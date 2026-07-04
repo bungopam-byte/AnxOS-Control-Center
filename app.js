@@ -93,6 +93,8 @@ function renderSnapshot(snapshot) {
   setField("cpuModel", snapshot.cpu?.model || "Unavailable");
   setField("cpuCores", Number.isFinite(snapshot.cpu?.cores) ? `${snapshot.cpu.cores}` : "Unavailable");
   setField("memoryUsage", `${formatPercent(snapshot.memory?.percent)} (${formatBytes(snapshot.memory?.used)} / ${formatBytes(snapshot.memory?.total)})`);
+  setField("memoryAvailable", formatBytes(snapshot.memory?.free));
+  setField("memoryTotal", formatBytes(snapshot.memory?.total));
 
   if (snapshot.disk) {
     setField("diskUsage", `${formatPercent(snapshot.disk.percent)} (${formatBytes(snapshot.disk.used)} / ${formatBytes(snapshot.disk.total)})`);

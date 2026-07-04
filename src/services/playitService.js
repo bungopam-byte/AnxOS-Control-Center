@@ -25,13 +25,42 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function parseJsonArray(value) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [];
+  }
+}
+
 function getConfigCandidates() {
   return unique([
     process.env.PLAYIT_CONFIG_PATH,
     path.join(process.cwd(), "playit.toml"),
+    process.platform === "win32" ? null : path.join("/etc", "playit", "playit.toml"),
     path.join(os.homedir(), ".config", "playit_gg", "playit.toml"),
     path.join(os.homedir(), ".config", "playit", "playit.toml"),
     path.join(os.homedir(), ".playit", "playit.toml"),
+  ]);
+}
+
+function getWindowsInstallCandidates() {
+  if (process.platform !== "win32") {
+    return [];
+  }
+
+  return unique([
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Programs", "playit", "playit.exe") : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Programs", "playit", "playit", "playit.exe") : null,
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "playit", "playit.exe") : null,
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "playit", "playit", "playit.exe") : null,
+    process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "playit", "playit.exe") : null,
+    process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "playit", "playit", "playit.exe") : null,
   ]);
 }
 
@@ -68,7 +97,7 @@ function sanitizeCommandLine(value) {
 }
 
 function extractTunnelId(content) {
-  const match = content.match(/\b(?:tunnel[_ -]?id|id)\b\s*[:=]\s*["']?([a-z0-9-]{6,})/i);
+  const match = content.match(/\btunnel[_ -]?id\b\s*[:=]\s*["']?([a-z0-9-]{6,})/i);
   return match?.[1] || null;
 }
 
@@ -127,6 +156,65 @@ async function readFirstAvailable(candidates) {
   return { path: null, content: "", diagnostics };
 }
 
+async function readSpecificFile(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    return {
+      content,
+      diagnostics: {
+        source: filePath,
+        checked: true,
+        ok: true,
+        errorCode: null,
+        hasOutput: Boolean(content),
+      },
+    };
+  } catch (error) {
+    return {
+      content: "",
+      diagnostics: {
+        source: filePath,
+        checked: true,
+        ok: false,
+        errorCode: error?.code || null,
+        hasOutput: false,
+        reason: error?.code === "EACCES" ? "unreadable" : "not_available",
+      },
+    };
+  }
+}
+
+async function readPlayitJournal() {
+  if (process.platform === "win32") {
+    return {
+      content: "",
+      diagnostics: {
+        source: "journalctl -u playit --no-pager -n 100",
+        checked: false,
+        ok: false,
+        errorCode: null,
+        hasOutput: false,
+        reason: "not_linux",
+      },
+    };
+  }
+
+  const result = await exec("journalctl", ["-u", "playit", "--no-pager", "-n", "100"]);
+  const content = [result.stdout, result.stderr].filter(Boolean).join("\n");
+
+  return {
+    content,
+    diagnostics: {
+      source: "journalctl -u playit --no-pager -n 100",
+      checked: true,
+      ok: result.ok,
+      errorCode: result.errorCode,
+      hasOutput: Boolean(content),
+      reason: content.includes("-- No entries --") ? "no_visible_entries" : null,
+    },
+  };
+}
+
 async function findPlayitBinary() {
   const explicitBinary = process.env.PLAYIT_BINARY;
 
@@ -147,13 +235,115 @@ async function findPlayitBinary() {
     }
   }
 
-  const command = process.platform === "win32" ? "where.exe" : "which";
+  if (process.platform === "win32") {
+    return findWindowsPlayitBinary();
+  }
+
+  const command = "which";
   const result = await exec(command, ["playit"]);
 
   return {
     installed: result.ok && Boolean(result.stdout),
     path: result.stdout.split(/\r?\n/)[0] || null,
     diagnostics: [{ method: command, ok: result.ok, errorCode: result.errorCode }],
+  };
+}
+
+async function findWindowsPlayitBinary() {
+  const diagnostics = [];
+  const whereResult = await exec("where.exe", ["playit"]);
+  diagnostics.push({
+    method: "where.exe playit",
+    ok: whereResult.ok,
+    errorCode: whereResult.errorCode,
+    executablePath: whereResult.stdout.split(/\r?\n/)[0] || null,
+  });
+
+  if (whereResult.ok && whereResult.stdout) {
+    return {
+      installed: true,
+      path: whereResult.stdout.split(/\r?\n/)[0],
+      diagnostics,
+      detectedBy: "where.exe playit",
+      processId: null,
+    };
+  }
+
+  for (const commandName of ["playit", "playit.exe"]) {
+    const result = await exec("powershell.exe", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      `Get-Command ${commandName} -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source`,
+    ]);
+    const executablePath = result.stdout.split(/\r?\n/)[0] || null;
+    diagnostics.push({
+      method: `Get-Command ${commandName}`,
+      ok: result.ok && Boolean(executablePath),
+      errorCode: result.errorCode,
+      executablePath,
+    });
+
+    if (executablePath) {
+      return {
+        installed: true,
+        path: executablePath,
+        diagnostics,
+        detectedBy: `Get-Command ${commandName}`,
+        processId: null,
+      };
+    }
+  }
+
+  for (const candidatePath of getWindowsInstallCandidates()) {
+    try {
+      await fs.access(candidatePath);
+      diagnostics.push({
+        method: "common install path",
+        ok: true,
+        errorCode: null,
+        executablePath: candidatePath,
+      });
+
+      return {
+        installed: true,
+        path: candidatePath,
+        diagnostics,
+        detectedBy: "common install path",
+        processId: null,
+      };
+    } catch (error) {
+      diagnostics.push({
+        method: "common install path",
+        ok: false,
+        errorCode: error?.code || null,
+        executablePath: candidatePath,
+      });
+    }
+  }
+
+  const processInfo = await getWindowsPlayitProcesses();
+  diagnostics.push(processInfo.diagnostics);
+
+  if (processInfo.processes.length > 0) {
+    const process = processInfo.processes[0];
+
+    return {
+      installed: true,
+      path: process.executablePath,
+      diagnostics,
+      detectedBy: "Get-CimInstance Win32_Process",
+      processId: process.processId,
+    };
+  }
+
+  return {
+    installed: false,
+    path: null,
+    diagnostics,
+    detectedBy: null,
+    processId: null,
   };
 }
 
@@ -194,44 +384,51 @@ async function runCliInspection(binaryPath, commands) {
   if (!binaryPath) {
     return {
       output: "",
+      outputs: [],
       commandResults: [],
     };
   }
 
-  const attempts = [];
-
-  if (supportsCommand(commands.help, "status")) {
-    attempts.push(["playit status", ["status"]]);
-  }
-
-  if (supportsCommand(commands.help, "tunnels")) {
-    attempts.push(["playit tunnels", ["tunnels"]]);
-  }
-
-  if (supportsCommand(commands.help, "account") && supportsCommand(commands.accountHelp, "status")) {
-    attempts.push(["playit account status", ["account", "status"]]);
-  }
+  const attempts = [
+    ["playit tunnels", ["tunnels"], supportsCommand(commands.help, "tunnels")],
+    [
+      "playit account status",
+      ["account", "status"],
+      supportsCommand(commands.help, "account") && supportsCommand(commands.accountHelp, "status"),
+    ],
+    ["playit status", ["status"], supportsCommand(commands.help, "status")],
+  ];
 
   const results = [];
   const output = [];
+  const outputs = [];
 
-  for (const [label, args] of attempts) {
+  for (const [label, args, supported] of attempts) {
     const result = await exec(binaryPath, args);
     const content = [result.stdout, result.stderr].filter(Boolean).join("\n");
+    outputs.push({
+      command: label,
+      content,
+      ok: result.ok,
+      errorCode: result.errorCode,
+      supported,
+    });
     results.push({
       command: label,
       ok: result.ok,
       errorCode: result.errorCode,
+      supported,
       hasOutput: Boolean(content),
     });
 
     if (content) {
-      output.push(content);
+      output.push(`${label}\n${content}`);
     }
   }
 
   return {
     output: output.join("\n"),
+    outputs,
     commandResults: results,
   };
 }
@@ -248,6 +445,31 @@ function parseRunning(cliOutput, processRunning) {
   return processRunning;
 }
 
+function getCliState(cliOutput) {
+  if (!cliOutput) {
+    return null;
+  }
+
+  if (/service is not running|not running|stopped|offline/i.test(cliOutput)) {
+    return "inactive";
+  }
+
+  if (/service is running|running|online/i.test(cliOutput)) {
+    return "active";
+  }
+
+  return "unknown";
+}
+
+function getSystemctlStatusState(output) {
+  const match = String(output || "").match(/\bActive:\s*([^\n]+)/i);
+  return match?.[1]?.trim() || null;
+}
+
+function isActiveSystemctlState(state) {
+  return /^active\b/i.test(String(state || ""));
+}
+
 function parseConnected(cliOutput, tunnelAddress) {
   if (/not connected|disconnected|offline/i.test(cliOutput)) {
     return false;
@@ -260,40 +482,231 @@ function parseConnected(cliOutput, tunnelAddress) {
   return null;
 }
 
-async function isPlayitProcessRunning() {
-  const result =
-    process.platform === "win32"
-      ? await exec("powershell.exe", [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-Command",
-          "Get-Process | Where-Object { $_.ProcessName -match '^playit' } | Select-Object -First 1 ProcessName,Id | ConvertTo-Json -Compress",
-        ])
-      : await exec("pgrep", ["-af", "playitd"]);
+function getUnavailableReason(source) {
+  if (source.diagnostics?.reason) {
+    return source.diagnostics.reason;
+  }
+
+  if (source.diagnostics?.ok === false) {
+    return source.diagnostics?.supported === false ? "unsupported" : "command_failed";
+  }
+
+  if (!source.content) {
+    return "no_output";
+  }
+
+  return "metadata_not_found";
+}
+
+function getParsedFieldNames(parsed) {
+  return Object.entries(parsed)
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+}
+
+function parseTunnelMetadataSource(content) {
+  const tunnelAddress = extractPlayitAddress(content);
+  const localTarget = extractLocalTarget(content);
+  const localParts = splitHostPort(localTarget);
 
   return {
-    running: result.ok && Boolean(result.stdout),
+    tunnelAddress,
+    localTarget,
+    localIp: localParts.ip,
+    localPort: localParts.port,
+    protocol: extractProtocol(content),
+    tunnelId: extractTunnelId(content),
+  };
+}
+
+function mergeTunnelMetadata(sources) {
+  const metadata = {
+    tunnelAddress: null,
+    localTarget: null,
+    localIp: null,
+    localPort: null,
+    protocol: null,
+    tunnelId: null,
+  };
+  const fieldSources = {};
+  const diagnostics = [];
+
+  for (const source of sources) {
+    const parsed = parseTunnelMetadataSource(source.content || "");
+    const parsedFields = getParsedFieldNames(parsed);
+
+    for (const field of Object.keys(metadata)) {
+      if (!metadata[field] && parsed[field]) {
+        metadata[field] = parsed[field];
+        fieldSources[field] = source.name;
+      }
+    }
+
+    diagnostics.push({
+      source: source.name,
+      checked: source.diagnostics?.checked !== false,
+      ok: source.diagnostics?.ok ?? true,
+      errorCode: source.diagnostics?.errorCode || null,
+      supported: source.diagnostics?.supported,
+      hasOutput: Boolean(source.content),
+      parsedFields,
+      reason: parsedFields.length > 0 ? null : getUnavailableReason(source),
+    });
+  }
+
+  if (metadata.localTarget && (!metadata.localIp || !metadata.localPort)) {
+    const localParts = splitHostPort(metadata.localTarget);
+    metadata.localIp = metadata.localIp || localParts.ip;
+    metadata.localPort = metadata.localPort || localParts.port;
+  }
+
+  return {
+    ...metadata,
+    fieldSources,
+    diagnostics,
+  };
+}
+
+async function getLinuxPlayitProcessState(cliOutput) {
+  const cliState = getCliState(cliOutput);
+  const diagnostics = {
+    method: null,
+    detectionMethod: null,
+    systemctlState: null,
+    cliState,
+    checks: [],
+  };
+
+  const isActiveResult = await exec("systemctl", ["is-active", "playit"]);
+  const isActiveState = isActiveResult.stdout.split(/\r?\n/)[0] || null;
+  diagnostics.systemctlState = isActiveState;
+  diagnostics.checks.push({
+    command: "systemctl is-active playit",
+    ok: isActiveResult.ok,
+    errorCode: isActiveResult.errorCode,
+    state: isActiveState,
+  });
+
+  if (isActiveSystemctlState(isActiveState)) {
+    diagnostics.method = "systemctl is-active playit";
+    diagnostics.detectionMethod = "systemctl is-active playit";
+    return {
+      running: true,
+      diagnostics,
+    };
+  }
+
+  const statusResult = await exec("systemctl", ["status", "playit"]);
+  const statusState = getSystemctlStatusState([statusResult.stdout, statusResult.stderr].filter(Boolean).join("\n"));
+  diagnostics.systemctlState = statusState || diagnostics.systemctlState;
+  diagnostics.checks.push({
+    command: "systemctl status playit",
+    ok: statusResult.ok,
+    errorCode: statusResult.errorCode,
+    state: statusState,
+  });
+
+  if (isActiveSystemctlState(statusState)) {
+    diagnostics.method = "systemctl status playit";
+    diagnostics.detectionMethod = "systemctl status playit";
+    return {
+      running: true,
+      diagnostics,
+    };
+  }
+
+  if (cliState === "active" || cliState === "inactive") {
+    diagnostics.method = "playit status";
+    diagnostics.detectionMethod = "playit status";
+    return {
+      running: cliState === "active",
+      diagnostics,
+    };
+  }
+
+  const pgrepResult = await exec("pgrep", ["-af", "playit"]);
+  diagnostics.checks.push({
+    command: "pgrep -af playit",
+    ok: pgrepResult.ok,
+    errorCode: pgrepResult.errorCode,
+    hasOutput: Boolean(pgrepResult.stdout),
+  });
+  diagnostics.method = "pgrep -af playit";
+  diagnostics.detectionMethod = "pgrep -af playit";
+
+  return {
+    running: pgrepResult.ok && Boolean(pgrepResult.stdout),
+    diagnostics,
+  };
+}
+
+async function isPlayitProcessRunning(cliOutput = "") {
+  if (process.platform === "win32") {
+    const processInfo = await getWindowsPlayitProcesses();
+
+    return {
+      running: processInfo.processes.length > 0,
+      diagnostics: {
+        ...processInfo.diagnostics,
+        method: "Get-CimInstance Win32_Process",
+        processIds: processInfo.processes.map((process) => process.processId).filter(Boolean),
+        executablePaths: processInfo.processes.map((process) => process.executablePath).filter(Boolean),
+      },
+    };
+  }
+
+  return getLinuxPlayitProcessState(cliOutput);
+}
+
+async function getWindowsPlayitProcesses() {
+  const result = await exec("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^playit' -or $_.CommandLine -match 'playit' -or $_.ExecutablePath -match 'playit' } | Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
+  ]);
+  const rows = parseJsonArray(result.stdout);
+  const processes = rows
+    .map((row) => ({
+      processId: row.ProcessId || null,
+      name: row.Name || null,
+      executablePath: row.ExecutablePath || null,
+      commandLine: row.CommandLine || "",
+    }))
+    .filter((row) => [row.name, row.executablePath, row.commandLine].filter(Boolean).join(" ").match(/\bplayit(?:\.exe|d)?\b/i));
+
+  return {
+    processes,
     diagnostics: {
-      method: process.platform === "win32" ? "Get-Process" : "pgrep playitd",
+      method: "Get-CimInstance Win32_Process playit",
       ok: result.ok,
       errorCode: result.errorCode,
-      hasOutput: Boolean(result.stdout),
+      hasOutput: processes.length > 0,
     },
   };
 }
 
 async function getPlayitProcessCommandLines() {
+  if (process.platform === "win32") {
+    const processInfo = await getWindowsPlayitProcesses();
+
+    return {
+      content: processInfo.processes.map((process) => process.commandLine).filter(Boolean).join("\n"),
+      diagnostics: {
+        command: "Get-CimInstance Win32_Process playit CommandLine",
+        ok: processInfo.diagnostics.ok,
+        errorCode: processInfo.diagnostics.errorCode,
+        hasOutput: processInfo.processes.length > 0,
+        processIds: processInfo.processes.map((process) => process.processId).filter(Boolean),
+        executablePaths: processInfo.processes.map((process) => process.executablePath).filter(Boolean),
+        commandLines: processInfo.processes.map((process) => sanitizeCommandLine(process.commandLine)).filter(Boolean),
+      },
+    };
+  }
+
   const result =
-    process.platform === "win32"
-      ? await exec("powershell.exe", [
-          "-NoProfile",
-          "-ExecutionPolicy",
-          "Bypass",
-          "-Command",
-          "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^playit' } | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress",
-        ])
-      : await exec("pgrep", ["-af", "playit"]);
+    await exec("pgrep", ["-af", "playit"]);
   const rawOutput = result.stdout || "";
   const lines = rawOutput
     .split(/\r?\n/)
@@ -322,20 +735,68 @@ async function getPlayitSnapshot() {
     readFirstAvailable(getConfigCandidates()),
     readFirstAvailable(getLogCandidates()),
   ]);
-  const [commands, processState, processCommandLines] = await Promise.all([
+  const [commands, processCommandLines] = await Promise.all([
     getCliCommands(binary.path),
-    isPlayitProcessRunning(),
     getPlayitProcessCommandLines(),
   ]);
   const cli = await runCliInspection(binary.path, commands);
+  const processState = await isPlayitProcessRunning(cli.output);
+  const [systemConfig, journal] = await Promise.all([
+    process.platform === "win32"
+      ? Promise.resolve({
+          content: "",
+          diagnostics: {
+            source: "/etc/playit/playit.toml",
+            checked: false,
+            ok: false,
+            errorCode: null,
+            hasOutput: false,
+            reason: "not_linux",
+          },
+        })
+      : readSpecificFile(path.join("/etc", "playit", "playit.toml")),
+    readPlayitJournal(),
+  ]);
   const combinedContent = [configResult.content, logResult.content].filter(Boolean).join("\n");
+  const metadataSources = [
+    ...cli.outputs.map((output) => ({
+      name: output.command,
+      content: output.content,
+      diagnostics: {
+        checked: true,
+        ok: output.ok,
+        errorCode: output.errorCode,
+        supported: output.supported,
+        reason: output.supported === false ? "unsupported" : null,
+      },
+    })),
+    {
+      name: "/etc/playit/playit.toml",
+      content: systemConfig.content,
+      diagnostics: systemConfig.diagnostics,
+    },
+    {
+      name: "journalctl -u playit --no-pager -n 100",
+      content: journal.content,
+      diagnostics: journal.diagnostics,
+    },
+  ];
+  const tunnelMetadata = mergeTunnelMetadata(metadataSources);
   const inspectionContent = [cli.output, processCommandLines.content, combinedContent].filter(Boolean).join("\n");
   const tunnelAddress =
-    getEnvValue(["PLAYIT_ADDRESS", "PLAYIT_TUNNEL_ADDRESS", "PLAYIT_DOMAIN"]) || extractPlayitAddress(inspectionContent);
+    tunnelMetadata.tunnelAddress ||
+    getEnvValue(["PLAYIT_ADDRESS", "PLAYIT_TUNNEL_ADDRESS", "PLAYIT_DOMAIN"]) ||
+    extractPlayitAddress(inspectionContent);
   const localTarget =
-    getEnvValue(["PLAYIT_LOCAL_TARGET", "PLAYIT_TARGET", "PLAYIT_LOCAL_ADDRESS"]) || extractLocalTarget(inspectionContent);
-  const localParts = splitHostPort(localTarget);
-  const running = binary.installed ? parseRunning(cli.output, processState.running) : false;
+    tunnelMetadata.localTarget ||
+    getEnvValue(["PLAYIT_LOCAL_TARGET", "PLAYIT_TARGET", "PLAYIT_LOCAL_ADDRESS"]) ||
+    extractLocalTarget(inspectionContent);
+  const localParts = {
+    ip: tunnelMetadata.localIp,
+    port: tunnelMetadata.localPort,
+    ...splitHostPort(localTarget),
+  };
+  const running = process.platform === "win32" ? (binary.installed ? parseRunning(cli.output, processState.running) : false) : processState.running;
   const connected = binary.installed && running ? parseConnected(cli.output, tunnelAddress) : false;
 
   return {
@@ -347,23 +808,30 @@ async function getPlayitSnapshot() {
     localTarget: localTarget || null,
     localIp: localParts.ip,
     localPort: localParts.port,
-    protocol: getEnvValue(["PLAYIT_PROTOCOL"]) || extractProtocol(inspectionContent),
-    tunnelId: getEnvValue(["PLAYIT_TUNNEL_ID"]) || extractTunnelId(inspectionContent),
+    protocol: tunnelMetadata.protocol || getEnvValue(["PLAYIT_PROTOCOL"]) || extractProtocol(inspectionContent),
+    tunnelId: tunnelMetadata.tunnelId || getEnvValue(["PLAYIT_TUNNEL_ID"]) || extractTunnelId(inspectionContent),
     lastCheckedAt: new Date().toISOString(),
     lastSuccessfulRefreshAt: binary.installed && cli.commandResults.some((result) => result.ok) ? new Date().toISOString() : null,
     diagnostics: {
       binaryPath: binary.path,
+      binaryDetectedBy: binary.detectedBy || binary.diagnostics.find((item) => item.ok)?.method || null,
+      binaryProcessId: binary.processId || null,
       binaryChecks: binary.diagnostics,
       commandDiscovery: commands.diagnostics,
       commandResults: cli.commandResults,
+      detectionMethod: processState.diagnostics.detectionMethod || processState.diagnostics.method || null,
+      systemctlState: processState.diagnostics.systemctlState || null,
+      cliState: processState.diagnostics.cliState || null,
       process: processState.diagnostics,
       processCommandLines: processCommandLines.diagnostics,
+      tunnelMetadataSources: tunnelMetadata.diagnostics,
+      tunnelMetadataFieldSources: tunnelMetadata.fieldSources,
       configFiles: configResult.diagnostics,
       logFiles: logResult.diagnostics,
       configPathUsed: configResult.path,
       logPathUsed: logResult.path,
-      addressSource: tunnelAddress ? "env_or_local_file" : null,
-      localTargetSource: localTarget ? "env_or_local_file" : null,
+      addressSource: tunnelMetadata.fieldSources.tunnelAddress || (tunnelAddress ? "env_or_local_file" : null),
+      localTargetSource: tunnelMetadata.fieldSources.localTarget || (localTarget ? "env_or_local_file" : null),
     },
   };
 }

@@ -209,6 +209,30 @@ function normalizePercent(value) {
   return number <= 1 ? number * 100 : number;
 }
 
+function parseDurationSeconds(value) {
+  if (typeof value !== "string") {
+    return safeNumber(value);
+  }
+
+  const parts = value.split(":").map((part) => safeNumber(part));
+
+  if (parts.some((part) => part === null)) {
+    return null;
+  }
+
+  if (parts.length === 4) {
+    const [days, hours, minutes, seconds] = parts;
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds;
+  }
+
+  if (parts.length === 3) {
+    const [hours, minutes, seconds] = parts;
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  return safeNumber(value);
+}
+
 function extractSessionId(loginResult) {
   if (typeof loginResult === "string" && loginResult.length > 0) {
     return loginResult;
@@ -502,12 +526,29 @@ function normalizePorts(value) {
 }
 
 function normalizeUptime(value) {
-  const number = safeNumber(value);
+  const number = parseDurationSeconds(value);
   if (number === null) {
     return null;
   }
 
   return number;
+}
+
+function getMetric(metrics, metricName) {
+  const metric = metrics?.[metricName];
+  return metric && typeof metric === "object" ? metric : null;
+}
+
+function getMetricRawValue(metrics, metricName) {
+  return safeNumber(findValue(getMetric(metrics, metricName), ["RawValue", "rawValue", "Value", "value"]));
+}
+
+function getMetricMaxValue(metrics, metricName) {
+  return safeNumber(findValue(getMetric(metrics, metricName), ["MaxValue", "maxValue", "Maximum", "maximum"]));
+}
+
+function getMetricPercent(metrics, metricName) {
+  return normalizePercent(findValue(getMetric(metrics, metricName), ["Percent", "percent"]));
 }
 
 function normalizeMemoryUsage(value) {
@@ -751,6 +792,60 @@ async function authenticateManagedInstance(adsApi, config, selectedInstance) {
   return authenticated ? managedApi : null;
 }
 
+async function getMinecraftVersion(managedApi) {
+  const result = await callMethodDetailed(managedApi.Core, "GetConfigAsync", ["MinecraftModule.Minecraft.SpecificVersion"]);
+
+  if (!result.ok || !result.value) {
+    return null;
+  }
+
+  const config = pickFirstObject(unwrapResult(result.value));
+  return findValue(config, ["CurrentValue", "currentValue", "Value", "value"]);
+}
+
+async function getManagedInstanceMetrics(managedApi) {
+  if (!managedApi) {
+    return null;
+  }
+
+  const statusResult = await callMethodDetailed(managedApi.Core, "GetStatusAsync");
+
+  if (!statusResult.ok || !statusResult.value) {
+    logSafeAmpInstanceDiagnostics("managed instance metrics", {
+      available: false,
+      errorCode: statusResult.errorCode,
+    });
+    return null;
+  }
+
+  const status = pickFirstObject(unwrapResult(statusResult.value));
+  const metrics = pickFirstObject(status.Metrics);
+  const version = await getMinecraftVersion(managedApi);
+
+  const normalized = {
+    playerCount: getMetricRawValue(metrics, "Active Users"),
+    maxPlayers: getMetricMaxValue(metrics, "Active Users"),
+    tps: getMetricRawValue(metrics, "TPS"),
+    cpuUsage: getMetricPercent(metrics, "CPU Usage"),
+    ramUsage: getMetricRawValue(metrics, "Memory Usage"),
+    uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
+    version,
+  };
+
+  logSafeAmpInstanceDiagnostics("managed instance metrics", {
+    available: true,
+    hasPlayers: Number.isFinite(normalized.playerCount),
+    hasMaxPlayers: Number.isFinite(normalized.maxPlayers),
+    hasTps: Number.isFinite(normalized.tps),
+    hasCpu: Number.isFinite(normalized.cpuUsage),
+    hasRam: Number.isFinite(normalized.ramUsage),
+    hasUptime: Number.isFinite(normalized.uptime),
+    hasVersion: Boolean(normalized.version),
+  });
+
+  return normalized;
+}
+
 async function getInstances(api) {
   const instanceMethodNames = ["GetInstancesAsync", "GetAvailableInstancesAsync", "GetInstanceListAsync", "ListInstancesAsync"];
   const instanceResults = [];
@@ -919,9 +1014,11 @@ async function getAmpSnapshot() {
     const selection = selectMinecraftInstance(instances);
     const selectedInstance = await enrichSelectedInstance(api, selection.selected);
     const managedInstanceApi = selectedInstance ? await authenticateManagedInstance(api, config, selectedInstance) : null;
+    const managedMetrics = await getManagedInstanceMetrics(managedInstanceApi);
     const finalSelectedInstance = selectedInstance
       ? {
           ...selectedInstance,
+          ...pickFirstObject(managedMetrics),
           childAuthenticated: Boolean(managedInstanceApi),
         }
       : null;

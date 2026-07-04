@@ -658,8 +658,10 @@ async function getInstances(api) {
 
   const rawInstances = dedupeInstances(instanceResults.flatMap((result) => asArray(result.value)));
   const statusRows = statusesResult.ok ? asArray(statusesResult.value) : [];
+  const moduleInfoResult = await callMethodDetailed(api.Core, "GetModuleInfoAsync");
+  const moduleInfoRows = moduleInfoResult.ok ? asArray(moduleInfoResult.value) : [];
 
-  if (rawInstances.length === 0 && statusRows.length === 0) {
+  if (rawInstances.length === 0 && statusRows.length === 0 && moduleInfoRows.length === 0) {
     logSafeAmpInstanceDiagnostics("instance discovery", {
       instanceCount: 0,
       instances: [],
@@ -669,7 +671,7 @@ async function getInstances(api) {
     return [];
   }
 
-  const sourceRows = rawInstances.length > 0 ? rawInstances : statusRows;
+  const sourceRows = rawInstances.length > 0 ? rawInstances : statusRows.length > 0 ? statusRows : moduleInfoRows;
   const normalized = [];
 
   for (const instance of sourceRows) {

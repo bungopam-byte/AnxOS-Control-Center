@@ -177,6 +177,14 @@ function renderAmpSnapshot(snapshot) {
     return;
   }
 
+  const selectedName = snapshot.summary?.selectedInstanceName;
+  const minecraftCount = Number.isFinite(snapshot.summary?.minecraftInstanceCount) ? snapshot.summary.minecraftInstanceCount : 0;
+  const selectionText = selectedName
+    ? selectedName
+    : minecraftCount > 1
+      ? `${minecraftCount} Minecraft instances; none selected`
+      : "No Minecraft auto-selection";
+
   setField(
     "ampConnection",
     `${snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable."}${formatAmpDiagnostics(snapshot.diagnostics)}`,
@@ -184,7 +192,7 @@ function renderAmpSnapshot(snapshot) {
   setField("ampStatus", snapshot.connection?.message || snapshot.message || "Unavailable");
   setField(
     "ampInstances",
-    `${snapshot.instances.length} instance(s) · ${snapshot.summary?.selectedInstanceName || "No Minecraft auto-selection"} · State: ${snapshot.summary?.state || "Unknown"}`,
+    `${snapshot.instances.length} instance(s) · ${selectionText} · State: ${snapshot.summary?.state || "Unknown"}`,
   );
   setField("ampUsage", formatAmpUsage(snapshot.summary));
 

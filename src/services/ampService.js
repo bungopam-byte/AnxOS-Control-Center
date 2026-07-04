@@ -532,6 +532,7 @@ function selectMinecraftInstance(instances) {
   return {
     selected: minecraftInstances.length === 1 ? minecraftInstances[0] : null,
     minecraftInstances,
+    mode: minecraftInstances.length === 0 ? "none" : minecraftInstances.length === 1 ? "auto" : "multiple",
   };
 }
 
@@ -558,6 +559,7 @@ function summarizeInstances(instances) {
     selectedInstanceId: selected?.id || null,
     selectedInstanceName: selected?.name || null,
     minecraftInstanceCount: instances.filter((instance) => instance.isMinecraft).length,
+    minecraftSelectionMode: selectMinecraftInstance(instances).mode,
     state: primary.state,
     playerCount,
     maxPlayers: primary.maxPlayers,
@@ -638,6 +640,17 @@ async function getAmpSnapshot() {
         instanceId: selection.selected.id,
         state: selection.selected.state,
       });
+    } else if (selection.minecraftInstances.length > 1) {
+      logSafeAmpInstanceDiagnostics("minecraft selection", {
+        selected: null,
+        reason: "multiple_minecraft_instances",
+        minecraftInstances: selection.minecraftInstances.map((instance) => ({
+          name: instance.name,
+          moduleType: instance.moduleType,
+          instanceId: instance.id,
+          state: instance.state,
+        })),
+      });
     }
 
     return createAmpSnapshot({
@@ -649,6 +662,7 @@ async function getAmpSnapshot() {
       instances,
       selectedInstance: selection.selected,
       minecraftInstances: selection.minecraftInstances,
+      minecraftSelectionMode: selection.mode,
     });
   } catch (error) {
     const diagnostics = createDiagnostics(config, "client_error", {

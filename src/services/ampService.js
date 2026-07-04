@@ -274,6 +274,22 @@ function createAmpSnapshot({
   minecraftSelectionMode = "none",
 }) {
   const instanceCount = Array.isArray(instances) ? instances.length : 0;
+  const summary = summarizeInstances(instances);
+  const minecraft = {
+    selectedInstanceId: summary.selectedInstanceId || null,
+    selectedInstanceName: summary.selectedInstanceName || null,
+    instanceCount: summary.minecraftInstanceCount || 0,
+    selectionMode: summary.minecraftSelectionMode || minecraftSelectionMode,
+    state: summary.state || null,
+    playerCount: summary.playerCount ?? null,
+    maxPlayers: summary.maxPlayers ?? null,
+    tps: summary.tps ?? null,
+    cpuUsage: summary.cpuUsage ?? null,
+    ramUsage: summary.ramUsage ?? null,
+    uptime: summary.uptime ?? null,
+    version: summary.version || null,
+    ports: summary.ports || [],
+  };
 
   return {
     connected,
@@ -287,13 +303,20 @@ function createAmpSnapshot({
     selectedInstance,
     minecraftInstances,
     minecraftSelectionMode,
+    playerCount: summary.playerCount ?? null,
+    maxPlayers: summary.maxPlayers ?? null,
+    tps: summary.tps ?? null,
+    cpuUsage: summary.cpuUsage ?? null,
+    ramUsage: summary.ramUsage ?? null,
+    uptime: summary.uptime ?? null,
+    minecraft,
     poll: {
       sequence: AMP_POLL_STATE.sequence,
       lastSuccessfulPollAt: AMP_POLL_STATE.lastSuccessfulPollAt,
       status,
       instanceCount,
     },
-    summary: summarizeInstances(instances),
+    summary,
   };
 }
 

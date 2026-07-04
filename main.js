@@ -3,6 +3,8 @@ const path = require("path");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
+const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxhub-icon.svg");
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1180,
@@ -10,6 +12,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 640,
     title: "AnxHub",
+    icon: APP_ICON_PATH,
     backgroundColor: "#080a0f",
     autoHideMenuBar: true,
     webPreferences: {

@@ -7,6 +7,13 @@ const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
 const SAFE_ERROR_FIELDS = ["code", "errno", "syscall"];
 const UNSPECIFIED_BIND_ADDRESSES = new Set(["", "0.0.0.0", "::", "[::]"]);
+const PLACEHOLDER_ENV_VALUES = new Set([
+  "your_amp_url",
+  "your_amp_username",
+  "your_amp_password",
+  "change_me",
+  "changeme",
+]);
 const AMP_POLL_STATE = {
   sequence: 0,
   lastSuccessfulPollAt: null,
@@ -42,15 +49,73 @@ function getEnvCandidates() {
   ]);
 }
 
+function getEnvExampleCandidates() {
+  return uniquePaths([
+    process.env.ANXHUB_ENV_EXAMPLE_PATH,
+    path.join(process.cwd(), ".env.example"),
+    process.resourcesPath ? path.join(process.resourcesPath, ".env.example") : null,
+    process.resourcesPath ? path.join(process.resourcesPath, "app", ".env.example") : null,
+    path.join(__dirname, "..", "..", ".env.example"),
+  ]);
+}
+
+function bootstrapEnvFile(candidates) {
+  const targetPath = process.env.ANXHUB_ENV_PATH || path.join(process.cwd(), ".env");
+  const existingPath = process.env.ANXHUB_ENV_PATH
+    ? (fs.existsSync(process.env.ANXHUB_ENV_PATH) ? process.env.ANXHUB_ENV_PATH : null)
+    : candidates.find((candidate) => fs.existsSync(candidate));
+
+  if (existingPath) {
+    return {
+      resolvedEnvPath: existingPath,
+      envAutoCreated: false,
+      envTemplatePath: null,
+      envCreateErrorCode: null,
+    };
+  }
+
+  const templatePath = getEnvExampleCandidates().find((candidate) => fs.existsSync(candidate));
+
+  if (!templatePath) {
+    return {
+      resolvedEnvPath: targetPath,
+      envAutoCreated: false,
+      envTemplatePath: null,
+      envCreateErrorCode: "ENOENT",
+    };
+  }
+
+  try {
+    fs.copyFileSync(templatePath, targetPath, fs.constants.COPYFILE_EXCL);
+
+    return {
+      resolvedEnvPath: targetPath,
+      envAutoCreated: true,
+      envTemplatePath: templatePath,
+      envCreateErrorCode: null,
+    };
+  } catch (error) {
+    return {
+      resolvedEnvPath: targetPath,
+      envAutoCreated: false,
+      envTemplatePath: templatePath,
+      envCreateErrorCode: getSafeErrorCode(error),
+    };
+  }
+}
+
 function loadEnv() {
   const candidates = getEnvCandidates();
-  const existingPath = candidates.find((candidate) => fs.existsSync(candidate)) || candidates[candidates.length - 1];
-  const result = dotenv.config({ path: existingPath, quiet: true });
+  const bootstrap = bootstrapEnvFile(candidates);
+  const result = dotenv.config({ path: bootstrap.resolvedEnvPath, quiet: true });
 
   return {
     cwd: process.cwd(),
-    resolvedEnvPath: existingPath,
-    envFileExists: fs.existsSync(existingPath),
+    resolvedEnvPath: bootstrap.resolvedEnvPath,
+    envFileExists: fs.existsSync(bootstrap.resolvedEnvPath),
+    envAutoCreated: bootstrap.envAutoCreated,
+    envTemplatePath: bootstrap.envTemplatePath,
+    envCreateErrorCode: bootstrap.envCreateErrorCode,
     envLoadErrorCode: result.error?.code || null,
     ampUrlLoaded: Boolean(process.env.AMP_URL),
   };
@@ -65,7 +130,10 @@ function getConfig() {
     password: process.env.AMP_PASSWORD,
   };
 
-  const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+  const missing = REQUIRED_ENV.filter((key) => {
+    const value = process.env[key];
+    return !value || PLACEHOLDER_ENV_VALUES.has(String(value).trim().toLowerCase());
+  });
 
   return {
     ...config,
@@ -145,6 +213,9 @@ function createDiagnostics(config, stage, details = {}) {
     cwd: config.env?.cwd || null,
     resolvedEnvPath: config.env?.resolvedEnvPath || null,
     envFileExists: config.env?.envFileExists ?? false,
+    envAutoCreated: config.env?.envAutoCreated ?? false,
+    envTemplatePath: config.env?.envTemplatePath || null,
+    envCreateErrorCode: config.env?.envCreateErrorCode || null,
     envLoadErrorCode: config.env?.envLoadErrorCode || null,
     ampUrlLoaded: config.env?.ampUrlLoaded ?? false,
     loadedAmpUrl: config.env?.ampUrl || null,
@@ -464,6 +535,10 @@ function pickFirstObject(...values) {
   return {};
 }
 
+function pickDefinedValues(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== null && item !== undefined));
+}
+
 function flattenKnownContainers(value) {
   const flat = {};
 
@@ -581,16 +656,40 @@ function getMetric(metrics, metricName) {
   return metric && typeof metric === "object" ? metric : null;
 }
 
+function getFirstMetric(metrics, metricNames) {
+  for (const metricName of metricNames) {
+    const metric = getMetric(metrics, metricName);
+
+    if (metric) {
+      return metric;
+    }
+  }
+
+  return null;
+}
+
 function getMetricRawValue(metrics, metricName) {
   return safeNumber(findValue(getMetric(metrics, metricName), ["RawValue", "rawValue", "Value", "value"]));
+}
+
+function getFirstMetricRawValue(metrics, metricNames) {
+  return safeNumber(findValue(getFirstMetric(metrics, metricNames), ["RawValue", "rawValue", "Value", "value"]));
 }
 
 function getMetricMaxValue(metrics, metricName) {
   return safeNumber(findValue(getMetric(metrics, metricName), ["MaxValue", "maxValue", "Maximum", "maximum"]));
 }
 
+function getFirstMetricMaxValue(metrics, metricNames) {
+  return safeNumber(findValue(getFirstMetric(metrics, metricNames), ["MaxValue", "maxValue", "Maximum", "maximum"]));
+}
+
 function getMetricPercent(metrics, metricName) {
   return normalizePercent(findValue(getMetric(metrics, metricName), ["Percent", "percent"]));
+}
+
+function getFirstMetricPercent(metrics, metricNames) {
+  return normalizePercent(findValue(getFirstMetric(metrics, metricNames), ["Percent", "percent"]));
 }
 
 function normalizeMemoryUsage(value) {
@@ -790,16 +889,21 @@ async function getManagedInstanceMetrics(managedApi) {
   const status = pickFirstObject(unwrapResult(statusResult.value));
   const metrics = pickFirstObject(status.Metrics);
   const version = await getMinecraftVersion(managedApi);
+  const usersMetricNames = ["Active Users", "Users", "Players", "Online Players", "Player Count"];
+  const tpsMetricNames = ["TPS", "Ticks Per Second", "Server TPS"];
+  const cpuMetricNames = ["CPU Usage", "CPU", "Processor Usage"];
+  const memoryMetricNames = ["Memory Usage", "RAM Usage", "Memory", "RAM"];
 
-  const normalized = {
-    playerCount: getMetricRawValue(metrics, "Active Users"),
-    maxPlayers: getMetricMaxValue(metrics, "Active Users"),
-    tps: getMetricRawValue(metrics, "TPS"),
-    cpuUsage: getMetricPercent(metrics, "CPU Usage"),
-    ramUsage: getMetricRawValue(metrics, "Memory Usage"),
+  const normalized = pickDefinedValues({
+    state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
+    playerCount: getFirstMetricRawValue(metrics, usersMetricNames),
+    maxPlayers: getFirstMetricMaxValue(metrics, usersMetricNames),
+    tps: getFirstMetricRawValue(metrics, tpsMetricNames),
+    cpuUsage: getFirstMetricPercent(metrics, cpuMetricNames),
+    ramUsage: getFirstMetricRawValue(metrics, memoryMetricNames),
     uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
     version,
-  };
+  });
 
   return normalized;
 }

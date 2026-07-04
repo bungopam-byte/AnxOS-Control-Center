@@ -791,6 +791,18 @@ function normalizeRuntimeMetrics(value, version = null) {
   const scopedValue = unwrapResult(value);
   const status = normalizeStatusPayload(scopedValue);
   const metrics = findRuntimeMetrics(scopedValue);
+  const uptime = findValue(status, [
+    "Uptime",
+    "uptime",
+    "UptimeSeconds",
+    "uptimeSeconds",
+    "RunningSeconds",
+    "runningSeconds",
+    "StartedFor",
+    "startedFor",
+    "UptimeSec",
+    "uptimeSec",
+  ]);
 
   return pickDefinedValues({
     state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
@@ -799,7 +811,7 @@ function normalizeRuntimeMetrics(value, version = null) {
     tps: getMetricRawValue(metrics, "TPS"),
     cpuUsage: getMetricRawValue(metrics, "CPU Usage"),
     ramUsage: getMetricRawValue(metrics, "Memory Usage"),
-    uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
+    uptime: normalizeUptime(uptime),
     version,
   });
 }

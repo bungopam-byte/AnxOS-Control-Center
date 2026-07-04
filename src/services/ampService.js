@@ -95,9 +95,30 @@ function createDiagnostics(config, stage, details = {}) {
   };
 }
 
+function getConnectionLabel(status) {
+  if (status === "connected") {
+    return "Connected";
+  }
+
+  if (status === "auth_failed") {
+    return "Auth failed";
+  }
+
+  if (status === "unreachable" || status === "error") {
+    return "Unreachable";
+  }
+
+  if (status === "unconfigured") {
+    return "Unconfigured";
+  }
+
+  return "Unavailable";
+}
+
 function createConnectionState(status, message, diagnostics = null) {
   return {
     status,
+    label: getConnectionLabel(status),
     message,
     connected: status === "connected",
     unreachable: status === "unreachable" || status === "error",

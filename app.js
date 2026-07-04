@@ -180,6 +180,12 @@ function formatAmpDiagnostics(diagnostics) {
   return ` · ${diagnostics.ampUrl || "AMP_URL unavailable"} · ${status} · ${code} · ${reachability}`;
 }
 
+function formatAmpConnection(snapshot) {
+  const label = snapshot.connection?.label || "Unavailable";
+  const message = snapshot.connection?.message || snapshot.message || "AMP unavailable.";
+  return `${label}: ${message}${formatAmpDiagnostics(snapshot.diagnostics)}`;
+}
+
 function renderAmpSnapshot(snapshot) {
   if (!snapshot?.configured) {
     setField("ampStatus", "Unconfigured");
@@ -202,9 +208,9 @@ function renderAmpSnapshot(snapshot) {
 
   setField(
     "ampConnection",
-    `${snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable."}${formatAmpDiagnostics(snapshot.diagnostics)}`,
+    formatAmpConnection(snapshot),
   );
-  setField("ampStatus", snapshot.connection?.message || snapshot.message || "Unavailable");
+  setField("ampStatus", snapshot.connection?.label || "Unavailable");
   setField(
     "ampInstances",
     `${snapshot.instances.length} instance(s) · ${selectionText} · State: ${snapshot.summary?.state || "Unknown"}`,

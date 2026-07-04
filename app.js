@@ -151,6 +151,10 @@ function formatAmpRuntime(summary) {
   return `${ports} · ${uptime}`;
 }
 
+function formatAmpVersion(summary) {
+  return summary?.version || "Unavailable";
+}
+
 function formatAmpDiagnostics(diagnostics) {
   if (!diagnostics) {
     return "";
@@ -174,6 +178,8 @@ function renderAmpSnapshot(snapshot) {
     setField("ampInstances", "No AMP data loaded.");
     setField("ampPlayers", "Player count unavailable.");
     setField("ampUsage", "AMP usage unavailable.");
+    setField("ampRuntime", "Unavailable");
+    setField("ampVersion", "Unavailable");
     return;
   }
 
@@ -195,11 +201,13 @@ function renderAmpSnapshot(snapshot) {
     `${snapshot.instances.length} instance(s) · ${selectionText} · State: ${snapshot.summary?.state || "Unknown"}`,
   );
   setField("ampUsage", formatAmpUsage(snapshot.summary));
+  setField("ampRuntime", formatAmpRuntime(snapshot.summary));
+  setField("ampVersion", formatAmpVersion(snapshot.summary));
 
   const players = Number.isFinite(snapshot.summary?.playerCount) ? snapshot.summary.playerCount : "Unavailable";
   const maxPlayers = Number.isFinite(snapshot.summary?.maxPlayers) ? snapshot.summary.maxPlayers : "Unavailable";
   const tps = Number.isFinite(snapshot.summary?.tps) ? snapshot.summary.tps.toFixed(1) : "Unavailable";
-  const version = snapshot.summary?.version || "Version unavailable";
+  const version = formatAmpVersion(snapshot.summary);
   setField("ampPlayers", `Players: ${players}/${maxPlayers} · TPS: ${tps} · ${version} · ${formatAmpRuntime(snapshot.summary)}`);
 }
 

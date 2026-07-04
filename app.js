@@ -42,7 +42,7 @@ let ampRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
-const AMP_REFRESH_INTERVAL_MS = 5000;
+const AMP_REFRESH_INTERVAL_MS = 2000;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
@@ -76,6 +76,22 @@ const startupAudio = {
   elementFadeTimer: null,
   usingElement: false,
 };
+
+function getDesktopApi() {
+  return window.anxos || window.anxhub || null;
+}
+
+function getDesktopApiState() {
+  const api = getDesktopApi();
+
+  return {
+    api,
+    hasBridge: Boolean(api),
+    hasSystem: typeof api?.system?.getSnapshot === "function",
+    hasAmp: typeof api?.amp?.getSnapshot === "function",
+    hasApp: typeof api?.app?.getRuntimeInfo === "function",
+  };
+}
 
 document.querySelectorAll("[data-field]").forEach((field) => {
   const fields = fieldMap.get(field.dataset.field) || [];
@@ -558,6 +574,10 @@ function formatDuration(totalSeconds) {
     return `${hours}h ${minutes}m`;
   }
 
+  if (minutes === 0) {
+    return `${Math.floor(totalSeconds)}s`;
+  }
+
   return `${minutes}m`;
 }
 
@@ -875,6 +895,16 @@ function formatMinecraftCpu(summary) {
   return formatPercent(summary?.cpuUsage);
 }
 
+function formatMinecraftState(summary, fallback) {
+  const state = summary?.state;
+
+  if (state === null || state === undefined || state === "") {
+    return fallback;
+  }
+
+  return typeof state === "number" ? `State ${state}` : String(state);
+}
+
 function formatMinecraftPorts(summary) {
   return Array.isArray(summary?.ports) && summary.ports.length > 0 ? summary.ports.join(", ") : "Unavailable";
 }
@@ -962,7 +992,7 @@ function renderAmpSnapshot(snapshot) {
   setField("minecraftDashboardRuntime", runtimeText);
   setField("minecraftDashboardVersion", versionText);
   setMinecraftPageFields({
-    status: snapshot.summary?.state || statusText,
+    status: formatMinecraftState(snapshot.summary, statusText),
     selection: selectionText,
     instance: formatMinecraftInstanceName(snapshot),
     players: formatMinecraftPlayers(snapshot.summary),
@@ -978,7 +1008,31 @@ function renderAmpSnapshot(snapshot) {
 }
 
 async function refreshAmpDashboard() {
-  if (ampRequestInFlight || !window.anxhub?.amp?.getSnapshot) {
+  if (ampRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasAmp) {
+    const message = desktopApiState.hasBridge ? "AMP IPC bridge unavailable." : "Desktop preload bridge unavailable.";
+    setField("ampConnection", message);
+    setField("ampStatus", "Unavailable");
+    setField("ampInstances", "Unavailable");
+    setField("ampPlayers", "Unavailable");
+    setField("ampUsage", "Unavailable");
+    setField("ampRuntime", "Unavailable");
+    setField("ampVersion", "Unavailable");
+    setField("ampDashboardConnection", message);
+    setField("ampDashboardStatus", "Unavailable");
+    setField("ampDashboardInstances", "Unavailable");
+    setField("ampDashboardUsage", "Unavailable");
+    setField("minecraftDashboardSelection", "Unavailable");
+    setField("minecraftDashboardPlayers", "Unavailable");
+    setField("minecraftDashboardRuntime", "Unavailable");
+    setField("minecraftDashboardVersion", "Unavailable");
+    setMinecraftPageUnavailable("Unavailable", message);
+    markStartupReady("amp");
     return;
   }
 
@@ -990,21 +1044,22 @@ async function refreshAmpDashboard() {
   ampRequestInFlight = true;
 
   try {
-    const snapshot = normalizeAmpSnapshotForRenderer(await window.anxhub.amp.getSnapshot());
+    const snapshot = normalizeAmpSnapshotForRenderer(await desktopApiState.api.amp.getSnapshot());
     latestAmpSnapshot = snapshot;
     ampRendererReceiveCount += 1;
     renderAmpSnapshot(latestAmpSnapshot);
     lastAmpRefreshAt = Date.now();
-  } catch {
+  } catch (error) {
+    const message = `AMP IPC request failed: ${error?.message || "Unknown error"}`;
     latestAmpSnapshot = null;
-    setField("ampConnection", "AMP API unavailable.");
+    setField("ampConnection", message);
     setField("ampStatus", "Unavailable");
     setField("ampInstances", "Unavailable");
     setField("ampPlayers", "Unavailable");
     setField("ampUsage", "Unavailable");
     setField("ampRuntime", "Unavailable");
     setField("ampVersion", "Unavailable");
-    setField("ampDashboardConnection", "AMP API unavailable.");
+    setField("ampDashboardConnection", message);
     setField("ampDashboardStatus", "Unavailable");
     setField("ampDashboardInstances", "Unavailable");
     setField("ampDashboardUsage", "Unavailable");
@@ -1012,7 +1067,7 @@ async function refreshAmpDashboard() {
     setField("minecraftDashboardPlayers", "Unavailable");
     setField("minecraftDashboardRuntime", "Unavailable");
     setField("minecraftDashboardVersion", "Unavailable");
-    setMinecraftPageUnavailable("Unavailable", "AMP API unavailable.");
+    setMinecraftPageUnavailable("Unavailable", message);
   } finally {
     markStartupReady("amp");
     ampRequestInFlight = false;
@@ -1020,7 +1075,9 @@ async function refreshAmpDashboard() {
 }
 
 async function refreshDashboard() {
-  if (systemRequestInFlight || !window.anxhub?.system?.getSnapshot) {
+  const desktopApiState = getDesktopApiState();
+
+  if (systemRequestInFlight || !desktopApiState.hasSystem) {
     setField("osVersion", "Desktop API unavailable");
     return;
   }
@@ -1028,7 +1085,7 @@ async function refreshDashboard() {
   systemRequestInFlight = true;
 
   try {
-    renderSnapshot(await window.anxhub.system.getSnapshot());
+    renderSnapshot(await desktopApiState.api.system.getSnapshot());
   } catch {
     showToast("System metrics are unavailable.");
   } finally {
@@ -1251,13 +1308,15 @@ function setAboutFields(info) {
 }
 
 async function loadRuntimeInfo() {
-  if (!window.anxhub?.app?.getRuntimeInfo) {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasApp) {
     setAboutFields(null);
     return;
   }
 
   try {
-    setAboutFields(await window.anxhub.app.getRuntimeInfo());
+    setAboutFields(await desktopApiState.api.app.getRuntimeInfo());
   } catch {
     setAboutFields(null);
   }

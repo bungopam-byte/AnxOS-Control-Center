@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("anxhub", {
+const desktopApi = {
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke("app:getRuntimeInfo"),
   },
@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld("anxhub", {
   amp: {
     getSnapshot: () => ipcRenderer.invoke("amp:getSnapshot"),
   },
-});
+};
+
+contextBridge.exposeInMainWorld("anxhub", desktopApi);
+contextBridge.exposeInMainWorld("anxos", desktopApi);

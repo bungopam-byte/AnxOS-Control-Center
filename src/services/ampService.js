@@ -275,7 +275,13 @@ async function authenticate(api, config) {
     api.sessionId = sessionId;
   }
 
-  return didLoginSucceed(loginResult, sessionId);
+  const authenticated = didLoginSucceed(loginResult, sessionId);
+
+  if (!authenticated) {
+    return false;
+  }
+
+  return withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
 }
 
 function getObjectKeys(value) {
@@ -387,15 +393,15 @@ function flattenKnownContainers(value) {
 }
 
 function getInstanceId(instance) {
-  return findValue(instance, ["InstanceID", "InstanceId", "InstanceIdString", "Id", "ID", "Guid", "mapKey"]);
+  return findValue(instance, ["InstanceID", "InstanceId", "InstanceIdString", "Id", "ID", "Guid", "id", "mapKey"]);
 }
 
 function getModuleType(instance) {
-  return findValue(instance, ["Module", "ModuleName", "ApplicationModule", "AppModule", "ModuleDisplayName", "Application"]) || "Unknown";
+  return findValue(instance, ["Module", "ModuleName", "ApplicationModule", "AppModule", "ModuleDisplayName", "Application", "moduleType"]) || "Unknown";
 }
 
 function getInstanceName(instance) {
-  return findValue(instance, ["InstanceName", "FriendlyName", "Name", "DisplayName", "Description"]) || "AMP Instance";
+  return findValue(instance, ["InstanceName", "FriendlyName", "Name", "DisplayName", "Description", "name"]) || "AMP Instance";
 }
 
 function getVersion(instance) {
@@ -511,7 +517,7 @@ function normalizeInstance(instance, status, detail = null) {
   };
   const name = getInstanceName(merged);
   const state =
-    findValue(merged, ["State", "Status", "ApplicationState", "DaemonState", "Running", "AppState", "InstanceState", "StateText"]) ||
+    findValue(merged, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]) ||
     "Unknown";
   const players = findValue(merged, [
     "Players",
@@ -539,6 +545,7 @@ function normalizeInstance(instance, status, detail = null) {
   return {
     id: getInstanceId(merged) || name,
     name,
+    friendlyName: findValue(merged, ["FriendlyName", "friendlyName"]),
     moduleType: getModuleType(merged),
     isMinecraft: isMinecraftInstance(merged),
     state,
@@ -636,6 +643,28 @@ async function enrichSelectedInstance(api, selectedInstance) {
   return enriched;
 }
 
+async function getAdsInstance(api, instanceId) {
+  if (!instanceId) {
+    return null;
+  }
+
+  const result = await callMethodDetailed(api.ADSModule, "GetInstanceAsync", [instanceId]);
+
+  if (result.ok && result.value) {
+    return pickFirstObject(unwrapResult(result.value));
+  }
+
+  if (!result.missing && result.errorCode) {
+    logSafeAmpInstanceDiagnostics("discovery method error", {
+      methodName: "GetInstanceAsync",
+      instanceId,
+      errorCode: result.errorCode,
+    });
+  }
+
+  return null;
+}
+
 async function getInstances(api) {
   const instanceMethodNames = ["GetInstancesAsync", "GetAvailableInstancesAsync", "GetInstanceListAsync", "ListInstancesAsync"];
   const instanceResults = [];
@@ -662,10 +691,18 @@ async function getInstances(api) {
 
   const rawInstances = dedupeInstances(instanceResults.flatMap((result) => asArray(result.value)));
   const statusRows = statusesResult.ok ? asArray(statusesResult.value) : [];
+  const statusInstances = [];
+
+  for (const status of statusRows) {
+    const instanceId = getInstanceId(status);
+    const instance = await getAdsInstance(api, instanceId);
+    statusInstances.push(instance ? { ...status, ...instance } : status);
+  }
+
   const moduleInfoResult = await callMethodDetailed(api.Core, "GetModuleInfoAsync");
   const moduleInfoRows = moduleInfoResult.ok ? asArray(moduleInfoResult.value) : [];
 
-  if (rawInstances.length === 0 && statusRows.length === 0 && moduleInfoRows.length === 0) {
+  if (rawInstances.length === 0 && statusInstances.length === 0 && moduleInfoRows.length === 0) {
     logSafeAmpInstanceDiagnostics("instance discovery", {
       instanceCount: 0,
       instances: [],
@@ -675,7 +712,7 @@ async function getInstances(api) {
     return [];
   }
 
-  const sourceRows = rawInstances.length > 0 ? rawInstances : statusRows.length > 0 ? statusRows : moduleInfoRows;
+  const sourceRows = dedupeInstances([...statusInstances, ...rawInstances, ...moduleInfoRows]);
   const normalized = [];
 
   for (const instance of sourceRows) {

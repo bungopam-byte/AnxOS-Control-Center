@@ -23,9 +23,12 @@
           <button class="nav-item" type="button" data-page-target="minecraft">Minecraft</button>
           <button class="nav-item" type="button" data-page-target="amp">AMP</button>
           <button class="nav-item" type="button" data-page-target="playit">Playit</button>
-          <button class="nav-item" type="button" data-page-target="coolpals">CoolPals</button>
-          <button class="nav-item" type="button" data-page-target="logs">Logs</button>
+          <button class="nav-item" type="button" data-page-target="docker">Docker</button>
+          <button class="nav-item" type="button" data-page-target="ssh">SSH</button>
           <button class="nav-item" type="button" data-page-target="files">Files</button>
+          <button class="nav-item" type="button" data-page-target="console">Console</button>
+          <button class="nav-item" type="button" data-page-target="backups">Backups</button>
+          <button class="nav-item" type="button" data-page-target="coolpals">CoolPals</button>
           <button class="nav-item" type="button" data-page-target="settings">Settings</button>
         </nav>
 
@@ -273,17 +276,31 @@
           </article>
         </section>
 
-        <section class="page" data-page="logs">
+        <section class="page" data-page="docker">
           <header class="page-header">
             <div>
-              <p class="eyebrow">Activity</p>
-              <h1>Logs</h1>
-              <p class="lede">Log viewers will appear here once local log paths are configured.</p>
+              <p class="eyebrow">Containers</p>
+              <h1>Docker</h1>
+              <p class="lede">Docker management will appear here once local Docker IPC is added.</p>
             </div>
           </header>
           <article class="status-card status-card--wide status-card--placeholder">
-            <h3>Logs Placeholder</h3>
-            <p>No log sources configured.</p>
+            <h3>Docker Placeholder</h3>
+            <p>No Docker service integration is configured.</p>
+          </article>
+        </section>
+
+        <section class="page" data-page="ssh">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Remote Access</p>
+              <h1>SSH</h1>
+              <p class="lede">SSH profiles and embedded terminal sessions will use secure IPC and no plaintext passwords.</p>
+            </div>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <h3>SSH Placeholder</h3>
+            <p>No SSH profiles configured.</p>
           </article>
         </section>
 
@@ -298,6 +315,34 @@
           <article class="status-card status-card--wide status-card--placeholder">
             <h3>Files Placeholder</h3>
             <p>No file manager integration configured.</p>
+          </article>
+        </section>
+
+        <section class="page" data-page="console">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Live Output</p>
+              <h1>Console</h1>
+              <p class="lede">Live Minecraft and AMP console output will appear here once command IPC is added.</p>
+            </div>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <h3>Console Placeholder</h3>
+            <p>No console stream configured.</p>
+          </article>
+        </section>
+
+        <section class="page" data-page="backups">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Recovery</p>
+              <h1>Backups</h1>
+              <p class="lede">Backup creation, restore, and scheduling will appear here after local backup paths are configured.</p>
+            </div>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <h3>Backups Placeholder</h3>
+            <p>No backup source configured.</p>
           </article>
         </section>
 

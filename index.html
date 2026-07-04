@@ -29,6 +29,7 @@
           <li data-startup-step="control">Preparing control center...</li>
         </ul>
       </div>
+      <audio data-startup-audio src="src/assets/startup.wav" preload="auto"></audio>
     </section>
 
     <div class="app-shell" data-app-shell hidden>
@@ -37,7 +38,7 @@
           <span class="brand-mark"><img src="src/assets/anxhub-icon.svg" alt="" aria-hidden="true"></span>
           <div>
             <strong>AnxOS</strong>
-            <span>Local control center</span>
+            <span>Control Center</span>
           </div>
         </div>
 
@@ -957,10 +958,124 @@
               <p class="lede">Backup creation, restore, and scheduling will appear here after local backup paths are configured.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <h3>Backups Placeholder</h3>
-            <p>No backup source configured.</p>
-          </article>
+
+          <section class="backup-shell" aria-label="Backup management">
+            <div class="backup-summary-grid">
+              <article class="backup-summary-card">
+                <span class="service-icon">BK</span>
+                <div>
+                  <span>Total Backups</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="backup-summary-card">
+                <span class="service-icon">LAST</span>
+                <div>
+                  <span>Last Backup</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="backup-summary-card">
+                <span class="service-icon">SCH</span>
+                <div>
+                  <span>Schedule</span>
+                  <strong>Not configured</strong>
+                </div>
+              </article>
+              <article class="backup-summary-card">
+                <span class="service-icon">DST</span>
+                <div>
+                  <span>Destination</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+            </div>
+
+            <div class="backup-toolbar">
+              <label class="backup-search">
+                <span>Search backups</span>
+                <input type="search" placeholder="Search backup name or source" disabled>
+              </label>
+              <div class="backup-actions" aria-label="Backup actions">
+                <button class="inline-action" type="button" disabled>Create Backup</button>
+                <button class="inline-action" type="button" disabled>Restore</button>
+                <button class="inline-action" type="button" disabled>Verify</button>
+                <button class="inline-action" type="button" disabled>Refresh</button>
+              </div>
+            </div>
+
+            <div class="backup-workspace">
+              <section class="backup-table-panel" aria-label="Backup list">
+                <div class="backup-panel-header">
+                  <h3>Backup History</h3>
+                  <span class="status-pill status-pill--external">Disconnected</span>
+                </div>
+                <div class="backup-table-wrap">
+                  <table class="backup-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Source</th>
+                        <th>Size</th>
+                        <th>Created</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                  <div class="backup-empty-state">
+                    <span class="backup-icon" aria-hidden="true"></span>
+                    <strong>No backups available</strong>
+                    <span>Configure a backup source later to display local backup history here.</span>
+                  </div>
+                  <div class="backup-loading-state" hidden>
+                    <span class="file-loader" aria-hidden="true"></span>
+                    <strong>Loading backups...</strong>
+                    <span>Waiting for backup integration.</span>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="backup-side-panel" aria-label="Backup schedule and restore">
+                <section class="backup-panel-card">
+                  <div class="backup-panel-header">
+                    <h3>Schedule</h3>
+                    <span class="status-pill status-pill--planned">Future IPC</span>
+                  </div>
+                  <dl class="backup-details-list">
+                    <div>
+                      <dt>Frequency</dt>
+                      <dd>Not configured</dd>
+                    </div>
+                    <div>
+                      <dt>Next Run</dt>
+                      <dd>Unavailable</dd>
+                    </div>
+                    <div>
+                      <dt>Retention</dt>
+                      <dd>Unavailable</dd>
+                    </div>
+                    <div>
+                      <dt>Target Path</dt>
+                      <dd>Unavailable</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section class="backup-panel-card">
+                  <div class="backup-panel-header">
+                    <h3>Restore</h3>
+                    <span class="status-pill status-pill--manual">Manual</span>
+                  </div>
+                  <div class="backup-restore-state">
+                    <strong>No backup selected</strong>
+                    <span>Selecting and restoring backups will be enabled when backend file operations exist.</span>
+                    <button class="inline-action" type="button" disabled>Restore Selected</button>
+                  </div>
+                </section>
+              </aside>
+            </div>
+          </section>
         </section>
 
         <section class="page" data-page="settings">

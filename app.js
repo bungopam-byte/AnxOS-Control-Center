@@ -13,6 +13,7 @@ const consoleViewer = document.querySelector("[data-console-viewer]");
 const consoleLogList = document.querySelector("[data-console-log-list]");
 const consoleEmptyState = document.querySelector("[data-console-empty]");
 const startupScreen = document.querySelector("[data-startup-screen]");
+const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
 const startupMessage = document.querySelector("[data-startup-message]");
 const startupDetail = document.querySelector("[data-startup-detail]");
@@ -57,6 +58,8 @@ const startupAudio = {
   gain: null,
   oscillators: [],
   timer: null,
+  elementFadeTimer: null,
+  usingElement: false,
 };
 
 document.querySelectorAll("[data-field]").forEach((field) => {
@@ -107,10 +110,35 @@ function isStartupSoundEnabled() {
   return readStoredSettings()["general.startupSound"] !== false;
 }
 
-function startStartupMusic() {
+function fadeStartupAudioElement(targetVolume, durationMs, onComplete) {
+  if (!startupAudioElement) {
+    return;
+  }
+
+  if (startupAudio.elementFadeTimer) {
+    window.clearInterval(startupAudio.elementFadeTimer);
+    startupAudio.elementFadeTimer = null;
+  }
+
+  const startVolume = startupAudioElement.volume;
+  const startedAt = Date.now();
+
+  startupAudio.elementFadeTimer = window.setInterval(() => {
+    const progress = Math.min((Date.now() - startedAt) / durationMs, 1);
+    startupAudioElement.volume = startVolume + (targetVolume - startVolume) * progress;
+
+    if (progress >= 1) {
+      window.clearInterval(startupAudio.elementFadeTimer);
+      startupAudio.elementFadeTimer = null;
+      onComplete?.();
+    }
+  }, 24);
+}
+
+function startGeneratedStartupTone() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
 
-  if (!AudioContext || startupAudio.context || !isStartupSoundEnabled()) {
+  if (!AudioContext || startupAudio.context) {
     return;
   }
 
@@ -149,7 +177,54 @@ function startStartupMusic() {
   }
 }
 
+function startStartupMusic() {
+  if (!isStartupSoundEnabled()) {
+    return;
+  }
+
+  if (startupAudioElement) {
+    startupAudioElement.loop = true;
+    startupAudioElement.currentTime = 0;
+    startupAudioElement.volume = 0;
+
+    const playPromise = startupAudioElement.play();
+
+    if (playPromise?.then) {
+      playPromise
+        .then(() => {
+          if (startupState.finished) {
+            startupAudioElement.pause();
+            startupAudioElement.currentTime = 0;
+            return;
+          }
+
+          startupAudio.usingElement = true;
+          fadeStartupAudioElement(0.42, 520);
+        })
+        .catch(() => {
+          startupAudio.usingElement = false;
+          startGeneratedStartupTone();
+        });
+      return;
+    }
+
+    startupAudio.usingElement = true;
+    fadeStartupAudioElement(0.42, 520);
+    return;
+  }
+
+  startGeneratedStartupTone();
+}
+
 function stopStartupMusic() {
+  if (startupAudio.usingElement && startupAudioElement) {
+    fadeStartupAudioElement(0, 320, () => {
+      startupAudioElement.pause();
+      startupAudioElement.currentTime = 0;
+      startupAudio.usingElement = false;
+    });
+  }
+
   if (startupAudio.timer) {
     window.clearInterval(startupAudio.timer);
     startupAudio.timer = null;

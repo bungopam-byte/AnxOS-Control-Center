@@ -6,6 +6,7 @@ dotenv.config({ path: path.join(__dirname, "..", "..", ".env"), quiet: true });
 
 const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
+const SAFE_ERROR_FIELDS = ["code", "errno", "syscall"];
 
 function getConfig() {
   const config = {
@@ -45,12 +46,57 @@ async function preflightAmpApi(config) {
 
     const body = await response.text();
     JSON.parse(body);
-    return response.ok;
-  } catch {
-    return false;
+    return {
+      ok: response.ok,
+      httpStatus: response.status,
+      errorCode: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      httpStatus: null,
+      errorCode: getSafeErrorCode(error),
+    };
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+function getSafeErrorCode(error) {
+  if (!error) {
+    return null;
+  }
+
+  if (error.name === "AbortError") {
+    return "ETIMEDOUT";
+  }
+
+  for (const field of SAFE_ERROR_FIELDS) {
+    if (typeof error[field] === "string" && error[field]) {
+      return error[field];
+    }
+  }
+
+  if (error.cause) {
+    return getSafeErrorCode(error.cause);
+  }
+
+  return error.name || "UNKNOWN";
+}
+
+function createDiagnostics(config, stage, details = {}) {
+  return {
+    ampUrl: config.url || null,
+    httpStatus: details.httpStatus ?? null,
+    errorCode: details.errorCode ?? null,
+    stage,
+    loginFailed: stage === "login",
+    serverUnreachable: stage === "preflight" || stage === "api_spec" || stage === "client_error",
+  };
+}
+
+function logSafeAmpDiagnostics(diagnostics) {
+  console.log("[AnxHub][AMP diagnostics]", diagnostics);
 }
 
 function safeNumber(value) {
@@ -236,14 +282,18 @@ async function getAmpSnapshot() {
   }
 
   try {
-    const reachable = await preflightAmpApi(config);
+    const preflight = await preflightAmpApi(config);
 
-    if (!reachable) {
+    if (!preflight.ok) {
+      const diagnostics = createDiagnostics(config, "preflight", preflight);
+      logSafeAmpDiagnostics(diagnostics);
+
       return {
         connected: false,
         configured: true,
         status: "unreachable",
         message: "AMP API is unreachable.",
+        diagnostics,
         instances: [],
         summary: summarizeInstances([]),
       };
@@ -253,11 +303,15 @@ async function getAmpSnapshot() {
     const initialized = await withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
 
     if (!initialized) {
+      const diagnostics = createDiagnostics(config, "api_spec");
+      logSafeAmpDiagnostics(diagnostics);
+
       return {
         connected: false,
         configured: true,
         status: "unreachable",
         message: "AMP API spec is unavailable.",
+        diagnostics,
         instances: [],
         summary: summarizeInstances([]),
       };
@@ -266,11 +320,15 @@ async function getAmpSnapshot() {
     const authenticated = await authenticate(api, config);
 
     if (!authenticated) {
+      const diagnostics = createDiagnostics(config, "login");
+      logSafeAmpDiagnostics(diagnostics);
+
       return {
         connected: false,
         configured: true,
         status: "auth_failed",
         message: "AMP authentication failed.",
+        diagnostics,
         instances: [],
         summary: summarizeInstances([]),
       };
@@ -283,15 +341,22 @@ async function getAmpSnapshot() {
       configured: true,
       status: "connected",
       message: "Connected to AMP.",
+      diagnostics: createDiagnostics(config, "connected"),
       instances,
       summary: summarizeInstances(instances),
     };
-  } catch {
+  } catch (error) {
+    const diagnostics = createDiagnostics(config, "client_error", {
+      errorCode: getSafeErrorCode(error),
+    });
+    logSafeAmpDiagnostics(diagnostics);
+
     return {
       connected: false,
       configured: true,
       status: "error",
       message: "AMP is unavailable.",
+      diagnostics,
       instances: [],
       summary: summarizeInstances([]),
     };

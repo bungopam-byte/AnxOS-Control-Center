@@ -109,6 +109,22 @@ function formatAmpUsage(summary) {
   return `AMP CPU ${cpu} · ${ram}`;
 }
 
+function formatAmpDiagnostics(diagnostics) {
+  if (!diagnostics) {
+    return "";
+  }
+
+  const status = diagnostics.httpStatus ? `HTTP ${diagnostics.httpStatus}` : "No HTTP status";
+  const code = diagnostics.errorCode ? `Error ${diagnostics.errorCode}` : "No error code";
+  const reachability = diagnostics.loginFailed
+    ? "Login failed"
+    : diagnostics.serverUnreachable
+      ? "Server unreachable"
+      : "Connected";
+
+  return ` · ${diagnostics.ampUrl || "AMP_URL unavailable"} · ${status} · ${code} · ${reachability}`;
+}
+
 function renderAmpSnapshot(snapshot) {
   if (!snapshot?.configured) {
     setField("ampConnection", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
@@ -118,7 +134,10 @@ function renderAmpSnapshot(snapshot) {
     return;
   }
 
-  setField("ampConnection", snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable.");
+  setField(
+    "ampConnection",
+    `${snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable."}${formatAmpDiagnostics(snapshot.diagnostics)}`,
+  );
   setField("ampInstances", `${snapshot.instances.length} instance(s) · State: ${snapshot.summary?.state || "Unknown"}`);
   setField("ampUsage", formatAmpUsage(snapshot.summary));
 

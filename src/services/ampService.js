@@ -1,8 +1,7 @@
 const path = require("path");
+const fs = require("fs");
 const dotenv = require("dotenv");
 const { AMPAPI } = require("@cubecoders/ampapi");
-
-dotenv.config({ path: path.join(__dirname, "..", "..", ".env"), quiet: true });
 
 const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
@@ -24,6 +23,37 @@ const DETAIL_CONTAINER_KEYS = [
   "State",
 ];
 
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
+}
+
+function getEnvCandidates() {
+  return uniquePaths([
+    process.env.ANXHUB_ENV_PATH,
+    path.join(process.cwd(), ".env"),
+    process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
+    process.resourcesPath ? path.join(process.resourcesPath, "app", ".env") : null,
+    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
+    path.join(__dirname, "..", "..", ".env"),
+  ]);
+}
+
+function loadEnv() {
+  const candidates = getEnvCandidates();
+  const existingPath = candidates.find((candidate) => fs.existsSync(candidate)) || candidates[candidates.length - 1];
+  const result = dotenv.config({ path: existingPath, quiet: true });
+
+  return {
+    cwd: process.cwd(),
+    resolvedEnvPath: existingPath,
+    envFileExists: fs.existsSync(existingPath),
+    envLoadErrorCode: result.error?.code || null,
+    ampUrlLoaded: Boolean(process.env.AMP_URL),
+  };
+}
+
+const ENV_LOAD_INFO = loadEnv();
+
 function getConfig() {
   const config = {
     url: process.env.AMP_URL,
@@ -37,6 +67,11 @@ function getConfig() {
     ...config,
     configured: missing.length === 0,
     missing,
+    env: {
+      ...ENV_LOAD_INFO,
+      ampUrlLoaded: Boolean(process.env.AMP_URL),
+      ampUrl: process.env.AMP_URL || null,
+    },
   };
 }
 
@@ -103,8 +138,15 @@ function getSafeErrorCode(error) {
 function createDiagnostics(config, stage, details = {}) {
   return {
     ampUrl: config.url || null,
+    cwd: config.env?.cwd || null,
+    resolvedEnvPath: config.env?.resolvedEnvPath || null,
+    envFileExists: config.env?.envFileExists ?? false,
+    envLoadErrorCode: config.env?.envLoadErrorCode || null,
+    ampUrlLoaded: config.env?.ampUrlLoaded ?? false,
+    loadedAmpUrl: config.env?.ampUrl || null,
     httpStatus: details.httpStatus ?? null,
     errorCode: details.errorCode ?? null,
+    networkErrorCode: details.errorCode ?? null,
     stage,
     loginFailed: stage === "login",
     serverUnreachable: stage === "preflight" || stage === "api_spec" || stage === "client_error",
@@ -960,6 +1002,7 @@ async function getAmpSnapshot() {
       configured: false,
       status: "unconfigured",
       message: `Missing ${config.missing.join(", ")}`,
+      diagnostics: createDiagnostics(config, "config"),
     });
   }
 

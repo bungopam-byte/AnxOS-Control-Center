@@ -216,14 +216,19 @@ function formatAmpDiagnostics(diagnostics) {
   }
 
   const status = diagnostics.httpStatus ? `HTTP ${diagnostics.httpStatus}` : "No HTTP status";
-  const code = diagnostics.errorCode ? `Error ${diagnostics.errorCode}` : "No error code";
+  const code = diagnostics.networkErrorCode || diagnostics.errorCode ? `Error ${diagnostics.networkErrorCode || diagnostics.errorCode}` : "No error code";
   const reachability = diagnostics.loginFailed
     ? "Login failed"
     : diagnostics.serverUnreachable
       ? "Server unreachable"
       : "Connected";
+  const ampUrlLoaded = diagnostics.ampUrlLoaded ? "AMP_URL loaded" : "AMP_URL not loaded";
+  const envStatus = diagnostics.envFileExists ? "env exists" : "env missing";
+  const envError = diagnostics.envLoadErrorCode ? `env error ${diagnostics.envLoadErrorCode}` : "env load ok";
+  const envPath = diagnostics.resolvedEnvPath ? `env ${diagnostics.resolvedEnvPath}` : "env path unavailable";
+  const cwd = diagnostics.cwd ? `cwd ${diagnostics.cwd}` : "cwd unavailable";
 
-  return ` · ${diagnostics.ampUrl || "AMP_URL unavailable"} · ${status} · ${code} · ${reachability}`;
+  return ` · ${diagnostics.loadedAmpUrl || diagnostics.ampUrl || "AMP_URL unavailable"} · ${ampUrlLoaded} · ${envStatus} · ${envError} · ${envPath} · ${cwd} · ${status} · ${code} · ${reachability}`;
 }
 
 function formatAmpConnection(snapshot) {

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>AnxHub</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Private Debian Server Hub</p>
+          <h1>AnxHub</h1>
+          <p class="lede">A lightweight local dashboard for Minecraft, AMP, playit.gg, SSH, and future CoolPals services.</p>
+        </div>
+        <div class="host-card" aria-label="Server summary">
+          <span class="pulse" aria-hidden="true"></span>
+          <div>
+            <strong data-field="hostname">Local network only</strong>
+            <span id="local-time">Loading local time...</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="status-grid" aria-labelledby="status-title">
+        <div class="section-heading">
+          <p class="eyebrow">Overview</p>
+          <h2 id="status-title">Server Status</h2>
+        </div>
+
+        <article class="status-card">
+          <div class="status-card__top">
+            <span class="service-icon">SYS</span>
+            <span class="status-pill status-pill--local">Live</span>
+          </div>
+          <h3>Host System</h3>
+          <p>Local machine identity and operating system information from Electron.</p>
+          <dl>
+            <div>
+              <dt>Hostname</dt>
+              <dd data-field="hostname">Checking...</dd>
+            </div>
+            <div>
+              <dt>OS Version</dt>
+              <dd data-field="osVersion">Checking...</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="status-card">
+          <div class="status-card__top">
+            <span class="service-icon">CPU</span>
+            <span class="status-pill status-pill--local">LAN</span>
+          </div>
+          <h3>CPU & RAM</h3>
+          <p>Processor and memory usage refreshed once per second.</p>
+          <dl>
+            <div>
+              <dt>CPU Usage</dt>
+              <dd><span data-field="cpuUsage">Checking...</span></dd>
+            </div>
+            <div>
+              <dt>RAM Usage</dt>
+              <dd><span data-field="memoryUsage">Checking...</span></dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="status-card">
+          <div class="status-card__top">
+            <span class="service-icon">IO</span>
+            <span class="status-pill status-pill--external">Local</span>
+          </div>
+          <h3>Disk & Network</h3>
+          <p>Root disk usage and current network throughput from local adapters.</p>
+          <dl>
+            <div>
+              <dt>Disk Usage</dt>
+              <dd><span data-field="diskUsage">Checking...</span></dd>
+            </div>
+            <div>
+              <dt>Network</dt>
+              <dd><span data-field="networkUsage">Checking...</span></dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="status-card">
+          <div class="status-card__top">
+            <span class="service-icon">UP</span>
+            <span class="status-pill status-pill--manual">Live</span>
+          </div>
+          <h3>Runtime</h3>
+          <p>System uptime and CPU temperature when the operating system exposes it.</p>
+          <dl>
+            <div>
+              <dt>Uptime</dt>
+              <dd data-field="uptime">Checking...</dd>
+            </div>
+            <div>
+              <dt>Temperature</dt>
+              <dd data-field="temperature">Checking...</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="quick-links" aria-labelledby="links-title">
+        <div class="section-heading">
+          <p class="eyebrow">Shortcuts</p>
+          <h2 id="links-title">Quick Links</h2>
+        </div>
+
+        <div class="link-list">
+          <a class="quick-link" href="http://192.168.1.134:8080">
+            <span>Open AMP Panel</span>
+            <small>http://192.168.1.134:8080</small>
+          </a>
+          <button class="quick-link quick-link--button" type="button" data-copy="coolpals.playit.fan">
+            <span>Copy Minecraft Address</span>
+            <small>coolpals.playit.fan</small>
+          </button>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>AnxHub is static and credential-free.</span>
+        <span>Keep it behind your LAN or VPN until you are ready to harden it.</span>
+      </footer>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

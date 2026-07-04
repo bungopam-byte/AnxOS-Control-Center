@@ -1,0 +1,14 @@
+{
+  "name": "anxhub",
+  "version": "1.0.0",
+  "description": "Private local desktop dashboard for a Debian server.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}

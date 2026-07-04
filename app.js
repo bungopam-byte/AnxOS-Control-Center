@@ -228,6 +228,13 @@ function formatAmpConnection(snapshot) {
   return `${label}: ${message}${formatAmpDiagnostics(snapshot.diagnostics)}`;
 }
 
+function formatPlayerSummary(summary) {
+  const players = Number.isFinite(summary?.playerCount) ? summary.playerCount : "Unavailable";
+  const maxPlayers = Number.isFinite(summary?.maxPlayers) ? summary.maxPlayers : "Unavailable";
+  const tps = Number.isFinite(summary?.tps) ? summary.tps.toFixed(1) : "Unavailable";
+  return `Players: ${players}/${maxPlayers} · TPS: ${tps}`;
+}
+
 function renderAmpSnapshot(snapshot) {
   if (!snapshot?.configured) {
     setField("ampStatus", "Unconfigured");
@@ -237,29 +244,47 @@ function renderAmpSnapshot(snapshot) {
     setField("ampUsage", "AMP usage unavailable.");
     setField("ampRuntime", "Unavailable");
     setField("ampVersion", "Unavailable");
+    setField("ampDashboardConnection", "AMP is not configured.");
+    setField("ampDashboardStatus", "Unconfigured");
+    setField("ampDashboardInstances", "Unavailable");
+    setField("ampDashboardUsage", "Unavailable");
+    setField("minecraftDashboardSelection", "Unavailable");
+    setField("minecraftDashboardPlayers", "Unavailable");
+    setField("minecraftDashboardRuntime", "Unavailable");
+    setField("minecraftDashboardVersion", "Unavailable");
     return;
   }
 
   const selectionText = formatMinecraftSelection(snapshot);
+  const connectionText = formatAmpConnection(snapshot);
+  const instancesText = formatAmpInstances(snapshot, selectionText);
+  const usageText = formatAmpUsage(snapshot.summary);
+  const runtimeText = formatAmpRuntime(snapshot.summary);
+  const versionText = formatAmpVersion(snapshot.summary);
+  const playersText = formatPlayerSummary(snapshot.summary);
 
   setField(
     "ampConnection",
-    formatAmpConnection(snapshot),
+    connectionText,
   );
   setField("ampStatus", snapshot.connection?.label || "Unavailable");
   setField(
     "ampInstances",
-    formatAmpInstances(snapshot, selectionText),
+    instancesText,
   );
-  setField("ampUsage", formatAmpUsage(snapshot.summary));
-  setField("ampRuntime", formatAmpRuntime(snapshot.summary));
-  setField("ampVersion", formatAmpVersion(snapshot.summary));
+  setField("ampUsage", usageText);
+  setField("ampRuntime", runtimeText);
+  setField("ampVersion", versionText);
+  setField("ampDashboardConnection", connectionText);
+  setField("ampDashboardStatus", snapshot.connection?.label || "Unavailable");
+  setField("ampDashboardInstances", instancesText);
+  setField("ampDashboardUsage", usageText);
+  setField("minecraftDashboardSelection", selectionText);
+  setField("minecraftDashboardPlayers", playersText);
+  setField("minecraftDashboardRuntime", runtimeText);
+  setField("minecraftDashboardVersion", versionText);
 
-  const players = Number.isFinite(snapshot.summary?.playerCount) ? snapshot.summary.playerCount : "Unavailable";
-  const maxPlayers = Number.isFinite(snapshot.summary?.maxPlayers) ? snapshot.summary.maxPlayers : "Unavailable";
-  const tps = Number.isFinite(snapshot.summary?.tps) ? snapshot.summary.tps.toFixed(1) : "Unavailable";
-  const version = formatAmpVersion(snapshot.summary);
-  setField("ampPlayers", `Players: ${players}/${maxPlayers} · TPS: ${tps} · ${version} · ${formatAmpRuntime(snapshot.summary)}`);
+  setField("ampPlayers", `${playersText} · ${versionText} · ${runtimeText}`);
 }
 
 async function refreshAmpDashboard() {
@@ -279,6 +304,14 @@ async function refreshAmpDashboard() {
     lastAmpRefreshAt = Date.now();
   } catch {
     setField("ampConnection", "AMP API unavailable.");
+    setField("ampDashboardConnection", "AMP API unavailable.");
+    setField("ampDashboardStatus", "Unavailable");
+    setField("ampDashboardInstances", "Unavailable");
+    setField("ampDashboardUsage", "Unavailable");
+    setField("minecraftDashboardSelection", "Unavailable");
+    setField("minecraftDashboardPlayers", "Unavailable");
+    setField("minecraftDashboardRuntime", "Unavailable");
+    setField("minecraftDashboardVersion", "Unavailable");
   } finally {
     ampRequestInFlight = false;
   }

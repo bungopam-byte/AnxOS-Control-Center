@@ -1141,6 +1141,210 @@ async function getAmpSnapshot() {
   }
 }
 
+function getMethodNames(target) {
+  if (!target || typeof target !== "object") {
+    return [];
+  }
+
+  const names = new Set();
+  let cursor = target;
+
+  while (cursor && cursor !== Object.prototype) {
+    Object.getOwnPropertyNames(cursor).forEach((name) => {
+      if (name !== "constructor" && typeof target[name] === "function") {
+        names.add(name);
+      }
+    });
+    cursor = Object.getPrototypeOf(cursor);
+  }
+
+  return [...names].sort();
+}
+
+function getApiMethods(api) {
+  return Object.fromEntries(
+    Object.entries(api)
+      .filter(([, moduleValue]) => moduleValue && typeof moduleValue === "object")
+      .map(([moduleName, moduleValue]) => [moduleName, getMethodNames(moduleValue)])
+      .filter(([, methods]) => methods.length > 0),
+  );
+}
+
+function getJsonKeys(value, prefix = "", output = new Set()) {
+  if (!value || typeof value !== "object") {
+    return output;
+  }
+
+  if (Array.isArray(value)) {
+    output.add(`${prefix || "<root>"}[]`);
+    value.slice(0, 3).forEach((item) => getJsonKeys(item, `${prefix}[]`, output));
+    return output;
+  }
+
+  Object.keys(value).forEach((key) => {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    output.add(nextPrefix);
+    getJsonKeys(value[key], nextPrefix, output);
+  });
+
+  return output;
+}
+
+function sanitizeDiagnosticValue(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(sanitizeDiagnosticValue);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (/password|token|session|secret/i.test(key)) {
+        return [key, "[redacted]"];
+      }
+
+      return [key, sanitizeDiagnosticValue(item)];
+    }),
+  );
+}
+
+function summarizeDiagnosticCall(label, result) {
+  const value = sanitizeDiagnosticValue(unwrapResult(result.value));
+
+  return {
+    label,
+    ok: result.ok,
+    missing: result.missing,
+    errorCode: result.errorCode,
+    topLevelKeys: value && typeof value === "object" ? Object.keys(value) : [],
+    jsonKeys: [...getJsonKeys(value)].sort(),
+    value,
+  };
+}
+
+function isSafeRuntimeMethod(methodName) {
+  return /^Get/i.test(methodName) && /status|metric|player|user|tps|performance|usage|state|uptime|memory|ram|cpu|version/i.test(methodName);
+}
+
+function collectMetricCandidates(calls) {
+  const wanted = /player|user|tps|cpu|processor|ram|memory|uptime|state|version/i;
+  const candidates = [];
+
+  function visit(value, path = "") {
+    if (!value || typeof value !== "object") {
+      if (path && wanted.test(path)) {
+        candidates.push({ path, value });
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.slice(0, 3).forEach((item, index) => visit(item, `${path}[${index}]`));
+      return;
+    }
+
+    Object.entries(value).forEach(([key, item]) => {
+      const nextPath = path ? `${path}.${key}` : key;
+      if (wanted.test(nextPath) && (!item || typeof item !== "object")) {
+        candidates.push({ path: nextPath, value: item });
+      }
+      visit(item, nextPath);
+    });
+  }
+
+  calls.forEach((call) => visit(call.value, call.label));
+  return candidates;
+}
+
+async function inspectManagedMinecraftRuntime({ instanceHint = "Coolpals01" } = {}) {
+  const config = getConfig();
+
+  if (!config.configured) {
+    throw new Error(`AMP is not configured. Missing ${config.missing.join(", ")}`);
+  }
+
+  const api = new AMPAPI(config.url);
+  const initialized = await withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
+
+  if (!initialized) {
+    throw new Error("AMP API spec is unavailable.");
+  }
+
+  const authenticated = await authenticate(api, config);
+
+  if (!authenticated) {
+    throw new Error("AMP authentication failed.");
+  }
+
+  const instances = await getInstances(api);
+  const hint = String(instanceHint || "").toLowerCase();
+  const selected =
+    instances.find((instance) =>
+      [instance.name, instance.friendlyName, instance.moduleType, instance.id]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(hint),
+    ) || selectMinecraftInstance(instances).selected;
+
+  if (!selected) {
+    throw new Error(`No managed Minecraft instance matched "${instanceHint}".`);
+  }
+
+  const adsSelectedInstance = await enrichSelectedInstance(api, selected);
+  const managedApi = await authenticateManagedInstance(api, config, adsSelectedInstance);
+
+  if (!managedApi) {
+    throw new Error("Managed Minecraft instance authentication failed.");
+  }
+
+  const readOnlyCalls = [];
+  const coreCalls = [
+    ["Core.GetStatusAsync", managedApi.Core, "GetStatusAsync", []],
+    ["Core.GetUpdatesAsync", managedApi.Core, "GetUpdatesAsync", []],
+    ["Core.GetModuleInfoAsync", managedApi.Core, "GetModuleInfoAsync", []],
+    [
+      "Core.GetConfigAsync(MinecraftModule.Minecraft.SpecificVersion)",
+      managedApi.Core,
+      "GetConfigAsync",
+      ["MinecraftModule.Minecraft.SpecificVersion"],
+    ],
+  ];
+
+  for (const [label, moduleValue, methodName, args] of coreCalls) {
+    readOnlyCalls.push(summarizeDiagnosticCall(label, await callMethodDetailed(moduleValue, methodName, args)));
+  }
+
+  const managedMethods = getApiMethods(managedApi);
+
+  for (const [moduleName, methods] of Object.entries(managedMethods)) {
+    if (moduleName === "Core") {
+      continue;
+    }
+
+    for (const methodName of methods.filter(isSafeRuntimeMethod)) {
+      readOnlyCalls.push(
+        summarizeDiagnosticCall(`${moduleName}.${methodName}`, await callMethodDetailed(managedApi[moduleName], methodName, [])),
+      );
+    }
+  }
+
+  return {
+    envPath: config.env?.resolvedEnvPath || null,
+    ampUrl: config.url,
+    selectedInstance: sanitizeDiagnosticValue(adsSelectedInstance),
+    managedUrl: adsSelectedInstance ? buildManagedInstanceUrl(config, adsSelectedInstance) : null,
+    managedAuthenticated: true,
+    adsMethods: getApiMethods(api),
+    managedMethods,
+    readOnlyCalls,
+    metricCandidates: collectMetricCandidates(readOnlyCalls),
+  };
+}
+
 module.exports = {
   getAmpSnapshot,
+  inspectManagedMinecraftRuntime,
 };

@@ -109,6 +109,12 @@ function formatAmpUsage(summary) {
   return `AMP CPU ${cpu} · ${ram}`;
 }
 
+function formatAmpRuntime(summary) {
+  const ports = Array.isArray(summary?.ports) && summary.ports.length > 0 ? summary.ports.join(", ") : "Ports unavailable";
+  const uptime = Number.isFinite(summary?.uptime) ? formatDuration(summary.uptime) : "Uptime unavailable";
+  return `${ports} · ${uptime}`;
+}
+
 function formatAmpDiagnostics(diagnostics) {
   if (!diagnostics) {
     return "";
@@ -138,12 +144,16 @@ function renderAmpSnapshot(snapshot) {
     "ampConnection",
     `${snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable."}${formatAmpDiagnostics(snapshot.diagnostics)}`,
   );
-  setField("ampInstances", `${snapshot.instances.length} instance(s) · State: ${snapshot.summary?.state || "Unknown"}`);
+  setField(
+    "ampInstances",
+    `${snapshot.instances.length} instance(s) · ${snapshot.summary?.selectedInstanceName || "No Minecraft auto-selection"} · State: ${snapshot.summary?.state || "Unknown"}`,
+  );
   setField("ampUsage", formatAmpUsage(snapshot.summary));
 
   const players = Number.isFinite(snapshot.summary?.playerCount) ? snapshot.summary.playerCount : "Unavailable";
+  const maxPlayers = Number.isFinite(snapshot.summary?.maxPlayers) ? snapshot.summary.maxPlayers : "Unavailable";
   const tps = Number.isFinite(snapshot.summary?.tps) ? snapshot.summary.tps.toFixed(1) : "Unavailable";
-  setField("ampPlayers", `Players: ${players} · TPS: ${tps}`);
+  setField("ampPlayers", `Players: ${players}/${maxPlayers} · TPS: ${tps} · ${formatAmpRuntime(snapshot.summary)}`);
 }
 
 async function refreshAmpDashboard() {

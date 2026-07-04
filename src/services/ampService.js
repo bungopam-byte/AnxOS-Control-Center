@@ -99,6 +99,10 @@ function logSafeAmpDiagnostics(diagnostics) {
   console.log("[AnxHub][AMP diagnostics]", diagnostics);
 }
 
+function logSafeAmpInstanceDiagnostics(label, payload) {
+  console.log(`[AnxHub][AMP ${label}]`, payload);
+}
+
 function safeNumber(value) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -149,16 +153,31 @@ function didLoginSucceed(loginResult, sessionId) {
 }
 
 async function callMethod(target, methodName, args = []) {
+  const result = await callMethodDetailed(target, methodName, args);
+  return result.ok ? result.value : null;
+}
+
+async function callMethodDetailed(target, methodName, args = []) {
   const method = target?.[methodName];
 
   if (typeof method !== "function") {
-    return null;
+    return { ok: false, missing: true, value: null, errorCode: null };
   }
 
   try {
-    return await withTimeout(method(...args), AMP_TIMEOUT_MS);
-  } catch {
-    return null;
+    return {
+      ok: true,
+      missing: false,
+      value: await withTimeout(method(...args), AMP_TIMEOUT_MS),
+      errorCode: null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      missing: false,
+      value: null,
+      errorCode: getSafeErrorCode(error),
+    };
   }
 }
 
@@ -182,63 +201,269 @@ async function authenticate(api, config) {
   return didLoginSucceed(loginResult, sessionId);
 }
 
-function asArray(value) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
+function getObjectKeys(value) {
   if (!value || typeof value !== "object") {
     return [];
   }
 
-  if (Array.isArray(value.result)) {
+  return Object.keys(value);
+}
+
+function unwrapResult(value) {
+  if (value && typeof value === "object" && Object.keys(value).length === 1 && value.result !== undefined) {
     return value.result;
   }
 
-  if (Array.isArray(value.Instances)) {
-    return value.Instances;
-  }
-
-  return Object.values(value).filter((item) => item && typeof item === "object");
+  return value;
 }
 
-function normalizeInstance(instance, status) {
-  const merged = { ...(instance || {}), ...(status || {}) };
-  const name = findValue(merged, ["InstanceName", "FriendlyName", "Name", "DisplayName"]) || "AMP Instance";
-  const state = findValue(merged, ["State", "Status", "ApplicationState", "DaemonState", "Running"]) || "Unknown";
-  const players = findValue(merged, ["Players", "PlayerCount", "CurrentPlayers", "ActiveUsers"]);
-  const maxPlayers = findValue(merged, ["MaxPlayers", "MaximumPlayers"]);
-  const memory = findValue(merged, ["MemoryUsageMB", "MemoryMB", "MemoryUsage", "RAMUsage", "UsedMemory"]);
+function asArray(value) {
+  const unwrapped = unwrapResult(value);
+
+  if (Array.isArray(unwrapped)) {
+    return unwrapped;
+  }
+
+  if (!unwrapped || typeof unwrapped !== "object") {
+    return [];
+  }
+
+  const preferredKeys = ["AvailableInstances", "Instances", "InstanceStatuses", "Statuses", "Result"];
+
+  for (const key of preferredKeys) {
+    if (unwrapped[key] !== undefined) {
+      return asArray(unwrapped[key]);
+    }
+  }
+
+  return Object.entries(unwrapped)
+    .filter(([, item]) => item && typeof item === "object")
+    .map(([mapKey, item]) => ({ mapKey, ...item }));
+}
+
+function pickFirstObject(...values) {
+  for (const value of values) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return {};
+}
+
+function getInstanceId(instance) {
+  return findValue(instance, ["InstanceID", "InstanceId", "InstanceIdString", "Id", "ID", "Guid", "mapKey"]);
+}
+
+function getModuleType(instance) {
+  return findValue(instance, ["Module", "ModuleName", "ApplicationModule", "AppModule", "ModuleDisplayName", "Application"]) || "Unknown";
+}
+
+function getInstanceName(instance) {
+  return findValue(instance, ["InstanceName", "FriendlyName", "Name", "DisplayName", "Description"]) || "AMP Instance";
+}
+
+function isMinecraftInstance(instance) {
+  const searchable = [
+    getInstanceName(instance),
+    getModuleType(instance),
+    findValue(instance, ["Target", "Type", "Application", "ApplicationName"]),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return searchable.includes("minecraft") || searchable.includes("mc") || searchable.includes("atm10");
+}
+
+function normalizePorts(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((port) => {
+        if (typeof port === "number" || typeof port === "string") {
+          return String(port);
+        }
+
+        if (!port || typeof port !== "object") {
+          return null;
+        }
+
+        const number = findValue(port, ["Port", "port", "HostPort", "ContainerPort", "PublicPort"]);
+        const protocol = findValue(port, ["Protocol", "protocol"]);
+        return number ? `${number}${protocol ? `/${protocol}` : ""}` : null;
+      })
+      .filter(Boolean);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.values(value)
+      .map((port) => (typeof port === "object" ? findValue(port, ["Port", "port", "HostPort", "PublicPort"]) : port))
+      .filter((port) => port !== null && port !== undefined)
+      .map(String);
+  }
+
+  const singlePort = safeNumber(value);
+  return singlePort === null ? [] : [String(singlePort)];
+}
+
+function normalizeUptime(value) {
+  const number = safeNumber(value);
+  if (number === null) {
+    return null;
+  }
+
+  return number;
+}
+
+function normalizeMemoryUsage(value) {
+  const number = safeNumber(value);
+  if (number === null) {
+    return null;
+  }
+
+  return number;
+}
+
+function mergeStatusRows(instance, statuses) {
+  const instanceId = getInstanceId(instance);
+
+  if (!instanceId) {
+    return null;
+  }
+
+  return statuses.find((status) => {
+    const statusId = getInstanceId(status);
+    return statusId && String(instanceId) === String(statusId);
+  });
+}
+
+function normalizeInstance(instance, status, detail = null) {
+  const merged = { ...pickFirstObject(instance), ...pickFirstObject(status), ...pickFirstObject(detail) };
+  const name = getInstanceName(merged);
+  const state =
+    findValue(merged, ["State", "Status", "ApplicationState", "DaemonState", "Running", "AppState", "InstanceState"]) || "Unknown";
+  const players = findValue(merged, ["Players", "PlayerCount", "CurrentPlayers", "ActiveUsers", "UsersOnline", "OnlinePlayers"]);
+  const maxPlayers = findValue(merged, ["MaxPlayers", "MaximumPlayers", "PlayerLimit"]);
+  const memory = findValue(merged, ["MemoryUsageMB", "MemoryMB", "MemoryUsage", "RAMUsage", "UsedMemory", "Memory"]);
+  const ports = normalizePorts(findValue(merged, ["Ports", "Port", "PortMappings", "ApplicationEndpoints", "NetworkPorts"]));
 
   return {
-    id: findValue(merged, ["InstanceID", "Id", "ID", "InstanceId"]) || name,
+    id: getInstanceId(merged) || name,
     name,
+    moduleType: getModuleType(merged),
+    isMinecraft: isMinecraftInstance(merged),
     state,
     playerCount: safeNumber(players),
     maxPlayers: safeNumber(maxPlayers),
-    tps: safeNumber(findValue(merged, ["TPS", "TicksPerSecond"])),
-    cpuUsage: normalizePercent(findValue(merged, ["CPUUsage", "CpuUsage", "CPU", "ProcessorUsage"])),
-    ramUsage: safeNumber(memory),
+    tps: safeNumber(findValue(merged, ["TPS", "TicksPerSecond", "ServerTPS"])),
+    cpuUsage: normalizePercent(findValue(merged, ["CPUUsage", "CpuUsage", "CPU", "ProcessorUsage", "PercentCPU"])),
+    ramUsage: normalizeMemoryUsage(memory),
+    ports,
+    uptime: normalizeUptime(findValue(merged, ["Uptime", "UptimeSeconds", "RunningSeconds", "StartedFor"])),
   };
 }
 
-async function getInstances(api) {
-  const instances =
-    (await callMethod(api.ADSModule, "GetInstancesAsync")) ||
-    (await callMethod(api.ADSModule, "GetInstanceStatusesAsync")) ||
-    [];
-  const statuses = (await callMethod(api.ADSModule, "GetInstanceStatusesAsync")) || [];
-  const statusRows = asArray(statuses);
+function logInstanceDiscovery(instances) {
+  logSafeAmpInstanceDiagnostics("instance discovery", {
+    instanceCount: instances.length,
+    instances: instances.map((instance) => ({
+      name: instance.name,
+      moduleType: instance.moduleType,
+      instanceId: instance.id,
+      state: instance.state,
+    })),
+  });
+}
 
-  return asArray(instances).map((instance) => {
-    const id = findValue(instance, ["InstanceID", "Id", "ID", "InstanceId"]);
-    const matchingStatus = statusRows.find((status) => {
-      const statusId = findValue(status, ["InstanceID", "Id", "ID", "InstanceId"]);
-      return id && statusId && String(id) === String(statusId);
+function logUnexpectedShape(label, value) {
+  const unwrapped = unwrapResult(value);
+
+  logSafeAmpInstanceDiagnostics("shape", {
+    source: label,
+    keys: getObjectKeys(unwrapped),
+    nestedKeys: asArray(unwrapped)
+      .slice(0, 3)
+      .map((item) => getObjectKeys(item)),
+  });
+}
+
+async function getInstanceDetail(api, instance) {
+  const instanceId = getInstanceId(instance);
+
+  if (!instanceId) {
+    return null;
+  }
+
+  const attempts = [
+    ["GetInstanceStatusAsync", [instanceId]],
+    ["GetInstanceInfoAsync", [instanceId]],
+    ["GetInstanceAsync", [instanceId]],
+  ];
+
+  const details = {};
+
+  for (const [methodName, args] of attempts) {
+    const result = await callMethodDetailed(api.ADSModule, methodName, args);
+
+    if (result.ok && result.value) {
+      Object.assign(details, pickFirstObject(unwrapResult(result.value)));
+    } else if (!result.missing && result.errorCode) {
+      logSafeAmpInstanceDiagnostics("instance detail error", {
+        methodName,
+        instanceId,
+        errorCode: result.errorCode,
+      });
+    }
+  }
+
+  return Object.keys(details).length > 0 ? details : null;
+}
+
+async function getInstances(api) {
+  const instancesResult = await callMethodDetailed(api.ADSModule, "GetInstancesAsync");
+  const statusesResult = await callMethodDetailed(api.ADSModule, "GetInstanceStatusesAsync");
+
+  if (instancesResult.ok) {
+    logUnexpectedShape("ADSModule.GetInstances", instancesResult.value);
+  }
+
+  if (statusesResult.ok) {
+    logUnexpectedShape("ADSModule.GetInstanceStatuses", statusesResult.value);
+  }
+
+  const rawInstances = instancesResult.ok ? asArray(instancesResult.value) : [];
+  const statusRows = statusesResult.ok ? asArray(statusesResult.value) : [];
+
+  if (rawInstances.length === 0 && statusRows.length === 0) {
+    logSafeAmpInstanceDiagnostics("instance discovery", {
+      instanceCount: 0,
+      instances: [],
+      availableAdsMethods: getObjectKeys(api.ADSModule),
     });
 
-    return normalizeInstance(instance, matchingStatus);
-  });
+    return [];
+  }
+
+  const sourceRows = rawInstances.length > 0 ? rawInstances : statusRows;
+  const normalized = [];
+
+  for (const instance of sourceRows) {
+    const status = mergeStatusRows(instance, statusRows);
+    const detail = await getInstanceDetail(api, instance);
+    normalized.push(normalizeInstance(instance, status, detail));
+  }
+
+  logInstanceDiscovery(normalized);
+  return normalized;
+}
+
+function selectMinecraftInstance(instances) {
+  const minecraftInstances = instances.filter((instance) => instance.isMinecraft);
+
+  return {
+    selected: minecraftInstances.length === 1 ? minecraftInstances[0] : null,
+    minecraftInstances,
+  };
 }
 
 function summarizeInstances(instances) {
@@ -252,18 +477,26 @@ function summarizeInstances(instances) {
     };
   }
 
-  const primary = instances[0];
-  const playerCount = instances.reduce((total, instance) => total + (instance.playerCount || 0), 0);
-  const cpuValues = instances.map((instance) => instance.cpuUsage).filter(Number.isFinite);
-  const ramValues = instances.map((instance) => instance.ramUsage).filter(Number.isFinite);
-  const tpsValues = instances.map((instance) => instance.tps).filter(Number.isFinite);
+  const { selected } = selectMinecraftInstance(instances);
+  const primary = selected || instances[0];
+  const scopedInstances = selected ? [selected] : instances;
+  const playerCount = scopedInstances.reduce((total, instance) => total + (instance.playerCount || 0), 0);
+  const cpuValues = scopedInstances.map((instance) => instance.cpuUsage).filter(Number.isFinite);
+  const ramValues = scopedInstances.map((instance) => instance.ramUsage).filter(Number.isFinite);
+  const tpsValues = scopedInstances.map((instance) => instance.tps).filter(Number.isFinite);
 
   return {
+    selectedInstanceId: selected?.id || null,
+    selectedInstanceName: selected?.name || null,
+    minecraftInstanceCount: instances.filter((instance) => instance.isMinecraft).length,
     state: primary.state,
     playerCount,
+    maxPlayers: primary.maxPlayers,
     tps: tpsValues.length > 0 ? tpsValues[0] : null,
     cpuUsage: cpuValues.length > 0 ? cpuValues.reduce((sum, value) => sum + value, 0) : null,
     ramUsage: ramValues.length > 0 ? ramValues.reduce((sum, value) => sum + value, 0) : null,
+    ports: primary.ports || [],
+    uptime: primary.uptime,
   };
 }
 
@@ -335,6 +568,16 @@ async function getAmpSnapshot() {
     }
 
     const instances = await getInstances(api);
+    const selection = selectMinecraftInstance(instances);
+
+    if (selection.selected) {
+      logSafeAmpInstanceDiagnostics("selected instance", {
+        name: selection.selected.name,
+        moduleType: selection.selected.moduleType,
+        instanceId: selection.selected.id,
+        state: selection.selected.state,
+      });
+    }
 
     return {
       connected: true,
@@ -343,6 +586,8 @@ async function getAmpSnapshot() {
       message: "Connected to AMP.",
       diagnostics: createDiagnostics(config, "connected"),
       instances,
+      selectedInstance: selection.selected,
+      minecraftInstances: selection.minecraftInstances,
       summary: summarizeInstances(instances),
     };
   } catch (error) {

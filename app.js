@@ -19,7 +19,8 @@ const startupDetail = document.querySelector("[data-startup-detail]");
 const startupSteps = {
   app: document.querySelector('[data-startup-step="app"]'),
   services: document.querySelector('[data-startup-step="services"]'),
-  amp: document.querySelector('[data-startup-step="amp"]'),
+  metrics: document.querySelector('[data-startup-step="metrics"]'),
+  control: document.querySelector('[data-startup-step="control"]'),
 };
 const sshTerminalCard = document.querySelector(".ssh-terminal-card");
 const sshTerminalWindow = document.querySelector("[data-ssh-terminal]");
@@ -40,12 +41,15 @@ let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
 const AMP_REFRESH_INTERVAL_MS = 5000;
 const STARTUP_FALLBACK_MS = 4200;
-const STARTUP_MINIMUM_MS = 900;
+const STARTUP_MINIMUM_MS = 2000;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
+const DEFAULT_SETTINGS = {
+  "general.startupSound": true,
+};
 const startupState = {
   startedAt: Date.now(),
   systemReady: false,
-  ampReady: false,
+  sequenceReady: false,
   finished: false,
 };
 const startupAudio = {
@@ -88,10 +92,25 @@ function updateStartupMessage(message, detail) {
   }
 }
 
+function readStoredSettings() {
+  try {
+    return {
+      ...DEFAULT_SETTINGS,
+      ...JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}"),
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function isStartupSoundEnabled() {
+  return readStoredSettings()["general.startupSound"] !== false;
+}
+
 function startStartupMusic() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
 
-  if (!AudioContext || startupAudio.context) {
+  if (!AudioContext || startupAudio.context || !isStartupSoundEnabled()) {
     return;
   }
 
@@ -173,7 +192,8 @@ function revealAppShell() {
 
   startupState.finished = true;
   setStartupStep("services", "complete");
-  setStartupStep("amp", "complete");
+  setStartupStep("metrics", "complete");
+  setStartupStep("control", "complete");
   updateStartupMessage("AnxOS Control Center ready.", "Opening dashboard...");
   stopStartupMusic();
 
@@ -202,7 +222,7 @@ function tryCompleteStartup(force = false) {
     return;
   }
 
-  const ready = startupState.systemReady && startupState.ampReady;
+  const ready = startupState.systemReady && startupState.sequenceReady;
   const elapsed = Date.now() - startupState.startedAt;
 
   if (force || (ready && elapsed >= STARTUP_MINIMUM_MS)) {
@@ -218,34 +238,64 @@ function tryCompleteStartup(force = false) {
 function markStartupReady(name) {
   if (name === "system") {
     startupState.systemReady = true;
-    setStartupStep("services", "complete");
-    updateStartupMessage("Loading local services...", "Checking AMP...");
-    if (!startupState.ampReady) {
-      setStartupStep("amp", "active");
-    }
+    setStartupStep("metrics", "complete");
   }
 
   if (name === "amp") {
-    startupState.ampReady = true;
-    setStartupStep("amp", "complete");
+    return;
   }
 
   tryCompleteStartup();
 }
 
+function advanceStartupStep(stepName, message, detail) {
+  Object.entries(startupSteps).forEach(([name]) => {
+    if (name !== stepName) {
+      setStartupStep(name, startupSteps[name]?.classList.contains("is-complete") ? "complete" : "");
+    }
+  });
+
+  setStartupStep(stepName, "active");
+  updateStartupMessage(message, detail);
+}
+
+function runStartupSequence() {
+  setStartupStep("app", "active");
+  updateStartupMessage("Starting AnxOS...", "Loading local infrastructure...");
+
+  window.setTimeout(() => {
+    setStartupStep("app", "complete");
+    advanceStartupStep("services", "Loading local services...", "Preparing local service checks...");
+  }, 450);
+
+  window.setTimeout(() => {
+    setStartupStep("services", "complete");
+    advanceStartupStep("metrics", "Checking system metrics...", "Reading local system status...");
+  }, 950);
+
+  window.setTimeout(() => {
+    setStartupStep("metrics", startupState.systemReady ? "complete" : "active");
+    advanceStartupStep("control", "Preparing control center...", "Finalizing dashboard layout...");
+  }, 1450);
+
+  window.setTimeout(() => {
+    startupState.sequenceReady = true;
+    setStartupStep("control", "complete");
+    tryCompleteStartup();
+  }, STARTUP_MINIMUM_MS);
+}
+
 function startStartupFallback() {
   startStartupMusic();
-  setStartupStep("app", "complete");
-  setStartupStep("services", "active");
-  updateStartupMessage("Starting AnxOS Control Center...", "Loading local services...");
+  runStartupSequence();
 
   window.setTimeout(() => {
     if (!startupState.systemReady) {
       startupState.systemReady = true;
     }
 
-    if (!startupState.ampReady) {
-      startupState.ampReady = true;
+    if (!startupState.sequenceReady) {
+      startupState.sequenceReady = true;
     }
 
     tryCompleteStartup(true);
@@ -935,14 +985,6 @@ function toggleSshFullscreen() {
 function syncSshScrollMode() {
   if (sshAutoscrollInput?.checked && sshTerminalWindow) {
     sshTerminalWindow.scrollTop = sshTerminalWindow.scrollHeight;
-  }
-}
-
-function readStoredSettings() {
-  try {
-    return JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
-  } catch {
-    return {};
   }
 }
 

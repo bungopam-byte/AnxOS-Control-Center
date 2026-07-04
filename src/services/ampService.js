@@ -127,7 +127,17 @@ function createConnectionState(status, message, diagnostics = null) {
   };
 }
 
-function createAmpSnapshot({ connected, configured, status, message, diagnostics = null, instances = [], selectedInstance = null, minecraftInstances = [] }) {
+function createAmpSnapshot({
+  connected,
+  configured,
+  status,
+  message,
+  diagnostics = null,
+  instances = [],
+  selectedInstance = null,
+  minecraftInstances = [],
+  minecraftSelectionMode = "none",
+}) {
   return {
     connected,
     configured,
@@ -138,6 +148,7 @@ function createAmpSnapshot({ connected, configured, status, message, diagnostics
     instances,
     selectedInstance,
     minecraftInstances,
+    minecraftSelectionMode,
     summary: summarizeInstances(instances),
   };
 }
@@ -715,6 +726,7 @@ async function getAmpSnapshot() {
     const finalInstances = selectedInstance
       ? instances.map((instance) => (String(instance.id) === String(selectedInstance.id) ? selectedInstance : instance))
       : instances;
+    const finalMinecraftInstances = finalInstances.filter((instance) => instance.isMinecraft);
 
     if (selectedInstance) {
       logSafeAmpInstanceDiagnostics("selected instance", {
@@ -744,7 +756,7 @@ async function getAmpSnapshot() {
       diagnostics: createDiagnostics(config, "connected"),
       instances: finalInstances,
       selectedInstance,
-      minecraftInstances: selection.minecraftInstances,
+      minecraftInstances: finalMinecraftInstances,
       minecraftSelectionMode: selection.mode,
     });
   } catch (error) {

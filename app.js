@@ -182,6 +182,30 @@ function formatAmpInstances(snapshot, selectionText) {
   return `${instances.length} instance(s) · ${selectionText} · ${instances.map(formatAmpInstance).join(" · ")}`;
 }
 
+function formatMinecraftSelection(snapshot) {
+  const selectedName = snapshot?.selectedInstance?.name || snapshot?.summary?.selectedInstanceName;
+  const minecraftInstances = Array.isArray(snapshot?.minecraftInstances) ? snapshot.minecraftInstances : [];
+  const minecraftCount = Number.isFinite(snapshot?.summary?.minecraftInstanceCount)
+    ? snapshot.summary.minecraftInstanceCount
+    : minecraftInstances.length;
+
+  if (selectedName) {
+    return `Selected: ${selectedName}`;
+  }
+
+  if (minecraftCount > 1) {
+    const names = minecraftInstances.map((instance) => instance.name).filter(Boolean).join(", ");
+    return `${minecraftCount} Minecraft instances; none selected${names ? ` (${names})` : ""}`;
+  }
+
+  if (minecraftCount === 1) {
+    const name = minecraftInstances[0]?.name;
+    return `1 Minecraft instance found; none selected${name ? ` (${name})` : ""}`;
+  }
+
+  return "No Minecraft auto-selection";
+}
+
 function formatAmpDiagnostics(diagnostics) {
   if (!diagnostics) {
     return "";
@@ -216,13 +240,7 @@ function renderAmpSnapshot(snapshot) {
     return;
   }
 
-  const selectedName = snapshot.summary?.selectedInstanceName;
-  const minecraftCount = Number.isFinite(snapshot.summary?.minecraftInstanceCount) ? snapshot.summary.minecraftInstanceCount : 0;
-  const selectionText = selectedName
-    ? selectedName
-    : minecraftCount > 1
-      ? `${minecraftCount} Minecraft instances; none selected`
-      : "No Minecraft auto-selection";
+  const selectionText = formatMinecraftSelection(snapshot);
 
   setField(
     "ampConnection",

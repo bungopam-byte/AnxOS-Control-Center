@@ -6,6 +6,7 @@ const pages = document.querySelectorAll("[data-page]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
+let lastAmpRefreshAt = 0;
 
 document.querySelectorAll("[data-field]").forEach((field) => {
   const fields = fieldMap.get(field.dataset.field) || [];
@@ -27,6 +28,14 @@ function showPage(pageName) {
   pages.forEach((page) => {
     page.classList.toggle("is-active", page.dataset.page === pageName);
   });
+
+  if ((pageName === "amp" || pageName === "minecraft") && Date.now() - lastAmpRefreshAt > 1000) {
+    refreshAmpDashboard();
+  }
+}
+
+function getActivePageName() {
+  return document.querySelector(".page.is-active")?.dataset.page || "dashboard";
 }
 
 function formatPercent(value) {
@@ -216,10 +225,16 @@ async function refreshAmpDashboard() {
     return;
   }
 
+  const activePage = getActivePageName();
+  if (lastAmpRefreshAt > 0 && activePage !== "amp" && activePage !== "minecraft") {
+    return;
+  }
+
   ampRequestInFlight = true;
 
   try {
     renderAmpSnapshot(await window.anxhub.amp.getSnapshot());
+    lastAmpRefreshAt = Date.now();
   } catch {
     setField("ampConnection", "AMP API unavailable.");
   } finally {

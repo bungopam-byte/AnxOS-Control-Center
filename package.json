@@ -1,5 +1,5 @@
 {
-  "name": "anxhub",
+  "name": "anxos-control-center",
   "productName": "AnxOS Control Center",
   "version": "1.0.0",
   "description": "Private local desktop control center for a Debian server.",

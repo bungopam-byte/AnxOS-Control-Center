@@ -95,6 +95,32 @@ function createDiagnostics(config, stage, details = {}) {
   };
 }
 
+function createConnectionState(status, message, diagnostics = null) {
+  return {
+    status,
+    message,
+    connected: status === "connected",
+    unreachable: status === "unreachable" || status === "error",
+    authFailed: status === "auth_failed",
+    diagnostics,
+  };
+}
+
+function createAmpSnapshot({ connected, configured, status, message, diagnostics = null, instances = [], selectedInstance = null, minecraftInstances = [] }) {
+  return {
+    connected,
+    configured,
+    status,
+    message,
+    diagnostics,
+    connection: createConnectionState(status, message, diagnostics),
+    instances,
+    selectedInstance,
+    minecraftInstances,
+    summary: summarizeInstances(instances),
+  };
+}
+
 function logSafeAmpDiagnostics(diagnostics) {
   console.log("[AnxHub][AMP diagnostics]", diagnostics);
 }
@@ -504,14 +530,12 @@ async function getAmpSnapshot() {
   const config = getConfig();
 
   if (!config.configured) {
-    return {
+    return createAmpSnapshot({
       connected: false,
       configured: false,
       status: "unconfigured",
       message: `Missing ${config.missing.join(", ")}`,
-      instances: [],
-      summary: summarizeInstances([]),
-    };
+    });
   }
 
   try {
@@ -521,15 +545,13 @@ async function getAmpSnapshot() {
       const diagnostics = createDiagnostics(config, "preflight", preflight);
       logSafeAmpDiagnostics(diagnostics);
 
-      return {
+      return createAmpSnapshot({
         connected: false,
         configured: true,
         status: "unreachable",
         message: "AMP API is unreachable.",
         diagnostics,
-        instances: [],
-        summary: summarizeInstances([]),
-      };
+      });
     }
 
     const api = new AMPAPI(config.url);
@@ -539,15 +561,13 @@ async function getAmpSnapshot() {
       const diagnostics = createDiagnostics(config, "api_spec");
       logSafeAmpDiagnostics(diagnostics);
 
-      return {
+      return createAmpSnapshot({
         connected: false,
         configured: true,
         status: "unreachable",
         message: "AMP API spec is unavailable.",
         diagnostics,
-        instances: [],
-        summary: summarizeInstances([]),
-      };
+      });
     }
 
     const authenticated = await authenticate(api, config);
@@ -556,15 +576,13 @@ async function getAmpSnapshot() {
       const diagnostics = createDiagnostics(config, "login");
       logSafeAmpDiagnostics(diagnostics);
 
-      return {
+      return createAmpSnapshot({
         connected: false,
         configured: true,
         status: "auth_failed",
         message: "AMP authentication failed.",
         diagnostics,
-        instances: [],
-        summary: summarizeInstances([]),
-      };
+      });
     }
 
     const instances = await getInstances(api);
@@ -579,7 +597,7 @@ async function getAmpSnapshot() {
       });
     }
 
-    return {
+    return createAmpSnapshot({
       connected: true,
       configured: true,
       status: "connected",
@@ -588,23 +606,20 @@ async function getAmpSnapshot() {
       instances,
       selectedInstance: selection.selected,
       minecraftInstances: selection.minecraftInstances,
-      summary: summarizeInstances(instances),
-    };
+    });
   } catch (error) {
     const diagnostics = createDiagnostics(config, "client_error", {
       errorCode: getSafeErrorCode(error),
     });
     logSafeAmpDiagnostics(diagnostics);
 
-    return {
+    return createAmpSnapshot({
       connected: false,
       configured: true,
       status: "error",
       message: "AMP is unavailable.",
       diagnostics,
-      instances: [],
-      summary: summarizeInstances([]),
-    };
+    });
   }
 }
 

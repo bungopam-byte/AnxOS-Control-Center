@@ -169,6 +169,7 @@ function formatAmpDiagnostics(diagnostics) {
 
 function renderAmpSnapshot(snapshot) {
   if (!snapshot?.configured) {
+    setField("ampStatus", "Unconfigured");
     setField("ampConnection", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
     setField("ampInstances", "No AMP data loaded.");
     setField("ampPlayers", "Player count unavailable.");
@@ -180,6 +181,7 @@ function renderAmpSnapshot(snapshot) {
     "ampConnection",
     `${snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable."}${formatAmpDiagnostics(snapshot.diagnostics)}`,
   );
+  setField("ampStatus", snapshot.connection?.message || snapshot.message || "Unavailable");
   setField(
     "ampInstances",
     `${snapshot.instances.length} instance(s) · ${snapshot.summary?.selectedInstanceName || "No Minecraft auto-selection"} · State: ${snapshot.summary?.state || "Unknown"}`,

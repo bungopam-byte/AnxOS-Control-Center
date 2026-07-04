@@ -170,6 +170,28 @@ function formatAmpVersion(summary) {
   return summary?.version || "Unavailable";
 }
 
+function formatAmpStatusLabel(snapshot) {
+  const status = snapshot?.status || "unavailable";
+
+  if (status === "connected") {
+    return "Connected";
+  }
+
+  if (status === "auth_failed") {
+    return "Auth failed";
+  }
+
+  if (status === "unreachable" || status === "error") {
+    return "Unreachable";
+  }
+
+  if (status === "unconfigured") {
+    return "Unconfigured";
+  }
+
+  return "Unavailable";
+}
+
 function findAmpValue(source, keys) {
   if (!source || typeof source !== "object") {
     return null;
@@ -387,12 +409,13 @@ function renderAmpSnapshot(snapshot) {
   const runtimeText = formatAmpRuntime(snapshot.summary);
   const versionText = formatAmpVersion(snapshot.summary);
   const playersText = formatPlayerSummary(snapshot.summary);
+  const statusText = formatAmpStatusLabel(snapshot);
 
   setField(
     "ampConnection",
     connectionText,
   );
-  setField("ampStatus", snapshot.connection?.label || "Unavailable");
+  setField("ampStatus", statusText);
   setField(
     "ampInstances",
     instancesText,
@@ -401,7 +424,7 @@ function renderAmpSnapshot(snapshot) {
   setField("ampRuntime", runtimeText);
   setField("ampVersion", versionText);
   setField("ampDashboardConnection", connectionText);
-  setField("ampDashboardStatus", snapshot.connection?.label || "Unavailable");
+  setField("ampDashboardStatus", statusText);
   setField("ampDashboardInstances", instancesText);
   setField("ampDashboardUsage", usageText);
   setField("minecraftDashboardSelection", selectionText);

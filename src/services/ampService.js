@@ -675,7 +675,7 @@ function normalizeUptime(value) {
 }
 
 function getMetric(metrics, metricName) {
-  const metric = metrics?.[metricName];
+  const metric = normalizeMetrics(metrics)[metricName];
   return metric && typeof metric === "object" ? metric : null;
 }
 
@@ -722,6 +722,44 @@ function normalizeMemoryUsage(value) {
   }
 
   return number;
+}
+
+function normalizeMetrics(metrics) {
+  if (!metrics || typeof metrics !== "object") {
+    return {};
+  }
+
+  if (!Array.isArray(metrics)) {
+    return metrics;
+  }
+
+  return Object.fromEntries(
+    metrics
+      .filter((metric) => metric && typeof metric === "object")
+      .map((metric) => {
+        const name = findValue(metric, ["Name", "name", "DisplayName", "displayName", "MetricName", "metricName", "mapKey"]);
+        return name ? [String(name), metric] : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+function normalizeStatusPayload(value) {
+  const unwrapped = unwrapResult(value);
+  const direct = pickFirstObject(unwrapped);
+
+  if (direct.Metrics || direct.Uptime || direct.State || direct.Status) {
+    return direct;
+  }
+
+  const nested = findValue(direct, ["Status", "status", "Result", "result", "Data", "data"]);
+  const nestedObject = pickFirstObject(nested, ...asArray(nested));
+
+  if (nestedObject.Metrics || nestedObject.Uptime || nestedObject.State || nestedObject.Status) {
+    return nestedObject;
+  }
+
+  return pickFirstObject(...asArray(unwrapped));
 }
 
 function mergeStatusRows(instance, statuses) {
@@ -909,8 +947,8 @@ async function getManagedInstanceMetrics(managedApi) {
     return null;
   }
 
-  const status = pickFirstObject(unwrapResult(statusResult.value));
-  const metrics = pickFirstObject(status.Metrics);
+  const status = normalizeStatusPayload(statusResult.value);
+  const metrics = normalizeMetrics(status.Metrics);
   const version = await getMinecraftVersion(managedApi);
 
   const normalized = pickDefinedValues({

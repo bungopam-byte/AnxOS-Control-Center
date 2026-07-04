@@ -256,6 +256,14 @@ function getObjectKeys(value) {
   return Object.keys(value);
 }
 
+function hasAnyKey(value, keys) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return keys.some((key) => value[key] !== undefined && value[key] !== null);
+}
+
 function getAvailableMethodNames(target) {
   return getObjectKeys(target).filter((key) => typeof target[key] === "function").sort();
 }
@@ -294,6 +302,23 @@ function asArray(value) {
     if (unwrapped[key] !== undefined) {
       return asArray(unwrapped[key]);
     }
+  }
+
+  if (
+    hasAnyKey(unwrapped, [
+      "InstanceID",
+      "InstanceId",
+      "Id",
+      "ID",
+      "InstanceName",
+      "FriendlyName",
+      "Name",
+      "Module",
+      "ModuleName",
+      "ApplicationModule",
+    ])
+  ) {
+    return [unwrapped];
   }
 
   return Object.entries(unwrapped)

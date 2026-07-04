@@ -164,6 +164,24 @@ function formatAmpVersion(summary) {
   return summary?.version || "Unavailable";
 }
 
+function formatAmpInstance(instance) {
+  const name = instance?.name || "Unnamed";
+  const moduleType = instance?.moduleType || "Unknown module";
+  const id = instance?.id || "Unknown ID";
+  const state = instance?.state || "Unknown";
+  return `${name} (${moduleType}, ID ${id}, ${state})`;
+}
+
+function formatAmpInstances(snapshot, selectionText) {
+  const instances = Array.isArray(snapshot?.instances) ? snapshot.instances : [];
+
+  if (instances.length === 0) {
+    return `0 instances · ${selectionText} · State: ${snapshot?.summary?.state || "Unavailable"}`;
+  }
+
+  return `${instances.length} instance(s) · ${selectionText} · ${instances.map(formatAmpInstance).join(" · ")}`;
+}
+
 function formatAmpDiagnostics(diagnostics) {
   if (!diagnostics) {
     return "";
@@ -213,7 +231,7 @@ function renderAmpSnapshot(snapshot) {
   setField("ampStatus", snapshot.connection?.label || "Unavailable");
   setField(
     "ampInstances",
-    `${snapshot.instances.length} instance(s) · ${selectionText} · State: ${snapshot.summary?.state || "Unknown"}`,
+    formatAmpInstances(snapshot, selectionText),
   );
   setField("ampUsage", formatAmpUsage(snapshot.summary));
   setField("ampRuntime", formatAmpRuntime(snapshot.summary));

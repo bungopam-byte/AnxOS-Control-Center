@@ -1438,6 +1438,107 @@ h3 {
   inset: 0;
 }
 
+.settings-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-section {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+}
+
+.settings-section__header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.settings-section__header h3 {
+  margin-bottom: 0;
+}
+
+.settings-grid,
+.settings-about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.settings-field {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settings-field input,
+.settings-field select,
+.settings-field textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-field textarea {
+  min-height: 96px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.settings-field input[type="color"] {
+  padding: 4px;
+}
+
+.settings-field input:focus,
+.settings-field select:focus,
+.settings-field textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.settings-check {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.settings-check input {
+  accent-color: var(--accent);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.settings-about-grid div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 15, 0.32);
+}
+
 .status-card__top {
   display: flex;
   justify-content: space-between;
@@ -1677,6 +1778,11 @@ dd {
   .coolpals-workspace {
     grid-template-columns: 1fr;
   }
+
+  .settings-grid,
+  .settings-about-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
@@ -1806,5 +1912,21 @@ dd {
 
   .coolpals-main-panel {
     min-height: 360px;
+  }
+
+  .settings-grid,
+  .settings-about-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-actions,
+  .settings-actions .inline-action,
+  .settings-check {
+    width: 100%;
+  }
+
+  .settings-actions .inline-action,
+  .settings-check {
+    justify-content: center;
   }
 }

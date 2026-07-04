@@ -1,9 +1,32 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { execFileSync } = require("child_process");
 const path = require("path");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxhub-icon.svg");
+
+function getGitCommit() {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: __dirname,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function getRuntimeInfo() {
+  return {
+    version: app.getVersion(),
+    gitCommit: getGitCommit(),
+    electron: process.versions.electron || null,
+    node: process.versions.node || null,
+    chromium: process.versions.chrome || null,
+  };
+}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -39,6 +62,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerSystemIpc();
   registerAmpIpc();
   createWindow();

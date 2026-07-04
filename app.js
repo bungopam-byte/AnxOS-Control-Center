@@ -28,6 +28,10 @@ const sshCopyButton = document.querySelector("[data-ssh-copy]");
 const sshClearButton = document.querySelector("[data-ssh-clear]");
 const sshFullscreenButton = document.querySelector("[data-ssh-fullscreen]");
 const sshAutoscrollInput = document.querySelector("[data-ssh-autoscroll]");
+const settingsForm = document.querySelector("[data-settings-form]");
+const settingsInputs = document.querySelectorAll("[data-setting]");
+const settingsResetButton = document.querySelector("[data-settings-reset]");
+const aboutFields = document.querySelectorAll("[data-about-field]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
@@ -37,6 +41,7 @@ let latestAmpSnapshot = null;
 const AMP_REFRESH_INTERVAL_MS = 5000;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 900;
+const SETTINGS_STORAGE_KEY = "anxhub.settings.v1";
 const startupState = {
   startedAt: Date.now(),
   systemReady: false,
@@ -847,6 +852,92 @@ function syncSshScrollMode() {
   }
 }
 
+function readStoredSettings() {
+  try {
+    return JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredSettings(settings) {
+  window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function getSettingInputValue(input) {
+  if (input.type === "checkbox") {
+    return input.checked;
+  }
+
+  return input.value;
+}
+
+function setSettingInputValue(input, value) {
+  if (input.type === "checkbox") {
+    input.checked = value === true;
+    return;
+  }
+
+  if (value !== undefined && value !== null) {
+    input.value = value;
+  }
+}
+
+function loadSettings() {
+  const settings = readStoredSettings();
+
+  settingsInputs.forEach((input) => {
+    setSettingInputValue(input, settings[input.dataset.setting]);
+  });
+}
+
+function saveSettings() {
+  const settings = {};
+
+  settingsInputs.forEach((input) => {
+    settings[input.dataset.setting] = getSettingInputValue(input);
+  });
+
+  writeStoredSettings(settings);
+}
+
+function resetSettings() {
+  window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+
+  settingsInputs.forEach((input) => {
+    if (input.type === "checkbox") {
+      input.checked = false;
+      return;
+    }
+
+    if (input.type !== "color") {
+      input.value = "";
+    }
+  });
+
+  showToast("Settings reset.");
+}
+
+function setAboutFields(info) {
+  aboutFields.forEach((field) => {
+    const value = info?.[field.dataset.aboutField];
+    field.textContent = value || "Unavailable";
+  });
+}
+
+async function loadRuntimeInfo() {
+  if (!window.anxhub?.app?.getRuntimeInfo) {
+    setAboutFields(null);
+    return;
+  }
+
+  try {
+    setAboutFields(await window.anxhub.app.getRuntimeInfo());
+  } catch {
+    setAboutFields(null);
+  }
+}
+
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -875,6 +966,11 @@ sshClearButton?.addEventListener("click", clearSshOutput);
 sshFullscreenButton?.addEventListener("click", toggleSshFullscreen);
 sshAutoscrollInput?.addEventListener("change", syncSshScrollMode);
 updateSshActions();
+settingsForm?.addEventListener("input", saveSettings);
+settingsForm?.addEventListener("change", saveSettings);
+settingsResetButton?.addEventListener("click", resetSettings);
+loadSettings();
+loadRuntimeInfo();
 startStartupFallback();
 
 registerRefreshTask(updateLocalTime, 30000);

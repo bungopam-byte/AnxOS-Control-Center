@@ -967,13 +967,219 @@
             <div>
               <p class="eyebrow">Preferences</p>
               <h1>Settings</h1>
-              <p class="lede">Desktop preferences and local integration paths will live here.</p>
+              <p class="lede">Local preferences for AnxHub and future service integrations.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <h3>Settings Placeholder</h3>
-            <p>No settings have been configured.</p>
-          </article>
+
+          <form class="settings-shell" data-settings-form>
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>General</h3>
+                <span class="status-pill status-pill--local">Local</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Startup behavior</span>
+                  <select data-setting="general.startupBehavior">
+                    <option value="">Unset</option>
+                    <option value="dashboard">Open dashboard</option>
+                    <option value="last-page">Restore last page</option>
+                    <option value="minimized">Start minimized</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span>Auto refresh interval</span>
+                  <input type="number" min="1" step="1" placeholder="Seconds" data-setting="general.refreshInterval">
+                </label>
+                <label class="settings-field">
+                  <span>Window options</span>
+                  <select data-setting="general.windowOptions">
+                    <option value="">Unset</option>
+                    <option value="normal">Normal window</option>
+                    <option value="remember-size">Remember size</option>
+                    <option value="fullscreen">Fullscreen</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Appearance</h3>
+                <span class="status-pill status-pill--local">UI</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Theme selector</span>
+                  <select data-setting="appearance.theme">
+                    <option value="">Unset</option>
+                    <option value="dark">Dark</option>
+                    <option value="system">System</option>
+                    <option value="high-contrast">High contrast</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span>Accent color</span>
+                  <input type="color" value="#63e6be" data-setting="appearance.accentColor">
+                </label>
+                <label class="settings-field">
+                  <span>Sidebar width</span>
+                  <input type="number" min="200" step="1" placeholder="Pixels" data-setting="appearance.sidebarWidth">
+                </label>
+                <label class="settings-field">
+                  <span>Font size</span>
+                  <input type="number" min="12" step="1" placeholder="Pixels" data-setting="appearance.fontSize">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Server</h3>
+                <span class="status-pill status-pill--planned">Future IPC</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>AMP URL</span>
+                  <input type="url" placeholder="Not configured" data-setting="server.ampUrl">
+                </label>
+                <label class="settings-field">
+                  <span>Playit Address</span>
+                  <input type="text" placeholder="Not configured" data-setting="server.playitAddress">
+                </label>
+                <label class="settings-field">
+                  <span>Minecraft Server Name</span>
+                  <input type="text" placeholder="Not configured" data-setting="server.minecraftName">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>SSH</h3>
+                <span class="status-pill status-pill--planned">Future IPC</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Profiles</span>
+                  <textarea rows="3" placeholder="No profiles configured" data-setting="ssh.profiles"></textarea>
+                </label>
+                <label class="settings-field">
+                  <span>Default profile</span>
+                  <input type="text" placeholder="Not configured" data-setting="ssh.defaultProfile">
+                </label>
+                <label class="settings-field">
+                  <span>Terminal font</span>
+                  <input type="text" placeholder="Not configured" data-setting="ssh.terminalFont">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Docker</h3>
+                <span class="status-pill status-pill--planned">Future IPC</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Default socket</span>
+                  <input type="text" placeholder="Not configured" data-setting="docker.defaultSocket">
+                </label>
+                <label class="settings-field">
+                  <span>Refresh interval</span>
+                  <input type="number" min="1" step="1" placeholder="Seconds" data-setting="docker.refreshInterval">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>CoolPals</h3>
+                <span class="status-pill status-pill--planned">Future IPC</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Bot path</span>
+                  <input type="text" placeholder="Not configured" data-setting="coolpals.botPath">
+                </label>
+                <label class="settings-field">
+                  <span>Restart behavior</span>
+                  <select data-setting="coolpals.restartBehavior">
+                    <option value="">Unset</option>
+                    <option value="manual">Manual only</option>
+                    <option value="on-crash">Restart on crash</option>
+                    <option value="always">Always restart</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Notifications</h3>
+                <span class="status-pill status-pill--local">Local</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-check">
+                  <input type="checkbox" data-setting="notifications.enabled">
+                  <span>Enable notifications</span>
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" data-setting="notifications.sound">
+                  <span>Sound</span>
+                </label>
+                <label class="settings-field">
+                  <span>Toast duration</span>
+                  <input type="number" min="500" step="100" placeholder="Milliseconds" data-setting="notifications.toastDuration">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Developer</h3>
+                <span class="status-pill status-pill--manual">Tools</span>
+              </div>
+              <div class="settings-actions">
+                <label class="settings-check">
+                  <input type="checkbox" data-setting="developer.debugMode">
+                  <span>Debug Mode</span>
+                </label>
+                <button class="inline-action" type="button" data-settings-action="open-logs" disabled>Open Logs</button>
+                <button class="inline-action" type="button" data-settings-action="export-logs" disabled>Export Logs</button>
+                <button class="inline-action" type="button" data-settings-reset>Reset Settings</button>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>About</h3>
+                <span class="status-pill status-pill--external">Runtime</span>
+              </div>
+              <dl class="settings-about-grid">
+                <div>
+                  <dt>Version</dt>
+                  <dd data-about-field="version">Unavailable</dd>
+                </div>
+                <div>
+                  <dt>Git Commit</dt>
+                  <dd data-about-field="gitCommit">Unavailable</dd>
+                </div>
+                <div>
+                  <dt>Electron</dt>
+                  <dd data-about-field="electron">Unavailable</dd>
+                </div>
+                <div>
+                  <dt>Node</dt>
+                  <dd data-about-field="node">Unavailable</dd>
+                </div>
+                <div>
+                  <dt>Chromium</dt>
+                  <dd data-about-field="chromium">Unavailable</dd>
+                </div>
+              </dl>
+            </section>
+          </form>
         </section>
       </main>
     </div>

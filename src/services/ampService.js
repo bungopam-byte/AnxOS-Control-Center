@@ -889,18 +889,14 @@ async function getManagedInstanceMetrics(managedApi) {
   const status = pickFirstObject(unwrapResult(statusResult.value));
   const metrics = pickFirstObject(status.Metrics);
   const version = await getMinecraftVersion(managedApi);
-  const usersMetricNames = ["Active Users", "Users", "Players", "Online Players", "Player Count"];
-  const tpsMetricNames = ["TPS", "Ticks Per Second", "Server TPS"];
-  const cpuMetricNames = ["CPU Usage", "CPU", "Processor Usage"];
-  const memoryMetricNames = ["Memory Usage", "RAM Usage", "Memory", "RAM"];
 
   const normalized = pickDefinedValues({
     state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
-    playerCount: getFirstMetricRawValue(metrics, usersMetricNames),
-    maxPlayers: getFirstMetricMaxValue(metrics, usersMetricNames),
-    tps: getFirstMetricRawValue(metrics, tpsMetricNames),
-    cpuUsage: getFirstMetricPercent(metrics, cpuMetricNames),
-    ramUsage: getFirstMetricRawValue(metrics, memoryMetricNames),
+    playerCount: getMetricRawValue(metrics, "Active Users"),
+    maxPlayers: getMetricMaxValue(metrics, "Active Users"),
+    tps: getMetricRawValue(metrics, "TPS"),
+    cpuUsage: getMetricRawValue(metrics, "CPU Usage"),
+    ramUsage: getMetricRawValue(metrics, "Memory Usage"),
     uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
     version,
   });

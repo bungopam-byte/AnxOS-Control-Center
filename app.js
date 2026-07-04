@@ -15,6 +15,8 @@ const consoleEmptyState = document.querySelector("[data-console-empty]");
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
+const appNameTargets = document.querySelectorAll("[data-app-name]");
+const sidebarTitleTarget = document.querySelector("[data-sidebar-title]");
 const startupMessage = document.querySelector("[data-startup-message]");
 const startupDetail = document.querySelector("[data-startup-detail]");
 const startupSteps = {
@@ -44,8 +46,21 @@ const AMP_REFRESH_INTERVAL_MS = 5000;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
+const DEFAULT_APP_NAME = "AnxOS Control Center";
+const DEFAULT_ACCENT_COLOR = "#b66cff";
 const DEFAULT_SETTINGS = {
-  "general.startupSound": true,
+  "app.displayName": DEFAULT_APP_NAME,
+  "appearance.accentColor": DEFAULT_ACCENT_COLOR,
+  "startup.enabled": true,
+  "startup.minimumDurationMs": STARTUP_MINIMUM_MS,
+  "startup.sound": true,
+  "startup.soundVolume": 42,
+  "general.defaultPage": "dashboard",
+  "amp.url": "",
+  "amp.username": "",
+  "minecraft.defaultAddress": "",
+  "playit.address": "",
+  "developer.debugMode": false,
 };
 const startupState = {
   startedAt: Date.now(),
@@ -97,17 +112,101 @@ function updateStartupMessage(message, detail) {
 
 function readStoredSettings() {
   try {
-    return {
+    const storedSettings = JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+    const migratedSettings = {
       ...DEFAULT_SETTINGS,
-      ...JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}"),
+      ...storedSettings,
     };
+
+    if (storedSettings["general.startupSound"] !== undefined && storedSettings["startup.sound"] === undefined) {
+      migratedSettings["startup.sound"] = storedSettings["general.startupSound"];
+    }
+
+    if (storedSettings["server.ampUrl"] && !storedSettings["amp.url"]) {
+      migratedSettings["amp.url"] = storedSettings["server.ampUrl"];
+    }
+
+    if (storedSettings["server.playitAddress"] && !storedSettings["playit.address"]) {
+      migratedSettings["playit.address"] = storedSettings["server.playitAddress"];
+    }
+
+    if (storedSettings["server.minecraftName"] && !storedSettings["minecraft.defaultAddress"]) {
+      migratedSettings["minecraft.defaultAddress"] = storedSettings["server.minecraftName"];
+    }
+
+    return migratedSettings;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
 function isStartupSoundEnabled() {
-  return readStoredSettings()["general.startupSound"] !== false;
+  return readStoredSettings()["startup.sound"] !== false;
+}
+
+function isStartupSplashEnabled() {
+  return readStoredSettings()["startup.enabled"] !== false;
+}
+
+function normalizeNumber(value, fallback, min, max) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(number, min), max);
+}
+
+function getStartupMinimumMs() {
+  return normalizeNumber(readStoredSettings()["startup.minimumDurationMs"], STARTUP_MINIMUM_MS, 0, 15000);
+}
+
+function getStartupSoundVolume() {
+  return normalizeNumber(readStoredSettings()["startup.soundVolume"], 42, 0, 100) / 100;
+}
+
+function hexToRgba(hex, alpha) {
+  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex : DEFAULT_ACCENT_COLOR;
+  const red = parseInt(normalized.slice(1, 3), 16);
+  const green = parseInt(normalized.slice(3, 5), 16);
+  const blue = parseInt(normalized.slice(5, 7), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function getSafePageName(pageName) {
+  return Array.from(pages).some((page) => page.dataset.page === pageName) ? pageName : DEFAULT_SETTINGS["general.defaultPage"];
+}
+
+function getSidebarTitle(displayName) {
+  return displayName.replace(/\s+Control Center$/i, "").trim() || displayName;
+}
+
+function applySettings(settings, options = {}) {
+  const displayName = String(settings["app.displayName"] || DEFAULT_APP_NAME).trim() || DEFAULT_APP_NAME;
+  const accentColor = /^#[0-9a-f]{6}$/i.test(settings["appearance.accentColor"])
+    ? settings["appearance.accentColor"]
+    : DEFAULT_ACCENT_COLOR;
+
+  document.title = displayName;
+  document.documentElement.style.setProperty("--accent", accentColor);
+  document.documentElement.style.setProperty("--accent-soft", hexToRgba(accentColor, 0.16));
+  appNameTargets.forEach((target) => {
+    target.textContent = displayName;
+  });
+
+  if (sidebarTitleTarget) {
+    sidebarTitleTarget.textContent = getSidebarTitle(displayName);
+  }
+
+  if (startupAudioElement) {
+    startupAudioElement.volume = startupAudio.usingElement ? getStartupSoundVolume() : startupAudioElement.volume;
+  }
+
+  if (options.openDefaultPage) {
+    showPage(getSafePageName(settings["general.defaultPage"]));
+  }
 }
 
 function fadeStartupAudioElement(targetVolume, durationMs, onComplete) {
@@ -137,8 +236,9 @@ function fadeStartupAudioElement(targetVolume, durationMs, onComplete) {
 
 function startGeneratedStartupTone() {
   const AudioContext = window.AudioContext || window.webkitAudioContext;
+  const volume = getStartupSoundVolume();
 
-  if (!AudioContext || startupAudio.context) {
+  if (!AudioContext || startupAudio.context || volume <= 0) {
     return;
   }
 
@@ -148,7 +248,7 @@ function startGeneratedStartupTone() {
     const notes = [146.83, 174.61, 220.0];
 
     gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.045, context.currentTime + 0.8);
+    gain.gain.exponentialRampToValueAtTime(0.11 * volume, context.currentTime + 0.8);
     gain.connect(context.destination);
 
     startupAudio.context = context;
@@ -178,7 +278,7 @@ function startGeneratedStartupTone() {
 }
 
 function startStartupMusic() {
-  if (!isStartupSoundEnabled()) {
+  if (!isStartupSoundEnabled() || getStartupSoundVolume() <= 0) {
     return;
   }
 
@@ -199,7 +299,7 @@ function startStartupMusic() {
           }
 
           startupAudio.usingElement = true;
-          fadeStartupAudioElement(0.42, 520);
+          fadeStartupAudioElement(getStartupSoundVolume(), 520);
         })
         .catch(() => {
           startupAudio.usingElement = false;
@@ -209,7 +309,7 @@ function startStartupMusic() {
     }
 
     startupAudio.usingElement = true;
-    fadeStartupAudioElement(0.42, 520);
+    fadeStartupAudioElement(getStartupSoundVolume(), 520);
     return;
   }
 
@@ -299,14 +399,15 @@ function tryCompleteStartup(force = false) {
 
   const ready = startupState.systemReady && startupState.sequenceReady;
   const elapsed = Date.now() - startupState.startedAt;
+  const minimumMs = getStartupMinimumMs();
 
-  if (force || (ready && elapsed >= STARTUP_MINIMUM_MS)) {
+  if (force || (ready && elapsed >= minimumMs)) {
     revealAppShell();
     return;
   }
 
   if (ready) {
-    window.setTimeout(() => tryCompleteStartup(), STARTUP_MINIMUM_MS - elapsed);
+    window.setTimeout(() => tryCompleteStartup(), minimumMs - elapsed);
   }
 }
 
@@ -357,10 +458,24 @@ function runStartupSequence() {
     startupState.sequenceReady = true;
     setStartupStep("control", "complete");
     tryCompleteStartup();
-  }, STARTUP_MINIMUM_MS);
+  }, getStartupMinimumMs());
 }
 
 function startStartupFallback() {
+  if (!isStartupSplashEnabled()) {
+    startupState.finished = true;
+
+    if (startupScreen) {
+      startupScreen.hidden = true;
+    }
+
+    if (appShell) {
+      appShell.hidden = false;
+    }
+
+    return;
+  }
+
   startStartupMusic();
   runStartupSequence();
 
@@ -374,7 +489,7 @@ function startStartupFallback() {
     }
 
     tryCompleteStartup(true);
-  }, STARTUP_FALLBACK_MS);
+  }, Math.max(STARTUP_FALLBACK_MS, getStartupMinimumMs() + 2200));
 }
 
 function showPage(pageName) {
@@ -1092,32 +1207,32 @@ function loadSettings() {
   settingsInputs.forEach((input) => {
     setSettingInputValue(input, settings[input.dataset.setting]);
   });
+
+  applySettings(settings);
 }
 
 function saveSettings() {
-  const settings = {};
+  const settings = {
+    ...DEFAULT_SETTINGS,
+  };
 
   settingsInputs.forEach((input) => {
     settings[input.dataset.setting] = getSettingInputValue(input);
   });
 
   writeStoredSettings(settings);
+  applySettings(settings);
 }
 
 function resetSettings() {
   window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+  const settings = { ...DEFAULT_SETTINGS };
 
   settingsInputs.forEach((input) => {
-    if (input.type === "checkbox") {
-      input.checked = false;
-      return;
-    }
-
-    if (input.type !== "color") {
-      input.value = "";
-    }
+    setSettingInputValue(input, settings[input.dataset.setting]);
   });
 
+  applySettings(settings);
   showToast("Settings reset.");
 }
 
@@ -1173,6 +1288,7 @@ settingsForm?.addEventListener("input", saveSettings);
 settingsForm?.addEventListener("change", saveSettings);
 settingsResetButton?.addEventListener("click", resetSettings);
 loadSettings();
+applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();
 startStartupFallback();
 

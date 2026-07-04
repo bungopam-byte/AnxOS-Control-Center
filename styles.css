@@ -1699,6 +1699,16 @@ h3 {
   gap: 14px;
 }
 
+.settings-note {
+  margin: -4px 0 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.settings-note code {
+  color: var(--text);
+}
+
 .settings-field {
   display: grid;
   gap: 8px;

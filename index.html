@@ -13,7 +13,7 @@
         <span class="startup-logo"><img src="src/assets/anxhub-icon.svg" alt="" aria-hidden="true"></span>
         <div>
           <p class="eyebrow">Local Control Center</p>
-          <h1>AnxOS Control Center</h1>
+          <h1 data-app-name>AnxOS Control Center</h1>
         </div>
         <div class="startup-status" role="status" aria-live="polite">
           <span class="startup-spinner" aria-hidden="true"></span>
@@ -37,7 +37,7 @@
         <div class="brand">
           <span class="brand-mark"><img src="src/assets/anxhub-icon.svg" alt="" aria-hidden="true"></span>
           <div>
-            <strong>AnxOS</strong>
+            <strong data-sidebar-title>AnxOS</strong>
             <span>Control Center</span>
           </div>
         </div>
@@ -1083,7 +1083,7 @@
             <div>
               <p class="eyebrow">Preferences</p>
               <h1>Settings</h1>
-              <p class="lede">Local preferences for AnxOS Control Center and future service integrations.</p>
+              <p class="lede">Local preferences for <span data-app-name>AnxOS Control Center</span> and future service integrations.</p>
             </div>
           </header>
 
@@ -1095,30 +1095,24 @@
               </div>
               <div class="settings-grid">
                 <label class="settings-field">
-                  <span>Startup behavior</span>
-                  <select data-setting="general.startupBehavior">
-                    <option value="">Unset</option>
-                    <option value="dashboard">Open dashboard</option>
-                    <option value="last-page">Restore last page</option>
-                    <option value="minimized">Start minimized</option>
-                  </select>
+                  <span>App name / display name</span>
+                  <input type="text" maxlength="48" data-setting="app.displayName">
                 </label>
                 <label class="settings-field">
-                  <span>Auto refresh interval</span>
-                  <input type="number" min="1" step="1" placeholder="Seconds" data-setting="general.refreshInterval">
-                </label>
-                <label class="settings-field">
-                  <span>Window options</span>
-                  <select data-setting="general.windowOptions">
-                    <option value="">Unset</option>
-                    <option value="normal">Normal window</option>
-                    <option value="remember-size">Remember size</option>
-                    <option value="fullscreen">Fullscreen</option>
+                  <span>Default page on launch</span>
+                  <select data-setting="general.defaultPage">
+                    <option value="dashboard">Dashboard</option>
+                    <option value="minecraft">Minecraft</option>
+                    <option value="amp">AMP</option>
+                    <option value="playit">Playit</option>
+                    <option value="docker">Docker</option>
+                    <option value="ssh">SSH</option>
+                    <option value="files">Files</option>
+                    <option value="console">Console</option>
+                    <option value="backups">Backups</option>
+                    <option value="coolpals">CoolPals</option>
+                    <option value="settings">Settings</option>
                   </select>
-                </label>
-                <label class="settings-check">
-                  <input type="checkbox" checked data-setting="general.startupSound">
-                  <span>Startup sound</span>
                 </label>
               </div>
             </section>
@@ -1130,127 +1124,77 @@
               </div>
               <div class="settings-grid">
                 <label class="settings-field">
-                  <span>Theme selector</span>
-                  <select data-setting="appearance.theme">
-                    <option value="">Unset</option>
-                    <option value="dark">Dark</option>
-                    <option value="system">System</option>
-                    <option value="high-contrast">High contrast</option>
-                  </select>
-                </label>
-                <label class="settings-field">
                   <span>Accent color</span>
-                  <input type="color" value="#b66cff" data-setting="appearance.accentColor">
-                </label>
-                <label class="settings-field">
-                  <span>Sidebar width</span>
-                  <input type="number" min="200" step="1" placeholder="Pixels" data-setting="appearance.sidebarWidth">
-                </label>
-                <label class="settings-field">
-                  <span>Font size</span>
-                  <input type="number" min="12" step="1" placeholder="Pixels" data-setting="appearance.fontSize">
+                  <input type="color" data-setting="appearance.accentColor">
                 </label>
               </div>
             </section>
 
             <section class="settings-section">
               <div class="settings-section__header">
-                <h3>Server</h3>
-                <span class="status-pill status-pill--planned">Future IPC</span>
-              </div>
-              <div class="settings-grid">
-                <label class="settings-field">
-                  <span>AMP URL</span>
-                  <input type="url" placeholder="Not configured" data-setting="server.ampUrl">
-                </label>
-                <label class="settings-field">
-                  <span>Playit Address</span>
-                  <input type="text" placeholder="Not configured" data-setting="server.playitAddress">
-                </label>
-                <label class="settings-field">
-                  <span>Minecraft Server Name</span>
-                  <input type="text" placeholder="Not configured" data-setting="server.minecraftName">
-                </label>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section__header">
-                <h3>SSH</h3>
-                <span class="status-pill status-pill--planned">Future IPC</span>
-              </div>
-              <div class="settings-grid">
-                <label class="settings-field">
-                  <span>Profiles</span>
-                  <textarea rows="3" placeholder="No profiles configured" data-setting="ssh.profiles"></textarea>
-                </label>
-                <label class="settings-field">
-                  <span>Default profile</span>
-                  <input type="text" placeholder="Not configured" data-setting="ssh.defaultProfile">
-                </label>
-                <label class="settings-field">
-                  <span>Terminal font</span>
-                  <input type="text" placeholder="Not configured" data-setting="ssh.terminalFont">
-                </label>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section__header">
-                <h3>Docker</h3>
-                <span class="status-pill status-pill--planned">Future IPC</span>
-              </div>
-              <div class="settings-grid">
-                <label class="settings-field">
-                  <span>Default socket</span>
-                  <input type="text" placeholder="Not configured" data-setting="docker.defaultSocket">
-                </label>
-                <label class="settings-field">
-                  <span>Refresh interval</span>
-                  <input type="number" min="1" step="1" placeholder="Seconds" data-setting="docker.refreshInterval">
-                </label>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section__header">
-                <h3>CoolPals</h3>
-                <span class="status-pill status-pill--planned">Future IPC</span>
-              </div>
-              <div class="settings-grid">
-                <label class="settings-field">
-                  <span>Bot path</span>
-                  <input type="text" placeholder="Not configured" data-setting="coolpals.botPath">
-                </label>
-                <label class="settings-field">
-                  <span>Restart behavior</span>
-                  <select data-setting="coolpals.restartBehavior">
-                    <option value="">Unset</option>
-                    <option value="manual">Manual only</option>
-                    <option value="on-crash">Restart on crash</option>
-                    <option value="always">Always restart</option>
-                  </select>
-                </label>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section__header">
-                <h3>Notifications</h3>
+                <h3>Startup</h3>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
                 <label class="settings-check">
-                  <input type="checkbox" data-setting="notifications.enabled">
-                  <span>Enable notifications</span>
-                </label>
-                <label class="settings-check">
-                  <input type="checkbox" data-setting="notifications.sound">
-                  <span>Sound</span>
+                  <input type="checkbox" data-setting="startup.enabled">
+                  <span>Enable startup splash</span>
                 </label>
                 <label class="settings-field">
-                  <span>Toast duration</span>
-                  <input type="number" min="500" step="100" placeholder="Milliseconds" data-setting="notifications.toastDuration">
+                  <span>Splash minimum duration</span>
+                  <input type="number" min="0" max="15000" step="250" data-setting="startup.minimumDurationMs">
+                </label>
+                <label class="settings-check">
+                  <input type="checkbox" data-setting="startup.sound">
+                  <span>Enable startup sound</span>
+                </label>
+                <label class="settings-field">
+                  <span>Startup sound volume</span>
+                  <input type="range" min="0" max="100" step="1" data-setting="startup.soundVolume">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>AMP</h3>
+                <span class="status-pill status-pill--planned">Password in .env</span>
+              </div>
+              <p class="settings-note">AMP password is not saved in localStorage. Keep sensitive values in <code>.env</code>.</p>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>AMP URL</span>
+                  <input type="url" placeholder="http://localhost:8080" data-setting="amp.url">
+                </label>
+                <label class="settings-field">
+                  <span>AMP username</span>
+                  <input type="text" autocomplete="username" placeholder="Not configured" data-setting="amp.username">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Minecraft</h3>
+                <span class="status-pill status-pill--local">Local</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Default Minecraft address</span>
+                  <input type="text" placeholder="server.example.com" data-setting="minecraft.defaultAddress">
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <h3>Playit</h3>
+                <span class="status-pill status-pill--local">Local</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Playit address</span>
+                  <input type="text" placeholder="Not configured" data-setting="playit.address">
                 </label>
               </div>
             </section>

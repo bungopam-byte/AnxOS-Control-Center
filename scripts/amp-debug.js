@@ -5,18 +5,13 @@ const { inspectManagedMinecraftRuntime } = require("../src/services/ampService")
 
 const instanceHint = process.argv[2] || "Coolpals01";
 
-function findCall(diagnostic, label) {
-  return diagnostic.readOnlyCalls.find((call) => call.label === label) || null;
-}
-
 function findRuntimeCalls(diagnostic) {
-  return diagnostic.readOnlyCalls.filter((call) => /status|metric/i.test(call.label));
+  return diagnostic.readOnlyCalls.filter((call) => /GetInstanceAsync|status|metric/i.test(call.label));
 }
 
 inspectManagedMinecraftRuntime({ instanceHint })
   .then((diagnostic) => {
     const selected = diagnostic.selectedInstance || {};
-    const getStatus = findCall(diagnostic, "Core.GetStatusAsync");
     const runtimeCalls = findRuntimeCalls(diagnostic);
     const output = {
       selectedInstance: {
@@ -24,8 +19,10 @@ inspectManagedMinecraftRuntime({ instanceHint })
         name: selected.name || selected.InstanceName || selected.FriendlyName || selected.Name || null,
       },
       managedUrl: diagnostic.managedUrl,
-      getStatusAsync: getStatus,
-      runtimeStatusOrMetricCalls: runtimeCalls,
+      runtimeMetricsDiagnostics: diagnostic.runtimeMetricsDiagnostics,
+      runtimeMetrics: diagnostic.runtimeMetrics,
+      adsRuntimeStatusOrMetricCalls: runtimeCalls,
+      adsReadOnlyCalls: diagnostic.readOnlyCalls,
     };
 
     console.log("===== AMP DEBUG JSON.stringify =====");

@@ -227,6 +227,10 @@ function createDiagnostics(config, stage, details = {}) {
     stage,
     loginFailed: stage === "login",
     serverUnreachable: stage === "preflight" || stage === "api_spec" || stage === "client_error",
+    runtimeMetricsMethod: details.runtimeMetricsMethod || null,
+    runtimeMetricsSource: details.runtimeMetricsSource || null,
+    runtimeMetricsErrorCode: details.runtimeMetricsErrorCode || null,
+    runtimeMetricsCandidates: details.runtimeMetricsCandidates || [],
   };
 }
 
@@ -450,23 +454,6 @@ function withTimeout(promise, timeoutMs) {
 
 async function authenticate(api, config) {
   const loginResult = await callMethod(api.Core, "LoginAsync", [config.username, config.password, "", false]);
-  const sessionId = extractSessionId(loginResult);
-
-  if (sessionId) {
-    api.sessionId = sessionId;
-  }
-
-  const authenticated = didLoginSucceed(loginResult, sessionId);
-
-  if (!authenticated) {
-    return false;
-  }
-
-  return withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
-}
-
-async function authenticateWithToken(api, username, token) {
-  const loginResult = await callMethod(api.Core, "LoginAsync", [username, "", token, false]);
   const sessionId = extractSessionId(loginResult);
 
   if (sessionId) {
@@ -762,6 +749,61 @@ function normalizeStatusPayload(value) {
   return pickFirstObject(...asArray(unwrapped));
 }
 
+function hasRuntimeMetrics(metrics) {
+  return ["Active Users", "TPS", "CPU Usage", "Memory Usage"].some((metricName) => Boolean(metrics[metricName]));
+}
+
+function findRuntimeMetrics(value, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 4) {
+    return {};
+  }
+
+  const normalized = normalizeMetrics(value);
+
+  if (hasRuntimeMetrics(normalized)) {
+    return normalized;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const metrics = findRuntimeMetrics(item, depth + 1);
+
+      if (hasRuntimeMetrics(metrics)) {
+        return metrics;
+      }
+    }
+
+    return {};
+  }
+
+  for (const key of ["Metrics", "metrics", "MetricData", "metricData", "Status", "status", "Result", "result", "Data", "data"]) {
+    const metrics = findRuntimeMetrics(value[key], depth + 1);
+
+    if (hasRuntimeMetrics(metrics)) {
+      return metrics;
+    }
+  }
+
+  return {};
+}
+
+function normalizeRuntimeMetrics(value, version = null) {
+  const scopedValue = unwrapResult(value);
+  const status = normalizeStatusPayload(scopedValue);
+  const metrics = findRuntimeMetrics(scopedValue);
+
+  return pickDefinedValues({
+    state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
+    playerCount: getMetricRawValue(metrics, "Active Users"),
+    maxPlayers: getMetricMaxValue(metrics, "Active Users"),
+    tps: getMetricRawValue(metrics, "TPS"),
+    cpuUsage: getMetricRawValue(metrics, "CPU Usage"),
+    ramUsage: getMetricRawValue(metrics, "Memory Usage"),
+    uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
+    version,
+  });
+}
+
 function mergeStatusRows(instance, statuses) {
   const instanceId = getInstanceId(instance);
 
@@ -897,94 +939,96 @@ async function getAdsInstance(api, instanceId) {
   return null;
 }
 
-async function authenticateManagedInstance(adsApi, config, selectedInstance) {
+function hasRuntimeMetricValues(metrics) {
+  return ["playerCount", "maxPlayers", "tps", "cpuUsage", "ramUsage", "uptime"].some((key) => metrics[key] !== undefined);
+}
+
+async function getSelectedInstanceAdsMetrics(api, selectedInstance) {
   const instanceId = getInstanceId(selectedInstance);
+  const candidates = [];
 
   if (!instanceId) {
-    return null;
+    return {
+      managedMetrics: null,
+      runtimeDiagnostics: {
+        runtimeMetricsSource: "ads",
+        runtimeMetricsMethod: null,
+        runtimeMetricsErrorCode: "NO_INSTANCE_ID",
+        runtimeMetricsCandidates: [],
+      },
+    };
   }
 
-  const adsInstance = await getAdsInstance(adsApi, instanceId);
-  const managedUrl = adsInstance ? buildManagedInstanceUrl(config, adsInstance) : null;
-
-  if (!adsInstance || !managedUrl) {
-    return null;
-  }
-
-  const handoffResult = await callMethodDetailed(adsApi.ADSModule, "ManageInstanceAsync", [instanceId]);
-  const handoffToken = handoffResult.ok ? extractActionResultValue(handoffResult.value) : null;
-
-  if (!handoffToken) {
-    return null;
-  }
-
-  const managedApi = new AMPAPI(managedUrl);
-  const initialized = await withTimeout(managedApi.initAsync(), AMP_TIMEOUT_MS);
-  const authenticated = initialized ? await authenticateWithToken(managedApi, config.username, handoffToken) : false;
-
-  return authenticated ? managedApi : null;
-}
-
-async function getMinecraftVersion(managedApi) {
-  const result = await callMethodDetailed(managedApi.Core, "GetConfigAsync", ["MinecraftModule.Minecraft.SpecificVersion"]);
-
-  if (!result.ok || !result.value) {
-    return null;
-  }
-
-  const config = pickFirstObject(unwrapResult(result.value));
-  return findValue(config, ["CurrentValue", "currentValue", "Value", "value"]);
-}
-
-async function getManagedInstanceMetrics(managedApi) {
-  if (!managedApi) {
-    return null;
-  }
-
-  const statusResult = await callMethodDetailed(managedApi.Core, "GetStatusAsync");
-
-  if (!statusResult.ok || !statusResult.value) {
-    return null;
-  }
-
-  const status = normalizeStatusPayload(statusResult.value);
-  const metrics = normalizeMetrics(status.Metrics);
-  const version = await getMinecraftVersion(managedApi);
-
-  const normalized = pickDefinedValues({
-    state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
-    playerCount: getMetricRawValue(metrics, "Active Users"),
-    maxPlayers: getMetricMaxValue(metrics, "Active Users"),
-    tps: getMetricRawValue(metrics, "TPS"),
-    cpuUsage: getMetricRawValue(metrics, "CPU Usage"),
-    ramUsage: getMetricRawValue(metrics, "Memory Usage"),
-    uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
-    version,
+  const label = "ADSModule.GetInstanceAsync";
+  const result = await callMethodDetailed(api.ADSModule, "GetInstanceAsync", [instanceId]);
+  candidates.push({
+    method: label,
+    ok: result.ok,
+    missing: result.missing,
+    errorCode: result.errorCode,
+    hasPayload: Boolean(result.value),
+    topLevelKeys: result.value && typeof result.value === "object" ? Object.keys(unwrapResult(result.value)) : [],
   });
 
-  return normalized;
+  if (result.ok && result.value) {
+    const metrics = normalizeRuntimeMetrics(result.value, selectedInstance.version || null);
+
+    if (hasRuntimeMetricValues(metrics)) {
+      return {
+        managedMetrics: metrics,
+        runtimeDiagnostics: {
+          runtimeMetricsSource: "ads",
+          runtimeMetricsMethod: label,
+          runtimeMetricsErrorCode: null,
+          runtimeMetricsCandidates: candidates,
+        },
+      };
+    }
+  }
+
+  return {
+    managedMetrics: null,
+    runtimeDiagnostics: {
+      runtimeMetricsSource: "ads",
+      runtimeMetricsMethod: null,
+      runtimeMetricsErrorCode: "NO_RUNTIME_METRICS",
+      runtimeMetricsCandidates: candidates,
+    },
+  };
 }
 
-async function getSelectedInstanceChildMetrics(api, config, selectedInstance) {
+async function getSelectedInstanceChildMetrics(api, selectedInstance) {
   if (!selectedInstance) {
     return {
       managedInstanceApi: null,
       managedMetrics: null,
+      runtimeDiagnostics: {
+        runtimeMetricsSource: null,
+        runtimeMetricsMethod: null,
+        runtimeMetricsErrorCode: "NO_SELECTED_INSTANCE",
+        runtimeMetricsCandidates: [],
+      },
     };
   }
 
   try {
-    const managedInstanceApi = await authenticateManagedInstance(api, config, selectedInstance);
-    const managedMetrics = await getManagedInstanceMetrics(managedInstanceApi);
+    const adsMetrics = await getSelectedInstanceAdsMetrics(api, selectedInstance);
 
     return {
-      managedInstanceApi,
-      managedMetrics,
+      managedInstanceApi: null,
+      managedMetrics: adsMetrics.managedMetrics,
+      runtimeDiagnostics: adsMetrics.runtimeDiagnostics,
     };
-  } catch {
+  } catch (error) {
     return {
       managedInstanceApi: null,
       managedMetrics: null,
+      runtimeDiagnostics: {
+        runtimeMetricsSource: "ads",
+        runtimeMetricsMethod: null,
+        runtimeMetricsErrorCode: getSafeErrorCode(error),
+        runtimeMetricsCandidates: [],
+      },
     };
   }
 }
@@ -1144,19 +1188,19 @@ async function getAmpSnapshot() {
 
     markSuccessfulAmpPoll("connected", adsInstances);
 
+    const { managedInstanceApi, managedMetrics, runtimeDiagnostics } = await getSelectedInstanceChildMetrics(api, adsSelectedInstance);
+
     const adsSnapshot = createAmpSnapshot({
       connected: true,
       configured: true,
       status: "connected",
       message: "Connected to AMP.",
-      diagnostics: createDiagnostics(config, "connected"),
+      diagnostics: createDiagnostics(config, "connected", runtimeDiagnostics),
       instances: adsInstances,
       selectedInstance: adsSelectedInstance,
       minecraftInstances: adsMinecraftInstances,
       minecraftSelectionMode: selection.mode,
     });
-
-    const { managedInstanceApi, managedMetrics } = await getSelectedInstanceChildMetrics(api, config, adsSelectedInstance);
 
     if (!managedMetrics) {
       return adsSnapshot;
@@ -1177,7 +1221,7 @@ async function getAmpSnapshot() {
       configured: true,
       status: "connected",
       message: "Connected to AMP.",
-      diagnostics: createDiagnostics(config, "connected"),
+      diagnostics: createDiagnostics(config, "connected", runtimeDiagnostics),
       instances: finalInstances,
       selectedInstance: finalSelectedInstance,
       minecraftInstances: finalMinecraftInstances,
@@ -1281,10 +1325,6 @@ function summarizeDiagnosticCall(label, result) {
   };
 }
 
-function isSafeRuntimeMethod(methodName) {
-  return /^Get/i.test(methodName) && /status|metric|player|user|tps|performance|usage|state|uptime|memory|ram|cpu|version/i.test(methodName);
-}
-
 function collectMetricCandidates(calls) {
   const wanted = /player|user|tps|cpu|processor|ram|memory|uptime|state|version/i;
   const candidates = [];
@@ -1351,51 +1391,26 @@ async function inspectManagedMinecraftRuntime({ instanceHint = "Coolpals01" } = 
   }
 
   const adsSelectedInstance = await enrichSelectedInstance(api, selected);
-  const managedApi = await authenticateManagedInstance(api, config, adsSelectedInstance);
-
-  if (!managedApi) {
-    throw new Error("Managed Minecraft instance authentication failed.");
-  }
-
   const readOnlyCalls = [];
-  const coreCalls = [
-    ["Core.GetStatusAsync", managedApi.Core, "GetStatusAsync", []],
-    ["Core.GetUpdatesAsync", managedApi.Core, "GetUpdatesAsync", []],
-    ["Core.GetModuleInfoAsync", managedApi.Core, "GetModuleInfoAsync", []],
-    [
-      "Core.GetConfigAsync(MinecraftModule.Minecraft.SpecificVersion)",
-      managedApi.Core,
-      "GetConfigAsync",
-      ["MinecraftModule.Minecraft.SpecificVersion"],
-    ],
-  ];
+  const instanceId = getInstanceId(adsSelectedInstance);
+  const adsCalls = [["ADSModule.GetInstanceAsync", api.ADSModule, "GetInstanceAsync", [instanceId]]];
 
-  for (const [label, moduleValue, methodName, args] of coreCalls) {
+  for (const [label, moduleValue, methodName, args] of adsCalls) {
     readOnlyCalls.push(summarizeDiagnosticCall(label, await callMethodDetailed(moduleValue, methodName, args)));
   }
 
-  const managedMethods = getApiMethods(managedApi);
-
-  for (const [moduleName, methods] of Object.entries(managedMethods)) {
-    if (moduleName === "Core") {
-      continue;
-    }
-
-    for (const methodName of methods.filter(isSafeRuntimeMethod)) {
-      readOnlyCalls.push(
-        summarizeDiagnosticCall(`${moduleName}.${methodName}`, await callMethodDetailed(managedApi[moduleName], methodName, [])),
-      );
-    }
-  }
+  const runtimeMetrics = await getSelectedInstanceAdsMetrics(api, adsSelectedInstance);
 
   return {
     envPath: config.env?.resolvedEnvPath || null,
     ampUrl: config.url,
     selectedInstance: sanitizeDiagnosticValue(adsSelectedInstance),
     managedUrl: adsSelectedInstance ? buildManagedInstanceUrl(config, adsSelectedInstance) : null,
-    managedAuthenticated: true,
+    managedAuthenticated: false,
+    runtimeMetricsDiagnostics: runtimeMetrics.runtimeDiagnostics,
+    runtimeMetrics: runtimeMetrics.managedMetrics,
     adsMethods: getApiMethods(api),
-    managedMethods,
+    managedMethods: {},
     readOnlyCalls,
     metricCandidates: collectMetricCandidates(readOnlyCalls),
   };

@@ -251,51 +251,72 @@
             </div>
           </header>
 
-          <div class="status-grid status-grid--two">
-            <article class="status-card">
+          <div class="minecraft-page-grid">
+            <article class="status-card minecraft-overview-card">
               <div class="status-card__top">
                 <span class="service-icon">MC</span>
-                <span class="status-pill status-pill--local">ATM10</span>
+                <span class="status-pill status-pill--local" data-field="minecraftPageStatus">Checking...</span>
               </div>
-              <h3>ATM10 Status</h3>
-              <p data-field="ampInstances">AMP instances and server state appear when available.</p>
-              <dl>
+              <h3>Server Status</h3>
+              <p data-field="minecraftPageSelectedInstance">Minecraft selection appears when available.</p>
+              <dl class="minecraft-detail-list">
                 <div>
-                  <dt>Players / TPS</dt>
-                  <dd data-field="ampPlayers">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Usage</dt>
-                  <dd data-field="ampUsage">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Ports / Uptime</dt>
-                  <dd data-field="ampRuntime">Checking...</dd>
+                  <dt>Selected Instance</dt>
+                  <dd data-field="minecraftPageInstance">Checking...</dd>
                 </div>
                 <div>
                   <dt>Version</dt>
-                  <dd data-field="ampVersion">Checking...</dd>
+                  <dd data-field="minecraftPageVersion">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Ports</dt>
+                  <dd data-field="minecraftPagePorts">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Uptime</dt>
+                  <dd data-field="minecraftPageUptime">Checking...</dd>
                 </div>
               </dl>
             </article>
 
-            <article class="status-card">
+            <article class="status-card minecraft-metric-card">
               <div class="status-card__top">
-                <span class="service-icon">NET</span>
-                <span class="status-pill status-pill--external">Address</span>
+                <span class="service-icon">PLY</span>
+                <span class="status-pill status-pill--local">Live</span>
               </div>
-              <h3>Connection</h3>
-              <p>Public playit.gg address for the Minecraft server.</p>
-              <dl>
-                <div>
-                  <dt>Playit Address</dt>
-                  <dd>coolpals.playit.fan</dd>
-                </div>
-                <div>
-                  <dt>Action</dt>
-                  <dd><button class="inline-action" type="button" data-copy="coolpals.playit.fan">Copy address</button></dd>
-                </div>
-              </dl>
+              <h3>Players</h3>
+              <p class="metric-value" data-field="minecraftPagePlayers">Checking...</p>
+              <span class="metric-caption">Online / max players</span>
+            </article>
+
+            <article class="status-card minecraft-metric-card">
+              <div class="status-card__top">
+                <span class="service-icon">TPS</span>
+                <span class="status-pill status-pill--local">Tick</span>
+              </div>
+              <h3>TPS</h3>
+              <p class="metric-value" data-field="minecraftPageTps">Checking...</p>
+              <span class="metric-caption">Server tick rate</span>
+            </article>
+
+            <article class="status-card minecraft-metric-card">
+              <div class="status-card__top">
+                <span class="service-icon">RAM</span>
+                <span class="status-pill status-pill--external">AMP</span>
+              </div>
+              <h3>RAM</h3>
+              <p class="metric-value" data-field="minecraftPageRam">Checking...</p>
+              <span class="metric-caption">Memory reported by AMP</span>
+            </article>
+
+            <article class="status-card minecraft-metric-card">
+              <div class="status-card__top">
+                <span class="service-icon">CPU</span>
+                <span class="status-pill status-pill--external">AMP</span>
+              </div>
+              <h3>CPU</h3>
+              <p class="metric-value" data-field="minecraftPageCpu">Checking...</p>
+              <span class="metric-caption">Processor usage reported by AMP</span>
             </article>
           </div>
         </section>

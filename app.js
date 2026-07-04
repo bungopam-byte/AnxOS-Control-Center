@@ -369,6 +369,72 @@ function formatPlayerSummary(summary) {
   return `Players: ${players}/${maxPlayers} · TPS: ${tps}`;
 }
 
+function formatMinecraftInstanceName(snapshot) {
+  const selectedInstance = snapshot?.selectedInstance;
+  const selectedName = selectedInstance?.friendlyName || selectedInstance?.name || snapshot?.summary?.selectedInstanceName;
+
+  if (!selectedName) {
+    return "Unavailable";
+  }
+
+  const moduleType = selectedInstance?.moduleType;
+  return moduleType ? `${selectedName} · ${moduleType}` : selectedName;
+}
+
+function formatMinecraftPlayers(summary) {
+  const players = Number.isFinite(summary?.playerCount) ? summary.playerCount : "Unavailable";
+  const maxPlayers = Number.isFinite(summary?.maxPlayers) ? summary.maxPlayers : "Unavailable";
+  return `${players} / ${maxPlayers}`;
+}
+
+function formatMinecraftTps(summary) {
+  return Number.isFinite(summary?.tps) ? summary.tps.toFixed(1) : "Unavailable";
+}
+
+function formatMinecraftRam(summary) {
+  return Number.isFinite(summary?.ramUsage) ? `${summary.ramUsage.toFixed(1)} MB` : "Unavailable";
+}
+
+function formatMinecraftCpu(summary) {
+  return formatPercent(summary?.cpuUsage);
+}
+
+function formatMinecraftPorts(summary) {
+  return Array.isArray(summary?.ports) && summary.ports.length > 0 ? summary.ports.join(", ") : "Unavailable";
+}
+
+function formatMinecraftUptime(summary) {
+  return Number.isFinite(summary?.uptime) ? formatDuration(summary.uptime) : "Unavailable";
+}
+
+function setMinecraftPageFields(fields) {
+  setField("minecraftPageStatus", fields.status);
+  setField("minecraftPageSelectedInstance", fields.selection);
+  setField("minecraftPageInstance", fields.instance);
+  setField("minecraftPagePlayers", fields.players);
+  setField("minecraftPageTps", fields.tps);
+  setField("minecraftPageRam", fields.ram);
+  setField("minecraftPageCpu", fields.cpu);
+  setField("minecraftPageVersion", fields.version);
+  setField("minecraftPagePorts", fields.ports);
+  setField("minecraftPageUptime", fields.uptime);
+}
+
+function setMinecraftPageUnavailable(status, selection) {
+  setMinecraftPageFields({
+    status,
+    selection,
+    instance: "Unavailable",
+    players: "Unavailable",
+    tps: "Unavailable",
+    ram: "Unavailable",
+    cpu: "Unavailable",
+    version: "Unavailable",
+    ports: "Unavailable",
+    uptime: "Unavailable",
+  });
+}
+
 function logAmpRendererReceive(snapshot) {
   console.log("[AnxHub][AMP renderer state]", {
     amp: {
@@ -401,6 +467,7 @@ function renderAmpSnapshot(snapshot) {
     setField("minecraftDashboardPlayers", "Unavailable");
     setField("minecraftDashboardRuntime", "Unavailable");
     setField("minecraftDashboardVersion", "Unavailable");
+    setMinecraftPageUnavailable("Unconfigured", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
     return;
   }
 
@@ -433,6 +500,18 @@ function renderAmpSnapshot(snapshot) {
   setField("minecraftDashboardPlayers", playersText);
   setField("minecraftDashboardRuntime", runtimeText);
   setField("minecraftDashboardVersion", versionText);
+  setMinecraftPageFields({
+    status: snapshot.summary?.state || statusText,
+    selection: selectionText,
+    instance: formatMinecraftInstanceName(snapshot),
+    players: formatMinecraftPlayers(snapshot.summary),
+    tps: formatMinecraftTps(snapshot.summary),
+    ram: formatMinecraftRam(snapshot.summary),
+    cpu: formatMinecraftCpu(snapshot.summary),
+    version: versionText,
+    ports: formatMinecraftPorts(snapshot.summary),
+    uptime: formatMinecraftUptime(snapshot.summary),
+  });
 
   setField("ampPlayers", `${playersText} · ${versionText} · ${runtimeText}`);
 }
@@ -473,6 +552,7 @@ async function refreshAmpDashboard() {
     setField("minecraftDashboardPlayers", "Unavailable");
     setField("minecraftDashboardRuntime", "Unavailable");
     setField("minecraftDashboardVersion", "Unavailable");
+    setMinecraftPageUnavailable("Unavailable", "AMP API unavailable.");
   } finally {
     ampRequestInFlight = false;
   }

@@ -302,6 +302,10 @@ function getInstanceName(instance) {
   return findValue(instance, ["InstanceName", "FriendlyName", "Name", "DisplayName", "Description"]) || "AMP Instance";
 }
 
+function getVersion(instance) {
+  return findValue(instance, ["Version", "AppVersion", "ApplicationVersion", "ServerVersion", "MinecraftVersion", "ProductVersion"]);
+}
+
 function isMinecraftInstance(instance) {
   const searchable = [
     getInstanceName(instance),
@@ -417,6 +421,7 @@ function normalizeInstance(instance, status, detail = null) {
     ramUsage: normalizeMemoryUsage(memory),
     ports,
     uptime: normalizeUptime(findValue(merged, ["Uptime", "UptimeSeconds", "RunningSeconds", "StartedFor"])),
+    version: getVersion(merged),
   };
 }
 
@@ -455,6 +460,8 @@ async function getInstanceDetail(api, instance) {
     ["GetInstanceStatusAsync", [instanceId]],
     ["GetInstanceInfoAsync", [instanceId]],
     ["GetInstanceAsync", [instanceId]],
+    ["GetInstanceDetailsAsync", [instanceId]],
+    ["GetInstanceMetricsAsync", [instanceId]],
   ];
 
   const details = {};
@@ -474,6 +481,31 @@ async function getInstanceDetail(api, instance) {
   }
 
   return Object.keys(details).length > 0 ? details : null;
+}
+
+async function enrichSelectedInstance(api, selectedInstance) {
+  if (!selectedInstance) {
+    return null;
+  }
+
+  const detail = await getInstanceDetail(api, selectedInstance);
+  const enriched = normalizeInstance(selectedInstance, null, detail);
+
+  logSafeAmpInstanceDiagnostics("selected detail", {
+    name: enriched.name,
+    moduleType: enriched.moduleType,
+    instanceId: enriched.id,
+    state: enriched.state,
+    hasPlayers: Number.isFinite(enriched.playerCount),
+    hasTps: Number.isFinite(enriched.tps),
+    hasCpu: Number.isFinite(enriched.cpuUsage),
+    hasRam: Number.isFinite(enriched.ramUsage),
+    hasPorts: enriched.ports.length > 0,
+    hasUptime: Number.isFinite(enriched.uptime),
+    hasVersion: Boolean(enriched.version),
+  });
+
+  return enriched;
 }
 
 async function getInstances(api) {
@@ -568,6 +600,7 @@ function summarizeInstances(instances) {
     ramUsage: ramValues.length > 0 ? ramValues.reduce((sum, value) => sum + value, 0) : null,
     ports: primary.ports || [],
     uptime: primary.uptime,
+    version: primary.version || null,
   };
 }
 
@@ -632,13 +665,17 @@ async function getAmpSnapshot() {
 
     const instances = await getInstances(api);
     const selection = selectMinecraftInstance(instances);
+    const selectedInstance = await enrichSelectedInstance(api, selection.selected);
+    const finalInstances = selectedInstance
+      ? instances.map((instance) => (String(instance.id) === String(selectedInstance.id) ? selectedInstance : instance))
+      : instances;
 
-    if (selection.selected) {
+    if (selectedInstance) {
       logSafeAmpInstanceDiagnostics("selected instance", {
-        name: selection.selected.name,
-        moduleType: selection.selected.moduleType,
-        instanceId: selection.selected.id,
-        state: selection.selected.state,
+        name: selectedInstance.name,
+        moduleType: selectedInstance.moduleType,
+        instanceId: selectedInstance.id,
+        state: selectedInstance.state,
       });
     } else if (selection.minecraftInstances.length > 1) {
       logSafeAmpInstanceDiagnostics("minecraft selection", {
@@ -659,8 +696,8 @@ async function getAmpSnapshot() {
       status: "connected",
       message: "Connected to AMP.",
       diagnostics: createDiagnostics(config, "connected"),
-      instances,
-      selectedInstance: selection.selected,
+      instances: finalInstances,
+      selectedInstance,
       minecraftInstances: selection.minecraftInstances,
       minecraftSelectionMode: selection.mode,
     });

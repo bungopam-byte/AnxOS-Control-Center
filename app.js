@@ -199,7 +199,8 @@ function renderAmpSnapshot(snapshot) {
   const players = Number.isFinite(snapshot.summary?.playerCount) ? snapshot.summary.playerCount : "Unavailable";
   const maxPlayers = Number.isFinite(snapshot.summary?.maxPlayers) ? snapshot.summary.maxPlayers : "Unavailable";
   const tps = Number.isFinite(snapshot.summary?.tps) ? snapshot.summary.tps.toFixed(1) : "Unavailable";
-  setField("ampPlayers", `Players: ${players}/${maxPlayers} · TPS: ${tps} · ${formatAmpRuntime(snapshot.summary)}`);
+  const version = snapshot.summary?.version || "Version unavailable";
+  setField("ampPlayers", `Players: ${players}/${maxPlayers} · TPS: ${tps} · ${version} · ${formatAmpRuntime(snapshot.summary)}`);
 }
 
 async function refreshAmpDashboard() {

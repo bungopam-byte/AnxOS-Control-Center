@@ -53,12 +53,35 @@ The dashboard refreshes once per second and displays:
 
 Missing platform data is shown as unavailable instead of using fake values.
 
+## AMP API Integration
+
+AnxHub can connect to a local AMP API using `@cubecoders/ampapi`. Credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed.
+
+Create your local environment file:
+
+```bash
+cd /home/anx/Projects/AnxHub
+cp .env.example .env
+```
+
+Edit `.env` with your local AMP details:
+
+```text
+AMP_URL=http://192.168.1.134:8080
+AMP_USERNAME=your_amp_username
+AMP_PASSWORD=your_amp_password
+```
+
+The dashboard reports AMP connection status, instances, server state, player count, TPS, CPU usage, and RAM usage when those values are exposed by the AMP API. Missing or unavailable AMP data is shown as unavailable without crashing the app.
+
 ## Architecture
 
 - `main.js` creates the Electron desktop window and blocks in-app navigation to external URLs.
 - `preload.js` exposes a small `window.anxhub` API to the browser context.
 - `src/ipc/systemIpc.js` registers the system metrics IPC route.
+- `src/ipc/ampIpc.js` registers the AMP IPC route.
 - `src/services/systemService.js` reads local OS metrics with Node APIs and platform commands.
+- `src/services/ampService.js` authenticates with AMP and normalizes available instance metrics.
 - Empty domain folders under `src/` reserve clean module boundaries for Minecraft, AMP, playit.gg, SSH, Docker, backups, pages, and shared UI as those integrations are implemented.
 
 The renderer still uses plain HTML/CSS/JavaScript. Node integration remains disabled in the browser window.

@@ -2,6 +2,7 @@ const timeTarget = document.querySelector("#local-time");
 const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const fields = document.querySelectorAll("[data-field]");
+let ampRequestInFlight = false;
 
 function setField(name, value) {
   fields.forEach((field) => {
@@ -102,6 +103,46 @@ function renderSnapshot(snapshot) {
   );
 }
 
+function formatAmpUsage(summary) {
+  const cpu = formatPercent(summary?.cpuUsage);
+  const ram = Number.isFinite(summary?.ramUsage) ? `${summary.ramUsage.toFixed(1)} MB RAM` : "RAM unavailable";
+  return `AMP CPU ${cpu} · ${ram}`;
+}
+
+function renderAmpSnapshot(snapshot) {
+  if (!snapshot?.configured) {
+    setField("ampConnection", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
+    setField("ampInstances", "No AMP data loaded.");
+    setField("ampPlayers", "Player count unavailable.");
+    setField("ampUsage", "AMP usage unavailable.");
+    return;
+  }
+
+  setField("ampConnection", snapshot.connected ? "AMP API connected." : snapshot.message || "AMP unavailable.");
+  setField("ampInstances", `${snapshot.instances.length} instance(s) · State: ${snapshot.summary?.state || "Unknown"}`);
+  setField("ampUsage", formatAmpUsage(snapshot.summary));
+
+  const players = Number.isFinite(snapshot.summary?.playerCount) ? snapshot.summary.playerCount : "Unavailable";
+  const tps = Number.isFinite(snapshot.summary?.tps) ? snapshot.summary.tps.toFixed(1) : "Unavailable";
+  setField("ampPlayers", `Players: ${players} · TPS: ${tps}`);
+}
+
+async function refreshAmpDashboard() {
+  if (ampRequestInFlight || !window.anxhub?.amp?.getSnapshot) {
+    return;
+  }
+
+  ampRequestInFlight = true;
+
+  try {
+    renderAmpSnapshot(await window.anxhub.amp.getSnapshot());
+  } catch {
+    setField("ampConnection", "AMP API unavailable.");
+  } finally {
+    ampRequestInFlight = false;
+  }
+}
+
 async function refreshDashboard() {
   if (!window.anxhub?.system?.getSnapshot) {
     setField("osVersion", "Desktop API unavailable");
@@ -139,4 +180,6 @@ copyButtons.forEach((button) => {
 
 updateLocalTime();
 refreshDashboard();
+refreshAmpDashboard();
 window.setInterval(refreshDashboard, 1000);
+window.setInterval(refreshAmpDashboard, 5000);

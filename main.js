@@ -1,5 +1,6 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
+const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 function createWindow() {
@@ -36,6 +37,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerSystemIpc();
+  registerAmpIpc();
   createWindow();
 
   app.on("activate", () => {

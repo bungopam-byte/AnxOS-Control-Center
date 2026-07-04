@@ -3,6 +3,8 @@ const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
+const refreshTasks = [];
+let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 
 function setField(name, value) {
@@ -203,16 +205,25 @@ async function refreshAmpDashboard() {
 }
 
 async function refreshDashboard() {
-  if (!window.anxhub?.system?.getSnapshot) {
+  if (systemRequestInFlight || !window.anxhub?.system?.getSnapshot) {
     setField("osVersion", "Desktop API unavailable");
     return;
   }
+
+  systemRequestInFlight = true;
 
   try {
     renderSnapshot(await window.anxhub.system.getSnapshot());
   } catch {
     showToast("System metrics are unavailable.");
+  } finally {
+    systemRequestInFlight = false;
   }
+}
+
+function registerRefreshTask(callback, intervalMs) {
+  refreshTasks.push(window.setInterval(callback, intervalMs));
+  callback();
 }
 
 function showToast(message) {
@@ -241,8 +252,6 @@ navItems.forEach((item) => {
   item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
 
-updateLocalTime();
-refreshDashboard();
-refreshAmpDashboard();
-window.setInterval(refreshDashboard, 1000);
-window.setInterval(refreshAmpDashboard, 5000);
+registerRefreshTask(updateLocalTime, 30000);
+registerRefreshTask(refreshDashboard, 1000);
+registerRefreshTask(refreshAmpDashboard, 5000);

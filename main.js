@@ -34,9 +34,9 @@ function createWindow() {
     height: 820,
     minWidth: 900,
     minHeight: 640,
-    title: "AnxHub",
+    title: "AnxOS Control Center",
     icon: APP_ICON_PATH,
-    backgroundColor: "#080a0f",
+    backgroundColor: "#07020f",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

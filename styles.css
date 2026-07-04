@@ -1,15 +1,15 @@
 :root {
   color-scheme: dark;
-  --bg: #080a0f;
-  --panel: #11151f;
-  --panel-strong: #171d2a;
-  --text: #eef2ff;
-  --muted: #9aa5b8;
-  --line: #252d3c;
-  --accent: #63e6be;
-  --accent-soft: rgba(99, 230, 190, 0.12);
-  --warning: #ffd166;
-  --planned: #a78bfa;
+  --bg: #07020f;
+  --panel: #150a24;
+  --panel-strong: #211033;
+  --text: #f8f5ff;
+  --muted: #b9abc8;
+  --line: #3a2552;
+  --accent: #b66cff;
+  --accent-soft: rgba(182, 108, 255, 0.16);
+  --warning: #f5d0ff;
+  --planned: #d8b4fe;
   --radius: 8px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -23,7 +23,8 @@ body {
   margin: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(99, 230, 190, 0.12), transparent 32rem),
+    radial-gradient(circle at top left, rgba(182, 108, 255, 0.18), transparent 32rem),
+    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.05), transparent 28rem),
     var(--bg);
   color: var(--text);
 }
@@ -49,7 +50,8 @@ a {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 50% 35%, rgba(99, 230, 190, 0.14), transparent 24rem),
+    radial-gradient(circle at 50% 35%, rgba(182, 108, 255, 0.22), transparent 24rem),
+    radial-gradient(circle at 20% 80%, rgba(255, 255, 255, 0.06), transparent 18rem),
     var(--bg);
   opacity: 1;
   transition: opacity 220ms ease, visibility 220ms ease;
@@ -80,7 +82,7 @@ a {
   margin-bottom: 20px;
   border-radius: var(--radius);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 10px rgba(99, 230, 190, 0.06);
+  box-shadow: 0 0 0 10px rgba(182, 108, 255, 0.08);
 }
 
 .startup-logo img {
@@ -131,11 +133,11 @@ a {
 
 @keyframes startup-pulse {
   70% {
-    box-shadow: 0 0 0 12px rgba(99, 230, 190, 0);
+    box-shadow: 0 0 0 12px rgba(182, 108, 255, 0);
   }
 
   100% {
-    box-shadow: 0 0 0 0 rgba(99, 230, 190, 0);
+    box-shadow: 0 0 0 0 rgba(182, 108, 255, 0);
   }
 }
 
@@ -255,7 +257,12 @@ a {
   font-weight: 700;
   text-align: left;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .nav-item:hover,
@@ -267,8 +274,14 @@ a {
   outline: none;
 }
 
+.nav-item:hover,
+.nav-item:focus-visible {
+  box-shadow: 0 0 18px rgba(182, 108, 255, 0.16);
+  transform: translateX(3px);
+}
+
 .nav-item.is-active {
-  border-color: rgba(99, 230, 190, 0.34);
+  border-color: rgba(182, 108, 255, 0.42);
   color: var(--accent);
 }
 
@@ -898,7 +911,7 @@ h3 {
 }
 
 .ssh-tab.is-active {
-  border-color: rgba(99, 230, 190, 0.34);
+  border-color: rgba(182, 108, 255, 0.42);
   color: var(--accent);
 }
 
@@ -1605,12 +1618,12 @@ dd {
 }
 
 .status-pill--external {
-  background: rgba(255, 209, 102, 0.14);
+  background: rgba(245, 208, 255, 0.14);
   color: var(--warning);
 }
 
 .status-pill--planned {
-  background: rgba(167, 139, 250, 0.14);
+  background: rgba(216, 180, 254, 0.14);
   color: var(--planned);
 }
 
@@ -1628,12 +1641,24 @@ dd {
   font-weight: 800;
   text-decoration: none;
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
 }
 
-.inline-action:hover,
-.inline-action:focus-visible {
+.inline-action:not(:disabled):hover,
+.inline-action:not(:disabled):focus-visible {
   border-color: var(--accent);
+  box-shadow: 0 0 18px rgba(182, 108, 255, 0.22);
+  color: #ffffff;
+  transform: translateY(-1px) scale(1.02);
   outline: none;
+}
+
+.inline-action:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
 }
 
 .toast {

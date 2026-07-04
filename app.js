@@ -41,12 +41,18 @@ let latestAmpSnapshot = null;
 const AMP_REFRESH_INTERVAL_MS = 5000;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 900;
-const SETTINGS_STORAGE_KEY = "anxhub.settings.v1";
+const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
 const startupState = {
   startedAt: Date.now(),
   systemReady: false,
   ampReady: false,
   finished: false,
+};
+const startupAudio = {
+  context: null,
+  gain: null,
+  oscillators: [],
+  timer: null,
 };
 
 document.querySelectorAll("[data-field]").forEach((field) => {
@@ -82,6 +88,84 @@ function updateStartupMessage(message, detail) {
   }
 }
 
+function startStartupMusic() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContext || startupAudio.context) {
+    return;
+  }
+
+  try {
+    const context = new AudioContext();
+    const gain = context.createGain();
+    const notes = [146.83, 174.61, 220.0];
+
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.045, context.currentTime + 0.8);
+    gain.connect(context.destination);
+
+    startupAudio.context = context;
+    startupAudio.gain = gain;
+    startupAudio.oscillators = notes.map((frequency, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = index === 1 ? "triangle" : "sine";
+      oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+      oscillator.connect(gain);
+      oscillator.start();
+      return oscillator;
+    });
+
+    startupAudio.timer = window.setInterval(() => {
+      startupAudio.oscillators.forEach((oscillator, index) => {
+        const offset = index % 2 === 0 ? 1.015 : 0.985;
+        oscillator.frequency.setTargetAtTime(notes[index] * offset, context.currentTime, 0.25);
+      });
+    }, 700);
+
+    context.resume?.().catch(() => {});
+  } catch {
+    startupAudio.context = null;
+    startupAudio.gain = null;
+    startupAudio.oscillators = [];
+  }
+}
+
+function stopStartupMusic() {
+  if (startupAudio.timer) {
+    window.clearInterval(startupAudio.timer);
+    startupAudio.timer = null;
+  }
+
+  const context = startupAudio.context;
+  const gain = startupAudio.gain;
+
+  if (!context || !gain) {
+    return;
+  }
+
+  try {
+    gain.gain.cancelScheduledValues(context.currentTime);
+    gain.gain.setTargetAtTime(0.0001, context.currentTime, 0.08);
+
+    window.setTimeout(() => {
+      startupAudio.oscillators.forEach((oscillator) => {
+        try {
+          oscillator.stop();
+        } catch {}
+      });
+
+      context.close?.();
+      startupAudio.context = null;
+      startupAudio.gain = null;
+      startupAudio.oscillators = [];
+    }, 260);
+  } catch {
+    startupAudio.context = null;
+    startupAudio.gain = null;
+    startupAudio.oscillators = [];
+  }
+}
+
 function revealAppShell() {
   if (startupState.finished) {
     return;
@@ -90,7 +174,8 @@ function revealAppShell() {
   startupState.finished = true;
   setStartupStep("services", "complete");
   setStartupStep("amp", "complete");
-  updateStartupMessage("AnxHub ready.", "Opening dashboard...");
+  updateStartupMessage("AnxOS Control Center ready.", "Opening dashboard...");
+  stopStartupMusic();
 
   if (appShell) {
     appShell.hidden = false;
@@ -149,9 +234,10 @@ function markStartupReady(name) {
 }
 
 function startStartupFallback() {
+  startStartupMusic();
   setStartupStep("app", "complete");
   setStartupStep("services", "active");
-  updateStartupMessage("Starting AnxHub...", "Loading local services...");
+  updateStartupMessage("Starting AnxOS Control Center...", "Loading local services...");
 
   window.setTimeout(() => {
     if (!startupState.systemReady) {

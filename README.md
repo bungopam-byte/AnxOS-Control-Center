@@ -1,6 +1,6 @@
-# AnxHub
+# AnxOS Control Center
 
-AnxHub is a private, lightweight local desktop dashboard for a homelab server. It uses Electron to open the existing static HTML/CSS/JS interface in a desktop window and reads local system metrics through a narrow Electron IPC service.
+AnxOS Control Center is a private, lightweight local desktop dashboard for a homelab server. It uses Electron to open the existing static HTML/CSS/JS interface in a desktop window and reads local system metrics through a narrow Electron IPC service.
 
 This project intentionally does not include secrets, tokens, API keys, credentials, or backend service controls.
 
@@ -55,7 +55,7 @@ Missing platform data is shown as unavailable instead of using fake values.
 
 ## AMP API Integration
 
-AnxHub can connect to a local AMP API using `@cubecoders/ampapi`. Credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed.
+AnxOS Control Center can connect to a local AMP API using `@cubecoders/ampapi`. Credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed.
 
 Create your local environment file:
 
@@ -95,13 +95,13 @@ cd /home/anx/Projects/AnxHub
 npm install
 ```
 
-Start AnxHub:
+Start AnxOS Control Center:
 
 ```bash
 npm start
 ```
 
-This opens AnxHub as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
+This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
 
 ## Add to the Debian App Launcher
 
@@ -113,7 +113,7 @@ cp /home/anx/Projects/AnxHub/anxhub.desktop ~/.local/share/applications/
 chmod +x /home/anx/Projects/AnxHub/start-anxhub.sh
 ```
 
-Then look for `AnxHub` in your desktop app launcher. You can also double-click `anxhub.desktop` from a file manager if your desktop environment allows trusted launchers.
+Then look for `AnxOS Control Center` in your desktop app launcher. You can also double-click `anxhub.desktop` from a file manager if your desktop environment allows trusted launchers.
 
 ## Run as a Static Web Page
 
@@ -138,7 +138,7 @@ http://192.168.1.134:8088
 
 ## Static Hosting on Debian
 
-Because AnxHub is static, it can be served by any local web server, including Apache, nginx, Caddy, or Python's built-in server.
+Because AnxOS Control Center is static, it can be served by any local web server, including Apache, nginx, Caddy, or Python's built-in server.
 
 For a simple local-only setup, keep it bound to your LAN or localhost. Do not expose it publicly until you add proper hardening such as HTTPS, authentication, firewall rules, and reverse proxy access controls.
 

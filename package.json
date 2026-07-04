@@ -1,7 +1,8 @@
 {
   "name": "anxhub",
+  "productName": "AnxOS Control Center",
   "version": "1.0.0",
-  "description": "Private local desktop dashboard for a Debian server.",
+  "description": "Private local desktop control center for a Debian server.",
   "main": "main.js",
   "private": true,
   "scripts": {

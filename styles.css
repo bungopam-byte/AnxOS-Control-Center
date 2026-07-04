@@ -222,6 +222,10 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.dashboard-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .status-card {
   min-height: 260px;
   padding: 18px;
@@ -387,6 +391,10 @@ dd {
   }
 
   .status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

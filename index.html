@@ -51,7 +51,7 @@
             </div>
           </header>
 
-          <div class="status-grid">
+          <div class="status-grid dashboard-grid">
             <article class="status-card">
               <div class="status-card__top">
                 <span class="service-icon">SYS</span>
@@ -76,16 +76,54 @@
                 <span class="service-icon">CPU</span>
                 <span class="status-pill status-pill--local">Live</span>
               </div>
-              <h3>CPU & RAM</h3>
-              <p>Processor and memory usage refreshed once per second.</p>
+              <h3>CPU</h3>
+              <p>Processor usage refreshed once per second.</p>
               <dl>
                 <div>
                   <dt>CPU Usage</dt>
                   <dd><span data-field="cpuUsage">Checking...</span></dd>
                 </div>
                 <div>
+                  <dt>Processor</dt>
+                  <dd><span data-field="cpuModel">Checking...</span></dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">RAM</span>
+                <span class="status-pill status-pill--local">Live</span>
+              </div>
+              <h3>Memory</h3>
+              <p>System RAM usage from local OS metrics.</p>
+              <dl>
+                <div>
                   <dt>RAM Usage</dt>
                   <dd><span data-field="memoryUsage">Checking...</span></dd>
+                </div>
+                <div>
+                  <dt>Available</dt>
+                  <dd><span data-field="memoryAvailable">Checking...</span></dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">DSK</span>
+                <span class="status-pill status-pill--external">Local</span>
+              </div>
+              <h3>Disk</h3>
+              <p>Root disk capacity and usage.</p>
+              <dl>
+                <div>
+                  <dt>Disk Usage</dt>
+                  <dd><span data-field="diskUsage">Checking...</span></dd>
+                </div>
+                <div>
+                  <dt>Free Space</dt>
+                  <dd><span data-field="diskFree">Checking...</span></dd>
                 </div>
               </dl>
             </article>
@@ -95,16 +133,16 @@
                 <span class="service-icon">IO</span>
                 <span class="status-pill status-pill--external">Local</span>
               </div>
-              <h3>Disk & Network</h3>
-              <p>Root disk usage and current network throughput from local adapters.</p>
+              <h3>Network</h3>
+              <p>Current network throughput from local adapters.</p>
               <dl>
                 <div>
-                  <dt>Disk Usage</dt>
-                  <dd><span data-field="diskUsage">Checking...</span></dd>
+                  <dt>Download</dt>
+                  <dd><span data-field="networkDownload">Checking...</span></dd>
                 </div>
                 <div>
-                  <dt>Network</dt>
-                  <dd><span data-field="networkUsage">Checking...</span></dd>
+                  <dt>Upload</dt>
+                  <dd><span data-field="networkUpload">Checking...</span></dd>
                 </div>
               </dl>
             </article>

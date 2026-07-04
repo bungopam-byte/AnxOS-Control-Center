@@ -3,6 +3,15 @@ const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
+const consoleSearchInput = document.querySelector("[data-console-search]");
+const consoleAutoscrollInput = document.querySelector("[data-console-autoscroll]");
+const consolePauseInput = document.querySelector("[data-console-pause]");
+const consoleClearButton = document.querySelector("[data-console-clear]");
+const consoleCopyButton = document.querySelector("[data-console-copy]");
+const consoleCountTarget = document.querySelector("[data-console-count]");
+const consoleViewer = document.querySelector("[data-console-viewer]");
+const consoleLogList = document.querySelector("[data-console-log-list]");
+const consoleEmptyState = document.querySelector("[data-console-empty]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
@@ -573,6 +582,84 @@ function showToast(message) {
   }, 2200);
 }
 
+function getConsoleRows() {
+  return consoleLogList ? [...consoleLogList.querySelectorAll("li")] : [];
+}
+
+function updateConsoleEmptyState() {
+  const rows = getConsoleRows();
+  const visibleRows = rows.filter((row) => !row.hidden);
+  const hasRows = rows.length > 0;
+
+  if (consoleEmptyState) {
+    consoleEmptyState.hidden = hasRows;
+  }
+
+  if (consoleCountTarget) {
+    consoleCountTarget.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? "line" : "lines"}`;
+  }
+
+  if (consoleClearButton) {
+    consoleClearButton.disabled = !hasRows;
+  }
+
+  if (consoleCopyButton) {
+    consoleCopyButton.disabled = visibleRows.length === 0;
+  }
+}
+
+function filterConsoleRows() {
+  const query = (consoleSearchInput?.value || "").trim().toLowerCase();
+
+  getConsoleRows().forEach((row) => {
+    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+  });
+
+  updateConsoleEmptyState();
+}
+
+function clearConsoleRows() {
+  if (!consoleLogList) {
+    return;
+  }
+
+  consoleLogList.replaceChildren();
+  updateConsoleEmptyState();
+}
+
+async function copyConsoleRows() {
+  const output = getConsoleRows()
+    .filter((row) => !row.hidden)
+    .map((row) => row.textContent)
+    .join("\n");
+
+  if (!output) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(output);
+    showToast("Copied console output.");
+  } catch {
+    showToast("Console output could not be copied.");
+  }
+}
+
+function syncConsoleScrollMode() {
+  if (!consoleViewer || !consoleAutoscrollInput || !consolePauseInput) {
+    return;
+  }
+
+  if (consolePauseInput.checked) {
+    consoleAutoscrollInput.checked = false;
+    return;
+  }
+
+  if (consoleAutoscrollInput.checked) {
+    consoleViewer.scrollTop = consoleViewer.scrollHeight;
+  }
+}
+
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -589,6 +676,13 @@ copyButtons.forEach((button) => {
 navItems.forEach((item) => {
   item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
+
+consoleSearchInput?.addEventListener("input", filterConsoleRows);
+consoleClearButton?.addEventListener("click", clearConsoleRows);
+consoleCopyButton?.addEventListener("click", copyConsoleRows);
+consoleAutoscrollInput?.addEventListener("change", syncConsoleScrollMode);
+consolePauseInput?.addEventListener("change", syncConsoleScrollMode);
+updateConsoleEmptyState();
 
 registerRefreshTask(updateLocalTime, 30000);
 registerRefreshTask(refreshDashboard, 1000);

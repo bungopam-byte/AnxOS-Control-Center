@@ -476,13 +476,49 @@
             <div>
               <p class="eyebrow">Live Output</p>
               <h1>Console</h1>
-              <p class="lede">Live Minecraft and AMP console output will appear here once command IPC is added.</p>
+              <p class="lede">Terminal-style console workspace ready for future log streaming.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <h3>Console Placeholder</h3>
-            <p>No console stream configured.</p>
-          </article>
+
+          <section class="console-shell" aria-label="Console log viewer">
+            <div class="console-toolbar">
+              <label class="console-search">
+                <span>Search logs</span>
+                <input type="search" placeholder="Filter console output" data-console-search>
+              </label>
+
+              <div class="console-actions">
+                <label class="console-toggle">
+                  <input type="checkbox" checked data-console-autoscroll>
+                  <span>Auto-scroll</span>
+                </label>
+                <label class="console-toggle">
+                  <input type="checkbox" data-console-pause>
+                  <span>Pause scrolling</span>
+                </label>
+                <button class="inline-action" type="button" data-console-clear disabled>Clear</button>
+                <button class="inline-action" type="button" data-console-copy disabled>Copy</button>
+              </div>
+            </div>
+
+            <div class="console-window">
+              <div class="console-titlebar">
+                <span class="console-dot"></span>
+                <span class="console-dot"></span>
+                <span class="console-dot"></span>
+                <strong>Console Output</strong>
+                <span data-console-count>0 lines</span>
+              </div>
+
+              <div class="console-log-viewer" data-console-viewer>
+                <ol class="console-log-list" data-console-log-list></ol>
+                <div class="console-empty-state" data-console-empty>
+                  <strong>No logs yet</strong>
+                  <span>Console output will appear here when streaming is connected.</span>
+                </div>
+              </div>
+            </div>
+          </section>
         </section>
 
         <section class="page" data-page="backups">

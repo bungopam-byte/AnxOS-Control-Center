@@ -462,13 +462,107 @@
             <div>
               <p class="eyebrow">Storage</p>
               <h1>Files</h1>
-              <p class="lede">A local file browser can be added here behind explicit safe filesystem IPC.</p>
+              <p class="lede">File manager workspace ready for explicit safe filesystem IPC.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <h3>Files Placeholder</h3>
-            <p>No file manager integration configured.</p>
-          </article>
+
+          <section class="file-manager-shell" aria-label="File manager">
+            <div class="file-toolbar">
+              <label class="file-search">
+                <span>Search files</span>
+                <input type="search" placeholder="Search current folder" data-file-search disabled>
+              </label>
+
+              <div class="file-actions" aria-label="File actions">
+                <button class="inline-action" type="button" data-file-action="upload" disabled>Upload</button>
+                <button class="inline-action" type="button" data-file-action="download" disabled>Download</button>
+                <button class="inline-action" type="button" data-file-action="rename" disabled>Rename</button>
+                <button class="inline-action" type="button" data-file-action="delete" disabled>Delete</button>
+                <button class="inline-action" type="button" data-file-action="new-folder" disabled>New Folder</button>
+                <button class="inline-action" type="button" data-file-action="refresh" disabled>Refresh</button>
+              </div>
+            </div>
+
+            <div class="file-browser">
+              <aside class="folder-tree-panel" aria-label="Folder tree">
+                <div class="panel-heading">
+                  <h3>Folders</h3>
+                  <span class="status-pill status-pill--planned">Disconnected</span>
+                </div>
+                <div class="folder-tree-empty">
+                  <span class="folder-icon" aria-hidden="true"></span>
+                  <strong>No filesystem connected</strong>
+                  <span>Folder roots will appear here after local file IPC is added.</span>
+                </div>
+              </aside>
+
+              <section class="file-list-panel" aria-label="Files">
+                <nav class="breadcrumb-bar" aria-label="Breadcrumb">
+                  <span class="breadcrumb-root">Files</span>
+                  <span class="breadcrumb-separator">/</span>
+                  <span>Disconnected</span>
+                </nav>
+
+                <div class="file-table-wrap">
+                  <table class="file-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Size</th>
+                        <th scope="col">Modified</th>
+                      </tr>
+                    </thead>
+                    <tbody data-file-list></tbody>
+                  </table>
+
+                  <div class="file-loading-state" data-file-loading hidden>
+                    <span class="file-loader" aria-hidden="true"></span>
+                    <strong>Loading files</strong>
+                    <span>Waiting for the file manager backend.</span>
+                  </div>
+
+                  <div class="file-empty-state" data-file-empty>
+                    <span class="file-icon" aria-hidden="true"></span>
+                    <strong>No files to show</strong>
+                    <span>Connect a local filesystem backend to browse folders and files.</span>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="file-details-panel" aria-label="File details">
+                <div class="panel-heading">
+                  <h3>Details</h3>
+                  <span class="status-pill status-pill--planned">None</span>
+                </div>
+                <div class="file-preview-icon" aria-hidden="true">
+                  <span class="file-icon"></span>
+                </div>
+                <dl class="file-details-list">
+                  <div>
+                    <dt>Selected Item</dt>
+                    <dd data-file-detail="name">None selected</dd>
+                  </div>
+                  <div>
+                    <dt>Type</dt>
+                    <dd data-file-detail="type">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Size</dt>
+                    <dd data-file-detail="size">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Modified</dt>
+                    <dd data-file-detail="modified">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Path</dt>
+                    <dd data-file-detail="path">Unavailable</dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+          </section>
         </section>
 
         <section class="page" data-page="console">

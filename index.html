@@ -436,19 +436,149 @@
         <section class="page" data-page="coolpals">
           <header class="page-header">
             <div>
-              <p class="eyebrow">Future Service</p>
+              <p class="eyebrow">Discord Bot</p>
               <h1>CoolPals</h1>
-              <p class="lede">Reserved for future bot controls without coupling AnxHub to the bot repository.</p>
+              <p class="lede">Discord bot control center ready for future service IPC.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <div class="status-card__top">
-              <span class="service-icon">CP</span>
-              <span class="status-pill status-pill--planned">Placeholder</span>
+
+          <section class="coolpals-shell" aria-label="CoolPals control center">
+            <div class="coolpals-summary-grid">
+              <article class="coolpals-summary-card">
+                <span class="service-icon">BOT</span>
+                <div>
+                  <span>Bot Status</span>
+                  <strong>Disconnected</strong>
+                </div>
+              </article>
+              <article class="coolpals-summary-card">
+                <span class="service-icon">GLD</span>
+                <div>
+                  <span>Guilds</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="coolpals-summary-card">
+                <span class="service-icon">USR</span>
+                <div>
+                  <span>Users</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="coolpals-summary-card">
+                <span class="service-icon">LAT</span>
+                <div>
+                  <span>Latency</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
             </div>
-            <h3>CoolPals Bot</h3>
-            <p>No live bot service integration is configured.</p>
-          </article>
+
+            <div class="coolpals-controls">
+              <div class="coolpals-actions" aria-label="CoolPals service controls">
+                <button class="inline-action" type="button" data-coolpals-action="start" disabled>Start</button>
+                <button class="inline-action" type="button" data-coolpals-action="stop" disabled>Stop</button>
+                <button class="inline-action" type="button" data-coolpals-action="restart" disabled>Restart</button>
+                <button class="inline-action" type="button" data-coolpals-action="reload" disabled>Reload</button>
+                <button class="inline-action" type="button" data-coolpals-action="sync" disabled>Sync Commands</button>
+                <button class="inline-action" type="button" data-coolpals-action="deploy" disabled>Deploy</button>
+                <button class="inline-action" type="button" data-coolpals-action="logs" disabled>View Logs</button>
+              </div>
+              <label class="coolpals-search">
+                <span>Command Search</span>
+                <input type="search" placeholder="Search slash commands" data-coolpals-search disabled>
+              </label>
+            </div>
+
+            <div class="coolpals-workspace">
+              <section class="coolpals-main-panel">
+                <div class="coolpals-panel-header">
+                  <h3>Guilds</h3>
+                  <span class="status-pill status-pill--planned">Disconnected</span>
+                </div>
+                <div class="coolpals-table-wrap">
+                  <table class="coolpals-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Members</th>
+                        <th scope="col">Shards</th>
+                        <th scope="col">Ping</th>
+                        <th scope="col">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody data-coolpals-guilds></tbody>
+                  </table>
+
+                  <div class="coolpals-loading-state" data-coolpals-loading hidden>
+                    <span class="file-loader" aria-hidden="true"></span>
+                    <strong>Loading CoolPals</strong>
+                    <span>Waiting for bot service integration.</span>
+                  </div>
+
+                  <div class="coolpals-empty-state" data-coolpals-empty>
+                    <span class="coolpals-icon" aria-hidden="true"></span>
+                    <strong>CoolPals is disconnected</strong>
+                    <span>Guilds, commands, and activity will appear once the bot backend is connected.</span>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="coolpals-info-panel" aria-label="Bot information">
+                <div class="coolpals-panel-header">
+                  <h3>Bot Information</h3>
+                  <span class="status-pill status-pill--planned">Offline</span>
+                </div>
+                <dl class="coolpals-info-list">
+                  <div>
+                    <dt>Version</dt>
+                    <dd data-coolpals-info="version">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Commit</dt>
+                    <dd data-coolpals-info="commit">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Node Version</dt>
+                    <dd data-coolpals-info="node">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Python Version</dt>
+                    <dd data-coolpals-info="python">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Discord.py Version</dt>
+                    <dd data-coolpals-info="discordpy">Unavailable</dd>
+                  </div>
+                </dl>
+              </aside>
+
+              <section class="coolpals-activity-panel" aria-label="Recent activity">
+                <div class="coolpals-panel-header">
+                  <h3>Recent Activity</h3>
+                  <span class="status-pill status-pill--planned">No Feed</span>
+                </div>
+                <div class="coolpals-feed-empty">
+                  <strong>No recent activity</strong>
+                  <span>Bot events will appear here after service integration.</span>
+                </div>
+              </section>
+
+              <section class="coolpals-log-panel" aria-label="Bot logs">
+                <div class="coolpals-panel-header">
+                  <h3>Log Viewer</h3>
+                  <span data-coolpals-log-count>0 lines</span>
+                </div>
+                <div class="coolpals-log-viewer">
+                  <ol data-coolpals-logs></ol>
+                  <div class="coolpals-log-empty">
+                    <strong>No logs available</strong>
+                    <span>Logs will appear when the bot service is connected.</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
         </section>
 
         <section class="page" data-page="docker">

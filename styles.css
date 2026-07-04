@@ -1199,6 +1199,245 @@ h3 {
   gap: 14px;
 }
 
+.coolpals-shell {
+  display: grid;
+  gap: 14px;
+}
+
+.coolpals-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.coolpals-summary-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 96px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+}
+
+.coolpals-summary-card span:not(.service-icon) {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.coolpals-summary-card strong {
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+.coolpals-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.34fr);
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.74);
+}
+
+.coolpals-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.coolpals-search {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.coolpals-search input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.coolpals-search input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.coolpals-workspace {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.25fr) minmax(240px, 0.75fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.coolpals-main-panel,
+.coolpals-info-panel,
+.coolpals-activity-panel,
+.coolpals-log-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+  overflow: hidden;
+}
+
+.coolpals-main-panel {
+  min-height: min(420px, calc(100vh - 380px));
+}
+
+.coolpals-log-panel {
+  min-height: 300px;
+}
+
+.coolpals-panel-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.coolpals-panel-header h3 {
+  margin-bottom: 0;
+}
+
+.coolpals-panel-header > span:not(.status-pill) {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.coolpals-table-wrap {
+  position: relative;
+  min-height: calc(min(420px, calc(100vh - 380px)) - 50px);
+  overflow: auto;
+}
+
+.coolpals-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+}
+
+.coolpals-table th,
+.coolpals-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.coolpals-table th {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.coolpals-empty-state,
+.coolpals-loading-state,
+.coolpals-feed-empty,
+.coolpals-log-empty {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.coolpals-empty-state,
+.coolpals-loading-state {
+  position: absolute;
+  inset: 0;
+}
+
+.coolpals-empty-state strong,
+.coolpals-loading-state strong,
+.coolpals-feed-empty strong,
+.coolpals-log-empty strong {
+  color: var(--text);
+}
+
+.coolpals-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 34px;
+  margin: 0 auto 4px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
+.coolpals-icon::before,
+.coolpals-icon::after {
+  position: absolute;
+  top: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+}
+
+.coolpals-icon::before {
+  left: 12px;
+}
+
+.coolpals-icon::after {
+  right: 12px;
+}
+
+.coolpals-info-panel {
+  padding-bottom: 14px;
+}
+
+.coolpals-info-list {
+  gap: 14px;
+  padding: 14px;
+}
+
+.coolpals-feed-empty {
+  min-height: 196px;
+}
+
+.coolpals-log-viewer {
+  position: relative;
+  min-height: 250px;
+  overflow: auto;
+  color: #d7deea;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9rem;
+}
+
+.coolpals-log-viewer ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 14px;
+  list-style: none;
+}
+
+.coolpals-log-empty {
+  position: absolute;
+  inset: 0;
+}
+
 .status-card__top {
   display: flex;
   justify-content: space-between;
@@ -1429,6 +1668,15 @@ dd {
   .docker-details-panel {
     min-height: auto;
   }
+
+  .coolpals-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .coolpals-controls,
+  .coolpals-workspace {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 620px) {
@@ -1540,6 +1788,23 @@ dd {
   }
 
   .docker-table-wrap {
+    min-height: 360px;
+  }
+
+  .coolpals-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .coolpals-actions,
+  .coolpals-actions .inline-action {
+    width: 100%;
+  }
+
+  .coolpals-actions .inline-action {
+    justify-content: center;
+  }
+
+  .coolpals-main-panel {
     min-height: 360px;
   }
 }

@@ -3,15 +3,19 @@ const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
-const refreshTasks = [];
+const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 
+document.querySelectorAll("[data-field]").forEach((field) => {
+  const fields = fieldMap.get(field.dataset.field) || [];
+  fields.push(field);
+  fieldMap.set(field.dataset.field, fields);
+});
+
 function setField(name, value) {
-  document.querySelectorAll("[data-field]").forEach((field) => {
-    if (field.dataset.field === name) {
-      field.textContent = value;
-    }
+  (fieldMap.get(name) || []).forEach((field) => {
+    field.textContent = value;
   });
 }
 
@@ -222,7 +226,7 @@ async function refreshDashboard() {
 }
 
 function registerRefreshTask(callback, intervalMs) {
-  refreshTasks.push(window.setInterval(callback, intervalMs));
+  window.setInterval(callback, intervalMs);
   callback();
 }
 

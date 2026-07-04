@@ -89,6 +89,7 @@ function renderSnapshot(snapshot) {
 
   setField("hostname", snapshot.hostname || "Unavailable");
   setField("osVersion", snapshot.osVersion || "Unavailable");
+  setField("platform", snapshot.platform || "Unavailable");
   setField("cpuUsage", formatPercent(snapshot.cpu?.usagePercent));
   setField("cpuModel", snapshot.cpu?.model || "Unavailable");
   setField("cpuCores", Number.isFinite(snapshot.cpu?.cores) ? `${snapshot.cpu.cores}` : "Unavailable");

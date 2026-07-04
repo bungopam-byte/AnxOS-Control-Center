@@ -12,6 +12,15 @@ const consoleCountTarget = document.querySelector("[data-console-count]");
 const consoleViewer = document.querySelector("[data-console-viewer]");
 const consoleLogList = document.querySelector("[data-console-log-list]");
 const consoleEmptyState = document.querySelector("[data-console-empty]");
+const startupScreen = document.querySelector("[data-startup-screen]");
+const appShell = document.querySelector("[data-app-shell]");
+const startupMessage = document.querySelector("[data-startup-message]");
+const startupDetail = document.querySelector("[data-startup-detail]");
+const startupSteps = {
+  app: document.querySelector('[data-startup-step="app"]'),
+  services: document.querySelector('[data-startup-step="services"]'),
+  amp: document.querySelector('[data-startup-step="amp"]'),
+};
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
@@ -19,6 +28,14 @@ let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
 const AMP_REFRESH_INTERVAL_MS = 5000;
+const STARTUP_FALLBACK_MS = 4200;
+const STARTUP_MINIMUM_MS = 900;
+const startupState = {
+  startedAt: Date.now(),
+  systemReady: false,
+  ampReady: false,
+  finished: false,
+};
 
 document.querySelectorAll("[data-field]").forEach((field) => {
   const fields = fieldMap.get(field.dataset.field) || [];
@@ -30,6 +47,111 @@ function setField(name, value) {
   (fieldMap.get(name) || []).forEach((field) => {
     field.textContent = value;
   });
+}
+
+function setStartupStep(name, status) {
+  const step = startupSteps[name];
+
+  if (!step) {
+    return;
+  }
+
+  step.classList.toggle("is-active", status === "active");
+  step.classList.toggle("is-complete", status === "complete");
+}
+
+function updateStartupMessage(message, detail) {
+  if (startupMessage) {
+    startupMessage.textContent = message;
+  }
+
+  if (startupDetail) {
+    startupDetail.textContent = detail;
+  }
+}
+
+function revealAppShell() {
+  if (startupState.finished) {
+    return;
+  }
+
+  startupState.finished = true;
+  setStartupStep("services", "complete");
+  setStartupStep("amp", "complete");
+  updateStartupMessage("AnxHub ready.", "Opening dashboard...");
+
+  if (appShell) {
+    appShell.hidden = false;
+    appShell.classList.add("is-loading");
+    window.requestAnimationFrame(() => {
+      appShell.classList.remove("is-loading");
+    });
+  }
+
+  if (!startupScreen) {
+    return;
+  }
+
+  window.setTimeout(() => {
+    startupScreen.classList.add("is-exiting");
+    window.setTimeout(() => {
+      startupScreen.hidden = true;
+    }, 240);
+  }, 120);
+}
+
+function tryCompleteStartup(force = false) {
+  if (startupState.finished) {
+    return;
+  }
+
+  const ready = startupState.systemReady && startupState.ampReady;
+  const elapsed = Date.now() - startupState.startedAt;
+
+  if (force || (ready && elapsed >= STARTUP_MINIMUM_MS)) {
+    revealAppShell();
+    return;
+  }
+
+  if (ready) {
+    window.setTimeout(() => tryCompleteStartup(), STARTUP_MINIMUM_MS - elapsed);
+  }
+}
+
+function markStartupReady(name) {
+  if (name === "system") {
+    startupState.systemReady = true;
+    setStartupStep("services", "complete");
+    updateStartupMessage("Loading local services...", "Checking AMP...");
+    if (!startupState.ampReady) {
+      setStartupStep("amp", "active");
+    }
+  }
+
+  if (name === "amp") {
+    startupState.ampReady = true;
+    setStartupStep("amp", "complete");
+  }
+
+  tryCompleteStartup();
+}
+
+function startStartupFallback() {
+  setStartupStep("app", "complete");
+  setStartupStep("services", "active");
+  updateStartupMessage("Starting AnxHub...", "Loading local services...");
+
+  window.setTimeout(() => {
+    if (!startupState.systemReady) {
+      startupState.systemReady = true;
+    }
+
+    if (!startupState.ampReady) {
+      startupState.ampReady = true;
+    }
+
+    tryCompleteStartup(true);
+  }, STARTUP_FALLBACK_MS);
 }
 
 function showPage(pageName) {
@@ -547,6 +669,7 @@ async function refreshAmpDashboard() {
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unavailable", "AMP API unavailable.");
   } finally {
+    markStartupReady("amp");
     ampRequestInFlight = false;
   }
 }
@@ -564,6 +687,7 @@ async function refreshDashboard() {
   } catch {
     showToast("System metrics are unavailable.");
   } finally {
+    markStartupReady("system");
     systemRequestInFlight = false;
   }
 }
@@ -683,6 +807,7 @@ consoleCopyButton?.addEventListener("click", copyConsoleRows);
 consoleAutoscrollInput?.addEventListener("change", syncConsoleScrollMode);
 consolePauseInput?.addEventListener("change", syncConsoleScrollMode);
 updateConsoleEmptyState();
+startStartupFallback();
 
 registerRefreshTask(updateLocalTime, 30000);
 registerRefreshTask(refreshDashboard, 1000);

@@ -7,6 +7,10 @@ const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
 const SAFE_ERROR_FIELDS = ["code", "errno", "syscall"];
 const UNSPECIFIED_BIND_ADDRESSES = new Set(["", "0.0.0.0", "::", "[::]"]);
+const AMP_POLL_STATE = {
+  sequence: 0,
+  lastSuccessfulPollAt: null,
+};
 const DETAIL_CONTAINER_KEYS = [
   "ApplicationState",
   "AppState",
@@ -147,6 +151,8 @@ function createDiagnostics(config, stage, details = {}) {
     httpStatus: details.httpStatus ?? null,
     errorCode: details.errorCode ?? null,
     networkErrorCode: details.errorCode ?? null,
+    lastSuccessfulPollAt: AMP_POLL_STATE.lastSuccessfulPollAt,
+    pollSequence: AMP_POLL_STATE.sequence,
     stage,
     loginFailed: stage === "login",
     serverUnreachable: stage === "preflight" || stage === "api_spec" || stage === "client_error",
@@ -196,6 +202,8 @@ function createAmpSnapshot({
   minecraftInstances = [],
   minecraftSelectionMode = "none",
 }) {
+  const instanceCount = Array.isArray(instances) ? instances.length : 0;
+
   return {
     connected,
     configured,
@@ -207,6 +215,12 @@ function createAmpSnapshot({
     selectedInstance,
     minecraftInstances,
     minecraftSelectionMode,
+    poll: {
+      sequence: AMP_POLL_STATE.sequence,
+      lastSuccessfulPollAt: AMP_POLL_STATE.lastSuccessfulPollAt,
+      status,
+      instanceCount,
+    },
     summary: summarizeInstances(instances),
   };
 }
@@ -217,6 +231,18 @@ function logSafeAmpDiagnostics(diagnostics) {
 
 function logSafeAmpInstanceDiagnostics(label, payload) {
   console.log(`[AnxHub][AMP ${label}]`, payload);
+}
+
+function markSuccessfulAmpPoll(status, instances) {
+  AMP_POLL_STATE.sequence += 1;
+  AMP_POLL_STATE.lastSuccessfulPollAt = new Date().toISOString();
+
+  logSafeAmpInstanceDiagnostics("poll state", {
+    lastSuccessfulPollAt: AMP_POLL_STATE.lastSuccessfulPollAt,
+    snapshotStatus: status,
+    instanceCount: Array.isArray(instances) ? instances.length : 0,
+    pollSequence: AMP_POLL_STATE.sequence,
+  });
 }
 
 function safeNumber(value) {
@@ -1090,6 +1116,8 @@ async function getAmpSnapshot() {
         })),
       });
     }
+
+    markSuccessfulAmpPoll("connected", finalInstances);
 
     return createAmpSnapshot({
       connected: true,

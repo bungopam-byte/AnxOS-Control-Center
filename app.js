@@ -7,6 +7,8 @@ const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 let lastAmpRefreshAt = 0;
+let ampRendererReceiveCount = 0;
+let latestAmpSnapshot = null;
 const AMP_REFRESH_INTERVAL_MS = 5000;
 
 document.querySelectorAll("[data-field]").forEach((field) => {
@@ -244,6 +246,17 @@ function formatPlayerSummary(summary) {
   return `Players: ${players}/${maxPlayers} · TPS: ${tps}`;
 }
 
+function logAmpRendererReceive(snapshot) {
+  const instanceCount = Array.isArray(snapshot?.instances) ? snapshot.instances.length : 0;
+
+  console.log("[AnxHub][AMP renderer state]", {
+    rendererReceiveCount: ampRendererReceiveCount,
+    snapshotStatus: snapshot?.status || "missing",
+    instanceCount,
+    lastSuccessfulPollAt: snapshot?.poll?.lastSuccessfulPollAt || snapshot?.diagnostics?.lastSuccessfulPollAt || null,
+  });
+}
+
 function renderAmpSnapshot(snapshot) {
   if (!snapshot?.configured) {
     setField("ampStatus", "Unconfigured");
@@ -309,10 +322,21 @@ async function refreshAmpDashboard() {
   ampRequestInFlight = true;
 
   try {
-    renderAmpSnapshot(await window.anxhub.amp.getSnapshot());
+    const snapshot = await window.anxhub.amp.getSnapshot();
+    latestAmpSnapshot = snapshot;
+    ampRendererReceiveCount += 1;
+    logAmpRendererReceive(latestAmpSnapshot);
+    renderAmpSnapshot(latestAmpSnapshot);
     lastAmpRefreshAt = Date.now();
   } catch {
+    latestAmpSnapshot = null;
     setField("ampConnection", "AMP API unavailable.");
+    setField("ampStatus", "Unavailable");
+    setField("ampInstances", "Unavailable");
+    setField("ampPlayers", "Unavailable");
+    setField("ampUsage", "Unavailable");
+    setField("ampRuntime", "Unavailable");
+    setField("ampVersion", "Unavailable");
     setField("ampDashboardConnection", "AMP API unavailable.");
     setField("ampDashboardStatus", "Unavailable");
     setField("ampDashboardInstances", "Unavailable");

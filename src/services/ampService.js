@@ -235,6 +235,10 @@ function getObjectKeys(value) {
   return Object.keys(value);
 }
 
+function getAvailableMethodNames(target) {
+  return getObjectKeys(target).filter((key) => typeof target[key] === "function").sort();
+}
+
 function unwrapResult(value) {
   if (value && typeof value === "object" && Object.keys(value).length === 1 && value.result !== undefined) {
     return value.result;
@@ -254,7 +258,16 @@ function asArray(value) {
     return [];
   }
 
-  const preferredKeys = ["AvailableInstances", "Instances", "InstanceStatuses", "Statuses", "Result"];
+  const preferredKeys = [
+    "AvailableInstances",
+    "Instances",
+    "InstanceStatuses",
+    "Statuses",
+    "Result",
+    "result",
+    "InstanceState",
+    "RemoteTargets",
+  ];
 
   for (const key of preferredKeys) {
     if (unwrapped[key] !== undefined) {
@@ -363,6 +376,24 @@ function mergeStatusRows(instance, statuses) {
   });
 }
 
+function dedupeInstances(instances) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const instance of instances) {
+    const key = String(getInstanceId(instance) || getInstanceName(instance)).toLowerCase();
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(instance);
+  }
+
+  return deduped;
+}
+
 function normalizeInstance(instance, status, detail = null) {
   const merged = { ...pickFirstObject(instance), ...pickFirstObject(status), ...pickFirstObject(detail) };
   const name = getInstanceName(merged);
@@ -446,25 +477,37 @@ async function getInstanceDetail(api, instance) {
 }
 
 async function getInstances(api) {
-  const instancesResult = await callMethodDetailed(api.ADSModule, "GetInstancesAsync");
-  const statusesResult = await callMethodDetailed(api.ADSModule, "GetInstanceStatusesAsync");
+  const instanceMethodNames = ["GetInstancesAsync", "GetAvailableInstancesAsync", "GetInstanceListAsync", "ListInstancesAsync"];
+  const instanceResults = [];
 
-  if (instancesResult.ok) {
-    logUnexpectedShape("ADSModule.GetInstances", instancesResult.value);
+  for (const methodName of instanceMethodNames) {
+    const result = await callMethodDetailed(api.ADSModule, methodName);
+
+    if (result.ok) {
+      logUnexpectedShape(`ADSModule.${methodName.replace(/Async$/, "")}`, result.value);
+      instanceResults.push({ methodName, value: result.value });
+    } else if (!result.missing && result.errorCode) {
+      logSafeAmpInstanceDiagnostics("discovery method error", {
+        methodName,
+        errorCode: result.errorCode,
+      });
+    }
   }
+
+  const statusesResult = await callMethodDetailed(api.ADSModule, "GetInstanceStatusesAsync");
 
   if (statusesResult.ok) {
     logUnexpectedShape("ADSModule.GetInstanceStatuses", statusesResult.value);
   }
 
-  const rawInstances = instancesResult.ok ? asArray(instancesResult.value) : [];
+  const rawInstances = dedupeInstances(instanceResults.flatMap((result) => asArray(result.value)));
   const statusRows = statusesResult.ok ? asArray(statusesResult.value) : [];
 
   if (rawInstances.length === 0 && statusRows.length === 0) {
     logSafeAmpInstanceDiagnostics("instance discovery", {
       instanceCount: 0,
       instances: [],
-      availableAdsMethods: getObjectKeys(api.ADSModule),
+      availableAdsMethods: getAvailableMethodNames(api.ADSModule),
     });
 
     return [];

@@ -456,13 +456,135 @@
             <div>
               <p class="eyebrow">Containers</p>
               <h1>Docker</h1>
-              <p class="lede">Docker management will appear here once local Docker IPC is added.</p>
+              <p class="lede">Docker management workspace ready for future local daemon IPC.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <h3>Docker Placeholder</h3>
-            <p>No Docker service integration is configured.</p>
-          </article>
+
+          <section class="docker-shell" aria-label="Docker management">
+            <div class="docker-summary-grid">
+              <article class="docker-summary-card">
+                <span class="service-icon">CNT</span>
+                <div>
+                  <span>Total Containers</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">RUN</span>
+                <div>
+                  <span>Running</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">STP</span>
+                <div>
+                  <span>Stopped</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">IMG</span>
+                <div>
+                  <span>Images</span>
+                  <strong>Unavailable</strong>
+                </div>
+              </article>
+            </div>
+
+            <div class="docker-toolbar">
+              <label class="docker-search">
+                <span>Search containers</span>
+                <input type="search" placeholder="Search by name or image" data-docker-search disabled>
+              </label>
+              <label class="docker-filter">
+                <span>Filter</span>
+                <select data-docker-filter disabled>
+                  <option>All</option>
+                  <option>Running</option>
+                  <option>Stopped</option>
+                </select>
+              </label>
+              <div class="docker-actions" aria-label="Docker actions">
+                <button class="inline-action" type="button" data-docker-action="refresh" disabled>Refresh</button>
+                <button class="inline-action" type="button" data-docker-action="start" disabled>Start</button>
+                <button class="inline-action" type="button" data-docker-action="stop" disabled>Stop</button>
+                <button class="inline-action" type="button" data-docker-action="restart" disabled>Restart</button>
+                <button class="inline-action" type="button" data-docker-action="remove" disabled>Remove</button>
+                <button class="inline-action" type="button" data-docker-action="logs" disabled>Logs</button>
+                <button class="inline-action" type="button" data-docker-action="shell" disabled>Shell</button>
+              </div>
+            </div>
+
+            <div class="docker-workspace">
+              <section class="docker-table-panel" aria-label="Docker containers">
+                <div class="docker-table-wrap">
+                  <table class="docker-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Name</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Image</th>
+                        <th scope="col">CPU</th>
+                        <th scope="col">RAM</th>
+                        <th scope="col">Ports</th>
+                        <th scope="col">Uptime</th>
+                      </tr>
+                    </thead>
+                    <tbody data-docker-list></tbody>
+                  </table>
+
+                  <div class="docker-loading-state" data-docker-loading hidden>
+                    <span class="file-loader" aria-hidden="true"></span>
+                    <strong>Loading containers</strong>
+                    <span>Waiting for Docker IPC integration.</span>
+                  </div>
+
+                  <div class="docker-empty-state" data-docker-empty>
+                    <span class="docker-icon" aria-hidden="true"></span>
+                    <strong>No Docker data available</strong>
+                    <span>Container information will appear once the local Docker backend is connected.</span>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="docker-details-panel" aria-label="Container details">
+                <div class="panel-heading">
+                  <h3>Container Details</h3>
+                  <span class="status-pill status-pill--planned">None</span>
+                </div>
+                <div class="docker-detail-icon" aria-hidden="true">
+                  <span class="docker-icon"></span>
+                </div>
+                <dl class="docker-details-list">
+                  <div>
+                    <dt>Name</dt>
+                    <dd data-docker-detail="name">None selected</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd data-docker-detail="status">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Image</dt>
+                    <dd data-docker-detail="image">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Resources</dt>
+                    <dd data-docker-detail="resources">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Ports</dt>
+                    <dd data-docker-detail="ports">Unavailable</dd>
+                  </div>
+                  <div>
+                    <dt>Uptime</dt>
+                    <dd data-docker-detail="uptime">Unavailable</dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+          </section>
         </section>
 
         <section class="page" data-page="ssh">

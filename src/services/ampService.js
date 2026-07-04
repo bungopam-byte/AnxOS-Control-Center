@@ -226,24 +226,9 @@ function createAmpSnapshot({
   };
 }
 
-function logSafeAmpDiagnostics(diagnostics) {
-  console.log("[AnxHub][AMP diagnostics]", diagnostics);
-}
-
-function logSafeAmpInstanceDiagnostics(label, payload) {
-  console.log(`[AnxHub][AMP ${label}]`, payload);
-}
-
 function markSuccessfulAmpPoll(status, instances) {
   AMP_POLL_STATE.sequence += 1;
   AMP_POLL_STATE.lastSuccessfulPollAt = new Date().toISOString();
-
-  logSafeAmpInstanceDiagnostics("poll state", {
-    lastSuccessfulPollAt: AMP_POLL_STATE.lastSuccessfulPollAt,
-    snapshotStatus: status,
-    instanceCount: Array.isArray(instances) ? instances.length : 0,
-    pollSequence: AMP_POLL_STATE.sequence,
-  });
 }
 
 function safeNumber(value) {
@@ -403,24 +388,12 @@ async function authenticateWithToken(api, username, token) {
   return withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
 }
 
-function getObjectKeys(value) {
-  if (!value || typeof value !== "object") {
-    return [];
-  }
-
-  return Object.keys(value);
-}
-
 function hasAnyKey(value, keys) {
   if (!value || typeof value !== "object") {
     return false;
   }
 
   return keys.some((key) => value[key] !== undefined && value[key] !== null);
-}
-
-function getAvailableMethodNames(target) {
-  return getObjectKeys(target).filter((key) => typeof target[key] === "function").sort();
 }
 
 function unwrapResult(value) {
@@ -711,30 +684,6 @@ function normalizeInstance(instance, status, detail = null) {
   };
 }
 
-function logInstanceDiscovery(instances) {
-  logSafeAmpInstanceDiagnostics("instance discovery", {
-    instanceCount: instances.length,
-    instances: instances.map((instance) => ({
-      name: instance.name,
-      moduleType: instance.moduleType,
-      instanceId: instance.id,
-      state: instance.state,
-    })),
-  });
-}
-
-function logUnexpectedShape(label, value) {
-  const unwrapped = unwrapResult(value);
-
-  logSafeAmpInstanceDiagnostics("shape", {
-    source: label,
-    keys: getObjectKeys(unwrapped),
-    nestedKeys: asArray(unwrapped)
-      .slice(0, 3)
-      .map((item) => getObjectKeys(item)),
-  });
-}
-
 async function getInstanceDetail(api, instance) {
   const instanceId = getInstanceId(instance);
 
@@ -757,12 +706,6 @@ async function getInstanceDetail(api, instance) {
 
     if (result.ok && result.value) {
       Object.assign(details, pickFirstObject(unwrapResult(result.value)));
-    } else if (!result.missing && result.errorCode) {
-      logSafeAmpInstanceDiagnostics("instance detail error", {
-        methodName,
-        instanceId,
-        errorCode: result.errorCode,
-      });
     }
   }
 
@@ -777,20 +720,6 @@ async function enrichSelectedInstance(api, selectedInstance) {
   const detail = await getInstanceDetail(api, selectedInstance);
   const enriched = normalizeInstance(selectedInstance, null, detail);
 
-  logSafeAmpInstanceDiagnostics("selected detail", {
-    name: enriched.name,
-    moduleType: enriched.moduleType,
-    instanceId: enriched.id,
-    state: enriched.state,
-    hasPlayers: Number.isFinite(enriched.playerCount),
-    hasTps: Number.isFinite(enriched.tps),
-    hasCpu: Number.isFinite(enriched.cpuUsage),
-    hasRam: Number.isFinite(enriched.ramUsage),
-    hasPorts: enriched.ports.length > 0,
-    hasUptime: Number.isFinite(enriched.uptime),
-    hasVersion: Boolean(enriched.version),
-  });
-
   return enriched;
 }
 
@@ -803,14 +732,6 @@ async function getAdsInstance(api, instanceId) {
 
   if (result.ok && result.value) {
     return pickFirstObject(unwrapResult(result.value));
-  }
-
-  if (!result.missing && result.errorCode) {
-    logSafeAmpInstanceDiagnostics("discovery method error", {
-      methodName: "GetInstanceAsync",
-      instanceId,
-      errorCode: result.errorCode,
-    });
   }
 
   return null;
@@ -827,11 +748,6 @@ async function authenticateManagedInstance(adsApi, config, selectedInstance) {
   const managedUrl = adsInstance ? buildManagedInstanceUrl(config, adsInstance) : null;
 
   if (!adsInstance || !managedUrl) {
-    logSafeAmpInstanceDiagnostics("managed instance auth", {
-      instanceId,
-      authenticated: false,
-      reason: "missing_management_endpoint",
-    });
     return null;
   }
 
@@ -839,24 +755,12 @@ async function authenticateManagedInstance(adsApi, config, selectedInstance) {
   const handoffToken = handoffResult.ok ? extractActionResultValue(handoffResult.value) : null;
 
   if (!handoffToken) {
-    logSafeAmpInstanceDiagnostics("managed instance auth", {
-      instanceId,
-      authenticated: false,
-      reason: handoffResult.missing ? "missing_manage_method" : "missing_handoff_token",
-      errorCode: handoffResult.errorCode,
-    });
     return null;
   }
 
   const managedApi = new AMPAPI(managedUrl);
   const initialized = await withTimeout(managedApi.initAsync(), AMP_TIMEOUT_MS);
   const authenticated = initialized ? await authenticateWithToken(managedApi, config.username, handoffToken) : false;
-
-  logSafeAmpInstanceDiagnostics("managed instance auth", {
-    instanceId,
-    initialized,
-    authenticated,
-  });
 
   return authenticated ? managedApi : null;
 }
@@ -880,10 +784,6 @@ async function getManagedInstanceMetrics(managedApi) {
   const statusResult = await callMethodDetailed(managedApi.Core, "GetStatusAsync");
 
   if (!statusResult.ok || !statusResult.value) {
-    logSafeAmpInstanceDiagnostics("managed instance metrics", {
-      available: false,
-      errorCode: statusResult.errorCode,
-    });
     return null;
   }
 
@@ -900,17 +800,6 @@ async function getManagedInstanceMetrics(managedApi) {
     uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
     version,
   };
-
-  logSafeAmpInstanceDiagnostics("managed instance metrics", {
-    available: true,
-    hasPlayers: Number.isFinite(normalized.playerCount),
-    hasMaxPlayers: Number.isFinite(normalized.maxPlayers),
-    hasTps: Number.isFinite(normalized.tps),
-    hasCpu: Number.isFinite(normalized.cpuUsage),
-    hasRam: Number.isFinite(normalized.ramUsage),
-    hasUptime: Number.isFinite(normalized.uptime),
-    hasVersion: Boolean(normalized.version),
-  });
 
   return normalized;
 }
@@ -931,12 +820,7 @@ async function getSelectedInstanceChildMetrics(api, config, selectedInstance) {
       managedInstanceApi,
       managedMetrics,
     };
-  } catch (error) {
-    logSafeAmpInstanceDiagnostics("managed instance metrics", {
-      available: false,
-      errorCode: getSafeErrorCode(error),
-    });
-
+  } catch {
     return {
       managedInstanceApi: null,
       managedMetrics: null,
@@ -952,21 +836,11 @@ async function getInstances(api) {
     const result = await callMethodDetailed(api.ADSModule, methodName);
 
     if (result.ok) {
-      logUnexpectedShape(`ADSModule.${methodName.replace(/Async$/, "")}`, result.value);
       instanceResults.push({ methodName, value: result.value });
-    } else if (!result.missing && result.errorCode) {
-      logSafeAmpInstanceDiagnostics("discovery method error", {
-        methodName,
-        errorCode: result.errorCode,
-      });
     }
   }
 
   const statusesResult = await callMethodDetailed(api.ADSModule, "GetInstanceStatusesAsync");
-
-  if (statusesResult.ok) {
-    logUnexpectedShape("ADSModule.GetInstanceStatuses", statusesResult.value);
-  }
 
   const rawInstances = dedupeInstances(instanceResults.flatMap((result) => asArray(result.value)));
   const statusRows = statusesResult.ok ? asArray(statusesResult.value) : [];
@@ -982,12 +856,6 @@ async function getInstances(api) {
   const moduleInfoRows = moduleInfoResult.ok ? asArray(moduleInfoResult.value) : [];
 
   if (rawInstances.length === 0 && statusInstances.length === 0 && moduleInfoRows.length === 0) {
-    logSafeAmpInstanceDiagnostics("instance discovery", {
-      instanceCount: 0,
-      instances: [],
-      availableAdsMethods: getAvailableMethodNames(api.ADSModule),
-    });
-
     return [];
   }
 
@@ -999,7 +867,6 @@ async function getInstances(api) {
     normalized.push(normalizeInstance(instance, status));
   }
 
-  logInstanceDiscovery(normalized);
   return normalized;
 }
 
@@ -1067,7 +934,6 @@ async function getAmpSnapshot() {
 
     if (!preflight.ok) {
       const diagnostics = createDiagnostics(config, "preflight", preflight);
-      logSafeAmpDiagnostics(diagnostics);
 
       return createAmpSnapshot({
         connected: false,
@@ -1083,7 +949,6 @@ async function getAmpSnapshot() {
 
     if (!initialized) {
       const diagnostics = createDiagnostics(config, "api_spec");
-      logSafeAmpDiagnostics(diagnostics);
 
       return createAmpSnapshot({
         connected: false,
@@ -1098,7 +963,6 @@ async function getAmpSnapshot() {
 
     if (!authenticated) {
       const diagnostics = createDiagnostics(config, "login");
-      logSafeAmpDiagnostics(diagnostics);
 
       return createAmpSnapshot({
         connected: false,
@@ -1116,26 +980,6 @@ async function getAmpSnapshot() {
       ? instances.map((instance) => (String(instance.id) === String(adsSelectedInstance.id) ? adsSelectedInstance : instance))
       : instances;
     const adsMinecraftInstances = adsInstances.filter((instance) => instance.isMinecraft);
-
-    if (adsSelectedInstance) {
-      logSafeAmpInstanceDiagnostics("selected instance", {
-        name: adsSelectedInstance.name,
-        moduleType: adsSelectedInstance.moduleType,
-        instanceId: adsSelectedInstance.id,
-        state: adsSelectedInstance.state,
-      });
-    } else if (selection.minecraftInstances.length > 1) {
-      logSafeAmpInstanceDiagnostics("minecraft selection", {
-        selected: null,
-        reason: "multiple_minecraft_instances",
-        minecraftInstances: selection.minecraftInstances.map((instance) => ({
-          name: instance.name,
-          moduleType: instance.moduleType,
-          instanceId: instance.id,
-          state: instance.state,
-        })),
-      });
-    }
 
     markSuccessfulAmpPoll("connected", adsInstances);
 
@@ -1182,7 +1026,6 @@ async function getAmpSnapshot() {
     const diagnostics = createDiagnostics(config, "client_error", {
       errorCode: getSafeErrorCode(error),
     });
-    logSafeAmpDiagnostics(diagnostics);
 
     return createAmpSnapshot({
       connected: false,

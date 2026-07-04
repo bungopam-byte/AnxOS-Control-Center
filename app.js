@@ -435,21 +435,6 @@ function setMinecraftPageUnavailable(status, selection) {
   });
 }
 
-function logAmpRendererReceive(snapshot) {
-  console.log("[AnxHub][AMP renderer state]", {
-    amp: {
-      status: snapshot?.status || "missing",
-      instanceCount: Number.isFinite(snapshot?.instanceCount)
-        ? snapshot.instanceCount
-        : Array.isArray(snapshot?.instances)
-          ? snapshot.instances.length
-          : 0,
-      selectedInstance: snapshot?.selectedInstance ? { name: snapshot.selectedInstance.name || null } : null,
-      diagnostics: snapshot?.diagnostics ? { errorCode: snapshot.diagnostics.errorCode || null } : null,
-    },
-  });
-}
-
 function renderAmpSnapshot(snapshot) {
   if (!snapshot?.configured) {
     setField("ampStatus", "Unconfigured");
@@ -532,7 +517,6 @@ async function refreshAmpDashboard() {
     const snapshot = normalizeAmpSnapshotForRenderer(await window.anxhub.amp.getSnapshot());
     latestAmpSnapshot = snapshot;
     ampRendererReceiveCount += 1;
-    logAmpRendererReceive(latestAmpSnapshot);
     renderAmpSnapshot(latestAmpSnapshot);
     lastAmpRefreshAt = Date.now();
   } catch {

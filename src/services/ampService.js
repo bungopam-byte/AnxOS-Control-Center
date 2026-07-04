@@ -7,6 +7,21 @@ dotenv.config({ path: path.join(__dirname, "..", "..", ".env"), quiet: true });
 const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
 const SAFE_ERROR_FIELDS = ["code", "errno", "syscall"];
+const DETAIL_CONTAINER_KEYS = [
+  "ApplicationState",
+  "AppState",
+  "Controller",
+  "Endpoint",
+  "Endpoints",
+  "Metrics",
+  "Network",
+  "Performance",
+  "Ports",
+  "Resources",
+  "ServerState",
+  "Status",
+  "State",
+];
 
 function getConfig() {
   const config = {
@@ -347,6 +362,26 @@ function pickFirstObject(...values) {
   return {};
 }
 
+function flattenKnownContainers(value) {
+  const flat = {};
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return flat;
+  }
+
+  Object.assign(flat, value);
+
+  for (const key of DETAIL_CONTAINER_KEYS) {
+    const nested = value[key];
+
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      Object.assign(flat, nested);
+    }
+  }
+
+  return flat;
+}
+
 function getInstanceId(instance) {
   return findValue(instance, ["InstanceID", "InstanceId", "InstanceIdString", "Id", "ID", "Guid", "mapKey"]);
 }
@@ -360,7 +395,16 @@ function getInstanceName(instance) {
 }
 
 function getVersion(instance) {
-  return findValue(instance, ["Version", "AppVersion", "ApplicationVersion", "ServerVersion", "MinecraftVersion", "ProductVersion"]);
+  return findValue(instance, [
+    "Version",
+    "AppVersion",
+    "ApplicationVersion",
+    "ServerVersion",
+    "MinecraftVersion",
+    "ProductVersion",
+    "ReleaseStream",
+    "Build",
+  ]);
 }
 
 function isMinecraftInstance(instance) {
@@ -456,14 +500,37 @@ function dedupeInstances(instances) {
 }
 
 function normalizeInstance(instance, status, detail = null) {
-  const merged = { ...pickFirstObject(instance), ...pickFirstObject(status), ...pickFirstObject(detail) };
+  const merged = {
+    ...flattenKnownContainers(pickFirstObject(instance)),
+    ...flattenKnownContainers(pickFirstObject(status)),
+    ...flattenKnownContainers(pickFirstObject(detail)),
+  };
   const name = getInstanceName(merged);
   const state =
-    findValue(merged, ["State", "Status", "ApplicationState", "DaemonState", "Running", "AppState", "InstanceState"]) || "Unknown";
-  const players = findValue(merged, ["Players", "PlayerCount", "CurrentPlayers", "ActiveUsers", "UsersOnline", "OnlinePlayers"]);
-  const maxPlayers = findValue(merged, ["MaxPlayers", "MaximumPlayers", "PlayerLimit"]);
-  const memory = findValue(merged, ["MemoryUsageMB", "MemoryMB", "MemoryUsage", "RAMUsage", "UsedMemory", "Memory"]);
-  const ports = normalizePorts(findValue(merged, ["Ports", "Port", "PortMappings", "ApplicationEndpoints", "NetworkPorts"]));
+    findValue(merged, ["State", "Status", "ApplicationState", "DaemonState", "Running", "AppState", "InstanceState", "StateText"]) ||
+    "Unknown";
+  const players = findValue(merged, [
+    "Players",
+    "PlayerCount",
+    "CurrentPlayers",
+    "ActiveUsers",
+    "UsersOnline",
+    "OnlinePlayers",
+    "PlayersOnline",
+  ]);
+  const maxPlayers = findValue(merged, ["MaxPlayers", "MaximumPlayers", "PlayerLimit", "PlayerLimitMax", "MaxUsers"]);
+  const memory = findValue(merged, [
+    "MemoryUsageMB",
+    "MemoryMB",
+    "MemoryUsage",
+    "RAMUsage",
+    "UsedMemory",
+    "Memory",
+    "MemUsageMB",
+  ]);
+  const ports = normalizePorts(
+    findValue(merged, ["Ports", "Port", "PortMappings", "ApplicationEndpoints", "NetworkPorts", "Endpoint", "Endpoints"]),
+  );
 
   return {
     id: getInstanceId(merged) || name,
@@ -473,11 +540,11 @@ function normalizeInstance(instance, status, detail = null) {
     state,
     playerCount: safeNumber(players),
     maxPlayers: safeNumber(maxPlayers),
-    tps: safeNumber(findValue(merged, ["TPS", "TicksPerSecond", "ServerTPS"])),
-    cpuUsage: normalizePercent(findValue(merged, ["CPUUsage", "CpuUsage", "CPU", "ProcessorUsage", "PercentCPU"])),
+    tps: safeNumber(findValue(merged, ["TPS", "TicksPerSecond", "ServerTPS", "CurrentTPS"])),
+    cpuUsage: normalizePercent(findValue(merged, ["CPUUsage", "CpuUsage", "CPU", "ProcessorUsage", "PercentCPU", "CPUPercent"])),
     ramUsage: normalizeMemoryUsage(memory),
     ports,
-    uptime: normalizeUptime(findValue(merged, ["Uptime", "UptimeSeconds", "RunningSeconds", "StartedFor"])),
+    uptime: normalizeUptime(findValue(merged, ["Uptime", "UptimeSeconds", "RunningSeconds", "StartedFor", "UptimeSec"])),
     version: getVersion(merged),
   };
 }

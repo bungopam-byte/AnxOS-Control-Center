@@ -10,6 +10,9 @@ const desktopApi = {
   amp: {
     getSnapshot: () => ipcRenderer.invoke("amp:getSnapshot"),
   },
+  playit: {
+    getSnapshot: () => ipcRenderer.invoke("playit:getSnapshot"),
+  },
 };
 
 contextBridge.exposeInMainWorld("anxhub", desktopApi);

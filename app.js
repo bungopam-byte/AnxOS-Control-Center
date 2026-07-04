@@ -19,6 +19,8 @@ const appNameTargets = document.querySelectorAll("[data-app-name]");
 const sidebarTitleTarget = document.querySelector("[data-sidebar-title]");
 const startupMessage = document.querySelector("[data-startup-message]");
 const startupDetail = document.querySelector("[data-startup-detail]");
+const playitStatusCard = document.querySelector("[data-playit-status-card]");
+const playitStatusPill = document.querySelector("[data-playit-status-pill]");
 const startupSteps = {
   app: document.querySelector('[data-startup-step="app"]'),
   services: document.querySelector('[data-startup-step="services"]'),
@@ -39,6 +41,7 @@ const aboutFields = document.querySelectorAll("[data-about-field]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
+let playitRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
@@ -89,6 +92,7 @@ function getDesktopApiState() {
     hasBridge: Boolean(api),
     hasSystem: typeof api?.system?.getSnapshot === "function",
     hasAmp: typeof api?.amp?.getSnapshot === "function",
+    hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasApp: typeof api?.app?.getRuntimeInfo === "function",
   };
 }
@@ -530,6 +534,10 @@ function showPage(pageName) {
   ) {
     refreshAmpDashboard();
   }
+
+  if (pageName === "playit") {
+    refreshPlayitStatus();
+  }
 }
 
 function getActivePageName() {
@@ -579,6 +587,26 @@ function formatDuration(totalSeconds) {
   }
 
   return `${minutes}m`;
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "Unavailable";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unavailable";
+  }
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function updateLocalTime() {
@@ -648,6 +676,73 @@ function renderSnapshot(snapshot) {
     "temperature",
     Number.isFinite(snapshot.cpu?.temperatureCelsius) ? `${snapshot.cpu.temperatureCelsius.toFixed(1)}°C` : "Unavailable",
   );
+}
+
+function getConfiguredPlayitAddress() {
+  const value = readStoredSettings()["playit.address"];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function setPlayitVisualState(state) {
+  const states = ["connected", "running", "stopped", "missing"];
+
+  states.forEach((name) => {
+    playitStatusCard?.classList.toggle(`is-${name}`, state === name);
+    playitStatusPill?.classList.toggle(`is-${name}`, state === name);
+  });
+}
+
+function renderPlayitSnapshot(snapshot) {
+  const configuredAddress = getConfiguredPlayitAddress();
+  const tunnelAddress = snapshot?.tunnelAddress || snapshot?.tunnelDomain || configuredAddress || "Unavailable";
+  const localIp = snapshot?.localIp || "Unavailable";
+  const localPort = snapshot?.localPort || "Unavailable";
+  const protocol = snapshot?.protocol || "Unavailable";
+  const tunnelId = snapshot?.tunnelId || "Unavailable";
+  const installed = snapshot?.installed === true;
+  const running = snapshot?.running === true;
+  const connected = snapshot?.connected === true;
+  const connectedLabel = connected ? "Connected" : running ? "Not connected" : "Disconnected";
+  const state = !installed ? "missing" : connected ? "connected" : running ? "running" : "stopped";
+
+  setPlayitVisualState(state);
+  setField("playitInstalled", installed ? "Installed" : "Missing");
+  setField("playitRunning", running ? "Running" : "Stopped");
+  setField("playitConnected", connectedLabel);
+  setField("playitTunnelAddress", tunnelAddress);
+  setField("playitLocalIp", localIp);
+  setField("playitLocalPort", localPort);
+  setField("playitProtocol", protocol);
+  setField("playitTunnelId", tunnelId);
+  setField("playitLastSuccessfulRefresh", formatDateTime(snapshot?.lastSuccessfulRefreshAt));
+  setField("playitLatency", "Unavailable");
+  setField("playitTraffic", "Unavailable");
+  setField(
+    "playitSummary",
+    connected
+      ? "Playit tunnel is running and forwarding traffic."
+      : running
+        ? "Playit is running, but no connected tunnel was detected."
+        : installed
+          ? "Playit is installed, but the tunnel process is stopped."
+          : "Playit is not installed.",
+  );
+}
+
+function renderPlayitUnavailable(message = "Playit status unavailable.") {
+  setPlayitVisualState("missing");
+  setField("playitInstalled", "Unavailable");
+  setField("playitRunning", "Unavailable");
+  setField("playitConnected", "Unavailable");
+  setField("playitTunnelAddress", getConfiguredPlayitAddress() || "Unavailable");
+  setField("playitLocalIp", "Unavailable");
+  setField("playitLocalPort", "Unavailable");
+  setField("playitProtocol", "Unavailable");
+  setField("playitTunnelId", "Unavailable");
+  setField("playitLastSuccessfulRefresh", "Unavailable");
+  setField("playitLatency", "Unavailable");
+  setField("playitTraffic", "Unavailable");
+  setField("playitSummary", message);
 }
 
 function formatAmpUsage(summary) {
@@ -1094,6 +1189,29 @@ async function refreshDashboard() {
   }
 }
 
+async function refreshPlayitStatus() {
+  if (playitRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasPlayit) {
+    renderPlayitUnavailable(desktopApiState.hasBridge ? "Playit IPC bridge unavailable." : "Desktop preload bridge unavailable.");
+    return;
+  }
+
+  playitRequestInFlight = true;
+
+  try {
+    renderPlayitSnapshot(await desktopApiState.api.playit.getSnapshot());
+  } catch (error) {
+    renderPlayitUnavailable(`Playit status request failed: ${error?.message || "Unknown error"}`);
+  } finally {
+    playitRequestInFlight = false;
+  }
+}
+
 function registerRefreshTask(callback, intervalMs) {
   window.setInterval(callback, intervalMs);
   callback();
@@ -1286,6 +1404,7 @@ function saveSettings() {
 
   writeStoredSettings(settings);
   applySettings(settings);
+  refreshPlayitStatus();
 }
 
 function resetSettings() {
@@ -1361,3 +1480,4 @@ startStartupFallback();
 registerRefreshTask(updateLocalTime, 30000);
 registerRefreshTask(refreshDashboard, 1000);
 registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);
+registerRefreshTask(refreshPlayitStatus, 5000);

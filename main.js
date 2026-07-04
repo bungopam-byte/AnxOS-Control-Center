@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const { execFileSync } = require("child_process");
 const path = require("path");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
+const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxhub-icon.svg");
@@ -67,6 +68,7 @@ app.whenReady().then(() => {
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerSystemIpc();
   registerAmpIpc();
+  registerPlayitIpc();
   createWindow();
 
   app.on("activate", () => {

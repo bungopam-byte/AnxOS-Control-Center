@@ -415,24 +415,65 @@
               <p class="lede">Local tunnel status and routing details for configured playit services.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide">
-            <div class="status-card__top">
-              <span class="service-icon">PG</span>
-              <span class="status-pill status-pill--planned">Pending</span>
+          <section class="playit-shell" aria-label="Playit tunnel status">
+            <article class="status-card status-card--wide playit-status-card" data-playit-status-card>
+              <div class="status-card__top">
+                <span class="service-icon">PG</span>
+                <span class="status-pill status-pill--planned" data-playit-status-pill data-field="playitConnected">Checking...</span>
+              </div>
+              <h3>Tunnel Status</h3>
+              <p data-field="playitSummary">Checking local playit status...</p>
+              <dl>
+                <div>
+                  <dt>Installed</dt>
+                  <dd data-field="playitInstalled">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Running</dt>
+                  <dd data-field="playitRunning">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Tunnel domain</dt>
+                  <dd data-field="playitTunnelAddress">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Local IP</dt>
+                  <dd data-field="playitLocalIp">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Local Port</dt>
+                  <dd data-field="playitLocalPort">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Protocol</dt>
+                  <dd data-field="playitProtocol">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Tunnel ID</dt>
+                  <dd data-field="playitTunnelId">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Last Check</dt>
+                  <dd data-field="playitLastSuccessfulRefresh">Checking...</dd>
+                </div>
+              </dl>
+            </article>
+
+            <div class="playit-summary-grid">
+              <article class="playit-summary-card">
+                <span>STATUS</span>
+                <strong data-field="playitConnected">Checking...</strong>
+              </article>
+              <article class="playit-summary-card">
+                <span>LATENCY</span>
+                <strong data-field="playitLatency">Unavailable</strong>
+              </article>
+              <article class="playit-summary-card">
+                <span>TRAFFIC</span>
+                <strong data-field="playitTraffic">Unavailable</strong>
+              </article>
             </div>
-            <h3>Tunnel Info</h3>
-            <p>No playit service is connected.</p>
-            <dl>
-              <div>
-                <dt>Known Address</dt>
-                <dd>coolpals.playit.fan</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>Unavailable</dd>
-              </div>
-            </dl>
-          </article>
+          </section>
         </section>
 
         <section class="page" data-page="coolpals">

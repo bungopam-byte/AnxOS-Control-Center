@@ -98,8 +98,14 @@ function renderSnapshot(snapshot) {
 
   if (snapshot.disk) {
     setField("diskUsage", `${formatPercent(snapshot.disk.percent)} (${formatBytes(snapshot.disk.used)} / ${formatBytes(snapshot.disk.total)})`);
+    setField("diskFree", formatBytes(snapshot.disk.free));
+    setField("diskMount", snapshot.disk.mount || "Unavailable");
+    setField("diskTotal", formatBytes(snapshot.disk.total));
   } else {
     setField("diskUsage", "Unavailable");
+    setField("diskFree", "Unavailable");
+    setField("diskMount", "Unavailable");
+    setField("diskTotal", "Unavailable");
   }
 
   if (snapshot.network) {

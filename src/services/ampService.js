@@ -177,6 +177,10 @@ function logSafeAmpInstanceDiagnostics(label, payload) {
 }
 
 function safeNumber(value) {
+  if (typeof value === "boolean" || value === "" || Array.isArray(value)) {
+    return null;
+  }
+
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -707,7 +711,7 @@ function summarizeInstances(instances) {
   const { selected } = selectMinecraftInstance(instances);
   const primary = selected || instances[0];
   const scopedInstances = selected ? [selected] : instances;
-  const playerCount = scopedInstances.reduce((total, instance) => total + (instance.playerCount || 0), 0);
+  const playerValues = scopedInstances.map((instance) => instance.playerCount).filter(Number.isFinite);
   const cpuValues = scopedInstances.map((instance) => instance.cpuUsage).filter(Number.isFinite);
   const ramValues = scopedInstances.map((instance) => instance.ramUsage).filter(Number.isFinite);
   const tpsValues = scopedInstances.map((instance) => instance.tps).filter(Number.isFinite);
@@ -718,7 +722,7 @@ function summarizeInstances(instances) {
     minecraftInstanceCount: instances.filter((instance) => instance.isMinecraft).length,
     minecraftSelectionMode: selectMinecraftInstance(instances).mode,
     state: primary.state,
-    playerCount,
+    playerCount: playerValues.length > 0 ? playerValues.reduce((total, value) => total + value, 0) : null,
     maxPlayers: primary.maxPlayers,
     tps: tpsValues.length > 0 ? tpsValues[0] : null,
     cpuUsage: cpuValues.length > 0 ? cpuValues.reduce((sum, value) => sum + value, 0) : null,

@@ -295,12 +295,14 @@ function formatAmpInstance(instance) {
 
 function formatAmpInstances(snapshot, selectionText) {
   const instances = Array.isArray(snapshot?.instances) ? snapshot.instances : [];
+  const instanceCount = Number.isFinite(snapshot?.instanceCount) ? snapshot.instanceCount : instances.length;
 
-  if (instances.length === 0) {
+  if (instanceCount === 0) {
     return `0 instances · ${selectionText} · State: ${snapshot?.summary?.state || "Unavailable"}`;
   }
 
-  return `${instances.length} instance(s) · ${selectionText} · ${instances.map(formatAmpInstance).join(" · ")}`;
+  const instanceDetails = instances.length > 0 ? ` · ${instances.map(formatAmpInstance).join(" · ")}` : "";
+  return `${instanceCount} instance(s) · ${selectionText}${instanceDetails}`;
 }
 
 function formatMinecraftSelection(snapshot) {

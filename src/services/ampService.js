@@ -674,8 +674,7 @@ async function getInstances(api) {
 
   for (const instance of sourceRows) {
     const status = mergeStatusRows(instance, statusRows);
-    const detail = await getInstanceDetail(api, instance);
-    normalized.push(normalizeInstance(instance, status, detail));
+    normalized.push(normalizeInstance(instance, status));
   }
 
   logInstanceDiscovery(normalized);

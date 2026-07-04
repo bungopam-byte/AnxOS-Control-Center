@@ -7,6 +7,7 @@ const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 let lastAmpRefreshAt = 0;
+const AMP_REFRESH_INTERVAL_MS = 5000;
 
 document.querySelectorAll("[data-field]").forEach((field) => {
   const fields = fieldMap.get(field.dataset.field) || [];
@@ -29,7 +30,10 @@ function showPage(pageName) {
     page.classList.toggle("is-active", page.dataset.page === pageName);
   });
 
-  if ((pageName === "amp" || pageName === "minecraft") && Date.now() - lastAmpRefreshAt > 1000) {
+  if (
+    (pageName === "dashboard" || pageName === "amp" || pageName === "minecraft") &&
+    Date.now() - lastAmpRefreshAt > AMP_REFRESH_INTERVAL_MS
+  ) {
     refreshAmpDashboard();
   }
 }
@@ -293,7 +297,7 @@ async function refreshAmpDashboard() {
   }
 
   const activePage = getActivePageName();
-  if (lastAmpRefreshAt > 0 && activePage !== "amp" && activePage !== "minecraft") {
+  if (lastAmpRefreshAt > 0 && activePage !== "dashboard" && activePage !== "amp" && activePage !== "minecraft") {
     return;
   }
 
@@ -367,4 +371,4 @@ navItems.forEach((item) => {
 
 registerRefreshTask(updateLocalTime, 30000);
 registerRefreshTask(refreshDashboard, 1000);
-registerRefreshTask(refreshAmpDashboard, 5000);
+registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);

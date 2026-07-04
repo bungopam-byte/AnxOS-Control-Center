@@ -8,128 +8,314 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <main class="shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Private Debian Server Hub</p>
-          <h1>AnxHub</h1>
-          <p class="lede">A lightweight local dashboard for Minecraft, AMP, playit.gg, SSH, and future CoolPals services.</p>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="AnxHub navigation">
+        <div class="brand">
+          <span class="brand-mark">A</span>
+          <div>
+            <strong>AnxHub</strong>
+            <span>Local control center</span>
+          </div>
         </div>
-        <div class="host-card" aria-label="Server summary">
+
+        <nav class="nav-menu">
+          <button class="nav-item is-active" type="button" data-page-target="dashboard">Dashboard</button>
+          <button class="nav-item" type="button" data-page-target="minecraft">Minecraft</button>
+          <button class="nav-item" type="button" data-page-target="amp">AMP</button>
+          <button class="nav-item" type="button" data-page-target="playit">Playit</button>
+          <button class="nav-item" type="button" data-page-target="coolpals">CoolPals</button>
+          <button class="nav-item" type="button" data-page-target="logs">Logs</button>
+          <button class="nav-item" type="button" data-page-target="files">Files</button>
+          <button class="nav-item" type="button" data-page-target="settings">Settings</button>
+        </nav>
+
+        <div class="sidebar-footer">
           <span class="pulse" aria-hidden="true"></span>
           <div>
             <strong data-field="hostname">Local network only</strong>
             <span id="local-time">Loading local time...</span>
           </div>
         </div>
-      </header>
+      </aside>
 
-      <section class="status-grid" aria-labelledby="status-title">
-        <div class="section-heading">
-          <p class="eyebrow">Overview</p>
-          <h2 id="status-title">Server Status</h2>
-        </div>
+      <main class="main-content">
+        <section class="page is-active" data-page="dashboard">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Overview</p>
+              <h1>Dashboard</h1>
+              <p class="lede">Live local system metrics from Electron IPC.</p>
+            </div>
+          </header>
 
-        <article class="status-card">
-          <div class="status-card__top">
-            <span class="service-icon">SYS</span>
-            <span class="status-pill status-pill--local">Live</span>
+          <div class="status-grid">
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">SYS</span>
+                <span class="status-pill status-pill--local">Live</span>
+              </div>
+              <h3>Host System</h3>
+              <p>Local machine identity and operating system information.</p>
+              <dl>
+                <div>
+                  <dt>Hostname</dt>
+                  <dd data-field="hostname">Checking...</dd>
+                </div>
+                <div>
+                  <dt>OS Version</dt>
+                  <dd data-field="osVersion">Checking...</dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">CPU</span>
+                <span class="status-pill status-pill--local">Live</span>
+              </div>
+              <h3>CPU & RAM</h3>
+              <p>Processor and memory usage refreshed once per second.</p>
+              <dl>
+                <div>
+                  <dt>CPU Usage</dt>
+                  <dd><span data-field="cpuUsage">Checking...</span></dd>
+                </div>
+                <div>
+                  <dt>RAM Usage</dt>
+                  <dd><span data-field="memoryUsage">Checking...</span></dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">IO</span>
+                <span class="status-pill status-pill--external">Local</span>
+              </div>
+              <h3>Disk & Network</h3>
+              <p>Root disk usage and current network throughput from local adapters.</p>
+              <dl>
+                <div>
+                  <dt>Disk Usage</dt>
+                  <dd><span data-field="diskUsage">Checking...</span></dd>
+                </div>
+                <div>
+                  <dt>Network</dt>
+                  <dd><span data-field="networkUsage">Checking...</span></dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">UP</span>
+                <span class="status-pill status-pill--manual">Live</span>
+              </div>
+              <h3>Runtime</h3>
+              <p>System uptime and CPU temperature when available.</p>
+              <dl>
+                <div>
+                  <dt>Uptime</dt>
+                  <dd data-field="uptime">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Temperature</dt>
+                  <dd data-field="temperature">Checking...</dd>
+                </div>
+              </dl>
+            </article>
           </div>
-          <h3>Host System</h3>
-          <p data-field="ampConnection">AMP connection status will appear here when configured.</p>
-          <dl>
-            <div>
-              <dt>Hostname</dt>
-              <dd data-field="hostname">Checking...</dd>
-            </div>
-            <div>
-              <dt>OS Version</dt>
-              <dd data-field="osVersion">Checking...</dd>
-            </div>
-          </dl>
-        </article>
+        </section>
 
-        <article class="status-card">
-          <div class="status-card__top">
-            <span class="service-icon">CPU</span>
-            <span class="status-pill status-pill--local">LAN</span>
+        <section class="page" data-page="minecraft">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Game Server</p>
+              <h1>Minecraft</h1>
+              <p class="lede">ATM10 status from the selected AMP Minecraft instance when available.</p>
+            </div>
+          </header>
+
+          <div class="status-grid status-grid--two">
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">MC</span>
+                <span class="status-pill status-pill--local">ATM10</span>
+              </div>
+              <h3>ATM10 Status</h3>
+              <p data-field="ampInstances">AMP instances and server state appear when available.</p>
+              <dl>
+                <div>
+                  <dt>Players / TPS</dt>
+                  <dd data-field="ampPlayers">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Usage</dt>
+                  <dd data-field="ampUsage">Checking...</dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">NET</span>
+                <span class="status-pill status-pill--external">Address</span>
+              </div>
+              <h3>Connection</h3>
+              <p>Public playit.gg address for the Minecraft server.</p>
+              <dl>
+                <div>
+                  <dt>Playit Address</dt>
+                  <dd>coolpals.playit.fan</dd>
+                </div>
+                <div>
+                  <dt>Action</dt>
+                  <dd><button class="inline-action" type="button" data-copy="coolpals.playit.fan">Copy address</button></dd>
+                </div>
+              </dl>
+            </article>
           </div>
-          <h3>CPU & RAM</h3>
-          <p data-field="ampUsage">AMP CPU and memory usage appears when the API exposes it.</p>
-          <dl>
-            <div>
-              <dt>CPU Usage</dt>
-              <dd><span data-field="cpuUsage">Checking...</span></dd>
-            </div>
-            <div>
-              <dt>RAM Usage</dt>
-              <dd><span data-field="memoryUsage">Checking...</span></dd>
-            </div>
-          </dl>
-        </article>
+        </section>
 
-        <article class="status-card">
-          <div class="status-card__top">
-            <span class="service-icon">IO</span>
-            <span class="status-pill status-pill--external">Local</span>
+        <section class="page" data-page="amp">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Controller</p>
+              <h1>AMP</h1>
+              <p class="lede">Local AMP API connection status and safe diagnostics.</p>
+            </div>
+          </header>
+
+          <div class="status-grid status-grid--two">
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">AMP</span>
+                <span class="status-pill status-pill--local">API</span>
+              </div>
+              <h3>Connection</h3>
+              <p data-field="ampConnection">AMP connection status will appear here when configured.</p>
+              <dl>
+                <div>
+                  <dt>Instances</dt>
+                  <dd data-field="ampInstances">Checking...</dd>
+                </div>
+                <div>
+                  <dt>Usage</dt>
+                  <dd data-field="ampUsage">Checking...</dd>
+                </div>
+              </dl>
+            </article>
+
+            <article class="status-card">
+              <div class="status-card__top">
+                <span class="service-icon">LAN</span>
+                <span class="status-pill status-pill--external">Local</span>
+              </div>
+              <h3>AMP Panel</h3>
+              <p>Open the local browser panel if you need AMP controls outside AnxHub.</p>
+              <dl>
+                <div>
+                  <dt>URL</dt>
+                  <dd>http://192.168.1.134:8080</dd>
+                </div>
+                <div>
+                  <dt>Action</dt>
+                  <dd><a class="inline-action" href="http://192.168.1.134:8080">Open panel</a></dd>
+                </div>
+              </dl>
+            </article>
           </div>
-          <h3>Disk & Network</h3>
-          <p data-field="ampInstances">AMP instances and server state appear when available.</p>
-          <dl>
-            <div>
-              <dt>Disk Usage</dt>
-              <dd><span data-field="diskUsage">Checking...</span></dd>
-            </div>
-            <div>
-              <dt>Network</dt>
-              <dd><span data-field="networkUsage">Checking...</span></dd>
-            </div>
-          </dl>
-        </article>
+        </section>
 
-        <article class="status-card">
-          <div class="status-card__top">
-            <span class="service-icon">UP</span>
-            <span class="status-pill status-pill--manual">Live</span>
-          </div>
-          <h3>Runtime</h3>
-          <p data-field="ampPlayers">AMP player count and TPS appear when the API exposes them.</p>
-          <dl>
+        <section class="page" data-page="playit">
+          <header class="page-header">
             <div>
-              <dt>Uptime</dt>
-              <dd data-field="uptime">Checking...</dd>
+              <p class="eyebrow">Tunnel</p>
+              <h1>Playit</h1>
+              <p class="lede">Tunnel details are local-first and remain unavailable until a playit service integration is added.</p>
             </div>
+          </header>
+          <article class="status-card status-card--wide">
+            <div class="status-card__top">
+              <span class="service-icon">PG</span>
+              <span class="status-pill status-pill--planned">Pending</span>
+            </div>
+            <h3>Tunnel Info</h3>
+            <p>No live playit.gg API or local process integration is configured yet.</p>
+            <dl>
+              <div>
+                <dt>Known Address</dt>
+                <dd>coolpals.playit.fan</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>Unavailable</dd>
+              </div>
+            </dl>
+          </article>
+        </section>
+
+        <section class="page" data-page="coolpals">
+          <header class="page-header">
             <div>
-              <dt>Temperature</dt>
-              <dd data-field="temperature">Checking...</dd>
+              <p class="eyebrow">Future Service</p>
+              <h1>CoolPals</h1>
+              <p class="lede">Reserved for future bot controls without coupling AnxHub to the bot repository.</p>
             </div>
-          </dl>
-        </article>
-      </section>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <div class="status-card__top">
+              <span class="service-icon">CP</span>
+              <span class="status-pill status-pill--planned">Placeholder</span>
+            </div>
+            <h3>CoolPals Bot</h3>
+            <p>No live bot service integration is configured.</p>
+          </article>
+        </section>
 
-      <section class="quick-links" aria-labelledby="links-title">
-        <div class="section-heading">
-          <p class="eyebrow">Shortcuts</p>
-          <h2 id="links-title">Quick Links</h2>
-        </div>
+        <section class="page" data-page="logs">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Activity</p>
+              <h1>Logs</h1>
+              <p class="lede">Log viewers will appear here once local log paths are configured.</p>
+            </div>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <h3>Logs Placeholder</h3>
+            <p>No log sources configured.</p>
+          </article>
+        </section>
 
-        <div class="link-list">
-          <a class="quick-link" href="http://192.168.1.134:8080">
-            <span>Open AMP Panel</span>
-            <small>http://192.168.1.134:8080</small>
-          </a>
-          <button class="quick-link quick-link--button" type="button" data-copy="coolpals.playit.fan">
-            <span>Copy Minecraft Address</span>
-            <small>coolpals.playit.fan</small>
-          </button>
-        </div>
-      </section>
+        <section class="page" data-page="files">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Storage</p>
+              <h1>Files</h1>
+              <p class="lede">A local file browser can be added here behind explicit safe filesystem IPC.</p>
+            </div>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <h3>Files Placeholder</h3>
+            <p>No file manager integration configured.</p>
+          </article>
+        </section>
 
-      <footer class="footer">
-        <span>AnxHub is static and credential-free.</span>
-        <span>Keep it behind your LAN or VPN until you are ready to harden it.</span>
-      </footer>
-    </main>
+        <section class="page" data-page="settings">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Preferences</p>
+              <h1>Settings</h1>
+              <p class="lede">Desktop preferences and local integration paths will live here.</p>
+            </div>
+          </header>
+          <article class="status-card status-card--wide status-card--placeholder">
+            <h3>Settings Placeholder</h3>
+            <p>No settings have been configured.</p>
+          </article>
+        </section>
+      </main>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="app.js"></script>

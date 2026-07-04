@@ -1,14 +1,25 @@
 const timeTarget = document.querySelector("#local-time");
 const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
-const fields = document.querySelectorAll("[data-field]");
+const navItems = document.querySelectorAll("[data-page-target]");
+const pages = document.querySelectorAll("[data-page]");
 let ampRequestInFlight = false;
 
 function setField(name, value) {
-  fields.forEach((field) => {
+  document.querySelectorAll("[data-field]").forEach((field) => {
     if (field.dataset.field === name) {
       field.textContent = value;
     }
+  });
+}
+
+function showPage(pageName) {
+  navItems.forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.pageTarget === pageName);
+  });
+
+  pages.forEach((page) => {
+    page.classList.toggle("is-active", page.dataset.page === pageName);
   });
 }
 
@@ -205,6 +216,10 @@ async function copyText(value) {
 
 copyButtons.forEach((button) => {
   button.addEventListener("click", () => copyText(button.dataset.copy));
+});
+
+navItems.forEach((item) => {
+  item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
 
 updateLocalTime();

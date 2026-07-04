@@ -180,7 +180,7 @@ function getSafePageName(pageName) {
 }
 
 function getSidebarTitle(displayName) {
-  return displayName.replace(/\s+Control Center$/i, "").trim() || displayName;
+  return displayName;
 }
 
 function applySettings(settings, options = {}) {
@@ -317,7 +317,10 @@ function startStartupMusic() {
 }
 
 function stopStartupMusic() {
+  let fadeStarted = false;
+
   if (startupAudio.usingElement && startupAudioElement) {
+    fadeStarted = true;
     fadeStartupAudioElement(0, 320, () => {
       startupAudioElement.pause();
       startupAudioElement.currentTime = 0;
@@ -334,10 +337,11 @@ function stopStartupMusic() {
   const gain = startupAudio.gain;
 
   if (!context || !gain) {
-    return;
+    return fadeStarted ? 340 : 0;
   }
 
   try {
+    fadeStarted = true;
     gain.gain.cancelScheduledValues(context.currentTime);
     gain.gain.setTargetAtTime(0.0001, context.currentTime, 0.08);
 
@@ -358,6 +362,8 @@ function stopStartupMusic() {
     startupAudio.gain = null;
     startupAudio.oscillators = [];
   }
+
+  return fadeStarted ? 340 : 0;
 }
 
 function revealAppShell() {
@@ -370,26 +376,27 @@ function revealAppShell() {
   setStartupStep("metrics", "complete");
   setStartupStep("control", "complete");
   updateStartupMessage("AnxOS Control Center ready.", "Opening dashboard...");
-  stopStartupMusic();
-
-  if (appShell) {
-    appShell.hidden = false;
-    appShell.classList.add("is-loading");
-    window.requestAnimationFrame(() => {
-      appShell.classList.remove("is-loading");
-    });
-  }
-
-  if (!startupScreen) {
-    return;
-  }
+  const musicFadeMs = stopStartupMusic();
 
   window.setTimeout(() => {
-    startupScreen.classList.add("is-exiting");
+    if (startupScreen) {
+      startupScreen.classList.add("is-exiting");
+    }
+
     window.setTimeout(() => {
-      startupScreen.hidden = true;
+      if (startupScreen) {
+        startupScreen.hidden = true;
+      }
+
+      if (appShell) {
+        appShell.hidden = false;
+        appShell.classList.add("is-loading");
+        window.requestAnimationFrame(() => {
+          appShell.classList.remove("is-loading");
+        });
+      }
     }, 240);
-  }, 120);
+  }, musicFadeMs);
 }
 
 function tryCompleteStartup(force = false) {

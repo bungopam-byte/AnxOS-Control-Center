@@ -404,10 +404,6 @@ h3 {
   max-width: 720px;
 }
 
-.status-card--placeholder {
-  border-style: dashed;
-}
-
 .minecraft-page-grid {
   display: grid;
   grid-template-columns: minmax(320px, 1.45fr) repeat(2, minmax(180px, 0.8fr));

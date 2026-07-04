@@ -6,6 +6,8 @@ const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxhub-icon.svg");
 
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
 function getGitCommit() {
   try {
     return execFileSync("git", ["rev-parse", "--short", "HEAD"], {

@@ -361,7 +361,7 @@
                 <span class="status-pill status-pill--local">API</span>
               </div>
               <h3>Connection</h3>
-              <p data-field="ampConnection">AMP connection status will appear here when configured.</p>
+              <p data-field="ampConnection">AMP connection is not configured.</p>
               <dl>
                 <div>
                   <dt>Status</dt>
@@ -412,7 +412,7 @@
             <div>
               <p class="eyebrow">Tunnel</p>
               <h1>Playit</h1>
-              <p class="lede">Tunnel details are local-first and remain unavailable until a playit service integration is added.</p>
+              <p class="lede">Local tunnel status and routing details for configured playit services.</p>
             </div>
           </header>
           <article class="status-card status-card--wide">
@@ -421,7 +421,7 @@
               <span class="status-pill status-pill--planned">Pending</span>
             </div>
             <h3>Tunnel Info</h3>
-            <p>No live playit.gg API or local process integration is configured yet.</p>
+            <p>No playit service is connected.</p>
             <dl>
               <div>
                 <dt>Known Address</dt>
@@ -440,7 +440,7 @@
             <div>
               <p class="eyebrow">Discord Bot</p>
               <h1>CoolPals</h1>
-              <p class="lede">Discord bot control center ready for future service IPC.</p>
+              <p class="lede">Discord bot operations, status, and logs for configured local services.</p>
             </div>
           </header>
 
@@ -515,13 +515,13 @@
                   <div class="coolpals-loading-state" data-coolpals-loading hidden>
                     <span class="file-loader" aria-hidden="true"></span>
                     <strong>Loading CoolPals</strong>
-                    <span>Waiting for bot service integration.</span>
+                    <span>Bot service is disconnected.</span>
                   </div>
 
                   <div class="coolpals-empty-state" data-coolpals-empty>
                     <span class="coolpals-icon" aria-hidden="true"></span>
                     <strong>CoolPals is disconnected</strong>
-                    <span>Guilds, commands, and activity will appear once the bot backend is connected.</span>
+                    <span>Connect the bot service to display guilds, commands, and activity.</span>
                   </div>
                 </div>
               </section>
@@ -562,7 +562,7 @@
                 </div>
                 <div class="coolpals-feed-empty">
                   <strong>No recent activity</strong>
-                  <span>Bot events will appear here after service integration.</span>
+                  <span>No bot events are available while the service is disconnected.</span>
                 </div>
               </section>
 
@@ -575,7 +575,7 @@
                   <ol data-coolpals-logs></ol>
                   <div class="coolpals-log-empty">
                     <strong>No logs available</strong>
-                    <span>Logs will appear when the bot service is connected.</span>
+                    <span>No bot logs are available while the service is disconnected.</span>
                   </div>
                 </div>
               </section>
@@ -588,7 +588,7 @@
             <div>
               <p class="eyebrow">Containers</p>
               <h1>Docker</h1>
-              <p class="lede">Docker management workspace ready for future local daemon IPC.</p>
+              <p class="lede">Container management workspace for a configured local Docker daemon.</p>
             </div>
           </header>
 
@@ -669,13 +669,13 @@
                   <div class="docker-loading-state" data-docker-loading hidden>
                     <span class="file-loader" aria-hidden="true"></span>
                     <strong>Loading containers</strong>
-                    <span>Waiting for Docker IPC integration.</span>
+                    <span>Docker daemon is disconnected.</span>
                   </div>
 
                   <div class="docker-empty-state" data-docker-empty>
                     <span class="docker-icon" aria-hidden="true"></span>
                     <strong>No Docker data available</strong>
-                    <span>Container information will appear once the local Docker backend is connected.</span>
+                    <span>Connect a Docker daemon to display containers, images, and resource usage.</span>
                   </div>
                 </div>
               </section>
@@ -724,7 +724,7 @@
             <div>
               <p class="eyebrow">Remote Access</p>
               <h1>SSH</h1>
-              <p class="lede">Terminal workspace ready for future SSH2 connections through Electron IPC.</p>
+              <p class="lede">Terminal workspace for configured SSH connection profiles.</p>
             </div>
           </header>
 
@@ -775,17 +775,17 @@
                 <div class="ssh-loading-state" data-ssh-loading hidden>
                   <span class="file-loader" aria-hidden="true"></span>
                   <strong>Connecting</strong>
-                  <span>Waiting for SSH backend integration.</span>
+                  <span>SSH service is disconnected.</span>
                 </div>
                 <div class="ssh-empty-state" data-ssh-empty>
                   <strong>No SSH session connected</strong>
-                  <span>Select a server profile and connect once SSH IPC is available.</span>
+                  <span>No SSH session is connected.</span>
                 </div>
               </div>
 
               <form class="ssh-command-row" data-ssh-command-form>
                 <span class="ssh-prompt" aria-hidden="true">$</span>
-                <input type="text" placeholder="Command input will be enabled after connection" data-ssh-command disabled>
+                <input type="text" placeholder="Connect to enable command input" data-ssh-command disabled>
                 <button class="inline-action" type="submit" disabled>Send</button>
               </form>
             </div>
@@ -797,7 +797,7 @@
             <div>
               <p class="eyebrow">Storage</p>
               <h1>Files</h1>
-              <p class="lede">File manager workspace ready for explicit safe filesystem IPC.</p>
+              <p class="lede">File browser workspace for configured local filesystem access.</p>
             </div>
           </header>
 
@@ -827,7 +827,7 @@
                 <div class="folder-tree-empty">
                   <span class="folder-icon" aria-hidden="true"></span>
                   <strong>No filesystem connected</strong>
-                  <span>Folder roots will appear here after local file IPC is added.</span>
+                  <span>No folder roots are connected.</span>
                 </div>
               </aside>
 
@@ -854,13 +854,13 @@
                   <div class="file-loading-state" data-file-loading hidden>
                     <span class="file-loader" aria-hidden="true"></span>
                     <strong>Loading files</strong>
-                    <span>Waiting for the file manager backend.</span>
+                    <span>File service is disconnected.</span>
                   </div>
 
                   <div class="file-empty-state" data-file-empty>
                     <span class="file-icon" aria-hidden="true"></span>
                     <strong>No files to show</strong>
-                    <span>Connect a local filesystem backend to browse folders and files.</span>
+                    <span>Connect a local filesystem service to browse folders and files.</span>
                   </div>
                 </div>
               </section>
@@ -905,7 +905,7 @@
             <div>
               <p class="eyebrow">Live Output</p>
               <h1>Console</h1>
-              <p class="lede">Terminal-style console workspace ready for future log streaming.</p>
+              <p class="lede">Terminal-style console workspace for connected log streams.</p>
             </div>
           </header>
 
@@ -943,7 +943,7 @@
                 <ol class="console-log-list" data-console-log-list></ol>
                 <div class="console-empty-state" data-console-empty>
                   <strong>No logs yet</strong>
-                  <span>Console output will appear here when streaming is connected.</span>
+                  <span>No console stream is connected.</span>
                 </div>
               </div>
             </div>
@@ -955,7 +955,7 @@
             <div>
               <p class="eyebrow">Recovery</p>
               <h1>Backups</h1>
-              <p class="lede">Backup creation, restore, and scheduling will appear here after local backup paths are configured.</p>
+              <p class="lede">Backup history, restore details, and schedules for configured local backup paths.</p>
             </div>
           </header>
 
@@ -1026,12 +1026,12 @@
                   <div class="backup-empty-state">
                     <span class="backup-icon" aria-hidden="true"></span>
                     <strong>No backups available</strong>
-                    <span>Configure a backup source later to display local backup history here.</span>
+                    <span>Connect a backup source to display local backup history.</span>
                   </div>
                   <div class="backup-loading-state" hidden>
                     <span class="file-loader" aria-hidden="true"></span>
                     <strong>Loading backups...</strong>
-                    <span>Waiting for backup integration.</span>
+                    <span>Backup service is disconnected.</span>
                   </div>
                 </div>
               </section>
@@ -1040,7 +1040,7 @@
                 <section class="backup-panel-card">
                   <div class="backup-panel-header">
                     <h3>Schedule</h3>
-                    <span class="status-pill status-pill--planned">Future IPC</span>
+                    <span class="status-pill status-pill--planned">Disconnected</span>
                   </div>
                   <dl class="backup-details-list">
                     <div>
@@ -1069,7 +1069,7 @@
                   </div>
                   <div class="backup-restore-state">
                     <strong>No backup selected</strong>
-                    <span>Selecting and restoring backups will be enabled when backend file operations exist.</span>
+                    <span>No backup is selected.</span>
                     <button class="inline-action" type="button" disabled>Restore Selected</button>
                   </div>
                 </section>
@@ -1083,7 +1083,7 @@
             <div>
               <p class="eyebrow">Preferences</p>
               <h1>Settings</h1>
-              <p class="lede">Local preferences for <span data-app-name>AnxOS Control Center</span> and future service integrations.</p>
+              <p class="lede">Local preferences for <span data-app-name>AnxOS Control Center</span> behavior, startup, and service addresses.</p>
             </div>
           </header>
 
@@ -1221,6 +1221,10 @@
                 <span class="status-pill status-pill--external">Runtime</span>
               </div>
               <dl class="settings-about-grid">
+                <div>
+                  <dt>Application</dt>
+                  <dd data-app-name>AnxOS Control Center</dd>
+                </div>
                 <div>
                   <dt>Version</dt>
                   <dd data-about-field="version">Unavailable</dd>

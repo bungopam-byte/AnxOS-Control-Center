@@ -7,6 +7,7 @@ dotenv.config({ path: path.join(__dirname, "..", "..", ".env"), quiet: true });
 const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
 const SAFE_ERROR_FIELDS = ["code", "errno", "syscall"];
+const UNSPECIFIED_BIND_ADDRESSES = new Set(["", "0.0.0.0", "::", "[::]"]);
 const DETAIL_CONTAINER_KEYS = [
   "ApplicationState",
   "AppState",
@@ -216,6 +217,14 @@ function extractSessionId(loginResult) {
   return findValue(loginResult, ["sessionID", "SessionID", "sessionId", "SESSIONID"]);
 }
 
+function extractActionResultValue(result) {
+  if (typeof result === "string" && result.length > 0) {
+    return result;
+  }
+
+  return findValue(result, ["Result", "result", "Value", "value"]);
+}
+
 function didLoginSucceed(loginResult, sessionId) {
   if (sessionId) {
     return true;
@@ -269,6 +278,23 @@ function withTimeout(promise, timeoutMs) {
 
 async function authenticate(api, config) {
   const loginResult = await callMethod(api.Core, "LoginAsync", [config.username, config.password, "", false]);
+  const sessionId = extractSessionId(loginResult);
+
+  if (sessionId) {
+    api.sessionId = sessionId;
+  }
+
+  const authenticated = didLoginSucceed(loginResult, sessionId);
+
+  if (!authenticated) {
+    return false;
+  }
+
+  return withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
+}
+
+async function authenticateWithToken(api, username, token) {
+  const loginResult = await callMethod(api.Core, "LoginAsync", [username, "", token, false]);
   const sessionId = extractSessionId(loginResult);
 
   if (sessionId) {
@@ -415,6 +441,21 @@ function getVersion(instance) {
     "ReleaseStream",
     "Build",
   ]);
+}
+
+function buildManagedInstanceUrl(config, instance) {
+  const port = safeNumber(findValue(instance, ["Port", "port"]));
+
+  if (port === null) {
+    return null;
+  }
+
+  const fallbackUrl = new URL(config.url);
+  const rawHost = String(findValue(instance, ["IP", "ApplicationIP", "Host", "hostname"]) || "").trim();
+  const host = rawHost && !UNSPECIFIED_BIND_ADDRESSES.has(rawHost) ? rawHost : fallbackUrl.hostname;
+  const protocol = findValue(instance, ["IsHTTPS", "isHttps"]) === true ? "https:" : fallbackUrl.protocol;
+
+  return `${protocol}//${host}:${port}`;
 }
 
 function isMinecraftInstance(instance) {
@@ -665,6 +706,51 @@ async function getAdsInstance(api, instanceId) {
   return null;
 }
 
+async function authenticateManagedInstance(adsApi, config, selectedInstance) {
+  const instanceId = getInstanceId(selectedInstance);
+
+  if (!instanceId) {
+    return null;
+  }
+
+  const adsInstance = await getAdsInstance(adsApi, instanceId);
+  const managedUrl = adsInstance ? buildManagedInstanceUrl(config, adsInstance) : null;
+
+  if (!adsInstance || !managedUrl) {
+    logSafeAmpInstanceDiagnostics("managed instance auth", {
+      instanceId,
+      authenticated: false,
+      reason: "missing_management_endpoint",
+    });
+    return null;
+  }
+
+  const handoffResult = await callMethodDetailed(adsApi.ADSModule, "ManageInstanceAsync", [instanceId]);
+  const handoffToken = handoffResult.ok ? extractActionResultValue(handoffResult.value) : null;
+
+  if (!handoffToken) {
+    logSafeAmpInstanceDiagnostics("managed instance auth", {
+      instanceId,
+      authenticated: false,
+      reason: handoffResult.missing ? "missing_manage_method" : "missing_handoff_token",
+      errorCode: handoffResult.errorCode,
+    });
+    return null;
+  }
+
+  const managedApi = new AMPAPI(managedUrl);
+  const initialized = await withTimeout(managedApi.initAsync(), AMP_TIMEOUT_MS);
+  const authenticated = initialized ? await authenticateWithToken(managedApi, config.username, handoffToken) : false;
+
+  logSafeAmpInstanceDiagnostics("managed instance auth", {
+    instanceId,
+    initialized,
+    authenticated,
+  });
+
+  return authenticated ? managedApi : null;
+}
+
 async function getInstances(api) {
   const instanceMethodNames = ["GetInstancesAsync", "GetAvailableInstancesAsync", "GetInstanceListAsync", "ListInstancesAsync"];
   const instanceResults = [];
@@ -832,17 +918,25 @@ async function getAmpSnapshot() {
     const instances = await getInstances(api);
     const selection = selectMinecraftInstance(instances);
     const selectedInstance = await enrichSelectedInstance(api, selection.selected);
-    const finalInstances = selectedInstance
-      ? instances.map((instance) => (String(instance.id) === String(selectedInstance.id) ? selectedInstance : instance))
+    const managedInstanceApi = selectedInstance ? await authenticateManagedInstance(api, config, selectedInstance) : null;
+    const finalSelectedInstance = selectedInstance
+      ? {
+          ...selectedInstance,
+          childAuthenticated: Boolean(managedInstanceApi),
+        }
+      : null;
+    const finalInstances = finalSelectedInstance
+      ? instances.map((instance) => (String(instance.id) === String(finalSelectedInstance.id) ? finalSelectedInstance : instance))
       : instances;
     const finalMinecraftInstances = finalInstances.filter((instance) => instance.isMinecraft);
 
-    if (selectedInstance) {
+    if (finalSelectedInstance) {
       logSafeAmpInstanceDiagnostics("selected instance", {
-        name: selectedInstance.name,
-        moduleType: selectedInstance.moduleType,
-        instanceId: selectedInstance.id,
-        state: selectedInstance.state,
+        name: finalSelectedInstance.name,
+        moduleType: finalSelectedInstance.moduleType,
+        instanceId: finalSelectedInstance.id,
+        state: finalSelectedInstance.state,
+        childAuthenticated: finalSelectedInstance.childAuthenticated,
       });
     } else if (selection.minecraftInstances.length > 1) {
       logSafeAmpInstanceDiagnostics("minecraft selection", {
@@ -864,7 +958,7 @@ async function getAmpSnapshot() {
       message: "Connected to AMP.",
       diagnostics: createDiagnostics(config, "connected"),
       instances: finalInstances,
-      selectedInstance,
+      selectedInstance: finalSelectedInstance,
       minecraftInstances: finalMinecraftInstances,
       minecraftSelectionMode: selection.mode,
     });

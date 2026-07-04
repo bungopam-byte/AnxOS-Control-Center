@@ -470,13 +470,72 @@
             <div>
               <p class="eyebrow">Remote Access</p>
               <h1>SSH</h1>
-              <p class="lede">SSH profiles and embedded terminal sessions will use secure IPC and no plaintext passwords.</p>
+              <p class="lede">Terminal workspace ready for future SSH2 connections through Electron IPC.</p>
             </div>
           </header>
-          <article class="status-card status-card--wide status-card--placeholder">
-            <h3>SSH Placeholder</h3>
-            <p>No SSH profiles configured.</p>
-          </article>
+
+          <section class="ssh-shell" aria-label="SSH terminal">
+            <div class="ssh-connect-bar">
+              <label class="ssh-field">
+                <span>Server</span>
+                <select data-ssh-server disabled>
+                  <option>No servers configured</option>
+                </select>
+              </label>
+              <label class="ssh-field">
+                <span>Profile</span>
+                <select data-ssh-profile disabled>
+                  <option>No profiles configured</option>
+                </select>
+              </label>
+              <div class="ssh-connection-actions">
+                <button class="inline-action" type="button" data-ssh-connect disabled>Connect</button>
+                <button class="inline-action" type="button" data-ssh-disconnect disabled>Disconnect</button>
+              </div>
+            </div>
+
+            <div class="ssh-session-tabs" role="tablist" aria-label="SSH sessions">
+              <button class="ssh-tab is-active" type="button" role="tab" aria-selected="true" disabled>New Session</button>
+              <button class="ssh-tab" type="button" role="tab" aria-selected="false" disabled>+</button>
+            </div>
+
+            <div class="ssh-terminal-card">
+              <div class="ssh-terminal-toolbar">
+                <div class="ssh-status">
+                  <span class="ssh-status-dot" aria-hidden="true"></span>
+                  <strong>Disconnected</strong>
+                </div>
+                <div class="ssh-tools">
+                  <label class="console-toggle">
+                    <input type="checkbox" checked data-ssh-autoscroll>
+                    <span>Auto-scroll</span>
+                  </label>
+                  <button class="inline-action" type="button" data-ssh-copy disabled>Copy Output</button>
+                  <button class="inline-action" type="button" data-ssh-clear disabled>Clear</button>
+                  <button class="inline-action" type="button" data-ssh-fullscreen>Fullscreen</button>
+                </div>
+              </div>
+
+              <div class="ssh-terminal-window" data-ssh-terminal>
+                <ol class="ssh-terminal-output" data-ssh-output></ol>
+                <div class="ssh-loading-state" data-ssh-loading hidden>
+                  <span class="file-loader" aria-hidden="true"></span>
+                  <strong>Connecting</strong>
+                  <span>Waiting for SSH backend integration.</span>
+                </div>
+                <div class="ssh-empty-state" data-ssh-empty>
+                  <strong>No SSH session connected</strong>
+                  <span>Select a server profile and connect once SSH IPC is available.</span>
+                </div>
+              </div>
+
+              <form class="ssh-command-row" data-ssh-command-form>
+                <span class="ssh-prompt" aria-hidden="true">$</span>
+                <input type="text" placeholder="Command input will be enabled after connection" data-ssh-command disabled>
+                <button class="inline-action" type="submit" disabled>Send</button>
+              </form>
+            </div>
+          </section>
         </section>
 
         <section class="page" data-page="files">

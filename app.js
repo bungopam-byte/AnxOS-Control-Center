@@ -21,6 +21,13 @@ const startupSteps = {
   services: document.querySelector('[data-startup-step="services"]'),
   amp: document.querySelector('[data-startup-step="amp"]'),
 };
+const sshTerminalCard = document.querySelector(".ssh-terminal-card");
+const sshTerminalWindow = document.querySelector("[data-ssh-terminal]");
+const sshOutputList = document.querySelector("[data-ssh-output]");
+const sshCopyButton = document.querySelector("[data-ssh-copy]");
+const sshClearButton = document.querySelector("[data-ssh-clear]");
+const sshFullscreenButton = document.querySelector("[data-ssh-fullscreen]");
+const sshAutoscrollInput = document.querySelector("[data-ssh-autoscroll]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
@@ -784,6 +791,62 @@ function syncConsoleScrollMode() {
   }
 }
 
+function getSshRows() {
+  return sshOutputList ? [...sshOutputList.querySelectorAll("li")] : [];
+}
+
+function updateSshActions() {
+  const hasOutput = getSshRows().length > 0;
+
+  if (sshCopyButton) {
+    sshCopyButton.disabled = !hasOutput;
+  }
+
+  if (sshClearButton) {
+    sshClearButton.disabled = !hasOutput;
+  }
+}
+
+async function copySshOutput() {
+  const output = getSshRows()
+    .map((row) => row.textContent)
+    .join("\n");
+
+  if (!output) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(output);
+    showToast("Copied SSH terminal output.");
+  } catch {
+    showToast("SSH terminal output could not be copied.");
+  }
+}
+
+function clearSshOutput() {
+  if (!sshOutputList) {
+    return;
+  }
+
+  sshOutputList.replaceChildren();
+  updateSshActions();
+}
+
+function toggleSshFullscreen() {
+  if (!sshTerminalCard) {
+    return;
+  }
+
+  sshTerminalCard.classList.toggle("is-fullscreen");
+}
+
+function syncSshScrollMode() {
+  if (sshAutoscrollInput?.checked && sshTerminalWindow) {
+    sshTerminalWindow.scrollTop = sshTerminalWindow.scrollHeight;
+  }
+}
+
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -807,6 +870,11 @@ consoleCopyButton?.addEventListener("click", copyConsoleRows);
 consoleAutoscrollInput?.addEventListener("change", syncConsoleScrollMode);
 consolePauseInput?.addEventListener("change", syncConsoleScrollMode);
 updateConsoleEmptyState();
+sshCopyButton?.addEventListener("click", copySshOutput);
+sshClearButton?.addEventListener("click", clearSshOutput);
+sshFullscreenButton?.addEventListener("click", toggleSshFullscreen);
+sshAutoscrollInput?.addEventListener("change", syncSshScrollMode);
+updateSshActions();
 startStartupFallback();
 
 registerRefreshTask(updateLocalTime, 30000);

@@ -170,6 +170,99 @@ function formatAmpVersion(summary) {
   return summary?.version || "Unavailable";
 }
 
+function findAmpValue(source, keys) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) {
+      return source[key];
+    }
+  }
+
+  return null;
+}
+
+function unwrapAmpValue(value) {
+  if (value && typeof value === "object" && Object.keys(value).length === 1 && value.result !== undefined) {
+    return value.result;
+  }
+
+  return value;
+}
+
+function asAmpArray(value) {
+  const unwrapped = unwrapAmpValue(value);
+
+  if (Array.isArray(unwrapped)) {
+    return unwrapped;
+  }
+
+  if (!unwrapped || typeof unwrapped !== "object") {
+    return [];
+  }
+
+  for (const key of ["AvailableInstances", "Instances", "InstanceStatuses", "Statuses", "Result", "result"]) {
+    if (unwrapped[key] !== undefined) {
+      return asAmpArray(unwrapped[key]);
+    }
+  }
+
+  return Object.entries(unwrapped)
+    .filter(([, item]) => item && typeof item === "object")
+    .map(([mapKey, item]) => ({ mapKey, ...item }));
+}
+
+function normalizeAmpInstanceForRenderer(instance) {
+  const name = findAmpValue(instance, ["name", "InstanceName", "FriendlyName", "Name", "DisplayName"]) || "AMP Instance";
+  const moduleType =
+    findAmpValue(instance, ["moduleType", "Module", "ModuleName", "ApplicationModule", "AppModule", "ModuleDisplayName"]) ||
+    "Unknown";
+
+  return {
+    ...instance,
+    id: findAmpValue(instance, ["id", "InstanceID", "InstanceId", "InstanceIdString", "Id", "ID", "Guid", "mapKey"]) || name,
+    name,
+    friendlyName: findAmpValue(instance, ["friendlyName", "FriendlyName"]),
+    moduleType,
+    isMinecraft:
+      instance?.isMinecraft ??
+      [name, moduleType, findAmpValue(instance, ["Target", "Type", "Application", "ApplicationName"])]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes("minecraft"),
+    state:
+      findAmpValue(instance, ["state", "State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState"]) ||
+      "Unknown",
+  };
+}
+
+function normalizeAmpSnapshotForRenderer(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return snapshot;
+  }
+
+  const instanceSource = Array.isArray(snapshot.instances) ? snapshot.instances : snapshot.AvailableInstances;
+  const instances = asAmpArray(instanceSource);
+  const normalizedInstances = instances.map(normalizeAmpInstanceForRenderer);
+  const selectedInstance = snapshot.selectedInstance
+    ? normalizeAmpInstanceForRenderer(snapshot.selectedInstance)
+    : normalizedInstances.find((instance) => instance.name === snapshot.summary?.selectedInstanceName) || null;
+  const minecraftInstances = Array.isArray(snapshot.minecraftInstances)
+    ? snapshot.minecraftInstances.map(normalizeAmpInstanceForRenderer)
+    : normalizedInstances.filter((instance) => instance.isMinecraft);
+
+  return {
+    ...snapshot,
+    instanceCount: Number.isFinite(snapshot.instanceCount) ? snapshot.instanceCount : normalizedInstances.length,
+    instances: normalizedInstances,
+    selectedInstance,
+    minecraftInstances,
+  };
+}
+
 function formatAmpInstance(instance) {
   const name = instance?.name || "Unnamed";
   const moduleType = instance?.moduleType || "Unknown module";
@@ -234,8 +327,14 @@ function formatAmpDiagnostics(diagnostics) {
 }
 
 function formatAmpConnection(snapshot) {
-  const label = snapshot.connection?.label || "Unavailable";
-  const message = snapshot.connection?.message || snapshot.message || "AMP unavailable.";
+  const status = snapshot?.status || snapshot?.connection?.status || "unavailable";
+
+  if (status === "connected" || snapshot?.connected === true) {
+    return "Connected: Connected to AMP.";
+  }
+
+  const label = snapshot?.connection?.label || "Unavailable";
+  const message = snapshot?.connection?.message || snapshot?.message || "AMP unavailable.";
   return `${label}: ${message}${formatAmpDiagnostics(snapshot.diagnostics)}`;
 }
 
@@ -247,13 +346,17 @@ function formatPlayerSummary(summary) {
 }
 
 function logAmpRendererReceive(snapshot) {
-  const instanceCount = Array.isArray(snapshot?.instances) ? snapshot.instances.length : 0;
-
   console.log("[AnxHub][AMP renderer state]", {
-    rendererReceiveCount: ampRendererReceiveCount,
-    snapshotStatus: snapshot?.status || "missing",
-    instanceCount,
-    lastSuccessfulPollAt: snapshot?.poll?.lastSuccessfulPollAt || snapshot?.diagnostics?.lastSuccessfulPollAt || null,
+    amp: {
+      status: snapshot?.status || "missing",
+      instanceCount: Number.isFinite(snapshot?.instanceCount)
+        ? snapshot.instanceCount
+        : Array.isArray(snapshot?.instances)
+          ? snapshot.instances.length
+          : 0,
+      selectedInstance: snapshot?.selectedInstance ? { name: snapshot.selectedInstance.name || null } : null,
+      diagnostics: snapshot?.diagnostics ? { errorCode: snapshot.diagnostics.errorCode || null } : null,
+    },
   });
 }
 
@@ -322,7 +425,7 @@ async function refreshAmpDashboard() {
   ampRequestInFlight = true;
 
   try {
-    const snapshot = await window.anxhub.amp.getSnapshot();
+    const snapshot = normalizeAmpSnapshotForRenderer(await window.anxhub.amp.getSnapshot());
     latestAmpSnapshot = snapshot;
     ampRendererReceiveCount += 1;
     logAmpRendererReceive(latestAmpSnapshot);

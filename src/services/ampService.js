@@ -211,6 +211,7 @@ function createAmpSnapshot({
     message,
     diagnostics,
     connection: createConnectionState(status, message, diagnostics),
+    instanceCount,
     instances,
     selectedInstance,
     minecraftInstances,

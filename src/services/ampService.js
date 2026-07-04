@@ -915,6 +915,35 @@ async function getManagedInstanceMetrics(managedApi) {
   return normalized;
 }
 
+async function getSelectedInstanceChildMetrics(api, config, selectedInstance) {
+  if (!selectedInstance) {
+    return {
+      managedInstanceApi: null,
+      managedMetrics: null,
+    };
+  }
+
+  try {
+    const managedInstanceApi = await authenticateManagedInstance(api, config, selectedInstance);
+    const managedMetrics = await getManagedInstanceMetrics(managedInstanceApi);
+
+    return {
+      managedInstanceApi,
+      managedMetrics,
+    };
+  } catch (error) {
+    logSafeAmpInstanceDiagnostics("managed instance metrics", {
+      available: false,
+      errorCode: getSafeErrorCode(error),
+    });
+
+    return {
+      managedInstanceApi: null,
+      managedMetrics: null,
+    };
+  }
+}
+
 async function getInstances(api) {
   const instanceMethodNames = ["GetInstancesAsync", "GetAvailableInstancesAsync", "GetInstanceListAsync", "ListInstancesAsync"];
   const instanceResults = [];
@@ -1082,28 +1111,18 @@ async function getAmpSnapshot() {
 
     const instances = await getInstances(api);
     const selection = selectMinecraftInstance(instances);
-    const selectedInstance = await enrichSelectedInstance(api, selection.selected);
-    const managedInstanceApi = selectedInstance ? await authenticateManagedInstance(api, config, selectedInstance) : null;
-    const managedMetrics = await getManagedInstanceMetrics(managedInstanceApi);
-    const finalSelectedInstance = selectedInstance
-      ? {
-          ...selectedInstance,
-          ...pickFirstObject(managedMetrics),
-          childAuthenticated: Boolean(managedInstanceApi),
-        }
-      : null;
-    const finalInstances = finalSelectedInstance
-      ? instances.map((instance) => (String(instance.id) === String(finalSelectedInstance.id) ? finalSelectedInstance : instance))
+    const adsSelectedInstance = await enrichSelectedInstance(api, selection.selected);
+    const adsInstances = adsSelectedInstance
+      ? instances.map((instance) => (String(instance.id) === String(adsSelectedInstance.id) ? adsSelectedInstance : instance))
       : instances;
-    const finalMinecraftInstances = finalInstances.filter((instance) => instance.isMinecraft);
+    const adsMinecraftInstances = adsInstances.filter((instance) => instance.isMinecraft);
 
-    if (finalSelectedInstance) {
+    if (adsSelectedInstance) {
       logSafeAmpInstanceDiagnostics("selected instance", {
-        name: finalSelectedInstance.name,
-        moduleType: finalSelectedInstance.moduleType,
-        instanceId: finalSelectedInstance.id,
-        state: finalSelectedInstance.state,
-        childAuthenticated: finalSelectedInstance.childAuthenticated,
+        name: adsSelectedInstance.name,
+        moduleType: adsSelectedInstance.moduleType,
+        instanceId: adsSelectedInstance.id,
+        state: adsSelectedInstance.state,
       });
     } else if (selection.minecraftInstances.length > 1) {
       logSafeAmpInstanceDiagnostics("minecraft selection", {
@@ -1118,7 +1137,35 @@ async function getAmpSnapshot() {
       });
     }
 
-    markSuccessfulAmpPoll("connected", finalInstances);
+    markSuccessfulAmpPoll("connected", adsInstances);
+
+    const adsSnapshot = createAmpSnapshot({
+      connected: true,
+      configured: true,
+      status: "connected",
+      message: "Connected to AMP.",
+      diagnostics: createDiagnostics(config, "connected"),
+      instances: adsInstances,
+      selectedInstance: adsSelectedInstance,
+      minecraftInstances: adsMinecraftInstances,
+      minecraftSelectionMode: selection.mode,
+    });
+
+    const { managedInstanceApi, managedMetrics } = await getSelectedInstanceChildMetrics(api, config, adsSelectedInstance);
+
+    if (!managedMetrics) {
+      return adsSnapshot;
+    }
+
+    const finalSelectedInstance = {
+      ...adsSelectedInstance,
+      ...pickFirstObject(managedMetrics),
+      childAuthenticated: Boolean(managedInstanceApi),
+    };
+    const finalInstances = adsInstances.map((instance) =>
+      String(instance.id) === String(finalSelectedInstance.id) ? finalSelectedInstance : instance,
+    );
+    const finalMinecraftInstances = finalInstances.filter((instance) => instance.isMinecraft);
 
     return createAmpSnapshot({
       connected: true,
@@ -1140,8 +1187,8 @@ async function getAmpSnapshot() {
     return createAmpSnapshot({
       connected: false,
       configured: true,
-      status: "error",
-      message: "AMP is unavailable.",
+      status: "unreachable",
+      message: "AMP ADS discovery failed.",
       diagnostics,
     });
   }

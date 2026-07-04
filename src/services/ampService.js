@@ -177,7 +177,7 @@ function logSafeAmpInstanceDiagnostics(label, payload) {
 }
 
 function safeNumber(value) {
-  if (typeof value === "boolean" || value === "" || Array.isArray(value)) {
+  if (value === null || value === undefined || typeof value === "boolean" || value === "" || Array.isArray(value)) {
     return null;
   }
 

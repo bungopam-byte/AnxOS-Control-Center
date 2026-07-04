@@ -113,8 +113,16 @@ function renderSnapshot(snapshot) {
       "networkUsage",
       `Down ${formatBytes(snapshot.network.downloadPerSecond)}/s · Up ${formatBytes(snapshot.network.uploadPerSecond)}/s`,
     );
+    setField("networkDownload", `${formatBytes(snapshot.network.downloadPerSecond)}/s`);
+    setField("networkUpload", `${formatBytes(snapshot.network.uploadPerSecond)}/s`);
+    setField("networkTotalDownload", formatBytes(snapshot.network.totalDownload));
+    setField("networkTotalUpload", formatBytes(snapshot.network.totalUpload));
   } else {
     setField("networkUsage", "Unavailable");
+    setField("networkDownload", "Unavailable");
+    setField("networkUpload", "Unavailable");
+    setField("networkTotalDownload", "Unavailable");
+    setField("networkTotalUpload", "Unavailable");
   }
 
   setField("uptime", formatDuration(snapshot.uptimeSeconds));

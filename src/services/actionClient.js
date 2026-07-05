@@ -19,7 +19,7 @@ function buildActionUrl(actionId) {
   return new URL(`/api/v1/actions/${encodeURIComponent(actionId)}`, baseUrl).toString();
 }
 
-async function executeAction(actionId, params = {}) {
+async function executeAction(actionId, payload = {}) {
   const config = getAgentConfig();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -37,9 +37,7 @@ async function executeAction(actionId, params = {}) {
     const response = await fetch(buildActionUrl(actionId), {
       method: "POST",
       headers,
-      body: JSON.stringify({
-        params,
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 

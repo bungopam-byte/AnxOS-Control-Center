@@ -1896,6 +1896,10 @@ function getDockerContainerLabel(container) {
   return container?.name || container?.id || "this container";
 }
 
+function getDockerContainerTarget(container) {
+  return container?.id || container?.name || null;
+}
+
 function getDockerActionErrorMessage(error) {
   if (typeof error?.message === "string" && error.message.trim() !== "") {
     return error.message.trim();
@@ -1957,9 +1961,17 @@ async function handleDockerAction(actionName) {
   updateDockerActionButtons();
 
   try {
+    const containerTarget = getDockerContainerTarget(selectedContainer);
+
+    if (!containerTarget) {
+      showToast("Docker action failed: no container target was selected.");
+      return;
+    }
+
     const response = await desktopApiState.api.actions.executeAction(definition.actionId, {
-      containerId: selectedContainer.id || null,
-      containerName: selectedContainer.name || null,
+      target: {
+        container: containerTarget,
+      },
     });
 
     showToast(response?.error?.message || definition.successMessage);

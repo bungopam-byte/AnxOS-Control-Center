@@ -1,5 +1,5 @@
 const { ipcMain } = require("electron");
-const { getDockerSnapshot } = require("../services/dockerService");
+const { getDockerSnapshot } = require("../services/serviceRouter");
 
 function registerDockerIpc() {
   ipcMain.handle("docker:getSnapshot", async () => getDockerSnapshot());

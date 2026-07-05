@@ -1,4 +1,5 @@
 const localDockerService = require("./dockerService");
+const localPlayitService = require("./playitService");
 const agentClient = require("./agentClient");
 
 const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
@@ -57,7 +58,42 @@ async function getDockerSnapshot() {
   return localDockerService.getDockerSnapshot();
 }
 
+async function getAgentPlayitSnapshot() {
+  if (!(await agentClient.isHealthy())) {
+    throw new AgentUnavailableError();
+  }
+
+  try {
+    return await agentClient.getPlayitSnapshot();
+  } catch {
+    throw new AgentUnavailableError();
+  }
+}
+
+async function getPlayitSnapshot() {
+  const backendMode = getBackendMode();
+
+  if (backendMode === "local") {
+    return localPlayitService.getPlayitSnapshot();
+  }
+
+  if (backendMode === "agent") {
+    return getAgentPlayitSnapshot();
+  }
+
+  if (await agentClient.isHealthy()) {
+    try {
+      return await agentClient.getPlayitSnapshot();
+    } catch {
+      return localPlayitService.getPlayitSnapshot();
+    }
+  }
+
+  return localPlayitService.getPlayitSnapshot();
+}
+
 module.exports = {
   getBackendMode,
   getDockerSnapshot,
+  getPlayitSnapshot,
 };

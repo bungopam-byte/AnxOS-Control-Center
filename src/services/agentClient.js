@@ -304,6 +304,51 @@ async function getDockerSnapshot() {
   };
 }
 
+function normalizePlayitSnapshot(payload) {
+  const snapshot = unwrapPayload(payload, "snapshot");
+  const candidate =
+    snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+      ? snapshot
+      : payload && typeof payload === "object" && !Array.isArray(payload)
+        ? payload
+        : {};
+
+  return {
+    installed: candidate.installed ?? false,
+    running: candidate.running ?? false,
+    connected: candidate.connected ?? false,
+    tunnelAddress: candidate.tunnelAddress || null,
+    tunnelDomain: candidate.tunnelDomain || (candidate.tunnelAddress ? String(candidate.tunnelAddress).split(":")[0] : null),
+    localTarget: candidate.localTarget || null,
+    localIp: candidate.localIp || null,
+    localPort: candidate.localPort || null,
+    protocol: candidate.protocol || null,
+    tunnelId: candidate.tunnelId || null,
+    lastCheckedAt: candidate.lastCheckedAt || new Date().toISOString(),
+    lastSuccessfulRefreshAt: candidate.lastSuccessfulRefreshAt || null,
+    diagnostics: candidate.diagnostics && typeof candidate.diagnostics === "object"
+      ? {
+          ...candidate.diagnostics,
+          agent: {
+            url: getAgentConfig().url,
+          },
+        }
+      : {
+          agent: {
+            url: getAgentConfig().url,
+          },
+        },
+  };
+}
+
+async function getPlayitStatus() {
+  return requestJson("/api/v1/playit/status");
+}
+
+async function getPlayitSnapshot() {
+  return normalizePlayitSnapshot(await getPlayitStatus());
+}
+
 module.exports = {
   AgentClientError,
   getAgentConfig,
@@ -311,6 +356,8 @@ module.exports = {
   getDockerSnapshot,
   getDockerSummary,
   getHealth,
+  getPlayitSnapshot,
+  getPlayitStatus,
   isHealthy,
   loadEnvironment,
 };

@@ -10,6 +10,7 @@ const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
 let environmentLoaded = false;
 let lastLoggedAgentSelection = null;
+let lastLoggedAgentConfigMeta = null;
 
 class AgentClientError extends Error {
   constructor(message, details = {}) {
@@ -41,6 +42,24 @@ function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function stripByteOrderMark(value) {
+  return typeof value === "string" ? value.replace(/^\uFEFF/, "") : value;
+}
+
+function hasOwn(object, key) {
+  return Boolean(object) && Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function firstDefined(object, keys) {
+  for (const key of keys) {
+    if (hasOwn(object, key) && object[key] !== undefined) {
+      return object[key];
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeBackendMode(value) {
   const normalized = trimValue(value).toLowerCase();
   return VALID_BACKEND_MODES.has(normalized) ? normalized : DEFAULT_BACKEND_MODE;
@@ -55,10 +74,14 @@ function getDefaultAgentSettings() {
 }
 
 function normalizeAgentSettings(settings = {}) {
+  const modeValue = firstDefined(settings, ["backendMode", "mode"]);
+  const urlValue = firstDefined(settings, ["agentUrl", "url"]);
+  const tokenValue = firstDefined(settings, ["agentToken", "token"]);
+
   return {
-    backendMode: normalizeBackendMode(settings.backendMode),
-    agentUrl: trimValue(settings.agentUrl) || DEFAULT_AGENT_URL,
-    agentToken: trimValue(settings.agentToken),
+    backendMode: modeValue === undefined ? DEFAULT_BACKEND_MODE : normalizeBackendMode(modeValue),
+    agentUrl: trimValue(urlValue) || DEFAULT_AGENT_URL,
+    agentToken: trimValue(tokenValue),
   };
 }
 
@@ -82,6 +105,26 @@ function getAgentConfigDirectory() {
 
 function getAgentConfigPath() {
   return path.join(getAgentConfigDirectory(), "agent.json");
+}
+
+function logAgentConfigMetadata(reason, configPath, settings = null) {
+  const payload = {
+    reason,
+    configPath,
+    keys: settings && typeof settings === "object" && !Array.isArray(settings)
+      ? Object.keys(settings).sort()
+      : [],
+  };
+  const serialized = JSON.stringify(payload);
+
+  if (serialized === lastLoggedAgentConfigMeta) {
+    return;
+  }
+
+  lastLoggedAgentConfigMeta = serialized;
+  console.info(
+    `[AnxHub][Agent] Config path: ${payload.configPath} (source=${reason}, keys=${payload.keys.join(",") || "<none>"})`,
+  );
 }
 
 function logAgentSelection(reason, source) {
@@ -112,28 +155,42 @@ function ensureAgentConfigFile() {
   const agentConfigPath = getAgentConfigPath();
 
   if (!fs.existsSync(agentConfigPath)) {
-    fs.writeFileSync(
-      agentConfigPath,
-      `${JSON.stringify(getDefaultAgentSettings(), null, 2)}\n`,
-      "utf8",
-    );
+    const defaults = getDefaultAgentSettings();
+    fs.writeFileSync(agentConfigPath, `${JSON.stringify(defaults, null, 2)}\n`, "utf8");
+    logAgentConfigMetadata("created-default-config", agentConfigPath, defaults);
   }
 }
 
 function readAgentSettings() {
+  const agentConfigPath = getAgentConfigPath();
+
   try {
     ensureAgentConfigFile();
-    const rawConfig = fs.readFileSync(getAgentConfigPath(), "utf8");
-    return normalizeAgentSettings(JSON.parse(rawConfig));
+    const rawConfig = stripByteOrderMark(fs.readFileSync(agentConfigPath, "utf8"));
+    const parsed = JSON.parse(rawConfig);
+    logAgentConfigMetadata("read-config", agentConfigPath, parsed);
+    return normalizeAgentSettings(parsed);
   } catch {
+    logAgentConfigMetadata("read-config-fallback", agentConfigPath, null);
     return getDefaultAgentSettings();
   }
 }
 
 function saveAgentSettings(settings = {}) {
-  const normalized = normalizeAgentSettings(settings);
+  const existing = readAgentSettings();
+  const explicitMode = firstDefined(settings, ["backendMode", "mode"]);
+  const explicitUrl = firstDefined(settings, ["agentUrl", "url"]);
+  const hasExplicitToken = hasOwn(settings, "agentToken") || hasOwn(settings, "token");
+  const explicitToken = firstDefined(settings, ["agentToken", "token"]);
+  const normalized = normalizeAgentSettings({
+    backendMode: explicitMode === undefined ? existing.backendMode : explicitMode,
+    agentUrl: explicitUrl === undefined ? existing.agentUrl : explicitUrl,
+    agentToken: hasExplicitToken ? explicitToken : existing.agentToken,
+  });
+  const agentConfigPath = getAgentConfigPath();
   ensureAgentConfigDirectory();
-  fs.writeFileSync(getAgentConfigPath(), `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  fs.writeFileSync(agentConfigPath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  logAgentConfigMetadata("saved-config", agentConfigPath, normalized);
   logAgentSelection("saved-config", normalized);
   return normalized;
 }

@@ -1,5 +1,5 @@
 {
-  "backendMode": "local",
-  "agentUrl": "http://127.0.0.1:47131",
-  "agentToken": ""
+  "backendMode": "agent",
+  "agentUrl": "http://192.168.1.134:47131",
+  "agentToken": "test-token"
 }

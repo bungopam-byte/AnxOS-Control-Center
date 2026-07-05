@@ -2,6 +2,7 @@ const http = require("http");
 const { URL } = require("url");
 
 const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
+const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDockerContainers, handleDockerSummary } = require("./routes/docker");
@@ -108,6 +109,14 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/files/read") {
     return handleFilesRead(url);
+  }
+
+  if (pathname === "/api/v1/console/commands") {
+    return handleConsoleCommands();
+  }
+
+  if (pathname === "/api/v1/console/logs") {
+    return handleConsoleLogs(url);
   }
 
   return {

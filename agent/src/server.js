@@ -5,6 +5,7 @@ const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDockerContainers, handleDockerSummary } = require("./routes/docker");
+const { handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handlePlayitStatus } = require("./routes/playit");
 const { handleSystemSummary } = require("./routes/system");
@@ -13,6 +14,11 @@ const config = getConfig();
 
 function sendJson(response, statusCode, body) {
   const payload = JSON.stringify(body);
+
+  if (Buffer.byteLength(payload) > config.maxResponseBytes) {
+    sendError(response, 413, "RESPONSE_TOO_LARGE");
+    return;
+  }
 
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
@@ -49,7 +55,9 @@ function readRequestBody(request) {
   });
 }
 
-async function routeRequest(request, pathname) {
+async function routeRequest(request, url) {
+  const pathname = url.pathname;
+
   if (request.method !== "GET") {
     return {
       statusCode: 405,
@@ -90,6 +98,18 @@ async function routeRequest(request, pathname) {
     return handleAmpInstances();
   }
 
+  if (pathname === "/api/v1/files/list") {
+    return handleFilesList(url);
+  }
+
+  if (pathname === "/api/v1/files/stat") {
+    return handleFilesStat(url);
+  }
+
+  if (pathname === "/api/v1/files/read") {
+    return handleFilesRead(url);
+  }
+
   return {
     statusCode: 404,
     body: {
@@ -117,11 +137,11 @@ async function handleRequest(request, response) {
       return;
     }
 
-    const result = await routeRequest(request, url.pathname);
+    const result = await routeRequest(request, url);
     sendJson(response, result.statusCode, result.body);
   } catch (error) {
     if (!response.headersSent) {
-      sendError(response, error.statusCode || 500, error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR");
+      sendError(response, error.statusCode || 500, error.code || (error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR"));
     }
   }
 }

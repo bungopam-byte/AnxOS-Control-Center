@@ -1,6 +1,7 @@
 const http = require("http");
 const { URL } = require("url");
 
+const { handleActionInvoke, handleActionsList } = require("./routes/actions");
 const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
 const { handleBackupsList } = require("./routes/backups");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
@@ -59,6 +60,10 @@ function readRequestBody(request) {
 
 async function routeRequest(request, url) {
   const pathname = url.pathname;
+
+  if (request.method === "POST" && pathname.startsWith("/api/v1/actions/")) {
+    return handleActionInvoke(request, url);
+  }
 
   if (request.method !== "GET") {
     return {
@@ -122,6 +127,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/backups/list") {
     return handleBackupsList();
+  }
+
+  if (pathname === "/api/v1/actions") {
+    return handleActionsList();
   }
 
   return {

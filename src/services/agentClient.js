@@ -237,6 +237,16 @@ function buildAgentUrl(pathname, configOverride = null) {
   return new URL(pathname, baseUrl).toString();
 }
 
+function logAgentRequest(pathname, status, ok, errorCode = null) {
+  console.info(
+    `[AnxHub][Agent] Request ${pathname} (status=${status ?? "n/a"}, ok=${ok ? "true" : "false"}, errorCode=${errorCode || "none"})`,
+  );
+}
+
+function getTransportErrorCode(error) {
+  return error?.cause?.code || error?.code || null;
+}
+
 async function requestJson(pathname, options = {}) {
   const {
     config: configOverride = null,
@@ -270,6 +280,8 @@ async function requestJson(pathname, options = {}) {
     const contentType = response.headers.get("content-type") || "";
     const payload = contentType.includes("application/json") ? await response.json() : await response.text();
 
+    logAgentRequest(pathname, response.status, response.ok, response.ok ? null : "AGENT_HTTP_ERROR");
+
     if (!response.ok) {
       throw new AgentClientError(`Agent request failed with HTTP ${response.status}.`, {
         status: response.status,
@@ -283,8 +295,12 @@ async function requestJson(pathname, options = {}) {
       throw error;
     }
 
+    const errorCode = error?.name === "AbortError"
+      ? "AGENT_TIMEOUT"
+      : getTransportErrorCode(error) || "AGENT_UNAVAILABLE";
+    logAgentRequest(pathname, null, false, errorCode);
     throw new AgentClientError("Agent unavailable.", {
-      code: error?.name === "AbortError" ? "AGENT_TIMEOUT" : "AGENT_UNAVAILABLE",
+      code: errorCode,
     });
   } finally {
     clearTimeout(timeout);

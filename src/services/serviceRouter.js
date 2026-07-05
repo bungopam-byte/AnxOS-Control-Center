@@ -39,10 +39,6 @@ function getBackendMode() {
 }
 
 async function getAgentDockerSnapshot() {
-  if (!(await agentClient.isHealthy())) {
-    throw new AgentUnavailableError();
-  }
-
   try {
     return await agentClient.getDockerSnapshot();
   } catch {
@@ -61,22 +57,14 @@ async function getDockerSnapshot() {
     return getAgentDockerSnapshot();
   }
 
-  if (await agentClient.isHealthy()) {
-    try {
-      return await agentClient.getDockerSnapshot();
-    } catch {
-      return localDockerService.getDockerSnapshot();
-    }
+  try {
+    return await agentClient.getDockerSnapshot();
+  } catch {
+    return localDockerService.getDockerSnapshot();
   }
-
-  return localDockerService.getDockerSnapshot();
 }
 
 async function getAgentPlayitSnapshot() {
-  if (!(await agentClient.isHealthy())) {
-    throw new AgentUnavailableError();
-  }
-
   try {
     return await agentClient.getPlayitSnapshot();
   } catch {
@@ -95,22 +83,14 @@ async function getPlayitSnapshot() {
     return getAgentPlayitSnapshot();
   }
 
-  if (await agentClient.isHealthy()) {
-    try {
-      return await agentClient.getPlayitSnapshot();
-    } catch {
-      return localPlayitService.getPlayitSnapshot();
-    }
+  try {
+    return await agentClient.getPlayitSnapshot();
+  } catch {
+    return localPlayitService.getPlayitSnapshot();
   }
-
-  return localPlayitService.getPlayitSnapshot();
 }
 
 async function getAgentAmpSnapshot() {
-  if (!(await agentClient.isHealthy())) {
-    throw new AgentUnavailableError();
-  }
-
   try {
     return await agentClient.getAmpSnapshot();
   } catch {
@@ -129,15 +109,11 @@ async function getAmpSnapshot() {
     return getAgentAmpSnapshot();
   }
 
-  if (await agentClient.isHealthy()) {
-    try {
-      return await agentClient.getAmpSnapshot();
-    } catch {
-      return localAmpService.getAmpSnapshot();
-    }
+  try {
+    return await agentClient.getAmpSnapshot();
+  } catch {
+    return localAmpService.getAmpSnapshot();
   }
-
-  return localAmpService.getAmpSnapshot();
 }
 
 async function getAgentFileListing() {

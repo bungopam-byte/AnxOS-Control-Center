@@ -1,5 +1,12 @@
 const { getAmpInstances, getAmpStatus } = require("../services/ampService");
 
+async function handleAmpSnapshot() {
+  return {
+    statusCode: 200,
+    body: await getAmpStatus(),
+  };
+}
+
 async function handleAmpStatus() {
   return {
     statusCode: 200,
@@ -16,5 +23,6 @@ async function handleAmpInstances() {
 
 module.exports = {
   handleAmpInstances,
+  handleAmpSnapshot,
   handleAmpStatus,
 };

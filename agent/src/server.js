@@ -2,16 +2,16 @@ const http = require("http");
 const { URL } = require("url");
 
 const { handleActionInvoke, handleActionsList } = require("./routes/actions");
-const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
+const { handleAmpInstances, handleAmpSnapshot, handleAmpStatus } = require("./routes/amp");
 const { auditAction } = require("./audit/auditLogger");
 const { handleBackupsList } = require("./routes/backups");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
-const { handleDockerContainers, handleDockerSummary } = require("./routes/docker");
+const { handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
 const { handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
-const { handlePlayitStatus } = require("./routes/playit");
+const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handleSystemSummary } = require("./routes/system");
 
 const config = getConfig();
@@ -103,12 +103,24 @@ async function routeRequest(request, url) {
     return handleDockerContainers();
   }
 
+  if (pathname === "/api/v1/docker/snapshot") {
+    return handleDockerSnapshot();
+  }
+
   if (pathname === "/api/v1/docker/summary") {
     return handleDockerSummary();
   }
 
+  if (pathname === "/api/v1/playit/snapshot") {
+    return handlePlayitSnapshot();
+  }
+
   if (pathname === "/api/v1/playit/status") {
     return handlePlayitStatus();
+  }
+
+  if (pathname === "/api/v1/amp/snapshot") {
+    return handleAmpSnapshot();
   }
 
   if (pathname === "/api/v1/amp/status") {

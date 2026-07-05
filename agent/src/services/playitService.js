@@ -64,5 +64,6 @@ async function getPlayitStatus() {
 }
 
 module.exports = {
+  getPlayitSnapshot,
   getPlayitStatus,
 };

@@ -1,14 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
+const { app } = require("electron");
 
-const AGENT_CONFIG_PATH = path.resolve(__dirname, "..", "..", "config", "agent.json");
 const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const REQUEST_TIMEOUT_MS = 3500;
 const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
 let environmentLoaded = false;
+let lastLoggedAgentSelection = null;
 
 class AgentClientError extends Error {
   constructor(message, details = {}) {
@@ -61,16 +62,58 @@ function normalizeAgentSettings(settings = {}) {
   };
 }
 
+function getAgentConfigDirectory() {
+  const explicitConfigDir = trimValue(process.env.ANXHUB_CONFIG_DIR);
+
+  if (explicitConfigDir) {
+    return explicitConfigDir;
+  }
+
+  if (app) {
+    try {
+      return path.join(app.getPath("userData"), "config");
+    } catch {
+      // Fall through to a writable non-Electron fallback.
+    }
+  }
+
+  return path.join(process.cwd(), "config");
+}
+
+function getAgentConfigPath() {
+  return path.join(getAgentConfigDirectory(), "agent.json");
+}
+
+function logAgentSelection(reason, source) {
+  const payload = {
+    reason,
+    backendMode: source.backendMode,
+    agentUrl: source.agentUrl || DEFAULT_AGENT_URL,
+    hasToken: Boolean(trimValue(source.agentToken)),
+  };
+  const serialized = JSON.stringify(payload);
+
+  if (serialized === lastLoggedAgentSelection) {
+    return;
+  }
+
+  lastLoggedAgentSelection = serialized;
+  console.info(
+    `[AnxHub][Agent] Selected agent URL: ${payload.agentUrl} (mode=${payload.backendMode}, source=${reason}, token=${payload.hasToken ? "set" : "unset"})`,
+  );
+}
+
 function ensureAgentConfigDirectory() {
-  fs.mkdirSync(path.dirname(AGENT_CONFIG_PATH), { recursive: true });
+  fs.mkdirSync(getAgentConfigDirectory(), { recursive: true });
 }
 
 function ensureAgentConfigFile() {
   ensureAgentConfigDirectory();
+  const agentConfigPath = getAgentConfigPath();
 
-  if (!fs.existsSync(AGENT_CONFIG_PATH)) {
+  if (!fs.existsSync(agentConfigPath)) {
     fs.writeFileSync(
-      AGENT_CONFIG_PATH,
+      agentConfigPath,
       `${JSON.stringify(getDefaultAgentSettings(), null, 2)}\n`,
       "utf8",
     );
@@ -80,7 +123,7 @@ function ensureAgentConfigFile() {
 function readAgentSettings() {
   try {
     ensureAgentConfigFile();
-    const rawConfig = fs.readFileSync(AGENT_CONFIG_PATH, "utf8");
+    const rawConfig = fs.readFileSync(getAgentConfigPath(), "utf8");
     return normalizeAgentSettings(JSON.parse(rawConfig));
   } catch {
     return getDefaultAgentSettings();
@@ -90,7 +133,8 @@ function readAgentSettings() {
 function saveAgentSettings(settings = {}) {
   const normalized = normalizeAgentSettings(settings);
   ensureAgentConfigDirectory();
-  fs.writeFileSync(AGENT_CONFIG_PATH, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  fs.writeFileSync(getAgentConfigPath(), `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  logAgentSelection("saved-config", normalized);
   return normalized;
 }
 
@@ -102,7 +146,7 @@ function getEffectiveAgentSettings() {
   const environmentUrl = trimValue(process.env.AGENT_URL);
   const environmentToken = trimValue(process.env.AGENT_TOKEN);
 
-  return {
+  const effective = {
     backendMode: environmentMode ? normalizeBackendMode(environmentMode) : stored.backendMode,
     agentUrl: environmentUrl || stored.agentUrl || DEFAULT_AGENT_URL,
     agentToken: environmentToken || stored.agentToken || "",
@@ -112,6 +156,9 @@ function getEffectiveAgentSettings() {
       agentToken: Boolean(environmentToken),
     },
   };
+
+  logAgentSelection("effective-config", effective);
+  return effective;
 }
 
 function getBackendMode() {
@@ -415,14 +462,11 @@ async function getDockerContainers() {
 }
 
 async function getDockerSnapshot() {
-  const [summaryPayload, containersPayload] = await Promise.all([
-    getDockerSummary(),
-    getDockerContainers(),
-  ]);
-  const containers = normalizeContainers(containersPayload);
+  const payload = await requestJson("/api/v1/docker/snapshot");
+  const containers = normalizeContainers(payload);
 
   return {
-    ...normalizeSummary(summaryPayload, containers),
+    ...normalizeSummary(payload, containers),
     containers,
   };
 }
@@ -469,7 +513,7 @@ async function getPlayitStatus() {
 }
 
 async function getPlayitSnapshot() {
-  return normalizePlayitSnapshot(await getPlayitStatus());
+  return normalizePlayitSnapshot(await requestJson("/api/v1/playit/snapshot"));
 }
 
 function safeNumber(value) {
@@ -934,12 +978,8 @@ async function getAmpInstances() {
 }
 
 async function getAmpSnapshot() {
-  const [statusPayload, instancesPayload] = await Promise.all([
-    getAmpStatus(),
-    getAmpInstances(),
-  ]);
-
-  return normalizeAmpSnapshot(statusPayload, instancesPayload);
+  const payload = await requestJson("/api/v1/amp/snapshot");
+  return normalizeAmpSnapshot(payload, payload);
 }
 
 function normalizePathSegments(value) {
@@ -1174,8 +1214,8 @@ async function getFileListing(currentPath = ".") {
 }
 
 module.exports = {
-  AGENT_CONFIG_PATH,
   AgentClientError,
+  getAgentConfigPath,
   getBackendMode,
   getDefaultAgentSettings,
   getEffectiveAgentSettings,

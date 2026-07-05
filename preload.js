@@ -22,6 +22,18 @@ const desktopApi = {
   files: {
     getListing: () => ipcRenderer.invoke("files:getListing"),
   },
+  ssh: {
+    listProfiles: () => ipcRenderer.invoke("ssh:listProfiles"),
+    connect: (payload) => ipcRenderer.invoke("ssh:connect", payload),
+    disconnect: (sessionId) => ipcRenderer.invoke("ssh:disconnect", { sessionId }),
+    write: (sessionId, input) => ipcRenderer.invoke("ssh:write", { sessionId, input }),
+    resize: (sessionId, size = {}) => ipcRenderer.invoke("ssh:resize", { sessionId, ...size }),
+    onEvent: (callback) => {
+      const handler = (_, payload) => callback(payload);
+      ipcRenderer.on("ssh:event", handler);
+      return () => ipcRenderer.removeListener("ssh:event", handler);
+    },
+  },
   settings: {
     getAgentConfig: () => ipcRenderer.invoke("settings:getAgentConfig"),
     saveAgentConfig: (settings) => ipcRenderer.invoke("settings:saveAgentConfig", settings),

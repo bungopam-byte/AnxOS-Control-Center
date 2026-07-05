@@ -793,6 +793,32 @@ function formatDockerPorts(value) {
   return formatDockerValue(value);
 }
 
+function formatDockerCpu(container) {
+  return formatDockerValue(container?.stats?.cpuPercent);
+}
+
+function formatDockerMemory(container) {
+  const usage = container?.stats?.memoryUsage;
+  const limit = container?.stats?.memoryLimit;
+
+  if (usage && limit) {
+    return `${usage} / ${limit}`;
+  }
+
+  return formatDockerValue(container?.stats?.memoryRaw || usage);
+}
+
+function formatDockerResources(container) {
+  const cpu = formatDockerCpu(container);
+  const memory = formatDockerMemory(container);
+
+  if (cpu === "Unavailable" && memory === "Unavailable") {
+    return "Unavailable";
+  }
+
+  return `CPU ${cpu} · RAM ${memory}`;
+}
+
 function getDockerStateLabel(snapshot) {
   if (!snapshot?.installed) {
     return {
@@ -833,7 +859,7 @@ function setDockerDetails(container = null) {
   setDockerDetail("name", formatDockerValue(container.name));
   setDockerDetail("status", formatDockerValue(container.status || container.state));
   setDockerDetail("image", formatDockerValue(container.image));
-  setDockerDetail("resources", "Unavailable");
+  setDockerDetail("resources", formatDockerResources(container));
   setDockerDetail("ports", formatDockerPorts(container.ports));
   setDockerDetail("uptime", formatDockerValue(container.runningFor || container.createdAt));
 }
@@ -856,8 +882,8 @@ function renderDockerRows(containers) {
     addDockerCell(row, formatDockerValue(container.name));
     addDockerCell(row, formatDockerValue(container.status || container.state));
     addDockerCell(row, formatDockerValue(container.image));
-    addDockerCell(row, "Unavailable");
-    addDockerCell(row, "Unavailable");
+    addDockerCell(row, formatDockerCpu(container));
+    addDockerCell(row, formatDockerMemory(container));
     addDockerCell(row, formatDockerPorts(container.ports));
     addDockerCell(row, formatDockerValue(container.runningFor || container.createdAt));
     dockerList.appendChild(row);

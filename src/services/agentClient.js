@@ -349,8 +349,481 @@ async function getPlayitSnapshot() {
   return normalizePlayitSnapshot(await getPlayitStatus());
 }
 
+function safeNumber(value) {
+  if (value === null || value === undefined || typeof value === "boolean" || value === "" || Array.isArray(value)) {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizePercent(value) {
+  const number = safeNumber(value);
+  if (number === null) {
+    return null;
+  }
+
+  return number <= 1 ? number * 100 : number;
+}
+
+function parseDurationSeconds(value) {
+  if (typeof value !== "string") {
+    return safeNumber(value);
+  }
+
+  const parts = value.split(":").map((part) => safeNumber(part));
+
+  if (parts.some((part) => part === null)) {
+    return safeNumber(value);
+  }
+
+  if (parts.length === 4) {
+    const [days, hours, minutes, seconds] = parts;
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds;
+  }
+
+  if (parts.length === 3) {
+    const [hours, minutes, seconds] = parts;
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  return safeNumber(value);
+}
+
+function findAmpValue(source, keys) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) {
+      return source[key];
+    }
+  }
+
+  return null;
+}
+
+function hasAnyAmpKey(value, keys) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return keys.some((key) => value[key] !== undefined && value[key] !== null);
+}
+
+function unwrapAmpResult(value) {
+  if (value && typeof value === "object" && Object.keys(value).length === 1 && value.result !== undefined) {
+    return value.result;
+  }
+
+  return value;
+}
+
+function asAmpArray(value) {
+  const unwrapped = unwrapAmpResult(value);
+
+  if (Array.isArray(unwrapped)) {
+    return unwrapped;
+  }
+
+  if (!unwrapped || typeof unwrapped !== "object") {
+    return [];
+  }
+
+  const preferredKeys = [
+    "instances",
+    "Instances",
+    "AvailableInstances",
+    "minecraftInstances",
+    "data",
+    "result",
+    "Result",
+  ];
+
+  for (const key of preferredKeys) {
+    if (unwrapped[key] !== undefined && unwrapped[key] !== unwrapped) {
+      const nested = asAmpArray(unwrapped[key]);
+
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+  }
+
+  if (
+    hasAnyAmpKey(unwrapped, [
+      "id",
+      "Id",
+      "ID",
+      "InstanceID",
+      "InstanceId",
+      "name",
+      "Name",
+      "FriendlyName",
+      "Module",
+      "ModuleName",
+      "ApplicationModule",
+    ])
+  ) {
+    return [unwrapped];
+  }
+
+  return Object.entries(unwrapped)
+    .filter(([, item]) => item && typeof item === "object")
+    .map(([mapKey, item]) => ({ mapKey, ...item }));
+}
+
+function getAmpInstanceId(instance) {
+  return findAmpValue(instance, ["id", "Id", "ID", "InstanceID", "InstanceId", "InstanceIdString", "Guid", "mapKey"]);
+}
+
+function getAmpModuleType(instance) {
+  return findAmpValue(instance, ["moduleType", "Module", "ModuleName", "ApplicationModule", "AppModule", "Application"]) || "Unknown";
+}
+
+function getAmpInstanceName(instance) {
+  return findAmpValue(instance, ["name", "Name", "InstanceName", "FriendlyName", "DisplayName", "Description"]) || "AMP Instance";
+}
+
+function isAmpMinecraftInstance(instance) {
+  const searchable = [
+    getAmpInstanceName(instance),
+    getAmpModuleType(instance),
+    findAmpValue(instance, ["Target", "Type", "Application", "ApplicationName"]),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return searchable.includes("minecraft") || searchable.includes("mc") || searchable.includes("atm10");
+}
+
+function normalizeAmpPorts(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((port) => {
+        if (typeof port === "number" || typeof port === "string") {
+          return String(port);
+        }
+
+        if (!port || typeof port !== "object") {
+          return null;
+        }
+
+        const number = findAmpValue(port, ["Port", "port", "HostPort", "ContainerPort", "PublicPort"]);
+        const protocol = findAmpValue(port, ["Protocol", "protocol"]);
+        return number ? `${number}${protocol ? `/${protocol}` : ""}` : null;
+      })
+      .filter(Boolean);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.values(value)
+      .map((port) => (typeof port === "object" ? findAmpValue(port, ["Port", "port", "HostPort", "PublicPort"]) : port))
+      .filter((port) => port !== null && port !== undefined)
+      .map(String);
+  }
+
+  const singlePort = safeNumber(value);
+  return singlePort === null ? [] : [String(singlePort)];
+}
+
+function normalizeAmpInstance(instance) {
+  if (!instance || typeof instance !== "object") {
+    return null;
+  }
+
+  const state =
+    findAmpValue(instance, ["state", "State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState"]) ||
+    "Unknown";
+
+  return {
+    id: getAmpInstanceId(instance) || getAmpInstanceName(instance),
+    name: getAmpInstanceName(instance),
+    friendlyName: findAmpValue(instance, ["friendlyName", "FriendlyName"]),
+    moduleType: getAmpModuleType(instance),
+    isMinecraft: isAmpMinecraftInstance(instance),
+    state,
+    playerCount: safeNumber(findAmpValue(instance, [
+      "playerCount",
+      "Players",
+      "PlayerCount",
+      "CurrentPlayers",
+      "ActiveUsers",
+      "UsersOnline",
+      "OnlinePlayers",
+      "PlayersOnline",
+    ])),
+    maxPlayers: safeNumber(findAmpValue(instance, ["maxPlayers", "MaxPlayers", "MaximumPlayers", "PlayerLimit", "MaxUsers"])),
+    tps: safeNumber(findAmpValue(instance, ["tps", "TPS", "TicksPerSecond", "ServerTPS", "CurrentTPS"])),
+    cpuUsage: normalizePercent(findAmpValue(instance, ["cpuUsage", "CPUUsage", "CpuUsage", "CPU", "ProcessorUsage", "PercentCPU"])),
+    ramUsage: safeNumber(findAmpValue(instance, [
+      "ramUsage",
+      "MemoryUsageMB",
+      "MemoryMB",
+      "MemoryUsage",
+      "RAMUsage",
+      "UsedMemory",
+      "Memory",
+      "MemUsageMB",
+    ])),
+    ports: normalizeAmpPorts(findAmpValue(instance, ["ports", "Ports", "Port", "PortMappings", "ApplicationEndpoints", "NetworkPorts", "Endpoint", "Endpoints"])),
+    uptime: parseDurationSeconds(findAmpValue(instance, ["uptime", "Uptime", "UptimeSeconds", "RunningSeconds", "StartedFor", "UptimeSec"])),
+    version: findAmpValue(instance, [
+      "version",
+      "Version",
+      "AppVersion",
+      "ApplicationVersion",
+      "ServerVersion",
+      "MinecraftVersion",
+      "ProductVersion",
+      "ReleaseStream",
+      "Build",
+    ]),
+  };
+}
+
+function getAmpSummaryCandidate(payload) {
+  const unwrapped = unwrapPayload(payload, "summary");
+  return unwrapped && typeof unwrapped === "object" && !Array.isArray(unwrapped)
+    ? unwrapped
+    : payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload
+      : {};
+}
+
+function selectAmpMinecraftInstance(instances) {
+  const minecraftInstances = instances.filter((instance) => instance.isMinecraft);
+
+  return {
+    selected: minecraftInstances.length === 1 ? minecraftInstances[0] : null,
+    minecraftInstances,
+    mode: minecraftInstances.length === 0 ? "none" : minecraftInstances.length === 1 ? "auto" : "multiple",
+  };
+}
+
+function summarizeAmpInstances(instances, summaryCandidate, selectedInstance, minecraftSelectionMode) {
+  if (summaryCandidate && typeof summaryCandidate === "object" && summaryCandidate.selectedInstanceName !== undefined) {
+    return {
+      selectedInstanceId: summaryCandidate.selectedInstanceId || selectedInstance?.id || null,
+      selectedInstanceName: summaryCandidate.selectedInstanceName || selectedInstance?.name || null,
+      minecraftInstanceCount: coerceNumber(summaryCandidate.minecraftInstanceCount, instances.filter((instance) => instance.isMinecraft).length),
+      minecraftSelectionMode: summaryCandidate.minecraftSelectionMode || minecraftSelectionMode,
+      state: summaryCandidate.state || null,
+      playerCount: safeNumber(summaryCandidate.playerCount),
+      maxPlayers: safeNumber(summaryCandidate.maxPlayers),
+      tps: safeNumber(summaryCandidate.tps),
+      cpuUsage: normalizePercent(summaryCandidate.cpuUsage),
+      ramUsage: safeNumber(summaryCandidate.ramUsage),
+      ports: Array.isArray(summaryCandidate.ports) ? summaryCandidate.ports.map(String) : [],
+      uptime: parseDurationSeconds(summaryCandidate.uptime),
+      version: summaryCandidate.version || null,
+    };
+  }
+
+  if (instances.length === 0) {
+    return {
+      selectedInstanceId: null,
+      selectedInstanceName: null,
+      minecraftInstanceCount: 0,
+      minecraftSelectionMode,
+      state: "No instances",
+      playerCount: null,
+      maxPlayers: null,
+      tps: null,
+      cpuUsage: null,
+      ramUsage: null,
+      ports: [],
+      uptime: null,
+      version: null,
+    };
+  }
+
+  const primary = selectedInstance || instances[0];
+  const scopedInstances = selectedInstance ? [selectedInstance] : instances;
+  const playerValues = scopedInstances.map((instance) => instance.playerCount).filter(Number.isFinite);
+  const cpuValues = scopedInstances.map((instance) => instance.cpuUsage).filter(Number.isFinite);
+  const ramValues = scopedInstances.map((instance) => instance.ramUsage).filter(Number.isFinite);
+  const tpsValues = scopedInstances.map((instance) => instance.tps).filter(Number.isFinite);
+
+  return {
+    selectedInstanceId: selectedInstance?.id || null,
+    selectedInstanceName: selectedInstance?.name || null,
+    minecraftInstanceCount: instances.filter((instance) => instance.isMinecraft).length,
+    minecraftSelectionMode,
+    state: primary.state,
+    playerCount: playerValues.length > 0 ? playerValues.reduce((total, value) => total + value, 0) : null,
+    maxPlayers: primary.maxPlayers,
+    tps: tpsValues.length > 0 ? tpsValues[0] : null,
+    cpuUsage: cpuValues.length > 0 ? cpuValues.reduce((sum, value) => sum + value, 0) : null,
+    ramUsage: ramValues.length > 0 ? ramValues.reduce((sum, value) => sum + value, 0) : null,
+    ports: primary.ports || [],
+    uptime: primary.uptime,
+    version: primary.version || null,
+  };
+}
+
+function getAmpStatusMessage(status, connected) {
+  if (connected || status === "connected") {
+    return "Connected to AMP.";
+  }
+
+  if (status === "auth_failed") {
+    return "AMP authentication failed.";
+  }
+
+  if (status === "unconfigured") {
+    return "AMP is not configured.";
+  }
+
+  return "AMP unavailable.";
+}
+
+function getAmpConnectionLabel(status) {
+  if (status === "connected") {
+    return "Connected";
+  }
+
+  if (status === "auth_failed") {
+    return "Auth failed";
+  }
+
+  if (status === "unreachable" || status === "error") {
+    return "Unreachable";
+  }
+
+  if (status === "unconfigured") {
+    return "Unconfigured";
+  }
+
+  return "Unavailable";
+}
+
+function normalizeAmpSnapshot(statusPayload, instancesPayload) {
+  const statusCandidate = getAmpSummaryCandidate(statusPayload);
+  const instanceRows = asAmpArray(unwrapPayload(instancesPayload, "instances"));
+  const normalizedInstances = instanceRows.map(normalizeAmpInstance).filter(Boolean);
+  const explicitSelected = statusCandidate.selectedInstance ? normalizeAmpInstance(statusCandidate.selectedInstance) : null;
+  const selection = selectAmpMinecraftInstance(normalizedInstances);
+  const selectedInstance =
+    explicitSelected ||
+    normalizedInstances.find((instance) => instance.name === statusCandidate.summary?.selectedInstanceName) ||
+    normalizedInstances.find((instance) => instance.id === statusCandidate.summary?.selectedInstanceId) ||
+    selection.selected ||
+    null;
+  const minecraftInstances = Array.isArray(statusCandidate.minecraftInstances)
+    ? statusCandidate.minecraftInstances.map(normalizeAmpInstance).filter(Boolean)
+    : selection.minecraftInstances;
+  const configured = typeof statusCandidate.configured === "boolean" ? statusCandidate.configured : true;
+  const connected = typeof statusCandidate.connected === "boolean" ? statusCandidate.connected : coerceBoolean(statusCandidate.status, false);
+  const status = statusCandidate.status || (connected ? "connected" : "unreachable");
+  const message = statusCandidate.message || getAmpStatusMessage(status, connected);
+  const diagnostics = statusCandidate.diagnostics && typeof statusCandidate.diagnostics === "object"
+    ? {
+        ...statusCandidate.diagnostics,
+        agent: {
+          url: getAgentConfig().url,
+        },
+      }
+    : {
+        agent: {
+          url: getAgentConfig().url,
+        },
+      };
+  const summary = summarizeAmpInstances(
+    normalizedInstances,
+    statusCandidate.summary || statusCandidate,
+    selectedInstance,
+    statusCandidate.minecraftSelectionMode || selection.mode,
+  );
+  const connection = statusCandidate.connection && typeof statusCandidate.connection === "object"
+    ? {
+        ...statusCandidate.connection,
+        status: statusCandidate.connection.status || status,
+        label: statusCandidate.connection.label || getAmpConnectionLabel(status),
+        message: statusCandidate.connection.message || message,
+      }
+    : {
+        status,
+        label: getAmpConnectionLabel(status),
+        message,
+        connected: status === "connected",
+        unreachable: status === "unreachable" || status === "error",
+        authFailed: status === "auth_failed",
+        diagnostics,
+      };
+
+  return {
+    connected: connected || status === "connected",
+    configured,
+    status,
+    message,
+    diagnostics,
+    connection,
+    instanceCount: coerceNumber(statusCandidate.instanceCount, normalizedInstances.length),
+    instances: normalizedInstances,
+    selectedInstance,
+    minecraftInstances,
+    minecraftSelectionMode: statusCandidate.minecraftSelectionMode || selection.mode,
+    playerCount: summary.playerCount ?? null,
+    maxPlayers: summary.maxPlayers ?? null,
+    tps: summary.tps ?? null,
+    cpuUsage: summary.cpuUsage ?? null,
+    ramUsage: summary.ramUsage ?? null,
+    uptime: summary.uptime ?? null,
+    minecraft: statusCandidate.minecraft && typeof statusCandidate.minecraft === "object"
+      ? statusCandidate.minecraft
+      : {
+          selectedInstanceId: summary.selectedInstanceId || null,
+          selectedInstanceName: summary.selectedInstanceName || null,
+          instanceCount: summary.minecraftInstanceCount || 0,
+          selectionMode: summary.minecraftSelectionMode || statusCandidate.minecraftSelectionMode || selection.mode,
+          state: summary.state || null,
+          playerCount: summary.playerCount ?? null,
+          maxPlayers: summary.maxPlayers ?? null,
+          tps: summary.tps ?? null,
+          cpuUsage: summary.cpuUsage ?? null,
+          ramUsage: summary.ramUsage ?? null,
+          uptime: summary.uptime ?? null,
+          version: summary.version || null,
+          ports: summary.ports || [],
+        },
+    poll: statusCandidate.poll && typeof statusCandidate.poll === "object"
+      ? statusCandidate.poll
+      : {
+          sequence: null,
+          lastSuccessfulPollAt: null,
+          status,
+          instanceCount: normalizedInstances.length,
+        },
+    summary,
+  };
+}
+
+async function getAmpStatus() {
+  return requestJson("/api/v1/amp/status");
+}
+
+async function getAmpInstances() {
+  return requestJson("/api/v1/amp/instances");
+}
+
+async function getAmpSnapshot() {
+  const [statusPayload, instancesPayload] = await Promise.all([
+    getAmpStatus(),
+    getAmpInstances(),
+  ]);
+
+  return normalizeAmpSnapshot(statusPayload, instancesPayload);
+}
+
 module.exports = {
   AgentClientError,
+  getAmpInstances,
+  getAmpSnapshot,
+  getAmpStatus,
   getAgentConfig,
   getDockerContainers,
   getDockerSnapshot,

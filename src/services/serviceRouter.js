@@ -1,3 +1,4 @@
+const localAmpService = require("./ampService");
 const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const agentClient = require("./agentClient");
@@ -92,7 +93,42 @@ async function getPlayitSnapshot() {
   return localPlayitService.getPlayitSnapshot();
 }
 
+async function getAgentAmpSnapshot() {
+  if (!(await agentClient.isHealthy())) {
+    throw new AgentUnavailableError();
+  }
+
+  try {
+    return await agentClient.getAmpSnapshot();
+  } catch {
+    throw new AgentUnavailableError();
+  }
+}
+
+async function getAmpSnapshot() {
+  const backendMode = getBackendMode();
+
+  if (backendMode === "local") {
+    return localAmpService.getAmpSnapshot();
+  }
+
+  if (backendMode === "agent") {
+    return getAgentAmpSnapshot();
+  }
+
+  if (await agentClient.isHealthy()) {
+    try {
+      return await agentClient.getAmpSnapshot();
+    } catch {
+      return localAmpService.getAmpSnapshot();
+    }
+  }
+
+  return localAmpService.getAmpSnapshot();
+}
+
 module.exports = {
+  getAmpSnapshot,
   getBackendMode,
   getDockerSnapshot,
   getPlayitSnapshot,

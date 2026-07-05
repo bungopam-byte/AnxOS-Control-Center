@@ -43,3 +43,4 @@ const desktopApi = {
 
 contextBridge.exposeInMainWorld("anxhub", desktopApi);
 contextBridge.exposeInMainWorld("anxos", desktopApi);
+contextBridge.exposeInMainWorld("electronAPI", desktopApi);

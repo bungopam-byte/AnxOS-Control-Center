@@ -789,6 +789,18 @@
               </div>
             </div>
 
+            <div class="ssh-password-prompt" data-ssh-password-prompt hidden>
+              <label class="ssh-field">
+                <span>Password</span>
+                <input type="password" placeholder="Enter SSH password" autocomplete="current-password" data-ssh-password>
+              </label>
+              <div class="ssh-connection-actions">
+                <button class="inline-action" type="button" data-ssh-password-submit>Connect Now</button>
+                <button class="inline-action" type="button" data-ssh-password-cancel>Cancel</button>
+              </div>
+              <p class="ssh-password-note" data-ssh-password-message>Password is used for this session only and is not saved.</p>
+            </div>
+
             <div class="ssh-session-tabs" role="tablist" aria-label="SSH sessions">
               <button class="ssh-tab is-active" type="button" role="tab" aria-selected="true" disabled>New Session</button>
               <button class="ssh-tab" type="button" role="tab" aria-selected="false" disabled>+</button>

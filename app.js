@@ -62,6 +62,11 @@ const sshServerSelect = document.querySelector("[data-ssh-server]");
 const sshProfileSelect = document.querySelector("[data-ssh-profile]");
 const sshConnectButton = document.querySelector("[data-ssh-connect]");
 const sshDisconnectButton = document.querySelector("[data-ssh-disconnect]");
+const sshPasswordPrompt = document.querySelector("[data-ssh-password-prompt]");
+const sshPasswordInput = document.querySelector("[data-ssh-password]");
+const sshPasswordSubmitButton = document.querySelector("[data-ssh-password-submit]");
+const sshPasswordCancelButton = document.querySelector("[data-ssh-password-cancel]");
+const sshPasswordMessage = document.querySelector("[data-ssh-password-message]");
 const sshCommandForm = document.querySelector("[data-ssh-command-form]");
 const sshCommandInput = document.querySelector("[data-ssh-command]");
 const sshCommandSendButton = sshCommandForm?.querySelector('button[type="submit"]');
@@ -102,6 +107,9 @@ let activeSshSessionId = null;
 let sshEventUnsubscribe = null;
 let sshSelectedServerId = null;
 let sshSelectedProfileId = null;
+let sshPasswordPromptVisible = false;
+let sshPendingPasswordProfileId = null;
+let sshTransientStatusMessage = "";
 const sshProfilesState = {
   servers: [],
   profiles: [],
@@ -2154,6 +2162,35 @@ function getActiveSshProfile() {
   return sshProfilesState.profiles.find((profile) => profile.id === sshSelectedProfileId) || null;
 }
 
+function setSshPasswordPromptState(visible, message = "") {
+  sshPasswordPromptVisible = visible;
+
+  if (sshPasswordPrompt) {
+    sshPasswordPrompt.hidden = !visible;
+  }
+
+  if (sshPasswordMessage) {
+    sshPasswordMessage.textContent = message || "Password is used for this session only and is not saved.";
+  }
+
+  if (!visible) {
+    sshPendingPasswordProfileId = null;
+
+    if (sshPasswordInput) {
+      sshPasswordInput.value = "";
+    }
+  }
+}
+
+function focusSshPasswordPrompt() {
+  if (sshPasswordInput) {
+    window.requestAnimationFrame(() => {
+      sshPasswordInput.focus();
+      sshPasswordInput.select?.();
+    });
+  }
+}
+
 function getSshProfileById(profileId) {
   return sshProfilesState.profiles.find((profile) => profile.id === profileId) || null;
 }
@@ -2351,6 +2388,10 @@ function appendSshOutput(sessionId, chunk) {
 }
 
 function getSshSessionStatusLabel(session) {
+  if (sshConnectRequestInFlight && !session) {
+    return "Connecting";
+  }
+
   if (!session) {
     return "Disconnected";
   }
@@ -2367,6 +2408,10 @@ function getSshSessionStatusLabel(session) {
 }
 
 function getSshSessionMessage(session) {
+  if (sshTransientStatusMessage) {
+    return sshTransientStatusMessage;
+  }
+
   if (!session) {
     return "No SSH session is connected.";
   }
@@ -2531,12 +2576,24 @@ function renderSshView() {
     sshCommandSendButton.disabled = !canSend;
   }
 
+  if (sshPasswordInput) {
+    sshPasswordInput.disabled = sshConnectRequestInFlight;
+  }
+
+  if (sshPasswordSubmitButton) {
+    sshPasswordSubmitButton.disabled = sshConnectRequestInFlight;
+  }
+
+  if (sshPasswordCancelButton) {
+    sshPasswordCancelButton.disabled = sshConnectRequestInFlight;
+  }
+
   if (sshLoading) {
-    sshLoading.hidden = !session || session.status !== "connecting";
+    sshLoading.hidden = !(sshConnectRequestInFlight || session?.status === "connecting");
   }
 
   if (sshEmpty) {
-    sshEmpty.hidden = hasOutput || session?.status === "connecting" || session?.status === "connected";
+    sshEmpty.hidden = hasOutput || sshConnectRequestInFlight || session?.status === "connecting" || session?.status === "connected";
   }
 
   setSshStatus(getSshSessionStatusLabel(session), getSshSessionMessage(session));
@@ -2598,6 +2655,7 @@ function ensureSshEventSubscription() {
   sshEventUnsubscribe = getDesktopApiState().api.ssh.onEvent((payload) => {
     if (payload?.type === "session-updated" && payload.session) {
       const session = mergeSshSessionSnapshot(payload.session);
+      sshTransientStatusMessage = session.message || "";
 
       if (!activeSshSessionId && session.status === "connected") {
         activeSshSessionId = session.id;
@@ -2605,6 +2663,10 @@ function ensureSshEventSubscription() {
 
       if (!activeSshSessionId) {
         activeSshSessionId = session.id;
+      }
+
+      if (session.status === "connected") {
+        setSshPasswordPromptState(false);
       }
 
       renderSshView();
@@ -2624,6 +2686,8 @@ function ensureSshEventSubscription() {
         session.message = payload.message || "SSH session failed.";
       }
 
+       sshTransientStatusMessage = payload.message || "SSH session failed.";
+
       if (payload?.message) {
         showToast(payload.message);
       }
@@ -2640,30 +2704,48 @@ function ensureSshEventSubscription() {
         session.message = payload.message || "SSH session disconnected.";
       }
 
+      sshTransientStatusMessage = payload.message || "SSH session disconnected.";
+
       renderSshView();
     }
   });
 }
 
-async function connectSshSession() {
+async function connectSshSession(options = {}) {
   const desktopApiState = getDesktopApiState();
   const profile = getActiveSshProfile();
 
   if (!desktopApiState.hasSsh || !profile || sshConnectRequestInFlight) {
+    if (!desktopApiState.hasSsh) {
+      sshTransientStatusMessage = desktopApiState.hasBridge ? "SSH bridge unavailable." : "Desktop preload bridge unavailable.";
+      renderSshView();
+    }
     return;
   }
 
-  let password = null;
+  if (profile.authType === "password" && sshPendingPasswordProfileId !== profile.id) {
+    sshPendingPasswordProfileId = profile.id;
+    setSshPasswordPromptState(true, `Enter the password for ${profile.username}@${profile.host}.`);
+    sshTransientStatusMessage = `Password required for ${profile.username}@${profile.host}.`;
+    renderSshView();
+    focusSshPasswordPrompt();
+    return;
+  }
+
+  const password = typeof options.password === "string" ? options.password : "";
 
   if (profile.authType === "password") {
-    password = window.prompt(`Password for ${profile.username}@${profile.host}:`, "");
-
-    if (password === null) {
+    if (!password) {
+      setSshPasswordPromptState(true, "Password required before connecting.");
+      sshTransientStatusMessage = "Password required before connecting.";
+      renderSshView();
+      focusSshPasswordPrompt();
       return;
     }
   }
 
   sshConnectRequestInFlight = true;
+  sshTransientStatusMessage = `Connecting to ${profile.username}@${profile.host}:${profile.port}...`;
   renderSshView();
 
   try {
@@ -2673,12 +2755,15 @@ async function connectSshSession() {
       ...measureSshTerminalSize(),
     });
 
+    setSshPasswordPromptState(false);
     mergeSshSessionSnapshot(session);
     activeSshSessionId = session.id;
+    sshTransientStatusMessage = session.message || `Connected to ${session.label}.`;
     renderSshView();
   } catch (error) {
+    setSshPasswordPromptState(true, error?.message || "SSH connection failed.");
+    sshTransientStatusMessage = error?.message || "SSH connection failed.";
     showToast(error?.message || "SSH connection failed.");
-    setSshStatus("Disconnected", error?.message || "SSH connection failed.");
     renderSshView();
   } finally {
     sshConnectRequestInFlight = false;
@@ -2698,8 +2783,10 @@ async function disconnectSshSession() {
     await desktopApiState.api.ssh.disconnect(session.id);
     session.status = "disconnected";
     session.message = "SSH session disconnected.";
+    sshTransientStatusMessage = "SSH session disconnected.";
     renderSshView();
   } catch (error) {
+    sshTransientStatusMessage = error?.message || "SSH disconnect failed.";
     showToast(error?.message || "SSH disconnect failed.");
   }
 }
@@ -3019,15 +3106,31 @@ sshFullscreenButton?.addEventListener("click", toggleSshFullscreen);
 sshAutoscrollInput?.addEventListener("change", syncSshScrollMode);
 sshServerSelect?.addEventListener("change", () => {
   sshSelectedServerId = sshServerSelect.value || null;
+  setSshPasswordPromptState(false);
+  sshTransientStatusMessage = "";
   syncSshSelectionState();
   renderSshView();
 });
 sshProfileSelect?.addEventListener("change", () => {
   sshSelectedProfileId = sshProfileSelect.value || null;
+  setSshPasswordPromptState(false);
+  sshTransientStatusMessage = "";
   renderSshView();
 });
 sshConnectButton?.addEventListener("click", connectSshSession);
 sshDisconnectButton?.addEventListener("click", disconnectSshSession);
+sshPasswordSubmitButton?.addEventListener("click", () => connectSshSession({ password: sshPasswordInput?.value || "" }));
+sshPasswordCancelButton?.addEventListener("click", () => {
+  setSshPasswordPromptState(false);
+  sshTransientStatusMessage = "SSH connection canceled.";
+  renderSshView();
+});
+sshPasswordInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    connectSshSession({ password: sshPasswordInput.value || "" });
+  }
+});
 sshCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 

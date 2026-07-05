@@ -5,6 +5,7 @@ const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDockerContainers, handleDockerSummary } = require("./routes/docker");
 const { handleHealth } = require("./routes/health");
+const { handlePlayitStatus } = require("./routes/playit");
 const { handleSystemSummary } = require("./routes/system");
 
 const config = getConfig();
@@ -74,6 +75,10 @@ async function routeRequest(request, pathname) {
 
   if (pathname === "/api/v1/docker/summary") {
     return handleDockerSummary();
+  }
+
+  if (pathname === "/api/v1/playit/status") {
+    return handlePlayitStatus();
   }
 
   return {

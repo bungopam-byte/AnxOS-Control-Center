@@ -92,8 +92,17 @@ function extractPlayitAddress(content) {
 
 function sanitizeCommandLine(value) {
   return String(value)
+    .replace(/(\bAuthorization:\s*Bearer\s+)\S+/gi, "$1[redacted]")
+    .replace(/(\bBearer\s+)\S+/gi, "$1[redacted]")
     .replace(/(--?(?:secret|token|password|credential|api[_-]?key)(?:=|\s+))\S+/gi, "$1[redacted]")
     .replace(/\b(?:secret|token|password|credential|api[_-]?key)\b\s*[:=]\s*\S+/gi, (match) => `${match.split(/[:=]/)[0]}=[redacted]`);
+}
+
+function isPlayitProcessLine(line) {
+  const command = String(line || "").replace(/^\d+\s+/, "").trim();
+  const executable = command.split(/\s+/)[0] || "";
+
+  return /(?:^|[/\\])playitd?(?:\.exe)?$/i.test(executable);
 }
 
 function extractTunnelId(content) {
@@ -712,7 +721,7 @@ async function getPlayitProcessCommandLines() {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => /\bplayitd?\b/i.test(line));
+    .filter(isPlayitProcessLine);
 
   return {
     content: lines.join("\n"),

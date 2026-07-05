@@ -15,6 +15,16 @@ function buildActionPath(actionId, suffix = "") {
   return `/api/v1/actions/${encodeURIComponent(actionId)}${suffix}`;
 }
 
+function getDeniedReasonCode(error) {
+  return error?.payload?.error?.code || error?.code || null;
+}
+
+function logActionRequest(actionId, endpoint, status, ok, errorCode = null) {
+  console.info(
+    `[AnxHub][Action] ${actionId} -> ${endpoint} (status=${status ?? "n/a"}, ok=${ok ? "true" : "false"}, errorCode=${errorCode || "none"})`,
+  );
+}
+
 function normalizeActionError(actionId, error) {
   if (error instanceof ActionClientError) {
     return error;
@@ -37,13 +47,19 @@ function normalizeActionError(actionId, error) {
 }
 
 async function executeAction(actionId, payload = {}) {
+  const endpoint = buildActionPath(actionId);
+
   try {
-    return await requestJson(buildActionPath(actionId), {
+    const response = await requestJson(endpoint, {
       method: "POST",
       body: payload,
     });
+    logActionRequest(actionId, endpoint, 200, true, response?.error?.code || null);
+    return response;
   } catch (error) {
-    throw normalizeActionError(actionId, error);
+    const normalized = normalizeActionError(actionId, error);
+    logActionRequest(actionId, endpoint, normalized.status, false, getDeniedReasonCode(normalized));
+    throw normalized;
   }
 }
 

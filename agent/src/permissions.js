@@ -1,10 +1,51 @@
+const DEFAULT_ACTION_PERMISSIONS = ["docker:write"];
+
+function normalizePermissionToken(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (normalized === "docker" || normalized === "docker.write") {
+    return "docker:write";
+  }
+
+  return normalized;
+}
+
+function expandPermissionToken(value) {
+  const normalized = normalizePermissionToken(value);
+
+  if (!normalized) {
+    return [];
+  }
+
+  if (normalized === "*" || normalized === "*:*") {
+    return ["*"];
+  }
+
+  if (normalized === "docker:*") {
+    return ["docker:*", "docker:write"];
+  }
+
+  return [normalized];
+}
+
+function getRawConfiguredPermissions() {
+  return process.env.AGENT_ACTION_PERMISSIONS
+    || process.env.AGENT_ALLOWED_PERMISSIONS
+    || process.env.ANX_AGENT_ACTION_PERMISSIONS
+    || "";
+}
+
 function getConfiguredPermissions() {
-  return new Set(
-    String(process.env.AGENT_ACTION_PERMISSIONS || "")
-      .split(",")
-      .map((permission) => permission.trim())
-      .filter(Boolean),
-  );
+  const rawPermissions = String(getRawConfiguredPermissions());
+  const sourcePermissions = rawPermissions.trim()
+    ? rawPermissions.split(/[\s,]+/)
+    : DEFAULT_ACTION_PERMISSIONS;
+
+  return new Set(sourcePermissions.flatMap(expandPermissionToken).filter(Boolean));
 }
 
 function authorizeAction(action) {
@@ -18,7 +59,7 @@ function authorizeAction(action) {
 
   const configuredPermissions = getConfiguredPermissions();
 
-  if (!configuredPermissions.has(action.permission)) {
+  if (!configuredPermissions.has("*") && !configuredPermissions.has(action.permission)) {
     return {
       ok: false,
       statusCode: 403,

@@ -286,6 +286,7 @@ async function requestJson(pathname, options = {}) {
       throw new AgentClientError(`Agent request failed with HTTP ${response.status}.`, {
         status: response.status,
         code: "AGENT_HTTP_ERROR",
+        payload,
       });
     }
 

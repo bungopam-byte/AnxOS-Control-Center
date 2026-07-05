@@ -1,0 +1,11 @@
+{
+  "name": "anxos-agent",
+  "version": "0.1.0",
+  "description": "Read-only local backend agent for AnxOS Control Center.",
+  "main": "src/server.js",
+  "private": true,
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/config.js && node --check src/auth.js && node --check src/routes/health.js && node --check src/routes/system.js && node --check src/routes/docker.js && node --check src/services/systemService.js && node --check src/services/dockerService.js"
+  }
+}

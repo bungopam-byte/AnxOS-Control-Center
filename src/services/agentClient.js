@@ -819,6 +819,233 @@ async function getAmpSnapshot() {
   return normalizeAmpSnapshot(statusPayload, instancesPayload);
 }
 
+function normalizePathSegments(value) {
+  return String(value || "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function getBaseName(value) {
+  const segments = normalizePathSegments(value);
+  return segments.length > 0 ? segments[segments.length - 1] : null;
+}
+
+function normalizeFileType(entry) {
+  const explicitType = trimValue(findAmpValue(entry, ["type", "Type", "kind", "Kind", "entryType", "EntryType"]));
+
+  if (explicitType) {
+    if (/dir/i.test(explicitType)) {
+      return "directory";
+    }
+
+    if (/file/i.test(explicitType)) {
+      return "file";
+    }
+
+    return explicitType.toLowerCase();
+  }
+
+  if (coerceBoolean(findAmpValue(entry, ["isDirectory", "IsDirectory", "directory", "Directory"]), false)) {
+    return "directory";
+  }
+
+  if (coerceBoolean(findAmpValue(entry, ["isFile", "IsFile", "file", "File"]), false)) {
+    return "file";
+  }
+
+  return "file";
+}
+
+function normalizeFileEntry(entry, currentPath = null) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const rawPath =
+    findAmpValue(entry, ["path", "Path", "fullPath", "FullPath", "absolutePath", "AbsolutePath"]) ||
+    null;
+  const name =
+    findAmpValue(entry, ["name", "Name", "displayName", "DisplayName"]) ||
+    getBaseName(rawPath) ||
+    null;
+  const entryPath = rawPath || (currentPath && name ? `${String(currentPath).replace(/[\\/]+$/, "")}/${name}` : name);
+  const type = normalizeFileType(entry);
+  const size = safeNumber(findAmpValue(entry, ["size", "Size", "length", "Length", "bytes", "Bytes"]));
+  const modifiedAt = findAmpValue(entry, ["modifiedAt", "ModifiedAt", "modified", "Modified", "mtime", "MTime", "lastModified", "LastModified"]) || null;
+  const extension = type === "file"
+    ? (findAmpValue(entry, ["extension", "Extension"]) || (typeof name === "string" && name.includes(".") ? name.split(".").pop() : null))
+    : null;
+
+  return {
+    name,
+    path: entryPath || null,
+    type,
+    isDirectory: type === "directory",
+    size,
+    modifiedAt,
+    extension: extension ? String(extension).replace(/^\./, "") : null,
+  };
+}
+
+function normalizeFileEntries(payload, currentPath = null) {
+  const candidate = unwrapPayload(payload, "entries");
+  const source =
+    Array.isArray(candidate) ? candidate
+      : Array.isArray(payload?.items) ? payload.items
+        : Array.isArray(payload?.files) ? payload.files
+          : Array.isArray(payload?.children) ? payload.children
+            : Array.isArray(payload?.listing) ? payload.listing
+              : [];
+
+  return source.map((entry) => normalizeFileEntry(entry, currentPath)).filter(Boolean);
+}
+
+function normalizeRootEntry(entry) {
+  if (typeof entry === "string") {
+    const trimmed = trimValue(entry);
+    return trimmed
+      ? {
+          name: getBaseName(trimmed) || trimmed,
+          path: trimmed,
+          type: "directory",
+          isDirectory: true,
+        }
+      : null;
+  }
+
+  const normalized = normalizeFileEntry(entry);
+
+  if (!normalized) {
+    return null;
+  }
+
+  return {
+    ...normalized,
+    type: "directory",
+    isDirectory: true,
+  };
+}
+
+function normalizeRoots(payload, currentPath = null) {
+  const rootsSource =
+    Array.isArray(payload?.roots) ? payload.roots
+      : Array.isArray(payload?.mounts) ? payload.mounts
+        : currentPath ? [currentPath] : [];
+
+  return rootsSource.map(normalizeRootEntry).filter(Boolean);
+}
+
+function normalizeBreadcrumbs(payload, currentPath = null) {
+  if (Array.isArray(payload?.breadcrumbs)) {
+    return payload.breadcrumbs
+      .map((crumb) => {
+        if (typeof crumb === "string") {
+          const trimmed = trimValue(crumb);
+          return trimmed ? { name: getBaseName(trimmed) || trimmed, path: trimmed } : null;
+        }
+
+        if (!crumb || typeof crumb !== "object") {
+          return null;
+        }
+
+        const crumbPath = findAmpValue(crumb, ["path", "Path", "fullPath", "FullPath", "absolutePath", "AbsolutePath"]) || null;
+        const crumbName = findAmpValue(crumb, ["name", "Name", "displayName", "DisplayName"]) || getBaseName(crumbPath) || null;
+
+        return crumbName || crumbPath ? { name: crumbName || crumbPath, path: crumbPath || crumbName } : null;
+      })
+      .filter(Boolean);
+  }
+
+  if (!currentPath) {
+    return [];
+  }
+
+  const segments = normalizePathSegments(currentPath);
+  const isAbsolute = /^[\\/]|^[A-Za-z]:[\\/]/.test(String(currentPath));
+  const breadcrumbs = [];
+  let cursor = String(currentPath).includes("\\") ? "" : isAbsolute ? "/" : "";
+
+  segments.forEach((segment) => {
+    if (/^[A-Za-z]:$/.test(segment)) {
+      cursor = `${segment}/`;
+    } else if (cursor === "/" || /^[A-Za-z]:\/$/.test(cursor)) {
+      cursor = `${cursor}${segment}`;
+    } else if (cursor) {
+      cursor = `${cursor}/${segment}`;
+    } else {
+      cursor = segment;
+    }
+
+    breadcrumbs.push({
+      name: segment,
+      path: cursor,
+    });
+  });
+
+  return breadcrumbs;
+}
+
+function normalizeFileListing(payload) {
+  const listing = unwrapPayload(payload, "listing");
+  const candidate =
+    listing && typeof listing === "object" && !Array.isArray(listing)
+      ? listing
+      : payload && typeof payload === "object" && !Array.isArray(payload)
+        ? payload
+        : {};
+  const currentPath =
+    findAmpValue(candidate, ["currentPath", "CurrentPath", "path", "Path", "directory", "Directory"]) ||
+    null;
+  const entries = normalizeFileEntries(candidate, currentPath);
+  const roots = normalizeRoots(candidate, currentPath);
+  const breadcrumbs = normalizeBreadcrumbs(candidate, currentPath);
+  const directoryCount = entries.filter((entry) => entry.isDirectory).length;
+  const fileCount = entries.filter((entry) => !entry.isDirectory).length;
+  const connected = typeof candidate.connected === "boolean" ? candidate.connected : true;
+  const configured = typeof candidate.configured === "boolean" ? candidate.configured : true;
+  const status = candidate.status || (connected ? "connected" : "unavailable");
+  const message = candidate.message || (connected ? "Connected to file service." : "File service unavailable.");
+
+  return {
+    configured,
+    connected,
+    status,
+    message,
+    currentPath,
+    roots,
+    breadcrumbs,
+    entries,
+    summary: {
+      directoryCount,
+      fileCount,
+      totalCount: entries.length,
+    },
+    lastCheckedAt: candidate.lastCheckedAt || new Date().toISOString(),
+    diagnostics: candidate.diagnostics && typeof candidate.diagnostics === "object"
+      ? {
+          ...candidate.diagnostics,
+          agent: {
+            url: getAgentConfig().url,
+          },
+        }
+      : {
+          agent: {
+            url: getAgentConfig().url,
+          },
+        },
+  };
+}
+
+async function getFileList() {
+  return requestJson("/api/v1/files/list");
+}
+
+async function getFileListing() {
+  return normalizeFileListing(await getFileList());
+}
+
 module.exports = {
   AgentClientError,
   getAmpInstances,
@@ -828,6 +1055,8 @@ module.exports = {
   getDockerContainers,
   getDockerSnapshot,
   getDockerSummary,
+  getFileList,
+  getFileListing,
   getHealth,
   getPlayitSnapshot,
   getPlayitStatus,

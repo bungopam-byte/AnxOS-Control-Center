@@ -12,6 +12,30 @@ class AgentUnavailableError extends Error {
   }
 }
 
+function createUnavailableFileListing(message = "File service unavailable.") {
+  return {
+    configured: false,
+    connected: false,
+    status: "unavailable",
+    message,
+    currentPath: null,
+    roots: [],
+    breadcrumbs: [],
+    entries: [],
+    summary: {
+      directoryCount: 0,
+      fileCount: 0,
+      totalCount: 0,
+    },
+    lastCheckedAt: new Date().toISOString(),
+    diagnostics: {
+      local: {
+        implemented: false,
+      },
+    },
+  };
+}
+
 function getBackendMode() {
   agentClient.loadEnvironment();
 
@@ -127,9 +151,44 @@ async function getAmpSnapshot() {
   return localAmpService.getAmpSnapshot();
 }
 
+async function getAgentFileListing() {
+  if (!(await agentClient.isHealthy())) {
+    throw new AgentUnavailableError();
+  }
+
+  try {
+    return await agentClient.getFileListing();
+  } catch {
+    throw new AgentUnavailableError();
+  }
+}
+
+async function getFileListing() {
+  const backendMode = getBackendMode();
+
+  if (backendMode === "local") {
+    return createUnavailableFileListing("Local file service is not implemented.");
+  }
+
+  if (backendMode === "agent") {
+    return getAgentFileListing();
+  }
+
+  if (await agentClient.isHealthy()) {
+    try {
+      return await agentClient.getFileListing();
+    } catch {
+      return createUnavailableFileListing("Agent file service unavailable. Local file service is not implemented.");
+    }
+  }
+
+  return createUnavailableFileListing("Local file service is not implemented.");
+}
+
 module.exports = {
   getAmpSnapshot,
   getBackendMode,
   getDockerSnapshot,
+  getFileListing,
   getPlayitSnapshot,
 };

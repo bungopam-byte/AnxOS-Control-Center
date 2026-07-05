@@ -1,4 +1,8 @@
-const { executeAction: executeAgentAction } = require("./actionClient");
+const {
+  cancelAction: cancelAgentAction,
+  executeAction: executeAgentAction,
+  pollAction: pollAgentAction,
+} = require("./actionClient");
 const { getBackendMode, isHealthy } = require("./agentClient");
 
 class ActionRouterError extends Error {
@@ -23,7 +27,7 @@ function assertActionId(actionId) {
   return actionId.trim();
 }
 
-async function executeAction(actionId, params = {}) {
+async function routeAgentAction(actionId, callback) {
   const normalizedActionId = assertActionId(actionId);
   const backendMode = getBackendMode();
 
@@ -32,10 +36,24 @@ async function executeAction(actionId, params = {}) {
   }
 
   await ensureAgentAvailable();
-  return executeAgentAction(normalizedActionId, params);
+  return callback(normalizedActionId);
+}
+
+async function executeAction(actionId, params = {}) {
+  return routeAgentAction(actionId, (normalizedActionId) => executeAgentAction(normalizedActionId, params));
+}
+
+async function pollAction(actionId) {
+  return routeAgentAction(actionId, (normalizedActionId) => pollAgentAction(normalizedActionId));
+}
+
+async function cancelAction(actionId, params = {}) {
+  return routeAgentAction(actionId, (normalizedActionId) => cancelAgentAction(normalizedActionId, params));
 }
 
 module.exports = {
   ActionRouterError,
+  cancelAction,
   executeAction,
+  pollAction,
 };

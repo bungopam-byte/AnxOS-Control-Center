@@ -1,6 +1,4 @@
-const { getAgentConfig } = require("./agentClient");
-
-const REQUEST_TIMEOUT_MS = 5000;
+const { AgentClientError, requestJson } = require("./agentClient");
 
 class ActionClientError extends Error {
   constructor(message, details = {}) {
@@ -13,66 +11,66 @@ class ActionClientError extends Error {
   }
 }
 
-function buildActionUrl(actionId) {
-  const config = getAgentConfig();
-  const baseUrl = config.url.endsWith("/") ? config.url : `${config.url}/`;
-  return new URL(`/api/v1/actions/${encodeURIComponent(actionId)}`, baseUrl).toString();
+function buildActionPath(actionId, suffix = "") {
+  return `/api/v1/actions/${encodeURIComponent(actionId)}${suffix}`;
+}
+
+function normalizeActionError(actionId, error) {
+  if (error instanceof ActionClientError) {
+    return error;
+  }
+
+  if (error instanceof AgentClientError) {
+    return new ActionClientError(error.message, {
+      actionId,
+      code: error.code || "ACTION_REQUEST_FAILED",
+      status: error.status || null,
+      payload: error.payload || null,
+    });
+  }
+
+  return new ActionClientError("Agent action request failed.", {
+    actionId,
+    code: error?.name === "AbortError" ? "ACTION_TIMEOUT" : "ACTION_UNAVAILABLE",
+    status: error?.status || null,
+  });
 }
 
 async function executeAction(actionId, payload = {}) {
-  const config = getAgentConfig();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
   try {
-    const headers = {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    };
-
-    if (config.token) {
-      headers.Authorization = `Bearer ${config.token}`;
-    }
-
-    const response = await fetch(buildActionUrl(actionId), {
+    return await requestJson(buildActionPath(actionId), {
       method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
+      body: payload,
     });
-
-    const contentType = response.headers.get("content-type") || "";
-    const payload = contentType.includes("application/json") ? await response.json() : await response.text();
-    const message =
-      payload?.error?.message ||
-      payload?.message ||
-      `Action request failed with HTTP ${response.status}.`;
-
-    if (!response.ok) {
-      throw new ActionClientError(message, {
-        actionId,
-        code: payload?.error?.code || "ACTION_REQUEST_FAILED",
-        status: response.status,
-        payload,
-      });
-    }
-
-    return payload;
   } catch (error) {
-    if (error instanceof ActionClientError) {
-      throw error;
-    }
+    throw normalizeActionError(actionId, error);
+  }
+}
 
-    throw new ActionClientError("Agent action request failed.", {
-      actionId,
-      code: error?.name === "AbortError" ? "ACTION_TIMEOUT" : "ACTION_UNAVAILABLE",
+async function pollAction(actionId) {
+  try {
+    return await requestJson(buildActionPath(actionId), {
+      method: "GET",
     });
-  } finally {
-    clearTimeout(timeout);
+  } catch (error) {
+    throw normalizeActionError(actionId, error);
+  }
+}
+
+async function cancelAction(actionId, payload = {}) {
+  try {
+    return await requestJson(buildActionPath(actionId, "/cancel"), {
+      method: "POST",
+      body: payload,
+    });
+  } catch (error) {
+    throw normalizeActionError(actionId, error);
   }
 }
 
 module.exports = {
   ActionClientError,
+  cancelAction,
   executeAction,
+  pollAction,
 };

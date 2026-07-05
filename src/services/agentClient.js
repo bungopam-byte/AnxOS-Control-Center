@@ -1194,6 +1194,7 @@ module.exports = {
   isHealthy,
   loadEnvironment,
   readAgentSettings,
+  requestJson,
   saveAgentSettings,
   testConnection,
 };

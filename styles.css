@@ -866,10 +866,30 @@ h3 {
   background: rgba(17, 21, 31, 0.82);
 }
 
+.ssh-profile-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+}
+
+.ssh-profile-form[hidden] {
+  display: none;
+}
+
+.ssh-profile-form .ssh-connection-actions {
+  grid-column: 1 / -1;
+}
+
 .ssh-password-prompt[hidden] {
   display: none;
 }
 
+.ssh-profile-form .ssh-field input,
 .ssh-password-prompt .ssh-field input {
   width: 100%;
   min-height: 40px;
@@ -898,6 +918,7 @@ h3 {
 }
 
 .ssh-field select,
+.ssh-field input,
 .ssh-command-row input {
   width: 100%;
   min-height: 40px;
@@ -2115,6 +2136,10 @@ dd {
     grid-template-columns: 1fr 1fr;
   }
 
+  .ssh-profile-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .ssh-connection-actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
@@ -2244,6 +2269,7 @@ dd {
   }
 
   .ssh-connect-bar,
+  .ssh-profile-form,
   .ssh-command-row {
     grid-template-columns: 1fr;
   }

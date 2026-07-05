@@ -24,14 +24,20 @@ const desktopApi = {
   },
   ssh: {
     listProfiles: () => ipcRenderer.invoke("ssh:listProfiles"),
+    saveProfile: (payload) => ipcRenderer.invoke("ssh:saveProfile", payload),
     connect: (payload) => ipcRenderer.invoke("ssh:connect", payload),
     disconnect: (sessionId) => ipcRenderer.invoke("ssh:disconnect", { sessionId }),
     write: (sessionId, input) => ipcRenderer.invoke("ssh:write", { sessionId, input }),
     resize: (sessionId, size = {}) => ipcRenderer.invoke("ssh:resize", { sessionId, ...size }),
-    onEvent: (callback) => {
+    onData: (callback) => {
       const handler = (_, payload) => callback(payload);
-      ipcRenderer.on("ssh:event", handler);
-      return () => ipcRenderer.removeListener("ssh:event", handler);
+      ipcRenderer.on("ssh:data", handler);
+      return () => ipcRenderer.removeListener("ssh:data", handler);
+    },
+    onStatus: (callback) => {
+      const handler = (_, payload) => callback(payload);
+      ipcRenderer.on("ssh:status", handler);
+      return () => ipcRenderer.removeListener("ssh:status", handler);
     },
   },
   settings: {

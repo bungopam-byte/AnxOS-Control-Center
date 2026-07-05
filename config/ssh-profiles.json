@@ -2,21 +2,22 @@
   "servers": [
     {
       "id": "debian-server",
-      "displayName": "Debian Server",
+      "displayName": "Debian",
       "host": "192.168.1.134"
     }
   ],
   "profiles": [
     {
-      "id": "debian-anx-password",
+      "id": "debian-anx",
       "serverId": "debian-server",
-      "displayName": "anx (Password)",
+      "displayName": "Debian",
       "host": "192.168.1.134",
       "port": 22,
       "username": "anx",
-      "authType": "password"
+      "authType": "password",
+      "privateKeyPath": null
     }
   ],
   "defaultServerId": "debian-server",
-  "defaultProfileId": "debian-anx-password"
+  "defaultProfileId": "debian-anx"
 }

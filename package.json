@@ -10,8 +10,26 @@
     "dist": "electron-builder",
     "amp:debug": "node scripts/amp-debug.js"
   },
+  "build": {
+    "appId": "com.anxos.controlcenter",
+    "files": [
+      "main.js",
+      "preload.js",
+      "app.js",
+      "index.html",
+      "styles.css",
+      "config/**/*",
+      "src/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
   "devDependencies": {
-    "electron": "^43.0.0"
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.12"
   },
   "dependencies": {
     "@cubecoders/ampapi": "^1.0.1",

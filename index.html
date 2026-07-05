@@ -10,7 +10,7 @@
   <body>
     <section class="startup-screen" data-startup-screen aria-label="AnxOS Control Center startup">
       <div class="startup-card">
-        <span class="startup-logo"><img src="src/assets/anxhub-icon.svg" alt="" aria-hidden="true"></span>
+        <span class="startup-logo"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
         <div>
           <p class="eyebrow">Local Control Center</p>
           <h1 data-app-name>AnxOS Control Center</h1>
@@ -35,7 +35,7 @@
     <div class="app-shell" data-app-shell hidden>
       <aside class="sidebar" aria-label="AnxOS Control Center navigation">
         <div class="brand">
-          <span class="brand-mark"><img src="src/assets/anxhub-icon.svg" alt="" aria-hidden="true"></span>
+          <span class="brand-mark"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
           <div>
             <strong data-sidebar-title>AnxOS</strong>
             <span>Control Center</span>
@@ -786,8 +786,43 @@
               <div class="ssh-connection-actions">
                 <button class="inline-action" type="button" data-ssh-connect disabled>Connect</button>
                 <button class="inline-action" type="button" data-ssh-disconnect disabled>Disconnect</button>
+                <button class="inline-action" type="button" data-ssh-profile-toggle>New Session</button>
               </div>
             </div>
+
+            <form class="ssh-profile-form" data-ssh-profile-form hidden>
+              <label class="ssh-field">
+                <span>Name</span>
+                <input type="text" placeholder="Debian" data-ssh-profile-name>
+              </label>
+              <label class="ssh-field">
+                <span>Host</span>
+                <input type="text" placeholder="192.168.1.134" data-ssh-profile-host>
+              </label>
+              <label class="ssh-field">
+                <span>Port</span>
+                <input type="number" min="1" max="65535" placeholder="22" data-ssh-profile-port>
+              </label>
+              <label class="ssh-field">
+                <span>Username</span>
+                <input type="text" placeholder="anx" data-ssh-profile-username>
+              </label>
+              <label class="ssh-field">
+                <span>Auth</span>
+                <select data-ssh-profile-auth>
+                  <option value="password">password</option>
+                  <option value="privateKey">privateKey</option>
+                </select>
+              </label>
+              <label class="ssh-field" data-ssh-private-key-field hidden>
+                <span>Private key path</span>
+                <input type="text" placeholder="C:\Users\you\.ssh\id_rsa" data-ssh-profile-private-key>
+              </label>
+              <div class="ssh-connection-actions">
+                <button class="inline-action" type="submit" data-ssh-profile-save>Save Profile</button>
+                <button class="inline-action" type="button" data-ssh-profile-cancel>Cancel</button>
+              </div>
+            </form>
 
             <div class="ssh-password-prompt" data-ssh-password-prompt hidden>
               <label class="ssh-field">

@@ -7,10 +7,10 @@ const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { registerFilesIpc } = require("./src/ipc/filesIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
-const { registerSshIpc } = require("./src/ipc/sshIpc");
+const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
-const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxhub-icon.svg");
+const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxos-logo.jpg");
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -96,4 +96,8 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  disposeSshIpc();
 });

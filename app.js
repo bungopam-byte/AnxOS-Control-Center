@@ -62,6 +62,17 @@ const sshServerSelect = document.querySelector("[data-ssh-server]");
 const sshProfileSelect = document.querySelector("[data-ssh-profile]");
 const sshConnectButton = document.querySelector("[data-ssh-connect]");
 const sshDisconnectButton = document.querySelector("[data-ssh-disconnect]");
+const sshProfileToggleButton = document.querySelector("[data-ssh-profile-toggle]");
+const sshProfileForm = document.querySelector("[data-ssh-profile-form]");
+const sshProfileNameInput = document.querySelector("[data-ssh-profile-name]");
+const sshProfileHostInput = document.querySelector("[data-ssh-profile-host]");
+const sshProfilePortInput = document.querySelector("[data-ssh-profile-port]");
+const sshProfileUsernameInput = document.querySelector("[data-ssh-profile-username]");
+const sshProfileAuthSelect = document.querySelector("[data-ssh-profile-auth]");
+const sshPrivateKeyField = document.querySelector("[data-ssh-private-key-field]");
+const sshProfilePrivateKeyInput = document.querySelector("[data-ssh-profile-private-key]");
+const sshProfileSaveButton = document.querySelector("[data-ssh-profile-save]");
+const sshProfileCancelButton = document.querySelector("[data-ssh-profile-cancel]");
 const sshPasswordPrompt = document.querySelector("[data-ssh-password-prompt]");
 const sshPasswordInput = document.querySelector("[data-ssh-password]");
 const sshPasswordSubmitButton = document.querySelector("[data-ssh-password-submit]");
@@ -104,12 +115,16 @@ let latestFilesListing = null;
 let selectedDockerContainerId = null;
 let selectedFileEntryPath = null;
 let activeSshSessionId = null;
-let sshEventUnsubscribe = null;
+let sshDataUnsubscribe = null;
+let sshStatusUnsubscribe = null;
 let sshSelectedServerId = null;
 let sshSelectedProfileId = null;
 let sshPasswordPromptVisible = false;
 let sshPendingPasswordProfileId = null;
 let sshTransientStatusMessage = "";
+let sshProfileFormVisible = false;
+let sshKeyboardMode = false;
+let sshKeyboardInputBuffer = "";
 const sshProfilesState = {
   servers: [],
   profiles: [],
@@ -177,11 +192,13 @@ function getDesktopApiState() {
     hasFiles: typeof api?.files?.getListing === "function",
     hasSsh:
       typeof api?.ssh?.listProfiles === "function" &&
+      typeof api?.ssh?.saveProfile === "function" &&
       typeof api?.ssh?.connect === "function" &&
       typeof api?.ssh?.disconnect === "function" &&
       typeof api?.ssh?.write === "function" &&
       typeof api?.ssh?.resize === "function" &&
-      typeof api?.ssh?.onEvent === "function",
+      typeof api?.ssh?.onData === "function" &&
+      typeof api?.ssh?.onStatus === "function",
     hasSettings:
       typeof api?.settings?.getAgentConfig === "function" &&
       typeof api?.settings?.saveAgentConfig === "function" &&
@@ -2072,6 +2089,10 @@ function showToast(message) {
   }, 2200);
 }
 
+function logSafeSshDebug(message, details = {}) {
+  console.info(`[SSH] ${message}`, details);
+}
+
 function getConsoleRows() {
   return consoleLogList ? [...consoleLogList.querySelectorAll("li")] : [];
 }
@@ -2191,6 +2212,72 @@ function focusSshPasswordPrompt() {
   }
 }
 
+function getSshProfileFormValues() {
+  return {
+    name: sshProfileNameInput?.value || "",
+    host: sshProfileHostInput?.value || "",
+    port: sshProfilePortInput?.value || "22",
+    username: sshProfileUsernameInput?.value || "",
+    authType: sshProfileAuthSelect?.value || "password",
+    privateKeyPath: sshProfilePrivateKeyInput?.value || "",
+  };
+}
+
+function resetSshProfileForm() {
+  if (sshProfileNameInput) {
+    sshProfileNameInput.value = "Debian";
+  }
+
+  if (sshProfileHostInput) {
+    sshProfileHostInput.value = "192.168.1.134";
+  }
+
+  if (sshProfilePortInput) {
+    sshProfilePortInput.value = "22";
+  }
+
+  if (sshProfileUsernameInput) {
+    sshProfileUsernameInput.value = "anx";
+  }
+
+  if (sshProfileAuthSelect) {
+    sshProfileAuthSelect.value = "password";
+  }
+
+  if (sshProfilePrivateKeyInput) {
+    sshProfilePrivateKeyInput.value = "";
+  }
+
+  syncSshProfileAuthField();
+}
+
+function setSshProfileFormVisible(visible) {
+  sshProfileFormVisible = visible;
+
+  if (sshProfileForm) {
+    sshProfileForm.hidden = !visible;
+  }
+
+  if (sshProfileToggleButton) {
+    sshProfileToggleButton.textContent = visible ? "Close" : "New Session";
+  }
+
+  if (visible) {
+    window.requestAnimationFrame(() => {
+      sshProfileNameInput?.focus();
+      sshProfileNameInput?.select?.();
+    });
+  }
+}
+
+function syncSshProfileAuthField() {
+  const needsPrivateKey = (sshProfileAuthSelect?.value || "password") === "privateKey";
+
+  if (sshPrivateKeyField) {
+    sshPrivateKeyField.hidden = !needsPrivateKey;
+  }
+}
+
 function getSshProfileById(profileId) {
   return sshProfilesState.profiles.find((profile) => profile.id === profileId) || null;
 }
@@ -2228,12 +2315,21 @@ function setSshStatus(status, message = "") {
   if (sshStatusDot) {
     const isConnected = status === "Connected";
     const isConnecting = status === "Connecting";
-    sshStatusDot.style.background = isConnected ? "var(--success)" : isConnecting ? "var(--caution)" : "var(--line)";
+    const isError = status === "Error";
+    sshStatusDot.style.background = isConnected
+      ? "var(--success)"
+      : isConnecting
+        ? "var(--caution)"
+        : isError
+          ? "var(--danger)"
+          : "var(--line)";
     sshStatusDot.style.boxShadow = isConnected
       ? "0 0 0 6px rgba(69, 224, 143, 0.14)"
       : isConnecting
         ? "0 0 0 6px rgba(245, 196, 81, 0.14)"
-        : "0 0 0 6px rgba(37, 45, 60, 0.24)";
+        : isError
+          ? "0 0 0 6px rgba(240, 86, 86, 0.14)"
+          : "0 0 0 6px rgba(37, 45, 60, 0.24)";
   }
 
   if (sshLoading) {
@@ -2304,6 +2400,10 @@ function clearSshOutput() {
   session.partialLine = "";
   renderSshOutput(session);
   renderSshView();
+}
+
+function getSshShellInputValue() {
+  return sshKeyboardMode ? sshKeyboardInputBuffer : sshCommandInput?.value || "";
 }
 
 async function copySshOutput() {
@@ -2402,6 +2502,10 @@ function getSshSessionStatusLabel(session) {
 
   if (session.status === "connecting") {
     return "Connecting";
+  }
+
+  if (session.status === "error") {
+    return "Error";
   }
 
   return "Disconnected";
@@ -2559,6 +2663,10 @@ function renderSshView() {
     sshProfileSelect.disabled = getSshFilteredProfiles().length === 0 || sshConnectRequestInFlight;
   }
 
+  if (sshProfileToggleButton) {
+    sshProfileToggleButton.disabled = sshConnectRequestInFlight;
+  }
+
   if (sshConnectButton) {
     sshConnectButton.disabled = !canConnect;
   }
@@ -2569,7 +2677,15 @@ function renderSshView() {
 
   if (sshCommandInput) {
     sshCommandInput.disabled = !canSend;
-    sshCommandInput.placeholder = canSend ? `Connected to ${session.label}` : "Connect to enable command input";
+    sshCommandInput.placeholder = canSend
+      ? sshKeyboardMode
+        ? "Live keyboard mode enabled"
+        : `Connected to ${session.label}`
+      : "Connect to enable command input";
+
+    if (sshKeyboardMode) {
+      sshCommandInput.value = sshKeyboardInputBuffer;
+    }
   }
 
   if (sshCommandSendButton) {
@@ -2624,7 +2740,7 @@ async function resizeActiveSshSession() {
   } catch {}
 }
 
-async function loadSshProfiles() {
+async function loadSshProfiles(options = {}) {
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasSsh) {
@@ -2635,24 +2751,78 @@ async function loadSshProfiles() {
 
   try {
     const payload = await desktopApiState.api.ssh.listProfiles();
+    logSafeSshDebug("Profiles loaded.", {
+      configPath: payload?.configPath || null,
+      profileCount: Array.isArray(payload?.profiles) ? payload.profiles.length : 0,
+      serverCount: Array.isArray(payload?.servers) ? payload.servers.length : 0,
+    });
     sshProfilesState.servers = Array.isArray(payload?.servers) ? payload.servers : [];
     sshProfilesState.profiles = Array.isArray(payload?.profiles) ? payload.profiles : [];
     sshProfilesState.defaultServerId = payload?.defaultServerId || sshProfilesState.servers[0]?.id || null;
     sshProfilesState.defaultProfileId = payload?.defaultProfileId || sshProfilesState.profiles[0]?.id || null;
+
+    if (options.profileId) {
+      const savedProfile = sshProfilesState.profiles.find((profile) => profile.id === options.profileId) || null;
+
+      if (savedProfile) {
+        sshSelectedProfileId = savedProfile.id;
+        sshSelectedServerId = savedProfile.serverId || sshSelectedServerId;
+      }
+    }
+
     syncSshSelectionState();
     renderSshView();
   } catch (error) {
     setSshStatus("Disconnected", `SSH profiles unavailable: ${error?.message || "Unknown error"}`);
+    console.error("[SSH] Profile load failed.", {
+      message: error?.message || "Unknown error",
+    });
     renderSshView();
   }
 }
 
-function ensureSshEventSubscription() {
-  if (sshEventUnsubscribe || !getDesktopApiState().hasSsh) {
+async function saveSshProfile(event) {
+  event?.preventDefault?.();
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasSsh || typeof desktopApiState.api?.ssh?.saveProfile !== "function") {
+    sshTransientStatusMessage = "SSH profile saving is unavailable.";
+    renderSshView();
+    showToast("SSH profile saving is unavailable.");
     return;
   }
 
-  sshEventUnsubscribe = getDesktopApiState().api.ssh.onEvent((payload) => {
+  try {
+    const payload = getSshProfileFormValues();
+    const result = await desktopApiState.api.ssh.saveProfile(payload);
+    logSafeSshDebug("Profile saved.", {
+      configPath: result?.profiles?.configPath || null,
+      profileId: result?.profile?.id || null,
+      profileName: result?.profile?.displayName || payload.name || null,
+    });
+    await loadSshProfiles({
+      profileId: result?.profile?.id || null,
+    });
+    sshTransientStatusMessage = `Saved SSH profile ${result?.profile?.displayName || payload.name}.`;
+    setSshProfileFormVisible(false);
+    renderSshView();
+    showToast("SSH profile saved.");
+  } catch (error) {
+    sshTransientStatusMessage = error?.message || "SSH profile could not be saved.";
+    console.error("[SSH] Profile save failed.", {
+      message: error?.message || "Unknown error",
+    });
+    renderSshView();
+    showToast(error?.message || "SSH profile could not be saved.");
+  }
+}
+
+function ensureSshEventSubscription() {
+  if ((sshDataUnsubscribe || sshStatusUnsubscribe) || !getDesktopApiState().hasSsh) {
+    return;
+  }
+
+  sshStatusUnsubscribe = getDesktopApiState().api.ssh.onStatus((payload) => {
     if (payload?.type === "session-updated" && payload.session) {
       const session = mergeSshSessionSnapshot(payload.session);
       sshTransientStatusMessage = session.message || "";
@@ -2670,11 +2840,6 @@ function ensureSshEventSubscription() {
       }
 
       renderSshView();
-      return;
-    }
-
-    if (payload?.type === "session-output") {
-      appendSshOutput(payload.sessionId, payload.chunk);
       return;
     }
 
@@ -2707,6 +2872,12 @@ function ensureSshEventSubscription() {
       sshTransientStatusMessage = payload.message || "SSH session disconnected.";
 
       renderSshView();
+    }
+  });
+
+  sshDataUnsubscribe = getDesktopApiState().api.ssh.onData((payload) => {
+    if (payload?.sessionId && typeof payload.chunk === "string") {
+      appendSshOutput(payload.sessionId, payload.chunk);
     }
   });
 }
@@ -2805,6 +2976,31 @@ async function sendSshCommand(commandText) {
   } catch (error) {
     showToast(error?.message || "SSH command failed.");
   }
+}
+
+async function writeSshInput(input) {
+  const desktopApiState = getDesktopApiState();
+  const session = getActiveSshSession();
+  const data = typeof input === "string" ? input : "";
+
+  if (!desktopApiState.hasSsh || !session || session.status !== "connected" || !data) {
+    return false;
+  }
+
+  try {
+    await desktopApiState.api.ssh.write(session.id, data);
+    return true;
+  } catch (error) {
+    showToast(error?.message || "SSH input failed.");
+    return false;
+  }
+}
+
+async function disconnectAllSshListeners() {
+  sshDataUnsubscribe?.();
+  sshStatusUnsubscribe?.();
+  sshDataUnsubscribe = null;
+  sshStatusUnsubscribe = null;
 }
 
 function writeStoredSettings(settings) {
@@ -3119,6 +3315,21 @@ sshProfileSelect?.addEventListener("change", () => {
 });
 sshConnectButton?.addEventListener("click", connectSshSession);
 sshDisconnectButton?.addEventListener("click", disconnectSshSession);
+sshProfileToggleButton?.addEventListener("click", () => {
+  if (!sshProfileFormVisible) {
+    resetSshProfileForm();
+  }
+
+  setSshProfileFormVisible(!sshProfileFormVisible);
+});
+sshProfileCancelButton?.addEventListener("click", () => {
+  setSshProfileFormVisible(false);
+});
+sshProfileAuthSelect?.addEventListener("change", syncSshProfileAuthField);
+sshProfileSaveButton?.addEventListener("click", () => {
+  sshProfileForm?.requestSubmit();
+});
+sshProfileForm?.addEventListener("submit", saveSshProfile);
 sshPasswordSubmitButton?.addEventListener("click", () => connectSshSession({ password: sshPasswordInput?.value || "" }));
 sshPasswordCancelButton?.addEventListener("click", () => {
   setSshPasswordPromptState(false);
@@ -3131,26 +3342,109 @@ sshPasswordInput?.addEventListener("keydown", (event) => {
     connectSshSession({ password: sshPasswordInput.value || "" });
   }
 });
+sshCommandInput?.addEventListener("focus", () => {
+  sshKeyboardMode = true;
+  sshKeyboardInputBuffer = sshCommandInput.value || "";
+  renderSshView();
+});
+sshCommandInput?.addEventListener("blur", () => {
+  sshKeyboardMode = false;
+  sshKeyboardInputBuffer = "";
+  renderSshView();
+});
+sshCommandInput?.addEventListener("keydown", async (event) => {
+  const session = getActiveSshSession();
+
+  if (!session || session.status !== "connected") {
+    return;
+  }
+
+  if (event.key === "Tab") {
+    event.preventDefault();
+    await writeSshInput("\t");
+    return;
+  }
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    await writeSshInput("\n");
+    sshKeyboardInputBuffer = "";
+    if (sshCommandInput) {
+      sshCommandInput.value = "";
+    }
+    return;
+  }
+
+  if (event.key === "Backspace") {
+    if (sshKeyboardInputBuffer) {
+      sshKeyboardInputBuffer = sshKeyboardInputBuffer.slice(0, -1);
+    }
+
+    await writeSshInput("\b");
+    return;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    await writeSshInput("\u001b");
+    return;
+  }
+
+  if (event.key.startsWith("Arrow")) {
+    event.preventDefault();
+    const arrowMap = {
+      ArrowUp: "\u001b[A",
+      ArrowDown: "\u001b[B",
+      ArrowRight: "\u001b[C",
+      ArrowLeft: "\u001b[D",
+    };
+    await writeSshInput(arrowMap[event.key] || "");
+    return;
+  }
+
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+      event.preventDefault();
+      await writeSshInput(String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64));
+    }
+    return;
+  }
+
+  if (event.key.length === 1) {
+    sshKeyboardInputBuffer += event.key;
+    await writeSshInput(event.key);
+  }
+});
 sshCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  const command = sshCommandInput?.value || "";
+  const command = getSshShellInputValue();
 
   if (!command.trim()) {
     return;
   }
 
-  await sendSshCommand(command);
+  if (sshKeyboardMode) {
+    await writeSshInput("\n");
+  } else {
+    await sendSshCommand(command);
+  }
 
   if (sshCommandInput) {
     sshCommandInput.value = "";
   }
+
+  sshKeyboardInputBuffer = "";
 });
 updateSshActions();
+resetSshProfileForm();
 ensureSshEventSubscription();
 loadSshProfiles();
 window.addEventListener("resize", () => {
   resizeActiveSshSession();
+});
+window.addEventListener("beforeunload", () => {
+  disconnectAllSshListeners();
 });
 filesSearchInput?.setAttribute("disabled", "");
 fileActionButtons.forEach((button) => {

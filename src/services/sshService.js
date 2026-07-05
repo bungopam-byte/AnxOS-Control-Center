@@ -1,10 +1,11 @@
 const { randomUUID } = require("crypto");
 const { EventEmitter } = require("events");
+const { app } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("ssh2");
 
-const SSH_PROFILES_PATH = path.resolve(__dirname, "..", "..", "config", "ssh-profiles.json");
+const DEV_SSH_PROFILES_PATH = path.resolve(__dirname, "..", "..", "config", "ssh-profiles.json");
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 const DEFAULT_SHELL_COLS = 120;
 const DEFAULT_SHELL_ROWS = 32;
@@ -24,15 +25,15 @@ function getDefaultProfilesConfig() {
     servers: [
       {
         id: "debian-server",
-        displayName: "Debian Server",
+        displayName: "Debian",
         host: "192.168.1.134",
       },
     ],
     profiles: [
       {
-        id: "debian-anx-password",
+        id: "debian-anx",
         serverId: "debian-server",
-        displayName: "anx (Password)",
+        displayName: "Debian",
         host: "192.168.1.134",
         port: 22,
         username: "anx",
@@ -40,8 +41,29 @@ function getDefaultProfilesConfig() {
       },
     ],
     defaultServerId: "debian-server",
-    defaultProfileId: "debian-anx-password",
+    defaultProfileId: "debian-anx",
   };
+}
+
+function slugify(value, fallback = "item") {
+  const slug = trimValue(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || fallback;
+}
+
+function getProfilesPath() {
+  if (app?.isPackaged) {
+    return path.join(app.getPath("userData"), "config", "ssh-profiles.json");
+  }
+
+  return DEV_SSH_PROFILES_PATH;
+}
+
+function getSeedProfilesPath() {
+  return DEV_SSH_PROFILES_PATH;
 }
 
 function trimValue(value) {
@@ -59,19 +81,29 @@ function normalizeAuthType(value) {
 }
 
 function ensureProfilesDirectory() {
-  fs.mkdirSync(path.dirname(SSH_PROFILES_PATH), { recursive: true });
+  fs.mkdirSync(path.dirname(getProfilesPath()), { recursive: true });
 }
 
 function ensureProfilesFile() {
   ensureProfilesDirectory();
+  const profilesPath = getProfilesPath();
 
-  if (!fs.existsSync(SSH_PROFILES_PATH)) {
-    fs.writeFileSync(
-      SSH_PROFILES_PATH,
-      `${JSON.stringify(getDefaultProfilesConfig(), null, 2)}\n`,
-      "utf8",
-    );
+  if (fs.existsSync(profilesPath)) {
+    return;
   }
+
+  const seedPath = getSeedProfilesPath();
+
+  if (seedPath !== profilesPath && fs.existsSync(seedPath)) {
+    fs.copyFileSync(seedPath, profilesPath);
+    return;
+  }
+
+  fs.writeFileSync(
+    profilesPath,
+    `${JSON.stringify(getDefaultProfilesConfig(), null, 2)}\n`,
+    "utf8",
+  );
 }
 
 function normalizeServer(server, fallbackHost = "") {
@@ -134,11 +166,27 @@ function normalizeProfilesConfig(config = {}) {
 function readProfilesConfig() {
   try {
     ensureProfilesFile();
-    const rawConfig = fs.readFileSync(SSH_PROFILES_PATH, "utf8");
-    return normalizeProfilesConfig(JSON.parse(rawConfig));
+    const rawConfig = fs.readFileSync(getProfilesPath(), "utf8");
+    const config = normalizeProfilesConfig(JSON.parse(rawConfig));
+
+    if (config.profiles.length === 0) {
+      writeProfilesConfig(getDefaultProfilesConfig());
+      return normalizeProfilesConfig(getDefaultProfilesConfig());
+    }
+
+    return config;
   } catch {
     return normalizeProfilesConfig(getDefaultProfilesConfig());
   }
+}
+
+function writeProfilesConfig(config) {
+  ensureProfilesDirectory();
+  fs.writeFileSync(getProfilesPath(), `${JSON.stringify(normalizeProfilesConfig(config), null, 2)}\n`, "utf8");
+}
+
+function logSafeSshDebug(message, details = {}) {
+  console.info(`[SSH Service] ${message}`, details);
 }
 
 function sanitizeProfile(profile) {
@@ -217,17 +265,98 @@ class SshService extends EventEmitter {
   constructor() {
     super();
     this.sessions = new Map();
+    this.sessionIdsByProfileId = new Map();
   }
 
   listProfiles() {
     const config = readProfilesConfig();
+    const configPath = getProfilesPath();
+
+    logSafeSshDebug("Profiles listed.", {
+      configPath,
+      profileCount: config.profiles.length,
+      serverCount: config.servers.length,
+    });
 
     return {
       servers: config.servers,
       profiles: config.profiles.map(sanitizeProfile),
       defaultServerId: config.defaultServerId,
       defaultProfileId: config.defaultProfileId,
-      configPath: "config/ssh-profiles.json",
+      configPath,
+    };
+  }
+
+  saveProfile(payload = {}) {
+    const config = readProfilesConfig();
+    const displayName = trimValue(payload.displayName || payload.name);
+    const host = trimValue(payload.host);
+    const username = trimValue(payload.username);
+    const authType = normalizeAuthType(payload.authType);
+    const privateKeyPath = trimValue(payload.privateKeyPath) || null;
+    const port = normalizePort(payload.port);
+
+    if (!displayName || !host || !username) {
+      throw new SshServiceError("Name, host, port, and username are required.", {
+        code: "SSH_PROFILE_FIELDS_REQUIRED",
+      });
+    }
+
+    if (authType === "privateKey" && !privateKeyPath) {
+      throw new SshServiceError("Private key path is required for key-based SSH profiles.", {
+        code: "SSH_PROFILE_FIELDS_REQUIRED",
+      });
+    }
+
+    const serverId = `${slugify(displayName, "server")}-server`;
+    const profileId = `${slugify(displayName, "profile")}-${slugify(username, "user")}`;
+    const nextServer = normalizeServer({
+      id: serverId,
+      displayName,
+      host,
+    });
+    const nextProfile = normalizeProfile(
+      {
+        id: profileId,
+        serverId,
+        displayName,
+        host,
+        port,
+        username,
+        authType,
+        privateKeyPath,
+      },
+      new Map(nextServer ? [[nextServer.id, nextServer]] : []),
+    );
+
+    this.validateProfile(nextProfile);
+
+    const servers = config.servers.filter((server) => server.id !== serverId);
+    const profiles = config.profiles.filter((profile) => profile.id !== profileId);
+
+    if (nextServer) {
+      servers.push(nextServer);
+    }
+
+    profiles.push(nextProfile);
+
+    const nextConfig = {
+      servers,
+      profiles,
+      defaultServerId: config.defaultServerId || nextServer?.id || null,
+      defaultProfileId: nextProfile.id,
+    };
+
+    writeProfilesConfig(nextConfig);
+    logSafeSshDebug("Profile saved.", {
+      configPath: getProfilesPath(),
+      profileId: nextProfile.id,
+      profileName: nextProfile.displayName,
+    });
+
+    return {
+      profile: sanitizeProfile(nextProfile),
+      profiles: this.listProfiles(),
     };
   }
 
@@ -317,6 +446,13 @@ class SshService extends EventEmitter {
 
   connect(options = {}) {
     const profile = this.getProfile(options.profileId);
+    const existingSessionId = this.sessionIdsByProfileId.get(profile.id);
+    const existingSession = existingSessionId ? this.sessions.get(existingSessionId) || null : null;
+
+    if (existingSession && !existingSession.didClose) {
+      return createSessionSnapshot(existingSession);
+    }
+
     const connectConfig = this.buildConnectConfig(profile, options);
     const sessionId = randomUUID();
     const client = new Client();
@@ -334,6 +470,7 @@ class SshService extends EventEmitter {
     };
 
     this.sessions.set(sessionId, session);
+    this.sessionIdsByProfileId.set(profile.id, sessionId);
     this.emit("session-updated", createSessionSnapshot(session));
 
     client.on("ready", () => {
@@ -437,6 +574,10 @@ class SshService extends EventEmitter {
       session.client?.destroy?.();
     } catch {}
 
+    if (session.profile?.id && this.sessionIdsByProfileId.get(session.profile.id) === sessionId) {
+      this.sessionIdsByProfileId.delete(session.profile.id);
+    }
+
     this.sessions.delete(sessionId);
   }
 
@@ -484,10 +625,19 @@ class SshService extends EventEmitter {
     session.stream.setWindow(rows, cols, 0, 0);
     return { sessionId };
   }
+
+  dispose() {
+    [...this.sessions.keys()].forEach((sessionId) => {
+      this.destroySession(sessionId);
+    });
+
+    this.removeAllListeners();
+    this.sessionIdsByProfileId.clear();
+  }
 }
 
 module.exports = {
-  SSH_PROFILES_PATH,
+  SSH_PROFILES_PATH: DEV_SSH_PROFILES_PATH,
   SshService,
   SshServiceError,
 };

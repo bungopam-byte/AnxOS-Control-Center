@@ -1,6 +1,7 @@
 const { ipcMain } = require("electron");
 const {
   getDefaultAgentSettings,
+  getAgentConfigPath,
   getEffectiveAgentSettings,
   readAgentSettings,
   saveAgentSettings,
@@ -19,7 +20,7 @@ function getAgentSettingsPayload() {
     },
     overrides: effective.overrides,
     defaults: getDefaultAgentSettings(),
-    configPath: "config/agent.json",
+    configPath: getAgentConfigPath(),
   };
 }
 

@@ -3,11 +3,9 @@ const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const agentClient = require("./agentClient");
 
-const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
-
 class AgentUnavailableError extends Error {
   constructor() {
-    super("Agent unavailable. Check AGENT_URL and AGENT_TOKEN.");
+    super("Agent unavailable. Check Agent settings.");
     this.name = "AgentUnavailableError";
   }
 }
@@ -37,16 +35,7 @@ function createUnavailableFileListing(message = "File service unavailable.") {
 }
 
 function getBackendMode() {
-  agentClient.loadEnvironment();
-
-  const rawMode = (
-    process.env.BACKEND_MODE ||
-    process.env.backendMode ||
-    process.env.ANXHUB_BACKEND_MODE ||
-    "local"
-  ).trim().toLowerCase();
-
-  return VALID_BACKEND_MODES.has(rawMode) ? rawMode : "local";
+  return agentClient.getBackendMode();
 }
 
 async function getAgentDockerSnapshot() {

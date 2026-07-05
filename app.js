@@ -55,6 +55,12 @@ const sshAutoscrollInput = document.querySelector("[data-ssh-autoscroll]");
 const settingsForm = document.querySelector("[data-settings-form]");
 const settingsInputs = document.querySelectorAll("[data-setting]");
 const settingsResetButton = document.querySelector("[data-settings-reset]");
+const agentSettingsInputs = document.querySelectorAll("[data-agent-setting]");
+const agentSettingsSaveButton = document.querySelector('[data-agent-action="save"]');
+const agentSettingsTestButton = document.querySelector('[data-agent-action="test"]');
+const agentConnectionPill = document.querySelector("[data-agent-connection-pill]");
+const agentConnectionMessage = document.querySelector("[data-agent-connection-message]");
+const agentConfigSource = document.querySelector("[data-agent-config-source]");
 const aboutFields = document.querySelectorAll("[data-about-field]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
@@ -62,6 +68,8 @@ let ampRequestInFlight = false;
 let playitRequestInFlight = false;
 let dockerRequestInFlight = false;
 let filesRequestInFlight = false;
+let agentSettingsRequestInFlight = false;
+let agentConnectionTestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
@@ -73,6 +81,7 @@ const STARTUP_MINIMUM_MS = 2000;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
 const DEFAULT_APP_NAME = "AnxOS Control Center";
 const DEFAULT_ACCENT_COLOR = "#b66cff";
+const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const DEFAULT_SETTINGS = {
   "app.displayName": DEFAULT_APP_NAME,
   "appearance.accentColor": DEFAULT_ACCENT_COLOR,
@@ -86,6 +95,11 @@ const DEFAULT_SETTINGS = {
   "minecraft.defaultAddress": "",
   "playit.address": "",
   "developer.debugMode": false,
+};
+const DEFAULT_AGENT_SETTINGS = {
+  backendMode: "local",
+  agentUrl: DEFAULT_AGENT_URL,
+  agentToken: "",
 };
 const startupState = {
   startedAt: Date.now(),
@@ -117,6 +131,10 @@ function getDesktopApiState() {
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasDocker: typeof api?.docker?.getSnapshot === "function",
     hasFiles: typeof api?.files?.getListing === "function",
+    hasSettings:
+      typeof api?.settings?.getAgentConfig === "function" &&
+      typeof api?.settings?.saveAgentConfig === "function" &&
+      typeof api?.settings?.testAgentConnection === "function",
     hasApp: typeof api?.app?.getRuntimeInfo === "function",
   };
 }
@@ -1956,6 +1974,99 @@ function setSettingInputValue(input, value) {
   }
 }
 
+function getAgentSettingInputValue(input) {
+  return typeof input?.value === "string" ? input.value : "";
+}
+
+function setAgentSettingInputValue(input, value) {
+  if (!input) {
+    return;
+  }
+
+  input.value = value !== undefined && value !== null ? value : "";
+}
+
+function getAgentSettingsFormValues() {
+  const settings = { ...DEFAULT_AGENT_SETTINGS };
+
+  agentSettingsInputs.forEach((input) => {
+    settings[input.dataset.agentSetting] = getAgentSettingInputValue(input);
+  });
+
+  return settings;
+}
+
+function setAgentActionButtonsDisabled(disabled) {
+  if (agentSettingsSaveButton) {
+    agentSettingsSaveButton.disabled = disabled;
+  }
+
+  if (agentSettingsTestButton) {
+    agentSettingsTestButton.disabled = disabled;
+  }
+}
+
+function setAgentConnectionDisplay(status, message, options = {}) {
+  if (agentConnectionPill) {
+    const connected = status === "connected";
+    const testing = status === "testing";
+    agentConnectionPill.textContent = testing ? "Testing..." : connected ? "Connected" : "Disconnected";
+    agentConnectionPill.classList.toggle("is-connected", connected);
+    agentConnectionPill.classList.toggle("is-disconnected", !connected && !testing);
+  }
+
+  if (agentConnectionMessage) {
+    agentConnectionMessage.textContent = message;
+  }
+
+  if (agentConfigSource && options.configSourceText) {
+    agentConfigSource.textContent = options.configSourceText;
+  }
+}
+
+function getAgentConfigSourceText(settingsPayload) {
+  const configPath = settingsPayload?.configPath || "config/agent.json";
+  const overrides = settingsPayload?.overrides || {};
+  const activeOverrides = [];
+
+  if (overrides.backendMode) {
+    activeOverrides.push("Backend Mode");
+  }
+
+  if (overrides.agentUrl) {
+    activeOverrides.push("Agent URL");
+  }
+
+  if (overrides.agentToken) {
+    activeOverrides.push("Agent Token");
+  }
+
+  if (activeOverrides.length === 0) {
+    return `Saved in ${configPath}.`;
+  }
+
+  return `Saved in ${configPath}. Environment overrides active for ${activeOverrides.join(", ")}.`;
+}
+
+function renderAgentSettings(settingsPayload) {
+  const storedSettings = {
+    ...DEFAULT_AGENT_SETTINGS,
+    ...(settingsPayload?.stored || {}),
+  };
+
+  agentSettingsInputs.forEach((input) => {
+    setAgentSettingInputValue(input, storedSettings[input.dataset.agentSetting]);
+  });
+
+  setAgentConnectionDisplay(
+    "disconnected",
+    "Use Test Connection to verify the current Agent settings.",
+    {
+      configSourceText: getAgentConfigSourceText(settingsPayload),
+    },
+  );
+}
+
 function loadSettings() {
   const settings = readStoredSettings();
 
@@ -1990,6 +2101,102 @@ function resetSettings() {
 
   applySettings(settings);
   showToast("Settings reset.");
+}
+
+async function loadAgentSettings() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasSettings) {
+    setAgentActionButtonsDisabled(true);
+    setAgentConnectionDisplay(
+      "disconnected",
+      desktopApiState.hasBridge
+        ? "Agent settings are unavailable in this desktop build."
+        : "Desktop preload bridge unavailable.",
+      { configSourceText: "Saved Agent settings are unavailable." },
+    );
+    return;
+  }
+
+  agentSettingsRequestInFlight = true;
+  setAgentActionButtonsDisabled(true);
+
+  try {
+    renderAgentSettings(await desktopApiState.api.settings.getAgentConfig());
+    await testAgentConnection({ silent: true });
+  } catch {
+    setAgentConnectionDisplay("disconnected", "Agent settings could not be loaded.", {
+      configSourceText: "Saved Agent settings are unavailable.",
+    });
+  } finally {
+    agentSettingsRequestInFlight = false;
+    setAgentActionButtonsDisabled(false);
+  }
+}
+
+async function saveAgentConfiguration() {
+  if (agentSettingsRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasSettings) {
+    showToast("Agent settings are unavailable.");
+    return;
+  }
+
+  agentSettingsRequestInFlight = true;
+  setAgentActionButtonsDisabled(true);
+
+  try {
+    const response = await desktopApiState.api.settings.saveAgentConfig(getAgentSettingsFormValues());
+    renderAgentSettings(response);
+    showToast("Agent settings saved.");
+    await testAgentConnection({ silent: true });
+  } catch {
+    showToast("Agent settings could not be saved.");
+  } finally {
+    agentSettingsRequestInFlight = false;
+    setAgentActionButtonsDisabled(false);
+  }
+}
+
+async function testAgentConnection(options = {}) {
+  if (agentConnectionTestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasSettings) {
+    if (!options.silent) {
+      showToast("Agent connection test is unavailable.");
+    }
+    return;
+  }
+
+  agentConnectionTestInFlight = true;
+  setAgentActionButtonsDisabled(true);
+  setAgentConnectionDisplay("testing", "Checking the Agent health endpoint...");
+
+  try {
+    const result = await desktopApiState.api.settings.testAgentConnection(getAgentSettingsFormValues());
+    setAgentConnectionDisplay(result?.connected ? "connected" : "disconnected", result?.message || "Agent unavailable.");
+
+    if (!options.silent) {
+      showToast(result?.connected ? "Agent connected." : "Agent unavailable.");
+    }
+  } catch {
+    setAgentConnectionDisplay("disconnected", "Agent unavailable.");
+
+    if (!options.silent) {
+      showToast("Agent unavailable.");
+    }
+  } finally {
+    agentConnectionTestInFlight = false;
+    setAgentActionButtonsDisabled(agentSettingsRequestInFlight);
+  }
 }
 
 function setAboutFields(info) {
@@ -2047,10 +2254,15 @@ fileActionButtons.forEach((button) => {
   button.disabled = button !== filesRefreshButton;
 });
 filesRefreshButton?.addEventListener("click", refreshFileListing);
-settingsForm?.addEventListener("input", saveSettings);
-settingsForm?.addEventListener("change", saveSettings);
+settingsInputs.forEach((input) => {
+  input.addEventListener("input", saveSettings);
+  input.addEventListener("change", saveSettings);
+});
 settingsResetButton?.addEventListener("click", resetSettings);
+agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
+agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 loadSettings();
+loadAgentSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();
 startStartupFallback();

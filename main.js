@@ -5,6 +5,7 @@ const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { registerFilesIpc } = require("./src/ipc/filesIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
+const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxhub-icon.svg");
@@ -73,6 +74,7 @@ app.whenReady().then(() => {
   registerPlayitIpc();
   registerDockerIpc();
   registerFilesIpc();
+  registerSettingsIpc();
   createWindow();
 
   app.on("activate", () => {

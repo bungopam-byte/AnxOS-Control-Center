@@ -1,8 +1,12 @@
+const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
 
+const AGENT_CONFIG_PATH = path.resolve(__dirname, "..", "..", "config", "agent.json");
+const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const REQUEST_TIMEOUT_MS = 3500;
+const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
 let environmentLoaded = false;
 
@@ -36,23 +40,106 @@ function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function getAgentConfig() {
-  loadEnvironment();
+function normalizeBackendMode(value) {
+  const normalized = trimValue(value).toLowerCase();
+  return VALID_BACKEND_MODES.has(normalized) ? normalized : DEFAULT_BACKEND_MODE;
+}
 
+function getDefaultAgentSettings() {
   return {
-    url: trimValue(process.env.AGENT_URL) || DEFAULT_AGENT_URL,
-    token: trimValue(process.env.AGENT_TOKEN) || null,
+    backendMode: DEFAULT_BACKEND_MODE,
+    agentUrl: DEFAULT_AGENT_URL,
+    agentToken: "",
   };
 }
 
-function buildAgentUrl(pathname) {
-  const config = getAgentConfig();
+function normalizeAgentSettings(settings = {}) {
+  return {
+    backendMode: normalizeBackendMode(settings.backendMode),
+    agentUrl: trimValue(settings.agentUrl) || DEFAULT_AGENT_URL,
+    agentToken: trimValue(settings.agentToken),
+  };
+}
+
+function ensureAgentConfigDirectory() {
+  fs.mkdirSync(path.dirname(AGENT_CONFIG_PATH), { recursive: true });
+}
+
+function ensureAgentConfigFile() {
+  ensureAgentConfigDirectory();
+
+  if (!fs.existsSync(AGENT_CONFIG_PATH)) {
+    fs.writeFileSync(
+      AGENT_CONFIG_PATH,
+      `${JSON.stringify(getDefaultAgentSettings(), null, 2)}\n`,
+      "utf8",
+    );
+  }
+}
+
+function readAgentSettings() {
+  try {
+    ensureAgentConfigFile();
+    const rawConfig = fs.readFileSync(AGENT_CONFIG_PATH, "utf8");
+    return normalizeAgentSettings(JSON.parse(rawConfig));
+  } catch {
+    return getDefaultAgentSettings();
+  }
+}
+
+function saveAgentSettings(settings = {}) {
+  const normalized = normalizeAgentSettings(settings);
+  ensureAgentConfigDirectory();
+  fs.writeFileSync(AGENT_CONFIG_PATH, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  return normalized;
+}
+
+function getEffectiveAgentSettings() {
+  loadEnvironment();
+
+  const stored = readAgentSettings();
+  const environmentMode = trimValue(process.env.BACKEND_MODE || process.env.backendMode || process.env.ANXHUB_BACKEND_MODE);
+  const environmentUrl = trimValue(process.env.AGENT_URL);
+  const environmentToken = trimValue(process.env.AGENT_TOKEN);
+
+  return {
+    backendMode: environmentMode ? normalizeBackendMode(environmentMode) : stored.backendMode,
+    agentUrl: environmentUrl || stored.agentUrl || DEFAULT_AGENT_URL,
+    agentToken: environmentToken || stored.agentToken || "",
+    overrides: {
+      backendMode: Boolean(environmentMode),
+      agentUrl: Boolean(environmentUrl),
+      agentToken: Boolean(environmentToken),
+    },
+  };
+}
+
+function getBackendMode() {
+  return getEffectiveAgentSettings().backendMode;
+}
+
+function getAgentConfig(configOverride = null) {
+  const source = configOverride ? normalizeAgentSettings(configOverride) : getEffectiveAgentSettings();
+
+  return {
+    url: source.agentUrl || DEFAULT_AGENT_URL,
+    token: trimValue(source.agentToken) || null,
+  };
+}
+
+function buildAgentUrl(pathname, configOverride = null) {
+  const config = getAgentConfig(configOverride);
   const baseUrl = config.url.endsWith("/") ? config.url : `${config.url}/`;
   return new URL(pathname, baseUrl).toString();
 }
 
-async function requestJson(pathname) {
-  const config = getAgentConfig();
+async function requestJson(pathname, options = {}) {
+  const {
+    config: configOverride = null,
+    method = "GET",
+    body = null,
+  } = options;
+  const config = getAgentConfig(configOverride);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -65,9 +152,14 @@ async function requestJson(pathname) {
       headers.Authorization = `Bearer ${config.token}`;
     }
 
-    const response = await fetch(buildAgentUrl(pathname), {
-      method: "GET",
+    if (body !== null) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(buildAgentUrl(pathname, configOverride), {
+      method,
       headers,
+      body: body === null ? undefined : JSON.stringify(body),
       signal: controller.signal,
     });
 
@@ -271,15 +363,46 @@ function isHealthyPayload(payload) {
   return true;
 }
 
-async function getHealth() {
-  return requestJson("/api/v1/health");
+async function getHealth(configOverride = null) {
+  return requestJson("/api/v1/health", {
+    config: configOverride,
+  });
 }
 
-async function isHealthy() {
+async function isHealthy(configOverride = null) {
   try {
-    return isHealthyPayload(await getHealth());
+    return isHealthyPayload(await getHealth(configOverride));
   } catch {
     return false;
+  }
+}
+
+async function testConnection(configOverride = null) {
+  const checkedAt = new Date().toISOString();
+  const config = getAgentConfig(configOverride);
+
+  try {
+    const payload = await getHealth(configOverride);
+    const connected = isHealthyPayload(payload);
+
+    return {
+      connected,
+      status: connected ? "connected" : "disconnected",
+      message: connected ? "Connected to the Agent." : "Agent health check reported a disconnected state.",
+      checkedAt,
+      url: config.url,
+      health: payload,
+    };
+  } catch (error) {
+    return {
+      connected: false,
+      status: "disconnected",
+      message: error?.message || "Agent unavailable.",
+      checkedAt,
+      url: config.url,
+      health: null,
+      code: error?.code || null,
+    };
   }
 }
 
@@ -1051,7 +1174,11 @@ async function getFileListing(currentPath = ".") {
 }
 
 module.exports = {
+  AGENT_CONFIG_PATH,
   AgentClientError,
+  getBackendMode,
+  getDefaultAgentSettings,
+  getEffectiveAgentSettings,
   getAmpInstances,
   getAmpSnapshot,
   getAmpStatus,
@@ -1066,4 +1193,7 @@ module.exports = {
   getPlayitStatus,
   isHealthy,
   loadEnvironment,
+  readAgentSettings,
+  saveAgentSettings,
+  testConnection,
 };

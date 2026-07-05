@@ -19,6 +19,11 @@ const desktopApi = {
   files: {
     getListing: () => ipcRenderer.invoke("files:getListing"),
   },
+  settings: {
+    getAgentConfig: () => ipcRenderer.invoke("settings:getAgentConfig"),
+    saveAgentConfig: (settings) => ipcRenderer.invoke("settings:saveAgentConfig", settings),
+    testAgentConnection: (settings) => ipcRenderer.invoke("settings:testAgentConnection", settings),
+  },
 };
 
 contextBridge.exposeInMainWorld("anxhub", desktopApi);

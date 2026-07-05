@@ -1242,6 +1242,37 @@
 
             <section class="settings-section">
               <div class="settings-section__header">
+                <h3>Agent</h3>
+                <span class="status-pill status-pill--planned" data-agent-connection-pill>Disconnected</span>
+              </div>
+              <p class="settings-note" data-agent-connection-message>Use the Agent for remote service data when local access is unavailable.</p>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Backend mode</span>
+                  <select data-agent-setting="backendMode">
+                    <option value="local">Local</option>
+                    <option value="agent">Agent</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span>Agent URL</span>
+                  <input type="url" placeholder="http://127.0.0.1:47131" data-agent-setting="agentUrl">
+                </label>
+                <label class="settings-field">
+                  <span>Agent token</span>
+                  <input type="password" autocomplete="off" placeholder="Optional bearer token" data-agent-setting="agentToken">
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-agent-action="save">Save Agent Settings</button>
+                <button class="inline-action" type="button" data-agent-action="test">Test Connection</button>
+                <span class="settings-inline-status" data-agent-config-source>Saved in config/agent.json.</span>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
                 <h3>Developer</h3>
                 <span class="status-pill status-pill--manual">Tools</span>
               </div>

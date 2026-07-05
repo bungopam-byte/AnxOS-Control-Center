@@ -3,6 +3,7 @@ const { URL } = require("url");
 
 const { handleActionInvoke, handleActionsList } = require("./routes/actions");
 const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
+const { auditAction } = require("./audit/auditLogger");
 const { handleBackupsList } = require("./routes/backups");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { isAuthorized } = require("./auth");
@@ -40,9 +41,19 @@ function sendError(response, statusCode, code) {
   });
 }
 
+function isActionInvokeRoute(request, pathname) {
+  return request.method === "POST" && pathname.startsWith("/api/v1/actions/");
+}
+
+function getActionIdFromPath(pathname) {
+  const prefix = "/api/v1/actions/";
+  return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : null;
+}
+
 function readRequestBody(request) {
   return new Promise((resolve, reject) => {
     let bytes = 0;
+    const chunks = [];
 
     request.on("data", (chunk) => {
       bytes += chunk.length;
@@ -50,10 +61,13 @@ function readRequestBody(request) {
       if (bytes > config.maxRequestBytes) {
         reject(Object.assign(new Error("request too large"), { statusCode: 413 }));
         request.destroy();
+        return;
       }
+
+      chunks.push(chunk);
     });
 
-    request.on("end", resolve);
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     request.on("error", reject);
   });
 }
@@ -61,7 +75,7 @@ function readRequestBody(request) {
 async function routeRequest(request, url) {
   const pathname = url.pathname;
 
-  if (request.method === "POST" && pathname.startsWith("/api/v1/actions/")) {
+  if (isActionInvokeRoute(request, pathname)) {
     return handleActionInvoke(request, url);
   }
 
@@ -150,12 +164,21 @@ async function handleRequest(request, response) {
   });
 
   try {
-    await readRequestBody(request);
+    request.body = await readRequestBody(request);
 
     const url = new URL(request.url, `http://${request.headers.host || `${config.host}:${config.port}`}`);
     const auth = isAuthorized(request, config, url.pathname);
 
     if (!auth.ok) {
+      if (isActionInvokeRoute(request, url.pathname)) {
+        auditAction(request, {
+          actionId: getActionIdFromPath(url.pathname),
+          permission: null,
+          outcome: "denied",
+          reason: auth.code,
+        });
+      }
+
       sendError(response, auth.statusCode, auth.code);
       return;
     }

@@ -20,7 +20,20 @@ function notImplementedResponse(action) {
   });
 }
 
+function completedResponse(action, result = null) {
+  return actionResponse(action, "completed", null, null, {
+    result,
+    implemented: true,
+  });
+}
+
+function failedResponse(action, code, message, details = {}) {
+  return actionResponse(action, "failed", code, message, details);
+}
+
 module.exports = {
   actionResponse,
+  completedResponse,
+  failedResponse,
   notImplementedResponse,
 };

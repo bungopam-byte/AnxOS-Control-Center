@@ -368,4 +368,5 @@ async function getDockerContainers() {
 module.exports = {
   getDockerContainers,
   getDockerSummary,
+  resolveDockerExecutable,
 };

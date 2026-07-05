@@ -1,5 +1,6 @@
 const { getAction, listActions } = require("../actions/actionRegistry");
-const { notImplementedResponse } = require("../actions/actionResponse");
+const { completedResponse, failedResponse, notImplementedResponse } = require("../actions/actionResponse");
+const { isDockerAction, runDockerAction } = require("../actions/dockerActions");
 const { auditAction } = require("../audit/auditLogger");
 const { authorizeAction } = require("../permissions");
 
@@ -23,12 +24,13 @@ function getActionIdFromPath(pathname) {
 }
 
 async function handleActionInvoke(request, url) {
-  const action = getAction(getActionIdFromPath(url.pathname));
+  const requestedActionId = getActionIdFromPath(url.pathname);
+  const action = getAction(requestedActionId);
   const authorization = authorizeAction(action);
 
   if (!authorization.ok) {
     auditAction(request, {
-      actionId: action?.actionId || getActionIdFromPath(url.pathname),
+      actionId: action?.actionId || requestedActionId,
       permission: authorization.permission || action?.permission || null,
       outcome: "denied",
       reason: authorization.code,
@@ -47,6 +49,43 @@ async function handleActionInvoke(request, url) {
         result: null,
       },
     };
+  }
+
+  auditAction(request, {
+    actionId: action.actionId,
+    permission: action.permission,
+    outcome: "attempted",
+    reason: null,
+  });
+
+  if (isDockerAction(action.actionId)) {
+    try {
+      const result = await runDockerAction(action, request);
+
+      auditAction(request, {
+        actionId: action.actionId,
+        permission: action.permission,
+        outcome: "completed",
+        reason: null,
+      });
+
+      return {
+        statusCode: 200,
+        body: completedResponse(action, result),
+      };
+    } catch (error) {
+      auditAction(request, {
+        actionId: action.actionId,
+        permission: action.permission,
+        outcome: "failed",
+        reason: error.code || "ACTION_FAILED",
+      });
+
+      return {
+        statusCode: error.statusCode || 500,
+        body: failedResponse(action, error.code || "ACTION_FAILED", "Action failed."),
+      };
+    }
   }
 
   auditAction(request, {

@@ -1,6 +1,7 @@
 const http = require("http");
 const { URL } = require("url");
 
+const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDockerContainers, handleDockerSummary } = require("./routes/docker");
@@ -79,6 +80,14 @@ async function routeRequest(request, pathname) {
 
   if (pathname === "/api/v1/playit/status") {
     return handlePlayitStatus();
+  }
+
+  if (pathname === "/api/v1/amp/status") {
+    return handleAmpStatus();
+  }
+
+  if (pathname === "/api/v1/amp/instances") {
+    return handleAmpInstances();
   }
 
   return {

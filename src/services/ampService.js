@@ -74,6 +74,15 @@ function bootstrapEnvFile(candidates) {
     };
   }
 
+  if (process.env.ANXHUB_DISABLE_ENV_BOOTSTRAP === "1") {
+    return {
+      resolvedEnvPath: targetPath,
+      envAutoCreated: false,
+      envTemplatePath: null,
+      envCreateErrorCode: "BOOTSTRAP_DISABLED",
+    };
+  }
+
   const templatePath = getEnvExampleCandidates().find((candidate) => fs.existsSync(candidate));
 
   if (!templatePath) {

@@ -16,6 +16,9 @@ const desktopApi = {
   docker: {
     getSnapshot: () => ipcRenderer.invoke("docker:getSnapshot"),
   },
+  files: {
+    getListing: () => ipcRenderer.invoke("files:getListing"),
+  },
 };
 
 contextBridge.exposeInMainWorld("anxhub", desktopApi);

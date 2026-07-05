@@ -3,6 +3,7 @@ const { execFileSync } = require("child_process");
 const path = require("path");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerDockerIpc } = require("./src/ipc/dockerIpc");
+const { registerFilesIpc } = require("./src/ipc/filesIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
@@ -71,6 +72,7 @@ app.whenReady().then(() => {
   registerAmpIpc();
   registerPlayitIpc();
   registerDockerIpc();
+  registerFilesIpc();
   createWindow();
 
   app.on("activate", () => {

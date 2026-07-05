@@ -16,6 +16,20 @@ const dockerList = document.querySelector("[data-docker-list]");
 const dockerLoading = document.querySelector("[data-docker-loading]");
 const dockerEmpty = document.querySelector("[data-docker-empty]");
 const dockerDetailFields = document.querySelectorAll("[data-docker-detail]");
+const filesPage = document.querySelector('[data-page="files"]');
+const filesList = document.querySelector("[data-file-list]");
+const filesLoading = document.querySelector("[data-file-loading]");
+const filesEmpty = document.querySelector("[data-file-empty]");
+const filesSearchInput = document.querySelector("[data-file-search]");
+const filesRefreshButton = document.querySelector('[data-file-action="refresh"]');
+const fileActionButtons = document.querySelectorAll("[data-file-action]");
+const fileDetailFields = document.querySelectorAll("[data-file-detail]");
+const filesBreadcrumbBar = filesPage?.querySelector(".breadcrumb-bar");
+const filesFolderPanel = filesPage?.querySelector(".folder-tree-panel");
+const filesFolderEmpty = filesPage?.querySelector(".folder-tree-empty");
+const filesFolderStatus = filesFolderPanel?.querySelector(".panel-heading .status-pill");
+const filesDetailsPanel = filesPage?.querySelector(".file-details-panel");
+const filesDetailsStatus = filesDetailsPanel?.querySelector(".panel-heading .status-pill");
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
@@ -47,9 +61,12 @@ let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 let playitRequestInFlight = false;
 let dockerRequestInFlight = false;
+let filesRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
+let latestFilesListing = null;
+let selectedFileEntryPath = null;
 const AMP_REFRESH_INTERVAL_MS = 2000;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
@@ -99,6 +116,7 @@ function getDesktopApiState() {
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasDocker: typeof api?.docker?.getSnapshot === "function",
+    hasFiles: typeof api?.files?.getListing === "function",
     hasApp: typeof api?.app?.getRuntimeInfo === "function",
   };
 }
@@ -548,6 +566,10 @@ function showPage(pageName) {
   if (pageName === "docker") {
     refreshDockerStatus();
   }
+
+  if (pageName === "files") {
+    refreshFileListing();
+  }
 }
 
 function getActivePageName() {
@@ -916,6 +938,336 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setDockerDetails(null);
   setDockerLoading(false);
   setDockerEmpty(true);
+}
+
+function setFileDetail(name, value) {
+  fileDetailFields.forEach((field) => {
+    if (field.dataset.fileDetail === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setFileDetails(entry = null) {
+  if (!entry) {
+    if (filesDetailsStatus) {
+      filesDetailsStatus.textContent = "None";
+    }
+
+    setFileDetail("name", "None selected");
+    setFileDetail("type", "Unavailable");
+    setFileDetail("size", "Unavailable");
+    setFileDetail("modified", "Unavailable");
+    setFileDetail("path", "Unavailable");
+    return;
+  }
+
+  if (filesDetailsStatus) {
+    filesDetailsStatus.textContent = entry.isDirectory ? "Folder" : "Selected";
+  }
+
+  setFileDetail("name", formatFileValue(entry.name));
+  setFileDetail("type", formatFileType(entry));
+  setFileDetail("size", entry.isDirectory ? "Folder" : formatBytes(entry.size));
+  setFileDetail("modified", formatDateTime(entry.modifiedAt));
+  setFileDetail("path", formatFileValue(entry.path));
+}
+
+function setFilesLoading(isLoading, message = "Loading files...") {
+  if (filesLoading) {
+    filesLoading.hidden = !isLoading;
+    const statusText = filesLoading.querySelector("span:last-child");
+
+    if (statusText) {
+      statusText.textContent = message;
+    }
+  }
+}
+
+function setFilesEmpty(isVisible, title, message) {
+  if (filesEmpty) {
+    filesEmpty.hidden = !isVisible;
+
+    const titleTarget = filesEmpty.querySelector("strong");
+    const messageTarget = filesEmpty.querySelector("span:last-child");
+
+    if (titleTarget && title) {
+      titleTarget.textContent = title;
+    }
+
+    if (messageTarget && message) {
+      messageTarget.textContent = message;
+    }
+  }
+}
+
+function clearFileRows() {
+  if (filesList) {
+    filesList.replaceChildren();
+  }
+}
+
+function normalizeFilesArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function formatFileValue(value) {
+  return value === null || value === undefined || value === "" ? "Unavailable" : String(value);
+}
+
+function formatFileType(entry) {
+  if (!entry) {
+    return "Unavailable";
+  }
+
+  if (entry.isDirectory) {
+    return "Folder";
+  }
+
+  if (entry.type && entry.type !== "file") {
+    return formatFileValue(entry.type);
+  }
+
+  if (entry.extension) {
+    return `${String(entry.extension).toUpperCase()} File`;
+  }
+
+  return "File";
+}
+
+function compareFileEntries(left, right) {
+  if (left.isDirectory !== right.isDirectory) {
+    return left.isDirectory ? -1 : 1;
+  }
+
+  return String(left.name || "").localeCompare(String(right.name || ""), undefined, { sensitivity: "base" });
+}
+
+function getSelectedFileEntry(entries) {
+  if (!selectedFileEntryPath) {
+    return entries[0] || null;
+  }
+
+  return entries.find((entry) => entry.path && entry.path === selectedFileEntryPath) || entries[0] || null;
+}
+
+function selectFileEntry(entry) {
+  selectedFileEntryPath = entry?.path || null;
+  setFileDetails(entry);
+
+  if (!filesList) {
+    return;
+  }
+
+  [...filesList.querySelectorAll("tr")].forEach((row) => {
+    row.classList.toggle("is-selected", row.dataset.filePath === selectedFileEntryPath);
+  });
+}
+
+function addFileCell(row, value) {
+  const cell = document.createElement("td");
+  cell.textContent = value;
+  row.appendChild(cell);
+}
+
+function renderFileRows(entries) {
+  clearFileRows();
+
+  if (!filesList) {
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const row = document.createElement("tr");
+    row.dataset.filePath = entry.path || entry.name || "";
+    row.tabIndex = 0;
+    row.addEventListener("click", () => selectFileEntry(entry));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectFileEntry(entry);
+      }
+    });
+    addFileCell(row, formatFileValue(entry.name));
+    addFileCell(row, formatFileType(entry));
+    addFileCell(row, entry.isDirectory ? "Folder" : formatBytes(entry.size));
+    addFileCell(row, formatDateTime(entry.modifiedAt));
+    filesList.appendChild(row);
+  });
+}
+
+function renderFileBreadcrumbs(listing) {
+  if (!filesBreadcrumbBar) {
+    return;
+  }
+
+  const breadcrumbs = normalizeFilesArray(listing?.breadcrumbs);
+
+  filesBreadcrumbBar.replaceChildren();
+
+  const root = document.createElement("span");
+  root.className = "breadcrumb-root";
+  root.textContent = "Files";
+  filesBreadcrumbBar.appendChild(root);
+
+  if (breadcrumbs.length === 0) {
+    const separator = document.createElement("span");
+    separator.className = "breadcrumb-separator";
+    separator.textContent = "/";
+    filesBreadcrumbBar.appendChild(separator);
+
+    const fallback = document.createElement("span");
+    fallback.textContent = listing?.currentPath || listing?.message || "Unavailable";
+    filesBreadcrumbBar.appendChild(fallback);
+    return;
+  }
+
+  breadcrumbs.forEach((crumb) => {
+    const separator = document.createElement("span");
+    separator.className = "breadcrumb-separator";
+    separator.textContent = "/";
+    filesBreadcrumbBar.appendChild(separator);
+
+    const segment = document.createElement("span");
+    segment.textContent = crumb?.name || crumb?.path || "Folder";
+    filesBreadcrumbBar.appendChild(segment);
+  });
+}
+
+function renderFolderRoots(listing) {
+  if (!filesFolderPanel) {
+    return;
+  }
+
+  const existingList = filesFolderPanel.querySelector(".folder-tree-list");
+
+  if (existingList) {
+    existingList.remove();
+  }
+
+  const roots = normalizeFilesArray(listing?.roots);
+
+  if (filesFolderStatus) {
+    filesFolderStatus.textContent = listing?.connected ? "Connected" : "Disconnected";
+  }
+
+  if (filesFolderEmpty) {
+    filesFolderEmpty.hidden = roots.length > 0;
+
+    const titleTarget = filesFolderEmpty.querySelector("strong");
+    const messageTarget = filesFolderEmpty.querySelector("span:last-child");
+
+    if (titleTarget) {
+      titleTarget.textContent = listing?.connected ? "No folder roots available" : "No filesystem connected";
+    }
+
+    if (messageTarget) {
+      messageTarget.textContent = listing?.connected
+        ? "The file service did not return any folder roots."
+        : (listing?.message || "No folder roots are connected.");
+    }
+  }
+
+  if (roots.length === 0) {
+    return;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "folder-tree-list";
+
+  roots.forEach((root) => {
+    const item = document.createElement("li");
+    const label = document.createElement("button");
+    label.type = "button";
+    label.className = "inline-action";
+    label.disabled = true;
+    label.textContent = root?.name || root?.path || "Root";
+    item.appendChild(label);
+    list.appendChild(item);
+  });
+
+  filesFolderPanel.appendChild(list);
+}
+
+function normalizeFileListingForRenderer(listing) {
+  if (!listing || typeof listing !== "object") {
+    return {
+      configured: false,
+      connected: false,
+      status: "unavailable",
+      message: "File service unavailable.",
+      currentPath: null,
+      roots: [],
+      breadcrumbs: [],
+      entries: [],
+      summary: {
+        directoryCount: 0,
+        fileCount: 0,
+        totalCount: 0,
+      },
+    };
+  }
+
+  const entries = normalizeFilesArray(listing.entries).slice().sort(compareFileEntries);
+  const roots = normalizeFilesArray(listing.roots);
+  const breadcrumbs = normalizeFilesArray(listing.breadcrumbs);
+
+  return {
+    ...listing,
+    roots,
+    breadcrumbs,
+    entries,
+    summary: listing.summary && typeof listing.summary === "object"
+      ? listing.summary
+      : {
+          directoryCount: entries.filter((entry) => entry.isDirectory).length,
+          fileCount: entries.filter((entry) => !entry.isDirectory).length,
+          totalCount: entries.length,
+        },
+  };
+}
+
+function renderFileListing(listing) {
+  const normalized = normalizeFileListingForRenderer(listing);
+  const entries = normalized.entries;
+  const selectedEntry = getSelectedFileEntry(entries);
+
+  latestFilesListing = normalized;
+  renderFileBreadcrumbs(normalized);
+  renderFolderRoots(normalized);
+  renderFileRows(entries);
+  selectFileEntry(selectedEntry);
+  setFilesLoading(false);
+
+  if (!normalized.connected) {
+    setFilesEmpty(true, "File service unavailable", normalized.message || "File service is disconnected.");
+    return;
+  }
+
+  if (entries.length === 0) {
+    setFilesEmpty(true, "No files to show", "This folder is empty.");
+    return;
+  }
+
+  setFilesEmpty(false, null, null);
+}
+
+function renderFileListingUnavailable(message = "File listing unavailable.") {
+  latestFilesListing = null;
+  clearFileRows();
+  renderFolderRoots({
+    connected: false,
+    roots: [],
+    message,
+  });
+  renderFileBreadcrumbs({
+    currentPath: null,
+    breadcrumbs: [],
+    message,
+  });
+  setFileDetails(null);
+  setFilesLoading(false);
+  setFilesEmpty(true, "File service unavailable", message);
 }
 
 function formatAmpUsage(summary) {
@@ -1409,6 +1761,30 @@ async function refreshDockerStatus() {
   }
 }
 
+async function refreshFileListing() {
+  if (filesRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasFiles) {
+    renderFileListingUnavailable(desktopApiState.hasBridge ? "Files IPC bridge unavailable." : "Desktop preload bridge unavailable.");
+    return;
+  }
+
+  filesRequestInFlight = true;
+  setFilesLoading(true, "Loading current directory...");
+
+  try {
+    renderFileListing(await desktopApiState.api.files.getListing());
+  } catch (error) {
+    renderFileListingUnavailable(`File listing request failed: ${error?.message || "Unknown error"}`);
+  } finally {
+    filesRequestInFlight = false;
+  }
+}
+
 function registerRefreshTask(callback, intervalMs) {
   window.setInterval(callback, intervalMs);
   callback();
@@ -1666,6 +2042,11 @@ sshClearButton?.addEventListener("click", clearSshOutput);
 sshFullscreenButton?.addEventListener("click", toggleSshFullscreen);
 sshAutoscrollInput?.addEventListener("change", syncSshScrollMode);
 updateSshActions();
+filesSearchInput?.setAttribute("disabled", "");
+fileActionButtons.forEach((button) => {
+  button.disabled = button !== filesRefreshButton;
+});
+filesRefreshButton?.addEventListener("click", refreshFileListing);
 settingsForm?.addEventListener("input", saveSettings);
 settingsForm?.addEventListener("change", saveSettings);
 settingsResetButton?.addEventListener("click", resetSettings);

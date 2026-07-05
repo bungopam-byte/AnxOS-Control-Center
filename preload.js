@@ -16,6 +16,9 @@ const desktopApi = {
   docker: {
     getSnapshot: () => ipcRenderer.invoke("docker:getSnapshot"),
   },
+  actions: {
+    executeAction: (actionId, params = {}) => ipcRenderer.invoke("action:execute", { actionId, params }),
+  },
   files: {
     getListing: () => ipcRenderer.invoke("files:getListing"),
   },

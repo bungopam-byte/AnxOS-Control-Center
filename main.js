@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const { execFileSync } = require("child_process");
 const path = require("path");
+const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { registerFilesIpc } = require("./src/ipc/filesIpc");
@@ -69,6 +70,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
+  registerActionIpc();
   registerSystemIpc();
   registerAmpIpc();
   registerPlayitIpc();

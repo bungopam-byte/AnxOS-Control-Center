@@ -1139,6 +1139,14 @@ h3 {
   text-align: left;
 }
 
+.docker-table tbody tr {
+  cursor: pointer;
+}
+
+.docker-table tbody tr.is-selected {
+  background: var(--accent-soft);
+}
+
 .docker-table th {
   color: var(--muted);
   font-size: 0.76rem;

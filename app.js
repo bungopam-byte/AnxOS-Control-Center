@@ -16,6 +16,13 @@ const dockerList = document.querySelector("[data-docker-list]");
 const dockerLoading = document.querySelector("[data-docker-loading]");
 const dockerEmpty = document.querySelector("[data-docker-empty]");
 const dockerDetailFields = document.querySelectorAll("[data-docker-detail]");
+const dockerSearchInput = document.querySelector("[data-docker-search]");
+const dockerFilterSelect = document.querySelector("[data-docker-filter]");
+const dockerActionButtons = document.querySelectorAll("[data-docker-action]");
+const dockerRefreshButton = document.querySelector('[data-docker-action="refresh"]');
+const dockerStartButton = document.querySelector('[data-docker-action="start"]');
+const dockerStopButton = document.querySelector('[data-docker-action="stop"]');
+const dockerRestartButton = document.querySelector('[data-docker-action="restart"]');
 const filesPage = document.querySelector('[data-page="files"]');
 const filesList = document.querySelector("[data-file-list]");
 const filesLoading = document.querySelector("[data-file-loading]");
@@ -67,13 +74,16 @@ let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 let playitRequestInFlight = false;
 let dockerRequestInFlight = false;
+let dockerActionRequestInFlight = false;
 let filesRequestInFlight = false;
 let agentSettingsRequestInFlight = false;
 let agentConnectionTestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
+let latestDockerSnapshot = null;
 let latestFilesListing = null;
+let selectedDockerContainerId = null;
 let selectedFileEntryPath = null;
 const AMP_REFRESH_INTERVAL_MS = 2000;
 const STARTUP_FALLBACK_MS = 4200;
@@ -130,6 +140,7 @@ function getDesktopApiState() {
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasDocker: typeof api?.docker?.getSnapshot === "function",
+    hasActions: typeof api?.actions?.executeAction === "function",
     hasFiles: typeof api?.files?.getListing === "function",
     hasSettings:
       typeof api?.settings?.getAgentConfig === "function" &&
@@ -859,6 +870,74 @@ function formatDockerResources(container) {
   return `CPU ${cpu} · RAM ${memory}`;
 }
 
+function getDockerContainers(snapshot = latestDockerSnapshot) {
+  return Array.isArray(snapshot?.containers) ? snapshot.containers : [];
+}
+
+function findDockerContainer(containerId, snapshot = latestDockerSnapshot) {
+  if (!containerId) {
+    return null;
+  }
+
+  return getDockerContainers(snapshot).find((container) => container?.id === containerId) || null;
+}
+
+function normalizeDockerActionState(container) {
+  const rawState = String(container?.state || container?.status || "").trim().toLowerCase();
+
+  if (/^up\b|running/.test(rawState)) {
+    return "running";
+  }
+
+  if (/created|exited|dead|paused|removing|stopped/.test(rawState)) {
+    return rawState.includes("created") ? "created" : "stopped";
+  }
+
+  return rawState || "unknown";
+}
+
+function canStartDockerContainer(container) {
+  return ["created", "stopped"].includes(normalizeDockerActionState(container));
+}
+
+function canStopDockerContainer(container) {
+  return normalizeDockerActionState(container) === "running";
+}
+
+function canRestartDockerContainer(container) {
+  return normalizeDockerActionState(container) === "running";
+}
+
+function updateDockerActionButtons() {
+  const selectedContainer = findDockerContainer(selectedDockerContainerId);
+  const hasActions = getDesktopApiState().hasActions;
+  const disableManagedActions = dockerActionRequestInFlight || !selectedContainer || !hasActions;
+
+  if (dockerRefreshButton) {
+    dockerRefreshButton.disabled = dockerRequestInFlight || dockerActionRequestInFlight;
+  }
+
+  if (dockerStartButton) {
+    dockerStartButton.disabled = disableManagedActions || !canStartDockerContainer(selectedContainer);
+  }
+
+  if (dockerStopButton) {
+    dockerStopButton.disabled = disableManagedActions || !canStopDockerContainer(selectedContainer);
+  }
+
+  if (dockerRestartButton) {
+    dockerRestartButton.disabled = disableManagedActions || !canRestartDockerContainer(selectedContainer);
+  }
+
+  dockerActionButtons.forEach((button) => {
+    const action = button.dataset.dockerAction;
+
+    if (action !== "refresh" && action !== "start" && action !== "stop" && action !== "restart") {
+      button.disabled = true;
+    }
+  });
+}
+
 function getDockerStateLabel(snapshot) {
   if (!snapshot?.installed) {
     return {
@@ -904,6 +983,20 @@ function setDockerDetails(container = null) {
   setDockerDetail("uptime", formatDockerValue(container.runningFor || container.createdAt));
 }
 
+function selectDockerContainer(containerId) {
+  const selectedContainer = findDockerContainer(containerId);
+  selectedDockerContainerId = selectedContainer?.id || null;
+  setDockerDetails(selectedContainer);
+
+  if (dockerList) {
+    [...dockerList.querySelectorAll("tr")].forEach((row) => {
+      row.classList.toggle("is-selected", row.dataset.dockerContainerId === selectedDockerContainerId);
+    });
+  }
+
+  updateDockerActionButtons();
+}
+
 function addDockerCell(row, value) {
   const cell = document.createElement("td");
   cell.textContent = value;
@@ -919,6 +1012,15 @@ function renderDockerRows(containers) {
 
   containers.forEach((container) => {
     const row = document.createElement("tr");
+    row.dataset.dockerContainerId = container.id || "";
+    row.tabIndex = 0;
+    row.addEventListener("click", () => selectDockerContainer(container.id));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectDockerContainer(container.id);
+      }
+    });
     addDockerCell(row, formatDockerValue(container.name));
     addDockerCell(row, formatDockerValue(container.status || container.state));
     addDockerCell(row, formatDockerValue(container.image));
@@ -933,6 +1035,13 @@ function renderDockerRows(containers) {
 function renderDockerSnapshot(snapshot) {
   const containers = Array.isArray(snapshot?.containers) ? snapshot.containers : [];
   const state = getDockerStateLabel(snapshot);
+  const nextSelectedContainer =
+    findDockerContainer(selectedDockerContainerId, snapshot) ||
+    containers[0] ||
+    null;
+
+  latestDockerSnapshot = snapshot;
+  selectedDockerContainerId = nextSelectedContainer?.id || null;
 
   setField("dockerInstalled", state.installed);
   setField("dockerDaemon", state.daemon);
@@ -941,12 +1050,14 @@ function renderDockerSnapshot(snapshot) {
   setField("dockerEmptyMessage", state.message);
   setField("dockerLoadingMessage", "Checking Docker daemon status...");
   renderDockerRows(containers);
-  setDockerDetails(containers[0] || null);
+  selectDockerContainer(selectedDockerContainerId);
   setDockerLoading(false);
   setDockerEmpty(containers.length === 0);
 }
 
 function renderDockerUnavailable(message = "Docker status unavailable.") {
+  latestDockerSnapshot = null;
+  selectedDockerContainerId = null;
   setField("dockerInstalled", "Unavailable");
   setField("dockerDaemon", "Unavailable");
   setField("dockerRunningContainers", "Unavailable");
@@ -956,6 +1067,7 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setDockerDetails(null);
   setDockerLoading(false);
   setDockerEmpty(true);
+  updateDockerActionButtons();
 }
 
 function setFileDetail(name, value) {
@@ -1755,6 +1867,43 @@ async function refreshPlayitStatus() {
   }
 }
 
+function getDockerActionDefinition(actionName) {
+  const definitions = {
+    start: {
+      actionId: "docker.start",
+      confirmLabel: "Start",
+      successMessage: "Docker start request sent.",
+      allowed: canStartDockerContainer,
+    },
+    stop: {
+      actionId: "docker.stop",
+      confirmLabel: "Stop",
+      successMessage: "Docker stop request sent.",
+      allowed: canStopDockerContainer,
+    },
+    restart: {
+      actionId: "docker.restart",
+      confirmLabel: "Restart",
+      successMessage: "Docker restart request sent.",
+      allowed: canRestartDockerContainer,
+    },
+  };
+
+  return definitions[actionName] || null;
+}
+
+function getDockerContainerLabel(container) {
+  return container?.name || container?.id || "this container";
+}
+
+function getDockerActionErrorMessage(error) {
+  if (typeof error?.message === "string" && error.message.trim() !== "") {
+    return error.message.trim();
+  }
+
+  return "Docker action failed.";
+}
+
 async function refreshDockerStatus() {
   if (dockerRequestInFlight) {
     return;
@@ -1776,6 +1925,55 @@ async function refreshDockerStatus() {
     renderDockerUnavailable(`Docker status request failed: ${error?.message || "Unknown error"}`);
   } finally {
     dockerRequestInFlight = false;
+    updateDockerActionButtons();
+  }
+}
+
+async function handleDockerAction(actionName) {
+  const definition = getDockerActionDefinition(actionName);
+  const selectedContainer = findDockerContainer(selectedDockerContainerId);
+
+  if (!definition || !selectedContainer || !definition.allowed(selectedContainer)) {
+    updateDockerActionButtons();
+    return;
+  }
+
+  const containerLabel = getDockerContainerLabel(selectedContainer);
+  const confirmed = window.confirm(`${definition.confirmLabel} ${containerLabel}?`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasActions) {
+    showToast("Docker actions are unavailable in this build.");
+    updateDockerActionButtons();
+    return;
+  }
+
+  dockerActionRequestInFlight = true;
+  updateDockerActionButtons();
+
+  try {
+    const response = await desktopApiState.api.actions.executeAction(definition.actionId, {
+      containerId: selectedContainer.id || null,
+      containerName: selectedContainer.name || null,
+    });
+
+    showToast(response?.error?.message || definition.successMessage);
+
+    if (response?.ok === false || response?.status === "not_implemented" || response?.error) {
+      return;
+    }
+
+    await refreshDockerStatus();
+  } catch (error) {
+    showToast(getDockerActionErrorMessage(error));
+  } finally {
+    dockerActionRequestInFlight = false;
+    updateDockerActionButtons();
   }
 }
 
@@ -2254,6 +2452,13 @@ fileActionButtons.forEach((button) => {
   button.disabled = button !== filesRefreshButton;
 });
 filesRefreshButton?.addEventListener("click", refreshFileListing);
+dockerSearchInput?.setAttribute("disabled", "");
+dockerFilterSelect?.setAttribute("disabled", "");
+dockerRefreshButton?.addEventListener("click", refreshDockerStatus);
+dockerStartButton?.addEventListener("click", () => handleDockerAction("start"));
+dockerStopButton?.addEventListener("click", () => handleDockerAction("stop"));
+dockerRestartButton?.addEventListener("click", () => handleDockerAction("restart"));
+updateDockerActionButtons();
 settingsInputs.forEach((input) => {
   input.addEventListener("input", saveSettings);
   input.addEventListener("change", saveSettings);

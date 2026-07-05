@@ -12,6 +12,10 @@ const consoleCountTarget = document.querySelector("[data-console-count]");
 const consoleViewer = document.querySelector("[data-console-viewer]");
 const consoleLogList = document.querySelector("[data-console-log-list]");
 const consoleEmptyState = document.querySelector("[data-console-empty]");
+const dockerList = document.querySelector("[data-docker-list]");
+const dockerLoading = document.querySelector("[data-docker-loading]");
+const dockerEmpty = document.querySelector("[data-docker-empty]");
+const dockerDetailFields = document.querySelectorAll("[data-docker-detail]");
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
@@ -42,6 +46,7 @@ const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 let playitRequestInFlight = false;
+let dockerRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
@@ -93,6 +98,7 @@ function getDesktopApiState() {
     hasSystem: typeof api?.system?.getSnapshot === "function",
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
+    hasDocker: typeof api?.docker?.getSnapshot === "function",
     hasApp: typeof api?.app?.getRuntimeInfo === "function",
   };
 }
@@ -538,6 +544,10 @@ function showPage(pageName) {
   if (pageName === "playit") {
     refreshPlayitStatus();
   }
+
+  if (pageName === "docker") {
+    refreshDockerStatus();
+  }
 }
 
 function getActivePageName() {
@@ -743,6 +753,143 @@ function renderPlayitUnavailable(message = "Playit status unavailable.") {
   setField("playitLatency", "Unavailable");
   setField("playitTraffic", "Unavailable");
   setField("playitSummary", message);
+}
+
+function setDockerDetail(name, value) {
+  dockerDetailFields.forEach((field) => {
+    if (field.dataset.dockerDetail === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setDockerLoading(isLoading) {
+  if (dockerLoading) {
+    dockerLoading.hidden = !isLoading;
+  }
+}
+
+function setDockerEmpty(isEmpty) {
+  if (dockerEmpty) {
+    dockerEmpty.hidden = !isEmpty;
+  }
+}
+
+function clearDockerRows() {
+  if (dockerList) {
+    dockerList.replaceChildren();
+  }
+}
+
+function formatDockerValue(value) {
+  return value === null || value === undefined || value === "" ? "Unavailable" : String(value);
+}
+
+function formatDockerPorts(value) {
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(", ") : "Unavailable";
+  }
+
+  return formatDockerValue(value);
+}
+
+function getDockerStateLabel(snapshot) {
+  if (!snapshot?.installed) {
+    return {
+      installed: "Missing",
+      daemon: "Unavailable",
+      message: "Docker CLI is missing.",
+    };
+  }
+
+  if (!snapshot.daemonRunning) {
+    return {
+      installed: "Installed",
+      daemon: "Stopped",
+      message: "Docker daemon is stopped or unavailable.",
+    };
+  }
+
+  return {
+    installed: "Installed",
+    daemon: "Running",
+    message: "No containers found.",
+  };
+}
+
+function setDockerDetails(container = null) {
+  if (!container) {
+    setField("dockerDetailState", "None");
+    setDockerDetail("name", "None selected");
+    setDockerDetail("status", "Unavailable");
+    setDockerDetail("image", "Unavailable");
+    setDockerDetail("resources", "Unavailable");
+    setDockerDetail("ports", "Unavailable");
+    setDockerDetail("uptime", "Unavailable");
+    return;
+  }
+
+  setField("dockerDetailState", formatDockerValue(container.state || container.status));
+  setDockerDetail("name", formatDockerValue(container.name));
+  setDockerDetail("status", formatDockerValue(container.status || container.state));
+  setDockerDetail("image", formatDockerValue(container.image));
+  setDockerDetail("resources", "Unavailable");
+  setDockerDetail("ports", formatDockerPorts(container.ports));
+  setDockerDetail("uptime", formatDockerValue(container.runningFor || container.createdAt));
+}
+
+function addDockerCell(row, value) {
+  const cell = document.createElement("td");
+  cell.textContent = value;
+  row.appendChild(cell);
+}
+
+function renderDockerRows(containers) {
+  clearDockerRows();
+
+  if (!dockerList) {
+    return;
+  }
+
+  containers.forEach((container) => {
+    const row = document.createElement("tr");
+    addDockerCell(row, formatDockerValue(container.name));
+    addDockerCell(row, formatDockerValue(container.status || container.state));
+    addDockerCell(row, formatDockerValue(container.image));
+    addDockerCell(row, "Unavailable");
+    addDockerCell(row, "Unavailable");
+    addDockerCell(row, formatDockerPorts(container.ports));
+    addDockerCell(row, formatDockerValue(container.runningFor || container.createdAt));
+    dockerList.appendChild(row);
+  });
+}
+
+function renderDockerSnapshot(snapshot) {
+  const containers = Array.isArray(snapshot?.containers) ? snapshot.containers : [];
+  const state = getDockerStateLabel(snapshot);
+
+  setField("dockerInstalled", state.installed);
+  setField("dockerDaemon", state.daemon);
+  setField("dockerRunningContainers", Number.isFinite(snapshot?.summary?.runningContainers) ? snapshot.summary.runningContainers : "Unavailable");
+  setField("dockerTotalContainers", Number.isFinite(snapshot?.summary?.totalContainers) ? snapshot.summary.totalContainers : "Unavailable");
+  setField("dockerEmptyMessage", state.message);
+  setField("dockerLoadingMessage", "Checking Docker daemon status...");
+  renderDockerRows(containers);
+  setDockerDetails(containers[0] || null);
+  setDockerLoading(false);
+  setDockerEmpty(containers.length === 0);
+}
+
+function renderDockerUnavailable(message = "Docker status unavailable.") {
+  setField("dockerInstalled", "Unavailable");
+  setField("dockerDaemon", "Unavailable");
+  setField("dockerRunningContainers", "Unavailable");
+  setField("dockerTotalContainers", "Unavailable");
+  setField("dockerEmptyMessage", message);
+  clearDockerRows();
+  setDockerDetails(null);
+  setDockerLoading(false);
+  setDockerEmpty(true);
 }
 
 function formatAmpUsage(summary) {
@@ -1212,6 +1359,30 @@ async function refreshPlayitStatus() {
   }
 }
 
+async function refreshDockerStatus() {
+  if (dockerRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasDocker) {
+    renderDockerUnavailable(desktopApiState.hasBridge ? "Docker IPC bridge unavailable." : "Desktop preload bridge unavailable.");
+    return;
+  }
+
+  dockerRequestInFlight = true;
+  setDockerLoading(true);
+
+  try {
+    renderDockerSnapshot(await desktopApiState.api.docker.getSnapshot());
+  } catch (error) {
+    renderDockerUnavailable(`Docker status request failed: ${error?.message || "Unknown error"}`);
+  } finally {
+    dockerRequestInFlight = false;
+  }
+}
+
 function registerRefreshTask(callback, intervalMs) {
   window.setInterval(callback, intervalMs);
   callback();
@@ -1481,3 +1652,4 @@ registerRefreshTask(updateLocalTime, 30000);
 registerRefreshTask(refreshDashboard, 1000);
 registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);
 registerRefreshTask(refreshPlayitStatus, 5000);
+registerRefreshTask(refreshDockerStatus, 5000);

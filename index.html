@@ -638,29 +638,29 @@
               <article class="docker-summary-card">
                 <span class="service-icon">CNT</span>
                 <div>
-                  <span>Total Containers</span>
-                  <strong>Unavailable</strong>
+                  <span>Docker</span>
+                  <strong data-field="dockerInstalled">Unavailable</strong>
                 </div>
               </article>
               <article class="docker-summary-card">
                 <span class="service-icon">RUN</span>
                 <div>
-                  <span>Running</span>
-                  <strong>Unavailable</strong>
+                  <span>Daemon</span>
+                  <strong data-field="dockerDaemon">Unavailable</strong>
                 </div>
               </article>
               <article class="docker-summary-card">
                 <span class="service-icon">STP</span>
                 <div>
-                  <span>Stopped</span>
-                  <strong>Unavailable</strong>
+                  <span>Running Containers</span>
+                  <strong data-field="dockerRunningContainers">Unavailable</strong>
                 </div>
               </article>
               <article class="docker-summary-card">
                 <span class="service-icon">IMG</span>
                 <div>
-                  <span>Images</span>
-                  <strong>Unavailable</strong>
+                  <span>Total Containers</span>
+                  <strong data-field="dockerTotalContainers">Unavailable</strong>
                 </div>
               </article>
             </div>
@@ -710,13 +710,13 @@
                   <div class="docker-loading-state" data-docker-loading hidden>
                     <span class="file-loader" aria-hidden="true"></span>
                     <strong>Loading containers</strong>
-                    <span>Docker daemon is disconnected.</span>
+                    <span data-field="dockerLoadingMessage">Checking Docker daemon status...</span>
                   </div>
 
                   <div class="docker-empty-state" data-docker-empty>
                     <span class="docker-icon" aria-hidden="true"></span>
                     <strong>No Docker data available</strong>
-                    <span>Connect a Docker daemon to display containers, images, and resource usage.</span>
+                    <span data-field="dockerEmptyMessage">Docker status is unavailable.</span>
                   </div>
                 </div>
               </section>
@@ -724,7 +724,7 @@
               <aside class="docker-details-panel" aria-label="Container details">
                 <div class="panel-heading">
                   <h3>Container Details</h3>
-                  <span class="status-pill status-pill--planned">None</span>
+                  <span class="status-pill status-pill--planned" data-field="dockerDetailState">None</span>
                 </div>
                 <div class="docker-detail-icon" aria-hidden="true">
                   <span class="docker-icon"></span>

@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const { execFileSync } = require("child_process");
 const path = require("path");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
+const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
@@ -69,6 +70,7 @@ app.whenReady().then(() => {
   registerSystemIpc();
   registerAmpIpc();
   registerPlayitIpc();
+  registerDockerIpc();
   createWindow();
 
   app.on("activate", () => {

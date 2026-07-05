@@ -13,6 +13,9 @@ const desktopApi = {
   playit: {
     getSnapshot: () => ipcRenderer.invoke("playit:getSnapshot"),
   },
+  docker: {
+    getSnapshot: () => ipcRenderer.invoke("docker:getSnapshot"),
+  },
 };
 
 contextBridge.exposeInMainWorld("anxhub", desktopApi);

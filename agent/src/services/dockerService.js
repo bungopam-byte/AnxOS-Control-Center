@@ -87,6 +87,19 @@ function inferState(status) {
   return status || null;
 }
 
+function parseDockerVersion(output) {
+  const match = output.match(/Docker version\s+([^,\s]+)/i);
+  return match?.[1] || null;
+}
+
+function isDaemonRunning(result) {
+  if (result.ok) {
+    return true;
+  }
+
+  return false;
+}
+
 function normalizeContainerName(value) {
   return typeof value === "string" ? value.replace(/^\/+/, "").trim() : "";
 }
@@ -99,7 +112,7 @@ function normalizeContainer(container) {
     name: normalizeContainerName(container.Names || container.Names?.[0] || container.Name || null) || null,
     image: container.Image || null,
     command: container.Command || null,
-    createdAt: container.CreatedAt || container.Created || null,
+    created: container.CreatedAt || container.Created || null,
     status,
     state: container.State || inferState(status),
     ports: container.Ports || null,
@@ -148,7 +161,7 @@ function parseTableContainers(output) {
         id: parts[0] || null,
         image: parts[1] || null,
         command: parts[2] || null,
-        createdAt: parts[3] || null,
+        created: parts[3] || null,
         status: parts[4] || null,
         state: inferState(parts[4]),
         ports: parts[5] || null,
@@ -268,26 +281,91 @@ async function listStats(dockerPath) {
   return result.ok ? parseStatsTable(result.stdout) : [];
 }
 
-async function getDockerContainers() {
+async function countImages(dockerPath) {
+  const result = await exec(dockerPath, ["images", "-q"]);
+
+  if (!result.ok || !result.stdout) {
+    return 0;
+  }
+
+  return unique(result.stdout.split(/\r?\n/).map((line) => line.trim())).length;
+}
+
+function flattenContainer(container) {
+  return {
+    id: container.id,
+    name: container.name,
+    image: container.image,
+    state: container.state,
+    status: container.status,
+    ports: container.ports,
+    created: container.created,
+    cpuPercent: container.stats?.cpuPercent || null,
+    memoryUsage: container.stats?.memoryUsage || null,
+    memoryLimit: container.stats?.memoryLimit || null,
+  };
+}
+
+async function getDockerSnapshot() {
   const dockerPath = await resolveDockerExecutable();
   const versionResult = await exec(dockerPath, ["--version"]);
+  const installed = versionResult.ok && Boolean(versionResult.stdout);
+  const infoResult = installed ? await exec(dockerPath, ["info"]) : { ok: false };
+  const daemonRunning = installed ? isDaemonRunning(infoResult) : false;
 
-  if (!versionResult.ok) {
+  if (!installed || !daemonRunning) {
     return {
-      available: false,
+      installed,
+      daemonRunning,
+      dockerVersion: parseDockerVersion(versionResult.stdout),
+      images: 0,
       containers: [],
     };
   }
 
-  const containers = await listContainers(dockerPath);
-  const stats = await listStats(dockerPath);
+  const [containers, stats, images] = await Promise.all([
+    listContainers(dockerPath),
+    listStats(dockerPath),
+    countImages(dockerPath),
+  ]);
 
   return {
-    available: true,
+    installed,
+    daemonRunning,
+    dockerVersion: parseDockerVersion(versionResult.stdout),
+    images,
     containers: attachStats(containers, stats),
+  };
+}
+
+async function getDockerSummary() {
+  const snapshot = await getDockerSnapshot();
+  const runningContainers = snapshot.containers.filter((container) => {
+    return /^running$/i.test(container.state || "") || /^up\b/i.test(container.status || "");
+  });
+
+  return {
+    installed: snapshot.installed,
+    daemonRunning: snapshot.daemonRunning,
+    runningContainers: runningContainers.length,
+    totalContainers: snapshot.containers.length,
+    images: snapshot.images,
+    dockerVersion: snapshot.dockerVersion,
+  };
+}
+
+async function getDockerContainers() {
+  const snapshot = await getDockerSnapshot();
+
+  return {
+    installed: snapshot.installed,
+    daemonRunning: snapshot.daemonRunning,
+    dockerVersion: snapshot.dockerVersion,
+    containers: snapshot.containers.map(flattenContainer),
   };
 }
 
 module.exports = {
   getDockerContainers,
+  getDockerSummary,
 };

@@ -3,7 +3,7 @@ const { URL } = require("url");
 
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
-const { handleDockerContainers } = require("./routes/docker");
+const { handleDockerContainers, handleDockerSummary } = require("./routes/docker");
 const { handleHealth } = require("./routes/health");
 const { handleSystemSummary } = require("./routes/system");
 
@@ -70,6 +70,10 @@ async function routeRequest(request, pathname) {
 
   if (pathname === "/api/v1/docker/containers") {
     return handleDockerContainers();
+  }
+
+  if (pathname === "/api/v1/docker/summary") {
+    return handleDockerSummary();
   }
 
   return {

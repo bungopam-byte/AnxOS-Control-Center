@@ -1,4 +1,11 @@
-const { getDockerContainers } = require("../services/dockerService");
+const { getDockerContainers, getDockerSummary } = require("../services/dockerService");
+
+async function handleDockerSummary() {
+  return {
+    statusCode: 200,
+    body: await getDockerSummary(),
+  };
+}
 
 async function handleDockerContainers() {
   return {
@@ -9,4 +16,5 @@ async function handleDockerContainers() {
 
 module.exports = {
   handleDockerContainers,
+  handleDockerSummary,
 };

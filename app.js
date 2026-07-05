@@ -3,6 +3,13 @@ const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
+const titlebar = document.querySelector("[data-titlebar]");
+const titlebarDragSurface = document.querySelector("[data-titlebar-drag]");
+const titlebarPageTarget = document.querySelector("[data-titlebar-page]");
+const titlebarConnection = document.querySelector("[data-titlebar-connection]");
+const titlebarConnectionLabel = document.querySelector("[data-titlebar-connection-label]");
+const titlebarWindowButtons = document.querySelectorAll("[data-window-action]");
+const titlebarMaximizeButton = document.querySelector('[data-window-action="maximize"]');
 const consoleSearchInput = document.querySelector("[data-console-search]");
 const consoleAutoscrollInput = document.querySelector("[data-console-autoscroll]");
 const consolePauseInput = document.querySelector("[data-console-pause]");
@@ -24,11 +31,27 @@ const dockerStartButton = document.querySelector('[data-docker-action="start"]')
 const dockerStopButton = document.querySelector('[data-docker-action="stop"]');
 const dockerRestartButton = document.querySelector('[data-docker-action="restart"]');
 const filesPage = document.querySelector('[data-page="files"]');
+const fileManagerShell = filesPage?.querySelector(".file-manager-shell");
+const fileWorkspace = filesPage?.querySelector(".file-workspace");
+const fileBrowser = filesPage?.querySelector(".file-browser");
 const filesList = document.querySelector("[data-file-list]");
 const filesLoading = document.querySelector("[data-file-loading]");
 const filesEmpty = document.querySelector("[data-file-empty]");
 const filesSearchInput = document.querySelector("[data-file-search]");
+const filesServerSelect = document.querySelector("[data-files-server]");
+const filesProfileSelect = document.querySelector("[data-files-profile]");
+const filesConnectButton = document.querySelector("[data-files-connect]");
+const filesDisconnectButton = document.querySelector("[data-files-disconnect]");
+const filesPathInput = document.querySelector("[data-files-path]");
+const filesPasswordPrompt = document.querySelector("[data-files-password-prompt]");
+const filesPasswordInput = document.querySelector("[data-files-password]");
+const filesPasswordSubmitButton = document.querySelector("[data-files-password-submit]");
+const filesPasswordCancelButton = document.querySelector("[data-files-password-cancel]");
+const filesPasswordMessage = document.querySelector("[data-files-password-message]");
+const filesModeButtons = document.querySelectorAll("[data-files-mode]");
 const filesRefreshButton = document.querySelector('[data-file-action="refresh"]');
+const filesGoButton = document.querySelector('[data-file-action="go"]');
+const filesHomeButton = document.querySelector('[data-file-action="home"]');
 const fileActionButtons = document.querySelectorAll("[data-file-action]");
 const fileDetailFields = document.querySelectorAll("[data-file-detail]");
 const filesBreadcrumbBar = filesPage?.querySelector(".breadcrumb-bar");
@@ -37,6 +60,20 @@ const filesFolderEmpty = filesPage?.querySelector(".folder-tree-empty");
 const filesFolderStatus = filesFolderPanel?.querySelector(".panel-heading .status-pill");
 const filesDetailsPanel = filesPage?.querySelector(".file-details-panel");
 const filesDetailsStatus = filesDetailsPanel?.querySelector(".panel-heading .status-pill");
+const fileEditorPanel = filesPage?.querySelector(".file-editor-panel");
+const fileEditor = document.querySelector("[data-file-editor]");
+const fileEditorStatus = document.querySelector("[data-file-editor-status]");
+const fileEditorDirtyIndicator = document.querySelector("[data-file-editor-dirty]");
+const fileEditorMessage = document.querySelector("[data-file-editor-message]");
+const fileEditorPath = document.querySelector("[data-file-editor-path]");
+const fileEditorLines = document.querySelector("[data-file-editor-lines]");
+const fileEditorSurface = document.querySelector("[data-file-editor-surface]");
+const fileEditorHeightInput = document.querySelector("[data-file-editor-height]");
+const fileEditorActionButtons = document.querySelectorAll("[data-file-editor-action]");
+const fileEditorOpenButton = document.querySelector('[data-file-editor-action="open"]');
+const fileEditorSaveButton = document.querySelector('[data-file-editor-action="save"]');
+const fileEditorRevertButton = document.querySelector('[data-file-editor-action="revert"]');
+const fileEditorFullscreenButton = document.querySelector('[data-file-editor-action="fullscreen"]');
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
@@ -104,14 +141,17 @@ let playitRequestInFlight = false;
 let dockerRequestInFlight = false;
 let dockerActionRequestInFlight = false;
 let filesRequestInFlight = false;
+let filesActionRequestInFlight = false;
 let agentSettingsRequestInFlight = false;
 let agentConnectionTestInFlight = false;
 let sshConnectRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
+let latestPlayitSnapshot = null;
 let latestDockerSnapshot = null;
 let latestFilesListing = null;
+let latestFileDocument = null;
 let selectedDockerContainerId = null;
 let selectedFileEntryPath = null;
 let activeSshSessionId = null;
@@ -125,11 +165,28 @@ let sshTransientStatusMessage = "";
 let sshProfileFormVisible = false;
 let sshKeyboardMode = false;
 let sshKeyboardInputBuffer = "";
+let filesSelectedServerId = null;
+let filesSelectedProfileId = null;
+let filesPasswordPromptVisible = false;
+let filesPendingPasswordProfileId = null;
+let filesViewMode = "browse";
+let fileEditorHeight = 560;
+let agentConnectionState = "disconnected";
+let titlebarWindowIsMaximized = false;
+let windowMaximizedUnsubscribe = null;
 const sshProfilesState = {
   servers: [],
   profiles: [],
   defaultServerId: null,
   defaultProfileId: null,
+};
+const filesConnectionState = {
+  connected: false,
+  profileId: null,
+  currentPath: null,
+  homePath: null,
+  status: "disconnected",
+  message: "No remote filesystem connected.",
 };
 const sshSessions = new Map();
 const AMP_REFRESH_INTERVAL_MS = 2000;
@@ -178,18 +235,39 @@ function getDesktopApi() {
   return window.anxos || window.anxhub || null;
 }
 
+function getDesktopWindowApi() {
+  return window.anxWindow || getDesktopApi()?.window || null;
+}
+
 function getDesktopApiState() {
   const api = getDesktopApi();
+  const windowApi = getDesktopWindowApi();
 
   return {
     api,
     hasBridge: Boolean(api),
+    hasWindow:
+      typeof windowApi?.minimize === "function" &&
+      typeof windowApi?.maximize === "function" &&
+      typeof windowApi?.restore === "function" &&
+      typeof windowApi?.close === "function" &&
+      typeof windowApi?.isMaximized === "function" &&
+      typeof windowApi?.onMaximizedChanged === "function",
     hasSystem: typeof api?.system?.getSnapshot === "function",
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasDocker: typeof api?.docker?.getSnapshot === "function",
     hasActions: typeof api?.actions?.executeAction === "function",
-    hasFiles: typeof api?.files?.getListing === "function",
+    hasFiles:
+      typeof api?.files?.list === "function" &&
+      typeof api?.files?.disconnect === "function" &&
+      typeof api?.files?.readText === "function" &&
+      typeof api?.files?.writeText === "function" &&
+      typeof api?.files?.mkdir === "function" &&
+      typeof api?.files?.rename === "function" &&
+      typeof api?.files?.delete === "function" &&
+      typeof api?.files?.upload === "function" &&
+      typeof api?.files?.download === "function",
     hasSsh:
       typeof api?.ssh?.listProfiles === "function" &&
       typeof api?.ssh?.saveProfile === "function" &&
@@ -309,8 +387,113 @@ function getSafePageName(pageName) {
   return Array.from(pages).some((page) => page.dataset.page === pageName) ? pageName : DEFAULT_SETTINGS["general.defaultPage"];
 }
 
+function getPageDisplayName(pageName) {
+  return Array.from(navItems).find((item) => item.dataset.pageTarget === pageName)?.textContent?.trim() || "Dashboard";
+}
+
 function getSidebarTitle(displayName) {
   return displayName;
+}
+
+function setTitlebarWindowState(isMaximized) {
+  titlebarWindowIsMaximized = Boolean(isMaximized);
+  document.body.classList.toggle("window-is-maximized", titlebarWindowIsMaximized);
+
+  if (titlebarMaximizeButton) {
+    titlebarMaximizeButton.classList.toggle("is-maximized", titlebarWindowIsMaximized);
+    titlebarMaximizeButton.setAttribute("aria-label", titlebarWindowIsMaximized ? "Restore window" : "Maximize window");
+    titlebarMaximizeButton.title = titlebarWindowIsMaximized ? "Restore" : "Maximize";
+  }
+}
+
+async function syncTitlebarWindowState() {
+  const windowApi = getDesktopWindowApi();
+
+  if (typeof windowApi?.isMaximized !== "function") {
+    setTitlebarWindowState(false);
+    return;
+  }
+
+  try {
+    setTitlebarWindowState(await windowApi.isMaximized());
+  } catch {
+    setTitlebarWindowState(false);
+  }
+}
+
+function setTitlebarConnectionState(connected, label) {
+  if (!titlebarConnection || !titlebarConnectionLabel) {
+    return;
+  }
+
+  titlebarConnection.classList.toggle("is-disconnected", !connected);
+  titlebarConnectionLabel.textContent = label;
+}
+
+function getTitlebarConnectionState(pageName = getActivePageName()) {
+  switch (pageName) {
+    case "amp":
+    case "minecraft": {
+      const connected =
+        latestAmpSnapshot?.status === "connected" ||
+        latestAmpSnapshot?.connection?.status === "connected" ||
+        latestAmpSnapshot?.connected === true;
+      return {
+        connected,
+        label: connected ? "Connected" : "Disconnected",
+      };
+    }
+    case "playit": {
+      const connected = latestPlayitSnapshot?.connected === true;
+      return {
+        connected,
+        label: connected ? "Connected" : "Disconnected",
+      };
+    }
+    case "docker": {
+      const connected = Boolean(latestDockerSnapshot?.installed && latestDockerSnapshot?.daemonRunning);
+      return {
+        connected,
+        label: connected ? "Connected" : "Disconnected",
+      };
+    }
+    case "ssh": {
+      const session = getActiveSshSession();
+      return {
+        connected: session?.status === "connected",
+        label: session?.status === "connected" ? "Connected" : "Disconnected",
+      };
+    }
+    case "files":
+      return {
+        connected: filesConnectionState.connected,
+        label: filesConnectionState.connected ? "Connected" : "Disconnected",
+      };
+    case "settings":
+      return {
+        connected: agentConnectionState === "connected",
+        label:
+          agentConnectionState === "testing"
+            ? "Testing..."
+            : agentConnectionState === "connected"
+              ? "Connected"
+              : "Disconnected",
+      };
+    default:
+      return {
+        connected: true,
+        label: "Connected",
+      };
+  }
+}
+
+function updateTitlebar(pageName = getActivePageName()) {
+  if (titlebarPageTarget) {
+    titlebarPageTarget.textContent = getPageDisplayName(pageName);
+  }
+
+  const connectionState = getTitlebarConnectionState(pageName);
+  setTitlebarConnectionState(connectionState.connected, connectionState.label);
 }
 
 function applySettings(settings, options = {}) {
@@ -336,6 +519,8 @@ function applySettings(settings, options = {}) {
 
   if (options.openDefaultPage) {
     showPage(getSafePageName(settings["general.defaultPage"]));
+  } else {
+    updateTitlebar();
   }
 }
 
@@ -654,13 +839,22 @@ function showPage(pageName) {
   }
 
   if (pageName === "files") {
-    refreshFileListing();
+    renderFilesView();
+
+    if (filesConnectionState.connected) {
+      refreshFileListing({
+        profileId: getFilesRequestProfileId(),
+        path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+      });
+    }
   }
 
   if (pageName === "ssh") {
     renderSshView();
     resizeActiveSshSession();
   }
+
+  updateTitlebar(pageName);
 }
 
 function getActivePageName() {
@@ -816,6 +1010,7 @@ function setPlayitVisualState(state) {
 }
 
 function renderPlayitSnapshot(snapshot) {
+  latestPlayitSnapshot = snapshot;
   const configuredAddress = getConfiguredPlayitAddress();
   const tunnelAddress = snapshot?.tunnelAddress || snapshot?.tunnelDomain || configuredAddress || "Unavailable";
   const localIp = snapshot?.localIp || "Unavailable";
@@ -850,9 +1045,11 @@ function renderPlayitSnapshot(snapshot) {
           ? "Playit is installed, but the tunnel process is stopped."
           : "Playit is not installed.",
   );
+  updateTitlebar();
 }
 
 function renderPlayitUnavailable(message = "Playit status unavailable.") {
+  latestPlayitSnapshot = null;
   setPlayitVisualState("missing");
   setField("playitInstalled", "Unavailable");
   setField("playitRunning", "Unavailable");
@@ -866,6 +1063,7 @@ function renderPlayitUnavailable(message = "Playit status unavailable.") {
   setField("playitLatency", "Unavailable");
   setField("playitTraffic", "Unavailable");
   setField("playitSummary", message);
+  updateTitlebar();
 }
 
 function setDockerDetail(name, value) {
@@ -1115,6 +1313,7 @@ function renderDockerSnapshot(snapshot) {
   selectDockerContainer(selectedDockerContainerId);
   setDockerLoading(false);
   setDockerEmpty(containers.length === 0);
+  updateTitlebar();
 }
 
 function renderDockerUnavailable(message = "Docker status unavailable.") {
@@ -1130,6 +1329,7 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setDockerLoading(false);
   setDockerEmpty(true);
   updateDockerActionButtons();
+  updateTitlebar();
 }
 
 function setFileDetail(name, value) {
@@ -1163,6 +1363,266 @@ function setFileDetails(entry = null) {
   setFileDetail("size", entry.isDirectory ? "Folder" : formatBytes(entry.size));
   setFileDetail("modified", formatDateTime(entry.modifiedAt));
   setFileDetail("path", formatFileValue(entry.path));
+}
+
+function setFileEditorMessage(message) {
+  if (fileEditorMessage) {
+    fileEditorMessage.textContent = message;
+  }
+}
+
+function setFileEditorPath(value) {
+  if (fileEditorPath) {
+    fileEditorPath.textContent = value || "No file opened";
+  }
+}
+
+function setFileEditorDirtyIndicator(isDirty) {
+  if (fileEditorDirtyIndicator) {
+    fileEditorDirtyIndicator.hidden = !isDirty;
+  }
+}
+
+function getFileEditorLineCount(value) {
+  return Math.max(1, String(value || "").split("\n").length);
+}
+
+function renderFileEditorLines(value = "") {
+  if (!fileEditorLines) {
+    return;
+  }
+
+  const lineCount = getFileEditorLineCount(value);
+  fileEditorLines.replaceChildren();
+
+  for (let index = 1; index <= lineCount; index += 1) {
+    const item = document.createElement("li");
+    item.textContent = `${index}`;
+    fileEditorLines.appendChild(item);
+  }
+}
+
+function syncFileEditorLineScroll() {
+  if (!fileEditor || !fileEditorLines) {
+    return;
+  }
+
+  fileEditorLines.style.transform = `translateY(${-fileEditor.scrollTop}px)`;
+}
+
+function setFileEditorHeight(value) {
+  const nextHeight = Math.max(360, Math.min(1100, Number(value) || 560));
+  fileEditorHeight = nextHeight;
+
+  if (fileEditorSurface) {
+    fileEditorSurface.style.setProperty("--file-editor-height", `${nextHeight}px`);
+  }
+
+  if (fileEditorHeightInput) {
+    fileEditorHeightInput.value = `${nextHeight}`;
+  }
+}
+
+function hasOpenFileEditorDocument() {
+  return Boolean(latestFileDocument?.path);
+}
+
+function setFilesViewMode(mode) {
+  const nextMode = mode === "edit" && hasOpenFileEditorDocument() ? "edit" : "browse";
+  filesViewMode = nextMode;
+
+  if (nextMode !== "edit" && fileEditorPanel) {
+    fileEditorPanel.classList.remove("is-fullscreen");
+  }
+
+  renderFilesView();
+}
+
+function toggleFileEditorFullscreen() {
+  if (!fileEditorPanel) {
+    return;
+  }
+
+  if (!fileEditorPanel.classList.contains("is-fullscreen") && hasOpenFileEditorDocument()) {
+    filesViewMode = "edit";
+  }
+
+  fileEditorPanel.classList.toggle("is-fullscreen");
+
+  if (fileEditorFullscreenButton) {
+    fileEditorFullscreenButton.textContent = fileEditorPanel.classList.contains("is-fullscreen")
+      ? "Exit Fullscreen"
+      : "Fullscreen Editor";
+  }
+
+  renderFilesView();
+}
+
+function resetFileEditor(message = "Open a text file to view and edit it here.") {
+  latestFileDocument = null;
+  filesViewMode = "browse";
+
+  if (fileEditor) {
+    fileEditor.value = "";
+    fileEditor.disabled = true;
+    fileEditor.scrollTop = 0;
+  }
+
+  if (fileEditorStatus) {
+    fileEditorStatus.textContent = "Read Only";
+  }
+
+  setFileEditorDirtyIndicator(false);
+  setFileEditorPath(null);
+  renderFileEditorLines("");
+  syncFileEditorLineScroll();
+  if (fileEditorPanel) {
+    fileEditorPanel.classList.remove("is-fullscreen");
+  }
+  setFileEditorMessage(message);
+}
+
+function applyFileEditorDocument(documentState) {
+  latestFileDocument = documentState;
+
+  if (fileEditor) {
+    fileEditor.disabled = !documentState?.supported;
+    fileEditor.value = documentState?.supported ? documentState.content || "" : "";
+    fileEditor.scrollTop = 0;
+  }
+
+  if (fileEditorStatus) {
+    fileEditorStatus.textContent = !documentState?.supported
+      ? "Unsupported"
+      : documentState?.dirty
+        ? "Unsaved"
+        : "Ready";
+  }
+
+  setFileEditorDirtyIndicator(Boolean(documentState?.dirty));
+  setFileEditorPath(documentState?.path || selectedFileEntryPath || null);
+  renderFileEditorLines(documentState?.supported ? documentState.content || "" : "");
+  syncFileEditorLineScroll();
+  setFileEditorMessage(documentState?.message || "Open a text file to view and edit it here.");
+  syncFileEditorButtons();
+}
+
+function syncFileEditorDirtyState() {
+  if (!latestFileDocument?.supported || !fileEditor) {
+    return;
+  }
+
+  latestFileDocument.content = fileEditor.value;
+  latestFileDocument.dirty = latestFileDocument.content !== latestFileDocument.savedContent;
+
+  if (fileEditorStatus) {
+    fileEditorStatus.textContent = latestFileDocument.dirty ? "Unsaved" : "Ready";
+  }
+
+  setFileEditorDirtyIndicator(latestFileDocument.dirty);
+  renderFileEditorLines(fileEditor.value);
+  syncFileEditorLineScroll();
+  syncFileEditorButtons();
+}
+
+function syncFileEditorButtons() {
+  const selectedEntry = getSelectedFileEntry(latestFilesListing?.entries || []);
+  const canOpenSelectedText = Boolean(filesConnectionState.connected && selectedEntry && !selectedEntry.isDirectory);
+  const hasEditableDocument = Boolean(latestFileDocument?.supported && latestFileDocument?.path);
+  const isDirty = Boolean(latestFileDocument?.dirty);
+  const isBusy = filesRequestInFlight || filesActionRequestInFlight;
+
+  if (fileEditorOpenButton) {
+    fileEditorOpenButton.disabled = !canOpenSelectedText || isBusy;
+  }
+
+  if (fileEditorSaveButton) {
+    fileEditorSaveButton.disabled = !hasEditableDocument || !isDirty || isBusy;
+  }
+
+  if (fileEditorRevertButton) {
+    fileEditorRevertButton.disabled = !hasEditableDocument || !isDirty || isBusy;
+  }
+
+  if (fileEditorFullscreenButton) {
+    fileEditorFullscreenButton.disabled = !hasEditableDocument && !fileEditorPanel?.classList.contains("is-fullscreen");
+  }
+}
+
+function updateFileActionButtons() {
+  const selectedEntry = getSelectedFileEntry(latestFilesListing?.entries || []);
+  const connected = filesConnectionState.connected;
+  const busy = filesRequestInFlight || filesActionRequestInFlight;
+  const canBrowse = connected && !busy;
+  const canMutate = connected && !busy;
+  const canDownload = connected && selectedEntry && !selectedEntry.isDirectory && !busy;
+  const hasOpenDocument = hasOpenFileEditorDocument();
+
+  if (filesConnectButton) {
+    filesConnectButton.disabled = !filesSelectedProfileId || busy || (connected && filesConnectionState.profileId === filesSelectedProfileId);
+  }
+
+  if (filesDisconnectButton) {
+    filesDisconnectButton.disabled = !connected || busy;
+  }
+
+  if (filesServerSelect) {
+    filesServerSelect.disabled = sshProfilesState.servers.length === 0 || busy;
+  }
+
+  if (filesProfileSelect) {
+    filesProfileSelect.disabled = getFilesFilteredProfiles().length === 0 || busy;
+  }
+
+  if (filesPathInput) {
+    filesPathInput.disabled = !connected || busy;
+  }
+
+  if (filesSearchInput) {
+    filesSearchInput.disabled = !connected;
+  }
+
+  if (filesGoButton) {
+    filesGoButton.disabled = !canBrowse;
+  }
+
+  if (filesHomeButton) {
+    filesHomeButton.disabled = !canBrowse;
+  }
+
+  filesModeButtons.forEach((button) => {
+    const mode = button.dataset.filesMode || "browse";
+    button.disabled = mode === "edit" && !hasOpenDocument;
+    button.classList.toggle("is-active", mode === filesViewMode);
+    button.setAttribute("aria-selected", mode === filesViewMode ? "true" : "false");
+  });
+
+  fileActionButtons.forEach((button) => {
+    if (button === filesGoButton || button === filesHomeButton) {
+      return;
+    }
+
+    const action = button.dataset.fileAction;
+
+    if (action === "refresh") {
+      button.disabled = !connected || busy;
+      return;
+    }
+
+    if (action === "upload" || action === "new-folder") {
+      button.disabled = !canMutate;
+      return;
+    }
+
+    if (action === "download") {
+      button.disabled = !canDownload;
+      return;
+    }
+
+    button.disabled = !(connected && selectedEntry) || busy;
+  });
+
+  syncFileEditorButtons();
 }
 
 function setFilesLoading(isLoading, message = "Loading files...") {
@@ -1227,6 +1687,51 @@ function formatFileType(entry) {
   return "File";
 }
 
+function normalizeRemotePathValue(value, fallback = "/") {
+  const rawValue = String(value || "").trim();
+  const fallbackValue = String(fallback || "/").trim() || "/";
+  const sourceValue = rawValue || fallbackValue;
+  const absoluteValue = sourceValue.startsWith("/") ? sourceValue : `${fallbackValue.replace(/\/+$/, "")}/${sourceValue}`;
+  const segments = absoluteValue.split("/").filter(Boolean);
+  const normalizedSegments = [];
+
+  segments.forEach((segment) => {
+    if (segment === ".") {
+      return;
+    }
+
+    if (segment === "..") {
+      normalizedSegments.pop();
+      return;
+    }
+
+    normalizedSegments.push(segment);
+  });
+
+  return `/${normalizedSegments.join("/")}` || "/";
+}
+
+function joinRemotePath(basePath, childName) {
+  return normalizeRemotePathValue(`${normalizeRemotePathValue(basePath).replace(/\/+$/, "")}/${String(childName || "").trim()}`);
+}
+
+function getRemoteParentPath(remotePath) {
+  const normalizedPath = normalizeRemotePathValue(remotePath);
+
+  if (normalizedPath === "/") {
+    return "/";
+  }
+
+  const parts = normalizedPath.split("/").filter(Boolean);
+  parts.pop();
+  return parts.length > 0 ? `/${parts.join("/")}` : "/";
+}
+
+function isProtectedRemotePathForConfirm(remotePath) {
+  const normalizedPath = normalizeRemotePathValue(remotePath);
+  return normalizedPath === "/" || ["/etc", "/usr", "/bin"].some((candidate) => normalizedPath === candidate || normalizedPath.startsWith(`${candidate}/`));
+}
+
 function compareFileEntries(left, right) {
   if (left.isDirectory !== right.isDirectory) {
     return left.isDirectory ? -1 : 1;
@@ -1246,6 +1751,9 @@ function getSelectedFileEntry(entries) {
 function selectFileEntry(entry) {
   selectedFileEntryPath = entry?.path || null;
   setFileDetails(entry);
+  if (!latestFileDocument?.path || latestFileDocument?.path === selectedFileEntryPath) {
+    setFileEditorPath(selectedFileEntryPath || null);
+  }
 
   if (!filesList) {
     return;
@@ -1254,12 +1762,26 @@ function selectFileEntry(entry) {
   [...filesList.querySelectorAll("tr")].forEach((row) => {
     row.classList.toggle("is-selected", row.dataset.filePath === selectedFileEntryPath);
   });
+
+  syncFileEditorButtons();
 }
 
 function addFileCell(row, value) {
   const cell = document.createElement("td");
   cell.textContent = value;
   row.appendChild(cell);
+}
+
+function filterFileRows() {
+  const query = (filesSearchInput?.value || "").trim().toLowerCase();
+
+  if (!filesList) {
+    return;
+  }
+
+  [...filesList.querySelectorAll("tr")].forEach((row) => {
+    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+  });
 }
 
 function renderFileRows(entries) {
@@ -1274,8 +1796,16 @@ function renderFileRows(entries) {
     row.dataset.filePath = entry.path || entry.name || "";
     row.tabIndex = 0;
     row.addEventListener("click", () => selectFileEntry(entry));
+    row.addEventListener("dblclick", () => {
+      handleFileEntryActivation(entry);
+    });
     row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        handleFileEntryActivation(entry);
+      }
+
+      if (event.key === " ") {
         event.preventDefault();
         selectFileEntry(entry);
       }
@@ -1286,6 +1816,8 @@ function renderFileRows(entries) {
     addFileCell(row, formatDateTime(entry.modifiedAt));
     filesList.appendChild(row);
   });
+
+  filterFileRows();
 }
 
 function renderFileBreadcrumbs(listing) {
@@ -1297,9 +1829,15 @@ function renderFileBreadcrumbs(listing) {
 
   filesBreadcrumbBar.replaceChildren();
 
-  const root = document.createElement("span");
+  const root = document.createElement(filesConnectionState.connected ? "button" : "span");
   root.className = "breadcrumb-root";
   root.textContent = "Files";
+
+  if (filesConnectionState.connected) {
+    root.type = "button";
+    root.addEventListener("click", () => navigateRemoteDirectory(filesConnectionState.homePath || "/"));
+  }
+
   filesBreadcrumbBar.appendChild(root);
 
   if (breadcrumbs.length === 0) {
@@ -1320,8 +1858,14 @@ function renderFileBreadcrumbs(listing) {
     separator.textContent = "/";
     filesBreadcrumbBar.appendChild(separator);
 
-    const segment = document.createElement("span");
+    const segment = document.createElement(filesConnectionState.connected ? "button" : "span");
     segment.textContent = crumb?.name || crumb?.path || "Folder";
+
+    if (filesConnectionState.connected) {
+      segment.type = "button";
+      segment.addEventListener("click", () => navigateRemoteDirectory(crumb?.path || filesConnectionState.currentPath));
+    }
+
     filesBreadcrumbBar.appendChild(segment);
   });
 }
@@ -1372,13 +1916,132 @@ function renderFolderRoots(listing) {
     const label = document.createElement("button");
     label.type = "button";
     label.className = "inline-action";
-    label.disabled = true;
+    label.disabled = !filesConnectionState.connected;
     label.textContent = root?.name || root?.path || "Root";
+    label.addEventListener("click", () => navigateRemoteDirectory(root?.path || filesConnectionState.homePath || "/"));
     item.appendChild(label);
     list.appendChild(item);
   });
 
   filesFolderPanel.appendChild(list);
+}
+
+function getFilesFilteredProfiles() {
+  return sshProfilesState.profiles.filter((profile) => {
+    if (!filesSelectedServerId) {
+      return true;
+    }
+
+    return profile.serverId === filesSelectedServerId;
+  });
+}
+
+function syncFilesSelectionState() {
+  const availableServerIds = new Set(sshProfilesState.servers.map((server) => server.id));
+
+  if (!availableServerIds.has(filesSelectedServerId)) {
+    filesSelectedServerId = sshProfilesState.defaultServerId || sshProfilesState.servers[0]?.id || null;
+  }
+
+  const filteredProfiles = getFilesFilteredProfiles();
+
+  if (!filteredProfiles.some((profile) => profile.id === filesSelectedProfileId)) {
+    filesSelectedProfileId = filteredProfiles[0]?.id || sshProfilesState.defaultProfileId || null;
+  }
+}
+
+function renderFilesProfileSelectors() {
+  syncFilesSelectionState();
+
+  if (filesServerSelect) {
+    filesServerSelect.replaceChildren();
+
+    sshProfilesState.servers.forEach((server) => {
+      const option = document.createElement("option");
+      option.value = server.id;
+      option.textContent = server.displayName;
+      option.selected = server.id === filesSelectedServerId;
+      filesServerSelect.appendChild(option);
+    });
+
+    if (sshProfilesState.servers.length === 0) {
+      const option = document.createElement("option");
+      option.textContent = "No servers configured";
+      filesServerSelect.appendChild(option);
+    }
+  }
+
+  if (filesProfileSelect) {
+    filesProfileSelect.replaceChildren();
+
+    const filteredProfiles = getFilesFilteredProfiles();
+
+    filteredProfiles.forEach((profile) => {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = `${profile.displayName} (${profile.username}@${profile.host}:${profile.port})`;
+      option.selected = profile.id === filesSelectedProfileId;
+      filesProfileSelect.appendChild(option);
+    });
+
+    if (filteredProfiles.length === 0) {
+      const option = document.createElement("option");
+      option.textContent = "No profiles configured";
+      filesProfileSelect.appendChild(option);
+    }
+  }
+}
+
+function getFilesProfileById(profileId) {
+  return sshProfilesState.profiles.find((profile) => profile.id === profileId) || null;
+}
+
+function getActiveFilesProfile() {
+  return getFilesProfileById(filesSelectedProfileId);
+}
+
+function setFilesPasswordPromptState(visible, message = "") {
+  filesPasswordPromptVisible = visible;
+
+  if (filesPasswordPrompt) {
+    filesPasswordPrompt.hidden = !visible;
+  }
+
+  if (filesPasswordMessage) {
+    filesPasswordMessage.textContent = message || "Password is used for this file session only and is not saved.";
+  }
+
+  if (!visible) {
+    filesPendingPasswordProfileId = null;
+
+    if (filesPasswordInput) {
+      filesPasswordInput.value = "";
+    }
+  }
+}
+
+function focusFilesPasswordPrompt() {
+  if (filesPasswordInput) {
+    window.requestAnimationFrame(() => {
+      filesPasswordInput.focus();
+      filesPasswordInput.select?.();
+    });
+  }
+}
+
+function updateFilesConnectionState(nextState = {}) {
+  filesConnectionState.connected = Boolean(nextState.connected);
+  filesConnectionState.profileId = nextState.profileId || null;
+  filesConnectionState.currentPath = nextState.currentPath || null;
+  filesConnectionState.homePath = nextState.homePath || null;
+  filesConnectionState.status = nextState.status || (filesConnectionState.connected ? "connected" : "disconnected");
+  filesConnectionState.message = nextState.message || (filesConnectionState.connected ? "Remote filesystem connected." : "No remote filesystem connected.");
+
+  if (filesPathInput) {
+    filesPathInput.value = filesConnectionState.currentPath || filesConnectionState.homePath || "";
+  }
+
+  updateTitlebar();
 }
 
 function normalizeFileListingForRenderer(listing) {
@@ -1424,6 +2087,14 @@ function renderFileListing(listing) {
   const entries = normalized.entries;
   const selectedEntry = getSelectedFileEntry(entries);
 
+  updateFilesConnectionState({
+    connected: normalized.connected,
+    profileId: normalized.profileId || filesSelectedProfileId,
+    currentPath: normalized.currentPath || filesConnectionState.currentPath,
+    homePath: normalized.homePath || filesConnectionState.homePath,
+    status: normalized.status || "connected",
+    message: normalized.message || "Remote filesystem connected.",
+  });
   latestFilesListing = normalized;
   renderFileBreadcrumbs(normalized);
   renderFolderRoots(normalized);
@@ -1433,19 +2104,31 @@ function renderFileListing(listing) {
 
   if (!normalized.connected) {
     setFilesEmpty(true, "File service unavailable", normalized.message || "File service is disconnected.");
+    updateFileActionButtons();
     return;
   }
 
   if (entries.length === 0) {
     setFilesEmpty(true, "No files to show", "This folder is empty.");
+    updateFileActionButtons();
     return;
   }
 
   setFilesEmpty(false, null, null);
+  updateFileActionButtons();
 }
 
 function renderFileListingUnavailable(message = "File listing unavailable.") {
   latestFilesListing = null;
+  selectedFileEntryPath = null;
+  updateFilesConnectionState({
+    connected: false,
+    profileId: filesSelectedProfileId,
+    currentPath: null,
+    homePath: null,
+    status: "disconnected",
+    message,
+  });
   clearFileRows();
   renderFolderRoots({
     connected: false,
@@ -1458,8 +2141,41 @@ function renderFileListingUnavailable(message = "File listing unavailable.") {
     message,
   });
   setFileDetails(null);
+  resetFileEditor(message);
   setFilesLoading(false);
   setFilesEmpty(true, "File service unavailable", message);
+  updateFileActionButtons();
+}
+
+function renderFilesView() {
+  if (filesViewMode === "edit" && !hasOpenFileEditorDocument()) {
+    filesViewMode = "browse";
+  }
+
+  renderFilesProfileSelectors();
+
+  if (fileManagerShell) {
+    fileManagerShell.classList.toggle("is-edit-mode", filesViewMode === "edit");
+    fileManagerShell.classList.toggle("is-browse-mode", filesViewMode !== "edit");
+  }
+
+  if (filesFolderStatus) {
+    filesFolderStatus.textContent = filesConnectionState.connected ? "Connected" : "Disconnected";
+    filesFolderStatus.classList.toggle("is-connected", filesConnectionState.connected);
+    filesFolderStatus.classList.toggle("is-disconnected", !filesConnectionState.connected);
+  }
+
+  if (filesDetailsStatus) {
+    filesDetailsStatus.classList.toggle("is-connected", Boolean(selectedFileEntryPath));
+  }
+
+  if (fileEditorFullscreenButton) {
+    fileEditorFullscreenButton.textContent = fileEditorPanel?.classList.contains("is-fullscreen")
+      ? "Exit Fullscreen"
+      : "Fullscreen Editor";
+  }
+
+  updateFileActionButtons();
 }
 
 function formatAmpUsage(summary) {
@@ -1771,6 +2487,7 @@ function renderAmpSnapshot(snapshot) {
     setField("minecraftDashboardRuntime", "Unavailable");
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unconfigured", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
+    updateTitlebar();
     return;
   }
 
@@ -1817,6 +2534,7 @@ function renderAmpSnapshot(snapshot) {
   });
 
   setField("ampPlayers", `${playersText} · ${versionText} · ${runtimeText}`);
+  updateTitlebar();
 }
 
 async function refreshAmpDashboard() {
@@ -1828,6 +2546,7 @@ async function refreshAmpDashboard() {
 
   if (!desktopApiState.hasAmp) {
     const message = desktopApiState.hasBridge ? "AMP IPC bridge unavailable." : "Desktop preload bridge unavailable.";
+    latestAmpSnapshot = null;
     setField("ampConnection", message);
     setField("ampStatus", "Unavailable");
     setField("ampInstances", "Unavailable");
@@ -1845,6 +2564,7 @@ async function refreshAmpDashboard() {
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unavailable", message);
     markStartupReady("amp");
+    updateTitlebar();
     return;
   }
 
@@ -1880,6 +2600,7 @@ async function refreshAmpDashboard() {
     setField("minecraftDashboardRuntime", "Unavailable");
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unavailable", message);
+    updateTitlebar();
   } finally {
     markStartupReady("amp");
     ampRequestInFlight = false;
@@ -2051,27 +2772,483 @@ async function handleDockerAction(actionName) {
   }
 }
 
-async function refreshFileListing() {
+function getFilesRequestProfileId() {
+  return filesConnectionState.profileId || filesSelectedProfileId || null;
+}
+
+function hasDirtyFileEditor() {
+  return Boolean(latestFileDocument?.supported && latestFileDocument?.dirty);
+}
+
+function confirmDiscardFileEditor(actionLabel = "continue") {
+  if (!hasDirtyFileEditor()) {
+    return true;
+  }
+
+  return window.confirm(`You have unsaved file changes. Discard them and ${actionLabel}?`);
+}
+
+async function refreshFileListing(options = {}) {
   if (filesRequestInFlight) {
-    return;
+    return null;
   }
 
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasFiles) {
     renderFileListingUnavailable(desktopApiState.hasBridge ? "Files IPC bridge unavailable." : "Desktop preload bridge unavailable.");
-    return;
+    return null;
+  }
+
+  const profileId = options.profileId || getFilesRequestProfileId();
+
+  if (!profileId) {
+    renderFileListingUnavailable("No SSH profile is selected for remote file access.");
+    return null;
   }
 
   filesRequestInFlight = true;
-  setFilesLoading(true, "Loading current directory...");
+  setFilesLoading(true, options.loadingMessage || "Loading current directory...");
+  updateFileActionButtons();
 
   try {
-    renderFileListing(await desktopApiState.api.files.getListing());
+    const listing = await desktopApiState.api.files.list({
+      profileId,
+      path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined,
+      password: options.password,
+    });
+
+    renderFileListing(listing);
+    renderFilesView();
+    setFilesPasswordPromptState(false);
+    return listing;
   } catch (error) {
-    renderFileListingUnavailable(`File listing request failed: ${error?.message || "Unknown error"}`);
+    const message = error?.message || "Unknown error";
+
+    if (!latestFilesListing || !filesConnectionState.connected) {
+      renderFileListingUnavailable(`File listing request failed: ${message}`);
+    } else {
+      setFilesLoading(false);
+      setFilesEmpty(latestFilesListing.entries.length === 0, "No files to show", message);
+      updateFilesConnectionState({
+        connected: filesConnectionState.connected,
+        profileId,
+        currentPath: filesConnectionState.currentPath,
+        homePath: filesConnectionState.homePath,
+        status: "connected",
+        message,
+      });
+      renderFilesView();
+      showToast(message);
+    }
+
+    return null;
   } finally {
     filesRequestInFlight = false;
+    updateFileActionButtons();
+  }
+}
+
+async function connectFilesSession(options = {}) {
+  const desktopApiState = getDesktopApiState();
+  const profile = getActiveFilesProfile();
+  const switchingProfiles = Boolean(filesConnectionState.connected && filesConnectionState.profileId && filesConnectionState.profileId !== profile?.id);
+
+  if (!desktopApiState.hasFiles || !profile || filesRequestInFlight) {
+    if (!desktopApiState.hasFiles) {
+      renderFileListingUnavailable(desktopApiState.hasBridge ? "Files IPC bridge unavailable." : "Desktop preload bridge unavailable.");
+    }
+    return;
+  }
+
+  if (switchingProfiles && !confirmDiscardFileEditor(`switch to ${profile.displayName || profile.host}`)) {
+    return;
+  }
+
+  if (profile.authType === "password" && filesPendingPasswordProfileId !== profile.id && !options.password) {
+    filesPendingPasswordProfileId = profile.id;
+    setFilesPasswordPromptState(true, `Enter the password for ${profile.username}@${profile.host}.`);
+    updateFilesConnectionState({
+      connected: false,
+      profileId: profile.id,
+      currentPath: null,
+      homePath: null,
+      status: "disconnected",
+      message: `Password required for ${profile.username}@${profile.host}.`,
+    });
+    renderFilesView();
+    focusFilesPasswordPrompt();
+    return;
+  }
+
+  const listing = await refreshFileListing({
+    profileId: profile.id,
+    path: filesConnectionState.connected && filesConnectionState.profileId === profile.id
+      ? filesConnectionState.currentPath || filesConnectionState.homePath
+      : undefined,
+    password: options.password,
+    loadingMessage: `Connecting to ${profile.displayName || profile.host}...`,
+  });
+
+  if (listing?.connected) {
+    if (switchingProfiles) {
+      resetFileEditor("Open a text file to view and edit it here.");
+    }
+    showToast(`Connected to ${profile.displayName || profile.host}.`);
+  }
+}
+
+async function disconnectFilesSession() {
+  const desktopApiState = getDesktopApiState();
+  const profileId = getFilesRequestProfileId();
+
+  if (!desktopApiState.hasFiles || !profileId) {
+    return;
+  }
+
+  if (!confirmDiscardFileEditor("disconnect")) {
+    return;
+  }
+
+  filesActionRequestInFlight = true;
+  updateFileActionButtons();
+
+  try {
+    await desktopApiState.api.files.disconnect(profileId);
+  } catch {}
+  finally {
+    renderFileListingUnavailable("Remote filesystem disconnected.");
+    setFilesPasswordPromptState(false);
+    renderFilesView();
+    showToast("Remote filesystem disconnected.");
+    filesActionRequestInFlight = false;
+    updateFileActionButtons();
+  }
+}
+
+async function navigateRemoteDirectory(remotePath) {
+  if (!filesConnectionState.connected) {
+    return;
+  }
+
+  await refreshFileListing({
+    profileId: getFilesRequestProfileId(),
+    path: normalizeRemotePathValue(remotePath, filesConnectionState.currentPath || filesConnectionState.homePath || "/"),
+    loadingMessage: "Loading remote directory...",
+  });
+}
+
+function getUnsupportedFileMessage(reason) {
+  if (reason === "file_too_large") {
+    return "This file is larger than 1 MB and is not opened in the inline editor.";
+  }
+
+  if (reason === "binary_unsupported") {
+    return "Binary files are not shown in the inline text editor.";
+  }
+
+  return "This file cannot be opened in the inline editor.";
+}
+
+async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListing?.entries || [])) {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasFiles || !entry || entry.isDirectory || !filesConnectionState.connected) {
+    return;
+  }
+
+  if (latestFileDocument?.path !== entry.path && !confirmDiscardFileEditor(`open ${entry.name}`)) {
+    return;
+  }
+
+  filesActionRequestInFlight = true;
+  setFileEditorMessage(`Opening ${entry.name}...`);
+  updateFileActionButtons();
+
+  try {
+    const payload = await desktopApiState.api.files.readText({
+      profileId: getFilesRequestProfileId(),
+      path: entry.path,
+    });
+
+    if (!payload?.supported) {
+      applyFileEditorDocument({
+        path: entry.path,
+        supported: false,
+        content: "",
+        savedContent: "",
+        dirty: false,
+        message: getUnsupportedFileMessage(payload?.reason),
+      });
+      return;
+    }
+
+    applyFileEditorDocument({
+      path: payload.path || entry.path,
+      supported: true,
+      content: payload.content || "",
+      savedContent: payload.content || "",
+      dirty: false,
+      message: `Editing ${payload.path || entry.path}`,
+    });
+    filesViewMode = "edit";
+    renderFilesView();
+    window.requestAnimationFrame(() => {
+      fileEditor?.focus();
+    });
+  } catch (error) {
+    resetFileEditor(error?.message || "Remote file could not be opened.");
+    showToast(error?.message || "Remote file could not be opened.");
+  } finally {
+    filesActionRequestInFlight = false;
+    updateFileActionButtons();
+  }
+}
+
+async function saveRemoteTextFile() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasFiles || !latestFileDocument?.supported || !latestFileDocument?.path || !fileEditor) {
+    return;
+  }
+
+  filesActionRequestInFlight = true;
+  updateFileActionButtons();
+
+  try {
+    await desktopApiState.api.files.writeText({
+      profileId: getFilesRequestProfileId(),
+      path: latestFileDocument.path,
+      content: fileEditor.value,
+    });
+
+    latestFileDocument.savedContent = fileEditor.value;
+    latestFileDocument.content = fileEditor.value;
+    latestFileDocument.dirty = false;
+    latestFileDocument.message = `Saved ${latestFileDocument.path}`;
+    applyFileEditorDocument(latestFileDocument);
+    await refreshFileListing({
+      profileId: getFilesRequestProfileId(),
+      path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+      loadingMessage: "Refreshing remote directory...",
+    });
+    showToast("Remote file saved.");
+  } catch (error) {
+    showToast(error?.message || "Remote file could not be saved.");
+  } finally {
+    filesActionRequestInFlight = false;
+    updateFileActionButtons();
+  }
+}
+
+function revertRemoteTextFile() {
+  if (!latestFileDocument?.supported) {
+    return;
+  }
+
+  if (fileEditor) {
+    fileEditor.value = latestFileDocument.savedContent || "";
+  }
+
+  latestFileDocument.content = latestFileDocument.savedContent || "";
+  latestFileDocument.dirty = false;
+  latestFileDocument.message = `Reverted ${latestFileDocument.path}`;
+  applyFileEditorDocument(latestFileDocument);
+}
+
+async function handleFileEntryActivation(entry) {
+  if (!entry) {
+    return;
+  }
+
+  if (entry.isDirectory) {
+    await navigateRemoteDirectory(entry.path);
+    return;
+  }
+
+  await openRemoteTextFile(entry);
+}
+
+async function runFileMutation(actionName, payload, successMessage, refreshPath) {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasFiles) {
+    return null;
+  }
+
+  filesActionRequestInFlight = true;
+  updateFileActionButtons();
+
+  try {
+    const result = await desktopApiState.api.files[actionName](payload);
+
+    if (result?.canceled) {
+      return result;
+    }
+
+    if (refreshPath) {
+      await refreshFileListing({
+        profileId: payload.profileId,
+        path: refreshPath,
+        loadingMessage: "Refreshing remote directory...",
+      });
+    }
+
+    if (successMessage) {
+      showToast(successMessage);
+    }
+
+    return result;
+  } catch (error) {
+    showToast(error?.message || "Remote file action failed.");
+    return null;
+  } finally {
+    filesActionRequestInFlight = false;
+    updateFileActionButtons();
+  }
+}
+
+async function createRemoteFolder() {
+  if (!filesConnectionState.connected) {
+    return;
+  }
+
+  const folderName = window.prompt("New folder name");
+
+  if (!folderName) {
+    return;
+  }
+
+  selectedFileEntryPath = joinRemotePath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", folderName);
+
+  await runFileMutation(
+    "mkdir",
+    {
+      profileId: getFilesRequestProfileId(),
+      path: selectedFileEntryPath,
+    },
+    "Remote folder created.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  );
+}
+
+async function renameRemoteEntry() {
+  const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
+
+  if (!entry) {
+    return;
+  }
+
+  const nextName = window.prompt(`Rename ${entry.name} to`, entry.name);
+
+  if (!nextName || nextName === entry.name) {
+    return;
+  }
+
+  const nextPath = joinRemotePath(getRemoteParentPath(entry.path), nextName);
+  selectedFileEntryPath = nextPath;
+
+  await runFileMutation(
+    "rename",
+    {
+      profileId: getFilesRequestProfileId(),
+      oldPath: entry.path,
+      newPath: nextPath,
+    },
+    "Remote item renamed.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  );
+
+  if (latestFileDocument?.path === entry.path) {
+    latestFileDocument.path = nextPath;
+    latestFileDocument.message = `Editing ${nextPath}`;
+    applyFileEditorDocument(latestFileDocument);
+  }
+}
+
+async function deleteRemoteEntry() {
+  const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
+
+  if (!entry) {
+    return;
+  }
+
+  if (latestFileDocument?.path === entry.path && !confirmDiscardFileEditor(`delete ${entry.name}`)) {
+    return;
+  }
+
+  let confirmDangerous = false;
+
+  if (isProtectedRemotePathForConfirm(entry.path)) {
+    const typed = window.prompt(`Protected path detected.\nType DELETE ${entry.path} to confirm.`, "");
+
+    if (typed !== `DELETE ${entry.path}`) {
+      showToast("Protected delete canceled.");
+      return;
+    }
+
+    confirmDangerous = true;
+  } else if (!window.confirm(`Delete ${entry.name}? This cannot be undone.`)) {
+    return;
+  }
+
+  selectedFileEntryPath = null;
+
+  await runFileMutation(
+    "delete",
+    {
+      profileId: getFilesRequestProfileId(),
+      path: entry.path,
+      confirmDangerous,
+    },
+    "Remote item deleted.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  );
+
+  if (latestFileDocument?.path === entry.path) {
+    resetFileEditor("Open a text file to view and edit it here.");
+  }
+}
+
+async function uploadRemoteFile() {
+  if (!filesConnectionState.connected) {
+    return;
+  }
+
+  const result = await runFileMutation(
+    "upload",
+    {
+      profileId: getFilesRequestProfileId(),
+      directoryPath: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+    },
+    "Remote upload complete.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  );
+
+  if (result?.canceled) {
+    showToast("Upload canceled.");
+  }
+}
+
+async function downloadRemoteFile() {
+  const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
+
+  if (!entry || entry.isDirectory) {
+    return;
+  }
+
+  const result = await runFileMutation(
+    "download",
+    {
+      profileId: getFilesRequestProfileId(),
+      path: entry.path,
+    },
+    "Remote download complete.",
+    null,
+  );
+
+  if (result?.canceled) {
+    showToast("Download canceled.");
   }
 }
 
@@ -2347,6 +3524,8 @@ function setSshStatus(status, message = "") {
       messageTarget.textContent = message;
     }
   }
+
+  updateTitlebar();
 }
 
 function updateSshActions() {
@@ -2746,6 +3925,7 @@ async function loadSshProfiles(options = {}) {
   if (!desktopApiState.hasSsh) {
     setSshStatus("Disconnected", desktopApiState.hasBridge ? "SSH IPC bridge unavailable." : "Desktop preload bridge unavailable.");
     renderSshView();
+    renderFilesView();
     return;
   }
 
@@ -2771,13 +3951,16 @@ async function loadSshProfiles(options = {}) {
     }
 
     syncSshSelectionState();
+    syncFilesSelectionState();
     renderSshView();
+    renderFilesView();
   } catch (error) {
     setSshStatus("Disconnected", `SSH profiles unavailable: ${error?.message || "Unknown error"}`);
     console.error("[SSH] Profile load failed.", {
       message: error?.message || "Unknown error",
     });
     renderSshView();
+    renderFilesView();
   }
 }
 
@@ -3059,6 +4242,8 @@ function setAgentActionButtonsDisabled(disabled) {
 }
 
 function setAgentConnectionDisplay(status, message, options = {}) {
+  agentConnectionState = status;
+
   if (agentConnectionPill) {
     const connected = status === "connected";
     const testing = status === "testing";
@@ -3074,6 +4259,8 @@ function setAgentConnectionDisplay(status, message, options = {}) {
   if (agentConfigSource && options.configSourceText) {
     agentConfigSource.textContent = options.configSourceText;
   }
+
+  updateTitlebar();
 }
 
 function getAgentConfigSourceText(settingsPayload) {
@@ -3282,6 +4469,47 @@ async function copyText(value) {
   }
 }
 
+async function toggleWindowMaximize() {
+  const windowApi = getDesktopWindowApi();
+
+  if (!windowApi) {
+    return;
+  }
+
+  if (titlebarWindowIsMaximized) {
+    windowApi.restore();
+    return;
+  }
+
+  windowApi.maximize();
+}
+
+titlebarWindowButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const windowApi = getDesktopWindowApi();
+    const action = button.dataset.windowAction;
+
+    if (!windowApi || !action) {
+      return;
+    }
+
+    if (action === "maximize") {
+      toggleWindowMaximize();
+      return;
+    }
+
+    windowApi[action]?.();
+  });
+});
+
+(titlebarDragSurface || titlebar)?.addEventListener("dblclick", (event) => {
+  if (event.target.closest("button, input, textarea, select, a")) {
+    return;
+  }
+
+  toggleWindowMaximize();
+});
+
 copyButtons.forEach((button) => {
   button.addEventListener("click", () => copyText(button.dataset.copy));
 });
@@ -3444,13 +4672,92 @@ window.addEventListener("resize", () => {
   resizeActiveSshSession();
 });
 window.addEventListener("beforeunload", () => {
+  windowMaximizedUnsubscribe?.();
   disconnectAllSshListeners();
 });
-filesSearchInput?.setAttribute("disabled", "");
-fileActionButtons.forEach((button) => {
-  button.disabled = button !== filesRefreshButton;
+filesServerSelect?.addEventListener("change", () => {
+  filesSelectedServerId = filesServerSelect.value || null;
+  setFilesPasswordPromptState(false);
+  syncFilesSelectionState();
+  renderFilesView();
 });
-filesRefreshButton?.addEventListener("click", refreshFileListing);
+filesProfileSelect?.addEventListener("change", () => {
+  filesSelectedProfileId = filesProfileSelect.value || null;
+  setFilesPasswordPromptState(false);
+  renderFilesView();
+});
+filesConnectButton?.addEventListener("click", () => connectFilesSession());
+filesDisconnectButton?.addEventListener("click", disconnectFilesSession);
+filesPasswordSubmitButton?.addEventListener("click", () => connectFilesSession({ password: filesPasswordInput?.value || "" }));
+filesPasswordCancelButton?.addEventListener("click", () => {
+  setFilesPasswordPromptState(false);
+  renderFilesView();
+});
+filesPasswordInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    connectFilesSession({ password: filesPasswordInput.value || "" });
+  }
+});
+filesModeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setFilesViewMode(button.dataset.filesMode || "browse");
+  });
+});
+filesPathInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    navigateRemoteDirectory(filesPathInput.value || filesConnectionState.currentPath || "/");
+  }
+});
+filesGoButton?.addEventListener("click", () => {
+  navigateRemoteDirectory(filesPathInput?.value || filesConnectionState.currentPath || "/");
+});
+filesHomeButton?.addEventListener("click", () => {
+  navigateRemoteDirectory(filesConnectionState.homePath || "/");
+});
+filesSearchInput?.addEventListener("input", filterFileRows);
+filesRefreshButton?.addEventListener("click", () => {
+  refreshFileListing({
+    profileId: getFilesRequestProfileId(),
+    path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  });
+});
+document.querySelector('[data-file-action="upload"]')?.addEventListener("click", uploadRemoteFile);
+document.querySelector('[data-file-action="download"]')?.addEventListener("click", downloadRemoteFile);
+document.querySelector('[data-file-action="rename"]')?.addEventListener("click", renameRemoteEntry);
+document.querySelector('[data-file-action="delete"]')?.addEventListener("click", deleteRemoteEntry);
+document.querySelector('[data-file-action="new-folder"]')?.addEventListener("click", createRemoteFolder);
+fileEditorOpenButton?.addEventListener("click", () => openRemoteTextFile());
+fileEditorSaveButton?.addEventListener("click", saveRemoteTextFile);
+fileEditorRevertButton?.addEventListener("click", revertRemoteTextFile);
+fileEditorFullscreenButton?.addEventListener("click", toggleFileEditorFullscreen);
+fileEditorHeightInput?.addEventListener("input", () => {
+  setFileEditorHeight(fileEditorHeightInput.value);
+});
+fileEditor?.addEventListener("input", syncFileEditorDirtyState);
+fileEditor?.addEventListener("scroll", syncFileEditorLineScroll);
+fileEditor?.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    saveRemoteTextFile();
+  }
+});
+window.addEventListener("keydown", (event) => {
+  if (
+    !event.defaultPrevented &&
+    getActivePageName() === "files" &&
+    (event.ctrlKey || event.metaKey) &&
+    event.key.toLowerCase() === "s" &&
+    latestFileDocument?.supported
+  ) {
+    event.preventDefault();
+    saveRemoteTextFile();
+  }
+});
+setFileEditorHeight(fileEditorHeight);
+resetFileEditor();
+renderFilesView();
 dockerSearchInput?.setAttribute("disabled", "");
 dockerFilterSelect?.setAttribute("disabled", "");
 dockerRefreshButton?.addEventListener("click", refreshDockerStatus);
@@ -3465,6 +4772,10 @@ settingsInputs.forEach((input) => {
 settingsResetButton?.addEventListener("click", resetSettings);
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
+windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaximized) => {
+  setTitlebarWindowState(isMaximized);
+}) || null;
+syncTitlebarWindowState();
 loadSettings();
 loadAgentSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });

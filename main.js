@@ -4,13 +4,14 @@ const path = require("path");
 const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerDockerIpc } = require("./src/ipc/dockerIpc");
-const { registerFilesIpc } = require("./src/ipc/filesIpc");
+const { disposeFilesIpc, registerFilesIpc } = require("./src/ipc/filesIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxos-logo.jpg");
+const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -40,6 +41,57 @@ function getRuntimeInfo() {
   };
 }
 
+function getSenderWindow(event) {
+  return BrowserWindow.fromWebContents(event.sender) || null;
+}
+
+function sendMaximizedState(window) {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  window.webContents.send(WINDOW_MAXIMIZED_CHANGED_CHANNEL, window.isMaximized());
+}
+
+function registerWindowIpc() {
+  ipcMain.on("window:minimize", (event) => {
+    getSenderWindow(event)?.minimize();
+  });
+
+  ipcMain.on("window:maximize", (event) => {
+    const window = getSenderWindow(event);
+
+    if (window && !window.isMaximized()) {
+      window.maximize();
+    }
+  });
+
+  ipcMain.on("window:restore", (event) => {
+    const window = getSenderWindow(event);
+
+    if (!window) {
+      return;
+    }
+
+    if (window.isMinimized()) {
+      window.restore();
+      return;
+    }
+
+    if (window.isMaximized()) {
+      window.unmaximize();
+    }
+  });
+
+  ipcMain.on("window:close", (event) => {
+    getSenderWindow(event)?.close();
+  });
+
+  ipcMain.handle("window:isMaximized", (event) => {
+    return Boolean(getSenderWindow(event)?.isMaximized());
+  });
+}
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1180,
@@ -50,6 +102,13 @@ function createWindow() {
     icon: APP_ICON_PATH,
     backgroundColor: "#07020f",
     autoHideMenuBar: true,
+    show: false,
+    frame: false,
+    titleBarStyle: "hidden",
+    titleBarOverlay: false,
+    thickFrame: true,
+    roundedCorners: true,
+    backgroundMaterial: process.platform === "win32" ? "mica" : "auto",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -57,6 +116,13 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  window.once("ready-to-show", () => {
+    window.show();
+    sendMaximizedState(window);
+  });
+  window.on("maximize", () => sendMaximizedState(window));
+  window.on("unmaximize", () => sendMaximizedState(window));
 
   window.loadFile(path.join(__dirname, "index.html"));
 
@@ -75,6 +141,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
+  registerWindowIpc();
   registerActionIpc();
   registerSystemIpc();
   registerAmpIpc();
@@ -99,5 +166,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  disposeFilesIpc();
   disposeSshIpc();
 });

@@ -33,7 +33,53 @@
     </section>
 
     <div class="app-shell" data-app-shell hidden>
-      <aside class="sidebar" aria-label="AnxOS Control Center navigation">
+      <header class="app-titlebar" data-titlebar>
+        <div class="app-titlebar__drag" data-titlebar-drag>
+          <div class="app-titlebar__brand">
+            <span class="app-titlebar__brand-mark"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
+            <div class="app-titlebar__brand-copy">
+              <strong data-app-name>AnxOS Control Center</strong>
+              <span>AnxOS Desktop Shell</span>
+            </div>
+          </div>
+
+          <div class="app-titlebar__context" aria-live="polite">
+            <span class="app-titlebar__label">Page</span>
+            <strong data-titlebar-page>Dashboard</strong>
+            <span class="app-titlebar__divider" aria-hidden="true"></span>
+            <span class="app-titlebar__connection" data-titlebar-connection>
+              <span class="app-titlebar__connection-dot" data-titlebar-connection-dot aria-hidden="true"></span>
+              <span data-titlebar-connection-label>Connected</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="app-titlebar__controls" role="group" aria-label="Window controls">
+          <button class="app-titlebar__control" type="button" data-window-action="minimize" aria-label="Minimize window" title="Minimize">
+            <svg viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M1 5h8"></path>
+            </svg>
+          </button>
+          <button class="app-titlebar__control app-titlebar__control--maximize" type="button" data-window-action="maximize" aria-label="Maximize window" title="Maximize">
+            <svg class="app-titlebar__control-icon app-titlebar__control-icon--maximize" viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M1.5 1.5h7v7h-7z"></path>
+            </svg>
+            <svg class="app-titlebar__control-icon app-titlebar__control-icon--restore" viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M3 1.5h5.5v5.5"></path>
+              <path d="M1.5 3h5.5v5.5H1.5z"></path>
+            </svg>
+          </button>
+          <button class="app-titlebar__control app-titlebar__control--close" type="button" data-window-action="close" aria-label="Close window" title="Close">
+            <svg viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M2 2l6 6"></path>
+              <path d="M8 2L2 8"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="app-workspace">
+        <aside class="sidebar" aria-label="AnxOS Control Center navigation">
         <div class="brand">
           <span class="brand-mark"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
           <div>
@@ -63,9 +109,9 @@
             <span id="local-time">Loading local time...</span>
           </div>
         </div>
-      </aside>
+        </aside>
 
-      <main class="main-content">
+        <main class="main-content">
         <section class="page is-active" data-page="dashboard">
           <header class="page-header">
             <div>
@@ -885,105 +931,196 @@
             <div>
               <p class="eyebrow">Storage</p>
               <h1>Files</h1>
-              <p class="lede">File browser workspace for configured local filesystem access.</p>
+              <p class="lede">Remote SFTP workspace for configured SSH connection profiles.</p>
             </div>
           </header>
 
           <section class="file-manager-shell" aria-label="File manager">
+            <div class="files-connect-bar">
+              <label class="ssh-field">
+                <span>Server</span>
+                <select data-files-server disabled>
+                  <option>No servers configured</option>
+                </select>
+              </label>
+              <label class="ssh-field">
+                <span>Profile</span>
+                <select data-files-profile disabled>
+                  <option>No profiles configured</option>
+                </select>
+              </label>
+              <div class="ssh-connection-actions">
+                <button class="inline-action" type="button" data-files-connect disabled>Connect</button>
+                <button class="inline-action" type="button" data-files-disconnect disabled>Disconnect</button>
+              </div>
+            </div>
+
+            <div class="file-password-prompt" data-files-password-prompt hidden>
+              <label class="ssh-field">
+                <span>Password</span>
+                <input type="password" placeholder="Enter SSH password" autocomplete="current-password" data-files-password>
+              </label>
+              <div class="ssh-connection-actions">
+                <button class="inline-action" type="button" data-files-password-submit>Connect Now</button>
+                <button class="inline-action" type="button" data-files-password-cancel>Cancel</button>
+              </div>
+              <p class="ssh-password-note" data-files-password-message>Password is used for this file session only and is not saved.</p>
+            </div>
+
             <div class="file-toolbar">
+              <label class="file-location">
+                <span>Remote Path</span>
+                <div class="file-location-row">
+                  <input type="text" placeholder="/home/anx" data-files-path disabled>
+                  <button class="inline-action" type="button" data-file-action="go" disabled>Go</button>
+                  <button class="inline-action" type="button" data-file-action="home" disabled>Home</button>
+                </div>
+              </label>
+
               <label class="file-search">
                 <span>Search files</span>
                 <input type="search" placeholder="Search current folder" data-file-search disabled>
               </label>
 
-              <div class="file-actions" aria-label="File actions">
-                <button class="inline-action" type="button" data-file-action="upload" disabled>Upload</button>
-                <button class="inline-action" type="button" data-file-action="download" disabled>Download</button>
-                <button class="inline-action" type="button" data-file-action="rename" disabled>Rename</button>
-                <button class="inline-action" type="button" data-file-action="delete" disabled>Delete</button>
-                <button class="inline-action" type="button" data-file-action="new-folder" disabled>New Folder</button>
-                <button class="inline-action" type="button" data-file-action="refresh" disabled>Refresh</button>
+              <div class="file-toolbar-stack">
+                <div class="file-mode-toggle" role="tablist" aria-label="Files layout mode">
+                  <button class="file-mode-button is-active" type="button" data-files-mode="browse" aria-selected="true">Browse Mode</button>
+                  <button class="file-mode-button" type="button" data-files-mode="edit" aria-selected="false" disabled>Edit Mode</button>
+                </div>
+
+                <div class="file-actions" aria-label="File actions">
+                  <button class="inline-action" type="button" data-file-action="upload" disabled>Upload</button>
+                  <button class="inline-action" type="button" data-file-action="download" disabled>Download</button>
+                  <button class="inline-action" type="button" data-file-action="rename" disabled>Rename</button>
+                  <button class="inline-action" type="button" data-file-action="delete" disabled>Delete</button>
+                  <button class="inline-action" type="button" data-file-action="new-folder" disabled>New Folder</button>
+                  <button class="inline-action" type="button" data-file-action="refresh" disabled>Refresh</button>
+                </div>
               </div>
             </div>
 
-            <div class="file-browser">
-              <aside class="folder-tree-panel" aria-label="Folder tree">
-                <div class="panel-heading">
-                  <h3>Folders</h3>
-                  <span class="status-pill status-pill--planned">Disconnected</span>
-                </div>
-                <div class="folder-tree-empty">
-                  <span class="folder-icon" aria-hidden="true"></span>
-                  <strong>No filesystem connected</strong>
-                  <span>No folder roots are connected.</span>
-                </div>
-              </aside>
-
-              <section class="file-list-panel" aria-label="Files">
-                <nav class="breadcrumb-bar" aria-label="Breadcrumb">
-                  <span class="breadcrumb-root">Files</span>
-                  <span class="breadcrumb-separator">/</span>
-                  <span>Disconnected</span>
-                </nav>
-
-                <div class="file-table-wrap">
-                  <table class="file-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">Name</th>
-                        <th scope="col">Type</th>
-                        <th scope="col">Size</th>
-                        <th scope="col">Modified</th>
-                      </tr>
-                    </thead>
-                    <tbody data-file-list></tbody>
-                  </table>
-
-                  <div class="file-loading-state" data-file-loading hidden>
-                    <span class="file-loader" aria-hidden="true"></span>
-                    <strong>Loading files</strong>
-                    <span>File service is disconnected.</span>
+            <div class="file-workspace">
+              <div class="file-browser">
+                <aside class="folder-tree-panel" aria-label="Folder tree">
+                  <div class="panel-heading">
+                    <h3>Folders</h3>
+                    <span class="status-pill status-pill--planned">Disconnected</span>
                   </div>
+                  <div class="folder-tree-empty">
+                    <span class="folder-icon" aria-hidden="true"></span>
+                    <strong>No filesystem connected</strong>
+                    <span>No folder roots are connected.</span>
+                  </div>
+                </aside>
 
-                  <div class="file-empty-state" data-file-empty>
-                    <span class="file-icon" aria-hidden="true"></span>
-                    <strong>No files to show</strong>
-                    <span>Connect a local filesystem service to browse folders and files.</span>
+                <section class="file-list-panel" aria-label="Files">
+                  <nav class="breadcrumb-bar" aria-label="Breadcrumb">
+                    <span class="breadcrumb-root">Files</span>
+                    <span class="breadcrumb-separator">/</span>
+                    <span>Disconnected</span>
+                  </nav>
+
+                  <div class="file-table-wrap">
+                    <table class="file-table">
+                      <thead>
+                        <tr>
+                          <th scope="col">Name</th>
+                          <th scope="col">Type</th>
+                          <th scope="col">Size</th>
+                          <th scope="col">Modified</th>
+                        </tr>
+                      </thead>
+                      <tbody data-file-list></tbody>
+                    </table>
+
+                    <div class="file-loading-state" data-file-loading hidden>
+                      <span class="file-loader" aria-hidden="true"></span>
+                      <strong>Loading files</strong>
+                      <span>File service is disconnected.</span>
+                    </div>
+
+                    <div class="file-empty-state" data-file-empty>
+                      <span class="file-icon" aria-hidden="true"></span>
+                      <strong>No files to show</strong>
+                      <span>Connect a local filesystem service to browse folders and files.</span>
+                    </div>
+                  </div>
+                </section>
+
+                <aside class="file-details-panel" aria-label="File details">
+                  <div class="panel-heading">
+                    <h3>Details</h3>
+                    <span class="status-pill status-pill--planned">None</span>
+                  </div>
+                  <div class="file-preview-icon" aria-hidden="true">
+                    <span class="file-icon"></span>
+                  </div>
+                  <dl class="file-details-list">
+                    <div>
+                      <dt>Selected Item</dt>
+                      <dd data-file-detail="name">None selected</dd>
+                    </div>
+                    <div>
+                      <dt>Type</dt>
+                      <dd data-file-detail="type">Unavailable</dd>
+                    </div>
+                    <div>
+                      <dt>Size</dt>
+                      <dd data-file-detail="size">Unavailable</dd>
+                    </div>
+                    <div>
+                      <dt>Modified</dt>
+                      <dd data-file-detail="modified">Unavailable</dd>
+                    </div>
+                    <div>
+                      <dt>Path</dt>
+                      <dd data-file-detail="path">Unavailable</dd>
+                    </div>
+                  </dl>
+                </aside>
+              </div>
+
+              <section class="file-editor-panel" aria-label="Editor workspace">
+                <div class="file-editor-toolbar">
+                  <div class="file-editor-heading">
+                    <div class="panel-heading">
+                      <h3>Editor</h3>
+                      <div class="file-editor-status-cluster">
+                        <span class="file-editor-unsaved" data-file-editor-dirty hidden>Unsaved changes</span>
+                        <span class="status-pill status-pill--planned" data-file-editor-status>Read Only</span>
+                      </div>
+                    </div>
+                    <div class="file-editor-topbar">
+                      <div class="file-editor-actions">
+                        <button class="inline-action" type="button" data-file-editor-action="open" disabled>Open Text</button>
+                        <button class="inline-action" type="button" data-file-editor-action="save" disabled>Save</button>
+                        <button class="inline-action" type="button" data-file-editor-action="revert" disabled>Revert</button>
+                        <button class="inline-action" type="button" data-file-editor-action="fullscreen">Fullscreen Editor</button>
+                      </div>
+                      <label class="file-editor-height-control">
+                        <span>Height</span>
+                        <input type="range" min="360" max="1100" step="20" value="560" data-file-editor-height>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="file-editor-pathbar">
+                    <span>Full Path</span>
+                    <code data-file-editor-path>No file opened</code>
                   </div>
                 </div>
+
+                <div class="file-editor-surface" data-file-editor-surface>
+                  <ol class="file-editor-lines" data-file-editor-lines aria-hidden="true"></ol>
+                  <div class="file-editor-code-layer" data-file-editor-code-layer aria-hidden="true" hidden></div>
+                  <textarea
+                    data-file-editor
+                    disabled
+                    spellcheck="false"
+                    placeholder="Open a text file to view and edit it here."
+                  ></textarea>
+                </div>
+                <p class="settings-note" data-file-editor-message>Open a text file to view and edit it here.</p>
               </section>
-
-              <aside class="file-details-panel" aria-label="File details">
-                <div class="panel-heading">
-                  <h3>Details</h3>
-                  <span class="status-pill status-pill--planned">None</span>
-                </div>
-                <div class="file-preview-icon" aria-hidden="true">
-                  <span class="file-icon"></span>
-                </div>
-                <dl class="file-details-list">
-                  <div>
-                    <dt>Selected Item</dt>
-                    <dd data-file-detail="name">None selected</dd>
-                  </div>
-                  <div>
-                    <dt>Type</dt>
-                    <dd data-file-detail="type">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Size</dt>
-                    <dd data-file-detail="size">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Modified</dt>
-                    <dd data-file-detail="modified">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Path</dt>
-                    <dd data-file-detail="path">Unavailable</dd>
-                  </div>
-                </dl>
-              </aside>
             </div>
           </section>
         </section>
@@ -1368,7 +1505,8 @@
             </section>
           </form>
         </section>
-      </main>
+        </main>
+      </div>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

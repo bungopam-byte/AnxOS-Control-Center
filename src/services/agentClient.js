@@ -1038,12 +1038,16 @@ function normalizeFileListing(payload) {
   };
 }
 
-async function getFileList() {
-  return requestJson("/api/v1/files/list");
+async function getFileList(currentPath = ".") {
+  const query = new URLSearchParams({
+    path: currentPath || ".",
+  });
+
+  return requestJson(`/api/v1/files/list?${query.toString()}`);
 }
 
-async function getFileListing() {
-  return normalizeFileListing(await getFileList());
+async function getFileListing(currentPath = ".") {
+  return normalizeFileListing(await getFileList(currentPath));
 }
 
 module.exports = {

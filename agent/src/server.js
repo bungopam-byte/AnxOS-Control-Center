@@ -2,6 +2,7 @@ const http = require("http");
 const { URL } = require("url");
 
 const { handleAmpInstances, handleAmpStatus } = require("./routes/amp");
+const { handleBackupsList } = require("./routes/backups");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
@@ -117,6 +118,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/console/logs") {
     return handleConsoleLogs(url);
+  }
+
+  if (pathname === "/api/v1/backups/list") {
+    return handleBackupsList();
   }
 
   return {

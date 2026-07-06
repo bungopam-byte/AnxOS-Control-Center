@@ -14,6 +14,25 @@ function createMarketplaceError(message, code = "MARKETPLACE_ERROR") {
   return error;
 }
 
+function getAgentErrorCode(error) {
+  return error?.payload?.error?.code || error?.code || null;
+}
+
+function mapMarketplaceError(error, fallback = "Template install failed.") {
+  const code = getAgentErrorCode(error);
+  const friendlyMessages = {
+    INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
+    INSTANCE_NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
+    NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
+    PATH_NOT_FOUND: "A required install file or folder was not found.",
+    DOWNLOAD_FAILED: "The template download failed.",
+    DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
+    DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
+  };
+
+  return friendlyMessages[code] || error?.message || fallback;
+}
+
 function readTemplatesFile() {
   const raw = fs.readFileSync(TEMPLATE_PATH, "utf8");
   const parsed = JSON.parse(raw);
@@ -93,6 +112,20 @@ function parsePorts(value, fallback = []) {
   }
 
   return Array.isArray(fallback) ? fallback : [];
+}
+
+async function listAgentInstanceIds() {
+  const list = await agentClient.listInstances();
+  return Array.isArray(list?.instances) ? list.instances.map((instance) => instance.id).filter(Boolean) : [];
+}
+
+async function verifyAgentInstanceExists(instanceId) {
+  const instanceIds = await listAgentInstanceIds();
+  if (!instanceIds.includes(instanceId)) {
+    throw createMarketplaceError(`Created instance ${instanceId} was not returned by the agent.`, "INSTANCE_NOT_FOUND");
+  }
+
+  return instanceIds;
 }
 
 function pushStep(progress, label, status = "complete", detail = "") {
@@ -202,6 +235,39 @@ function resolveUrlTemplate(template, options = {}) {
   });
 
   return url;
+}
+
+async function resolveDownloadUrl(template, options = {}) {
+  const source = template.downloadSource || {};
+
+  if (
+    template.id === "minecraft-paper" &&
+    source.type === "url" &&
+    source.urlTemplate &&
+    (!options.build || String(options.build).toLowerCase() === "latest")
+  ) {
+    const version = options.version || source.version || "latest";
+    const buildsUrl = `https://api.papermc.io/v2/projects/paper/versions/${encodeURIComponent(String(version))}/builds`;
+    const response = await fetch(buildsUrl);
+    if (!response.ok) {
+      throw createMarketplaceError(`Paper build lookup failed with HTTP ${response.status}.`, "DOWNLOAD_FAILED");
+    }
+
+    const payload = await response.json();
+    const builds = Array.isArray(payload?.builds) ? payload.builds : [];
+    const latestBuild = builds
+      .map((build) => Number.parseInt(build.build, 10))
+      .filter(Number.isFinite)
+      .sort((left, right) => right - left)[0];
+
+    if (!Number.isFinite(latestBuild)) {
+      throw createMarketplaceError("No Paper builds were available for the selected version.", "DOWNLOAD_FAILED");
+    }
+
+    return resolveUrlTemplate(template, { ...options, build: latestBuild });
+  }
+
+  return resolveUrlTemplate(template, options);
 }
 
 async function writeInstanceText(instanceId, filePath, content) {
@@ -386,8 +452,12 @@ function buildInstancePayload(template, options, ports) {
 async function downloadToInstance(template, options, instanceId, progress) {
   const source = template.downloadSource || {};
   const fileName = source.fileName || "server.jar";
+  const downloadRequired = source.required === true || template.id === "minecraft-paper";
 
   if (options.skipDownload || !source.type || source.type === "manual" || source.type === "docker" || source.type === "docker-compose") {
+    if (downloadRequired) {
+      throw createMarketplaceError(`${fileName} is required for this template.`, "DOWNLOAD_REQUIRED");
+    }
     pushStep(progress, "Downloading", "skipped", "No direct download is required for this template.");
     return { downloaded: false, record: null };
   }
@@ -411,9 +481,18 @@ async function downloadToInstance(template, options, instanceId, progress) {
     return { downloaded: false, record: null };
   }
 
-  const url = resolveUrlTemplate(template, options);
+  let url;
+  try {
+    url = await resolveDownloadUrl(template, options);
+  } catch (error) {
+    if (downloadRequired) {
+      throw error;
+    }
+    pushStep(progress, "Downloading", "skipped", mapMarketplaceError(error, "Download skipped."));
+    return { downloaded: false, record: null };
+  }
   if (!url || url.includes("{")) {
-    if (source.required) {
+    if (downloadRequired) {
       throw createMarketplaceError("Template download URL is incomplete.", "DOWNLOAD_URL_INCOMPLETE");
     }
     pushStep(progress, "Downloading", "skipped", "Download URL requires version/build data.");
@@ -486,7 +565,7 @@ async function downloadToInstance(template, options, instanceId, progress) {
       canRetry: true,
     });
 
-    if (source.required) {
+    if (downloadRequired) {
       throw error;
     }
 
@@ -505,63 +584,75 @@ async function installTemplate(payload = {}) {
   const instancePayload = buildInstancePayload(template, options, ports);
   const isMinecraft = template.category === "Minecraft";
 
-  pushStep(progress, "Creating folders", "running");
-  const createResult = await agentClient.createInstance(instancePayload);
-  const instance = createResult.instance || createResult;
-  await agentClient.createInstanceFolder(instancePayload.id, ".");
-  await agentClient.createInstanceFolder(instancePayload.id, "runtime");
-  pushStep(progress, "Creating folders", "complete", `Created ${instancePayload.id}.`);
+  try {
+    pushStep(progress, "Creating instance", "running", `Creating ${instancePayload.id}.`);
+    const createResult = await agentClient.createInstance(instancePayload);
+    const instance = createResult.instance || createResult;
+    const createdIds = await verifyAgentInstanceExists(instancePayload.id);
+    pushStep(progress, "Creating instance", "complete", `Created ${instancePayload.id}. Agent instances: ${createdIds.join(", ") || "none"}.`);
 
-  const generated = generatedFileForTemplate(template, options, ports);
-  if (generated) {
-    pushStep(progress, "Installing", "running", `Writing ${generated.path}.`);
-    await writeInstanceText(instancePayload.id, generated.path, generated.content);
-    pushStep(progress, "Installing", "complete", "Starter project generated.");
-  }
+    pushStep(progress, "Creating folders", "running");
+    await agentClient.createInstanceFolder(instancePayload.id, ".");
+    await agentClient.createInstanceFolder(instancePayload.id, "runtime");
+    pushStep(progress, "Creating folders", "complete", `Prepared folders for ${instancePayload.id}.`);
 
-  const downloadResult = await downloadToInstance(template, options, instancePayload.id, progress);
+    const generated = generatedFileForTemplate(template, options, ports);
+    if (generated) {
+      pushStep(progress, "Installing", "running", `Writing ${generated.path}.`);
+      await writeInstanceText(instancePayload.id, generated.path, generated.content);
+      pushStep(progress, "Installing", "complete", "Starter project generated.");
+    }
 
-  pushStep(progress, "Configuring", "running");
-  if (isMinecraft) {
-    await writeInstanceText(instancePayload.id, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`);
-    await agentClient.saveMinecraftProperties(instancePayload.id, buildMinecraftProperties(options, ports));
-  } else if (!generated) {
-    await writeInstanceText(
-      instancePayload.id,
-      "index.js",
-      [
-        `console.log(${JSON.stringify(`${template.displayName} placeholder instance`)})`,
-        "setInterval(() => {}, 30000);",
-        "",
-      ].join("\n")
-    );
-  }
-  pushStep(progress, "Configuring", "complete", "Configuration files generated.");
+    const downloadResult = await downloadToInstance(template, options, instancePayload.id, progress);
 
-  let startedInstance = instance;
-  const needsDownloadedArtifact = (template.startupType === "java-jar" || template.instanceType === "minecraft-paper" || template.instanceType === "java-app") && !generated;
-  if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
-    pushStep(progress, "Starting", "running");
-    try {
+    pushStep(progress, "Configuring", "running");
+    if (isMinecraft) {
+      await writeInstanceText(instancePayload.id, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`);
+      await agentClient.saveMinecraftProperties(instancePayload.id, buildMinecraftProperties(options, ports));
+    } else if (!generated) {
+      await writeInstanceText(
+        instancePayload.id,
+        "index.js",
+        [
+          `console.log(${JSON.stringify(`${template.displayName} placeholder instance`)})`,
+          "setInterval(() => {}, 30000);",
+          "",
+        ].join("\n")
+      );
+    }
+    pushStep(progress, "Configuring", "complete", "Configuration files generated.");
+
+    let startedInstance = instance;
+    const needsDownloadedArtifact = (template.startupType === "java-jar" || template.instanceType === "minecraft-paper" || template.instanceType === "java-app") && !generated;
+    if (needsDownloadedArtifact && downloadResult.downloaded) {
+      const jarName = template.downloadSource?.fileName || options.jar || "server.jar";
+      await agentClient.readInstanceFile(instancePayload.id, jarName);
+      pushStep(progress, "Verifying files", "complete", `${jarName} is available.`);
+    }
+
+    if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
+      pushStep(progress, "Starting", "running");
       const started = await agentClient.startInstance(instancePayload.id);
       startedInstance = started.instance || started;
       pushStep(progress, "Starting", "complete", "Instance start requested.");
-    } catch (error) {
-      pushStep(progress, "Starting", "failed", error.message || "Start failed.");
-      throw error;
+    } else {
+      pushStep(progress, "Starting", "skipped", needsDownloadedArtifact ? "Start skipped until the server jar is available." : "Start was disabled for this install.");
     }
-  } else {
-    pushStep(progress, "Starting", "skipped", needsDownloadedArtifact ? "Start skipped until the server jar is available." : "Start was disabled for this install.");
+
+    pushStep(progress, "Complete", "complete", "Installation finished.");
+
+    return {
+      template,
+      instance: startedInstance,
+      progress,
+      downloads: sanitizeDownloads(getDownloads()).downloads,
+    };
+  } catch (error) {
+    pushStep(progress, "Failed", "failed", mapMarketplaceError(error));
+    const installError = createMarketplaceError(mapMarketplaceError(error), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED");
+    installError.progress = progress;
+    throw installError;
   }
-
-  pushStep(progress, "Complete", "complete", "Installation finished.");
-
-  return {
-    template,
-    instance: startedInstance,
-    progress,
-    downloads: sanitizeDownloads(getDownloads()).downloads,
-  };
 }
 
 module.exports = {

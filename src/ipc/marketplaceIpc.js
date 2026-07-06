@@ -12,7 +12,7 @@ function getMarketplaceErrorMessage(error) {
   const message = error?.payload?.error?.message || error?.message;
 
   if (code) {
-    return message && message !== "Request failed." ? `${code}: ${message}` : code;
+    return message && message !== "Request failed." ? message : code;
   }
 
   return message || "Marketplace request failed.";

@@ -3749,6 +3749,16 @@ dd {
   padding: 16px;
 }
 
+.marketplace-loading,
+.marketplace-empty {
+  pointer-events: none;
+}
+
+.marketplace-grid {
+  position: relative;
+  z-index: 1;
+}
+
 .marketplace-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));

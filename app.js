@@ -3930,6 +3930,10 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     INVALID_DISPLAY_NAME: "Enter a valid instance name.",
     INVALID_PORTS: "Enter valid ports between 1 and 65535.",
     PATH_NOT_FOUND: "The requested file or folder was not found.",
+    DOWNLOAD_FAILED: "The template download failed.",
+    DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
+    DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
+    MARKETPLACE_INSTALL_FAILED: "Template install failed.",
   };
 
   if (friendlyMessages[effectiveCode]) {
@@ -4473,6 +4477,9 @@ async function installMarketplaceTemplate(event) {
     await refreshInstances();
   } catch (error) {
     setMarketplaceInstallState("Failed", "failed");
+    renderMarketplaceProgress([
+      { label: "Failed", status: "failed", detail: getAgentErrorMessage(error, "Template install failed.") },
+    ]);
     setMarketplaceMessage(getAgentErrorMessage(error, "Template install failed."), "error");
     showToast(getAgentErrorMessage(error, "Template install failed."));
   } finally {

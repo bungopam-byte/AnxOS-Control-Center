@@ -98,7 +98,17 @@
     "startupType": "java-jar",
     "defaultRam": "4G",
     "defaultPorts": [25565],
-    "downloadSource": { "type": "manual", "fileName": "fabric-server.jar" },
+    "downloadSource": { "type": "url", "fileName": "fabric-server.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "fabric",
+        "destination": "data/fabric-server.jar",
+        "fileName": "fabric-server.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
     "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
     "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
   },
@@ -115,7 +125,30 @@
     "startupType": "java-jar",
     "defaultRam": "4G",
     "defaultPorts": [25565],
-    "downloadSource": { "type": "manual", "fileName": "forge-server.jar" },
+    "downloadSource": { "type": "url", "fileName": "forge-installer.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "forge",
+        "destination": "data/forge-installer.jar",
+        "fileName": "forge-installer.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "postInstall": {
+      "type": "java-installer",
+      "jar": "forge-installer.jar",
+      "args": ["--installServer"],
+      "requiredFiles": ["run.sh"],
+      "timeoutMs": 300000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["run.sh", "nogui"],
+      "workingDirectory": "data",
+      "restartPolicy": "on-failure"
+    },
     "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
     "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
   },
@@ -132,9 +165,133 @@
     "startupType": "java-jar",
     "defaultRam": "4G",
     "defaultPorts": [25565],
-    "downloadSource": { "type": "manual", "fileName": "neoforge-server.jar" },
+    "downloadSource": { "type": "url", "fileName": "neoforge-installer.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "neoforge",
+        "destination": "data/neoforge-installer.jar",
+        "fileName": "neoforge-installer.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "postInstall": {
+      "type": "java-installer",
+      "jar": "neoforge-installer.jar",
+      "args": ["--installServer"],
+      "requiredFiles": ["run.sh"],
+      "timeoutMs": 300000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["run.sh", "nogui"],
+      "workingDirectory": "data",
+      "restartPolicy": "on-failure"
+    },
     "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
     "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+  },
+  {
+    "id": "velocity",
+    "displayName": "Velocity",
+    "description": "Modern Minecraft proxy server from PaperMC.",
+    "icon": "VEL",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Networking",
+    "instanceType": "java-app",
+    "startupType": "java-jar",
+    "defaultRam": "1G",
+    "defaultPorts": [25577],
+    "downloadSource": { "type": "url", "fileName": "velocity.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "paper-project",
+        "project": "velocity",
+        "destination": "data/velocity.jar",
+        "fileName": "velocity.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "startup": {
+      "executable": "java",
+      "args": ["-Xmx{memory}", "-jar", "{jar}"],
+      "workingDirectory": "data",
+      "restartPolicy": "on-failure"
+    },
+    "installScript": ["create-instance", "create-folders", "download", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "waterfall",
+    "displayName": "Waterfall",
+    "description": "PaperMC-maintained BungeeCord-compatible proxy.",
+    "icon": "WTF",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Networking",
+    "instanceType": "java-app",
+    "startupType": "java-jar",
+    "defaultRam": "1G",
+    "defaultPorts": [25577],
+    "downloadSource": { "type": "url", "fileName": "waterfall.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "paper-project",
+        "project": "waterfall",
+        "destination": "data/waterfall.jar",
+        "fileName": "waterfall.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "startup": {
+      "executable": "java",
+      "args": ["-Xmx{memory}", "-jar", "{jar}"],
+      "workingDirectory": "data",
+      "restartPolicy": "on-failure"
+    },
+    "installScript": ["create-instance", "create-folders", "download", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "bungeecord",
+    "displayName": "BungeeCord",
+    "description": "Classic Minecraft proxy server from SpigotMC.",
+    "icon": "BC",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Networking",
+    "instanceType": "java-app",
+    "startupType": "java-jar",
+    "defaultRam": "1G",
+    "defaultPorts": [25577],
+    "downloadSource": { "type": "url", "fileName": "BungeeCord.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "bungeecord",
+        "destination": "data/BungeeCord.jar",
+        "fileName": "BungeeCord.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "startup": {
+      "executable": "java",
+      "args": ["-Xmx{memory}", "-jar", "{jar}"],
+      "workingDirectory": "data",
+      "restartPolicy": "on-failure"
+    },
+    "installScript": ["create-instance", "create-folders", "download", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
   {
     "id": "jellyfin",
@@ -150,6 +307,8 @@
     "defaultRam": "2G",
     "defaultPorts": [8096],
     "downloadSource": { "type": "docker", "image": "jellyfin/jellyfin:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -167,6 +326,8 @@
     "defaultRam": "4G",
     "defaultPorts": [2283],
     "downloadSource": { "type": "docker-compose" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -184,6 +345,8 @@
     "defaultRam": "2G",
     "defaultPorts": [8080],
     "downloadSource": { "type": "docker", "image": "nextcloud:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -201,6 +364,8 @@
     "defaultRam": "1G",
     "defaultPorts": [3000],
     "downloadSource": { "type": "docker", "image": "gitea/gitea:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -218,6 +383,8 @@
     "defaultRam": "512M",
     "defaultPorts": [3001],
     "downloadSource": { "type": "docker", "image": "louislam/uptime-kuma:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -235,6 +402,8 @@
     "defaultRam": "1G",
     "defaultPorts": [3000],
     "downloadSource": { "type": "docker", "image": "grafana/grafana:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -252,6 +421,8 @@
     "defaultRam": "1G",
     "defaultPorts": [9090],
     "downloadSource": { "type": "docker", "image": "prom/prometheus:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -269,6 +440,8 @@
     "defaultRam": "1G",
     "defaultPorts": [5432],
     "downloadSource": { "type": "docker", "image": "postgres:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -286,6 +459,8 @@
     "defaultRam": "1G",
     "defaultPorts": [3306],
     "downloadSource": { "type": "docker", "image": "mariadb:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -303,6 +478,8 @@
     "defaultRam": "512M",
     "defaultPorts": [6379],
     "downloadSource": { "type": "docker", "image": "redis:latest" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
@@ -388,6 +565,8 @@
     "defaultRam": "1G",
     "defaultPorts": [8080],
     "downloadSource": { "type": "manual", "fileName": "app.jar" },
+    "comingSoon": true,
+    "comingSoonMessage": "This template is not ready yet.",
     "installScript": ["create-instance", "create-folders"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   }

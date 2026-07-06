@@ -3804,6 +3804,16 @@ dd {
   box-shadow: 0 16px 38px rgba(65, 33, 118, 0.26);
 }
 
+.marketplace-card.is-disabled {
+  opacity: 0.62;
+}
+
+.marketplace-card.is-disabled:hover {
+  border-color: rgba(185, 148, 255, 0.16);
+  transform: none;
+  box-shadow: none;
+}
+
 .marketplace-card__icon {
   display: grid;
   width: 48px;

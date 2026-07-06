@@ -4019,6 +4019,12 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
     DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
+    FABRIC_RESOLVE_FAILED: "Unable to resolve Fabric download.",
+    FORGE_RESOLVE_FAILED: "Unable to download Forge installer.",
+    NEOFORGE_RESOLVE_FAILED: "Unable to download NeoForge installer.",
+    PROXY_RESOLVE_FAILED: "Unable to resolve proxy download.",
+    TEMPLATE_NOT_READY: "This template is not ready yet.",
+    TEMPLATE_INSTALL_TIMEOUT: "The template installer did not finish in time.",
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
     MARKETPLACE_INSTALL_FAILED: "Template install failed.",
   };
@@ -4186,6 +4192,7 @@ function renderMarketplaceTemplates() {
     const card = document.createElement("article");
     card.className = "marketplace-card";
     card.classList.toggle("is-selected", template.id === marketplaceSelectedTemplateId);
+    card.classList.toggle("is-disabled", Boolean(template.comingSoon || template.disabled));
 
     const icon = document.createElement("span");
     icon.className = "marketplace-card__icon";
@@ -4205,12 +4212,18 @@ function renderMarketplaceTemplates() {
     const install = document.createElement("button");
     install.type = "button";
     install.className = "inline-action";
-    install.textContent = "Install";
-    install.disabled = marketplaceInstallInFlight;
+    install.textContent = template.comingSoon || template.disabled ? "Coming soon" : "Install";
+    install.disabled = marketplaceInstallInFlight || Boolean(template.comingSoon || template.disabled);
     install.addEventListener("click", () => openMarketplaceWizard(template.id));
 
     card.append(icon, body, install);
-    card.addEventListener("dblclick", () => openMarketplaceWizard(template.id));
+    card.addEventListener("dblclick", () => {
+      if (template.comingSoon || template.disabled) {
+        setMarketplaceMessage(template.comingSoonMessage || "This template is not ready yet.", "warning");
+        return;
+      }
+      openMarketplaceWizard(template.id);
+    });
     marketplaceGrid.append(card);
   });
 }
@@ -4256,6 +4269,12 @@ function openMarketplaceWizard(templateId) {
     showToast("Template not found.");
     return;
   }
+  if (template.comingSoon || template.disabled) {
+    const message = template.comingSoonMessage || "This template is not ready yet.";
+    setMarketplaceMessage(message, "warning");
+    showToast(message, "info");
+    return;
+  }
 
   marketplaceSelectedTemplateId = template.id;
   if (marketplaceWizard) {
@@ -4282,11 +4301,12 @@ function openMarketplaceWizard(templateId) {
     nameField.value = template.displayName || "";
   }
   if (versionField) {
-    versionField.value = "1.21.4";
+    versionField.value = "latest";
   }
   if (serverTypeField) {
     const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
     serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
+    serverTypeField.disabled = true;
   }
   if (storageField) {
     storageField.value = "data";
@@ -4322,6 +4342,10 @@ function closeMarketplaceWizard() {
   }
   if (marketplaceSelectedMeta) {
     marketplaceSelectedMeta.textContent = "Installable templates appear as cards.";
+  }
+  const serverTypeField = getMarketplaceField("serverType");
+  if (serverTypeField) {
+    serverTypeField.disabled = false;
   }
   renderMarketplaceTemplates();
 }
@@ -4527,7 +4551,15 @@ async function installMarketplaceTemplate(event) {
 
   let options;
   try {
+    const serverTypeField = getMarketplaceField("serverType");
+    if (serverTypeField && template.category === "Minecraft") {
+      const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
+      serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
+    }
     options = collectMarketplaceInstallOptions();
+    options.serverType = template.category === "Minecraft"
+      ? (template.displayName || template.id || "").replace(/^Minecraft\s+/i, "")
+      : options.serverType;
   } catch (error) {
     setMarketplaceMessage(error?.message || "Check install settings.", "error");
     showToast(error?.message || "Check install settings.", "warning");

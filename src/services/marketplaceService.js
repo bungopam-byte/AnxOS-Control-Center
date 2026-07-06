@@ -6,6 +6,11 @@ const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-te
 const CATEGORIES = ["Minecraft", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
 const PAPER_DEFAULT_BUILD = "latest";
 const MOJANG_VERSION_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+const FABRIC_META_URL = "https://meta.fabricmc.net/v2";
+const FORGE_PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
+const FORGE_MAVEN_METADATA_URL = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml";
+const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
+const BUNGEECORD_JAR_URL = "https://hub.spigotmc.org/jenkins/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar";
 
 const downloads = new Map();
 
@@ -31,6 +36,12 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
     DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
+    FABRIC_RESOLVE_FAILED: "Unable to resolve Fabric download.",
+    FORGE_RESOLVE_FAILED: "Unable to download Forge installer.",
+    NEOFORGE_RESOLVE_FAILED: "Unable to download NeoForge installer.",
+    PROXY_RESOLVE_FAILED: "Unable to resolve proxy download.",
+    TEMPLATE_NOT_READY: "This template is not ready yet.",
+    TEMPLATE_INSTALL_TIMEOUT: "The template installer did not finish in time.",
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
   };
 
@@ -281,6 +292,15 @@ function latestFromList(values) {
   return values[values.length - 1];
 }
 
+function extractXmlTag(xml, tagName) {
+  const match = String(xml || "").match(new RegExp(`<${tagName}>([^<]+)</${tagName}>`));
+  return match ? match[1].trim() : "";
+}
+
+function extractXmlTags(xml, tagName) {
+  return [...String(xml || "").matchAll(new RegExp(`<${tagName}>([^<]+)</${tagName}>`, "g"))].map((match) => match[1].trim());
+}
+
 async function resolvePaperDownload(download, options = {}) {
   const project = download.project || "paper";
   const projectUrl = `https://fill.papermc.io/v3/projects/${encodeURIComponent(project)}`;
@@ -315,6 +335,40 @@ async function resolvePaperDownload(download, options = {}) {
   throw createMarketplaceError("Unable to resolve latest stable Paper build.", "DOWNLOAD_RESOLVE_FAILED");
 }
 
+async function resolvePaperProjectDownload(download, options = {}) {
+  const project = download.project || "paper";
+  const projectUrl = `https://fill.papermc.io/v3/projects/${encodeURIComponent(project)}`;
+  const versionsPayload = await fetchJson(`${projectUrl}/versions`, `${project} version lookup`);
+  const requestedVersion = options.version || download.version || "latest";
+  const versionEntries = Array.isArray(versionsPayload?.versions) ? versionsPayload.versions : [];
+  const candidateVersions = String(requestedVersion).toLowerCase() === "latest"
+    ? versionEntries.map((entry) => entry?.version?.id).filter(Boolean)
+    : [requestedVersion];
+
+  for (const version of candidateVersions) {
+    const builds = await fetchJson(`${projectUrl}/versions/${encodeURIComponent(String(version))}/builds`, `${project} build lookup`);
+    const buildEntries = Array.isArray(builds) ? builds : Array.isArray(builds?.builds) ? builds.builds : [];
+    const requestedBuild = options.build || download.build || "latest";
+    const stableBuilds = buildEntries.filter((build) => String(build?.channel || "").toUpperCase() === "STABLE");
+    const selectedBuild = String(requestedBuild).toLowerCase() === "latest"
+      ? stableBuilds.sort((left, right) => Number(right.id || right.build) - Number(left.id || left.build))[0]
+      : buildEntries.find((build) => String(build?.id || build?.build) === String(requestedBuild));
+    const serverDownload = selectedBuild?.downloads?.["server:default"] || selectedBuild?.downloads?.server;
+
+    if (selectedBuild && serverDownload?.url) {
+      return {
+        url: serverDownload.url,
+        version,
+        build: selectedBuild.id || selectedBuild.build,
+        checksum: serverDownload.checksums?.sha256 || null,
+        size: serverDownload.size || null,
+      };
+    }
+  }
+
+  throw createMarketplaceError("Unable to resolve proxy download.", "PROXY_RESOLVE_FAILED");
+}
+
 async function resolvePurpurDownload(download, options = {}) {
   const projectUrl = "https://api.purpurmc.org/v2/purpur";
   const projectPayload = await fetchJson(projectUrl, "Purpur version lookup");
@@ -343,6 +397,93 @@ async function resolvePurpurDownload(download, options = {}) {
     url: `${projectUrl}/${encodeURIComponent(String(version))}/${encodeURIComponent(String(build))}/download`,
     version,
     build,
+  };
+}
+
+async function resolveFabricDownload(download, options = {}) {
+  const games = await fetchJson(`${FABRIC_META_URL}/versions/game`, "Fabric game version lookup");
+  const loaders = await fetchJson(`${FABRIC_META_URL}/versions/loader`, "Fabric loader lookup");
+  const installers = await fetchJson(`${FABRIC_META_URL}/versions/installer`, "Fabric installer lookup");
+  const requestedVersion = options.version || download.version || "latest";
+  const game = String(requestedVersion).toLowerCase() === "latest"
+    ? games.find((entry) => entry.stable)?.version
+    : requestedVersion;
+  const loader = loaders.find((entry) => entry.stable)?.version || loaders[0]?.version;
+  const installer = installers.find((entry) => entry.stable)?.version || installers[0]?.version;
+
+  if (!game || !loader || !installer) {
+    throw createMarketplaceError("Unable to resolve Fabric download.", "FABRIC_RESOLVE_FAILED");
+  }
+
+  return {
+    url: `${FABRIC_META_URL}/versions/loader/${encodeURIComponent(String(game))}/${encodeURIComponent(String(loader))}/${encodeURIComponent(String(installer))}/server/jar`,
+    version: game,
+    build: loader,
+  };
+}
+
+async function resolveForgeDownload(download, options = {}) {
+  const requestedVersion = options.version || download.version || "latest";
+  let forgeVersion = "";
+
+  if (String(requestedVersion).toLowerCase() !== "latest") {
+    const promotions = await fetchJson(FORGE_PROMOTIONS_URL, "Forge promotions lookup");
+    const promos = promotions?.promos || {};
+    const forgeBuild = promos[`${requestedVersion}-recommended`] || promos[`${requestedVersion}-latest`];
+    if (forgeBuild) {
+      forgeVersion = `${requestedVersion}-${forgeBuild}`;
+    }
+  }
+
+  if (!forgeVersion) {
+    const response = await fetch(FORGE_MAVEN_METADATA_URL);
+    if (!response.ok) {
+      throw createMarketplaceError("Unable to download Forge installer.", "FORGE_RESOLVE_FAILED");
+    }
+    const metadata = await response.text();
+    forgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
+  }
+
+  if (!forgeVersion) {
+    throw createMarketplaceError("Unable to download Forge installer.", "FORGE_RESOLVE_FAILED");
+  }
+
+  return {
+    url: `https://maven.minecraftforge.net/net/minecraftforge/forge/${encodeURIComponent(forgeVersion)}/forge-${encodeURIComponent(forgeVersion)}-installer.jar`,
+    version: forgeVersion.split("-")[0],
+    build: forgeVersion,
+  };
+}
+
+async function resolveNeoForgeDownload(download, options = {}) {
+  const requestedVersion = options.version || download.version || "latest";
+  const response = await fetch(NEOFORGE_MAVEN_METADATA_URL);
+  if (!response.ok) {
+    throw createMarketplaceError("Unable to download NeoForge installer.", "NEOFORGE_RESOLVE_FAILED");
+  }
+
+  const metadata = await response.text();
+  const versions = extractXmlTags(metadata, "version");
+  let neoForgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
+  if (String(requestedVersion).toLowerCase() !== "latest") {
+    neoForgeVersion = versions.filter((version) => version.startsWith(`${requestedVersion}.`)).at(-1) || neoForgeVersion;
+  }
+
+  if (!neoForgeVersion) {
+    throw createMarketplaceError("Unable to download NeoForge installer.", "NEOFORGE_RESOLVE_FAILED");
+  }
+
+  return {
+    url: `https://maven.neoforged.net/releases/net/neoforged/neoforge/${encodeURIComponent(neoForgeVersion)}/neoforge-${encodeURIComponent(neoForgeVersion)}-installer.jar`,
+    version: requestedVersion,
+    build: neoForgeVersion,
+  };
+}
+
+async function resolveBungeeCordDownload() {
+  return {
+    url: BUNGEECORD_JAR_URL,
+    version: "latest",
   };
 }
 
@@ -377,8 +518,28 @@ async function resolveDownloadUrl(download, options = {}) {
     return resolvePaperDownload(download, options);
   }
 
+  if (download.resolver === "paper-project") {
+    return resolvePaperProjectDownload(download, options);
+  }
+
   if (download.resolver === "purpur") {
     return resolvePurpurDownload(download, options);
+  }
+
+  if (download.resolver === "fabric") {
+    return resolveFabricDownload(download, options);
+  }
+
+  if (download.resolver === "forge") {
+    return resolveForgeDownload(download, options);
+  }
+
+  if (download.resolver === "neoforge") {
+    return resolveNeoForgeDownload(download, options);
+  }
+
+  if (download.resolver === "bungeecord") {
+    return resolveBungeeCordDownload(download, options);
   }
 
   if (download.resolver === "mojang-vanilla") {
@@ -612,7 +773,26 @@ function templateNeedsDownloadedArtifact(template, generated) {
   return !generated && (template.startupType === "java-jar" || template.instanceType === "minecraft-paper" || template.instanceType === "java-app");
 }
 
+function resolveTemplateArgs(args = [], template, options = {}) {
+  return Array.isArray(args)
+    ? args.map((arg) => String(arg)
+      .replaceAll("{memory}", normalizeName(options.memory, template.defaultRam || ""))
+      .replaceAll("{jar}", getPrimaryArtifactName(template, options)))
+    : [];
+}
+
 function buildStartupPatch(template, options, ports) {
+  if (template.startup && typeof template.startup === "object") {
+    return {
+      executable: template.startup.executable || "java",
+      args: resolveTemplateArgs(template.startup.args, template, options),
+      workingDirectory: template.startup.workingDirectory || "data",
+      memoryLimit: normalizeName(options.memory, template.defaultRam || ""),
+      ports,
+      restartPolicy: template.startup.restartPolicy || "on-failure",
+    };
+  }
+
   if (!(template.startupType === "java-jar" || template.instanceType === "minecraft-paper" || template.instanceType === "java-app")) {
     return null;
   }
@@ -631,6 +811,55 @@ function buildStartupPatch(template, options, ports) {
     memoryLimit: memory,
     ports,
   };
+}
+
+async function waitForInstanceInstaller(instanceId, timeoutMs) {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < timeoutMs) {
+    last = await agentClient.getInstanceStatus(instanceId);
+    const state = last?.instance?.state || last?.state;
+    if (state === "Stopped") {
+      return last;
+    }
+    if (state === "Failed") {
+      throw createMarketplaceError("Template installer failed.", "MARKETPLACE_INSTALL_FAILED");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  try {
+    await agentClient.forceKillInstance(instanceId);
+  } catch {}
+  throw createMarketplaceError("The template installer did not finish in time.", "TEMPLATE_INSTALL_TIMEOUT");
+}
+
+async function runTemplatePostInstall(template, options, instanceId, progress) {
+  const postInstall = template.postInstall;
+  if (!postInstall || postInstall.type !== "java-installer") {
+    return;
+  }
+
+  const installerJar = normalizeInstanceFilePath(postInstall.jar || getPrimaryArtifactPath(template, options));
+  await agentClient.readInstanceFile(instanceId, installerJar);
+  const installerArgs = ["-jar", fileNameFromDestination(installerJar), ...resolveTemplateArgs(postInstall.args || ["--installServer"], template, options)];
+
+  pushStep(progress, "Installing", "running", `Running ${fileNameFromDestination(installerJar)}.`);
+  await agentClient.updateInstance(instanceId, {
+    executable: "java",
+    args: installerArgs,
+    workingDirectory: "data",
+    restartPolicy: "never",
+    startupTimeoutMs: postInstall.timeoutMs || 300000,
+  });
+  await agentClient.startInstance(instanceId);
+  await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000);
+
+  const requiredFiles = Array.isArray(postInstall.requiredFiles) ? postInstall.requiredFiles : [];
+  for (const requiredFile of requiredFiles) {
+    await agentClient.readInstanceFile(instanceId, requiredFile);
+  }
+  pushStep(progress, "Installing", "complete", "Server installer finished.");
 }
 
 async function downloadOneToInstance(template, download, options, instanceId, progress) {
@@ -787,6 +1016,10 @@ async function downloadToInstance(template, options, instanceId, progress) {
 
 async function installTemplate(payload = {}) {
   const template = findTemplate(payload.templateId, payload.template);
+  if (template.comingSoon || template.disabled) {
+    throw createMarketplaceError(template.comingSoonMessage || "This template is not ready yet.", "TEMPLATE_NOT_READY");
+  }
+
   const options = payload.options || {};
   const progress = [];
   const ports = parsePorts(options.ports || options.port, template.defaultPorts);
@@ -794,6 +1027,12 @@ async function installTemplate(payload = {}) {
   const isMinecraft = template.category === "Minecraft";
 
   try {
+    console.info("[Marketplace] Create requested.", {
+      templateId: template.id,
+      generatedInstanceId: instancePayload.id,
+      displayName: instancePayload.displayName,
+      selectedServerType: options.serverType || null,
+    });
     pushStep(progress, "Creating instance", "running", `Creating ${instancePayload.id}.`);
     const createResult = await agentClient.createInstance(instancePayload);
     const createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
@@ -834,7 +1073,7 @@ async function installTemplate(payload = {}) {
       await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports));
       await agentClient.readInstanceFile(createdInstanceId, "eula.txt");
       await agentClient.readInstanceFile(createdInstanceId, "server.properties");
-    } else if (!generated) {
+    } else if (!generated && !normalizeTemplateDownloads(template).length && !template.startup) {
       await writeInstanceText(
         createdInstanceId,
         "index.js",
@@ -846,6 +1085,8 @@ async function installTemplate(payload = {}) {
       );
     }
     pushStep(progress, "Configuring", "complete", "Configuration files generated.");
+
+    await runTemplatePostInstall(template, options, createdInstanceId, progress);
 
     const startupPatch = buildStartupPatch(template, options, ports);
     if (startupPatch) {

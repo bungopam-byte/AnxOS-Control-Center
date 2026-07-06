@@ -78,33 +78,160 @@
         </div>
       </header>
 
-      <div class="app-workspace">
-        <aside class="sidebar" aria-label="AnxOS Control Center navigation">
-        <div class="brand">
-          <span class="brand-mark"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
-          <div>
-            <strong data-sidebar-title>AnxOS</strong>
-            <span>Control Center</span>
+      <div class="app-workspace" data-app-workspace>
+        <aside class="sidebar" data-sidebar aria-label="AnxOS Control Center navigation">
+        <div class="sidebar-header">
+          <div class="brand">
+            <span class="brand-mark"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
+            <div class="brand-copy">
+              <strong data-sidebar-title>AnxOS</strong>
+              <span>Control Center</span>
+            </div>
           </div>
+
+          <button
+            class="sidebar-toggle"
+            type="button"
+            data-sidebar-toggle
+            aria-label="Collapse sidebar"
+            aria-controls="app-sidebar-nav"
+            aria-pressed="false"
+            title="Collapse sidebar (Ctrl+B)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M15 6l-6 6 6 6"></path>
+            </svg>
+          </button>
         </div>
 
-        <nav class="nav-menu">
-          <button class="nav-item is-active" type="button" data-page-target="dashboard">Dashboard</button>
-          <button class="nav-item" type="button" data-page-target="minecraft">Minecraft</button>
-          <button class="nav-item" type="button" data-page-target="amp">AMP</button>
-          <button class="nav-item" type="button" data-page-target="playit">Playit</button>
-          <button class="nav-item" type="button" data-page-target="docker">Docker</button>
-          <button class="nav-item" type="button" data-page-target="ssh">SSH</button>
-          <button class="nav-item" type="button" data-page-target="files">Files</button>
-          <button class="nav-item" type="button" data-page-target="console">Console</button>
-          <button class="nav-item" type="button" data-page-target="backups">Backups</button>
-          <button class="nav-item" type="button" data-page-target="coolpals">CoolPals</button>
-          <button class="nav-item" type="button" data-page-target="settings">Settings</button>
+        <nav class="nav-menu" id="app-sidebar-nav">
+          <button class="nav-item is-active" type="button" data-page-target="dashboard" data-page-label="Dashboard" data-tooltip="Dashboard" aria-current="page" aria-label="Dashboard">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="4" width="6" height="6" rx="1.5"></rect>
+                <rect x="14" y="4" width="6" height="6" rx="1.5"></rect>
+                <rect x="4" y="14" width="6" height="6" rx="1.5"></rect>
+                <rect x="14" y="14" width="6" height="6" rx="1.5"></rect>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Dashboard</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="minecraft" data-page-label="Minecraft" data-tooltip="Minecraft" aria-label="Minecraft">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 3 4.5 7v10L12 21l7.5-4V7Z"></path>
+                <path d="M12 3v8.5"></path>
+                <path d="M4.5 7 12 11.5 19.5 7"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Minecraft</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="amp" data-page-label="AMP" data-tooltip="AMP" aria-label="AMP">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="5" y="4" width="14" height="5" rx="1.5"></rect>
+                <rect x="5" y="10" width="14" height="5" rx="1.5"></rect>
+                <rect x="5" y="16" width="14" height="4" rx="1.5"></rect>
+                <path d="M8 6.5h.01"></path>
+                <path d="M8 12.5h.01"></path>
+                <path d="M8 18h.01"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>AMP</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="playit" data-page-label="Playit" data-tooltip="Playit" aria-label="Playit">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 12h12"></path>
+                <path d="M12 8l4 4-4 4"></path>
+                <path d="M6 7h4"></path>
+                <path d="M6 17h4"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Playit</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="docker" data-page-label="Docker" data-tooltip="Docker" aria-label="Docker">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="10" width="4" height="4" rx="1"></rect>
+                <rect x="9" y="10" width="4" height="4" rx="1"></rect>
+                <rect x="14" y="10" width="4" height="4" rx="1"></rect>
+                <rect x="9" y="5" width="4" height="4" rx="1"></rect>
+                <path d="M4 16h13.5a2.5 2.5 0 0 0 2.5-2.5V12"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Docker</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="ssh" data-page-label="SSH" data-tooltip="SSH" aria-label="SSH">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="5" width="16" height="14" rx="2"></rect>
+                <path d="m8 10 3 2-3 2"></path>
+                <path d="M13 15h3"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>SSH</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="files" data-page-label="Files" data-tooltip="Files" aria-label="Files">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H10l2 2h5.5A2.5 2.5 0 0 1 20 10.5v7A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5Z"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Files</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="console" data-page-label="Console" data-tooltip="Console" aria-label="Console">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="5" width="16" height="14" rx="2"></rect>
+                <path d="m8 10 3 2-3 2"></path>
+                <path d="M13 15h4"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Console</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="backups" data-page-label="Backups" data-tooltip="Backups" aria-label="Backups">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M6 10a6 6 0 1 1 1.8 4.2"></path>
+                <path d="M6 6v4h4"></path>
+                <path d="M12 9v3l2 2"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Backups</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="coolpals" data-page-label="CoolPals" data-tooltip="CoolPals" aria-label="CoolPals">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>
+                <path d="M16.5 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"></path>
+                <path d="M4.5 19a4.5 4.5 0 0 1 9 0"></path>
+                <path d="M13.5 19a3.5 3.5 0 0 1 7 0"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>CoolPals</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="settings" data-page-label="Settings" data-tooltip="Settings" aria-label="Settings">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"></path>
+                <path d="M12 3v2.5"></path>
+                <path d="M12 18.5V21"></path>
+                <path d="m4.9 4.9 1.8 1.8"></path>
+                <path d="m17.3 17.3 1.8 1.8"></path>
+                <path d="M3 12h2.5"></path>
+                <path d="M18.5 12H21"></path>
+                <path d="m4.9 19.1 1.8-1.8"></path>
+                <path d="m17.3 6.7 1.8-1.8"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Settings</span>
+          </button>
         </nav>
 
-        <div class="sidebar-footer">
+        <div class="sidebar-footer" data-sidebar-footer data-tooltip="Local network only">
           <span class="pulse" aria-hidden="true"></span>
-          <div>
+          <div class="sidebar-footer__copy">
             <strong data-field="hostname">Local network only</strong>
             <span id="local-time">Loading local time...</span>
           </div>

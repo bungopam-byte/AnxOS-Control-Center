@@ -85,6 +85,16 @@ const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
+const appWorkspace = document.querySelector("[data-app-workspace]");
+const sidebar = document.querySelector("[data-sidebar]");
+const sidebarHeader = document.querySelector(".sidebar-header");
+const sidebarBrand = document.querySelector(".brand");
+const sidebarBrandCopy = document.querySelector(".brand-copy");
+const sidebarToggleButton = document.querySelector("[data-sidebar-toggle]");
+const sidebarToggleIcon = sidebarToggleButton?.querySelector("svg") || null;
+const sidebarFooter = document.querySelector("[data-sidebar-footer]");
+const sidebarFooterCopy = document.querySelector(".sidebar-footer__copy");
+const sidebarNavLabels = document.querySelectorAll(".nav-item__label");
 const appNameTargets = document.querySelectorAll("[data-app-name]");
 const sidebarTitleTarget = document.querySelector("[data-sidebar-title]");
 const startupMessage = document.querySelector("[data-startup-message]");
@@ -183,6 +193,9 @@ let filesExplorerWidth = 320;
 let agentConnectionState = "disconnected";
 let titlebarWindowIsMaximized = false;
 let windowMaximizedUnsubscribe = null;
+let sidebarCollapsed = false;
+let sidebarHoverExpanded = false;
+let sidebarHoverExpansionLocked = false;
 let monacoLoadPromise = null;
 let monacoApi = null;
 let monacoEditorInstance = null;
@@ -213,6 +226,7 @@ const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
+const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const DEFAULT_APP_NAME = "AnxOS Control Center";
@@ -221,6 +235,8 @@ const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const DEFAULT_FILES_EXPLORER_WIDTH = 320;
 const MIN_FILES_EXPLORER_WIDTH = 220;
 const MAX_FILES_EXPLORER_WIDTH = 520;
+const SIDEBAR_EXPANDED_WIDTH = 248;
+const SIDEBAR_COLLAPSED_WIDTH = 72;
 const DEFAULT_SETTINGS = {
   "app.displayName": DEFAULT_APP_NAME,
   "appearance.accentColor": DEFAULT_ACCENT_COLOR,
@@ -412,11 +428,194 @@ function getSafePageName(pageName) {
 }
 
 function getPageDisplayName(pageName) {
-  return Array.from(navItems).find((item) => item.dataset.pageTarget === pageName)?.textContent?.trim() || "Dashboard";
+  const item = Array.from(navItems).find((candidate) => candidate.dataset.pageTarget === pageName);
+  return item?.dataset.pageLabel || item?.querySelector("[data-nav-label]")?.textContent?.trim() || "Dashboard";
 }
 
 function getSidebarTitle(displayName) {
   return displayName;
+}
+
+function isDesktopSidebarCollapsible() {
+  return window.matchMedia("(min-width: 981px)").matches;
+}
+
+function canHoverExpandSidebar() {
+  return isDesktopSidebarCollapsible() && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function readSidebarCollapsed() {
+  try {
+    const storedValue = window.localStorage.getItem(SIDEBAR_STATE_STORAGE_KEY);
+
+    if (!storedValue) {
+      return false;
+    }
+
+    if (storedValue === "collapsed") {
+      return true;
+    }
+
+    if (storedValue === "expanded") {
+      return false;
+    }
+
+    const parsedValue = JSON.parse(storedValue);
+    return parsedValue === true || parsedValue?.collapsed === true;
+  } catch {
+    return false;
+  }
+}
+
+function persistSidebarState() {
+  try {
+    window.localStorage.setItem(SIDEBAR_STATE_STORAGE_KEY, sidebarCollapsed ? "collapsed" : "expanded");
+  } catch {}
+}
+
+function updateSidebarFooterTooltip() {
+  if (!sidebarFooter) {
+    return;
+  }
+
+  const hostname = document.querySelector(".sidebar-footer [data-field='hostname']")?.textContent?.trim() || "Local network only";
+  const localTime = timeTarget?.textContent?.trim() || "Loading local time...";
+  const tooltip = `${hostname} | ${localTime}`;
+
+  sidebarFooter.dataset.tooltip = tooltip;
+  if (sidebarCollapsed && !sidebarHoverExpanded && isDesktopSidebarCollapsible()) {
+    sidebarFooter.title = tooltip;
+  }
+}
+
+function syncSidebarTooltips() {
+  const showCollapsedTooltips = sidebarCollapsed && !sidebarHoverExpanded && isDesktopSidebarCollapsible();
+
+  navItems.forEach((item) => {
+    const label = item.dataset.pageLabel || item.querySelector("[data-nav-label]")?.textContent?.trim() || "";
+    item.title = showCollapsedTooltips ? label : "";
+  });
+
+  if (sidebarFooter) {
+    sidebarFooter.title = showCollapsedTooltips ? sidebarFooter.dataset.tooltip || "" : "";
+  }
+
+  if (sidebarToggleButton) {
+    sidebarToggleButton.title = `${sidebarCollapsed ? "Expand" : "Collapse"} sidebar (Ctrl+B)`;
+  }
+}
+
+function syncSidebarState() {
+  if (!appWorkspace || !sidebar) {
+    return;
+  }
+
+  const collapsedOnDesktop = sidebarCollapsed && isDesktopSidebarCollapsible();
+  const hoverExpanded = collapsedOnDesktop && sidebarHoverExpanded;
+  const sidebarIsCollapsed = collapsedOnDesktop && !hoverExpanded;
+  const sidebarWidth = sidebarIsCollapsed ? `${SIDEBAR_COLLAPSED_WIDTH}px` : `${SIDEBAR_EXPANDED_WIDTH}px`;
+  const hiddenLabelTargets = [sidebarBrandCopy, sidebarFooterCopy, ...Array.from(sidebarNavLabels)].filter(Boolean);
+
+  appWorkspace.classList.toggle("is-sidebar-collapsed", collapsedOnDesktop);
+  appWorkspace.classList.toggle("is-sidebar-hover-expanded", hoverExpanded);
+  sidebar.dataset.sidebarState = sidebarIsCollapsed ? "collapsed" : "expanded";
+  sidebar.setAttribute("aria-expanded", sidebarIsCollapsed ? "false" : "true");
+  sidebar.style.width = isDesktopSidebarCollapsible() ? sidebarWidth : "";
+  sidebar.style.flexBasis = isDesktopSidebarCollapsible() ? sidebarWidth : "";
+  sidebar.style.minWidth = isDesktopSidebarCollapsible() ? (sidebarIsCollapsed ? sidebarWidth : "0px") : "";
+  sidebar.style.maxWidth = isDesktopSidebarCollapsible() ? sidebarWidth : "";
+  sidebar.style.paddingLeft = sidebarIsCollapsed ? "10px" : "";
+  sidebar.style.paddingRight = sidebarIsCollapsed ? "10px" : "";
+
+  if (sidebarHeader) {
+    sidebarHeader.style.flexDirection = sidebarIsCollapsed ? "column" : "";
+    sidebarHeader.style.alignItems = sidebarIsCollapsed ? "center" : "";
+    sidebarHeader.style.gap = sidebarIsCollapsed ? "10px" : "";
+  }
+
+  if (sidebarBrand) {
+    sidebarBrand.style.justifyContent = sidebarIsCollapsed ? "center" : "";
+    sidebarBrand.style.gap = sidebarIsCollapsed ? "0px" : "";
+  }
+
+  if (sidebarFooter) {
+    sidebarFooter.style.justifyContent = sidebarIsCollapsed ? "center" : "";
+    sidebarFooter.style.gap = sidebarIsCollapsed ? "0px" : "";
+    sidebarFooter.style.paddingLeft = sidebarIsCollapsed ? "0px" : "";
+    sidebarFooter.style.paddingRight = sidebarIsCollapsed ? "0px" : "";
+  }
+
+  hiddenLabelTargets.forEach((target) => {
+    target.style.maxWidth = sidebarIsCollapsed ? "0px" : "";
+    target.style.margin = sidebarIsCollapsed ? "0" : "";
+    target.style.opacity = sidebarIsCollapsed ? "0" : "";
+    target.style.pointerEvents = sidebarIsCollapsed ? "none" : "";
+    target.style.transform = sidebarIsCollapsed ? "translateX(-8px)" : "";
+  });
+
+  sidebarNavLabels.forEach((label) => {
+    label.style.display = sidebarIsCollapsed ? "block" : "";
+  });
+
+  navItems.forEach((item) => {
+    item.style.justifyContent = sidebarIsCollapsed ? "center" : "";
+    item.style.gap = sidebarIsCollapsed ? "0px" : "";
+    item.style.paddingLeft = sidebarIsCollapsed ? "0px" : "";
+    item.style.paddingRight = sidebarIsCollapsed ? "0px" : "";
+    item.style.textAlign = sidebarIsCollapsed ? "center" : "";
+  });
+
+  if (sidebarToggleIcon) {
+    sidebarToggleIcon.style.transform = sidebarIsCollapsed ? "rotate(180deg)" : "";
+  }
+
+  if (sidebarToggleButton) {
+    sidebarToggleButton.setAttribute("aria-label", collapsedOnDesktop ? "Expand sidebar" : "Collapse sidebar");
+    sidebarToggleButton.setAttribute("aria-pressed", collapsedOnDesktop ? "true" : "false");
+  }
+
+  syncSidebarTooltips();
+  updateSidebarFooterTooltip();
+}
+
+function setSidebarHoverExpanded(nextValue) {
+  const normalizedValue = Boolean(nextValue);
+
+  if (!sidebarCollapsed || sidebarHoverExpansionLocked || !canHoverExpandSidebar() || sidebarHoverExpanded === normalizedValue) {
+    return;
+  }
+
+  sidebarHoverExpanded = normalizedValue;
+  syncSidebarState();
+}
+
+function setSidebarCollapsed(nextValue, options = {}) {
+  const normalizedValue = Boolean(nextValue);
+
+  if (sidebarCollapsed === normalizedValue && !options.force) {
+    return;
+  }
+
+  sidebarCollapsed = normalizedValue;
+  sidebarHoverExpanded = false;
+  sidebarHoverExpansionLocked = normalizedValue ? options.lockHoverExpand === true : false;
+  syncSidebarState();
+
+  if (options.persist !== false) {
+    persistSidebarState();
+  }
+}
+
+function toggleSidebarCollapsed(options = {}) {
+  setSidebarCollapsed(!sidebarCollapsed, options);
+}
+
+function syncSidebarViewportState() {
+  if (!isDesktopSidebarCollapsible() && sidebarHoverExpanded) {
+    sidebarHoverExpanded = false;
+  }
+
+  syncSidebarState();
 }
 
 function getFileNameFromPath(value) {
@@ -1345,7 +1544,14 @@ function startStartupFallback() {
 
 function showPage(pageName) {
   navItems.forEach((item) => {
-    item.classList.toggle("is-active", item.dataset.pageTarget === pageName);
+    const isActive = item.dataset.pageTarget === pageName;
+    item.classList.toggle("is-active", isActive);
+
+    if (isActive) {
+      item.setAttribute("aria-current", "page");
+    } else {
+      item.removeAttribute("aria-current");
+    }
   });
 
   pages.forEach((page) => {
@@ -1464,6 +1670,7 @@ function updateLocalTime() {
     hour: "2-digit",
     minute: "2-digit",
   });
+  updateSidebarFooterTooltip();
 }
 
 function renderSnapshot(snapshot) {
@@ -1479,6 +1686,7 @@ function renderSnapshot(snapshot) {
   });
 
   setField("hostname", snapshot.hostname || "Unavailable");
+  updateSidebarFooterTooltip();
   setField("osVersion", snapshot.osVersion || "Unavailable");
   setField("platform", snapshot.platform || "Unavailable");
   setField("cpuUsage", formatPercent(snapshot.cpu?.usagePercent));
@@ -5216,6 +5424,15 @@ copyButtons.forEach((button) => {
 navItems.forEach((item) => {
   item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
+sidebarToggleButton?.addEventListener("click", () => {
+  toggleSidebarCollapsed({ lockHoverExpand: true });
+});
+sidebar?.addEventListener("mouseenter", () => setSidebarHoverExpanded(true));
+sidebar?.addEventListener("mouseleave", () => {
+  sidebarHoverExpansionLocked = false;
+  setSidebarHoverExpanded(false);
+});
+window.addEventListener("resize", syncSidebarViewportState);
 
 consoleSearchInput?.addEventListener("input", filterConsoleRows);
 consoleClearButton?.addEventListener("click", clearConsoleRows);
@@ -5463,6 +5680,12 @@ fileEditor?.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("keydown", (event) => {
+  if (!event.defaultPrevented && !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
+    event.preventDefault();
+    toggleSidebarCollapsed({ lockHoverExpand: Boolean(sidebar?.matches(":hover")) });
+    return;
+  }
+
   if (
     !event.defaultPrevented &&
     getActivePageName() === "files" &&
@@ -5474,6 +5697,8 @@ window.addEventListener("keydown", (event) => {
     saveRemoteTextFile();
   }
 });
+sidebarCollapsed = readSidebarCollapsed();
+syncSidebarState();
 filesExplorerWidth = readFilesExplorerWidth();
 const fileEditorPreferences = readFileEditorPreferences();
 fileEditorWordWrapEnabled = fileEditorPreferences.wordWrap;

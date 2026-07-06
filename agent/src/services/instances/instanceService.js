@@ -698,21 +698,26 @@ function normalizeVersionInfo(versionInfo = null, config = {}) {
         : null)
   );
   const buildNumber = cleanVersionValue(input.buildNumber || input.paperBuild || config.buildNumber || config.paperBuild);
+  const rawGameVersion = cleanVersionValue(input.gameVersion || input.minecraftVersion);
   const gameVersion = cleanVersionValue(
-    input.gameVersion ||
-      input.minecraftVersion ||
-      (game === "minecraft" ? minecraftVersion : genericVersion)
+    game === "minecraft"
+      ? (parseMinecraftVersion(rawGameVersion) || minecraftVersion)
+      : (rawGameVersion || genericVersion)
   );
   const minecraftDisplay = game === "minecraft"
-    ? [
+    ? (gameVersion || softwareVersion || buildNumber ? [
       software,
       gameVersion,
       buildNumber && /paper|purpur|folia/i.test(String(software || "")) ? `build ${buildNumber}` : null,
       softwareVersion && !String(softwareVersion).includes(String(gameVersion || "")) && !/paper|purpur|folia/i.test(String(software || "")) ? softwareVersion : null,
-    ].filter(Boolean).join(" ")
+    ].filter(Boolean).join(" ") : null)
     : null;
+  const inputDisplayVersion = cleanVersionValue(input.displayVersion);
+  const usableInputDisplayVersion = game === "minecraft" && inputDisplayVersion && !parseMinecraftVersion(inputDisplayVersion)
+    ? null
+    : inputDisplayVersion;
   const displayVersion = cleanVersionValue(
-    input.displayVersion ||
+    usableInputDisplayVersion ||
       (game === "minecraft"
         ? (minecraftDisplay || gameVersion || softwareVersion || buildNumber)
         : game === "fivem"
@@ -786,6 +791,51 @@ async function assertFiveMCanStart(config) {
 
 function parseMinecraftVersion(value) {
   return String(value || "").match(/\b(?:1\.\d+(?:\.\d+)?|\d{2,}\.\d+(?:\.\d+)?)\b/)?.[0] || null;
+}
+
+function findMinecraftVersionInObject(value, depth = 0) {
+  if (depth > 5 || value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === "string" || typeof value === "number") {
+    return parseMinecraftVersion(value);
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const detected = findMinecraftVersionInObject(item, depth + 1);
+      if (detected) return detected;
+    }
+    return null;
+  }
+  if (typeof value !== "object") {
+    return null;
+  }
+
+  const preferredKeys = [
+    "minecraftVersion",
+    "gameVersion",
+    "serverVersion",
+    "version",
+    "versionName",
+    "displayVersion",
+    "id",
+    "minecraft",
+    "minecraftArguments",
+  ];
+  for (const key of preferredKeys) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) {
+      const detected = findMinecraftVersionInObject(value[key], depth + 1);
+      if (detected) return detected;
+    }
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (!/(version|minecraft|manifest|installer|marketplace|metadata|server)/i.test(key)) {
+      continue;
+    }
+    const detected = findMinecraftVersionInObject(child, depth + 1);
+    if (detected) return detected;
+  }
+  return null;
 }
 
 function inferNeoForgeMinecraftVersion(value) {
@@ -994,11 +1044,12 @@ async function detectFromKnownFiles(config) {
     try {
       const parsed = await readJson(filePath);
       const id = parsed.minecraftVersion || parsed.serverVersion || parsed.id || parsed.minecraftArguments || parsed.version || parsed.versionName || parsed.minecraft;
+      const detectedMinecraftVersion = parseMinecraftVersion(id) || findMinecraftVersionInObject(parsed);
       detections.push({
         game: parsed.game || parsed.versionInfo?.game || null,
-        serverSoftware: parsed.serverSoftware || null,
-        minecraftVersion: parseMinecraftVersion(id),
-        gameVersion: parsed.gameVersion || parsed.versionInfo?.gameVersion || extractGenericVersion(parsed.version || parsed.serverVersion || parsed.displayVersion || ""),
+        serverSoftware: parsed.serverSoftware || parsed.versionInfo?.software || inferServerSoftwareFromText(JSON.stringify(parsed)) || null,
+        minecraftVersion: detectedMinecraftVersion,
+        gameVersion: parseMinecraftVersion(parsed.gameVersion || parsed.versionInfo?.gameVersion) || detectedMinecraftVersion,
         softwareVersion: parsed.softwareVersion || parsed.versionInfo?.softwareVersion || null,
         displayVersion: parsed.displayVersion || parsed.versionInfo?.displayVersion || parsed.version || null,
         displayVersionDetail: parsed.displayVersionDetail || parsed.versionInfo?.displayVersionDetail || null,
@@ -1229,13 +1280,17 @@ async function detectFromMinecraftStatus(config) {
 }
 
 function buildVersionLabel(metadata) {
-  if (metadata.versionInfo?.displayVersion) {
+  const software = metadata.serverSoftware || null;
+  const game = metadata.game || metadata.versionInfo?.game || inferGameFamily(metadata);
+  const isMinecraft = game === "minecraft" || isMinecraftSoftwareName([software, metadata.type, metadata.templateId, metadata.id].filter(Boolean).join(" "));
+  if (!isMinecraft && metadata.versionInfo?.displayVersion) {
     return cleanVersionValue(metadata.versionInfo.displayVersion);
   }
-  const software = metadata.serverSoftware || null;
-  const minecraftVersion = cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.versionName || metadata.version);
+  const minecraftVersion = isMinecraft
+    ? parseMinecraftVersion(metadata.minecraftVersion || metadata.gameVersion || metadata.serverVersion || metadata.versionName || metadata.version || metadata.versionInfo?.gameVersion || metadata.versionInfo?.displayVersion)
+    : cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.versionName || metadata.version);
   const savedVersion = cleanVersionValue(metadata.versionName || metadata.version);
-  if (savedVersion && savedVersion !== minecraftVersion) {
+  if (!isMinecraft && savedVersion && savedVersion !== minecraftVersion) {
     return savedVersion;
   }
   const buildNumber = cleanVersionValue(metadata.paperBuild || metadata.buildNumber);
@@ -1244,14 +1299,41 @@ function buildVersionLabel(metadata) {
     return `${software} ${minecraftVersion}${buildSuffix}`;
   }
   const templateVersion = cleanVersionValue(metadata.templateVersion);
+  if (isMinecraft) {
+    return null;
+  }
   return cleanVersionValue(metadata.versionName || metadata.version || metadata.serverVersion || metadata.minecraftVersion) ||
     (buildNumber ? `Build ${buildNumber}` : null) ||
     (templateVersion ? `Template v${templateVersion}` : null);
 }
 
+function hasUsableCachedVersion(config) {
+  if (config.versionCacheVersion !== VERSION_CACHE_VERSION) {
+    return false;
+  }
+  const cached = cleanVersionValue(config.versionInfo?.displayVersion || config.displayVersion || config.versionName || config.version || config.serverVersion || config.minecraftVersion || config.gameVersion);
+  if (!cached || cached === "Unknown version") {
+    return false;
+  }
+  const isMinecraft = inferGameFamily(config) === "minecraft" || isMinecraftSoftwareName([config.serverSoftware, config.type, config.templateId, config.id, ...(Array.isArray(config.tags) ? config.tags : [])].filter(Boolean).join(" "));
+  if (!isMinecraft) {
+    return true;
+  }
+  return Boolean(parseMinecraftVersion([
+    config.versionInfo?.gameVersion,
+    config.versionInfo?.minecraftVersion,
+    config.versionInfo?.displayVersion,
+    config.minecraftVersion,
+    config.gameVersion,
+    config.serverVersion,
+    config.versionName,
+    config.version,
+    config.displayVersion,
+  ].filter(Boolean).join(" ")));
+}
+
 async function detectInstanceVersion(config, options = {}) {
-  const cached = cleanVersionValue(config.versionInfo?.displayVersion || config.displayVersion || config.versionName || config.version || config.serverVersion || config.minecraftVersion);
-  if (!options.force && cached && cached !== "Unknown version" && config.versionCacheVersion === VERSION_CACHE_VERSION) {
+  if (!options.force && hasUsableCachedVersion(config)) {
     return config;
   }
 
@@ -1263,7 +1345,20 @@ async function detectInstanceVersion(config, options = {}) {
   const status = software ? await detectFromMinecraftStatus(config) : {};
   const detected = {
     serverSoftware: known.serverSoftware || properties.serverSoftware || jar.serverSoftware || logs.serverSoftware || status.serverSoftware || software || null,
-    minecraftVersion: cleanVersionValue(known.minecraftVersion || properties.minecraftVersion || jar.minecraftVersion || logs.minecraftVersion || status.minecraftVersion || config.minecraftVersion || config.serverVersion || config.versionName || config.version),
+    minecraftVersion: parseMinecraftVersion([
+      known.minecraftVersion,
+      known.gameVersion,
+      properties.minecraftVersion,
+      jar.minecraftVersion,
+      logs.minecraftVersion,
+      status.minecraftVersion,
+      config.minecraftVersion,
+      config.gameVersion,
+      config.serverVersion,
+      config.versionName,
+      config.version,
+      config.displayVersion,
+    ].filter(Boolean).join(" ")),
     softwareVersion: cleanVersionValue(known.softwareVersion || jar.softwareVersion || logs.softwareVersion || config.softwareVersion),
     buildNumber: cleanVersionValue(known.buildNumber || known.paperBuild || jar.buildNumber || jar.paperBuild || logs.buildNumber || logs.paperBuild || config.buildNumber || config.paperBuild),
     paperBuild: cleanVersionValue(known.paperBuild || jar.paperBuild || logs.paperBuild || config.paperBuild),

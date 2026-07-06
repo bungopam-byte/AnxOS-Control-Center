@@ -3002,9 +3002,16 @@ function getInstanceVersionMetadata(instance) {
   if (resolvedInfo && typeof resolvedInfo === "object") {
     const software = normalizeSoftwareName(resolvedInfo.software || resolvedInfo.serverSoftware || "");
     const game = cleanInstanceVersionValue(resolvedInfo.game || resolvedInfo.gameFamily || "") || (resolvedInfo.isMinecraft ? "minecraft" : "");
-    const gameVersion = cleanInstanceVersionValue(
-      resolvedInfo.gameVersion || resolvedInfo.minecraftVersion || resolvedInfo.displayVersion || resolvedInfo.version
-    );
+    const isMinecraft = game === "minecraft" || resolvedInfo.isMinecraft === true;
+    const gameVersion = isMinecraft
+      ? extractMinecraftVersion([
+        resolvedInfo.gameVersion,
+        resolvedInfo.minecraftVersion,
+        resolvedInfo.serverVersion,
+        resolvedInfo.displayVersion,
+        resolvedInfo.version,
+      ].filter(Boolean).join(" "))
+      : cleanInstanceVersionValue(resolvedInfo.gameVersion || resolvedInfo.minecraftVersion || resolvedInfo.displayVersion || resolvedInfo.version);
     const softwareVersion = cleanInstanceVersionValue(
       resolvedInfo.softwareVersion || resolvedInfo.serverVersion || resolvedInfo.buildVersion || resolvedInfo.loaderVersion
     );
@@ -3012,16 +3019,16 @@ function getInstanceVersionMetadata(instance) {
     const detail = cleanInstanceVersionValue(
       resolvedInfo.displayVersionDetail || formatVersionDetailLabel(software, softwareVersion, buildNumber, game)
     );
-    const main = game === "minecraft" || resolvedInfo.isMinecraft === true
+    const main = isMinecraft
       ? cleanInstanceVersionValue(gameVersion || resolvedInfo.minecraftVersion || resolvedInfo.version || resolvedInfo.displayVersion || softwareVersion || buildNumber)
       : cleanInstanceVersionValue(resolvedInfo.displayVersion || gameVersion || softwareVersion || buildNumber);
     return {
       game,
-      isMinecraft: game === "minecraft" || resolvedInfo.isMinecraft === true,
-      main: main || "Unknown version",
+      isMinecraft,
+      main: isMinecraft ? (extractMinecraftVersion(main) || "Unknown version") : (main || "Unknown version"),
       secondary: detail,
       software: software || formatInstanceType(instance?.type || template?.category || "Application"),
-      gameVersion: gameVersion || (game === "minecraft" ? "Unknown version" : main || "Unknown version"),
+      gameVersion: gameVersion || (isMinecraft ? "Unknown version" : main || "Unknown version"),
       softwareVersion: softwareVersion || buildNumber || "",
       buildNumber,
       buildDate: formatInstanceValue(resolvedInfo.buildDate || instance?.buildDate || metadata.buildDate || marketplace.buildDate),

@@ -380,6 +380,60 @@ async function assertMinecraftPropertiesVersionBackfill() {
   }
 }
 
+async function assertOldVanillaInstallerMetadataBackfill() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-old-vanilla-version-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "old-vanilla-version-smoke",
+      displayName: "Minecraft Vanilla",
+      type: "java-app",
+      workingDirectory: "data",
+      executable: "java",
+      args: ["-Xmx2G", "-jar", "server.jar", "nogui"],
+      restartPolicy: "never",
+      tags: ["minecraft", "minecraft-vanilla"],
+      templateId: "minecraft-vanilla",
+    });
+    await instanceService.writeInstanceFile(
+      "old-vanilla-version-smoke",
+      "metadata.json",
+      JSON.stringify({
+        provider: "Vanilla",
+        displayVersion: "Vanilla",
+        marketplace: {
+          templateId: "minecraft-vanilla",
+          selectedVersion: "26.2",
+        },
+        installer: {
+          type: "mojang",
+          version: "26.2",
+        },
+      })
+    );
+    const status = await instanceService.getStatus("old-vanilla-version-smoke");
+    assert.strictEqual(status.serverSoftware, "Vanilla", "Old Vanilla metadata should infer serverSoftware.");
+    assert.strictEqual(status.minecraftVersion, "26.2", "Old Vanilla installer metadata should backfill minecraftVersion.");
+    assert.strictEqual(status.gameVersion, "26.2", "Old Vanilla installer metadata should backfill gameVersion.");
+    assert.strictEqual(status.versionInfo?.gameVersion, "26.2", "Old Vanilla installer metadata should normalize versionInfo.");
+    assert.notStrictEqual(status.versionInfo?.displayVersion, "Vanilla", "Provider label alone must not be stored as the display version.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function assertCalendarMinecraftVersionMetadata() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-calendar-minecraft-version-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
@@ -491,6 +545,7 @@ async function main() {
   await assertFiveMPlaceholderStartIsBlocked();
   await assertPaperMetadataBackfill();
   await assertMinecraftPropertiesVersionBackfill();
+  await assertOldVanillaInstallerMetadataBackfill();
   await assertCalendarMinecraftVersionMetadata();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();

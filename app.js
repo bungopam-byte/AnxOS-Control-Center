@@ -3518,6 +3518,71 @@ async function saveInstanceTextFile() {
   }
 }
 
+function isJavaJarInstance(instance) {
+  const args = Array.isArray(instance?.args) ? instance.args : [];
+  return instance?.type === "java-app" ||
+    instance?.type === "minecraft-paper" ||
+    (String(instance?.executable || "").toLowerCase().includes("java") && args.includes("-jar"));
+}
+
+function getConfiguredJarPath(instance) {
+  return parseJarFromArgs(instance) || (instance?.type === "minecraft-paper" ? "paper.jar" : "");
+}
+
+function setMissingInstanceFileHint(filePath) {
+  selectedInstanceFilePath = filePath;
+  if (instanceFileEditorName) {
+    instanceFileEditorName.textContent = `Missing: ${filePath}`;
+  }
+  if (instanceFileEditorState) {
+    instanceFileEditorState.textContent = "Upload required";
+  }
+}
+
+async function focusMissingJarInFiles(instance, jarPath) {
+  setActiveInstanceTab("files");
+  const parentPath = getInstanceParentPath(jarPath);
+  instanceCurrentFilePath = parentPath;
+  setMissingInstanceFileHint(jarPath);
+  await refreshInstanceFiles(parentPath);
+  selectInstanceFile(jarPath);
+  setMissingInstanceFileHint(jarPath);
+}
+
+async function verifyJavaJarBeforeLaunch(instance) {
+  if (!isJavaJarInstance(instance)) {
+    return true;
+  }
+
+  const jarPath = getConfiguredJarPath(instance);
+  if (!jarPath) {
+    window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
+    return false;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.readFile(instance.id, jarPath);
+    return true;
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, instance.id, "launch-preflight-instance-not-found");
+      return false;
+    }
+
+    if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
+      const message = `${getFileNameFromPath(jarPath)} was not found in this instance.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`;
+      window.alert(message);
+      showToast(`${getFileNameFromPath(jarPath)} was not found. Upload it in Files or use Marketplace.`, "warning");
+      await focusMissingJarInFiles(instance, jarPath);
+      return false;
+    }
+
+    console.warn("[Instances] Jar preflight failed.", error);
+    showToast(getAgentErrorMessage(error, "Could not verify the configured server JAR."));
+    return false;
+  }
+}
+
 function updateInstanceActionButtons() {
   const desktopApiState = getDesktopApiState();
   const selectedInstance = findInstance();
@@ -3561,7 +3626,8 @@ function updateInstanceActionButtons() {
   }
 
   if (instancesDeleteButton) {
-    instancesDeleteButton.disabled = busy || !hasInstancesBridge || !selectedInstance || isInstanceRunning(selectedInstance);
+    instancesDeleteButton.disabled = busy || !hasInstancesBridge || !selectedInstance;
+    instancesDeleteButton.textContent = instanceActionRequestInFlight ? "Working..." : "Delete";
   }
 
   if (instancesLogsButton) {
@@ -3851,9 +3917,23 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   const wrappedMessage = String(error?.message || "");
   const wrappedCode = wrappedMessage.match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
   const effectiveCode = backendCode && backendCode !== "AGENT_HTTP_ERROR" ? backendCode : wrappedCode;
+  const friendlyMessages = {
+    INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
+    INSTANCE_NOT_FOUND: "The selected instance no longer exists.",
+    NOT_FOUND: "The selected instance no longer exists.",
+    INSTANCE_RUNNING: "Stop the instance before deleting it.",
+    INSTANCE_ALREADY_RUNNING: "This instance is already running.",
+    INSTANCE_NOT_RUNNING: "This instance is not running.",
+    EXECUTABLE_NOT_ALLOWED: "This executable is not allowed by the agent.",
+    INVALID_MEMORY_LIMIT: "Use memory like 512M, 2G, or 2048M.",
+    INVALID_INSTANCE_ID: "Use an ID with 2-64 letters, numbers, underscores, or dashes.",
+    INVALID_DISPLAY_NAME: "Enter a valid instance name.",
+    INVALID_PORTS: "Enter valid ports between 1 and 65535.",
+    PATH_NOT_FOUND: "The requested file or folder was not found.",
+  };
 
-  if (effectiveCode === "INSTANCE_NOT_FOUND" || effectiveCode === "NOT_FOUND") {
-    return "Selected instance no longer exists.";
+  if (friendlyMessages[effectiveCode]) {
+    return friendlyMessages[effectiveCode];
   }
 
   if (backendCode && backendCode !== "AGENT_HTTP_ERROR") {
@@ -4816,10 +4896,10 @@ async function runInstanceAction(actionName) {
   }
 
   const label = selectedInstance.displayName || selectedInstance.id;
+  const targetInstanceId = selectedInstance.id;
 
   if (actionName === "delete") {
-    const typed = window.prompt(`Delete ${label}? This cannot be undone.\nType DELETE ${selectedInstance.id} to confirm.`, "");
-    if (typed !== `DELETE ${selectedInstance.id}`) {
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
       showToast("Delete canceled.");
       return;
     }
@@ -4827,13 +4907,21 @@ async function runInstanceAction(actionName) {
     return;
   }
 
+  if ((actionName === "start" || actionName === "restart") && !(await verifyJavaJarBeforeLaunch(selectedInstance))) {
+    return;
+  }
+
   instanceActionRequestInFlight = true;
   updateInstanceActionButtons();
 
   try {
-    await desktopApiState.api.instances[actionName](selectedInstance.id);
-    forgetStaleInstanceId(selectedInstance.id);
-    showToast(`Instance ${actionName} request completed.`);
+    if (actionName === "delete") {
+      showToast(`Deleting ${label}...`);
+    }
+
+    await desktopApiState.api.instances[actionName](targetInstanceId);
+    forgetStaleInstanceId(targetInstanceId);
+    showToast(actionName === "delete" ? "Instance deleted." : `Instance ${actionName} request completed.`);
 
     if (actionName === "delete") {
       selectedInstanceId = null;
@@ -4844,10 +4932,22 @@ async function runInstanceAction(actionName) {
     await refreshInstances();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error, selectedInstance.id);
+      if (actionName === "delete") {
+        markStaleInstanceId(targetInstanceId, error);
+        selectedInstanceId = null;
+        latestInstanceMetrics = null;
+        storeLastInstanceId(null);
+        clearInstanceLogs();
+        setInstanceDetails(null);
+        showToast("Instance was already deleted. Refreshed the list.", "warning");
+        await refreshInstances();
+      } else {
+        await handleMissingSelectedInstance(error, targetInstanceId, `${actionName}-not-found`);
+      }
     } else {
       console.warn(`[Instances] ${actionName} failed.`, error);
       showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
+      await refreshInstances();
     }
   } finally {
     instanceActionRequestInFlight = false;

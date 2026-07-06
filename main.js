@@ -9,6 +9,7 @@ const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { disposeFilesIpc, registerFilesIpc } = require("./src/ipc/filesIpc");
 const { registerInstancesIpc } = require("./src/ipc/instancesIpc");
 const { registerMarketplaceIpc } = require("./src/ipc/marketplaceIpc");
+const { registerNodesIpc } = require("./src/ipc/nodesIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSecurityIpc } = require("./src/ipc/securityIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
@@ -247,6 +248,7 @@ app.whenReady().then(() => {
   registerDockerIpc();
   registerInstancesIpc();
   registerMarketplaceIpc();
+  registerNodesIpc();
   registerFilesIpc();
   registerSettingsIpc();
   registerSecurityIpc();

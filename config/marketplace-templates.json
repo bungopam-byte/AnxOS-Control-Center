@@ -615,6 +615,84 @@
     "configurationSchema": []
   },
   {
+    "id": "docker-minecraft-bedrock",
+    "displayName": "Minecraft Bedrock Docker",
+    "description": "Docker-backed Minecraft Bedrock dedicated server using itzg/minecraft-bedrock-server.",
+    "icon": "BDR",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "runtime": "docker",
+    "instanceType": "docker-container",
+    "startupType": "docker-image",
+    "defaultRam": "2G",
+    "defaultPorts": [19132],
+    "tags": ["minecraft", "bedrock", "docker", "game-server"],
+    "downloadSource": { "type": "docker", "image": "itzg/minecraft-bedrock-server:latest", "required": true },
+    "docker": {
+      "image": "itzg/minecraft-bedrock-server:latest",
+      "ports": ["19132:19132/udp"],
+      "restartPolicy": "unless-stopped"
+    },
+    "compatibility": {
+      "requires": ["docker"],
+      "platforms": ["linux"],
+      "architectures": ["amd64", "arm64"]
+    },
+    "updateCheck": {
+      "type": "docker-tag",
+      "image": "itzg/minecraft-bedrock-server",
+      "tag": "latest"
+    },
+    "installMetadata": {
+      "method": "docker",
+      "source": "Docker Hub itzg/minecraft-bedrock-server",
+      "notes": "Requires Docker on the target node."
+    },
+    "installScript": ["create-container", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "docker-nginx",
+    "displayName": "Nginx Docker",
+    "description": "Docker-backed Nginx app server for quick static hosting tests.",
+    "icon": "NGX",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Applications",
+    "runtime": "docker",
+    "instanceType": "docker-container",
+    "startupType": "docker-image",
+    "defaultRam": "512M",
+    "defaultPorts": [8080],
+    "tags": ["nginx", "docker", "app-server"],
+    "downloadSource": { "type": "docker", "image": "nginx:stable-alpine", "required": true },
+    "docker": {
+      "image": "nginx:stable-alpine",
+      "ports": ["8080:80"],
+      "restartPolicy": "unless-stopped"
+    },
+    "compatibility": {
+      "requires": ["docker"],
+      "platforms": ["linux"],
+      "architectures": ["amd64", "arm64"]
+    },
+    "updateCheck": {
+      "type": "docker-tag",
+      "image": "nginx",
+      "tag": "stable-alpine"
+    },
+    "installMetadata": {
+      "method": "docker",
+      "source": "Docker Hub nginx",
+      "notes": "Requires Docker on the target node."
+    },
+    "installScript": ["create-container", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
     "id": "jellyfin",
     "displayName": "Jellyfin",
     "description": "Self-hosted media server template.",

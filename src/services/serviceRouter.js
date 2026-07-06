@@ -2,6 +2,7 @@ const localAmpService = require("./ampService");
 const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const agentClient = require("./agentClient");
+const { getNodeAgentConfig } = require("./nodeService");
 
 class AgentUnavailableError extends Error {
   constructor() {
@@ -38,30 +39,59 @@ function getBackendMode() {
   return agentClient.getBackendMode();
 }
 
-async function getAgentDockerSnapshot() {
+async function getAgentDockerSnapshot(options = {}) {
   try {
-    return await agentClient.getDockerSnapshot();
+    return await agentClient.getDockerSnapshot(getOptionalNodeConfig(options));
   } catch {
     throw new AgentUnavailableError();
   }
 }
 
-async function getDockerSnapshot() {
+async function getDockerSnapshot(options = {}) {
   const backendMode = getBackendMode();
+  const selectedNodeId = options?.nodeId || "";
 
-  if (backendMode === "local") {
+  if (backendMode === "local" && (!selectedNodeId || selectedNodeId === "default")) {
     return localDockerService.getDockerSnapshot();
   }
 
   if (backendMode === "agent") {
-    return getAgentDockerSnapshot();
+    return getAgentDockerSnapshot(options);
   }
 
   try {
-    return await agentClient.getDockerSnapshot();
+    return await agentClient.getDockerSnapshot(getOptionalNodeConfig(options));
   } catch {
     return localDockerService.getDockerSnapshot();
   }
+}
+
+async function createDockerContainer(payload = {}) {
+  return agentClient.createDockerContainer(payload, getOptionalNodeConfig(payload));
+}
+
+async function startDockerContainer(container, options = {}) {
+  return agentClient.startDockerContainer(container, getOptionalNodeConfig(options));
+}
+
+async function stopDockerContainer(container, options = {}) {
+  return agentClient.stopDockerContainer(container, getOptionalNodeConfig(options));
+}
+
+async function restartDockerContainer(container, options = {}) {
+  return agentClient.restartDockerContainer(container, getOptionalNodeConfig(options));
+}
+
+async function deleteDockerContainer(container, options = {}) {
+  return agentClient.deleteDockerContainer(container, getOptionalNodeConfig(options));
+}
+
+async function getDockerContainerLogs(container, options = {}) {
+  return agentClient.getDockerContainerLogs(container, options, getOptionalNodeConfig(options));
+}
+
+async function getDockerContainerStats(container, options = {}) {
+  return agentClient.getDockerContainerStats(container, getOptionalNodeConfig(options));
 }
 
 async function getAgentPlayitSnapshot() {
@@ -150,20 +180,24 @@ async function getFileListing() {
   return createUnavailableFileListing("Local file service is not implemented.");
 }
 
-async function listInstances() {
+function getOptionalNodeConfig(options = {}) {
+  return options?.nodeId && options.nodeId !== "default" ? getNodeAgentConfig(options.nodeId) : null;
+}
+
+async function listInstances(options = {}) {
   try {
-    return await agentClient.listInstances();
+    return await agentClient.listInstances(getOptionalNodeConfig(options));
   } catch {
     throw new AgentUnavailableError();
   }
 }
 
 async function createInstance(payload) {
-  return agentClient.createInstance(payload);
+  return agentClient.createInstance(payload, getOptionalNodeConfig(payload));
 }
 
-async function updateInstance(instanceId, payload) {
-  return agentClient.updateInstance(instanceId, payload);
+async function updateInstance(instanceId, payload, options = {}) {
+  return agentClient.updateInstance(instanceId, payload, getOptionalNodeConfig(options));
 }
 
 async function getInstanceStatus(instanceId) {
@@ -222,20 +256,20 @@ async function saveMinecraftProperties(instanceId, properties) {
   return agentClient.saveMinecraftProperties(instanceId, properties);
 }
 
-async function startInstance(instanceId) {
-  return agentClient.startInstance(instanceId);
+async function startInstance(instanceId, options = {}) {
+  return agentClient.startInstance(instanceId, getOptionalNodeConfig(options));
 }
 
-async function stopInstance(instanceId) {
-  return agentClient.stopInstance(instanceId);
+async function stopInstance(instanceId, options = {}) {
+  return agentClient.stopInstance(instanceId, getOptionalNodeConfig(options));
 }
 
-async function restartInstance(instanceId) {
-  return agentClient.restartInstance(instanceId);
+async function restartInstance(instanceId, options = {}) {
+  return agentClient.restartInstance(instanceId, getOptionalNodeConfig(options));
 }
 
-async function deleteInstance(instanceId) {
-  return agentClient.deleteInstance(instanceId);
+async function deleteInstance(instanceId, options = {}) {
+  return agentClient.deleteInstance(instanceId, getOptionalNodeConfig(options));
 }
 
 async function listBackups(options = {}) {
@@ -277,10 +311,12 @@ async function deleteBackupSchedule(instanceId) {
 module.exports = {
   clearInstanceLogs,
   createBackup,
+  createDockerContainer,
   createInstance,
   createInstanceFolder,
   deleteBackup,
   deleteBackupSchedule,
+  deleteDockerContainer,
   deleteInstance,
   deleteInstanceFile,
   downloadBackup,
@@ -288,6 +324,8 @@ module.exports = {
   getAmpSnapshot,
   getBackendMode,
   getDockerSnapshot,
+  getDockerContainerLogs,
+  getDockerContainerStats,
   getFileListing,
   getInstanceLogs,
   getInstanceMetrics,
@@ -302,12 +340,15 @@ module.exports = {
   readInstanceFile,
   renameInstanceFile,
   restartInstance,
+  restartDockerContainer,
   restoreBackup,
   saveMinecraftProperties,
   saveBackupSchedule,
   sendInstanceCommand,
   startInstance,
+  startDockerContainer,
   stopInstance,
+  stopDockerContainer,
   updateInstance,
   writeInstanceFile,
 };

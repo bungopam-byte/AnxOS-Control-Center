@@ -270,6 +270,11 @@ const securityStatus = document.querySelector("[data-security-status]");
 const securityCurrentUser = document.querySelector("[data-security-current-user]");
 const securityCurrentRole = document.querySelector("[data-security-current-role]");
 const securitySettingsMessage = document.querySelector("[data-security-settings-message]");
+const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
+const nodeFields = document.querySelectorAll("[data-node-field]");
+const nodeList = document.querySelector("[data-node-list]");
+const nodeMessage = document.querySelector("[data-node-message]");
+const nodeStatus = document.querySelector("[data-node-status]");
 const backupActionButtons = document.querySelectorAll("[data-backup-action]");
 const backupTableBody = document.querySelector(".backup-table tbody");
 const backupEmptyState = document.querySelector(".backup-empty-state");
@@ -289,6 +294,7 @@ let filesActionRequestInFlight = false;
 let agentSettingsRequestInFlight = false;
 let agentConnectionTestInFlight = false;
 let securityState = { setupRequired: false, authenticated: false, user: null };
+let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
 let backupsState = { backups: [], selectedBackupId: null };
 let sshConnectRequestInFlight = false;
@@ -535,7 +541,15 @@ function getDesktopApiState() {
     hasSystem: typeof api?.system?.getSnapshot === "function",
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
-    hasDocker: typeof api?.docker?.getSnapshot === "function",
+    hasDocker:
+      typeof api?.docker?.getSnapshot === "function" &&
+      typeof api?.docker?.create === "function" &&
+      typeof api?.docker?.start === "function" &&
+      typeof api?.docker?.stop === "function" &&
+      typeof api?.docker?.restart === "function" &&
+      typeof api?.docker?.delete === "function" &&
+      typeof api?.docker?.getLogs === "function" &&
+      typeof api?.docker?.getStats === "function",
     hasMarketplace:
       typeof api?.marketplace?.listTemplates === "function" &&
       typeof api?.marketplace?.installTemplate === "function" &&
@@ -604,6 +618,12 @@ function getDesktopApiState() {
       typeof api?.backups?.listSchedules === "function" &&
       typeof api?.backups?.saveSchedule === "function" &&
       typeof api?.backups?.deleteSchedule === "function",
+    hasNodes:
+      typeof api?.nodes?.list === "function" &&
+      typeof api?.nodes?.save === "function" &&
+      typeof api?.nodes?.delete === "function" &&
+      typeof api?.nodes?.select === "function" &&
+      typeof api?.nodes?.test === "function",
     hasApp: typeof api?.app?.getRuntimeInfo === "function",
   };
 }
@@ -2519,8 +2539,8 @@ function canRestartDockerContainer(container) {
 
 function updateDockerActionButtons() {
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
-  const hasActions = getDesktopApiState().hasActions;
-  const disableManagedActions = dockerActionRequestInFlight || !selectedContainer || !hasActions;
+  const hasDocker = getDesktopApiState().hasDocker;
+  const disableManagedActions = dockerActionRequestInFlight || !selectedContainer || !hasDocker;
 
   if (dockerRefreshButton) {
     dockerRefreshButton.disabled = dockerRequestInFlight || dockerActionRequestInFlight;
@@ -2541,7 +2561,11 @@ function updateDockerActionButtons() {
   dockerActionButtons.forEach((button) => {
     const action = button.dataset.dockerAction;
 
-    if (action !== "refresh" && action !== "start" && action !== "stop" && action !== "restart") {
+    if (action === "create") {
+      button.disabled = dockerActionRequestInFlight || !hasDocker;
+    } else if (action === "remove" || action === "logs") {
+      button.disabled = disableManagedActions;
+    } else if (action !== "refresh" && action !== "start" && action !== "stop" && action !== "restart") {
       button.disabled = true;
     }
   });
@@ -4980,6 +5004,7 @@ async function installMarketplaceTemplate(event) {
   try {
     const result = await desktopApiState.api.marketplace.installTemplate({
       templateId: template.id,
+      nodeId: getSelectedNodeId(),
       options,
     });
     renderMarketplaceProgress(result?.progress || []);
@@ -5197,7 +5222,7 @@ async function refreshInstances(options = {}) {
   updateInstanceActionButtons();
 
   try {
-    renderInstancesSnapshot(await desktopApiState.api.instances.list());
+    renderInstancesSnapshot(await desktopApiState.api.instances.list({ nodeId: getSelectedNodeId() }));
     if (options.refreshMetrics !== false) {
       await refreshSelectedInstanceMetrics();
     }
@@ -5325,6 +5350,7 @@ async function createInstanceFromForm(event) {
       type: payload.type,
       memoryLimit: payload.memoryLimit || null,
     });
+    payload.nodeId = getSelectedNodeId();
     const response = await desktopApiState.api.instances.create(payload);
     const instance = normalizeInstanceResponse(response);
     createdInstanceId = instance?.id || payload.id;
@@ -5451,7 +5477,7 @@ async function runInstanceAction(actionName) {
       logInstanceLifecycle("start requested", { instanceId: targetInstanceId });
     }
 
-    const actionResult = await desktopApiState.api.instances[actionName](targetInstanceId);
+    const actionResult = await desktopApiState.api.instances[actionName](targetInstanceId, { nodeId: getSelectedNodeId() });
     if (actionName === "start") {
       logInstanceLifecycle("start result", {
         instanceId: targetInstanceId,
@@ -7222,10 +7248,19 @@ function getDockerActionDefinition(actionName) {
       allowed: canStopDockerContainer,
     },
     restart: {
-      actionId: "docker.restart",
       confirmLabel: "Restart",
       successMessage: "Docker restart request sent.",
       allowed: canRestartDockerContainer,
+    },
+    remove: {
+      confirmLabel: "Remove",
+      successMessage: "Docker container removed.",
+      allowed: () => true,
+    },
+    logs: {
+      confirmLabel: "Show logs for",
+      successMessage: "Docker logs loaded.",
+      allowed: () => true,
     },
   };
 
@@ -7264,7 +7299,7 @@ async function refreshDockerStatus() {
   setDockerLoading(true);
 
   try {
-    renderDockerSnapshot(await desktopApiState.api.docker.getSnapshot());
+    renderDockerSnapshot(await desktopApiState.api.docker.getSnapshot({ nodeId: getSelectedNodeId() }));
   } catch (error) {
     renderDockerUnavailable(`Docker status request failed: ${error?.message || "Unknown error"}`);
   } finally {
@@ -7274,6 +7309,45 @@ async function refreshDockerStatus() {
 }
 
 async function handleDockerAction(actionName) {
+  if (actionName === "create") {
+    const desktopApiState = getDesktopApiState();
+    if (!desktopApiState.hasDocker) {
+      showToast("Docker actions are unavailable in this build.");
+      return;
+    }
+    const name = window.prompt("Container name", `anxhub-${Date.now()}`);
+    if (!name) {
+      return;
+    }
+    const image = window.prompt("Docker image", "itzg/minecraft-server:latest");
+    if (!image) {
+      return;
+    }
+    const port = window.prompt("Port mapping host:container", "25565:25565") || "";
+    const memory = window.prompt("Memory limit", "2g") || "";
+    try {
+      dockerActionRequestInFlight = true;
+      updateDockerActionButtons();
+      await desktopApiState.api.docker.create({
+        nodeId: getSelectedNodeId(),
+        name,
+        image,
+        ports: port ? [port] : [],
+        memory,
+        restartPolicy: "unless-stopped",
+        start: window.confirm("Start container after create?"),
+      });
+      showToast("Docker container created.");
+      await refreshDockerStatus();
+    } catch (error) {
+      showToast(getDockerActionErrorMessage(error));
+    } finally {
+      dockerActionRequestInFlight = false;
+      updateDockerActionButtons();
+    }
+    return;
+  }
+
   const definition = getDockerActionDefinition(actionName);
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
 
@@ -7291,7 +7365,7 @@ async function handleDockerAction(actionName) {
 
   const desktopApiState = getDesktopApiState();
 
-  if (!desktopApiState.hasActions) {
+  if (!desktopApiState.hasDocker) {
     showToast("Docker actions are unavailable in this build.");
     updateDockerActionButtons();
     return;
@@ -7308,17 +7382,19 @@ async function handleDockerAction(actionName) {
       return;
     }
 
-    const response = await desktopApiState.api.actions.executeAction(definition.actionId, {
-      target: {
-        container: containerTarget,
-      },
-    });
-
-    showToast(response?.error?.message || definition.successMessage);
-
-    if (response?.ok === false || response?.status === "not_implemented" || response?.error) {
+    if (actionName === "logs") {
+      const logs = await desktopApiState.api.docker.getLogs(containerTarget, { nodeId: getSelectedNodeId(), tail: 200 });
+      window.alert(logs?.logs || "No logs returned.");
       return;
     }
+
+    if (actionName === "remove") {
+      await desktopApiState.api.docker.delete(containerTarget, { nodeId: getSelectedNodeId() });
+    } else {
+      await desktopApiState.api.docker[actionName](containerTarget, { nodeId: getSelectedNodeId() });
+    }
+
+    showToast(definition.successMessage);
 
     await refreshDockerStatus();
   } catch (error) {
@@ -9696,6 +9772,135 @@ async function rotateAgentTokenFromSettings() {
   }
 }
 
+function getSelectedNodeId() {
+  return nodesState.selectedNodeId || "default";
+}
+
+function renderNodes() {
+  nodeTargetSelects.forEach((select) => {
+    const previous = select.value || getSelectedNodeId();
+    select.replaceChildren();
+    (nodesState.nodes || []).forEach((node) => {
+      const option = document.createElement("option");
+      option.value = node.id;
+      option.textContent = node.default ? `${node.displayName} (default)` : node.displayName;
+      select.append(option);
+    });
+    select.value = (nodesState.nodes || []).some((node) => node.id === previous) ? previous : getSelectedNodeId();
+  });
+
+  if (nodeStatus) {
+    const selected = (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId());
+    nodeStatus.textContent = selected?.displayName || "Default";
+  }
+
+  if (nodeMessage) {
+    nodeMessage.textContent = `${(nodesState.nodes || []).length} node(s) registered. Tokens are stored in the local node registry.`;
+  }
+
+  if (nodeList) {
+    nodeList.replaceChildren();
+    (nodesState.nodes || []).forEach((node) => {
+      const item = document.createElement("article");
+      item.className = "download-item";
+      const title = document.createElement("strong");
+      title.textContent = node.displayName || node.id;
+      const detail = document.createElement("small");
+      detail.textContent = `${node.agentUrl} · token ${node.hasToken ? "configured" : "not set"} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
+      item.append(title, detail);
+      item.addEventListener("click", () => selectNode(node.id));
+      nodeList.append(item);
+    });
+  }
+}
+
+async function refreshNodes() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasNodes) {
+    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "Default Agent", default: true }] };
+    renderNodes();
+    return;
+  }
+  try {
+    nodesState = await desktopApiState.api.nodes.list();
+  } catch {
+    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "Default Agent", default: true }] };
+  }
+  renderNodes();
+}
+
+async function selectNode(nodeId) {
+  const desktopApiState = getDesktopApiState();
+  nodesState.selectedNodeId = nodeId || "default";
+  nodeTargetSelects.forEach((select) => {
+    select.value = nodesState.selectedNodeId;
+  });
+  if (desktopApiState.hasNodes) {
+    await desktopApiState.api.nodes.select(nodesState.selectedNodeId).catch(() => {});
+  }
+  renderNodes();
+  if (getActivePageName() === "instances") {
+    refreshInstances();
+  } else if (getActivePageName() === "docker") {
+    refreshDockerStatus();
+  }
+}
+
+function getNodeFormPayload() {
+  const payload = { docker: {} };
+  nodeFields.forEach((field) => {
+    if (field.dataset.nodeField === "dockerEnabled") {
+      payload.docker.enabled = field.checked;
+    } else {
+      payload[field.dataset.nodeField] = field.value;
+    }
+  });
+  return payload;
+}
+
+async function saveNodeFromSettings() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasNodes) {
+    return;
+  }
+  try {
+    await desktopApiState.api.nodes.save(getNodeFormPayload());
+    nodeFields.forEach((field) => {
+      if (field.type !== "checkbox") {
+        field.value = "";
+      }
+    });
+    await refreshNodes();
+    showToast("Node registered.");
+  } catch (error) {
+    showToast(error?.message || "Node could not be saved.");
+  }
+}
+
+async function testSelectedNode() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasNodes) {
+    return;
+  }
+  const result = await desktopApiState.api.nodes.test(getSelectedNodeId()).catch((error) => ({ connected: false, message: error.message }));
+  showToast(result.connected ? "Node connected." : result.message || "Node unavailable.");
+}
+
+async function deleteSelectedNode() {
+  const desktopApiState = getDesktopApiState();
+  const nodeId = getSelectedNodeId();
+  if (!desktopApiState.hasNodes || nodeId === "default" || !window.confirm(`Delete node ${nodeId}?`)) {
+    return;
+  }
+  try {
+    await desktopApiState.api.nodes.delete(nodeId);
+    await refreshNodes();
+    showToast("Node deleted.");
+  } catch (error) {
+    showToast(error?.message || "Node could not be deleted.");
+  }
+}
+
 function getSettingInputValue(input) {
   if (input.type === "checkbox") {
     return input.checked;
@@ -10339,6 +10544,12 @@ dockerRefreshButton?.addEventListener("click", refreshDockerStatus);
 dockerStartButton?.addEventListener("click", () => handleDockerAction("start"));
 dockerStopButton?.addEventListener("click", () => handleDockerAction("stop"));
 dockerRestartButton?.addEventListener("click", () => handleDockerAction("restart"));
+dockerActionButtons.forEach((button) => {
+  const action = button.dataset.dockerAction;
+  if (["create", "remove", "logs"].includes(action)) {
+    button.addEventListener("click", () => handleDockerAction(action));
+  }
+});
 updateDockerActionButtons();
 marketplaceSearchInput?.addEventListener("input", debounce(renderMarketplaceTemplates, 120));
 marketplaceRefreshButton?.addEventListener("click", refreshMarketplace);
@@ -10527,6 +10738,12 @@ agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 securityForm?.addEventListener("submit", submitSecurityForm);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
 document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);
+nodeTargetSelects.forEach((select) => {
+  select.addEventListener("change", () => selectNode(select.value || "default"));
+});
+document.querySelector('[data-node-action="save"]')?.addEventListener("click", saveNodeFromSettings);
+document.querySelector('[data-node-action="test"]')?.addEventListener("click", testSelectedNode);
+document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);
 backupActionButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const action = button.dataset.backupAction;
@@ -10552,6 +10769,7 @@ syncTitlebarWindowState();
 configurePrimaryNavigation();
 loadSettings();
 refreshSecurityState();
+refreshNodes();
 loadAgentSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();

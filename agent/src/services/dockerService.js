@@ -3,6 +3,7 @@ const fs = require("fs/promises");
 const path = require("path");
 
 const COMMAND_TIMEOUT_MS = 3500;
+const CONTAINER_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 
 function exec(command, args) {
   return new Promise((resolve) => {
@@ -306,6 +307,122 @@ function flattenContainer(container) {
   };
 }
 
+function validateContainerTarget(value) {
+  const target = String(value || "").trim();
+  if (!CONTAINER_NAME_PATTERN.test(target)) {
+    throw Object.assign(new Error("Invalid container target."), { code: "INVALID_CONTAINER_TARGET", statusCode: 400 });
+  }
+  return target;
+}
+
+function validateImage(value) {
+  const image = String(value || "").trim();
+  if (!image || image.includes("\0") || /[;&|`$<>]/.test(image) || image.length > 256) {
+    throw Object.assign(new Error("Invalid Docker image."), { code: "INVALID_DOCKER_IMAGE", statusCode: 400 });
+  }
+  return image;
+}
+
+function normalizeStringArray(value, maxItems = 64) {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value) || value.length > maxItems) {
+    throw Object.assign(new Error("Invalid Docker arguments."), { code: "INVALID_DOCKER_ARGS", statusCode: 400 });
+  }
+  return value.map((entry) => String(entry || "").trim()).filter(Boolean);
+}
+
+function normalizePorts(value) {
+  return normalizeStringArray(value, 32).filter((entry) => /^\d{1,5}:\d{1,5}(\/(?:tcp|udp))?$/i.test(entry));
+}
+
+function normalizeRestartPolicy(value) {
+  const policy = String(value || "unless-stopped").trim();
+  return ["no", "always", "unless-stopped", "on-failure"].includes(policy) ? policy : "unless-stopped";
+}
+
+async function runDockerCommand(args) {
+  const dockerPath = await resolveDockerExecutable();
+  const result = await exec(dockerPath, args);
+  if (!result.ok) {
+    throw Object.assign(new Error("Docker command failed."), {
+      code: "DOCKER_COMMAND_FAILED",
+      statusCode: 502,
+      detail: result.stderr || result.stdout || null,
+    });
+  }
+  return result;
+}
+
+async function createContainer(payload = {}) {
+  const name = validateContainerTarget(payload.name || `anxhub-${Date.now()}`);
+  const image = validateImage(payload.image);
+  const args = ["create", "--name", name, "--restart", normalizeRestartPolicy(payload.restartPolicy)];
+  const ports = normalizePorts(payload.ports);
+  ports.forEach((port) => args.push("-p", port));
+  if (payload.memory) {
+    args.push("--memory", String(payload.memory));
+  }
+  if (payload.cpus) {
+    args.push("--cpus", String(payload.cpus));
+  }
+  args.push(image, ...normalizeStringArray(payload.command, 64));
+  const result = await runDockerCommand(args);
+  if (payload.start === true) {
+    await runDockerCommand(["start", name]);
+  }
+  return {
+    container: {
+      id: result.stdout || name,
+      name,
+      image,
+      started: payload.start === true,
+    },
+  };
+}
+
+async function startContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["start", target]);
+  return { container: target, action: "start" };
+}
+
+async function stopContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["stop", target]);
+  return { container: target, action: "stop" };
+}
+
+async function restartContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["restart", target]);
+  return { container: target, action: "restart" };
+}
+
+async function deleteContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["rm", "-f", target]);
+  return { container: target, deleted: true };
+}
+
+async function getContainerLogs(container, options = {}) {
+  const target = validateContainerTarget(container);
+  const tail = Number.parseInt(options.tail, 10);
+  const result = await runDockerCommand(["logs", "--tail", String(Number.isFinite(tail) ? Math.min(Math.max(tail, 1), 1000) : 200), target]);
+  return { container: target, logs: result.stdout };
+}
+
+async function getContainerStats(container) {
+  const target = validateContainerTarget(container);
+  const result = await runDockerCommand(["stats", "--no-stream", "--format", "json", target]);
+  try {
+    return { container: target, stats: JSON.parse(result.stdout) };
+  } catch {
+    return { container: target, stats: { raw: result.stdout } };
+  }
+}
+
 async function getDockerSnapshot() {
   const dockerPath = await resolveDockerExecutable();
   const versionResult = await exec(dockerPath, ["--version"]);
@@ -369,5 +486,12 @@ module.exports = {
   getDockerContainers,
   getDockerSnapshot,
   getDockerSummary,
+  createContainer,
+  deleteContainer,
+  getContainerLogs,
+  getContainerStats,
   resolveDockerExecutable,
+  restartContainer,
+  startContainer,
+  stopContainer,
 };

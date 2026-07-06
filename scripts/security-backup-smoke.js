@@ -9,6 +9,7 @@ process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
 process.env.AGENT_BACKUP_ROOT = path.join(root, "backups");
 
 const security = require("../src/services/securityService");
+const nodeService = require("../src/services/nodeService");
 const backupService = require("../agent/src/services/backupService");
 
 async function main() {
@@ -19,6 +20,17 @@ async function main() {
   assert.strictEqual(status.user.role, "Owner", "First user should be Owner.");
   const rotated = security.rotateAgentToken();
   assert(/^anx_/.test(rotated.token), "Agent token should be generated and displayed once.");
+  const savedNode = nodeService.saveNode({
+    displayName: "Smoke Node",
+    agentUrl: "http://127.0.0.1:47131",
+    agentToken: "smoke-token",
+    docker: { enabled: true },
+  });
+  assert(savedNode.node.id, "Node registration should create an id.");
+  const nodes = nodeService.listNodes();
+  assert(nodes.nodes.some((node) => node.id === savedNode.node.id), "Registered node should be listed.");
+  assert.strictEqual(nodeService.selectNode(savedNode.node.id).selectedNodeId, savedNode.node.id, "Node selection should persist.");
+  assert.strictEqual(nodeService.deleteNode(savedNode.node.id).deleted, true, "Node delete should work.");
   security.checkRateLimit("smoke-limit", 1, 60000);
   assert.throws(() => security.checkRateLimit("smoke-limit", 1, 60000), /Too many requests|RATE_LIMITED/);
 

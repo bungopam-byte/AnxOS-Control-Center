@@ -837,6 +837,7 @@
               </label>
               <div class="docker-actions" aria-label="Docker actions">
                 <button class="inline-action" type="button" data-docker-action="refresh" disabled>Refresh</button>
+                <button class="inline-action" type="button" data-docker-action="create">Create</button>
                 <button class="inline-action" type="button" data-docker-action="start" disabled>Start</button>
                 <button class="inline-action" type="button" data-docker-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-docker-action="restart" disabled>Restart</button>
@@ -931,6 +932,10 @@
               <label class="docker-search">
                 <span>Search templates</span>
                 <input type="search" placeholder="Search apps, servers, bots, and databases" data-marketplace-search>
+              </label>
+              <label class="docker-filter">
+                <span>Target Node</span>
+                <select data-node-target="marketplace"></select>
               </label>
               <div class="marketplace-categories" data-marketplace-categories aria-label="Marketplace categories"></div>
               <button class="inline-action" type="button" data-marketplace-refresh>Refresh</button>
@@ -1043,6 +1048,10 @@
                   <option value="200" selected>200</option>
                   <option value="500">500</option>
                 </select>
+              </label>
+              <label class="docker-filter">
+                <span>Node</span>
+                <select data-node-target="instances"></select>
               </label>
               <div class="docker-actions" aria-label="Instance actions">
                 <button class="inline-action" type="button" data-instance-action="refresh" disabled>Refresh</button>
@@ -1992,6 +2001,29 @@
                 <button class="inline-action" type="button" data-security-action="logout">Logout</button>
                 <span class="settings-inline-status" data-security-settings-message>Security state unavailable.</span>
               </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Nodes</h2>
+                  <p>Register AnxOS agents and choose the default target node.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-node-status>Default</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field"><span>Node name</span><input type="text" data-node-field="displayName" placeholder="Game Node 1"></label>
+                <label class="settings-field"><span>Agent URL</span><input type="url" data-node-field="agentUrl" placeholder="http://127.0.0.1:47131"></label>
+                <label class="settings-field"><span>Agent token</span><input type="password" data-node-field="agentToken" placeholder="Bearer token"></label>
+                <label class="settings-check"><input type="checkbox" data-node-field="dockerEnabled" checked><span>Docker enabled on this node</span></label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-node-action="save">Register Node</button>
+                <button class="inline-action" type="button" data-node-action="test">Test Selected</button>
+                <button class="inline-action" type="button" data-node-action="delete">Delete Selected</button>
+                <span class="settings-inline-status" data-node-message>No additional nodes registered.</span>
+              </div>
+              <div class="download-list" data-node-list></div>
             </section>
 
             <section class="settings-section">

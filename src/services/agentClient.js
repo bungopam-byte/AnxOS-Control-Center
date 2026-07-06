@@ -624,14 +624,63 @@ async function getDockerContainers() {
   return requestJson("/api/v1/docker/containers");
 }
 
-async function getDockerSnapshot() {
-  const payload = await requestJson("/api/v1/docker/snapshot");
+async function getDockerSnapshot(configOverride = null) {
+  const payload = await requestJson("/api/v1/docker/snapshot", { config: configOverride });
   const containers = normalizeContainers(payload);
 
   return {
     ...normalizeSummary(payload, containers),
     containers,
   };
+}
+
+async function createDockerContainer(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/docker/containers", {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function startDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/start`, {
+    config: configOverride,
+    method: "POST",
+  });
+}
+
+async function stopDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/stop`, {
+    config: configOverride,
+    method: "POST",
+  });
+}
+
+async function restartDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/restart`, {
+    config: configOverride,
+    method: "POST",
+  });
+}
+
+async function deleteDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}`, {
+    config: configOverride,
+    method: "DELETE",
+  });
+}
+
+async function getDockerContainerLogs(container, options = {}, configOverride = null) {
+  const query = new URLSearchParams({ tail: String(options.tail || 200) });
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/logs?${query.toString()}`, {
+    config: configOverride,
+  });
+}
+
+async function getDockerContainerStats(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/stats`, {
+    config: configOverride,
+  });
 }
 
 function normalizePlayitSnapshot(payload) {
@@ -1463,26 +1512,28 @@ function encodeInstanceId(instanceId) {
   return encodeURIComponent(String(instanceId || ""));
 }
 
-async function listInstances() {
-  return requestJson("/api/v1/instances");
+async function listInstances(configOverride = null) {
+  return requestJson("/api/v1/instances", { config: configOverride });
 }
 
-async function createInstance(payload = {}) {
+async function createInstance(payload = {}, configOverride = null) {
   return requestJson("/api/v1/instances", {
+    config: configOverride,
     method: "POST",
     body: payload,
   });
 }
 
-async function updateInstance(instanceId, payload = {}) {
+async function updateInstance(instanceId, payload = {}, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}`, {
+    config: configOverride,
     method: "PATCH",
     body: payload,
   });
 }
 
-async function getInstanceStatus(instanceId) {
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/status`);
+async function getInstanceStatus(instanceId, configOverride = null) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/status`, { config: configOverride });
 }
 
 async function getInstanceMetrics(instanceId) {
@@ -1515,8 +1566,9 @@ async function sendInstanceCommand(instanceId, command) {
   });
 }
 
-async function forceKillInstance(instanceId) {
+async function forceKillInstance(instanceId, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/force-kill`, {
+    config: configOverride,
     method: "POST",
   });
 }
@@ -1526,13 +1578,14 @@ async function listInstanceFiles(instanceId, currentPath = ".") {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/files?${query.toString()}`);
 }
 
-async function readInstanceFile(instanceId, filePath) {
+async function readInstanceFile(instanceId, filePath, configOverride = null) {
   const query = new URLSearchParams({ path: filePath || "." });
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`);
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`, { config: configOverride });
 }
 
 async function writeInstanceFile(instanceId, filePath, content, options = {}) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
+    config: options.config || null,
     method: "PUT",
     body: {
       path: filePath,
@@ -1542,15 +1595,17 @@ async function writeInstanceFile(instanceId, filePath, content, options = {}) {
   });
 }
 
-async function deleteInstanceFile(instanceId, filePath) {
+async function deleteInstanceFile(instanceId, filePath, configOverride = null) {
   const query = new URLSearchParams({ path: filePath || "." });
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`, {
+    config: configOverride,
     method: "DELETE",
   });
 }
 
-async function createInstanceFolder(instanceId, folderPath) {
+async function createInstanceFolder(instanceId, folderPath, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/mkdir`, {
+    config: configOverride,
     method: "POST",
     body: { path: folderPath },
   });
@@ -1570,33 +1625,38 @@ async function getMinecraftProperties(instanceId) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`);
 }
 
-async function saveMinecraftProperties(instanceId, properties = {}) {
+async function saveMinecraftProperties(instanceId, properties = {}, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`, {
+    config: configOverride,
     method: "PUT",
     body: { properties },
   });
 }
 
-async function startInstance(instanceId) {
+async function startInstance(instanceId, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/start`, {
+    config: configOverride,
     method: "POST",
   });
 }
 
-async function stopInstance(instanceId) {
+async function stopInstance(instanceId, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/stop`, {
+    config: configOverride,
     method: "POST",
   });
 }
 
-async function restartInstance(instanceId) {
+async function restartInstance(instanceId, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/restart`, {
+    config: configOverride,
     method: "POST",
   });
 }
 
-async function deleteInstance(instanceId) {
+async function deleteInstance(instanceId, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}`, {
+    config: configOverride,
     method: "DELETE",
   });
 }
@@ -1661,12 +1721,14 @@ module.exports = {
   AgentClientError,
   clearInstanceLogs,
   createBackup,
+  createDockerContainer,
   downloadFile,
   downloadBackup,
   createInstance,
   createInstanceFolder,
   deleteBackup,
   deleteBackupSchedule,
+  deleteDockerContainer,
   deleteInstance,
   deleteInstanceFile,
   forceKillInstance,
@@ -1679,6 +1741,8 @@ module.exports = {
   getAmpStatus,
   getAgentConfig,
   getDockerContainers,
+  getDockerContainerLogs,
+  getDockerContainerStats,
   getDockerSnapshot,
   getDockerSummary,
   getFileList,
@@ -1697,6 +1761,7 @@ module.exports = {
   listInstanceFiles,
   listInstances,
   loadEnvironment,
+  normalizeAgentSettings,
   readAgentSettings,
   requestBuffer,
   requestJson,
@@ -1704,11 +1769,14 @@ module.exports = {
   saveBackupSchedule,
   saveMinecraftProperties,
   sendInstanceCommand,
+  startDockerContainer,
   restartInstance,
   restoreBackup,
   testConnection,
   startInstance,
   stopInstance,
+  stopDockerContainer,
+  restartDockerContainer,
   readInstanceFile,
   renameInstanceFile,
   updateInstance,

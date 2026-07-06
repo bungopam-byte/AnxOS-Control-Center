@@ -2,6 +2,8 @@ const { ipcMain } = require("electron");
 const {
   cancelDownload,
   getDownloads,
+  getImportSupport,
+  importCommunityTemplate,
   installTemplate,
   listTemplates,
   retryDownload,
@@ -29,6 +31,12 @@ async function invokeMarketplaceOperation(operation) {
 
 function registerMarketplaceIpc() {
   ipcMain.handle("marketplace:listTemplates", async () => invokeMarketplaceOperation(() => listTemplates()));
+  ipcMain.handle("marketplace:getImportSupport", async () => invokeMarketplaceOperation(() => getImportSupport()));
+  ipcMain.handle("marketplace:importCommunityTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requirePermission("marketplace:install", payload?.template?.id || payload?.id || "community-template");
+    audit({ action: "marketplace.communityTemplate.import", target: payload?.template?.id || payload?.id || "community-template" });
+    return importCommunityTemplate(payload);
+  }));
   ipcMain.handle("marketplace:installTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
     requirePermission("marketplace:install", payload.templateId);
     audit({ action: "marketplace.install", target: payload.templateId });

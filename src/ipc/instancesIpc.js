@@ -44,7 +44,7 @@ async function invokeInstanceOperation(operation) {
 }
 
 function registerInstancesIpc() {
-  ipcMain.handle("instances:list", async () => invokeInstanceOperation(() => listInstances()));
+  ipcMain.handle("instances:list", async (_, payload = {}) => invokeInstanceOperation(() => listInstances(payload)));
   ipcMain.handle("instances:create", async (_, payload = {}) => invokeInstanceOperation(() => createInstance(payload)));
   ipcMain.handle("instances:update", async (_, payload = {}) => invokeInstanceOperation(() => updateInstance(payload.instanceId, payload.config || {})));
   ipcMain.handle("instances:getStatus", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceStatus(payload.instanceId)));
@@ -59,17 +59,17 @@ function registerInstancesIpc() {
   ipcMain.handle("instances:start", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:lifecycle", payload.instanceId);
     audit({ action: "instance.start", target: payload.instanceId });
-    return startInstance(payload.instanceId);
+    return startInstance(payload.instanceId, payload);
   }));
   ipcMain.handle("instances:stop", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:lifecycle", payload.instanceId);
     audit({ action: "instance.stop", target: payload.instanceId });
-    return stopInstance(payload.instanceId);
+    return stopInstance(payload.instanceId, payload);
   }));
   ipcMain.handle("instances:restart", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:lifecycle", payload.instanceId);
     audit({ action: "instance.restart", target: payload.instanceId });
-    return restartInstance(payload.instanceId);
+    return restartInstance(payload.instanceId, payload);
   }));
   ipcMain.handle("instances:forceKill", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:lifecycle", payload.instanceId);
@@ -79,7 +79,7 @@ function registerInstancesIpc() {
   ipcMain.handle("instances:delete", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:delete", payload.instanceId);
     audit({ action: "instance.delete", target: payload.instanceId });
-    return deleteInstance(payload.instanceId);
+    return deleteInstance(payload.instanceId, payload);
   }));
   ipcMain.handle("instances:listFiles", async (_, payload = {}) => invokeInstanceOperation(() => listInstanceFiles(payload.instanceId, payload.path)));
   ipcMain.handle("instances:readFile", async (_, payload = {}) => invokeInstanceOperation(() => readInstanceFile(payload.instanceId, payload.path)));

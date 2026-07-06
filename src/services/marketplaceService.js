@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const agentClient = require("./agentClient");
+const { getNodeAgentConfig } = require("./nodeService");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
 const CATEGORIES = ["Minecraft", "Game Servers", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
@@ -11,6 +12,7 @@ const FORGE_PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforg
 const FORGE_MAVEN_METADATA_URL = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml";
 const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
 const BUNGEECORD_JAR_URL = "https://hub.spigotmc.org/jenkins/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar";
+const COMMUNITY_TEMPLATE_FORMAT_VERSION = 1;
 
 const downloads = new Map();
 
@@ -99,6 +101,69 @@ function findTemplate(templateId, templateOverride = null) {
   return template;
 }
 
+function validateCommunityTemplate(template = {}) {
+  const id = String(template.id || "").trim();
+  const hasDownloadSource = Boolean(template.downloadSource) || (Array.isArray(template.downloads) && template.downloads.length > 0) || Boolean(template.installer);
+  const hasDockerImage = template.runtime === "docker" && Boolean(template.docker?.image || template.downloadSource?.image);
+  if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(id)) {
+    throw createMarketplaceError("Community template id is invalid.", "INVALID_COMMUNITY_TEMPLATE");
+  }
+  if (!String(template.displayName || "").trim()) {
+    throw createMarketplaceError("Community template displayName is required.", "INVALID_COMMUNITY_TEMPLATE");
+  }
+  if (!String(template.category || "").trim()) {
+    throw createMarketplaceError("Community template category is required.", "INVALID_COMMUNITY_TEMPLATE");
+  }
+  if (template.disabled !== true && template.comingSoon !== true && !hasDownloadSource && !hasDockerImage) {
+    throw createMarketplaceError("Community template must define a real download source, Docker image, or be disabled.", "INVALID_COMMUNITY_TEMPLATE");
+  }
+
+  return {
+    screenshots: [],
+    author: "Community",
+    version: "1.0.0",
+    defaultPorts: [],
+    configurationSchema: [],
+    installScript: [],
+    formatVersion: COMMUNITY_TEMPLATE_FORMAT_VERSION,
+    ...template,
+    tags: Array.isArray(template.tags) ? template.tags : [],
+  };
+}
+
+function importCommunityTemplate(payload = {}) {
+  const template = validateCommunityTemplate(payload.template || payload);
+  return {
+    template,
+    installable: !(template.disabled || template.comingSoon),
+    warnings: template.runtime === "docker" && !template.docker?.image && !template.downloadSource?.image
+      ? ["Docker templates should define docker.image or downloadSource.image."]
+      : [],
+  };
+}
+
+function getImportSupport() {
+  return {
+    communityTemplates: {
+      supported: true,
+      formatVersion: COMMUNITY_TEMPLATE_FORMAT_VERSION,
+      requiredFields: ["id", "displayName", "category"],
+      installableWhen: "Template declares a real download source, SteamCMD installer, Docker image, or is explicitly disabled.",
+    },
+    modpacks: {
+      modrinth: {
+        supported: true,
+        mode: "metadata-validation",
+        notes: "Modrinth .mrpack import can be validated and converted into a community template when server files are available.",
+      },
+      curseforge: {
+        supported: false,
+        reason: "CurseForge imports often require API credentials or user-authorized downloads, so automated one-click install is not enabled by default.",
+      },
+    },
+  };
+}
+
 function normalizeName(value, fallback) {
   const normalized = typeof value === "string" ? value.trim() : "";
   return normalized || fallback;
@@ -132,8 +197,8 @@ function parsePorts(value, fallback = []) {
   return Array.isArray(fallback) ? fallback : [];
 }
 
-async function listAgentInstanceIds() {
-  const list = await agentClient.listInstances();
+async function listAgentInstanceIds(agentConfig = null) {
+  const list = await agentClient.listInstances(agentConfig);
   return Array.isArray(list?.instances) ? list.instances.map((instance) => instance.id).filter(Boolean) : [];
 }
 
@@ -145,8 +210,8 @@ function resolveCreatedInstanceId(createResult, fallbackId) {
     fallbackId;
 }
 
-async function verifyAgentInstanceExists(instanceId) {
-  const instanceIds = await listAgentInstanceIds();
+async function verifyAgentInstanceExists(instanceId, agentConfig = null) {
+  const instanceIds = await listAgentInstanceIds(agentConfig);
   if (!instanceIds.includes(instanceId)) {
     throw createMarketplaceError(
       `Created instance could not be verified. Expected ${instanceId}. Available: ${instanceIds.join(", ") || "none"}.`,
@@ -604,12 +669,12 @@ async function resolveDownloadUrl(download, options = {}) {
   return { url: resolveUrlTemplate(download, options) };
 }
 
-async function writeInstanceText(instanceId, filePath, content) {
-  return agentClient.writeInstanceFile(instanceId, filePath, content);
+async function writeInstanceText(instanceId, filePath, content, agentConfig = null) {
+  return agentClient.writeInstanceFile(instanceId, filePath, content, { config: agentConfig });
 }
 
-async function writeInstanceBuffer(instanceId, filePath, buffer) {
-  return agentClient.writeInstanceFile(instanceId, filePath, Buffer.from(buffer).toString("base64"), { encoding: "base64" });
+async function writeInstanceBuffer(instanceId, filePath, buffer, agentConfig = null) {
+  return agentClient.writeInstanceFile(instanceId, filePath, Buffer.from(buffer).toString("base64"), { encoding: "base64", config: agentConfig });
 }
 
 function buildMinecraftProperties(options, ports) {
@@ -1005,11 +1070,11 @@ function buildStartupPatch(template, options, ports) {
   };
 }
 
-async function waitForInstanceInstaller(instanceId, timeoutMs) {
+async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = null) {
   const started = Date.now();
   let last = null;
   while (Date.now() - started < timeoutMs) {
-    last = await agentClient.getInstanceStatus(instanceId);
+    last = await agentClient.getInstanceStatus(instanceId, agentConfig);
     const state = last?.instance?.state || last?.state;
     if (state === "Stopped") {
       return last;
@@ -1021,19 +1086,19 @@ async function waitForInstanceInstaller(instanceId, timeoutMs) {
   }
 
   try {
-    await agentClient.forceKillInstance(instanceId);
+    await agentClient.forceKillInstance(instanceId, agentConfig);
   } catch {}
   throw createMarketplaceError("The template installer did not finish in time.", "TEMPLATE_INSTALL_TIMEOUT");
 }
 
-async function runTemplatePostInstall(template, options, instanceId, progress) {
+async function runTemplatePostInstall(template, options, instanceId, progress, agentConfig = null) {
   const postInstall = template.postInstall;
   if (!postInstall || postInstall.type !== "java-installer") {
     return;
   }
 
   const installerJar = normalizeInstanceFilePath(postInstall.jar || getPrimaryArtifactPath(template, options));
-  await agentClient.readInstanceFile(instanceId, installerJar);
+  await agentClient.readInstanceFile(instanceId, installerJar, agentConfig);
   const installerArgs = ["-jar", fileNameFromDestination(installerJar), ...resolveTemplateArgs(postInstall.args || ["--installServer"], template, options)];
 
   pushStep(progress, "Installing", "running", `Running ${fileNameFromDestination(installerJar)}.`);
@@ -1043,18 +1108,18 @@ async function runTemplatePostInstall(template, options, instanceId, progress) {
     workingDirectory: "data",
     restartPolicy: "never",
     startupTimeoutMs: postInstall.timeoutMs || 300000,
-  });
-  await agentClient.startInstance(instanceId);
-  await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000);
+  }, agentConfig);
+  await agentClient.startInstance(instanceId, agentConfig);
+  await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig);
 
   const requiredFiles = Array.isArray(postInstall.requiredFiles) ? postInstall.requiredFiles : [];
   for (const requiredFile of requiredFiles) {
-    await agentClient.readInstanceFile(instanceId, requiredFile);
+    await agentClient.readInstanceFile(instanceId, requiredFile, agentConfig);
   }
   pushStep(progress, "Installing", "complete", "Server installer finished.");
 }
 
-async function runTemplateInstaller(template, options, instanceId, progress) {
+async function runTemplateInstaller(template, options, instanceId, progress, agentConfig = null) {
   if (!template.installer) {
     return;
   }
@@ -1065,7 +1130,7 @@ async function runTemplateInstaller(template, options, instanceId, progress) {
   }
 
   const scriptPath = "runtime/marketplace-install.sh";
-  await writeInstanceText(instanceId, scriptPath, script);
+  await writeInstanceText(instanceId, scriptPath, script, agentConfig);
   pushStep(progress, "Installing", "running", `Running ${template.installer.type} installer.`);
   await agentClient.updateInstance(instanceId, {
     executable: "bash",
@@ -1073,18 +1138,18 @@ async function runTemplateInstaller(template, options, instanceId, progress) {
     workingDirectory: "data",
     restartPolicy: "never",
     startupTimeoutMs: template.installer.timeoutMs || 600000,
-  });
-  await agentClient.startInstance(instanceId);
-  await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000);
+  }, agentConfig);
+  await agentClient.startInstance(instanceId, agentConfig);
+  await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig);
 
   const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
   for (const requiredFile of requiredFiles) {
-    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile));
+    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
   }
   pushStep(progress, "Installing", "complete", "Server installer finished.");
 }
 
-async function writeTemplateConfigFiles(template, options, ports, instanceId) {
+async function writeTemplateConfigFiles(template, options, ports, instanceId, agentConfig = null) {
   const files = Array.isArray(template.configFiles) ? template.configFiles : [];
   for (const configFile of files) {
     if (!configFile?.path) {
@@ -1093,13 +1158,14 @@ async function writeTemplateConfigFiles(template, options, ports, instanceId) {
     await writeInstanceText(
       instanceId,
       normalizeInstanceFilePath(configFile.path),
-      buildConfigFileContent(configFile, template, options, ports)
+      buildConfigFileContent(configFile, template, options, ports),
+      agentConfig
     );
-    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(configFile.path));
+    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(configFile.path), agentConfig);
   }
 }
 
-async function downloadOneToInstance(template, download, options, instanceId, progress) {
+async function downloadOneToInstance(template, download, options, instanceId, progress, agentConfig = null) {
   const destination = normalizeInstanceFilePath(download.destination || download.fileName || "server.jar");
   const fileName = fileNameFromDestination(destination);
   const downloadRequired = download.required === true;
@@ -1115,7 +1181,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   if (download.type === "inline") {
     const record = createDownloadRecord(template, fileName);
     updateDownload(record, { status: "running", startedAt: new Date().toISOString(), canCancel: false });
-    await writeInstanceText(instanceId, destination, download.content || "");
+    await writeInstanceText(instanceId, destination, download.content || "", agentConfig);
     updateDownload(record, { status: "complete", progress: 100, bytesReceived: String(download.content || "").length, bytesTotal: String(download.content || "").length });
     pushStep(progress, "Downloading", "complete", `Generated ${fileName}.`);
     return { downloaded: true, record };
@@ -1203,8 +1269,8 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
     }
 
     const buffer = Buffer.concat(chunks);
-    await writeInstanceBuffer(instanceId, destination, buffer);
-    await agentClient.readInstanceFile(instanceId, destination);
+    await writeInstanceBuffer(instanceId, destination, buffer, agentConfig);
+    await agentClient.readInstanceFile(instanceId, destination, agentConfig);
     updateDownload(record, {
       status: "complete",
       progress: 100,
@@ -1236,7 +1302,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   }
 }
 
-async function downloadToInstance(template, options, instanceId, progress) {
+async function downloadToInstance(template, options, instanceId, progress, agentConfig = null) {
   const templateDownloads = normalizeTemplateDownloads(template);
   if (!templateDownloads.length) {
     pushStep(progress, "Downloading", "skipped", "No direct download is required for this template.");
@@ -1246,7 +1312,7 @@ async function downloadToInstance(template, options, instanceId, progress) {
   const records = [];
   let downloaded = false;
   for (const download of templateDownloads) {
-    const result = await downloadOneToInstance(template, download, options, instanceId, progress);
+    const result = await downloadOneToInstance(template, download, options, instanceId, progress, agentConfig);
     downloaded = downloaded || Boolean(result.downloaded);
     if (result.record) {
       records.push(result.record);
@@ -1263,10 +1329,43 @@ async function installTemplate(payload = {}) {
   }
 
   const options = payload.options || {};
+  const agentConfig = payload.nodeId && payload.nodeId !== "default" ? getNodeAgentConfig(payload.nodeId) : null;
   const progress = [];
   const ports = parsePorts(options.ports || options.port, template.defaultPorts);
+
+  if (template.runtime === "docker" || template.startupType === "docker-image") {
+    try {
+      pushStep(progress, "Creating container", "running", `Creating ${template.displayName}.`);
+      const portMappings = ports.map((port) => `${port}:${port}`);
+      const result = await agentClient.createDockerContainer({
+        name: slugify(options.id || options.name || template.id),
+        image: template.docker?.image || template.downloadSource?.image,
+        ports: Array.isArray(template.docker?.ports) ? template.docker.ports : portMappings,
+        memory: normalizeName(options.memory, template.defaultRam || ""),
+        restartPolicy: template.docker?.restartPolicy || "unless-stopped",
+        start: options.start !== false,
+        command: template.docker?.command || [],
+      }, agentConfig);
+      pushStep(progress, "Creating container", "complete", "Docker container created.");
+      pushStep(progress, "Complete", "complete", "Installation finished.");
+      return {
+        template,
+        instance: result.container,
+        container: result.container,
+        progress,
+        downloads: sanitizeDownloads(getDownloads()).downloads,
+      };
+    } catch (error) {
+      pushStep(progress, "Failed", "failed", mapMarketplaceError(error, "Docker template install failed."));
+      const installError = createMarketplaceError(mapMarketplaceError(error, "Docker template install failed."), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED");
+      installError.progress = progress;
+      throw installError;
+    }
+  }
+
   const instancePayload = buildInstancePayload(template, options, ports);
   const isMinecraft = template.category === "Minecraft";
+  let createdInstanceId = null;
 
   try {
     console.info("[Marketplace] Create requested.", {
@@ -1276,8 +1375,8 @@ async function installTemplate(payload = {}) {
       selectedServerType: options.serverType || null,
     });
     pushStep(progress, "Creating instance", "running", `Creating ${instancePayload.id}.`);
-    const createResult = await agentClient.createInstance(instancePayload);
-    const createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
+    const createResult = await agentClient.createInstance(instancePayload, agentConfig);
+    createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
     const createRecord = createResult?.instance || createResult?.data?.instance || createResult?.data || createResult || {};
     const instance = typeof createRecord === "object" ? { ...createRecord, id: createdInstanceId } : { id: createdInstanceId };
     console.info("[Marketplace] Create result.", {
@@ -1286,7 +1385,7 @@ async function installTemplate(payload = {}) {
       createResponse: createResult,
       resolvedCreatedId: createdInstanceId,
     });
-    const createdIds = await verifyAgentInstanceExists(createdInstanceId);
+    const createdIds = await verifyAgentInstanceExists(createdInstanceId, agentConfig);
     console.info("[Marketplace] Instance verification result.", {
       templateId: template.id,
       requestedInstanceId: instancePayload.id,
@@ -1296,28 +1395,28 @@ async function installTemplate(payload = {}) {
     pushStep(progress, "Creating instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
 
     pushStep(progress, "Creating folders", "running");
-    await agentClient.createInstanceFolder(createdInstanceId, ".");
-    await agentClient.createInstanceFolder(createdInstanceId, "runtime");
+    await agentClient.createInstanceFolder(createdInstanceId, ".", agentConfig);
+    await agentClient.createInstanceFolder(createdInstanceId, "runtime", agentConfig);
     pushStep(progress, "Creating folders", "complete", `Prepared folders for ${createdInstanceId}.`);
 
     const generated = generatedFileForTemplate(template, options, ports);
     if (generated) {
       pushStep(progress, "Installing", "running", `Writing ${generated.path}.`);
-      await writeInstanceText(createdInstanceId, generated.path, generated.content);
+      await writeInstanceText(createdInstanceId, generated.path, generated.content, agentConfig);
       pushStep(progress, "Installing", "complete", "Starter project generated.");
     }
 
-    const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress);
-    await runTemplateInstaller(template, options, createdInstanceId, progress);
+    const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig);
+    await runTemplateInstaller(template, options, createdInstanceId, progress, agentConfig);
 
     pushStep(progress, "Configuring", "running");
     if (isMinecraft) {
-      await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`);
-      await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports));
-      await agentClient.readInstanceFile(createdInstanceId, "eula.txt");
-      await agentClient.readInstanceFile(createdInstanceId, "server.properties");
+      await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`, agentConfig);
+      await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports), agentConfig);
+      await agentClient.readInstanceFile(createdInstanceId, "eula.txt", agentConfig);
+      await agentClient.readInstanceFile(createdInstanceId, "server.properties", agentConfig);
     } else if (Array.isArray(template.configFiles) && template.configFiles.length > 0) {
-      await writeTemplateConfigFiles(template, options, ports, createdInstanceId);
+      await writeTemplateConfigFiles(template, options, ports, createdInstanceId, agentConfig);
     } else if (!generated && !normalizeTemplateDownloads(template).length && !template.startup) {
       await writeInstanceText(
         createdInstanceId,
@@ -1326,17 +1425,18 @@ async function installTemplate(payload = {}) {
           `console.log(${JSON.stringify(`${template.displayName} placeholder instance`)})`,
           "setInterval(() => {}, 30000);",
           "",
-        ].join("\n")
+        ].join("\n"),
+        agentConfig
       );
     }
     pushStep(progress, "Configuring", "complete", "Configuration files generated.");
 
-    await runTemplatePostInstall(template, options, createdInstanceId, progress);
+    await runTemplatePostInstall(template, options, createdInstanceId, progress, agentConfig);
 
     const startupPatch = buildStartupPatch(template, options, ports);
     if (startupPatch) {
       pushStep(progress, "Finalizing installation", "running", "Configuring startup command.");
-      const updated = await agentClient.updateInstance(createdInstanceId, startupPatch);
+      const updated = await agentClient.updateInstance(createdInstanceId, startupPatch, agentConfig);
       const updatedInstance = updated?.instance || updated;
       if (updatedInstance?.executable !== startupPatch.executable || !Array.isArray(updatedInstance?.args) || updatedInstance.args.join("\n") !== startupPatch.args.join("\n")) {
         throw createMarketplaceError("Startup command was not configured.", "STARTUP_CONFIGURATION_FAILED");
@@ -1348,12 +1448,12 @@ async function installTemplate(payload = {}) {
     const needsDownloadedArtifact = templateNeedsDownloadedArtifact(template, generated);
     if (needsDownloadedArtifact && downloadResult.downloaded) {
       const jarPath = getPrimaryArtifactPath(template, options);
-      await agentClient.readInstanceFile(createdInstanceId, jarPath);
+      await agentClient.readInstanceFile(createdInstanceId, jarPath, agentConfig);
       pushStep(progress, "Verifying files", "complete", `${jarPath} is available.`);
     }
 
     if (startupPatch) {
-      const refreshedIds = await verifyAgentInstanceExists(createdInstanceId);
+      const refreshedIds = await verifyAgentInstanceExists(createdInstanceId, agentConfig);
       if (!startupPatch.executable || !Array.isArray(startupPatch.args) || startupPatch.args.length === 0) {
         throw createMarketplaceError("Startup command was not configured.", "STARTUP_CONFIGURATION_FAILED");
       }
@@ -1364,7 +1464,7 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Starting", "skipped", template.manualStartMessage || "Manual setup is required before this server can start.");
     } else if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
       pushStep(progress, "Starting", "running");
-      const started = await agentClient.startInstance(createdInstanceId);
+      const started = await agentClient.startInstance(createdInstanceId, agentConfig);
       startedInstance = started.instance || started;
       pushStep(progress, "Starting", "complete", "Instance start requested.");
     } else {
@@ -1380,6 +1480,14 @@ async function installTemplate(payload = {}) {
       downloads: sanitizeDownloads(getDownloads()).downloads,
     };
   } catch (error) {
+    if (createdInstanceId && template.rollbackOnFailure !== false) {
+      try {
+        await agentClient.deleteInstance(createdInstanceId, agentConfig);
+        pushStep(progress, "Rollback", "complete", `Removed incomplete instance ${createdInstanceId}.`);
+      } catch {
+        pushStep(progress, "Rollback", "failed", `Could not remove incomplete instance ${createdInstanceId}.`);
+      }
+    }
     pushStep(progress, "Failed", "failed", mapMarketplaceError(error));
     const installError = createMarketplaceError(mapMarketplaceError(error), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED");
     installError.progress = progress;
@@ -1395,7 +1503,10 @@ module.exports = {
   },
   cancelDownload,
   getDownloads: () => sanitizeDownloads(getDownloads()),
+  getImportSupport,
+  importCommunityTemplate,
   installTemplate,
   listTemplates,
   retryDownload,
+  validateCommunityTemplate,
 };

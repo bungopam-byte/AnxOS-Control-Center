@@ -9,7 +9,7 @@ const { startBackupScheduler } = require("./services/backupService");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
-const { handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
+const { handleDocker, handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
 const { handleFilesDownload, handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
@@ -144,6 +144,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/backups" || pathname.startsWith("/api/v1/backups/")) {
     return handleBackups(request, url);
+  }
+
+  if (pathname === "/api/v1/docker/containers" || pathname.startsWith("/api/v1/docker/containers/")) {
+    return handleDocker(request, url);
   }
 
   if (request.method !== "GET") {

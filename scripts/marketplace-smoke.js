@@ -57,6 +57,59 @@ function assertSteamCmdTemplates() {
   }
 }
 
+function assertDockerTemplates() {
+  const dockerTemplates = templates.filter((template) => template.runtime === "docker");
+  assert(dockerTemplates.length >= 2, "Expected Docker-backed templates.");
+  for (const template of dockerTemplates) {
+    assert.strictEqual(template.startupType, "docker-image", `${template.id} must use Docker image startup.`);
+    assert(template.docker?.image || template.downloadSource?.image, `${template.id} must define a Docker image.`);
+    assert(Array.isArray(template.compatibility?.requires) && template.compatibility.requires.includes("docker"), `${template.id} must declare Docker compatibility.`);
+    assert(template.updateCheck?.type, `${template.id} must declare update check metadata.`);
+    assert(template.installScript.includes("create-container"), `${template.id} must use container install steps.`);
+  }
+}
+
+function assertMarketplaceMetadata() {
+  for (const template of templates) {
+    assert(template.id && template.displayName && template.category, "Template core metadata is required.");
+    assert(Array.isArray(template.tags || []), `${template.id} tags must be an array when present.`);
+    if (!template.disabled && template.category === "Game Servers") {
+      assert(template.installMetadata || template.runtime === "docker", `${template.id} should describe install metadata.`);
+    }
+  }
+}
+
+function assertImportEcosystemSupport() {
+  const support = marketplaceService.getImportSupport();
+  assert.strictEqual(support.communityTemplates.supported, true, "Community template import support should be advertised.");
+  assert.strictEqual(support.modpacks.modrinth.supported, true, "Modrinth metadata import support should be advertised.");
+  assert.strictEqual(support.modpacks.curseforge.supported, false, "CurseForge should not claim automatic install without credentials.");
+
+  const imported = marketplaceService.importCommunityTemplate({
+    id: "community-docker-smoke",
+    displayName: "Community Docker Smoke",
+    category: "Applications",
+    runtime: "docker",
+    startupType: "docker-image",
+    docker: {
+      image: "nginx:stable-alpine",
+      ports: ["8080:80"],
+    },
+  });
+  assert.strictEqual(imported.installable, true, "Valid community Docker template should be installable.");
+  assert.strictEqual(imported.template.formatVersion, 1, "Community template format version should be set.");
+
+  assert.throws(
+    () => marketplaceService.importCommunityTemplate({
+      id: "broken-community-docker",
+      displayName: "Broken Community Docker",
+      category: "Applications",
+      runtime: "docker",
+    }),
+    /real download source, Docker image, or be disabled/
+  );
+}
+
 function assertMinecraftTemplatesStillPass() {
   const minecraftTemplates = templates.filter((template) => template.category === "Minecraft");
   assert(minecraftTemplates.length >= 6, "Expected existing Minecraft templates.");
@@ -75,6 +128,9 @@ async function main() {
   assertCatalogLoads();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
+  assertDockerTemplates();
+  assertMarketplaceMetadata();
+  assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   console.log("Marketplace smoke checks passed.");
 }

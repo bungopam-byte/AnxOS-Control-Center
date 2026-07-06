@@ -7,6 +7,7 @@ const {
   saveAgentSettings,
   testConnection,
 } = require("../services/agentClient");
+const { audit, requirePermission } = require("../services/securityService");
 
 function getAgentSettingsPayload() {
   const stored = readAgentSettings();
@@ -27,7 +28,9 @@ function getAgentSettingsPayload() {
 function registerSettingsIpc() {
   ipcMain.handle("settings:getAgentConfig", async () => getAgentSettingsPayload());
   ipcMain.handle("settings:saveAgentConfig", async (_, payload = {}) => {
+    requirePermission("settings:write", "agent-config");
     saveAgentSettings(payload);
+    audit({ action: "settings.agent.save", target: "agent-config" });
     return getAgentSettingsPayload();
   });
   ipcMain.handle("settings:testAgentConnection", async (_, payload = null) => testConnection(payload));

@@ -1601,12 +1601,72 @@ async function deleteInstance(instanceId) {
   });
 }
 
+async function listBackups(options = {}) {
+  const query = new URLSearchParams();
+  if (options.instanceId) {
+    query.set("instanceId", options.instanceId);
+  }
+  return requestJson(`/api/v1/backups/list${query.toString() ? `?${query.toString()}` : ""}`);
+}
+
+async function createBackup(payload = {}) {
+  return requestJson("/api/v1/backups", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function restoreBackup(payload = {}) {
+  return requestJson("/api/v1/backups/restore", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function importBackup(payload = {}) {
+  return requestJson("/api/v1/backups/import", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function deleteBackup(backupId) {
+  return requestJson(`/api/v1/backups/${encodeURIComponent(String(backupId || ""))}`, {
+    method: "DELETE",
+  });
+}
+
+async function downloadBackup(backupId) {
+  return requestBuffer(`/api/v1/backups/${encodeURIComponent(String(backupId || ""))}/download`);
+}
+
+async function listBackupSchedules() {
+  return requestJson("/api/v1/backups/schedules");
+}
+
+async function saveBackupSchedule(payload = {}) {
+  return requestJson("/api/v1/backups/schedules", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+async function deleteBackupSchedule(instanceId) {
+  return requestJson(`/api/v1/backups/${encodeURIComponent(String(instanceId || ""))}/schedule`, {
+    method: "DELETE",
+  });
+}
+
 module.exports = {
   AgentClientError,
   clearInstanceLogs,
+  createBackup,
   downloadFile,
+  downloadBackup,
   createInstance,
   createInstanceFolder,
+  deleteBackup,
+  deleteBackupSchedule,
   deleteInstance,
   deleteInstanceFile,
   forceKillInstance,
@@ -1631,6 +1691,9 @@ module.exports = {
   getPlayitSnapshot,
   getPlayitStatus,
   isHealthy,
+  importBackup,
+  listBackupSchedules,
+  listBackups,
   listInstanceFiles,
   listInstances,
   loadEnvironment,
@@ -1638,9 +1701,11 @@ module.exports = {
   requestBuffer,
   requestJson,
   saveAgentSettings,
+  saveBackupSchedule,
   saveMinecraftProperties,
   sendInstanceCommand,
   restartInstance,
+  restoreBackup,
   testConnection,
   startInstance,
   stopInstance,

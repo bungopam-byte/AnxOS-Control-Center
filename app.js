@@ -259,6 +259,21 @@ const agentSettingsTestButton = document.querySelector('[data-agent-action="test
 const agentConnectionPill = document.querySelector("[data-agent-connection-pill]");
 const agentConnectionMessage = document.querySelector("[data-agent-connection-message]");
 const agentConfigSource = document.querySelector("[data-agent-config-source]");
+const securityGate = document.querySelector("[data-security-gate]");
+const securityForm = document.querySelector("[data-security-form]");
+const securityMode = document.querySelector("[data-security-mode]");
+const securityTitle = document.querySelector("[data-security-title]");
+const securityDescription = document.querySelector("[data-security-description]");
+const securitySubmit = document.querySelector("[data-security-submit]");
+const securityMessage = document.querySelector("[data-security-message]");
+const securityStatus = document.querySelector("[data-security-status]");
+const securityCurrentUser = document.querySelector("[data-security-current-user]");
+const securityCurrentRole = document.querySelector("[data-security-current-role]");
+const securitySettingsMessage = document.querySelector("[data-security-settings-message]");
+const backupActionButtons = document.querySelectorAll("[data-backup-action]");
+const backupTableBody = document.querySelector(".backup-table tbody");
+const backupEmptyState = document.querySelector(".backup-empty-state");
+const backupLoadingState = document.querySelector(".backup-loading-state");
 const aboutFields = document.querySelectorAll("[data-about-field]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
@@ -273,6 +288,9 @@ let filesRequestInFlight = false;
 let filesActionRequestInFlight = false;
 let agentSettingsRequestInFlight = false;
 let agentConnectionTestInFlight = false;
+let securityState = { setupRequired: false, authenticated: false, user: null };
+let backupRequestInFlight = false;
+let backupsState = { backups: [], selectedBackupId: null };
 let sshConnectRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
@@ -570,6 +588,22 @@ function getDesktopApiState() {
       typeof api?.settings?.getAgentConfig === "function" &&
       typeof api?.settings?.saveAgentConfig === "function" &&
       typeof api?.settings?.testAgentConnection === "function",
+    hasSecurity:
+      typeof api?.security?.getStatus === "function" &&
+      typeof api?.security?.setupAdmin === "function" &&
+      typeof api?.security?.login === "function" &&
+      typeof api?.security?.logout === "function" &&
+      typeof api?.security?.rotateAgentToken === "function",
+    hasBackups:
+      typeof api?.backups?.list === "function" &&
+      typeof api?.backups?.create === "function" &&
+      typeof api?.backups?.restore === "function" &&
+      typeof api?.backups?.delete === "function" &&
+      typeof api?.backups?.download === "function" &&
+      typeof api?.backups?.import === "function" &&
+      typeof api?.backups?.listSchedules === "function" &&
+      typeof api?.backups?.saveSchedule === "function" &&
+      typeof api?.backups?.deleteSchedule === "function",
     hasApp: typeof api?.app?.getRuntimeInfo === "function",
   };
 }
@@ -2023,6 +2057,10 @@ function showPage(pageName) {
 
   if (safePageName === "instances") {
     refreshInstances();
+  }
+
+  if (safePageName === "backups") {
+    refreshBackups();
   }
 
   if (safePageName === "console") {
@@ -4660,7 +4698,11 @@ function handleInstanceBackupAction(action) {
   }
 
   if (action === "backup-now") {
-    showToast("Backup creation uses the shared Backups system. Opening Backups.");
+    createBackupForInstance(selectedInstance.id);
+    return;
+  } else if (action === "schedule") {
+    configureBackupSchedule(selectedInstance.id);
+    return;
   } else if (action === "history") {
     showToast("Opening shared backup history.");
   } else {
@@ -4669,6 +4711,197 @@ function handleInstanceBackupAction(action) {
   }
 
   showPage("backups");
+}
+
+function getSelectedBackup() {
+  return backupsState.backups.find((backup) => backup.id === backupsState.selectedBackupId) || null;
+}
+
+function renderBackups() {
+  if (!backupTableBody) {
+    return;
+  }
+
+  backupTableBody.replaceChildren();
+  if (backupEmptyState) {
+    backupEmptyState.hidden = backupRequestInFlight || backupsState.backups.length > 0;
+  }
+  if (backupLoadingState) {
+    backupLoadingState.hidden = !backupRequestInFlight;
+  }
+
+  backupsState.backups.forEach((backup) => {
+    const row = document.createElement("tr");
+    row.classList.toggle("is-selected", backup.id === backupsState.selectedBackupId);
+    row.addEventListener("click", () => {
+      backupsState.selectedBackupId = backup.id;
+      renderBackups();
+    });
+    [backup.name || backup.id, backup.instanceId || "Unknown", formatBytes(Number(backup.size) || 0), formatDateTime(backup.createdAt), backup.status || backup.type || "complete"].forEach((value) => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    });
+    backupTableBody.append(row);
+  });
+
+  const selected = getSelectedBackup();
+  backupActionButtons.forEach((button) => {
+    const action = button.dataset.backupAction;
+    button.disabled = backupRequestInFlight || (["restore", "delete", "download"].includes(action) && !selected);
+  });
+}
+
+async function refreshBackups() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasBackups) {
+    backupsState = { backups: [], selectedBackupId: null };
+    renderBackups();
+    return;
+  }
+
+  backupRequestInFlight = true;
+  renderBackups();
+  try {
+    const result = await desktopApiState.api.backups.list();
+    backupsState.backups = Array.isArray(result?.backups) ? result.backups : [];
+    if (!getSelectedBackup()) {
+      backupsState.selectedBackupId = backupsState.backups[0]?.id || null;
+    }
+  } catch (error) {
+    showToast(error?.message || "Backups could not be loaded.");
+    backupsState.backups = [];
+  } finally {
+    backupRequestInFlight = false;
+    renderBackups();
+  }
+}
+
+async function createBackupForInstance(instanceId = null) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasBackups) {
+    showToast("Backup service is unavailable.");
+    return;
+  }
+
+  const selectedInstance = instanceId ? findInstance(instanceId) : findInstance();
+  const targetInstanceId = instanceId || selectedInstance?.id || window.prompt("Instance ID to back up", selectedInstanceId || "");
+  if (!targetInstanceId) {
+    return;
+  }
+  const type = window.confirm("Create a world-only backup? Choose Cancel for a full instance backup.") ? "world" : "full";
+  backupRequestInFlight = true;
+  renderBackups();
+  try {
+    await desktopApiState.api.backups.create({
+      instanceId: targetInstanceId,
+      name: `${targetInstanceId} ${type} backup`,
+      type,
+      createdBy: securityState.user?.username || "local-user",
+    });
+    showToast("Backup created.");
+    await refreshBackups();
+  } catch (error) {
+    showToast(error?.message || "Backup could not be created.");
+  } finally {
+    backupRequestInFlight = false;
+    renderBackups();
+  }
+}
+
+async function restoreSelectedBackup() {
+  const selected = getSelectedBackup();
+  const desktopApiState = getDesktopApiState();
+  if (!selected || !desktopApiState.hasBackups) {
+    return;
+  }
+  if (!window.confirm(`Restore ${selected.name || selected.id}? The instance will be stopped and a safety snapshot will be created first.`)) {
+    return;
+  }
+  try {
+    await desktopApiState.api.backups.restore({ backupId: selected.id, restart: window.confirm("Restart after restore?") });
+    showToast("Backup restored.");
+    await refreshInstances();
+    await refreshBackups();
+  } catch (error) {
+    showToast(error?.message || "Backup restore failed.");
+  }
+}
+
+async function deleteSelectedBackup() {
+  const selected = getSelectedBackup();
+  const desktopApiState = getDesktopApiState();
+  if (!selected || !desktopApiState.hasBackups || !window.confirm(`Delete backup ${selected.name || selected.id}?`)) {
+    return;
+  }
+  try {
+    await desktopApiState.api.backups.delete(selected.id);
+    showToast("Backup deleted.");
+    backupsState.selectedBackupId = null;
+    await refreshBackups();
+  } catch (error) {
+    showToast(error?.message || "Backup delete failed.");
+  }
+}
+
+async function downloadSelectedBackup() {
+  const selected = getSelectedBackup();
+  const desktopApiState = getDesktopApiState();
+  if (!selected || !desktopApiState.hasBackups) {
+    return;
+  }
+  try {
+    const result = await desktopApiState.api.backups.download(selected.id);
+    showToast(result?.canceled ? "Download canceled." : "Backup downloaded.");
+  } catch (error) {
+    showToast(error?.message || "Backup download failed.");
+  }
+}
+
+async function importBackupForInstance() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasBackups) {
+    return;
+  }
+  const instanceId = window.prompt("Instance ID for imported backup", selectedInstanceId || "");
+  if (!instanceId) {
+    return;
+  }
+  try {
+    const result = await desktopApiState.api.backups.import({ instanceId, createdBy: securityState.user?.username || "local-user" });
+    showToast(result?.canceled ? "Import canceled." : "Backup imported.");
+    await refreshBackups();
+  } catch (error) {
+    showToast(error?.message || "Backup import failed.");
+  }
+}
+
+async function configureBackupSchedule(instanceId) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasBackups || !instanceId) {
+    showToast("Backup scheduling is unavailable.");
+    return;
+  }
+  const interval = window.prompt("Run backup every how many hours?", "24");
+  if (!interval) {
+    return;
+  }
+  const keepLast = window.prompt("Keep last how many backups?", "10") || "10";
+  const maxAgeDays = window.prompt("Delete backups older than how many days?", "30") || "30";
+  const type = window.confirm("Schedule world-only backups? Choose Cancel for full instance backups.") ? "world" : "full";
+  try {
+    await desktopApiState.api.backups.saveSchedule({
+      instanceId,
+      intervalHours: Number.parseInt(interval, 10),
+      keepLast: Number.parseInt(keepLast, 10),
+      maxAgeDays: Number.parseInt(maxAgeDays, 10),
+      type,
+      enabled: true,
+    });
+    showToast("Backup schedule saved.");
+  } catch (error) {
+    showToast(error?.message || "Backup schedule could not be saved.");
+  }
 }
 
 async function refreshMarketplace() {
@@ -9357,6 +9590,112 @@ function writeStoredSettings(settings) {
   window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 }
 
+function renderSecurityState() {
+  const setup = Boolean(securityState.setupRequired);
+  const authenticated = Boolean(securityState.authenticated);
+  if (securityGate) {
+    securityGate.hidden = authenticated || !getDesktopApiState().hasSecurity;
+  }
+  if (securityMode) {
+    securityMode.textContent = setup ? "First Run Setup" : "Security";
+  }
+  if (securityTitle) {
+    securityTitle.textContent = setup ? "Create Owner Account" : "Sign in to AnxHub";
+  }
+  if (securityDescription) {
+    securityDescription.textContent = setup
+      ? "No owner exists yet. Create the first local admin account."
+      : "Use your local AnxHub account to continue.";
+  }
+  if (securitySubmit) {
+    securitySubmit.textContent = setup ? "Create Owner" : "Sign In";
+  }
+  if (securityStatus) {
+    securityStatus.textContent = authenticated ? "Signed in" : setup ? "Setup required" : "Locked";
+  }
+  if (securityCurrentUser) {
+    securityCurrentUser.value = securityState.user?.username || "";
+  }
+  if (securityCurrentRole) {
+    securityCurrentRole.value = securityState.user?.role || "";
+  }
+  if (securitySettingsMessage) {
+    securitySettingsMessage.textContent = authenticated
+      ? `Audit log: ${securityState.auditPath || "configured"}`
+      : "Sign in to manage security settings.";
+  }
+}
+
+async function refreshSecurityState() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasSecurity) {
+    securityState = { setupRequired: false, authenticated: true, user: null };
+    renderSecurityState();
+    return;
+  }
+
+  try {
+    securityState = await desktopApiState.api.security.getStatus();
+  } catch {
+    securityState = { setupRequired: false, authenticated: false, user: null };
+  }
+  renderSecurityState();
+}
+
+async function submitSecurityForm(event) {
+  event?.preventDefault();
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasSecurity) {
+    return;
+  }
+  const username = document.querySelector('[data-security-field="username"]')?.value || "";
+  const password = document.querySelector('[data-security-field="password"]')?.value || "";
+  try {
+    if (securityState.setupRequired) {
+      await desktopApiState.api.security.setupAdmin({ username, password });
+    } else {
+      await desktopApiState.api.security.login({ username, password });
+    }
+    if (securityMessage) {
+      securityMessage.textContent = "";
+    }
+    await refreshSecurityState();
+    showToast("Signed in.");
+  } catch (error) {
+    if (securityMessage) {
+      securityMessage.textContent = error?.message || "Security request failed.";
+    }
+    showToast(error?.message || "Security request failed.");
+  }
+}
+
+async function logoutSecuritySession() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasSecurity) {
+    return;
+  }
+  await desktopApiState.api.security.logout().catch(() => {});
+  await refreshSecurityState();
+}
+
+async function rotateAgentTokenFromSettings() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasSecurity) {
+    return;
+  }
+  try {
+    const result = await desktopApiState.api.security.rotateAgentToken();
+    await navigator.clipboard?.writeText?.(result.token).catch(() => {});
+    if (securitySettingsMessage) {
+      securitySettingsMessage.textContent = `New token: ${result.token}`;
+    }
+    showToast("Agent token rotated. Copy it now; it will not be shown again.");
+    await loadAgentSettings();
+  } catch (error) {
+    showToast(error?.message || "Agent token rotation failed.");
+  }
+}
+
 function getSettingInputValue(input) {
   if (input.type === "checkbox") {
     return input.checked;
@@ -10185,12 +10524,34 @@ settingsInputs.forEach((input) => {
 settingsResetButton?.addEventListener("click", resetSettings);
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
+securityForm?.addEventListener("submit", submitSecurityForm);
+document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
+document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);
+backupActionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.backupAction;
+    if (action === "refresh") {
+      refreshBackups();
+    } else if (action === "create") {
+      createBackupForInstance();
+    } else if (action === "restore") {
+      restoreSelectedBackup();
+    } else if (action === "delete") {
+      deleteSelectedBackup();
+    } else if (action === "download") {
+      downloadSelectedBackup();
+    } else if (action === "import") {
+      importBackupForInstance();
+    }
+  });
+});
 windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaximized) => {
   setTitlebarWindowState(isMaximized);
 }) || null;
 syncTitlebarWindowState();
 configurePrimaryNavigation();
 loadSettings();
+refreshSecurityState();
 loadAgentSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();

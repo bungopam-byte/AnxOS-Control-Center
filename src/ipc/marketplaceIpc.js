@@ -6,6 +6,7 @@ const {
   listTemplates,
   retryDownload,
 } = require("../services/marketplaceService");
+const { audit, requirePermission } = require("../services/securityService");
 
 function getMarketplaceErrorMessage(error) {
   const code = error?.payload?.error?.code || error?.code;
@@ -28,7 +29,11 @@ async function invokeMarketplaceOperation(operation) {
 
 function registerMarketplaceIpc() {
   ipcMain.handle("marketplace:listTemplates", async () => invokeMarketplaceOperation(() => listTemplates()));
-  ipcMain.handle("marketplace:installTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => installTemplate(payload)));
+  ipcMain.handle("marketplace:installTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requirePermission("marketplace:install", payload.templateId);
+    audit({ action: "marketplace.install", target: payload.templateId });
+    return installTemplate(payload);
+  }));
   ipcMain.handle("marketplace:getDownloads", async () => invokeMarketplaceOperation(() => getDownloads()));
   ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => cancelDownload(payload.downloadId)));
   ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => retryDownload(payload.downloadId)));

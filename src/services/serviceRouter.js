@@ -238,12 +238,52 @@ async function deleteInstance(instanceId) {
   return agentClient.deleteInstance(instanceId);
 }
 
+async function listBackups(options = {}) {
+  return agentClient.listBackups(options);
+}
+
+async function createBackup(payload = {}) {
+  return agentClient.createBackup(payload);
+}
+
+async function restoreBackup(payload = {}) {
+  return agentClient.restoreBackup(payload);
+}
+
+async function deleteBackup(backupId) {
+  return agentClient.deleteBackup(backupId);
+}
+
+async function downloadBackup(backupId) {
+  return agentClient.downloadBackup(backupId);
+}
+
+async function importBackup(payload = {}) {
+  return agentClient.importBackup(payload);
+}
+
+async function listBackupSchedules() {
+  return agentClient.listBackupSchedules();
+}
+
+async function saveBackupSchedule(payload = {}) {
+  return agentClient.saveBackupSchedule(payload);
+}
+
+async function deleteBackupSchedule(instanceId) {
+  return agentClient.deleteBackupSchedule(instanceId);
+}
+
 module.exports = {
   clearInstanceLogs,
+  createBackup,
   createInstance,
   createInstanceFolder,
+  deleteBackup,
+  deleteBackupSchedule,
   deleteInstance,
   deleteInstanceFile,
+  downloadBackup,
   forceKillInstance,
   getAmpSnapshot,
   getBackendMode,
@@ -254,12 +294,17 @@ module.exports = {
   getInstanceStatus,
   getMinecraftProperties,
   getPlayitSnapshot,
+  importBackup,
+  listBackupSchedules,
+  listBackups,
   listInstanceFiles,
   listInstances,
   readInstanceFile,
   renameInstanceFile,
   restartInstance,
+  restoreBackup,
   saveMinecraftProperties,
+  saveBackupSchedule,
   sendInstanceCommand,
   startInstance,
   stopInstance,

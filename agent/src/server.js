@@ -4,7 +4,8 @@ const { URL } = require("url");
 const { handleActionInvoke, handleActionsList } = require("./routes/actions");
 const { handleAmpInstances, handleAmpSnapshot, handleAmpStatus } = require("./routes/amp");
 const { auditAction } = require("./audit/auditLogger");
-const { handleBackupsList } = require("./routes/backups");
+const { handleBackups, handleBackupsList } = require("./routes/backups");
+const { startBackupScheduler } = require("./services/backupService");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
@@ -16,6 +17,22 @@ const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handleSystemSummary } = require("./routes/system");
 
 const config = getConfig();
+const rateBuckets = new Map();
+
+function checkRateLimit(key, limit, windowMs) {
+  const now = Date.now();
+  const bucket = rateBuckets.get(key) || [];
+  const active = bucket.filter((timestamp) => now - timestamp < windowMs);
+  active.push(now);
+  rateBuckets.set(key, active);
+
+  if (active.length > limit) {
+    const error = new Error("RATE_LIMITED");
+    error.code = "RATE_LIMITED";
+    error.statusCode = 429;
+    throw error;
+  }
+}
 
 function sendJson(response, statusCode, body) {
   const payload = JSON.stringify(body);
@@ -125,6 +142,10 @@ async function routeRequest(request, url) {
     return handleInstances(request, url);
   }
 
+  if (pathname === "/api/v1/backups" || pathname.startsWith("/api/v1/backups/")) {
+    return handleBackups(request, url);
+  }
+
   if (request.method !== "GET") {
     return {
       statusCode: 405,
@@ -226,6 +247,15 @@ async function handleRequest(request, response) {
   });
 
   try {
+    const address = request.socket?.remoteAddress || "local";
+    checkRateLimit(`api:${address}`, 900, 60 * 1000);
+    if (/\/file$/.test(request.url || "") && request.method === "PUT") {
+      checkRateLimit(`file-write:${address}`, 120, 60 * 1000);
+    }
+    if (/\/command$/.test(request.url || "") && request.method === "POST") {
+      checkRateLimit(`console:${address}`, 120, 60 * 1000);
+    }
+
     request.body = await readRequestBody(request);
 
     const url = new URL(request.url, `http://${request.headers.host || `${config.host}:${config.port}`}`);
@@ -271,5 +301,6 @@ server.on("error", (error) => {
 });
 
 server.listen(config.port, config.host, () => {
+  startBackupScheduler();
   console.info(`AnxOS Agent listening on http://${config.host}:${config.port}`);
 });

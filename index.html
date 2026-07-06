@@ -32,6 +32,26 @@
       <audio data-startup-audio src="src/assets/startup.wav" preload="auto"></audio>
     </section>
 
+    <section class="security-gate" data-security-gate hidden aria-label="Security sign in">
+      <form class="security-gate-card" data-security-form>
+        <p class="eyebrow" data-security-mode>Security</p>
+        <h1 data-security-title>Sign in to AnxHub</h1>
+        <p class="lede" data-security-description>Use your local AnxHub account to continue.</p>
+        <label class="settings-field">
+          <span>Username</span>
+          <input type="text" autocomplete="username" data-security-field="username" required>
+        </label>
+        <label class="settings-field">
+          <span>Password</span>
+          <input type="password" autocomplete="current-password" data-security-field="password" required>
+        </label>
+        <div class="settings-actions">
+          <button class="inline-action" type="submit" data-security-submit>Continue</button>
+        </div>
+        <p class="settings-note" data-security-message></p>
+      </form>
+    </section>
+
     <div class="app-shell" data-app-shell hidden>
       <header class="app-titlebar" data-titlebar>
         <div class="app-titlebar__drag" data-titlebar-drag>
@@ -1288,7 +1308,7 @@
                     <div class="instance-backup-actions">
                       <button class="inline-action" type="button" data-instance-backup-action="backup-now">Backup Now</button>
                       <button class="inline-action" type="button" data-instance-backup-action="restore" disabled>Restore</button>
-                      <button class="inline-action" type="button" data-instance-backup-action="schedule" disabled>Scheduled Backups</button>
+                      <button class="inline-action" type="button" data-instance-backup-action="schedule">Scheduled Backups</button>
                       <button class="inline-action" type="button" data-instance-backup-action="history">Backup History</button>
                     </div>
                     <div class="docker-empty-state"><strong data-instance-backup-empty-title>Backup history is shared</strong><span data-instance-backup-empty-message>Open the Backups page to view configured local backup paths.</span></div>
@@ -1856,10 +1876,12 @@
                 <input type="search" placeholder="Search backup name or source" disabled>
               </label>
               <div class="backup-actions" aria-label="Backup actions">
-                <button class="inline-action" type="button" disabled>Create Backup</button>
-                <button class="inline-action" type="button" disabled>Restore</button>
-                <button class="inline-action" type="button" disabled>Verify</button>
-                <button class="inline-action" type="button" disabled>Refresh</button>
+                <button class="inline-action" type="button" data-backup-action="create">Create Backup</button>
+                <button class="inline-action" type="button" data-backup-action="restore" disabled>Restore</button>
+                <button class="inline-action" type="button" data-backup-action="delete" disabled>Delete</button>
+                <button class="inline-action" type="button" data-backup-action="download" disabled>Download</button>
+                <button class="inline-action" type="button" data-backup-action="import">Import</button>
+                <button class="inline-action" type="button" data-backup-action="refresh">Refresh</button>
               </div>
             </div>
 
@@ -1929,7 +1951,7 @@
                   <div class="backup-restore-state">
                     <strong>No backup selected</strong>
                     <span>No backup is selected.</span>
-                    <button class="inline-action" type="button" disabled>Restore Selected</button>
+                  <button class="inline-action" type="button" data-backup-action="restore" disabled>Restore Selected</button>
                   </div>
                 </section>
               </aside>
@@ -1947,6 +1969,31 @@
           </header>
 
           <form class="settings-shell" data-settings-form>
+            <section class="settings-section">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Security</h2>
+                  <p>Manage the local session and Agent token.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-security-status>Locked</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Signed in as</span>
+                  <input type="text" data-security-current-user readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Role</span>
+                  <input type="text" data-security-current-role readonly>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-security-action="rotate-agent-token">Rotate Agent Token</button>
+                <button class="inline-action" type="button" data-security-action="logout">Logout</button>
+                <span class="settings-inline-status" data-security-settings-message>Security state unavailable.</span>
+              </div>
+            </section>
+
             <section class="settings-section">
               <div class="settings-section__header">
                 <h3>General</h3>

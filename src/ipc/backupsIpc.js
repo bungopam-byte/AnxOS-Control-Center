@@ -1,0 +1,111 @@
+const { ipcMain, dialog } = require("electron");
+const fs = require("fs");
+const path = require("path");
+const {
+  createBackup,
+  deleteBackup,
+  deleteBackupSchedule,
+  downloadBackup,
+  importBackup,
+  listBackupSchedules,
+  listBackups,
+  restoreBackup,
+  saveBackupSchedule,
+} = require("../services/serviceRouter");
+const { audit, requirePermission } = require("../services/securityService");
+
+function getBackupErrorMessage(error) {
+  const code = error?.payload?.error?.code || error?.code;
+  const message = error?.payload?.error?.message || error?.message;
+  return message && message !== "Request failed." ? message : code || "Backup request failed.";
+}
+
+async function invokeBackupOperation(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    throw new Error(getBackupErrorMessage(error));
+  }
+}
+
+async function saveBackupDownload(backupId) {
+  const payload = await downloadBackup(backupId);
+  const suggested = backupId.endsWith(".tar.gz") ? backupId : `${backupId}.tar.gz`;
+  const selection = await dialog.showSaveDialog({
+    title: "Download backup",
+    defaultPath: suggested,
+    filters: [{ name: "Backup archives", extensions: ["tar.gz", "tgz"] }],
+  });
+
+  if (selection.canceled || !selection.filePath) {
+    return { canceled: true };
+  }
+
+  fs.writeFileSync(selection.filePath, payload.buffer);
+  audit({ action: "backup.download", target: backupId });
+  return {
+    canceled: false,
+    path: selection.filePath,
+    size: payload.buffer.length,
+  };
+}
+
+async function importBackupFromFile(payload = {}) {
+  requirePermission("backups:write", payload.instanceId);
+  const selection = await dialog.showOpenDialog({
+    title: "Import backup",
+    properties: ["openFile"],
+    filters: [{ name: "Backup archives", extensions: ["tar.gz", "tgz"] }],
+  });
+
+  if (selection.canceled || !selection.filePaths?.[0]) {
+    return { canceled: true };
+  }
+
+  const filePath = selection.filePaths[0];
+  const content = fs.readFileSync(filePath).toString("base64");
+  const result = await importBackup({
+    ...payload,
+    name: payload.name || path.basename(filePath),
+    content,
+    encoding: "base64",
+  });
+  audit({ action: "backup.import", target: result?.backup?.id || payload.instanceId });
+  return result;
+}
+
+function registerBackupsIpc() {
+  ipcMain.handle("backups:list", async (_, payload = {}) => invokeBackupOperation(() => listBackups(payload)));
+  ipcMain.handle("backups:create", async (_, payload = {}) => invokeBackupOperation(() => {
+    requirePermission("backups:write", payload.instanceId);
+    audit({ action: "backup.create", target: payload.instanceId });
+    return createBackup(payload);
+  }));
+  ipcMain.handle("backups:restore", async (_, payload = {}) => invokeBackupOperation(() => {
+    requirePermission("backups:restore", payload.backupId);
+    audit({ action: "backup.restore", target: payload.backupId });
+    return restoreBackup(payload);
+  }));
+  ipcMain.handle("backups:delete", async (_, payload = {}) => invokeBackupOperation(() => {
+    requirePermission("backups:write", payload.backupId);
+    audit({ action: "backup.delete", target: payload.backupId });
+    return deleteBackup(payload.backupId);
+  }));
+  ipcMain.handle("backups:download", async (_, payload = {}) => invokeBackupOperation(() => saveBackupDownload(payload.backupId)));
+  ipcMain.handle("backups:import", async (_, payload = {}) => invokeBackupOperation(() => importBackupFromFile(payload)));
+  ipcMain.handle("backups:listSchedules", async () => invokeBackupOperation(() => listBackupSchedules()));
+  ipcMain.handle("backups:saveSchedule", async (_, payload = {}) => invokeBackupOperation(() => {
+    requirePermission("backups:write", payload.instanceId);
+    audit({ action: "backup.schedule.save", target: payload.instanceId });
+    return saveBackupSchedule(payload);
+  }));
+  ipcMain.handle("backups:deleteSchedule", async (_, payload = {}) => invokeBackupOperation(() => {
+    requirePermission("backups:write", payload.instanceId);
+    audit({ action: "backup.schedule.delete", target: payload.instanceId });
+    return deleteBackupSchedule(payload.instanceId);
+  }));
+}
+
+module.exports = {
+  registerBackupsIpc,
+};

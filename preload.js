@@ -63,6 +63,17 @@ const desktopApi = {
   actions: {
     executeAction: (actionId, params = {}) => ipcRenderer.invoke("action:execute", { actionId, params }),
   },
+  backups: {
+    list: (payload = {}) => ipcRenderer.invoke("backups:list", payload),
+    create: (payload = {}) => ipcRenderer.invoke("backups:create", payload),
+    restore: (payload = {}) => ipcRenderer.invoke("backups:restore", payload),
+    delete: (backupId) => ipcRenderer.invoke("backups:delete", { backupId }),
+    download: (backupId) => ipcRenderer.invoke("backups:download", { backupId }),
+    import: (payload = {}) => ipcRenderer.invoke("backups:import", payload),
+    listSchedules: () => ipcRenderer.invoke("backups:listSchedules"),
+    saveSchedule: (payload = {}) => ipcRenderer.invoke("backups:saveSchedule", payload),
+    deleteSchedule: (instanceId) => ipcRenderer.invoke("backups:deleteSchedule", { instanceId }),
+  },
   files: {
     list: (payload) => ipcRenderer.invoke("files:list", payload),
     disconnect: (profileId) => ipcRenderer.invoke("files:disconnect", { profileId }),
@@ -96,6 +107,13 @@ const desktopApi = {
     getAgentConfig: () => ipcRenderer.invoke("settings:getAgentConfig"),
     saveAgentConfig: (settings) => ipcRenderer.invoke("settings:saveAgentConfig", settings),
     testAgentConnection: (settings) => ipcRenderer.invoke("settings:testAgentConnection", settings),
+  },
+  security: {
+    getStatus: () => ipcRenderer.invoke("security:getStatus"),
+    setupAdmin: (payload) => ipcRenderer.invoke("security:setupAdmin", payload),
+    login: (payload) => ipcRenderer.invoke("security:login", payload),
+    logout: () => ipcRenderer.invoke("security:logout"),
+    rotateAgentToken: () => ipcRenderer.invoke("security:rotateAgentToken"),
   },
 };
 

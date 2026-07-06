@@ -371,6 +371,24 @@ function resolveInstanceDataPath(instanceId, value = ".") {
   };
 }
 
+async function assertNoInstanceDataEscape(resolved, options = {}) {
+  const realRoot = await fs.realpath(resolved.root).catch(() => resolved.root);
+  const existingTarget = await fs.realpath(resolved.path).catch(() => null);
+
+  if (existingTarget && !isInsideRoot(existingTarget, realRoot)) {
+    throw createInstanceError("PATH_NOT_ALLOWED", 403);
+  }
+
+  if (options.forWrite) {
+    const parent = path.dirname(resolved.path);
+    await fs.mkdir(parent, { recursive: true });
+    const realParent = await fs.realpath(parent).catch(() => parent);
+    if (!isInsideRoot(realParent, realRoot)) {
+      throw createInstanceError("PATH_NOT_ALLOWED", 403);
+    }
+  }
+}
+
 function buildTypeCommand(type, payload) {
   const args = normalizeStringArray(payload.args, "ARGS", 128);
 
@@ -1037,6 +1055,7 @@ async function clearLogs(instanceId, options = {}) {
 async function listInstanceFiles(instanceId, requestedPath = ".") {
   const config = await loadInstanceConfig(instanceId);
   const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await assertNoInstanceDataEscape(resolved);
   const stats = await fs.stat(resolved.path).catch((error) => {
     if (error?.code === "ENOENT") {
       throw createInstanceError("PATH_NOT_FOUND", 404);
@@ -1080,6 +1099,7 @@ async function listInstanceFiles(instanceId, requestedPath = ".") {
 async function readInstanceFile(instanceId, requestedPath) {
   const config = await loadInstanceConfig(instanceId);
   const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await assertNoInstanceDataEscape(resolved);
   const stats = await fs.stat(resolved.path).catch((error) => {
     if (error?.code === "ENOENT") {
       throw createInstanceError("PATH_NOT_FOUND", 404);
@@ -1113,6 +1133,7 @@ async function readInstanceFile(instanceId, requestedPath) {
 async function writeInstanceFile(instanceId, requestedPath, content, options = {}) {
   const config = await loadInstanceConfig(instanceId);
   const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await assertNoInstanceDataEscape(resolved, { forWrite: true });
   const encoding = options && options.encoding === "base64" ? "base64" : "utf8";
   const payload = encoding === "base64"
     ? Buffer.from(String(content || ""), "base64")
@@ -1129,6 +1150,7 @@ async function writeInstanceFile(instanceId, requestedPath, content, options = {
 async function createInstanceFolder(instanceId, requestedPath) {
   const config = await loadInstanceConfig(instanceId);
   const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await assertNoInstanceDataEscape(resolved, { forWrite: true });
   await fs.mkdir(resolved.path, { recursive: true });
   return {
     id: config.id,
@@ -1141,6 +1163,8 @@ async function renameInstanceFile(instanceId, fromPath, toPath) {
   const config = await loadInstanceConfig(instanceId);
   const from = resolveInstanceDataPath(config.id, fromPath);
   const to = resolveInstanceDataPath(config.id, toPath);
+  await assertNoInstanceDataEscape(from);
+  await assertNoInstanceDataEscape(to, { forWrite: true });
   await fs.mkdir(path.dirname(to.path), { recursive: true });
   await fs.rename(from.path, to.path);
   return {
@@ -1154,6 +1178,7 @@ async function renameInstanceFile(instanceId, fromPath, toPath) {
 async function deleteInstanceFile(instanceId, requestedPath) {
   const config = await loadInstanceConfig(instanceId);
   const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await assertNoInstanceDataEscape(resolved);
 
   if (resolved.relativePath === ".") {
     throw createInstanceError("PATH_NOT_ALLOWED", 403);

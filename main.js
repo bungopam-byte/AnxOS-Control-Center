@@ -4,11 +4,13 @@ const fs = require("fs");
 const path = require("path");
 const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
+const { registerBackupsIpc } = require("./src/ipc/backupsIpc");
 const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { disposeFilesIpc, registerFilesIpc } = require("./src/ipc/filesIpc");
 const { registerInstancesIpc } = require("./src/ipc/instancesIpc");
 const { registerMarketplaceIpc } = require("./src/ipc/marketplaceIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
+const { registerSecurityIpc } = require("./src/ipc/securityIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
@@ -240,12 +242,14 @@ app.whenReady().then(() => {
   registerActionIpc();
   registerSystemIpc();
   registerAmpIpc();
+  registerBackupsIpc();
   registerPlayitIpc();
   registerDockerIpc();
   registerInstancesIpc();
   registerMarketplaceIpc();
   registerFilesIpc();
   registerSettingsIpc();
+  registerSecurityIpc();
   registerSshIpc();
   createWindow();
 

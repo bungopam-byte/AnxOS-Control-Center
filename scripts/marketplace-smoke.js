@@ -12,6 +12,17 @@ const preloadPath = path.join(__dirname, "..", "preload.js");
 const marketplaceIpcPath = path.join(__dirname, "..", "src", "ipc", "marketplaceIpc.js");
 const templates = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 
+function pickVersionTrace(value = {}) {
+  return {
+    gameVersion: value.gameVersion || value.versionInfo?.gameVersion || null,
+    minecraftVersion: value.minecraftVersion || value.versionInfo?.minecraftVersion || null,
+    version: value.version || value.versionName || value.displayVersion || null,
+    versionInfo: value.versionInfo || null,
+    detectedVersion: value.detectedVersion || value.detectedVersionAt || null,
+    providerVersion: value.providerVersion || value.serverSoftware || value.versionInfo?.software || null,
+  };
+}
+
 function findTemplate(id) {
   const template = templates.find((entry) => entry.id === id);
   assert(template, `Missing template: ${id}`);
@@ -434,6 +445,169 @@ async function assertOldVanillaInstallerMetadataBackfill() {
   }
 }
 
+async function assertVanillaInstallVersionPipeline() {
+  const agentClient = require("../src/services/agentClient");
+  const originalFetch = global.fetch;
+  const originalAgent = {};
+  const patchedAgentMethods = [
+    "createInstance",
+    "listInstances",
+    "createInstanceFolder",
+    "writeInstanceFile",
+    "readInstanceFile",
+    "saveMinecraftProperties",
+    "updateInstance",
+    "getInstanceStatus",
+    "startInstance",
+    "deleteInstance",
+  ];
+  patchedAgentMethods.forEach((name) => {
+    originalAgent[name] = agentClient[name];
+  });
+
+  const selectedVersion = "26.2";
+  const trace = [];
+  const instances = new Map();
+  const files = new Map();
+
+  function record(stage, value) {
+    trace.push({ stage, ...pickVersionTrace(value) });
+  }
+
+  function currentInstance(instanceId) {
+    const instance = instances.get(instanceId);
+    if (!instance) {
+      throw new Error(`Missing mocked instance ${instanceId}`);
+    }
+    return instance;
+  }
+
+  function makeJsonResponse(body) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(body),
+      arrayBuffer: async () => Buffer.from(JSON.stringify(body)).buffer,
+    };
+  }
+
+  try {
+    global.fetch = async (url) => {
+      const href = String(url);
+      if (href.includes("version_manifest_v2.json")) {
+        return makeJsonResponse({
+          latest: { release: selectedVersion },
+          versions: [{ id: selectedVersion, type: "release", url: "https://mock.local/mojang/26.2.json" }],
+        });
+      }
+      if (href === "https://mock.local/mojang/26.2.json") {
+        return makeJsonResponse({
+          id: selectedVersion,
+          downloads: { server: { url: "https://mock.local/server.jar" } },
+        });
+      }
+      if (href === "https://mock.local/server.jar") {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "8" },
+          arrayBuffer: async () => Buffer.from("jar-data"),
+        };
+      }
+      throw new Error(`Unexpected mocked fetch URL: ${href}`);
+    };
+
+    agentClient.createInstance = async (payload) => {
+      instances.set(payload.id, { ...payload, state: "Stopped", pid: null });
+      record("agent:createInstance", payload);
+      return { instance: currentInstance(payload.id) };
+    };
+    agentClient.listInstances = async () => {
+      const response = { root: "/mock/instances", instances: [...instances.values()] };
+      record("agent:listInstances", response.instances[0] || {});
+      return response;
+    };
+    agentClient.createInstanceFolder = async () => ({ ok: true });
+    agentClient.writeInstanceFile = async (instanceId, filePath, content) => {
+      files.set(`${instanceId}:${filePath}`, content);
+      if (filePath === "metadata.json") {
+        record("agent:writeMetadataFile", JSON.parse(content));
+      }
+      return { path: filePath, size: String(content || "").length };
+    };
+    agentClient.readInstanceFile = async (instanceId, filePath) => {
+      if (filePath === "server.jar") {
+        return { path: filePath, content: files.get(`${instanceId}:${filePath}`) || "" };
+      }
+      if (filePath === "eula.txt" || filePath === "server.properties") {
+        return { path: filePath, content: files.get(`${instanceId}:${filePath}`) || "" };
+      }
+      return { path: filePath, content: files.get(`${instanceId}:${filePath}`) || "" };
+    };
+    agentClient.saveMinecraftProperties = async (instanceId, properties) => {
+      files.set(`${instanceId}:server.properties`, Object.entries(properties || {}).map(([key, value]) => `${key}=${value}`).join("\n"));
+      return { ok: true };
+    };
+    agentClient.updateInstance = async (instanceId, patch) => {
+      const next = { ...currentInstance(instanceId), ...patch };
+      instances.set(instanceId, next);
+      record(patch.versionInfo || patch.minecraftVersion || patch.gameVersion ? "agent:updateMetadata" : "agent:updateStartup", next);
+      return { instance: next };
+    };
+    agentClient.getInstanceStatus = async (instanceId) => {
+      const instance = currentInstance(instanceId);
+      record("agent:getStatus", instance);
+      return { instance };
+    };
+    agentClient.startInstance = async (instanceId) => {
+      const next = { ...currentInstance(instanceId), state: "Running", pid: 1234 };
+      instances.set(instanceId, next);
+      record("agent:startInstance", next);
+      return { instance: next };
+    };
+    agentClient.deleteInstance = async (instanceId) => {
+      instances.delete(instanceId);
+      return { id: instanceId, deleted: true };
+    };
+
+    const result = await marketplaceService.installTemplate({
+      templateId: "minecraft-vanilla",
+      options: {
+        id: "vanilla-version-pipeline-smoke",
+        name: "Vanilla Version Pipeline Smoke",
+        version: selectedVersion,
+        memory: "2G",
+        port: 25565,
+        ports: [25565],
+        acceptEula: true,
+        start: false,
+      },
+    });
+    record("marketplace:installResult", result.instance || {});
+
+    const apiPayload = await agentClient.listInstances();
+    const apiInstance = apiPayload.instances.find((instance) => instance.id === "vanilla-version-pipeline-smoke");
+    record("api:/instances", apiInstance || {});
+    const ipcPayload = apiPayload;
+    const rendererInput = ipcPayload.instances[0];
+    record("ipc:instances:list", rendererInput || {});
+
+    const appSource = fs.readFileSync(appPath, "utf8");
+    assert(appSource.includes("instance?.minecraftVersion"), "Renderer versionInfo branch must read top-level minecraftVersion when versionInfo is old.");
+    assert(appSource.includes("metadata.minecraftVersion"), "Renderer versionInfo branch must read metadata minecraftVersion when versionInfo is old.");
+    assert.strictEqual(apiInstance.minecraftVersion, selectedVersion, `Agent /instances lost minecraftVersion.\n${JSON.stringify(trace, null, 2)}`);
+    assert.strictEqual(apiInstance.gameVersion, selectedVersion, `Agent /instances lost gameVersion.\n${JSON.stringify(trace, null, 2)}`);
+    assert.strictEqual(apiInstance.versionInfo?.gameVersion, selectedVersion, `Agent /instances lost versionInfo.gameVersion.\n${JSON.stringify(trace, null, 2)}`);
+    assert.strictEqual(pickVersionTrace(rendererInput).gameVersion, selectedVersion, `IPC/renderer input lost gameVersion.\n${JSON.stringify(trace, null, 2)}`);
+  } finally {
+    global.fetch = originalFetch;
+    patchedAgentMethods.forEach((name) => {
+      agentClient[name] = originalAgent[name];
+    });
+  }
+}
+
 async function assertCalendarMinecraftVersionMetadata() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-calendar-minecraft-version-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
@@ -546,6 +720,7 @@ async function main() {
   await assertPaperMetadataBackfill();
   await assertMinecraftPropertiesVersionBackfill();
   await assertOldVanillaInstallerMetadataBackfill();
+  await assertVanillaInstallVersionPipeline();
   await assertCalendarMinecraftVersionMetadata();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();

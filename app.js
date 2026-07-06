@@ -2875,11 +2875,19 @@ function getInstancePrimaryPort(instance) {
 }
 
 function getInstanceVersion(instance) {
+  const serverSoftware = String(instance?.serverSoftware || instance?.metadata?.serverSoftware || "").trim();
+  const minecraftVersion = String(instance?.minecraftVersion || instance?.metadata?.minecraftVersion || "").trim();
+  if (serverSoftware && minecraftVersion && minecraftVersion !== "latest") {
+    return `${serverSoftware} ${minecraftVersion}`;
+  }
+
   const candidates = [
-    instance?.serverVersion,
     instance?.version,
+    instance?.serverVersion,
+    minecraftVersion,
     instance?.gameVersion,
     instance?.minecraftVersion,
+    serverSoftware,
     instance?.metadata?.serverVersion,
     instance?.metadata?.version,
     instance?.marketplace?.serverVersion,

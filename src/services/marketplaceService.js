@@ -369,6 +369,16 @@ function extractXmlTags(xml, tagName) {
   return [...String(xml || "").matchAll(new RegExp(`<${tagName}>([^<]+)</${tagName}>`, "g"))].map((match) => match[1].trim());
 }
 
+function inferNeoForgeMinecraftVersion(version) {
+  const text = String(version || "");
+  const literal = text.match(/\b1\.\d+(?:\.\d+)?\b/)?.[0];
+  if (literal) {
+    return literal;
+  }
+  const modern = text.match(/^(\d{2})\.(\d+)\./);
+  return modern ? `1.${Number.parseInt(modern[1], 10)}.${Number.parseInt(modern[2], 10)}` : "";
+}
+
 async function resolvePaperDownload(download, options = {}) {
   const project = download.project || "paper";
   const projectUrl = `https://fill.papermc.io/v3/projects/${encodeURIComponent(project)}`;
@@ -543,7 +553,7 @@ async function resolveNeoForgeDownload(download, options = {}) {
 
   return {
     url: `https://maven.neoforged.net/releases/net/neoforged/neoforge/${encodeURIComponent(neoForgeVersion)}/neoforge-${encodeURIComponent(neoForgeVersion)}-installer.jar`,
-    version: requestedVersion,
+    version: String(requestedVersion).toLowerCase() === "latest" ? inferNeoForgeMinecraftVersion(neoForgeVersion) || requestedVersion : requestedVersion,
     build: neoForgeVersion,
   };
 }
@@ -874,6 +884,17 @@ function generatedFileForTemplate(template, options, ports) {
   return null;
 }
 
+function getTemplateServerSoftware(template = {}) {
+  const searchable = [template.id, template.displayName, template.instanceType, ...(Array.isArray(template.tags) ? template.tags : [])].join(" ").toLowerCase();
+  if (searchable.includes("neoforge")) return "NeoForge";
+  if (searchable.includes("forge")) return "Forge";
+  if (searchable.includes("fabric")) return "Fabric";
+  if (searchable.includes("purpur")) return "Purpur";
+  if (searchable.includes("paper")) return "Paper";
+  if (searchable.includes("vanilla")) return "Vanilla";
+  return template.serverSoftware || null;
+}
+
 function buildInstancePayload(template, options, ports) {
   const name = normalizeName(options.name, template.displayName || "AnxOS Instance");
   const id = slugify(options.id || name);
@@ -881,10 +902,13 @@ function buildInstancePayload(template, options, ports) {
   const isMinecraft = template.category === "Minecraft";
   const tags = [...new Set([template.category?.toLowerCase(), template.id, isMinecraft ? "minecraft" : null].filter(Boolean))];
   const environment = {};
+  const serverSoftware = getTemplateServerSoftware(template);
   const serverVersion = options.version || template.serverVersion || template.gameVersion || (isMinecraft ? "latest" : null);
   const metadata = {
     version: serverVersion,
     serverVersion,
+    serverSoftware,
+    minecraftVersion: isMinecraft ? serverVersion : null,
     templateVersion: template.version || null,
     templateId: template.id || null,
     primaryPort: ports[0] || null,
@@ -1178,6 +1202,19 @@ async function writeTemplateConfigFiles(template, options, ports, instanceId, ag
   }
 }
 
+function buildResolvedVersionMetadata(template, resolved = {}) {
+  const serverSoftware = getTemplateServerSoftware(template);
+  const minecraftVersion = template.category === "Minecraft" ? resolved.version || null : null;
+  const version = serverSoftware && minecraftVersion ? `${serverSoftware} ${minecraftVersion}` : resolved.version || null;
+  return {
+    version,
+    serverVersion: resolved.version || null,
+    serverSoftware,
+    minecraftVersion,
+    buildNumber: resolved.build || null,
+  };
+}
+
 async function downloadOneToInstance(template, download, options, instanceId, progress, agentConfig = null) {
   const destination = normalizeInstanceFilePath(download.destination || download.fileName || "server.jar");
   const fileName = fileNameFromDestination(destination);
@@ -1294,7 +1331,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
     });
     pushStep(progress, "Downloading", "complete", `Downloaded ${fileName}.`);
     pushStep(progress, "Verifying files", "complete", `${destination} is available.`);
-    return { downloaded: true, record };
+    return { downloaded: true, record, metadata: buildResolvedVersionMetadata(template, resolved) };
   } catch (error) {
     const cancelled = error?.name === "AbortError";
     updateDownload(record, {
@@ -1323,16 +1360,24 @@ async function downloadToInstance(template, options, instanceId, progress, agent
   }
 
   const records = [];
+  const metadata = {};
   let downloaded = false;
   for (const download of templateDownloads) {
     const result = await downloadOneToInstance(template, download, options, instanceId, progress, agentConfig);
     downloaded = downloaded || Boolean(result.downloaded);
+    if (result.metadata) {
+      Object.entries(result.metadata).forEach(([key, value]) => {
+        if (value) {
+          metadata[key] = value;
+        }
+      });
+    }
     if (result.record) {
       records.push(result.record);
     }
   }
 
-  return { downloaded, records };
+  return { downloaded, records, metadata };
 }
 
 async function installTemplate(payload = {}) {
@@ -1420,6 +1465,12 @@ async function installTemplate(payload = {}) {
     }
 
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig);
+    if (downloadResult.metadata && Object.keys(downloadResult.metadata).length > 0) {
+      pushStep(progress, "Detecting version", "running", "Saving resolved server version metadata.");
+      await agentClient.updateInstance(createdInstanceId, downloadResult.metadata, agentConfig);
+      Object.assign(instance, downloadResult.metadata);
+      pushStep(progress, "Detecting version", "complete", downloadResult.metadata.version || downloadResult.metadata.serverVersion || "Version metadata saved.");
+    }
     await runTemplateInstaller(template, options, createdInstanceId, progress, agentConfig);
 
     pushStep(progress, "Configuring", "running");

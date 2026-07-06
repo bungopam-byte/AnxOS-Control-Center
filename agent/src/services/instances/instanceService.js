@@ -33,6 +33,7 @@ const MAX_LOG_LINES = 1000;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
+const VERSION_CACHE_VERSION = 1;
 const DEFAULT_EXECUTABLE_ROOTS = [
   "/bin",
   "/usr/bin",
@@ -52,6 +53,22 @@ function createInstanceError(code, statusCode = 400) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function execFile(command, args, options = {}) {
+  return new Promise((resolve) => {
+    childProcess.execFile(command, args, {
+      timeout: options.timeout || 3000,
+      maxBuffer: options.maxBuffer || 512 * 1024,
+      cwd: options.cwd,
+    }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        stdout: stdout || "",
+        stderr: stderr || "",
+      });
+    });
+  });
 }
 
 function getInstanceRoot() {
@@ -470,8 +487,13 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     ports: normalizePorts(payload.ports),
     version: payload.version ? String(payload.version).slice(0, 80) : null,
     serverVersion: payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null,
+    serverSoftware: payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null,
+    minecraftVersion: payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null,
     templateVersion: payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null,
     templateId: payload.templateId ? String(payload.templateId).slice(0, 80) : null,
+    buildNumber: payload.buildNumber ? String(payload.buildNumber).slice(0, 80) : null,
+    detectedVersionAt: payload.detectedVersionAt || null,
+    versionCacheVersion: payload.versionCacheVersion || null,
     connectionHost: payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null,
     primaryPort: Number.isInteger(primaryPort) && primaryPort > 0 && primaryPort <= 65535 ? primaryPort : null,
     tags: normalizeTags(payload.tags),
@@ -502,6 +524,251 @@ function publicConfig(config) {
       return redacted;
     }, {}),
   };
+}
+
+function cleanVersionValue(value) {
+  const text = String(value || "").trim();
+  if (!text || text === "latest" || text === "Unknown version" || /\blatest\b/i.test(text)) {
+    return null;
+  }
+  return text.slice(0, 80);
+}
+
+function inferServerSoftware(config) {
+  const searchable = [
+    config.serverSoftware,
+    config.templateId,
+    config.type,
+    config.displayName,
+    config.id,
+    ...(Array.isArray(config.tags) ? config.tags : []),
+    ...(Array.isArray(config.args) ? config.args : []),
+  ].join(" ").toLowerCase();
+
+  if (searchable.includes("neoforge")) return "NeoForge";
+  if (searchable.includes("forge")) return "Forge";
+  if (searchable.includes("fabric")) return "Fabric";
+  if (searchable.includes("purpur")) return "Purpur";
+  if (searchable.includes("paper")) return "Paper";
+  if (searchable.includes("vanilla") || searchable.includes("minecraft")) return "Vanilla";
+  return config.serverSoftware || null;
+}
+
+function parseMinecraftVersion(value) {
+  return String(value || "").match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || null;
+}
+
+function inferNeoForgeMinecraftVersion(value) {
+  const literal = parseMinecraftVersion(value);
+  if (literal) {
+    return literal;
+  }
+  const modern = String(value || "").match(/^(\d{2})\.(\d+)\./);
+  return modern ? `1.${Number.parseInt(modern[1], 10)}.${Number.parseInt(modern[2], 10)}` : null;
+}
+
+function parseBuildNumber(value) {
+  return String(value || "").match(/(?:build|b)[-_. ]?(\d{1,8})\b/i)?.[1] || null;
+}
+
+async function readTextIfExists(filePath, maxBytes = 512 * 1024) {
+  try {
+    const stats = await fs.stat(filePath);
+    if (!stats.isFile() || stats.size > maxBytes) {
+      return "";
+    }
+    return await fs.readFile(filePath, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+async function listDirectoryNames(directory) {
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    return entries.filter((entry) => entry.isDirectory() || entry.isFile()).map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+async function unzipText(filePath, entryName) {
+  if (!filePath || !(await pathExists(filePath))) {
+    return "";
+  }
+  const result = await execFile("unzip", ["-p", filePath, entryName], { timeout: 2500 });
+  return result.ok ? result.stdout : "";
+}
+
+function getJarCandidates(config) {
+  const candidates = [];
+  const args = Array.isArray(config.args) ? config.args : [];
+  const jarIndex = args.findIndex((arg) => arg === "-jar");
+  if (jarIndex >= 0 && args[jarIndex + 1]) {
+    candidates.push(args[jarIndex + 1]);
+  }
+  for (const arg of args) {
+    if (/\.jar$/i.test(String(arg || ""))) {
+      candidates.push(arg);
+    }
+  }
+  candidates.push("server.jar", "paper.jar", "purpur.jar", "fabric-server.jar", "forge-installer.jar", "neoforge-installer.jar");
+  return [...new Set(candidates.map((candidate) => String(candidate || "").trim()).filter(Boolean))];
+}
+
+async function findJarPaths(config) {
+  const workingDirectory = config.workingDirectory || "data";
+  const roots = [
+    resolveRelativeManagedPath(config.id, workingDirectory, "data"),
+    path.join(instancePath(config.id), "data"),
+  ];
+  const paths = [];
+  for (const root of roots) {
+    for (const candidate of getJarCandidates(config)) {
+      try {
+        const resolved = path.resolve(root, candidate);
+        if (isInsideRoot(resolved, instancePath(config.id)) && await pathExists(resolved)) {
+          paths.push(resolved);
+        }
+      } catch {}
+    }
+    const names = await listDirectoryNames(root);
+    for (const name of names.filter((entry) => /\.jar$/i.test(entry))) {
+      paths.push(path.join(root, name));
+    }
+  }
+  return [...new Set(paths)];
+}
+
+async function detectFromKnownFiles(config) {
+  const dataRoot = path.join(instancePath(config.id), "data");
+  const detections = [];
+  const jsonCandidates = [
+    path.join(dataRoot, "version.json"),
+    path.join(dataRoot, "install_profile.json"),
+  ];
+
+  for (const filePath of jsonCandidates) {
+    try {
+      const parsed = await readJson(filePath);
+      const id = parsed.id || parsed.minecraftArguments || parsed.version || parsed.minecraft || parsed.minecraftVersion;
+      detections.push({ minecraftVersion: parseMinecraftVersion(id), buildNumber: parseBuildNumber(JSON.stringify(parsed)) });
+    } catch {}
+  }
+
+  const forgeVersions = await listDirectoryNames(path.join(dataRoot, "libraries", "net", "minecraftforge", "forge"));
+  const forgeVersion = forgeVersions.find((name) => parseMinecraftVersion(name));
+  if (forgeVersion) {
+    detections.push({ serverSoftware: "Forge", minecraftVersion: parseMinecraftVersion(forgeVersion), buildNumber: forgeVersion });
+  }
+
+  const neoForgeVersions = await listDirectoryNames(path.join(dataRoot, "libraries", "net", "neoforged", "neoforge"));
+  const neoForgeVersion = neoForgeVersions.find((name) => inferNeoForgeMinecraftVersion(name));
+  if (neoForgeVersion) {
+    detections.push({ serverSoftware: "NeoForge", minecraftVersion: inferNeoForgeMinecraftVersion(neoForgeVersion), buildNumber: neoForgeVersion });
+  }
+
+  const fabricProperties = await readTextIfExists(path.join(dataRoot, "fabric-server-launcher.properties"));
+  if (fabricProperties) {
+    detections.push({ serverSoftware: "Fabric", minecraftVersion: parseMinecraftVersion(fabricProperties), buildNumber: parseBuildNumber(fabricProperties) });
+  }
+
+  return detections.find((entry) => entry.minecraftVersion || entry.serverSoftware) || {};
+}
+
+async function detectFromJars(config) {
+  const jars = await findJarPaths(config);
+  for (const jarPath of jars) {
+    const fileName = path.basename(jarPath);
+    const versionJson = await unzipText(jarPath, "version.json");
+    if (versionJson) {
+      try {
+        const parsed = JSON.parse(versionJson);
+        const minecraftVersion = parseMinecraftVersion(parsed.id || parsed.name || parsed.version);
+        if (minecraftVersion) {
+          return { minecraftVersion, serverSoftware: inferServerSoftware({ ...config, args: [...(config.args || []), fileName] }) || "Vanilla" };
+        }
+      } catch {}
+    }
+
+    const manifest = await unzipText(jarPath, "META-INF/MANIFEST.MF");
+    const searchable = `${fileName}\n${manifest}`;
+    const minecraftVersion = parseMinecraftVersion(searchable);
+    if (minecraftVersion) {
+      return {
+        minecraftVersion,
+        serverSoftware: inferServerSoftware({ ...config, args: [...(config.args || []), searchable] }) || null,
+        buildNumber: parseBuildNumber(searchable),
+      };
+    }
+
+    const fabricJson = await unzipText(jarPath, "fabric.mod.json");
+    if (fabricJson) {
+      return {
+        serverSoftware: "Fabric",
+        minecraftVersion: parseMinecraftVersion(fabricJson),
+        buildNumber: parseBuildNumber(fabricJson),
+      };
+    }
+  }
+  return {};
+}
+
+function buildVersionLabel(metadata) {
+  const software = metadata.serverSoftware || null;
+  const minecraftVersion = cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.version);
+  if (software && minecraftVersion) {
+    return `${software} ${minecraftVersion}`;
+  }
+  return cleanVersionValue(metadata.serverVersion || metadata.version || metadata.minecraftVersion) || null;
+}
+
+async function detectInstanceVersion(config) {
+  const cached = cleanVersionValue(config.serverVersion || config.minecraftVersion || config.version);
+  if (cached && config.versionCacheVersion === VERSION_CACHE_VERSION) {
+    return config;
+  }
+
+  const software = inferServerSoftware(config);
+  const known = await detectFromKnownFiles(config);
+  const jar = await detectFromJars(config);
+  const detected = {
+    serverSoftware: known.serverSoftware || jar.serverSoftware || software || null,
+    minecraftVersion: cleanVersionValue(known.minecraftVersion || jar.minecraftVersion || config.minecraftVersion || config.serverVersion || config.version),
+    buildNumber: cleanVersionValue(known.buildNumber || jar.buildNumber || config.buildNumber),
+  };
+  const label = buildVersionLabel({ ...config, ...detected });
+  if (!label && !detected.minecraftVersion && !detected.serverSoftware) {
+    return {
+      ...config,
+      detectedVersionAt: nowIso(),
+      versionCacheVersion: VERSION_CACHE_VERSION,
+    };
+  }
+
+  return {
+    ...config,
+    ...detected,
+    serverVersion: detected.minecraftVersion || config.serverVersion || null,
+    version: label || detected.minecraftVersion || config.version || null,
+    detectedVersionAt: nowIso(),
+    versionCacheVersion: VERSION_CACHE_VERSION,
+  };
+}
+
+async function backfillInstanceVersion(config) {
+  const next = await detectInstanceVersion(config);
+  if (
+    next.version !== config.version ||
+    next.serverVersion !== config.serverVersion ||
+    next.serverSoftware !== config.serverSoftware ||
+    next.minecraftVersion !== config.minecraftVersion ||
+    next.buildNumber !== config.buildNumber ||
+    next.versionCacheVersion !== config.versionCacheVersion
+  ) {
+    await saveInstanceConfig(next);
+  }
+  return next;
 }
 
 async function loadInstanceConfig(instanceId) {
@@ -587,7 +854,7 @@ async function listInstances() {
 
   for (const id of ids) {
     try {
-      instances.push(publicConfig(await reconcileConfigState(await loadInstanceConfig(id))));
+      instances.push(publicConfig(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(id)))));
     } catch {
       continue;
     }
@@ -645,8 +912,13 @@ async function updateInstance(instanceId, payload = {}) {
     ports: payload.ports !== undefined ? normalizePorts(payload.ports) : current.ports,
     version: payload.version !== undefined ? (payload.version ? String(payload.version).slice(0, 80) : null) : current.version,
     serverVersion: payload.serverVersion !== undefined ? (payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null) : current.serverVersion,
+    serverSoftware: payload.serverSoftware !== undefined ? (payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null) : current.serverSoftware,
+    minecraftVersion: payload.minecraftVersion !== undefined ? (payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null) : current.minecraftVersion,
     templateVersion: payload.templateVersion !== undefined ? (payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null) : current.templateVersion,
     templateId: payload.templateId !== undefined ? (payload.templateId ? String(payload.templateId).slice(0, 80) : null) : current.templateId,
+    buildNumber: payload.buildNumber !== undefined ? (payload.buildNumber ? String(payload.buildNumber).slice(0, 80) : null) : current.buildNumber,
+    detectedVersionAt: payload.detectedVersionAt !== undefined ? payload.detectedVersionAt : current.detectedVersionAt,
+    versionCacheVersion: payload.versionCacheVersion !== undefined ? payload.versionCacheVersion : current.versionCacheVersion,
     connectionHost: payload.connectionHost !== undefined ? (payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null) : current.connectionHost,
     primaryPort: payload.primaryPort !== undefined
       ? (() => {
@@ -1008,7 +1280,7 @@ async function restartInstance(instanceId) {
 }
 
 async function getStatus(instanceId) {
-  return publicConfig(await reconcileConfigState(await loadInstanceConfig(instanceId)));
+  return publicConfig(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId))));
 }
 
 async function readRecentLines(filePath, lineLimit) {

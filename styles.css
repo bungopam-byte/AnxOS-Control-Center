@@ -2767,9 +2767,75 @@ body.is-resizing-files * {
 
 .instance-files-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1.3fr);
-  gap: 12px;
-  min-height: 360px;
+  grid-template-columns: minmax(360px, 1fr) minmax(320px, 0.72fr);
+  align-items: stretch;
+  gap: 14px;
+  min-height: 460px;
+  min-width: 0;
+}
+
+.instance-file-browser,
+.instance-file-editor {
+  min-width: 0;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(11, 5, 22, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.instance-file-browser {
+  overflow: auto;
+}
+
+.instance-files-table {
+  min-width: 620px;
+}
+
+.instance-files-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(18, 8, 34, 0.96);
+  color: rgba(231, 224, 246, 0.72);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.instance-files-table td,
+.instance-files-table th {
+  padding: 10px 12px;
+}
+
+.instance-files-table tr {
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.instance-files-table tbody tr:hover {
+  background: rgba(139, 92, 246, 0.11);
+}
+
+.instance-files-table tbody tr.is-selected {
+  background: rgba(139, 92, 246, 0.2);
+  box-shadow: inset 3px 0 0 rgba(199, 161, 255, 0.9);
+}
+
+.instance-files-table tbody tr.is-directory .file-entry-icon {
+  background: rgba(83, 180, 255, 0.16);
+  border-color: rgba(125, 211, 252, 0.28);
+  color: #bae6fd;
+}
+
+.instance-file-name .file-entry-icon {
+  width: 44px;
+  min-width: 44px;
+}
+
+.instance-file-name .file-entry-name-text span {
+  max-width: 28vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .instance-file-dropzone {
@@ -2786,22 +2852,54 @@ body.is-resizing-files * {
 }
 
 .instance-file-editor {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.instance-file-editor .panel-heading {
+  align-items: start;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(185, 148, 255, 0.14);
+  background: rgba(18, 8, 34, 0.78);
+}
+
+.instance-file-editor .panel-heading h3 {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.instance-file-editor-meta {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .instance-file-editor textarea,
 .instance-raw-json {
   width: 100%;
-  min-height: 320px;
-  resize: vertical;
+  min-height: 400px;
   border: 0;
   background: #090c12;
   color: var(--text);
-  padding: 12px;
+  padding: 16px;
   font: 0.84rem/1.55 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.instance-file-editor textarea {
+  height: 100%;
+  resize: none;
+  outline: none;
+  tab-size: 2;
+}
+
+.instance-raw-json {
+  resize: vertical;
+}
+
+.instance-file-editor textarea:focus {
+  box-shadow: inset 0 0 0 1px rgba(199, 161, 255, 0.28);
 }
 
 .instance-config-form,

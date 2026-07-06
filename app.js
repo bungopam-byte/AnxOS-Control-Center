@@ -89,6 +89,7 @@ const instanceFilesList = document.querySelector("[data-instance-files-list]");
 const instanceFilePathLabel = document.querySelector("[data-instance-file-path]");
 const instanceFileEditor = document.querySelector("[data-instance-file-editor]");
 const instanceFileEditorName = document.querySelector("[data-instance-file-editor-name]");
+const instanceFileEditorMeta = document.querySelector("[data-instance-file-editor-meta]");
 const instanceFileEditorState = document.querySelector("[data-instance-file-editor-state]");
 const instanceFileDropzone = document.querySelector("[data-instance-file-dropzone]");
 const instanceFileShortcuts = document.querySelector("[data-instance-file-shortcuts]");
@@ -3445,6 +3446,79 @@ function getInstanceParentPath(currentPath) {
   return parts.length > 0 ? parts.join("/") : ".";
 }
 
+const FILE_TYPE_MAP = new Map([
+  [".jar", { label: "JAR", badge: "JAR" }],
+  [".class", { label: "Java Class", badge: "JVM" }],
+  [".zip", { label: "ZIP", badge: "ZIP" }],
+  [".tar.gz", { label: "TAR.GZ", badge: "TGZ" }],
+  [".tgz", { label: "TAR.GZ", badge: "TGZ" }],
+  [".gz", { label: "GZip", badge: "GZ" }],
+  [".7z", { label: "7-Zip", badge: "7Z" }],
+  [".rar", { label: "RAR", badge: "RAR" }],
+  [".exe", { label: "Executable", badge: "EXE" }],
+  [".msi", { label: "Windows Installer", badge: "MSI" }],
+  [".dll", { label: "DLL", badge: "DLL" }],
+  [".sh", { label: "Shell Script", badge: "SH" }],
+  [".bash", { label: "Shell Script", badge: "SH" }],
+  [".bat", { label: "Batch Script", badge: "BAT" }],
+  [".cmd", { label: "Batch Script", badge: "BAT" }],
+  [".ps1", { label: "PowerShell Script", badge: "PS1" }],
+  [".js", { label: "JavaScript", badge: "JS" }],
+  [".mjs", { label: "JavaScript", badge: "JS" }],
+  [".cjs", { label: "JavaScript", badge: "JS" }],
+  [".ts", { label: "TypeScript", badge: "TS" }],
+  [".json", { label: "JSON", badge: "{}" }],
+  [".jsonl", { label: "JSON", badge: "{}" }],
+  [".yaml", { label: "YAML", badge: "YML" }],
+  [".yml", { label: "YAML", badge: "YML" }],
+  [".toml", { label: "TOML", badge: "TOML" }],
+  [".ini", { label: "INI", badge: "INI" }],
+  [".properties", { label: "Properties", badge: "PROP" }],
+  [".env", { label: "Environment", badge: "ENV" }],
+  [".py", { label: "Python", badge: "PY" }],
+  [".java", { label: "Java", badge: "JAVA" }],
+  [".kt", { label: "Kotlin", badge: "KT" }],
+  [".kts", { label: "Kotlin", badge: "KT" }],
+  [".go", { label: "Go", badge: "GO" }],
+  [".rs", { label: "Rust", badge: "RS" }],
+  [".php", { label: "PHP", badge: "PHP" }],
+  [".html", { label: "HTML", badge: "HTML" }],
+  [".htm", { label: "HTML", badge: "HTML" }],
+  [".css", { label: "CSS", badge: "CSS" }],
+  [".md", { label: "Markdown", badge: "MD" }],
+  [".txt", { label: "Text", badge: "TXT" }],
+  [".log", { label: "Text", badge: "LOG" }],
+  [".cfg", { label: "Configuration", badge: "CFG" }],
+  [".conf", { label: "Configuration", badge: "CONF" }],
+  [".png", { label: "PNG", badge: "PNG" }],
+  [".jpg", { label: "JPEG", badge: "JPG" }],
+  [".jpeg", { label: "JPEG", badge: "JPG" }],
+  [".webp", { label: "WebP", badge: "WEBP" }],
+  [".gif", { label: "GIF", badge: "GIF" }],
+  [".svg", { label: "SVG", badge: "SVG" }],
+  [".ico", { label: "ICO", badge: "ICO" }],
+  [".mp3", { label: "MP3", badge: "MP3" }],
+  [".wav", { label: "WAV", badge: "WAV" }],
+  [".mp4", { label: "MP4", badge: "MP4" }],
+  [".mkv", { label: "MKV", badge: "MKV" }],
+  [".pdf", { label: "PDF", badge: "PDF" }],
+]);
+
+function getFileTypeInfo(entryOrName) {
+  const entry = typeof entryOrName === "object" && entryOrName !== null ? entryOrName : { name: entryOrName };
+  if (entry.isDirectory) {
+    return { label: "Directory", badge: "DIR" };
+  }
+
+  const lowerName = String(entry.path || entry.name || "").split("/").pop().toLowerCase();
+  if (lowerName === "dockerfile") {
+    return { label: "Dockerfile", badge: "DOC" };
+  }
+
+  const extension = [...FILE_TYPE_MAP.keys()].find((candidate) => lowerName.endsWith(candidate));
+  return extension ? FILE_TYPE_MAP.get(extension) : { label: "File", badge: "FILE" };
+}
+
 function isEditableInstanceFile(filePath) {
   return /\.(txt|properties|ya?ml|json|toml|cfg|conf)$/i.test(String(filePath || ""));
 }
@@ -3476,16 +3550,39 @@ async function refreshInstanceFiles(pathValue = instanceCurrentFilePath) {
 function renderInstanceFileRows(entries) {
   instanceFilesList?.replaceChildren();
   entries.forEach((entry) => {
+    const typeInfo = getFileTypeInfo(entry);
+    const entryPath = entry.path || entry.name || "";
     const row = document.createElement("tr");
-    row.dataset.instanceFilePath = entry.path || entry.name;
+    row.dataset.instanceFilePath = entryPath;
+    row.classList.toggle("is-directory", Boolean(entry.isDirectory));
+    row.classList.toggle("is-file", !entry.isDirectory);
     row.tabIndex = 0;
-    row.addEventListener("click", () => selectInstanceFile(entry.path));
+    row.addEventListener("click", () => selectInstanceFile(entryPath));
     row.addEventListener("dblclick", () => activateInstanceFile(entry));
+
     const nameCell = document.createElement("td");
-    nameCell.textContent = `${entry.isDirectory ? "DIR" : "TXT"} ${entry.name}`;
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "file-entry-name instance-file-name";
+    const icon = document.createElement("span");
+    icon.className = "file-entry-icon";
+    icon.textContent = typeInfo.badge;
+    const nameText = document.createElement("div");
+    nameText.className = "file-entry-name-text";
+    const title = document.createElement("strong");
+    title.textContent = entry.name || "Unnamed";
+    const meta = document.createElement("span");
+    meta.textContent = entry.isDirectory ? "Open folder" : entryPath;
+    nameText.append(title, meta);
+    nameWrap.append(icon, nameText);
+    nameCell.append(nameWrap);
+
     const typeCell = document.createElement("td");
-    typeCell.textContent = entry.isDirectory ? "Folder" : formatBytes(entry.size);
-    row.append(nameCell, typeCell);
+    typeCell.textContent = typeInfo.label;
+    const sizeCell = document.createElement("td");
+    sizeCell.textContent = entry.isDirectory ? "Directory" : formatBytes(entry.size);
+    const modifiedCell = document.createElement("td");
+    modifiedCell.textContent = formatDateTime(entry.modifiedAt);
+    row.append(nameCell, typeCell, sizeCell, modifiedCell);
     instanceFilesList.appendChild(row);
   });
 }
@@ -3498,13 +3595,14 @@ function selectInstanceFile(filePath) {
 }
 
 async function activateInstanceFile(entry) {
+  const entryPath = entry?.path || entry?.name || "";
   if (entry.isDirectory) {
-    await refreshInstanceFiles(entry.path);
+    await refreshInstanceFiles(entryPath);
     return;
   }
 
-  if (isEditableInstanceFile(entry.path)) {
-    await openInstanceTextFile(entry.path);
+  if (isEditableInstanceFile(entryPath)) {
+    await openInstanceTextFile(entryPath);
   }
 }
 
@@ -3529,6 +3627,11 @@ async function openInstanceTextFile(filePath) {
     }
     if (instanceFileEditorName) {
       instanceFileEditorName.textContent = openedInstanceFilePath;
+    }
+    if (instanceFileEditorMeta) {
+      const typeInfo = getFileTypeInfo(openedInstanceFilePath);
+      const sizeLabel = Number.isFinite(file.size) ? ` · ${formatBytes(file.size)}` : "";
+      instanceFileEditorMeta.textContent = `${typeInfo.label}${sizeLabel}`;
     }
     syncInstanceFileDirtyState();
   } catch (error) {
@@ -3595,6 +3698,9 @@ function setMissingInstanceFileHint(filePath) {
   selectedInstanceFilePath = filePath;
   if (instanceFileEditorName) {
     instanceFileEditorName.textContent = `Missing: ${filePath}`;
+  }
+  if (instanceFileEditorMeta) {
+    instanceFileEditorMeta.textContent = `${getFileTypeInfo(filePath).label} · Upload this file into the data folder.`;
   }
   if (instanceFileEditorState) {
     instanceFileEditorState.textContent = "Upload required";
@@ -5533,18 +5639,14 @@ function formatFileType(entry) {
   }
 
   if (entry.isDirectory) {
-    return "Folder";
+    return getFileTypeInfo(entry).label;
   }
 
   if (entry.type && entry.type !== "file") {
     return formatFileValue(entry.type);
   }
 
-  if (entry.extension) {
-    return `${String(entry.extension).toUpperCase()} File`;
-  }
-
-  return "File";
+  return getFileTypeInfo(entry).label;
 }
 
 function normalizeRemotePathValue(value, fallback = "/") {
@@ -5627,35 +5729,7 @@ function selectFileEntry(entry) {
 }
 
 function getFileEntryBadge(entry) {
-  if (entry?.isDirectory) {
-    return "DIR";
-  }
-
-  const lowerName = String(entry?.name || "").toLowerCase();
-
-  if (lowerName === "dockerfile") {
-    return "DOC";
-  }
-
-  const badgeMap = {
-    ".env": "ENV",
-    ".json": "{}",
-    ".jsonl": "{}",
-    ".toml": "CFG",
-    ".yml": "YML",
-    ".yaml": "YML",
-    ".js": "JS",
-    ".ts": "TS",
-    ".py": "PY",
-    ".sh": "SH",
-    ".bash": "SH",
-    ".md": "MD",
-    ".html": "HT",
-    ".css": "CS",
-  };
-
-  const extension = lowerName.includes(".") ? lowerName.slice(lowerName.lastIndexOf(".")) : "";
-  return badgeMap[extension] || "TXT";
+  return getFileTypeInfo(entry).badge;
 }
 
 function buildFileNameCell(entry) {
@@ -5675,7 +5749,7 @@ function buildFileNameCell(entry) {
   text.appendChild(title);
 
   const meta = document.createElement("span");
-  meta.textContent = entry.isDirectory ? "Folder" : detectMonacoLanguage(entry.path || entry.name);
+  meta.textContent = getFileTypeInfo(entry).label;
   text.appendChild(meta);
 
   wrapper.appendChild(text);

@@ -785,7 +785,7 @@ async function assertFiveMCanStart(config) {
 }
 
 function parseMinecraftVersion(value) {
-  return String(value || "").match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || null;
+  return String(value || "").match(/\b(?:1\.\d+(?:\.\d+)?|\d{2,}\.\d+(?:\.\d+)?)\b/)?.[0] || null;
 }
 
 function inferNeoForgeMinecraftVersion(value) {

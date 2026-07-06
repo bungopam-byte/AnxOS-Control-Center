@@ -2930,7 +2930,7 @@ function getInstanceTemplateMetadata(instance) {
 }
 
 function extractMinecraftVersion(value) {
-  return cleanInstanceVersionValue(value).match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "";
+  return cleanInstanceVersionValue(value).match(/\b(?:1\.\d+(?:\.\d+)?|\d{2,}\.\d+(?:\.\d+)?)\b/)?.[0] || "";
 }
 
 function extractGenericVersion(value) {
@@ -3012,7 +3012,9 @@ function getInstanceVersionMetadata(instance) {
     const detail = cleanInstanceVersionValue(
       resolvedInfo.displayVersionDetail || formatVersionDetailLabel(software, softwareVersion, buildNumber, game)
     );
-    const main = cleanInstanceVersionValue(resolvedInfo.displayVersion || gameVersion || softwareVersion || buildNumber);
+    const main = game === "minecraft" || resolvedInfo.isMinecraft === true
+      ? cleanInstanceVersionValue(gameVersion || resolvedInfo.minecraftVersion || resolvedInfo.version || resolvedInfo.displayVersion || softwareVersion || buildNumber)
+      : cleanInstanceVersionValue(resolvedInfo.displayVersion || gameVersion || softwareVersion || buildNumber);
     return {
       game,
       isMinecraft: game === "minecraft" || resolvedInfo.isMinecraft === true,
@@ -3269,7 +3271,7 @@ function inferMinecraftServerType(instance) {
 
 function inferMinecraftVersion(instance) {
   const searchable = [instance?.displayName, instance?.id, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ");
-  return searchable.match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "Unknown version";
+  return searchable.match(/\b(?:1\.\d+(?:\.\d+)?|\d{2,}\.\d+(?:\.\d+)?)\b/)?.[0] || "Unknown version";
 }
 
 function renderInstanceWorkspaceProfile(instance) {

@@ -380,6 +380,55 @@ async function assertMinecraftPropertiesVersionBackfill() {
   }
 }
 
+async function assertCalendarMinecraftVersionMetadata() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-calendar-minecraft-version-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "calendar-minecraft-version-smoke",
+      displayName: "Calendar Minecraft Version Smoke",
+      type: "java-app",
+      workingDirectory: "data",
+      jar: "server.jar",
+      restartPolicy: "never",
+      tags: ["minecraft", "vanilla"],
+      templateId: "minecraft-vanilla",
+      game: "minecraft",
+      serverSoftware: "Vanilla",
+      minecraftVersion: "26.2",
+      gameVersion: "26.2",
+      version: "26.2",
+      displayVersion: "26.2",
+      versionInfo: {
+        game: "minecraft",
+        software: "Vanilla",
+        gameVersion: "26.2",
+        displayVersion: "26.2",
+        isMinecraft: true,
+      },
+    });
+    const status = await instanceService.getStatus("calendar-minecraft-version-smoke");
+    assert.strictEqual(status.minecraftVersion, "26.2", "Calendar-style Minecraft versions should persist as minecraftVersion.");
+    assert.strictEqual(status.gameVersion, "26.2", "Calendar-style Minecraft versions should persist as gameVersion.");
+    assert.strictEqual(status.versionInfo?.gameVersion, "26.2", "Calendar-style Minecraft versions should survive versionInfo normalization.");
+    assert.strictEqual(status.versionInfo?.displayVersion, "26.2", "Calendar-style Minecraft versions should display from metadata before runtime detection.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function assertImportEcosystemSupport() {
   const support = marketplaceService.getImportSupport();
   assert.strictEqual(support.communityTemplates.supported, true, "Community template import support should be advertised.");
@@ -442,6 +491,7 @@ async function main() {
   await assertFiveMPlaceholderStartIsBlocked();
   await assertPaperMetadataBackfill();
   await assertMinecraftPropertiesVersionBackfill();
+  await assertCalendarMinecraftVersionMetadata();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   console.log("Marketplace smoke checks passed.");

@@ -24,6 +24,7 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
     INSTANCE_NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
     NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
+    INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
     PATH_NOT_FOUND: "A required install file or folder was not found.",
     DOWNLOAD_FAILED: "The template download failed.",
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
@@ -119,10 +120,21 @@ async function listAgentInstanceIds() {
   return Array.isArray(list?.instances) ? list.instances.map((instance) => instance.id).filter(Boolean) : [];
 }
 
+function resolveCreatedInstanceId(createResult, fallbackId) {
+  return createResult?.instance?.id ||
+    createResult?.id ||
+    createResult?.data?.id ||
+    createResult?.data?.instance?.id ||
+    fallbackId;
+}
+
 async function verifyAgentInstanceExists(instanceId) {
   const instanceIds = await listAgentInstanceIds();
   if (!instanceIds.includes(instanceId)) {
-    throw createMarketplaceError(`Created instance ${instanceId} was not returned by the agent.`, "INSTANCE_NOT_FOUND");
+    throw createMarketplaceError(
+      `Created instance could not be verified. Expected ${instanceId}. Available: ${instanceIds.join(", ") || "none"}.`,
+      "INSTANCE_VERIFICATION_FAILED"
+    );
   }
 
   return instanceIds;
@@ -587,31 +599,45 @@ async function installTemplate(payload = {}) {
   try {
     pushStep(progress, "Creating instance", "running", `Creating ${instancePayload.id}.`);
     const createResult = await agentClient.createInstance(instancePayload);
-    const instance = createResult.instance || createResult;
-    const createdIds = await verifyAgentInstanceExists(instancePayload.id);
-    pushStep(progress, "Creating instance", "complete", `Created ${instancePayload.id}. Agent instances: ${createdIds.join(", ") || "none"}.`);
+    const createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
+    const createRecord = createResult?.instance || createResult?.data?.instance || createResult?.data || createResult || {};
+    const instance = typeof createRecord === "object" ? { ...createRecord, id: createdInstanceId } : { id: createdInstanceId };
+    console.info("[Marketplace] Create result.", {
+      templateId: template.id,
+      requestedInstanceId: instancePayload.id,
+      createResponse: createResult,
+      resolvedCreatedId: createdInstanceId,
+    });
+    const createdIds = await verifyAgentInstanceExists(createdInstanceId);
+    console.info("[Marketplace] Instance verification result.", {
+      templateId: template.id,
+      requestedInstanceId: instancePayload.id,
+      resolvedCreatedId: createdInstanceId,
+      refreshedInstanceIds: createdIds,
+    });
+    pushStep(progress, "Creating instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
 
     pushStep(progress, "Creating folders", "running");
-    await agentClient.createInstanceFolder(instancePayload.id, ".");
-    await agentClient.createInstanceFolder(instancePayload.id, "runtime");
-    pushStep(progress, "Creating folders", "complete", `Prepared folders for ${instancePayload.id}.`);
+    await agentClient.createInstanceFolder(createdInstanceId, ".");
+    await agentClient.createInstanceFolder(createdInstanceId, "runtime");
+    pushStep(progress, "Creating folders", "complete", `Prepared folders for ${createdInstanceId}.`);
 
     const generated = generatedFileForTemplate(template, options, ports);
     if (generated) {
       pushStep(progress, "Installing", "running", `Writing ${generated.path}.`);
-      await writeInstanceText(instancePayload.id, generated.path, generated.content);
+      await writeInstanceText(createdInstanceId, generated.path, generated.content);
       pushStep(progress, "Installing", "complete", "Starter project generated.");
     }
 
-    const downloadResult = await downloadToInstance(template, options, instancePayload.id, progress);
+    const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress);
 
     pushStep(progress, "Configuring", "running");
     if (isMinecraft) {
-      await writeInstanceText(instancePayload.id, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`);
-      await agentClient.saveMinecraftProperties(instancePayload.id, buildMinecraftProperties(options, ports));
+      await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`);
+      await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports));
     } else if (!generated) {
       await writeInstanceText(
-        instancePayload.id,
+        createdInstanceId,
         "index.js",
         [
           `console.log(${JSON.stringify(`${template.displayName} placeholder instance`)})`,
@@ -626,13 +652,13 @@ async function installTemplate(payload = {}) {
     const needsDownloadedArtifact = (template.startupType === "java-jar" || template.instanceType === "minecraft-paper" || template.instanceType === "java-app") && !generated;
     if (needsDownloadedArtifact && downloadResult.downloaded) {
       const jarName = template.downloadSource?.fileName || options.jar || "server.jar";
-      await agentClient.readInstanceFile(instancePayload.id, jarName);
+      await agentClient.readInstanceFile(createdInstanceId, jarName);
       pushStep(progress, "Verifying files", "complete", `${jarName} is available.`);
     }
 
     if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
       pushStep(progress, "Starting", "running");
-      const started = await agentClient.startInstance(instancePayload.id);
+      const started = await agentClient.startInstance(createdInstanceId);
       startedInstance = started.instance || started;
       pushStep(progress, "Starting", "complete", "Instance start requested.");
     } else {

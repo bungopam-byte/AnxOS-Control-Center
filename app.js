@@ -4004,6 +4004,7 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   const friendlyMessages = {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
     INSTANCE_NOT_FOUND: "The selected instance no longer exists.",
+    INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
     NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_RUNNING: "Stop the instance before deleting it.",
     INSTANCE_ALREADY_RUNNING: "This instance is already running.",

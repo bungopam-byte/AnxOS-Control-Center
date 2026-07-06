@@ -2902,37 +2902,135 @@ function getInstanceTemplateVersionLabel(instance) {
   return "";
 }
 
-function getInstanceVersion(instance) {
-  const savedVersion = cleanInstanceVersionValue(instance?.version || instance?.metadata?.version || instance?.marketplace?.version);
-  if (savedVersion) {
-    return savedVersion;
-  }
+function getInstanceTemplateMetadata(instance) {
+  const templateId = instance?.templateId || instance?.metadata?.templateId || instance?.marketplace?.templateId;
+  return templateId ? findMarketplaceTemplate(templateId) : null;
+}
 
-  const serverSoftware = cleanInstanceVersionValue(instance?.serverSoftware || instance?.metadata?.serverSoftware);
-  const minecraftVersion = cleanInstanceVersionValue(instance?.minecraftVersion || instance?.metadata?.minecraftVersion);
-  const buildNumber = cleanInstanceVersionValue(instance?.buildNumber || instance?.metadata?.buildNumber);
-  if (serverSoftware && minecraftVersion) {
-    const buildSuffix = buildNumber && buildNumber !== minecraftVersion ? ` build ${buildNumber}` : "";
-    return `${serverSoftware} ${minecraftVersion}${buildSuffix}`;
-  }
+function extractMinecraftVersion(value) {
+  return cleanInstanceVersionValue(value).match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "";
+}
 
-  const candidates = [
-    instance?.serverVersion,
-    minecraftVersion,
-    instance?.gameVersion,
+function normalizeSoftwareName(value) {
+  const text = cleanInstanceVersionValue(value);
+  if (!text) {
+    return "";
+  }
+  return text
+    .replace(/^minecraft[-_\s]*/i, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function isMinecraftSoftwareName(value) {
+  return /minecraft|paper|purpur|spigot|bukkit|fabric|quilt|forge|neoforge|mohist|magma|arclight|vanilla/i.test(String(value || ""));
+}
+
+function getInstanceVersionMetadata(instance) {
+  const metadata = instance?.metadata || {};
+  const marketplace = instance?.marketplace || {};
+  const template = getInstanceTemplateMetadata(instance);
+  const serverSoftware = cleanInstanceVersionValue(
+    instance?.serverSoftware ||
+      metadata.serverSoftware ||
+      marketplace.serverSoftware ||
+      template?.serverSoftware ||
+      (isMinecraftInstance(instance) ? inferMinecraftServerType(instance) : "")
+  );
+  const software = normalizeSoftwareName(serverSoftware);
+  const isMinecraft = isMinecraftInstance(instance) || isMinecraftSoftwareName(serverSoftware || instance?.type || template?.id);
+  const buildNumber = cleanInstanceVersionValue(
+    instance?.paperBuild ||
+      metadata.paperBuild ||
+      marketplace.paperBuild ||
+      instance?.buildNumber ||
+      metadata.buildNumber ||
+      marketplace.buildNumber
+  );
+  const softwareVersion = cleanInstanceVersionValue(
+    instance?.softwareVersion ||
+      metadata.softwareVersion ||
+      marketplace.softwareVersion ||
+      instance?.serverVersion ||
+      metadata.serverVersion ||
+      marketplace.serverVersion
+  );
+  const savedVersion = cleanInstanceVersionValue(
+    instance?.versionName || instance?.version || metadata.versionName || metadata.version || marketplace.version
+  );
+  const templateLabel = getInstanceTemplateVersionLabel(instance);
+  const minecraftVersion = [
     instance?.minecraftVersion,
-    instance?.metadata?.serverVersion,
-    instance?.marketplace?.serverVersion,
-    serverSoftware,
-    getInstanceTemplateVersionLabel(instance),
-  ];
-  const value = candidates.map(cleanInstanceVersionValue).find(Boolean);
-  return value || "Unknown version";
+    metadata.minecraftVersion,
+    marketplace.minecraftVersion,
+    template?.minecraftVersion,
+    instance?.gameVersion,
+    metadata.gameVersion,
+    marketplace.gameVersion,
+    template?.gameVersion,
+    softwareVersion,
+    savedVersion,
+    templateLabel,
+    inferMinecraftVersion(instance),
+  ]
+    .map(extractMinecraftVersion)
+    .find(Boolean);
+
+  if (isMinecraft) {
+    let secondary = "";
+    const lowerSoftware = software.toLowerCase();
+    if (buildNumber && /paper|purpur/.test(lowerSoftware)) {
+      secondary = `${software || "Minecraft"} Build ${buildNumber}`;
+    } else if (buildNumber && /fabric|quilt/.test(lowerSoftware)) {
+      secondary = `${software || "Loader"} Loader ${buildNumber}`;
+    } else if (softwareVersion && softwareVersion !== minecraftVersion) {
+      secondary = `${software || "Software"} ${softwareVersion}`;
+    } else if (buildNumber && buildNumber !== minecraftVersion) {
+      secondary = `${software || "Build"} ${buildNumber}`;
+    } else {
+      secondary = software && software !== "Minecraft" ? software : "";
+    }
+
+    return {
+      isMinecraft: true,
+      main: minecraftVersion || "Unknown version",
+      secondary,
+      software: software || "Minecraft",
+      minecraftVersion: minecraftVersion || "Unknown version",
+      softwareVersion: softwareVersion || buildNumber || "",
+      buildNumber,
+      buildDate: formatInstanceValue(instance?.buildDate || metadata.buildDate || marketplace.buildDate),
+    };
+  }
+
+  const main = [savedVersion, softwareVersion, instance?.gameVersion, metadata.gameVersion, marketplace.gameVersion, templateLabel]
+    .map(cleanInstanceVersionValue)
+    .find(Boolean);
+  return {
+    isMinecraft: false,
+    main: main || "Unknown version",
+    secondary: software && main && !main.toLowerCase().includes(software.toLowerCase()) ? software : "",
+    software: software || formatInstanceType(instance?.type || template?.category || "Application"),
+    minecraftVersion: "N/A",
+    softwareVersion: softwareVersion || savedVersion || "",
+    buildNumber,
+    buildDate: formatInstanceValue(instance?.buildDate || metadata.buildDate || marketplace.buildDate),
+  };
+}
+
+function getInstanceVersion(instance) {
+  return getInstanceVersionMetadata(instance).main;
 }
 
 function getSelectedNodeAgentUrl() {
   const selectedNode = (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId());
   return selectedNode?.agentUrl || latestAgentSettingsPayload?.effective?.agentUrl || latestAgentSettingsPayload?.stored?.agentUrl || DEFAULT_AGENT_SETTINGS.agentUrl;
+}
+
+function getInstanceNodeLabel(instance = null) {
+  const nodeId = instance?.nodeId || getSelectedNodeId();
+  const node = (nodesState.nodes || []).find((candidate) => candidate.id === nodeId);
+  return node?.displayName || node?.name || nodeId || "default";
 }
 
 function getInstanceConnectionHost(instance = null) {
@@ -3155,7 +3253,7 @@ function renderMinecraftWorkspaceSummary(instance, metrics) {
     return;
   }
 
-  setMinecraftSummaryField("version", getInstanceVersion(instance) === "Unknown version" ? inferMinecraftVersion(instance) : getInstanceVersion(instance));
+  setMinecraftSummaryField("version", getInstanceVersionMetadata(instance).minecraftVersion || inferMinecraftVersion(instance));
   setMinecraftSummaryField("serverType", inferMinecraftServerType(instance));
   setMinecraftSummaryField("java", instance?.executable || "java");
   setMinecraftSummaryField("players", "Unavailable");
@@ -3180,7 +3278,7 @@ function readStoredInstanceTab() {
 }
 
 function setActiveInstanceTab(tabName) {
-  activeInstanceTab = tabName || "overview";
+  activeInstanceTab = tabName === "configuration" ? "settings" : tabName || "overview";
   instanceTabs.forEach((button) => {
     const active = button.dataset.instanceTab === activeInstanceTab;
     button.classList.toggle("is-active", active);
@@ -3198,7 +3296,7 @@ function setActiveInstanceTab(tabName) {
     refreshInstanceLogs({ silent: true });
   } else if (activeInstanceTab === "files") {
     refreshInstanceFiles();
-  } else if (activeInstanceTab === "configuration") {
+  } else if (activeInstanceTab === "settings") {
     loadMinecraftProperties();
   }
 }
@@ -4115,11 +4213,20 @@ function buildInstanceNameCell(instance) {
 }
 
 function buildInstanceVersionCell(instance) {
+  const version = getInstanceVersionMetadata(instance);
+  const wrapper = document.createElement("div");
+  wrapper.className = "instance-version-cell";
   const badge = document.createElement("span");
   badge.className = "instance-version-badge";
-  badge.textContent = getInstanceVersion(instance);
-  badge.title = getInstanceVersion(instance);
-  return badge;
+  badge.textContent = version.main;
+  badge.title = version.secondary ? `${version.main} · ${version.secondary}` : version.main;
+  wrapper.append(badge);
+  if (version.secondary) {
+    const secondary = document.createElement("small");
+    secondary.textContent = version.secondary;
+    wrapper.append(secondary);
+  }
+  return wrapper;
 }
 
 function buildInstanceAddressCell(instance) {
@@ -4174,7 +4281,6 @@ function renderInstanceRows(instances) {
   }
 
   instances.forEach((instance) => {
-    const metrics = getInstanceMetrics(instance.id);
     const row = document.createElement("tr");
     row.dataset.instanceId = instance.id || "";
     row.tabIndex = 0;
@@ -4192,11 +4298,6 @@ function renderInstanceRows(instances) {
     addInstanceCell(row, buildInstanceAddressCell(instance));
     addInstanceCell(row, buildInstanceStatePill(instance));
     addInstanceCell(row, formatInstanceValue(instance.pid));
-    addInstanceCell(row, formatDuration(metrics?.uptimeSeconds));
-    addInstanceCell(row, formatInstanceCpu(metrics));
-    addInstanceCell(row, formatInstanceMemory(metrics));
-    addInstanceCell(row, formatInstancePorts(instance, metrics));
-    addInstanceCell(row, formatInstanceList(instance.tags));
     instancesList.appendChild(row);
   });
 
@@ -4214,6 +4315,15 @@ function setInstanceDetails(instance = null) {
     setInstanceDetail("id", "Unavailable");
     setInstanceDetail("version", "Unknown version");
     setInstanceDetail("address", "No port configured");
+    setInstanceDetail("connectionHost", "Unavailable");
+    setInstanceDetail("queryPort", "Unavailable");
+    setInstanceDetail("rconPort", "Unavailable");
+    setInstanceDetail("versionSoftware", "Unavailable");
+    setInstanceDetail("minecraftVersion", "Unavailable");
+    setInstanceDetail("versionBuild", "Unavailable");
+    setInstanceDetail("buildDate", "Unavailable");
+    setInstanceDetail("node", "Unavailable");
+    setInstanceDetail("created", "Unavailable");
     setInstanceDetail("type", "Unavailable");
     setInstanceDetail("command", "Unavailable");
     setInstanceDetail("pid", "Unavailable");
@@ -4235,13 +4345,26 @@ function setInstanceDetails(instance = null) {
 
   const command = [instance.executable, ...(Array.isArray(instance.args) ? instance.args : [])].filter(Boolean).join(" ");
   const address = formatInstanceAddressLabel(instance);
+  const version = getInstanceVersionMetadata(instance);
+  const primaryPort = getInstancePrimaryPort(instance);
+  const ports = getInstancePorts(instance);
+  const rconPort = ports.find((port) => port !== primaryPort) || null;
   setField("instanceDetailState", instance.state || "Unavailable");
   setField("instancesSelectedCpu", formatInstanceCpu(metrics));
   setField("instancesSelectedMemory", formatInstanceMemory(metrics));
   setInstanceDetail("name", formatInstanceValue(instance.displayName));
   setInstanceDetail("id", formatInstanceValue(instance.id));
-  setInstanceDetail("version", getInstanceVersion(instance));
+  setInstanceDetail("version", version.main);
   setInstanceDetail("address", address);
+  setInstanceDetail("connectionHost", getInstanceConnectionHost(instance));
+  setInstanceDetail("queryPort", primaryPort ? String(primaryPort) : "Unavailable");
+  setInstanceDetail("rconPort", rconPort ? String(rconPort) : "Unavailable");
+  setInstanceDetail("versionSoftware", version.software || "Unavailable");
+  setInstanceDetail("minecraftVersion", version.minecraftVersion || "N/A");
+  setInstanceDetail("versionBuild", version.secondary || version.softwareVersion || version.buildNumber || "Unavailable");
+  setInstanceDetail("buildDate", version.buildDate || "Unavailable");
+  setInstanceDetail("node", getInstanceNodeLabel(instance));
+  setInstanceDetail("created", formatDateTime(instance.createdAt || instance.created || instance.metadata?.createdAt));
   setInstanceDetail("type", formatInstanceType(instance.type));
   setInstanceDetail("command", command || "Unavailable");
   setInstanceDetail("pid", formatInstanceValue(instance.pid));
@@ -5854,7 +5977,7 @@ async function createInstanceFromForm(event) {
         selectInstance(candidateId, { refreshMetrics: false });
         setInstanceCreateFormVisible(false);
         instanceCreateForm?.reset();
-        setInstanceFormMessage("Instance created. A follow-up configuration step was not available yet; refresh or open Configuration to retry.");
+        setInstanceFormMessage("Instance created. A follow-up configuration step was not available yet; refresh or open Settings to retry.");
         showToast("Instance created. Some setup could not be applied yet.", "warning");
       }
     } else {

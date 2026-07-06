@@ -194,6 +194,8 @@ function assertMarketplaceVersionMetadata() {
   assert.strictEqual(paper.serverSoftware, "Paper", "Paper metadata should save server software.");
   assert.strictEqual(paper.minecraftVersion, "1.21.8", "Paper metadata should save Minecraft version.");
   assert.strictEqual(paper.buildNumber, 42, "Paper metadata should save build number.");
+  assert.strictEqual(paper.paperBuild, 42, "Paper metadata should save paperBuild.");
+  assert.match(paper.versionName, /Paper 1\.21\.8 build 42/, "Paper metadata should save versionName.");
   assert.match(paper.version, /Paper 1\.21\.8 build 42/, "Paper display version should include build number.");
 
   const vanilla = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-vanilla"), {
@@ -204,6 +206,9 @@ function assertMarketplaceVersionMetadata() {
   const source = fs.readFileSync(appPath, "utf8");
   assert(source.includes("cleanInstanceVersionValue"), "Renderer should clean version candidates before display.");
   assert(source.includes("getInstanceTemplateVersionLabel"), "Renderer should have a template metadata fallback.");
+  assert(source.includes("getInstanceVersionMetadata"), "Renderer should normalize version metadata before display.");
+  assert(source.includes("main: minecraftVersion || \"Unknown version\""), "Minecraft table version should use the game version as the main value.");
+  assert(source.includes("secondary = `${software || \"Minecraft\"} Build ${buildNumber}`"), "Minecraft build/software info should be secondary metadata.");
 }
 
 function assertFiveMStartupSafety() {
@@ -217,6 +222,7 @@ function assertFiveMStartupSafety() {
   assert(agentSource.includes("FIVEM_LICENSE_REQUIRED"), "Agent should expose a FiveM license-required failure reason.");
   assert(agentSource.includes("Invalid key format specified|Could not authenticate server license key|HTTP 429"), "Agent should detect FiveM license/auth log failures.");
   assert(agentSource.includes("suppressRestart"), "Agent should suppress restart loops for known FiveM license failures.");
+  assert(agentSource.includes("detectFromMinecraftStatus"), "Agent should keep a Minecraft status-query fallback for version detection.");
 }
 
 async function assertFiveMPlaceholderStartIsBlocked() {
@@ -251,6 +257,91 @@ async function assertFiveMPlaceholderStartIsBlocked() {
     );
     const status = await instanceService.getStatus("fivem-license-smoke");
     assert.strictEqual(status.failureReason, "FIVEM_LICENSE_REQUIRED", "FiveM placeholder start should set a license failure reason.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function assertPaperMetadataBackfill() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-paper-version-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "paper-version-smoke",
+      displayName: "Paper Version Smoke",
+      type: "minecraft-paper",
+      workingDirectory: "data",
+      jar: "paper.jar",
+      restartPolicy: "never",
+      tags: ["minecraft", "paper"],
+      templateId: "minecraft-paper",
+    });
+    await instanceService.writeInstanceFile(
+      "paper-version-smoke",
+      "metadata.json",
+      JSON.stringify({
+        serverSoftware: "Paper",
+        minecraftVersion: "1.21.8",
+        paperBuild: "42",
+        buildNumber: "42",
+      })
+    );
+    const status = await instanceService.getStatus("paper-version-smoke");
+    assert.strictEqual(status.serverSoftware, "Paper", "Paper backfill should persist serverSoftware.");
+    assert.strictEqual(status.minecraftVersion, "1.21.8", "Paper backfill should persist minecraftVersion.");
+    assert.strictEqual(status.paperBuild, "42", "Paper backfill should persist paperBuild.");
+    assert.strictEqual(status.version, "Paper 1.21.8 build 42", "Paper backfill should normalize display version.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function assertMinecraftPropertiesVersionBackfill() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-minecraft-properties-version-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "minecraft-properties-version-smoke",
+      displayName: "Minecraft Properties Version Smoke",
+      type: "minecraft-paper",
+      workingDirectory: "data",
+      jar: "paper.jar",
+      restartPolicy: "never",
+      tags: ["minecraft", "paper"],
+      templateId: "minecraft-paper",
+    });
+    await instanceService.writeInstanceFile(
+      "minecraft-properties-version-smoke",
+      "server.properties",
+      "motd=Smoke\nminecraft-version=1.21.8\n"
+    );
+    const status = await instanceService.getStatus("minecraft-properties-version-smoke");
+    assert.strictEqual(status.minecraftVersion, "1.21.8", "Minecraft server.properties backfill should persist minecraftVersion.");
+    assert.strictEqual(status.serverSoftware, "Paper", "Minecraft server.properties backfill should preserve inferred server software.");
   } finally {
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;
@@ -321,6 +412,8 @@ async function main() {
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMPlaceholderStartIsBlocked();
+  await assertPaperMetadataBackfill();
+  await assertMinecraftPropertiesVersionBackfill();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   console.log("Marketplace smoke checks passed.");

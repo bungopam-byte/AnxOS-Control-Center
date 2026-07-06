@@ -33,7 +33,7 @@ const MAX_LOG_LINES = 1000;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
-const VERSION_CACHE_VERSION = 2;
+const VERSION_CACHE_VERSION = 3;
 const FIVEM_LICENSE_MESSAGE = "FiveM needs a valid license key in server.cfg before it can start.";
 const FIVEM_LICENSE_PLACEHOLDERS = new Set([
   "CHANGE_ME",
@@ -492,12 +492,14 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     memoryLimit: payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null,
     ports: normalizePorts(payload.ports),
     version: payload.version ? String(payload.version).slice(0, 80) : null,
+    versionName: payload.versionName ? String(payload.versionName).slice(0, 80) : null,
     serverVersion: payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null,
     serverSoftware: payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null,
     minecraftVersion: payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null,
     templateVersion: payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null,
     templateId: payload.templateId ? String(payload.templateId).slice(0, 80) : null,
     buildNumber: payload.buildNumber ? String(payload.buildNumber).slice(0, 80) : null,
+    paperBuild: payload.paperBuild ? String(payload.paperBuild).slice(0, 80) : null,
     detectedVersionAt: payload.detectedVersionAt || null,
     versionCacheVersion: payload.versionCacheVersion || null,
     connectionHost: payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null,
@@ -620,6 +622,82 @@ function parseBuildNumber(value) {
   return String(value || "").match(/(?:build|b)[-_. ]?(\d{1,8})\b/i)?.[1] || null;
 }
 
+function parsePaperBuildNumber(value) {
+  const text = String(value || "");
+  return text.match(/\bpaper[-_\s]?(?:mc[-_\s]?)?(?:version\s*)?1\.\d+(?:\.\d+)?[-_\s+#]*(\d{1,8})\b/i)?.[1] ||
+    text.match(/\bpaper\b[^\n\r]*(?:build|#)\s*(\d{1,8})\b/i)?.[1] ||
+    parseBuildNumber(text);
+}
+
+function encodeVarInt(value) {
+  const bytes = [];
+  let remaining = Number(value) >>> 0;
+  do {
+    let byte = remaining & 0x7f;
+    remaining >>>= 7;
+    if (remaining !== 0) {
+      byte |= 0x80;
+    }
+    bytes.push(byte);
+  } while (remaining !== 0);
+  return Buffer.from(bytes);
+}
+
+function decodeVarInt(buffer, offset = 0) {
+  let value = 0;
+  let position = 0;
+  let currentOffset = offset;
+  while (currentOffset < buffer.length) {
+    const current = buffer[currentOffset];
+    value |= (current & 0x7f) << (7 * position);
+    currentOffset += 1;
+    if ((current & 0x80) !== 0x80) {
+      return { value, offset: currentOffset };
+    }
+    position += 1;
+    if (position > 5) {
+      break;
+    }
+  }
+  return null;
+}
+
+function buildMinecraftStatusRequest(port) {
+  const host = Buffer.from("127.0.0.1", "utf8");
+  const handshakePayload = Buffer.concat([
+    encodeVarInt(0),
+    encodeVarInt(764),
+    encodeVarInt(host.length),
+    host,
+    Buffer.from([(port >> 8) & 0xff, port & 0xff]),
+    encodeVarInt(1),
+  ]);
+  const handshake = Buffer.concat([encodeVarInt(handshakePayload.length), handshakePayload]);
+  const requestPayload = encodeVarInt(0);
+  return Buffer.concat([handshake, encodeVarInt(requestPayload.length), requestPayload]);
+}
+
+function parseMinecraftStatusResponse(buffer) {
+  const packetLength = decodeVarInt(buffer, 0);
+  if (!packetLength) {
+    return null;
+  }
+  const packetId = decodeVarInt(buffer, packetLength.offset);
+  if (!packetId) {
+    return null;
+  }
+  const jsonLength = decodeVarInt(buffer, packetId.offset);
+  if (!jsonLength) {
+    return null;
+  }
+  const jsonStart = jsonLength.offset;
+  const jsonEnd = jsonStart + jsonLength.value;
+  if (jsonEnd > buffer.length) {
+    return null;
+  }
+  return JSON.parse(buffer.subarray(jsonStart, jsonEnd).toString("utf8"));
+}
+
 async function readTextIfExists(filePath, maxBytes = 512 * 1024) {
   try {
     const stats = await fs.stat(filePath);
@@ -693,6 +771,7 @@ async function detectFromKnownFiles(config) {
   const dataRoot = path.join(instancePath(config.id), "data");
   const detections = [];
   const jsonCandidates = [
+    path.join(dataRoot, "metadata.json"),
     path.join(dataRoot, "version.json"),
     path.join(dataRoot, "install_profile.json"),
   ];
@@ -700,8 +779,14 @@ async function detectFromKnownFiles(config) {
   for (const filePath of jsonCandidates) {
     try {
       const parsed = await readJson(filePath);
-      const id = parsed.id || parsed.minecraftArguments || parsed.version || parsed.minecraft || parsed.minecraftVersion;
-      detections.push({ minecraftVersion: parseMinecraftVersion(id), buildNumber: parseBuildNumber(JSON.stringify(parsed)) });
+      const id = parsed.minecraftVersion || parsed.serverVersion || parsed.id || parsed.minecraftArguments || parsed.version || parsed.versionName || parsed.minecraft;
+      detections.push({
+        serverSoftware: parsed.serverSoftware || null,
+        minecraftVersion: parseMinecraftVersion(id),
+        buildNumber: parsed.buildNumber || parsed.paperBuild || parseBuildNumber(JSON.stringify(parsed)),
+        paperBuild: parsed.paperBuild || null,
+        versionName: parsed.versionName || parsed.version || null,
+      });
     } catch {}
   }
 
@@ -725,6 +810,88 @@ async function detectFromKnownFiles(config) {
   return detections.find((entry) => entry.minecraftVersion || entry.serverSoftware) || {};
 }
 
+function parsePropertiesText(text) {
+  return String(text || "").split(/\r?\n/).reduce((properties, line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("!")) {
+      return properties;
+    }
+    const separator = trimmed.search(/[:=]/);
+    if (separator < 0) {
+      return properties;
+    }
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim();
+    if (key) {
+      properties[key] = value;
+    }
+    return properties;
+  }, {});
+}
+
+async function detectFromServerProperties(config) {
+  const dataRoot = path.join(instancePath(config.id), "data");
+  const candidates = [
+    path.join(dataRoot, "server.properties"),
+    path.join(dataRoot, "server", "server.properties"),
+  ];
+
+  for (const filePath of candidates) {
+    const text = await readTextIfExists(filePath, 128 * 1024);
+    if (!text) {
+      continue;
+    }
+    const properties = parsePropertiesText(text);
+    const versionSource = properties["minecraft-version"] ||
+      properties["server-version"] ||
+      properties.version ||
+      properties["serverVersion"] ||
+      text.match(/minecraft(?: server)? version[:= ]+([0-9][^\s#]+)/i)?.[1];
+    const minecraftVersion = parseMinecraftVersion(versionSource);
+    if (minecraftVersion) {
+      return {
+        serverSoftware: inferServerSoftware(config),
+        minecraftVersion,
+      };
+    }
+  }
+
+  return {};
+}
+
+async function detectFromLogs(config) {
+  const dataRoot = path.join(instancePath(config.id), "data");
+  const candidates = [
+    path.join(dataRoot, "logs", "latest.log"),
+    path.join(dataRoot, "server", "logs", "latest.log"),
+    logPath(config.id, "stdout"),
+    logPath(config.id, "stderr"),
+  ];
+
+  for (const filePath of candidates) {
+    const text = await readTextIfExists(filePath, 256 * 1024);
+    if (!text) {
+      continue;
+    }
+    const paperLine = text.match(/(?:This server is running|Starting).{0,120}\bPaper\b.{0,160}/i)?.[0] ||
+      text.match(/\bPaper version\b.{0,160}/i)?.[0] ||
+      "";
+    const minecraftLine = text.match(/Starting minecraft server version\s+([0-9][^\s]+)/i)?.[0] || "";
+    const searchable = `${paperLine}\n${minecraftLine}`;
+    const minecraftVersion = parseMinecraftVersion(searchable);
+    if (paperLine || minecraftVersion) {
+      return {
+        serverSoftware: paperLine ? "Paper" : null,
+        minecraftVersion,
+        buildNumber: parsePaperBuildNumber(searchable),
+        paperBuild: parsePaperBuildNumber(searchable),
+      };
+    }
+  }
+
+  return {};
+}
+
 async function detectFromJars(config) {
   const jars = await findJarPaths(config);
   for (const jarPath of jars) {
@@ -735,7 +902,13 @@ async function detectFromJars(config) {
         const parsed = JSON.parse(versionJson);
         const minecraftVersion = parseMinecraftVersion(parsed.id || parsed.name || parsed.version);
         if (minecraftVersion) {
-          return { minecraftVersion, serverSoftware: inferServerSoftware({ ...config, args: [...(config.args || []), fileName] }) || "Vanilla" };
+          const serverSoftware = inferServerSoftware({ ...config, args: [...(config.args || []), fileName] }) || "Vanilla";
+          return {
+            minecraftVersion,
+            serverSoftware,
+            buildNumber: serverSoftware === "Paper" ? parsePaperBuildNumber(fileName) : null,
+            paperBuild: serverSoftware === "Paper" ? parsePaperBuildNumber(fileName) : null,
+          };
         }
       } catch {}
     }
@@ -747,7 +920,8 @@ async function detectFromJars(config) {
       return {
         minecraftVersion,
         serverSoftware: inferServerSoftware({ ...config, args: [...(config.args || []), searchable] }) || null,
-        buildNumber: parseBuildNumber(searchable),
+        buildNumber: parsePaperBuildNumber(searchable) || parseBuildNumber(searchable),
+        paperBuild: parsePaperBuildNumber(searchable),
       };
     }
 
@@ -763,37 +937,100 @@ async function detectFromJars(config) {
   return {};
 }
 
+function getMinecraftStatusPorts(config) {
+  const values = [
+    config.primaryPort,
+    ...(Array.isArray(config.ports) ? config.ports : []),
+    25565,
+  ];
+  return [...new Set(values.map((value) => Number.parseInt(value, 10)).filter((port) => Number.isInteger(port) && port > 0 && port <= 65535))];
+}
+
+async function queryMinecraftStatus(port) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const chunks = [];
+    let settled = false;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(PORT_CONNECT_TIMEOUT_MS);
+    socket.on("connect", () => {
+      socket.write(buildMinecraftStatusRequest(port));
+    });
+    socket.on("data", (chunk) => {
+      chunks.push(chunk);
+      const buffer = Buffer.concat(chunks);
+      try {
+        const parsed = parseMinecraftStatusResponse(buffer);
+        if (parsed?.version?.name) {
+          finish(parsed);
+        }
+      } catch {
+        finish(null);
+      }
+    });
+    socket.on("timeout", () => finish(null));
+    socket.on("error", () => finish(null));
+    socket.on("close", () => finish(null));
+  });
+}
+
+async function detectFromMinecraftStatus(config) {
+  for (const port of getMinecraftStatusPorts(config)) {
+    const status = await queryMinecraftStatus(port);
+    const minecraftVersion = parseMinecraftVersion(status?.version?.name);
+    if (minecraftVersion) {
+      return {
+        serverSoftware: inferServerSoftware(config),
+        minecraftVersion,
+      };
+    }
+  }
+  return {};
+}
+
 function buildVersionLabel(metadata) {
   const software = metadata.serverSoftware || null;
-  const minecraftVersion = cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.version);
-  const savedVersion = cleanVersionValue(metadata.version);
+  const minecraftVersion = cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.versionName || metadata.version);
+  const savedVersion = cleanVersionValue(metadata.versionName || metadata.version);
   if (savedVersion && savedVersion !== minecraftVersion) {
     return savedVersion;
   }
-  const buildNumber = cleanVersionValue(metadata.buildNumber);
+  const buildNumber = cleanVersionValue(metadata.paperBuild || metadata.buildNumber);
   const buildSuffix = buildNumber && buildNumber !== minecraftVersion ? ` build ${buildNumber}` : "";
   if (software && minecraftVersion) {
     return `${software} ${minecraftVersion}${buildSuffix}`;
   }
   const templateVersion = cleanVersionValue(metadata.templateVersion);
-  return cleanVersionValue(metadata.version || metadata.serverVersion || metadata.minecraftVersion) ||
+  return cleanVersionValue(metadata.versionName || metadata.version || metadata.serverVersion || metadata.minecraftVersion) ||
     (buildNumber ? `Build ${buildNumber}` : null) ||
     (templateVersion ? `Template v${templateVersion}` : null);
 }
 
 async function detectInstanceVersion(config) {
-  const cached = cleanVersionValue(config.serverVersion || config.minecraftVersion || config.version);
+  const cached = cleanVersionValue(config.versionName || config.version || config.serverVersion || config.minecraftVersion);
   if (cached && config.versionCacheVersion === VERSION_CACHE_VERSION) {
     return config;
   }
 
   const software = inferServerSoftware(config);
   const known = await detectFromKnownFiles(config);
+  const properties = software ? await detectFromServerProperties(config) : {};
   const jar = await detectFromJars(config);
+  const logs = await detectFromLogs(config);
+  const status = software ? await detectFromMinecraftStatus(config) : {};
   const detected = {
-    serverSoftware: known.serverSoftware || jar.serverSoftware || software || null,
-    minecraftVersion: cleanVersionValue(known.minecraftVersion || jar.minecraftVersion || config.minecraftVersion || config.serverVersion || config.version),
-    buildNumber: cleanVersionValue(known.buildNumber || jar.buildNumber || config.buildNumber),
+    serverSoftware: known.serverSoftware || properties.serverSoftware || jar.serverSoftware || logs.serverSoftware || status.serverSoftware || software || null,
+    minecraftVersion: cleanVersionValue(known.minecraftVersion || properties.minecraftVersion || jar.minecraftVersion || logs.minecraftVersion || status.minecraftVersion || config.minecraftVersion || config.serverVersion || config.versionName || config.version),
+    buildNumber: cleanVersionValue(known.buildNumber || known.paperBuild || jar.buildNumber || jar.paperBuild || logs.buildNumber || logs.paperBuild || config.buildNumber || config.paperBuild),
+    paperBuild: cleanVersionValue(known.paperBuild || jar.paperBuild || logs.paperBuild || config.paperBuild),
+    versionName: cleanVersionValue(known.versionName || config.versionName),
   };
   const label = buildVersionLabel({ ...config, ...detected });
   if (!label && !detected.minecraftVersion && !detected.serverSoftware) {
@@ -822,6 +1059,8 @@ async function backfillInstanceVersion(config) {
     next.serverSoftware !== config.serverSoftware ||
     next.minecraftVersion !== config.minecraftVersion ||
     next.buildNumber !== config.buildNumber ||
+    next.paperBuild !== config.paperBuild ||
+    next.versionName !== config.versionName ||
     next.versionCacheVersion !== config.versionCacheVersion
   ) {
     await saveInstanceConfig(next);
@@ -969,12 +1208,14 @@ async function updateInstance(instanceId, payload = {}) {
       : current.memoryLimit,
     ports: payload.ports !== undefined ? normalizePorts(payload.ports) : current.ports,
     version: payload.version !== undefined ? (payload.version ? String(payload.version).slice(0, 80) : null) : current.version,
+    versionName: payload.versionName !== undefined ? (payload.versionName ? String(payload.versionName).slice(0, 80) : null) : current.versionName,
     serverVersion: payload.serverVersion !== undefined ? (payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null) : current.serverVersion,
     serverSoftware: payload.serverSoftware !== undefined ? (payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null) : current.serverSoftware,
     minecraftVersion: payload.minecraftVersion !== undefined ? (payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null) : current.minecraftVersion,
     templateVersion: payload.templateVersion !== undefined ? (payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null) : current.templateVersion,
     templateId: payload.templateId !== undefined ? (payload.templateId ? String(payload.templateId).slice(0, 80) : null) : current.templateId,
     buildNumber: payload.buildNumber !== undefined ? (payload.buildNumber ? String(payload.buildNumber).slice(0, 80) : null) : current.buildNumber,
+    paperBuild: payload.paperBuild !== undefined ? (payload.paperBuild ? String(payload.paperBuild).slice(0, 80) : null) : current.paperBuild,
     detectedVersionAt: payload.detectedVersionAt !== undefined ? payload.detectedVersionAt : current.detectedVersionAt,
     versionCacheVersion: payload.versionCacheVersion !== undefined ? payload.versionCacheVersion : current.versionCacheVersion,
     connectionHost: payload.connectionHost !== undefined ? (payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null) : current.connectionHost,

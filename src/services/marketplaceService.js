@@ -1418,14 +1418,17 @@ function buildResolvedVersionMetadata(template, resolved = {}) {
   const serverSoftware = getTemplateServerSoftware(template);
   const minecraftVersion = template.category === "Minecraft" ? resolved.version || null : null;
   const build = resolved.build || null;
+  const isPaper = serverSoftware === "Paper";
   const buildSuffix = build && String(build) !== String(minecraftVersion) ? ` build ${build}` : "";
   const version = serverSoftware && minecraftVersion ? `${serverSoftware} ${minecraftVersion}${buildSuffix}` : resolved.version || null;
   return {
     version,
+    versionName: version,
     serverVersion: resolved.version || null,
     serverSoftware,
     minecraftVersion,
     buildNumber: build,
+    paperBuild: isPaper ? build : null,
     detectedVersionAt: new Date().toISOString(),
     versionCacheVersion: INSTANCE_VERSION_CACHE_VERSION,
   };

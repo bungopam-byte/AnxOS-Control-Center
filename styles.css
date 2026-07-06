@@ -3075,30 +3075,82 @@ body.is-resizing-files * {
 
 .instances-shell {
   display: grid;
-  grid-template-columns: minmax(300px, 0.58fr) minmax(680px, 1.42fr);
-  gap: 12px;
+  grid-template-columns: minmax(620px, 1fr) minmax(330px, 0.42fr);
+  grid-template-rows: auto auto 1fr;
+  gap: 14px;
   align-items: start;
   min-width: 0;
   overflow: hidden;
 }
 
 .instances-summary-grid {
-  grid-column: 1;
+  grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
 .instances-toolbar {
-  grid-column: 1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(220px, 0.42fr) minmax(160px, 0.26fr) auto;
   align-items: end;
-  padding: 12px;
-  gap: 10px;
+  padding: 16px;
+  gap: 12px;
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(43, 20, 74, 0.74), rgba(14, 8, 26, 0.88)),
+    rgba(13, 7, 22, 0.9);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
 }
 
-.instances-toolbar .docker-search,
+.instances-toolbar__title {
+  min-width: 0;
+}
+
+.instances-toolbar__title .eyebrow,
+.instances-toolbar__title .lede {
+  margin: 0;
+}
+
+.instances-toolbar__title h1 {
+  margin: 2px 0 4px;
+  font-size: clamp(1.8rem, 2.2vw, 2.45rem);
+  letter-spacing: 0;
+}
+
+.instances-toolbar .docker-search {
+  min-width: 0;
+}
+
 .instances-toolbar .docker-actions {
-  grid-column: 1 / -1;
+  justify-content: flex-end;
+  align-self: end;
+}
+
+.instances-toolbar__future {
+  grid-column: 2 / 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.instances-toolbar__future span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid rgba(185, 171, 200, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.instances-log-control {
+  display: none;
 }
 
 .instances-summary-grid .docker-summary-card {
@@ -3107,7 +3159,7 @@ body.is-resizing-files * {
 }
 
 .instance-create-form {
-  grid-column: 1;
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
@@ -3198,16 +3250,17 @@ body.is-resizing-files * {
 
 .instances-table-panel {
   grid-column: 1;
+  grid-row: 3;
 }
 
 .instances-details-panel {
   grid-column: 2;
-  grid-row: 1 / span 4;
+  grid-row: 3;
 }
 
 .instances-table-panel .docker-table-wrap {
-  min-height: clamp(420px, 56vh, 680px);
-  max-height: calc(100vh - 390px);
+  min-height: clamp(520px, 68vh, 780px);
+  max-height: calc(100vh - 210px);
 }
 
 .instance-name-cell {
@@ -3233,9 +3286,45 @@ body.is-resizing-files * {
   gap: 6px;
 }
 
+.instances-table {
+  min-width: 820px;
+}
+
 .instances-table td,
 .instances-table th {
   vertical-align: middle;
+}
+
+.instances-table th {
+  color: rgba(224, 214, 239, 0.68);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.instances-table td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.instances-table tbody tr {
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.instances-table tbody tr:hover {
+  background: rgba(156, 111, 255, 0.08);
+}
+
+.instances-table tbody tr.is-selected {
+  background: rgba(156, 111, 255, 0.13);
+}
+
+.instance-version-cell {
+  display: grid;
+  gap: 3px;
+  align-items: center;
+  justify-items: start;
 }
 
 .instance-version-badge {
@@ -3250,6 +3339,13 @@ body.is-resizing-files * {
   color: var(--muted);
   font-size: 0.73rem;
   line-height: 1.35;
+  white-space: nowrap;
+}
+
+.instance-version-cell small {
+  color: rgba(224, 214, 239, 0.52);
+  font-size: 0.68rem;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -3367,25 +3463,48 @@ body.is-resizing-files * {
 }
 
 .instance-workspace {
-  min-height: clamp(560px, 68vh, 780px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(17, 21, 31, 0.82);
+  min-height: clamp(520px, 68vh, 780px);
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(26, 14, 43, 0.92), rgba(13, 7, 22, 0.92)),
+    rgba(17, 21, 31, 0.82);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
   overflow: hidden;
   max-width: 100%;
 }
 
 .instance-workspace-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
+  padding: 16px;
+  border-bottom: 1px solid rgba(185, 171, 200, 0.12);
+}
+
+.instance-detail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(182, 108, 255, 0.38);
+  border-radius: 8px;
+  background: rgba(156, 111, 255, 0.13);
+  color: #d8c8ff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
 }
 
 .instance-workspace-header h3 {
   margin: 0 0 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1.05rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .instance-workspace-header span:not(.instance-state) {
@@ -3406,13 +3525,31 @@ body.is-resizing-files * {
   font-size: 0.76rem;
 }
 
+.instance-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(185, 171, 200, 0.12);
+  background: rgba(8, 10, 15, 0.24);
+}
+
+.instance-quick-actions .inline-action {
+  min-height: 32px;
+  padding: 7px 9px;
+}
+
+.instance-quick-actions .instance-danger-action {
+  display: none;
+}
+
 .instance-tabs {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(8, 10, 15, 0.36);
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(185, 171, 200, 0.12);
+  background: rgba(8, 10, 15, 0.34);
 }
 
 .instance-tab {
@@ -3434,26 +3571,40 @@ body.is-resizing-files * {
 
 .instance-tab-panel {
   display: none;
-  padding: 12px;
+  padding: 14px;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
+  max-height: calc(100vh - 355px);
 }
 
 .instance-tab-panel.is-active {
   display: grid;
-  gap: 16px;
+  gap: 14px;
+}
+
+.instance-overview-section {
+  display: grid;
+  gap: 10px;
+}
+
+.instance-overview-section h4 {
+  margin: 0;
+  color: rgba(224, 214, 239, 0.82);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .instance-overview-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .instance-overview-grid article {
-  padding: 13px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  padding: 10px;
+  border: 1px solid rgba(185, 171, 200, 0.12);
+  border-radius: 8px;
   background: rgba(8, 10, 15, 0.44);
 }
 
@@ -3464,6 +3615,52 @@ body.is-resizing-files * {
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.instance-overview-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(185, 171, 200, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.28);
+}
+
+.instance-overview-list div {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.42fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(185, 171, 200, 0.09);
+}
+
+.instance-overview-list div:last-child {
+  border-bottom: 0;
+}
+
+.instance-overview-list dt {
+  color: rgba(224, 214, 239, 0.58);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.instance-overview-list dd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.instance-overview-list .instance-copy-button {
+  flex: 0 0 auto;
 }
 
 .instance-minecraft-summary,
@@ -5279,7 +5476,15 @@ dd {
   }
 
   .instances-shell {
-    grid-template-columns: minmax(300px, 0.72fr) minmax(560px, 1.28fr);
+    grid-template-columns: minmax(560px, 1fr) minmax(320px, 0.46fr);
+  }
+
+  .instances-toolbar {
+    grid-template-columns: minmax(320px, 1fr) minmax(180px, 0.36fr) auto;
+  }
+
+  .instances-toolbar__future {
+    grid-column: 2 / 3;
   }
 
   .instance-files-grid {
@@ -5458,11 +5663,28 @@ dd {
   .playit-shell,
   .ssh-workspace-shell,
   .console-ops-shell,
+  .instances-shell,
   .marketplace-layout,
   .backup-workspace,
   .settings-shell,
   .coolpals-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .instances-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .instances-toolbar__title,
+  .instances-toolbar__future,
+  .instances-toolbar .docker-actions,
+  .instances-table-panel,
+  .instances-details-panel {
+    grid-column: 1 / -1;
+  }
+
+  .instances-details-panel {
+    grid-row: auto;
   }
 
   .settings-section,

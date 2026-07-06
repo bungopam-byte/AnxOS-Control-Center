@@ -881,6 +881,14 @@ function buildInstancePayload(template, options, ports) {
   const isMinecraft = template.category === "Minecraft";
   const tags = [...new Set([template.category?.toLowerCase(), template.id, isMinecraft ? "minecraft" : null].filter(Boolean))];
   const environment = {};
+  const serverVersion = options.version || template.serverVersion || template.gameVersion || (isMinecraft ? "latest" : null);
+  const metadata = {
+    version: serverVersion,
+    serverVersion,
+    templateVersion: template.version || null,
+    templateId: template.id || null,
+    primaryPort: ports[0] || null,
+  };
 
   if (ports[0]) {
     environment.PORT = String(ports[0]);
@@ -901,6 +909,7 @@ function buildInstancePayload(template, options, ports) {
       shutdownTimeoutMs: 10000,
       memoryLimit: memory,
       ports,
+      ...metadata,
       tags,
     };
   }
@@ -920,6 +929,7 @@ function buildInstancePayload(template, options, ports) {
       shutdownTimeoutMs: 10000,
       memoryLimit: memory,
       ports,
+      ...metadata,
       tags,
     };
   }
@@ -946,6 +956,7 @@ function buildInstancePayload(template, options, ports) {
       shutdownTimeoutMs: 15000,
       memoryLimit: memory,
       ports,
+      ...metadata,
       tags,
     };
   }
@@ -965,6 +976,7 @@ function buildInstancePayload(template, options, ports) {
       shutdownTimeoutMs: 10000,
       memoryLimit: memory,
       ports,
+      ...metadata,
       tags,
     };
   }
@@ -983,6 +995,7 @@ function buildInstancePayload(template, options, ports) {
     shutdownTimeoutMs: 10000,
     memoryLimit: memory,
     ports,
+    ...metadata,
     tags,
   };
 }

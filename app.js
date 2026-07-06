@@ -55,6 +55,7 @@ const instancesList = document.querySelector("[data-instances-list]");
 const instancesLoading = document.querySelector("[data-instances-loading]");
 const instancesEmpty = document.querySelector("[data-instances-empty]");
 const instancesDetailFields = document.querySelectorAll("[data-instance-detail]");
+const instanceAddressCopyButton = document.querySelector("[data-instance-address-copy]");
 const instancesSearchInput = document.querySelector("[data-instances-search]");
 const instancesLogStreamSelect = document.querySelector("[data-instances-log-stream]");
 const instancesLogLimitSelect = document.querySelector("[data-instances-log-limit]");
@@ -363,6 +364,7 @@ let filesViewMode = "browse";
 let fileEditorHeight = 560;
 let filesExplorerWidth = 320;
 let agentConnectionState = "disconnected";
+let latestAgentSettingsPayload = null;
 let titlebarWindowIsMaximized = false;
 let windowMaximizedUnsubscribe = null;
 let sidebarCollapsed = false;
@@ -2845,6 +2847,105 @@ function formatInstancePorts(instance, metrics = null) {
   return formatInstanceList(instance?.ports);
 }
 
+function normalizePortEntry(port) {
+  if (Number.isInteger(port) && port > 0 && port <= 65535) {
+    return port;
+  }
+  if (typeof port === "number") {
+    return normalizePortEntry(Number.parseInt(port, 10));
+  }
+  if (typeof port === "string") {
+    const match = port.match(/\d{1,5}/);
+    return match ? normalizePortEntry(Number.parseInt(match[0], 10)) : null;
+  }
+  if (port && typeof port === "object") {
+    return normalizePortEntry(port.port || port.hostPort || port.publicPort || port.containerPort);
+  }
+  return null;
+}
+
+function getInstancePorts(instance) {
+  const ports = Array.isArray(instance?.ports) ? instance.ports.map(normalizePortEntry).filter(Boolean) : [];
+  const primaryPort = normalizePortEntry(instance?.primaryPort);
+  return [...new Set([primaryPort, ...ports].filter(Boolean))];
+}
+
+function getInstancePrimaryPort(instance) {
+  return getInstancePorts(instance)[0] || null;
+}
+
+function getInstanceVersion(instance) {
+  const candidates = [
+    instance?.serverVersion,
+    instance?.version,
+    instance?.gameVersion,
+    instance?.minecraftVersion,
+    instance?.metadata?.serverVersion,
+    instance?.metadata?.version,
+    instance?.marketplace?.serverVersion,
+    instance?.marketplace?.version,
+  ];
+  const value = candidates.find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
+  return value ? String(value).trim() : "Unknown version";
+}
+
+function getSelectedNodeAgentUrl() {
+  const selectedNode = (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId());
+  return selectedNode?.agentUrl || latestAgentSettingsPayload?.effective?.agentUrl || latestAgentSettingsPayload?.stored?.agentUrl || DEFAULT_AGENT_SETTINGS.agentUrl;
+}
+
+function getInstanceConnectionHost(instance = null) {
+  if (instance?.connectionHost) {
+    return String(instance.connectionHost);
+  }
+  try {
+    const url = new URL(getSelectedNodeAgentUrl());
+    return url.hostname || "localhost";
+  } catch {
+    return "localhost";
+  }
+}
+
+function formatInstanceAddress(instance) {
+  const port = getInstancePrimaryPort(instance);
+  if (!port) {
+    return "No port configured";
+  }
+  return `${getInstanceConnectionHost(instance)}:${port}`;
+}
+
+function formatInstanceAddressLabel(instance) {
+  const address = formatInstanceAddress(instance);
+  if (address === "No port configured") {
+    return address;
+  }
+  const extraPorts = Math.max(getInstancePorts(instance).length - 1, 0);
+  return extraPorts > 0 ? `${address} +${extraPorts} more` : address;
+}
+
+async function copyInstanceAddress(instance, button = null) {
+  const address = formatInstanceAddress(instance);
+  if (address === "No port configured") {
+    showToast("No port configured.");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(address);
+    showToast("Copied!");
+    if (button) {
+      const previous = button.textContent;
+      button.textContent = "Copied!";
+      button.disabled = true;
+      window.setTimeout(() => {
+        button.textContent = previous || "Copy";
+        button.disabled = false;
+      }, 1400);
+    }
+  } catch {
+    showToast(address);
+  }
+}
+
 function getInstanceMetrics(instanceId = selectedInstanceId) {
   return latestInstanceMetrics?.id === instanceId ? latestInstanceMetrics : null;
 }
@@ -2928,7 +3029,7 @@ function inferMinecraftServerType(instance) {
 
 function inferMinecraftVersion(instance) {
   const searchable = [instance?.displayName, instance?.id, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ");
-  return searchable.match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "Unavailable";
+  return searchable.match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "Unknown version";
 }
 
 function renderInstanceWorkspaceProfile(instance) {
@@ -3010,7 +3111,7 @@ function renderMinecraftWorkspaceSummary(instance, metrics) {
     return;
   }
 
-  setMinecraftSummaryField("version", inferMinecraftVersion(instance));
+  setMinecraftSummaryField("version", getInstanceVersion(instance) === "Unknown version" ? inferMinecraftVersion(instance) : getInstanceVersion(instance));
   setMinecraftSummaryField("serverType", inferMinecraftServerType(instance));
   setMinecraftSummaryField("java", instance?.executable || "java");
   setMinecraftSummaryField("players", "Unavailable");
@@ -3965,7 +4066,34 @@ function buildInstanceNameCell(instance) {
   title.textContent = instance?.displayName || instance?.id || "Unnamed instance";
   const meta = document.createElement("span");
   meta.textContent = instance?.id || "missing-id";
-  wrapper.append(title, meta);
+  const detail = document.createElement("div");
+  detail.className = "instance-meta-row";
+  const version = document.createElement("span");
+  version.className = "instance-meta-chip";
+  version.textContent = getInstanceVersion(instance);
+  const address = document.createElement("span");
+  address.className = "instance-meta-chip";
+  address.textContent = formatInstanceAddressLabel(instance);
+  detail.append(version, address);
+  wrapper.append(title, meta, detail);
+  return wrapper;
+}
+
+function buildInstanceAddressCell(instance) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "instance-address-cell";
+  const label = document.createElement("span");
+  label.textContent = formatInstanceAddressLabel(instance);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "instance-copy-button";
+  button.textContent = "Copy";
+  button.disabled = !getInstancePrimaryPort(instance);
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    copyInstanceAddress(instance, button);
+  });
+  wrapper.append(label, button);
   return wrapper;
 }
 
@@ -3999,6 +4127,8 @@ function renderInstanceRows(instances) {
 
     addInstanceCell(row, buildInstanceNameCell(instance));
     addInstanceCell(row, formatInstanceType(instance.type));
+    addInstanceCell(row, getInstanceVersion(instance));
+    addInstanceCell(row, buildInstanceAddressCell(instance));
     addInstanceCell(row, buildInstanceStatePill(instance));
     addInstanceCell(row, formatInstanceValue(instance.pid));
     addInstanceCell(row, formatDuration(metrics?.uptimeSeconds));
@@ -4021,6 +4151,8 @@ function setInstanceDetails(instance = null) {
     setField("instancesSelectedMemory", "Unavailable");
     setInstanceDetail("name", "None selected");
     setInstanceDetail("id", "Unavailable");
+    setInstanceDetail("version", "Unknown version");
+    setInstanceDetail("address", "No port configured");
     setInstanceDetail("type", "Unavailable");
     setInstanceDetail("command", "Unavailable");
     setInstanceDetail("pid", "Unavailable");
@@ -4034,15 +4166,21 @@ function setInstanceDetails(instance = null) {
     renderInstanceWorkspaceProfile(null);
     populateInstanceConfigForm(null);
     renderInstanceNetwork(null);
+    if (instanceAddressCopyButton) {
+      instanceAddressCopyButton.disabled = true;
+    }
     return;
   }
 
   const command = [instance.executable, ...(Array.isArray(instance.args) ? instance.args : [])].filter(Boolean).join(" ");
+  const address = formatInstanceAddressLabel(instance);
   setField("instanceDetailState", instance.state || "Unavailable");
   setField("instancesSelectedCpu", formatInstanceCpu(metrics));
   setField("instancesSelectedMemory", formatInstanceMemory(metrics));
   setInstanceDetail("name", formatInstanceValue(instance.displayName));
   setInstanceDetail("id", formatInstanceValue(instance.id));
+  setInstanceDetail("version", getInstanceVersion(instance));
+  setInstanceDetail("address", address);
   setInstanceDetail("type", formatInstanceType(instance.type));
   setInstanceDetail("command", command || "Unavailable");
   setInstanceDetail("pid", formatInstanceValue(instance.pid));
@@ -4057,6 +4195,9 @@ function setInstanceDetails(instance = null) {
   renderMinecraftWorkspaceSummary(instance, metrics);
   populateInstanceConfigForm(instance);
   renderInstanceNetwork(instance);
+  if (instanceAddressCopyButton) {
+    instanceAddressCopyButton.disabled = !getInstancePrimaryPort(instance);
+  }
 }
 
 function selectInstance(instanceId, options = {}) {
@@ -10185,6 +10326,7 @@ function getAgentConfigSourceText(settingsPayload) {
 }
 
 function renderAgentSettings(settingsPayload) {
+  latestAgentSettingsPayload = settingsPayload || null;
   const storedSettings = {
     ...DEFAULT_AGENT_SETTINGS,
     ...(settingsPayload?.stored || {}),
@@ -10409,6 +10551,12 @@ titlebarWindowButtons.forEach((button) => {
 
 copyButtons.forEach((button) => {
   button.addEventListener("click", () => copyText(button.dataset.copy));
+});
+instanceAddressCopyButton?.addEventListener("click", () => {
+  const instance = findInstance();
+  if (instance) {
+    copyInstanceAddress(instance, instanceAddressCopyButton);
+  }
 });
 
 navItems.forEach((item) => {

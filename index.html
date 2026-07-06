@@ -1108,6 +1108,8 @@
                       <tr>
                         <th scope="col">Name / ID</th>
                         <th scope="col">Type</th>
+                        <th scope="col">Version</th>
+                        <th scope="col">IP:Port</th>
                         <th scope="col">State</th>
                         <th scope="col">PID</th>
                         <th scope="col">Uptime</th>
@@ -1139,6 +1141,11 @@
                   <div>
                     <h3 data-instance-detail="name">No instance selected</h3>
                     <span data-instance-detail="id">Select an instance to manage it.</span>
+                    <div class="instance-header-meta">
+                      <span data-instance-detail="version">Unknown version</span>
+                      <span data-instance-detail="address">No port configured</span>
+                      <button class="instance-copy-button" type="button" data-instance-address-copy disabled>Copy</button>
+                    </div>
                   </div>
                   <span class="instance-state" data-field="instanceDetailState">None</span>
                 </div>

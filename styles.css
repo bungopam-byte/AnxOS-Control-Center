@@ -3212,6 +3212,53 @@ body.is-resizing-files * {
   font-size: 0.78rem;
 }
 
+.instance-meta-row,
+.instance-header-meta,
+.instance-address-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.instance-meta-chip {
+  width: max-content;
+  max-width: 100%;
+  padding: 2px 7px;
+  border: 1px solid rgba(185, 171, 200, 0.2);
+  border-radius: 999px;
+  background: rgba(156, 111, 255, 0.09);
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.instance-address-cell {
+  min-width: 150px;
+}
+
+.instance-copy-button {
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid rgba(156, 111, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(156, 111, 255, 0.12);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.instance-copy-button:hover:not(:disabled) {
+  border-color: rgba(156, 111, 255, 0.72);
+  background: rgba(156, 111, 255, 0.2);
+}
+
+.instance-copy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
 .instance-state {
   display: inline-flex;
   align-items: center;
@@ -3279,6 +3326,19 @@ body.is-resizing-files * {
 .instance-workspace-header span:not(.instance-state) {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.instance-workspace-header .instance-header-meta {
+  margin-top: 8px;
+}
+
+.instance-workspace-header .instance-header-meta span {
+  padding: 3px 8px;
+  border: 1px solid rgba(185, 171, 200, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .instance-tabs {

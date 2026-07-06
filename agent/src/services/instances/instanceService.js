@@ -449,6 +449,7 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
   const id = existingConfig?.id || validateInstanceId(payload.id);
   const type = validateInstanceType(payload.type || existingConfig?.type);
   const command = buildTypeCommand(type, payload);
+  const primaryPort = Number.parseInt(payload.primaryPort, 10);
 
   assertExecutableAllowed(command.executable);
   assertSafeArguments(command.args);
@@ -467,6 +468,12 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     shutdownTimeoutMs: validatePositiveInteger(payload.shutdownTimeoutMs, DEFAULT_SHUTDOWN_TIMEOUT_MS, 10 * 60 * 1000),
     memoryLimit: payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null,
     ports: normalizePorts(payload.ports),
+    version: payload.version ? String(payload.version).slice(0, 80) : null,
+    serverVersion: payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null,
+    templateVersion: payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null,
+    templateId: payload.templateId ? String(payload.templateId).slice(0, 80) : null,
+    connectionHost: payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null,
+    primaryPort: Number.isInteger(primaryPort) && primaryPort > 0 && primaryPort <= 65535 ? primaryPort : null,
     tags: normalizeTags(payload.tags),
     createdAt,
     updatedAt: nowIso(),
@@ -636,6 +643,17 @@ async function updateInstance(instanceId, payload = {}) {
       ? (payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null)
       : current.memoryLimit,
     ports: payload.ports !== undefined ? normalizePorts(payload.ports) : current.ports,
+    version: payload.version !== undefined ? (payload.version ? String(payload.version).slice(0, 80) : null) : current.version,
+    serverVersion: payload.serverVersion !== undefined ? (payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null) : current.serverVersion,
+    templateVersion: payload.templateVersion !== undefined ? (payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null) : current.templateVersion,
+    templateId: payload.templateId !== undefined ? (payload.templateId ? String(payload.templateId).slice(0, 80) : null) : current.templateId,
+    connectionHost: payload.connectionHost !== undefined ? (payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null) : current.connectionHost,
+    primaryPort: payload.primaryPort !== undefined
+      ? (() => {
+        const port = Number.parseInt(payload.primaryPort, 10);
+        return Number.isInteger(port) && port > 0 && port <= 65535 ? port : null;
+      })()
+      : current.primaryPort,
     tags: payload.tags !== undefined ? normalizeTags(payload.tags) : current.tags,
     updatedAt: nowIso(),
   };

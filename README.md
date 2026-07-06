@@ -103,6 +103,60 @@ npm start
 
 This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
 
+## Debian Agent: Playit Metadata Permissions
+
+The Debian agent can report Playit installed/running state from normal service checks. Tunnel metadata such as the Playit domain, local target, protocol, and tunnel id requires access to the Playit daemon IPC socket, normally:
+
+```text
+/run/playit/playitd.sock
+```
+
+Check the current Playit permissions on the Debian host:
+
+```bash
+stat -c '%F %a %U %G %n' /run/playit /run/playit/playitd.sock /usr/lib/systemd/system/playit.service
+getent passwd playit
+getent group playit
+id <agent-user>
+```
+
+A healthy least-privilege setup gives the AnxOS Agent process read/write access to the socket and search access to `/run/playit`, without running the whole agent as root. Prefer one of these approaches:
+
+```bash
+# If the socket group is playit, add the agent service user to that group.
+sudo usermod -aG playit <agent-user>
+sudo systemctl restart anxos-agent
+```
+
+If Playit creates the socket with a group that is not shared with the agent, use a dedicated group and a systemd override for Playit:
+
+```bash
+sudo groupadd --system anxos-playit
+sudo usermod -aG anxos-playit playit
+sudo usermod -aG anxos-playit <agent-user>
+sudo systemctl edit playit
+```
+
+Use this override:
+
+```ini
+[Service]
+Group=anxos-playit
+RuntimeDirectoryMode=0750
+UMask=0007
+```
+
+Then restart Playit and the agent:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart playit
+sudo systemctl restart anxos-agent
+stat -c '%F %a %U %G %n' /run/playit /run/playit/playitd.sock
+```
+
+Do not use `chmod 777` on the Playit socket and do not run the entire AnxOS Agent as root. If socket access is still denied, `/api/v1/playit/snapshot` will keep `installed` and `running` detection but will leave tunnel metadata null and include a `diagnostics.playitIpcAccess` permission message.
+
 ## Add to the Debian App Launcher
 
 After `npm install`, copy or symlink the desktop entry into your local applications folder:

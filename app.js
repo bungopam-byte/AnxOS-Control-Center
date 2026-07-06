@@ -345,6 +345,7 @@ const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
 const STALE_INSTANCE_STORAGE_KEY = "anxos.instances.staleIds.v1";
 const staleInstanceIds = new Set();
+const instanceRemovalAllowedIds = new Set();
 const PRIMARY_NAVIGATION_ORDER = [
   "dashboard",
   "marketplace",
@@ -753,9 +754,15 @@ function isStaleInstanceId(instanceId) {
   return Boolean(instanceId && staleInstanceIds.has(instanceId));
 }
 
-function filterStaleInstances(instances) {
-  loadStaleInstanceIds();
-  return Array.isArray(instances) ? instances.filter((instance) => instance?.id && !staleInstanceIds.has(instance.id)) : [];
+function filterStaleInstances(instances, reason = "list-render") {
+  const normalizedInstances = Array.isArray(instances) ? instances.filter((instance) => instance?.id) : [];
+  console.info("[Instances] Renderer filter result.", {
+    reason,
+    inputCount: Array.isArray(instances) ? instances.length : 0,
+    outputCount: normalizedInstances.length,
+    filteredIds: [],
+  });
+  return normalizedInstances;
 }
 
 function forgetStaleInstanceId(instanceId) {
@@ -811,6 +818,10 @@ function logInstanceStaleCleanup(instanceId, reason, details = {}) {
     refreshedInstanceIds: details.refreshedInstanceIds || getInstances().map((instance) => instance.id),
     errorCode: details.error ? getAgentErrorCode(details.error) : null,
   });
+}
+
+function logInstanceLifecycle(message, details = {}) {
+  console.info("[Instances] Lifecycle:", message, details);
 }
 
 function debounce(callback, waitMs = 120) {
@@ -2599,7 +2610,7 @@ function normalizeInstancesPayload(payload) {
 
   return {
     root: payload?.root || payload?.data?.root || null,
-    instances: filterStaleInstances(instances),
+    instances: filterStaleInstances(instances, "list-response"),
   };
 }
 
@@ -2621,6 +2632,57 @@ function findInstance(instanceId = selectedInstanceId) {
   }
 
   return getInstances().find((instance) => instance?.id === instanceId) || null;
+}
+
+function updateInstanceSnapshot(instanceId, patch = {}) {
+  if (!latestInstancesSnapshot || !instanceId) {
+    return false;
+  }
+
+  let updated = false;
+  latestInstancesSnapshot = {
+    ...latestInstancesSnapshot,
+    instances: getInstances().map((instance) => {
+      if (instance?.id !== instanceId) {
+        return instance;
+      }
+
+      updated = true;
+      return {
+        ...instance,
+        ...patch,
+      };
+    }),
+  };
+
+  if (updated) {
+    renderInstanceRows(getInstances());
+    setInstanceDetails(findInstance(selectedInstanceId));
+    updateInstanceActionButtons();
+  }
+
+  return updated;
+}
+
+function removeInstanceFromSnapshot(instanceId) {
+  if (!latestInstancesSnapshot || !instanceId) {
+    return false;
+  }
+
+  const nextInstances = getInstances().filter((instance) => instance?.id !== instanceId);
+  if (nextInstances.length === getInstances().length) {
+    return false;
+  }
+
+  latestInstancesSnapshot = {
+    ...latestInstancesSnapshot,
+    instances: nextInstances,
+  };
+  renderInstanceRows(nextInstances);
+  setInstancesEmpty(nextInstances.length === 0);
+  updateInstanceActionButtons();
+  updateTitlebar();
+  return true;
 }
 
 function setInstanceDetail(name, value) {
@@ -3790,11 +3852,34 @@ function selectInstance(instanceId, options = {}) {
 }
 
 function renderInstancesSnapshot(snapshot) {
-  latestInstancesSnapshot = normalizeInstancesPayload(snapshot);
+  const previousInstances = getInstances();
+  const normalizedSnapshot = normalizeInstancesPayload(snapshot);
+  const incomingInstances = normalizedSnapshot.instances;
+  const incomingIds = new Set(incomingInstances.map((instance) => instance.id));
+  const preservedInstances = previousInstances.filter((instance) => {
+    return instance?.id && !incomingIds.has(instance.id) && !instanceRemovalAllowedIds.has(instance.id);
+  });
+  const removedIds = previousInstances
+    .filter((instance) => instance?.id && !incomingIds.has(instance.id) && instanceRemovalAllowedIds.has(instance.id))
+    .map((instance) => instance.id);
+
+  if (preservedInstances.length > 0 || removedIds.length > 0) {
+    console.info("[Instances] List reconciliation.", {
+      incomingCount: incomingInstances.length,
+      preservedIds: preservedInstances.map((instance) => instance.id),
+      removedIds,
+    });
+  }
+
+  latestInstancesSnapshot = {
+    ...normalizedSnapshot,
+    instances: [...incomingInstances, ...preservedInstances],
+  };
+  instanceRemovalAllowedIds.clear();
   const instances = getInstances();
   const previousSelectedInstanceId = selectedInstanceId;
   const storedInstanceId = readLastInstanceId();
-  const rememberedInstanceId = isStaleInstanceId(storedInstanceId) ? null : storedInstanceId;
+  const rememberedInstanceId = storedInstanceId;
   const previousExists = Boolean(previousSelectedInstanceId && findInstance(previousSelectedInstanceId));
   const rememberedExists = Boolean(rememberedInstanceId && findInstance(rememberedInstanceId));
   const selected =
@@ -3805,7 +3890,6 @@ function renderInstancesSnapshot(snapshot) {
 
   if (
     (previousSelectedInstanceId && !previousExists) ||
-    (storedInstanceId && !rememberedInstanceId) ||
     (rememberedInstanceId && !rememberedExists && !previousExists)
   ) {
     notifyMissingSelectedInstance();
@@ -3983,29 +4067,34 @@ async function handleMissingSelectedInstance(error = null, instanceId = selected
   const missingInstanceId = instanceId || selectedInstanceId;
 
   if (missingInstanceId) {
-    logInstanceStaleCleanup(missingInstanceId, reason, { error });
-    markStaleInstanceId(missingInstanceId, error);
+    console.warn("[Instances] Instance request failed; keeping renderer list intact.", {
+      instanceId: missingInstanceId,
+      reason,
+      errorCode: error ? getAgentErrorCode(error) : null,
+    });
   } else {
     notifyMissingSelectedInstance(error);
   }
 
-  selectedInstanceId = null;
   latestInstanceMetrics = null;
-  storeLastInstanceId(null);
-  clearInstanceLogs("Selected instance no longer exists.");
-  setInstanceDetails(null);
+
+  if (missingInstanceId && findInstance(missingInstanceId)) {
+    updateInstanceSnapshot(missingInstanceId, {
+      state: "Failed",
+      failureReason: getAgentErrorMessage(error, "Instance request failed."),
+    });
+    showToast(getAgentErrorMessage(error, "Instance request failed."), "warning");
+    return;
+  }
+
+  if (selectedInstanceId === missingInstanceId) {
+    selectedInstanceId = null;
+    storeLastInstanceId(null);
+    clearInstanceLogs("Selected instance no longer exists.");
+    setInstanceDetails(null);
+  }
+
   updateInstanceActionButtons();
-  if (latestInstancesSnapshot) {
-    latestInstancesSnapshot = {
-      ...latestInstancesSnapshot,
-      instances: filterStaleInstances(latestInstancesSnapshot.instances),
-    };
-  }
-  if (instancesRequestInFlight) {
-    window.setTimeout(() => refreshInstances(), 0);
-  } else {
-    await refreshInstances();
-  }
 }
 
 function getMarketplaceField(name) {
@@ -4686,7 +4775,14 @@ async function refreshInstances(options = {}) {
       await refreshSelectedInstanceMetrics();
     }
   } catch (error) {
-    renderInstancesUnavailable(`Instance request failed: ${getAgentErrorMessage(error)}`);
+    console.warn("[Instances] List refresh failed; keeping previous renderer state.", error);
+    if (latestInstancesSnapshot) {
+      setInstancesLoading(false);
+      setInstancesEmpty(getInstances().length === 0, "Instance list refresh failed. Keeping the last known list.");
+      showToast(getAgentErrorMessage(error, "Instance list refresh failed."), "warning");
+    } else {
+      renderInstancesUnavailable(`Instance request failed: ${getAgentErrorMessage(error)}`);
+    }
   } finally {
     instancesRequestInFlight = false;
     updateInstanceActionButtons();
@@ -4924,9 +5020,18 @@ async function runInstanceAction(actionName) {
   try {
     if (actionName === "delete") {
       showToast(`Deleting ${label}...`);
+    } else if (actionName === "start") {
+      logInstanceLifecycle("start requested", { instanceId: targetInstanceId });
     }
 
-    await desktopApiState.api.instances[actionName](targetInstanceId);
+    const actionResult = await desktopApiState.api.instances[actionName](targetInstanceId);
+    if (actionName === "start") {
+      logInstanceLifecycle("start result", {
+        instanceId: targetInstanceId,
+        state: actionResult?.instance?.state || actionResult?.state || null,
+        pid: actionResult?.instance?.pid || actionResult?.pid || null,
+      });
+    }
     forgetStaleInstanceId(targetInstanceId);
     showToast(actionName === "delete" ? "Instance deleted." : `Instance ${actionName} request completed.`);
 
@@ -4934,18 +5039,29 @@ async function runInstanceAction(actionName) {
       selectedInstanceId = null;
       latestInstanceMetrics = null;
       clearInstanceLogs();
+      setInstanceDetails(null);
+      instanceRemovalAllowedIds.add(targetInstanceId);
+      removeInstanceFromSnapshot(targetInstanceId);
     }
 
-    await refreshInstances();
+    const refreshedInstances = await refreshInstances();
+    if (actionName === "start") {
+      logInstanceLifecycle("list result after start", {
+        instanceId: targetInstanceId,
+        count: refreshedInstances.length,
+        containsInstance: refreshedInstances.some((instance) => instance.id === targetInstanceId),
+      });
+    }
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
       if (actionName === "delete") {
-        markStaleInstanceId(targetInstanceId, error);
+        instanceRemovalAllowedIds.add(targetInstanceId);
         selectedInstanceId = null;
         latestInstanceMetrics = null;
         storeLastInstanceId(null);
         clearInstanceLogs();
         setInstanceDetails(null);
+        removeInstanceFromSnapshot(targetInstanceId);
         showToast("Instance was already deleted. Refreshed the list.", "warning");
         await refreshInstances();
       } else {
@@ -4953,8 +5069,22 @@ async function runInstanceAction(actionName) {
       }
     } else {
       console.warn(`[Instances] ${actionName} failed.`, error);
+      if (actionName === "start" || actionName === "restart") {
+        updateInstanceSnapshot(targetInstanceId, {
+          state: "Failed",
+          failureReason: getAgentErrorMessage(error, `Instance ${actionName} failed.`),
+        });
+      }
       showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
-      await refreshInstances();
+      const refreshedInstances = await refreshInstances();
+      if (actionName === "start") {
+        logInstanceLifecycle("list result after failed start", {
+          instanceId: targetInstanceId,
+          count: refreshedInstances.length,
+          containsInstance: refreshedInstances.some((instance) => instance.id === targetInstanceId),
+          errorCode: getAgentErrorCode(error),
+        });
+      }
     }
   } finally {
     instanceActionRequestInFlight = false;

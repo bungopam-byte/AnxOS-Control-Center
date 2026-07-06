@@ -2934,10 +2934,13 @@ async function copyInstanceAddress(instance, button = null) {
     showToast("Copied!");
     if (button) {
       const previous = button.textContent;
-      button.textContent = "Copied!";
+      const previousTitle = button.title;
+      button.textContent = button.classList?.contains("instance-copy-button") ? "✓" : "Copied!";
+      button.title = "Copied!";
       button.disabled = true;
       window.setTimeout(() => {
         button.textContent = previous || "Copy";
+        button.title = previousTitle || "Copy address";
         button.disabled = false;
       }, 1400);
     }
@@ -4066,17 +4069,16 @@ function buildInstanceNameCell(instance) {
   title.textContent = instance?.displayName || instance?.id || "Unnamed instance";
   const meta = document.createElement("span");
   meta.textContent = instance?.id || "missing-id";
-  const detail = document.createElement("div");
-  detail.className = "instance-meta-row";
-  const version = document.createElement("span");
-  version.className = "instance-meta-chip";
-  version.textContent = getInstanceVersion(instance);
-  const address = document.createElement("span");
-  address.className = "instance-meta-chip";
-  address.textContent = formatInstanceAddressLabel(instance);
-  detail.append(version, address);
-  wrapper.append(title, meta, detail);
+  wrapper.append(title, meta);
   return wrapper;
+}
+
+function buildInstanceVersionCell(instance) {
+  const badge = document.createElement("span");
+  badge.className = "instance-version-badge";
+  badge.textContent = getInstanceVersion(instance);
+  badge.title = getInstanceVersion(instance);
+  return badge;
 }
 
 function buildInstanceAddressCell(instance) {
@@ -4084,10 +4086,28 @@ function buildInstanceAddressCell(instance) {
   wrapper.className = "instance-address-cell";
   const label = document.createElement("span");
   label.textContent = formatInstanceAddressLabel(instance);
+  label.title = getInstancePrimaryPort(instance) ? "Copy address" : "No port configured";
+  label.className = getInstancePrimaryPort(instance) ? "instance-address-text is-copyable" : "instance-address-text";
+  if (getInstancePrimaryPort(instance)) {
+    label.tabIndex = 0;
+    label.addEventListener("click", (event) => {
+      event.stopPropagation();
+      copyInstanceAddress(instance, button);
+    });
+    label.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        copyInstanceAddress(instance, button);
+      }
+    });
+  }
   const button = document.createElement("button");
   button.type = "button";
   button.className = "instance-copy-button";
-  button.textContent = "Copy";
+  button.textContent = "⧉";
+  button.title = "Copy address";
+  button.setAttribute("aria-label", "Copy address");
   button.disabled = !getInstancePrimaryPort(instance);
   button.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -4127,7 +4147,7 @@ function renderInstanceRows(instances) {
 
     addInstanceCell(row, buildInstanceNameCell(instance));
     addInstanceCell(row, formatInstanceType(instance.type));
-    addInstanceCell(row, getInstanceVersion(instance));
+    addInstanceCell(row, buildInstanceVersionCell(instance));
     addInstanceCell(row, buildInstanceAddressCell(instance));
     addInstanceCell(row, buildInstanceStatePill(instance));
     addInstanceCell(row, formatInstanceValue(instance.pid));

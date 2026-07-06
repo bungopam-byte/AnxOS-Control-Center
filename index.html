@@ -268,6 +268,29 @@
             </div>
           </header>
 
+          <div class="dashboard-ops-grid" aria-label="Operations snapshot">
+            <article>
+              <span>Docker</span>
+              <strong data-field="dockerSummaryContainers">Checking...</strong>
+              <small data-field="dockerSummaryStatus">Checking daemon...</small>
+            </article>
+            <article>
+              <span>Instances</span>
+              <strong><span data-field="instancesRunning">Checking...</span> running</strong>
+              <small><span data-field="instancesTotal">Checking...</span> total managed services</small>
+            </article>
+            <article>
+              <span>Selected Resource</span>
+              <strong data-field="instancesSelectedCpu">Unavailable</strong>
+              <small data-field="instancesSelectedMemory">RAM unavailable</small>
+            </article>
+            <article>
+              <span>Network</span>
+              <strong data-field="networkThroughput">Checking...</strong>
+              <small>Current transfer rate</small>
+            </article>
+          </div>
+
           <div class="status-grid dashboard-grid">
             <article class="status-card">
               <div class="status-card__top">

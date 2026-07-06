@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
 const { execFileSync } = require("child_process");
+const fs = require("fs");
 const path = require("path");
 const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
@@ -14,6 +15,10 @@ const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
+const DEFAULT_WINDOW_BOUNDS = {
+  width: 1180,
+  height: 820,
+};
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -41,6 +46,51 @@ function getRuntimeInfo() {
     node: process.versions.node || null,
     chromium: process.versions.chrome || null,
   };
+}
+
+function getWindowStatePath() {
+  return path.join(app.getPath("userData"), "config", "window-state.json");
+}
+
+function readWindowState() {
+  try {
+    const state = JSON.parse(fs.readFileSync(getWindowStatePath(), "utf8"));
+    const width = Number.parseInt(state.width, 10);
+    const height = Number.parseInt(state.height, 10);
+    const x = Number.parseInt(state.x, 10);
+    const y = Number.parseInt(state.y, 10);
+
+    return {
+      width: Number.isFinite(width) ? Math.max(width, 900) : DEFAULT_WINDOW_BOUNDS.width,
+      height: Number.isFinite(height) ? Math.max(height, 640) : DEFAULT_WINDOW_BOUNDS.height,
+      x: Number.isFinite(x) ? x : undefined,
+      y: Number.isFinite(y) ? y : undefined,
+      maximized: state.maximized === true,
+    };
+  } catch {
+    return {
+      ...DEFAULT_WINDOW_BOUNDS,
+      maximized: false,
+    };
+  }
+}
+
+function saveWindowState(window) {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const bounds = window.isMaximized() ? window.getNormalBounds() : window.getBounds();
+    const state = {
+      ...bounds,
+      maximized: window.isMaximized(),
+    };
+    fs.mkdirSync(path.dirname(getWindowStatePath()), { recursive: true });
+    fs.writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2));
+  } catch {
+    // Window state is a convenience preference; failure should not block startup or shutdown.
+  }
 }
 
 function getSenderWindow(event) {
@@ -95,9 +145,17 @@ function registerWindowIpc() {
 }
 
 function createWindow() {
+  const windowState = readWindowState();
+  let saveWindowStateTimer = null;
+  const scheduleWindowStateSave = () => {
+    clearTimeout(saveWindowStateTimer);
+    saveWindowStateTimer = setTimeout(() => saveWindowState(window), 250);
+  };
   const window = new BrowserWindow({
-    width: 1180,
-    height: 820,
+    width: windowState.width,
+    height: windowState.height,
+    x: windowState.x,
+    y: windowState.y,
     minWidth: 900,
     minHeight: 640,
     title: "AnxOS Control Center",
@@ -120,11 +178,26 @@ function createWindow() {
   });
 
   window.once("ready-to-show", () => {
+    if (windowState.maximized) {
+      window.maximize();
+    }
     window.show();
     sendMaximizedState(window);
   });
-  window.on("maximize", () => sendMaximizedState(window));
-  window.on("unmaximize", () => sendMaximizedState(window));
+  window.on("maximize", () => {
+    saveWindowState(window);
+    sendMaximizedState(window);
+  });
+  window.on("unmaximize", () => {
+    saveWindowState(window);
+    sendMaximizedState(window);
+  });
+  window.on("resize", scheduleWindowStateSave);
+  window.on("move", scheduleWindowStateSave);
+  window.on("close", () => {
+    clearTimeout(saveWindowStateTimer);
+    saveWindowState(window);
+  });
 
   window.loadFile(path.join(__dirname, "index.html"));
 
@@ -138,6 +211,26 @@ function createWindow() {
       event.preventDefault();
       shell.openExternal(url);
     }
+  });
+
+  window.webContents.on("context-menu", (_, params) => {
+    const template = params.isEditable
+      ? [
+          { role: "undo" },
+          { role: "redo" },
+          { type: "separator" },
+          { role: "cut" },
+          { role: "copy" },
+          { role: "paste" },
+          { type: "separator" },
+          { role: "selectAll" },
+        ]
+      : [
+          { role: "copy", enabled: Boolean(params.selectionText) },
+          { type: "separator" },
+          { role: "selectAll" },
+        ];
+    Menu.buildFromTemplate(template).popup({ window });
   });
 }
 

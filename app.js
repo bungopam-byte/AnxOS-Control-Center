@@ -279,6 +279,7 @@ let latestFileDocument = null;
 let selectedDockerContainerId = null;
 let selectedFileEntryPath = null;
 let activeSshSessionId = null;
+const refreshTaskIds = [];
 let sshDataUnsubscribe = null;
 let sshStatusUnsubscribe = null;
 let sshSelectedServerId = null;
@@ -336,6 +337,8 @@ const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
+const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
+const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
 const PRIMARY_NAVIGATION_ORDER = [
   "dashboard",
   "marketplace",
@@ -666,11 +669,55 @@ function getSafePageName(pageName) {
     return "instances";
   }
 
+  if (pageName === "amp" || pageName === "coolpals") {
+    return "dashboard";
+  }
+
   if (pageName === "console") {
     return "console";
   }
 
   return Array.from(pages).some((page) => page.dataset.page === pageName) ? pageName : DEFAULT_SETTINGS["general.defaultPage"];
+}
+
+function readLastPageName() {
+  try {
+    return getSafePageName(window.localStorage.getItem(LAST_PAGE_STORAGE_KEY));
+  } catch {
+    return DEFAULT_SETTINGS["general.defaultPage"];
+  }
+}
+
+function storeLastPageName(pageName) {
+  try {
+    window.localStorage.setItem(LAST_PAGE_STORAGE_KEY, getSafePageName(pageName));
+  } catch {}
+}
+
+function readLastInstanceId() {
+  try {
+    return window.localStorage.getItem(LAST_INSTANCE_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function storeLastInstanceId(instanceId) {
+  try {
+    if (instanceId) {
+      window.localStorage.setItem(LAST_INSTANCE_STORAGE_KEY, instanceId);
+    } else {
+      window.localStorage.removeItem(LAST_INSTANCE_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function debounce(callback, waitMs = 120) {
+  let timeoutId = null;
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => callback(...args), waitMs);
+  };
 }
 
 function getPageDisplayName(pageName) {
@@ -1498,7 +1545,7 @@ function applySettings(settings, options = {}) {
   }
 
   if (options.openDefaultPage) {
-    showPage(getSafePageName(settings["general.defaultPage"]));
+    showPage(readLastPageName() || getSafePageName(settings["general.defaultPage"]));
   } else {
     updateTitlebar();
   }
@@ -1795,8 +1842,9 @@ function startStartupFallback() {
 }
 
 function showPage(pageName) {
+  const safePageName = getSafePageName(pageName);
   navItems.forEach((item) => {
-    const isActive = item.dataset.pageTarget === pageName;
+    const isActive = item.dataset.pageTarget === safePageName;
     item.classList.toggle("is-active", isActive);
 
     if (isActive) {
@@ -1807,34 +1855,36 @@ function showPage(pageName) {
   });
 
   pages.forEach((page) => {
-    page.classList.toggle("is-active", page.dataset.page === pageName);
+    page.classList.toggle("is-active", page.dataset.page === safePageName);
   });
 
+  storeLastPageName(safePageName);
+
   if (
-    (pageName === "dashboard" || pageName === "amp" || pageName === "minecraft") &&
+    (safePageName === "dashboard" || safePageName === "amp" || safePageName === "minecraft") &&
     Date.now() - lastAmpRefreshAt > AMP_REFRESH_INTERVAL_MS
   ) {
     refreshAmpDashboard();
   }
 
-  if (pageName === "playit") {
+  if (safePageName === "playit") {
     refreshPlayitStatus();
   }
 
-  if (pageName === "docker") {
+  if (safePageName === "docker") {
     refreshDockerStatus();
   }
 
-  if (pageName === "instances") {
+  if (safePageName === "instances") {
     refreshInstances();
   }
 
-  if (pageName === "marketplace") {
+  if (safePageName === "marketplace") {
     refreshMarketplace();
     refreshMarketplaceDownloads();
   }
 
-  if (pageName === "files") {
+  if (safePageName === "files") {
     renderFilesView();
 
     if (filesConnectionState.connected) {
@@ -1845,12 +1895,12 @@ function showPage(pageName) {
     }
   }
 
-  if (pageName === "ssh") {
+  if (safePageName === "ssh") {
     renderSshView();
     resizeActiveSshSession();
   }
 
-  updateTitlebar(pageName);
+  updateTitlebar(safePageName);
 }
 
 function getActivePageName() {
@@ -2015,12 +2065,14 @@ function renderSnapshot(snapshot) {
     );
     setField("networkDownload", `${formatBytes(snapshot.network.downloadPerSecond)}/s`);
     setField("networkUpload", `${formatBytes(snapshot.network.uploadPerSecond)}/s`);
+    setField("networkThroughput", `${formatBytes(snapshot.network.downloadPerSecond)}/s down · ${formatBytes(snapshot.network.uploadPerSecond)}/s up`);
     setField("networkTotalDownload", formatBytes(snapshot.network.totalDownload));
     setField("networkTotalUpload", formatBytes(snapshot.network.totalUpload));
   } else {
     setField("networkUsage", "Unavailable");
     setField("networkDownload", "Unavailable");
     setField("networkUpload", "Unavailable");
+    setField("networkThroughput", "Unavailable");
     setField("networkTotalDownload", "Unavailable");
     setField("networkTotalUpload", "Unavailable");
   }
@@ -2408,6 +2460,8 @@ function renderDockerSnapshot(snapshot) {
   setField("dockerDaemon", state.daemon);
   setField("dockerRunningContainers", Number.isFinite(snapshot?.summary?.runningContainers) ? snapshot.summary.runningContainers : "Unavailable");
   setField("dockerTotalContainers", Number.isFinite(snapshot?.summary?.totalContainers) ? snapshot.summary.totalContainers : "Unavailable");
+  setField("dockerSummaryContainers", Number.isFinite(snapshot?.summary?.totalContainers) ? `${snapshot.summary.runningContainers || 0} / ${snapshot.summary.totalContainers}` : "Unavailable");
+  setField("dockerSummaryStatus", state.message);
   setField("dockerEmptyMessage", state.message);
   setField("dockerLoadingMessage", "Checking Docker daemon status...");
   renderDockerRows(containers);
@@ -2424,6 +2478,8 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setField("dockerDaemon", "Unavailable");
   setField("dockerRunningContainers", "Unavailable");
   setField("dockerTotalContainers", "Unavailable");
+  setField("dockerSummaryContainers", "Unavailable");
+  setField("dockerSummaryStatus", message);
   setField("dockerEmptyMessage", message);
   clearDockerRows();
   setDockerDetails(null);
@@ -3507,6 +3563,7 @@ function selectInstance(instanceId, options = {}) {
   const previousSelectedInstanceId = selectedInstanceId;
   const selectedInstance = findInstance(instanceId);
   selectedInstanceId = selectedInstance?.id || null;
+  storeLastInstanceId(selectedInstanceId);
   if (previousSelectedInstanceId !== selectedInstanceId) {
     clearInstanceLogs(selectedInstanceId ? "Refresh logs to load the selected instance." : "Select an instance and refresh logs.");
   }
@@ -3530,6 +3587,7 @@ function renderInstancesSnapshot(snapshot) {
   const instances = getInstances();
   const selected =
     findInstance(selectedInstanceId) ||
+    findInstance(readLastInstanceId()) ||
     instances[0] ||
     null;
   selectedInstanceId = selected?.id || null;
@@ -3549,6 +3607,7 @@ function renderInstancesUnavailable(message = "Instance manager unavailable.") {
   latestInstancesSnapshot = null;
   latestInstanceMetrics = null;
   selectedInstanceId = null;
+  storeLastInstanceId(null);
   setField("instancesTotal", "Unavailable");
   setField("instancesRunning", "Unavailable");
   setField("instancesSelectedCpu", "Unavailable");
@@ -6789,12 +6848,34 @@ async function downloadRemoteFile() {
 }
 
 function registerRefreshTask(callback, intervalMs) {
-  window.setInterval(callback, intervalMs);
+  const intervalId = window.setInterval(callback, intervalMs);
+  refreshTaskIds.push(intervalId);
   callback();
 }
 
-function showToast(message) {
+function inferToastTone(message, tone) {
+  if (tone) {
+    return tone;
+  }
+
+  const normalized = String(message || "").toLowerCase();
+  if (/\b(failed|error|unavailable|could not|invalid|denied)\b/.test(normalized)) {
+    return "error";
+  }
+  if (/\b(canceled|warning|missing|planned|not available)\b/.test(normalized)) {
+    return "warning";
+  }
+  if (/\b(saved|complete|connected|created|updated|installed|copied|cleared|request completed)\b/.test(normalized)) {
+    return "success";
+  }
+  return "info";
+}
+
+function showToast(message, tone = null) {
+  const nextTone = inferToastTone(message, tone);
   toast.textContent = message;
+  toast.dataset.tone = nextTone;
+  toast.setAttribute("role", nextTone === "error" ? "alert" : "status");
   toast.classList.add("is-visible");
   window.clearTimeout(showToast.timeoutId);
   showToast.timeoutId = window.setTimeout(() => {
@@ -8063,7 +8144,7 @@ sidebar?.addEventListener("mouseleave", () => {
 });
 window.addEventListener("resize", syncSidebarViewportState);
 
-consoleSearchInput?.addEventListener("input", filterConsoleRows);
+consoleSearchInput?.addEventListener("input", debounce(filterConsoleRows, 120));
 consoleClearButton?.addEventListener("click", clearConsoleRows);
 consoleCopyButton?.addEventListener("click", copyConsoleRows);
 consoleAutoscrollInput?.addEventListener("change", syncConsoleScrollMode);
@@ -8225,6 +8306,7 @@ window.addEventListener("mouseup", () => {
   stopFilesDividerDrag();
 });
 window.addEventListener("beforeunload", () => {
+  refreshTaskIds.forEach((intervalId) => window.clearInterval(intervalId));
   windowMaximizedUnsubscribe?.();
   stopFilesDividerDrag();
   disposeMonacoEditorResources();
@@ -8271,7 +8353,7 @@ filesGoButton?.addEventListener("click", () => {
 filesHomeButton?.addEventListener("click", () => {
   navigateRemoteDirectory(filesConnectionState.homePath || "/");
 });
-filesSearchInput?.addEventListener("input", filterFileRows);
+filesSearchInput?.addEventListener("input", debounce(filterFileRows, 120));
 filesRefreshButton?.addEventListener("click", () => {
   refreshFileListing({
     profileId: getFilesRequestProfileId(),
@@ -8343,7 +8425,7 @@ dockerStartButton?.addEventListener("click", () => handleDockerAction("start"));
 dockerStopButton?.addEventListener("click", () => handleDockerAction("stop"));
 dockerRestartButton?.addEventListener("click", () => handleDockerAction("restart"));
 updateDockerActionButtons();
-marketplaceSearchInput?.addEventListener("input", renderMarketplaceTemplates);
+marketplaceSearchInput?.addEventListener("input", debounce(renderMarketplaceTemplates, 120));
 marketplaceRefreshButton?.addEventListener("click", refreshMarketplace);
 downloadRefreshButton?.addEventListener("click", refreshMarketplaceDownloads);
 marketplaceWizard?.addEventListener("submit", installMarketplaceTemplate);
@@ -8351,7 +8433,7 @@ marketplaceCancelButton?.addEventListener("click", closeMarketplaceWizard);
 document.querySelectorAll("[data-instance-backup-action]").forEach((button) => {
   button.addEventListener("click", () => handleInstanceBackupAction(button.dataset.instanceBackupAction));
 });
-instancesSearchInput?.addEventListener("input", filterInstanceRows);
+instancesSearchInput?.addEventListener("input", debounce(filterInstanceRows, 120));
 instancesLogStreamSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesLogLimitSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesRefreshButton?.addEventListener("click", refreshInstances);
@@ -8502,7 +8584,7 @@ registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);
 registerRefreshTask(refreshPlayitStatus, 5000);
 registerRefreshTask(refreshDockerStatus, 5000);
 registerRefreshTask(() => {
-  if (getActivePageName() === "instances") {
+  if (getActivePageName() === "instances" || getActivePageName() === "dashboard") {
     refreshInstances();
   }
 }, 5000);

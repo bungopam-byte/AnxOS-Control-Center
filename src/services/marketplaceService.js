@@ -16,10 +16,31 @@ const COMMUNITY_TEMPLATE_FORMAT_VERSION = 1;
 
 const downloads = new Map();
 
-function createMarketplaceError(message, code = "MARKETPLACE_ERROR") {
+function createMarketplaceError(message, code = "MARKETPLACE_ERROR", details = {}) {
   const error = new Error(message);
   error.code = code;
+  error.details = details;
   return error;
+}
+
+function truncateText(value, maxLength = 1200) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function formatErrorDetails(details = {}) {
+  const parts = [];
+  if (details.templateId) parts.push(`templateId=${details.templateId}`);
+  if (details.step) parts.push(`step=${details.step}`);
+  if (details.url) parts.push(`url=${details.url}`);
+  if (details.status) parts.push(`status=${details.status}`);
+  if (details.body) parts.push(`body=${truncateText(details.body, 500)}`);
+  if (details.message) parts.push(`message=${details.message}`);
+  return parts.length ? ` (${parts.join(" | ")})` : "";
+}
+
+function createMarketplaceStepError(message, code, details = {}) {
+  return createMarketplaceError(`${message}${formatErrorDetails(details)}`, code, details);
 }
 
 function getAgentErrorCode(error) {

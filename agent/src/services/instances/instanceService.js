@@ -1419,7 +1419,13 @@ async function backfillInstanceVersion(config, options = {}) {
     next.versionName !== config.versionName ||
     next.versionCacheVersion !== config.versionCacheVersion
   ) {
-    await saveInstanceConfig(next);
+    try {
+      await saveInstanceConfig(next);
+    } catch (error) {
+      if (error?.code !== "EROFS" && error?.code !== "EACCES" && error?.code !== "EPERM") {
+        throw error;
+      }
+    }
   }
   return next;
 }

@@ -71,10 +71,17 @@ const instanceConfigCancelButton = document.querySelector("[data-instance-config
 const instanceConfigDirtyLabel = document.querySelector("[data-instance-config-dirty]");
 const instanceMinecraftSettings = document.querySelector("[data-instance-minecraft-settings]");
 const instanceMinecraftSummary = document.querySelector("[data-instance-minecraft-summary]");
+const instanceMinecraftSummaryFields = document.querySelectorAll("[data-minecraft-summary]");
+const instanceAppProfile = document.querySelector("[data-instance-app-profile]");
+const instanceAppIcon = document.querySelector("[data-instance-app-icon]");
+const instanceAppName = document.querySelector("[data-instance-app-name]");
+const instanceAppDescription = document.querySelector("[data-instance-app-description]");
 const minecraftPropertyInputs = document.querySelectorAll("[data-minecraft-property]");
 const instanceNetworkList = document.querySelector("[data-instance-network-list]");
 const instanceNetworkPortInput = document.querySelector("[data-instance-network-port]");
 const instanceNetworkAddButton = document.querySelector("[data-instance-network-add]");
+const instanceNetworkSummary = document.querySelector("[data-instance-network-summary]");
+const instanceNetworkDetails = document.querySelectorAll("[data-instance-network-detail]");
 const instanceRawJson = document.querySelector("[data-instance-raw-json]");
 const instanceAdvancedInputs = document.querySelectorAll("[data-instance-advanced]");
 const instanceFilesList = document.querySelector("[data-instance-files-list]");
@@ -83,6 +90,12 @@ const instanceFileEditor = document.querySelector("[data-instance-file-editor]")
 const instanceFileEditorName = document.querySelector("[data-instance-file-editor-name]");
 const instanceFileEditorState = document.querySelector("[data-instance-file-editor-state]");
 const instanceFileDropzone = document.querySelector("[data-instance-file-dropzone]");
+const instanceFileShortcuts = document.querySelector("[data-instance-file-shortcuts]");
+const instanceConsoleFilterSelect = document.querySelector("[data-instance-console-filter]");
+const instanceBackupTitle = document.querySelector("[data-instance-backup-title]");
+const instanceBackupDescription = document.querySelector("[data-instance-backup-description]");
+const instanceBackupEmptyTitle = document.querySelector("[data-instance-backup-empty-title]");
+const instanceBackupEmptyMessage = document.querySelector("[data-instance-backup-empty-message]");
 const marketplaceSearchInput = document.querySelector("[data-marketplace-search]");
 const marketplaceCategories = document.querySelector("[data-marketplace-categories]");
 const marketplaceRefreshButton = document.querySelector("[data-marketplace-refresh]");
@@ -323,6 +336,76 @@ const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
+const PRIMARY_NAVIGATION_ORDER = [
+  "dashboard",
+  "marketplace",
+  "instances",
+  "docker",
+  "files",
+  "ssh",
+  "playit",
+  "console",
+  "backups",
+  "settings",
+];
+const LEGACY_PRIMARY_PAGES = new Set(["minecraft", "amp", "coolpals"]);
+const INSTANCE_WORKSPACE_PROFILES = [
+  {
+    id: "minecraft",
+    label: "Minecraft Server",
+    icon: "MC",
+    description: "Minecraft servers use the shared instance workspace with server.properties, console commands, files, networking, and backups.",
+    fileShortcuts: ["server.properties", "eula.txt", "plugins", "mods", "config", "world", "logs", "whitelist.json", "ops.json", "banned-players.json", "banned-ips.json"],
+    backupTitle: "Minecraft Backups",
+    backupDescription: "Back up worlds, plugins, mods, configuration, and logs through the shared backup system.",
+    matches: (instance) => {
+      const searchable = [instance?.type, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase();
+      return searchable.includes("minecraft") || instance?.type === "minecraft-paper";
+    },
+  },
+  {
+    id: "discord-bot",
+    label: "Discord Bot",
+    icon: "BOT",
+    description: "Bot instances share console, logs, files, environment, and restart controls.",
+    matches: (instance) => [instance?.id, instance?.displayName, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase().includes("discord"),
+  },
+  {
+    id: "node",
+    label: "Node.js Application",
+    icon: "JS",
+    description: "Node.js applications share the runtime console, files, environment, networking, and process metrics.",
+    matches: (instance) => instance?.type === "node-app",
+  },
+  {
+    id: "python",
+    label: "Python Application",
+    icon: "PY",
+    description: "Python applications share the runtime console, files, environment, networking, and process metrics.",
+    matches: (instance) => instance?.type === "python-app",
+  },
+  {
+    id: "java",
+    label: "Java Application",
+    icon: "JAR",
+    description: "Java services share jar configuration, JVM arguments, console, files, and metrics.",
+    matches: (instance) => instance?.type === "java-app",
+  },
+  {
+    id: "database",
+    label: "Database Service",
+    icon: "DB",
+    description: "Database templates share process metrics, logs, files, ports, and backup entry points.",
+    matches: (instance) => [instance?.type, instance?.id, instance?.displayName, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase().match(/\b(postgresql|mariadb|redis|database)\b/),
+  },
+  {
+    id: "application",
+    label: "Application",
+    icon: "APP",
+    description: "Marketplace applications use the shared workspace for lifecycle, logs, files, metrics, and networking.",
+    matches: (instance) => [instance?.id, instance?.displayName, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase().match(/\b(jellyfin|immich|gitea|grafana|prometheus|nextcloud|uptime-kuma)\b/),
+  },
+];
 const DEFAULT_APP_NAME = "AnxOS Control Center";
 const DEFAULT_ACCENT_COLOR = "#b66cff";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
@@ -459,6 +542,31 @@ function setField(name, value) {
   });
 }
 
+function configurePrimaryNavigation() {
+  const navMenu = document.querySelector(".nav-menu");
+
+  if (!navMenu) {
+    return;
+  }
+
+  const orderedItems = PRIMARY_NAVIGATION_ORDER
+    .map((pageName) => navMenu.querySelector(`[data-page-target="${pageName}"]`))
+    .filter(Boolean);
+
+  orderedItems.forEach((item) => {
+    item.hidden = false;
+    navMenu.appendChild(item);
+  });
+
+  navMenu.querySelectorAll("[data-page-target]").forEach((item) => {
+    const pageTarget = item.dataset.pageTarget;
+    if (LEGACY_PRIMARY_PAGES.has(pageTarget) || !PRIMARY_NAVIGATION_ORDER.includes(pageTarget)) {
+      item.hidden = true;
+      item.removeAttribute("aria-current");
+    }
+  });
+}
+
 function setStartupStep(name, status) {
   const step = startupSteps[name];
 
@@ -554,6 +662,14 @@ function hexToMonacoColor(hex, alpha = 1) {
 }
 
 function getSafePageName(pageName) {
+  if (pageName === "minecraft") {
+    return "instances";
+  }
+
+  if (pageName === "console") {
+    return "console";
+  }
+
   return Array.from(pages).some((page) => page.dataset.page === pageName) ? pageName : DEFAULT_SETTINGS["general.defaultPage"];
 }
 
@@ -2028,6 +2144,7 @@ function renderPlayitSnapshot(snapshot) {
   setField("playitLatency", "Unavailable");
   setField("playitTraffic", "Unavailable");
   setField("playitSummary", playitState.summary);
+  renderInstanceNetwork(findInstance());
   updateTitlebar();
 }
 
@@ -2046,6 +2163,7 @@ function renderPlayitUnavailable(message = "Playit status unavailable.") {
   setField("playitLatency", "Unavailable");
   setField("playitTraffic", "Unavailable");
   setField("playitSummary", message);
+  renderInstanceNetwork(findInstance());
   updateTitlebar();
 }
 
@@ -2425,8 +2543,141 @@ function canRestartInstance(instance) {
 }
 
 function isMinecraftInstance(instance = findInstance()) {
-  const searchable = [instance?.type, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase();
-  return searchable.includes("minecraft") || instance?.type === "minecraft-paper" || instance?.type === "java-app";
+  return getInstanceWorkspaceProfile(instance)?.id === "minecraft";
+}
+
+function getInstanceWorkspaceProfile(instance) {
+  if (!instance) {
+    return null;
+  }
+
+  return INSTANCE_WORKSPACE_PROFILES.find((profile) => profile.matches(instance)) || {
+    id: "generic",
+    label: formatInstanceType(instance.type || "Instance"),
+    icon: "APP",
+    description: "Generic managed service using the shared Universal Instance Workspace.",
+    fileShortcuts: [],
+    backupTitle: "Instance Backups",
+    backupDescription: "Use the shared backup system for this managed instance.",
+  };
+}
+
+function setMinecraftSummaryField(name, value) {
+  instanceMinecraftSummaryFields.forEach((field) => {
+    if (field.dataset.minecraftSummary === name) {
+      field.textContent = formatInstanceValue(value);
+    }
+  });
+}
+
+function inferMinecraftServerType(instance) {
+  const searchable = [instance?.type, instance?.id, instance?.displayName, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase();
+  if (searchable.includes("purpur")) return "Purpur";
+  if (searchable.includes("fabric")) return "Fabric";
+  if (searchable.includes("forge") && !searchable.includes("neoforge")) return "Forge";
+  if (searchable.includes("neoforge")) return "NeoForge";
+  if (searchable.includes("vanilla")) return "Vanilla";
+  if (searchable.includes("paper")) return "Paper";
+  return instance?.type === "minecraft-paper" ? "Paper" : "Java";
+}
+
+function inferMinecraftVersion(instance) {
+  const searchable = [instance?.displayName, instance?.id, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ");
+  return searchable.match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "Unavailable";
+}
+
+function renderInstanceWorkspaceProfile(instance) {
+  const profile = getInstanceWorkspaceProfile(instance);
+
+  if (instanceAppProfile) {
+    instanceAppProfile.hidden = !profile;
+  }
+  if (instanceAppIcon) {
+    instanceAppIcon.textContent = profile?.icon || "APP";
+  }
+  if (instanceAppName) {
+    instanceAppName.textContent = profile?.label || "Application";
+  }
+  if (instanceAppDescription) {
+    instanceAppDescription.textContent = profile?.description || "Shared instance workspace.";
+  }
+
+  renderInstanceFileShortcuts(profile);
+  renderInstanceBackupProfile(profile);
+}
+
+function renderInstanceFileShortcuts(profile) {
+  if (!instanceFileShortcuts) {
+    return;
+  }
+
+  const shortcuts = Array.isArray(profile?.fileShortcuts) ? profile.fileShortcuts : [];
+  instanceFileShortcuts.replaceChildren();
+  instanceFileShortcuts.hidden = shortcuts.length === 0;
+
+  shortcuts.forEach((shortcut) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "instance-file-shortcut";
+    button.textContent = shortcut.endsWith("/") ? shortcut : shortcut;
+    button.addEventListener("click", () => openInstanceShortcut(shortcut));
+    instanceFileShortcuts.append(button);
+  });
+}
+
+async function openInstanceShortcut(shortcut) {
+  const pathValue = String(shortcut || "").replace(/\/+$/, "");
+  if (!pathValue) {
+    return;
+  }
+
+  if (isEditableInstanceFile(pathValue)) {
+    await openInstanceTextFile(pathValue);
+    return;
+  }
+
+  await refreshInstanceFiles(pathValue);
+}
+
+function renderInstanceBackupProfile(profile) {
+  if (instanceBackupTitle) {
+    instanceBackupTitle.textContent = profile?.backupTitle || "Instance Backups";
+  }
+  if (instanceBackupDescription) {
+    instanceBackupDescription.textContent = profile?.backupDescription || "Use the shared backup system for this instance.";
+  }
+  if (instanceBackupEmptyTitle) {
+    instanceBackupEmptyTitle.textContent = profile?.id === "minecraft" ? "Minecraft backup history" : "Backup history is shared";
+  }
+  if (instanceBackupEmptyMessage) {
+    instanceBackupEmptyMessage.textContent = profile?.id === "minecraft"
+      ? "Use Backup Now or open the Backups page for configured schedules and restore history."
+      : "Open the Backups page to view configured local backup paths.";
+  }
+}
+
+function renderMinecraftWorkspaceSummary(instance, metrics) {
+  if (instanceMinecraftSummary) {
+    instanceMinecraftSummary.hidden = !isMinecraftInstance(instance);
+  }
+
+  if (!isMinecraftInstance(instance)) {
+    return;
+  }
+
+  setMinecraftSummaryField("version", inferMinecraftVersion(instance));
+  setMinecraftSummaryField("serverType", inferMinecraftServerType(instance));
+  setMinecraftSummaryField("java", instance?.executable || "java");
+  setMinecraftSummaryField("players", "Unavailable");
+  setMinecraftSummaryField("maxPlayers", latestMinecraftProperties["max-players"] || "Unavailable");
+  setMinecraftSummaryField("tps", "Placeholder");
+  setMinecraftSummaryField("world", latestMinecraftProperties["level-name"] || "world");
+  setMinecraftSummaryField("seed", latestMinecraftProperties["level-seed"] || "Unavailable");
+  setMinecraftSummaryField("playit", latestPlayitSnapshot?.connected ? "Connected" : "Unavailable");
+  setMinecraftSummaryField("ram", formatInstanceMemory(metrics));
+  setMinecraftSummaryField("cpu", formatInstanceCpu(metrics));
+  setMinecraftSummaryField("disk", formatInstanceDisk(metrics));
+  setMinecraftSummaryField("uptime", formatDuration(metrics?.uptimeSeconds));
 }
 
 function readStoredInstanceTab() {
@@ -2658,6 +2909,8 @@ function populateMinecraftProperties(properties = {}) {
   latestMinecraftProperties = { ...defaults, ...properties };
   Object.entries(latestMinecraftProperties).forEach(([key, value]) => setMinecraftPropertyValue(key, value));
   instanceMinecraftSnapshot = JSON.stringify(collectMinecraftProperties());
+  renderMinecraftWorkspaceSummary(findInstance(), getInstanceMetrics());
+  renderInstanceNetwork(findInstance());
   syncInstanceConfigDirtyState();
 }
 
@@ -2667,6 +2920,7 @@ function renderInstanceNetwork(instance) {
   }
 
   instanceNetworkList.replaceChildren();
+  renderInstanceNetworkSummary(instance);
   const ports = Array.isArray(instance?.ports) ? instance.ports : [];
   const metrics = getInstanceMetrics(instance?.id);
   const portStatus = new Map((Array.isArray(metrics?.ports) ? metrics.ports : []).map((entry) => [entry.port, entry.open]));
@@ -2692,6 +2946,34 @@ function renderInstanceNetwork(instance) {
     row.append(label, remove);
     instanceNetworkList.appendChild(row);
   });
+}
+
+function setInstanceNetworkDetail(name, value) {
+  instanceNetworkDetails.forEach((field) => {
+    if (field.dataset.instanceNetworkDetail === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function renderInstanceNetworkSummary(instance) {
+  if (!instanceNetworkSummary) {
+    return;
+  }
+
+  const isMinecraft = isMinecraftInstance(instance);
+  instanceNetworkSummary.hidden = !instance;
+  const ports = Array.isArray(instance?.ports) ? instance.ports : [];
+  const configuredPort = ports[0] || latestMinecraftProperties["server-port"] || "Unavailable";
+  const tunnelAddress = latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || "Unavailable";
+  const localIp = latestPlayitSnapshot?.localIp || "127.0.0.1";
+  const localPort = latestPlayitSnapshot?.localPort || configuredPort;
+
+  setInstanceNetworkDetail("localAddress", localPort === "Unavailable" ? "Unavailable" : `${localIp}:${localPort}`);
+  setInstanceNetworkDetail("publicAddress", tunnelAddress);
+  setInstanceNetworkDetail("configuredPort", formatInstanceValue(configuredPort));
+  setInstanceNetworkDetail("playitTunnel", isMinecraft ? tunnelAddress : "Shared Playit page");
+  setInstanceNetworkDetail("tunnelStatus", latestPlayitSnapshot?.connected ? "Connected" : "Unavailable");
 }
 
 async function updateInstancePorts(ports) {
@@ -2760,14 +3042,88 @@ async function loadMinecraftProperties() {
 
 function syncConsoleLogSearch() {
   const query = (instanceConsoleSearchInput?.value || "").trim().toLowerCase();
+  const filter = instanceConsoleFilterSelect?.value || "all";
 
   if (!instancesLogList) {
     return;
   }
 
   [...instancesLogList.querySelectorAll("li")].forEach((row) => {
-    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+    const text = row.textContent.toLowerCase();
+    const stream = row.dataset.stream || "";
+    const severity = row.dataset.severity || "info";
+    const matchesQuery = !query || text.includes(query);
+    const matchesFilter =
+      filter === "all" ||
+      filter === stream ||
+      filter === severity ||
+      (filter === "error" && stream === "stderr");
+    row.hidden = !matchesQuery || !matchesFilter;
   });
+}
+
+function getLogSeverity(entry) {
+  const message = String(entry?.message || "").toLowerCase();
+  if (entry?.stream === "stderr" || /\b(error|exception|failed|fatal)\b/.test(message)) {
+    return "error";
+  }
+  if (/\b(warn|warning)\b/.test(message)) {
+    return "warn";
+  }
+  return "info";
+}
+
+function appendAnsiText(target, text) {
+  const ansiPattern = /\u001b\[([0-9;]*)m/g;
+  const colorMap = {
+    30: "ansi-black",
+    31: "ansi-red",
+    32: "ansi-green",
+    33: "ansi-yellow",
+    34: "ansi-blue",
+    35: "ansi-magenta",
+    36: "ansi-cyan",
+    37: "ansi-white",
+    90: "ansi-gray",
+    91: "ansi-red",
+    92: "ansi-green",
+    93: "ansi-yellow",
+    94: "ansi-blue",
+    95: "ansi-magenta",
+    96: "ansi-cyan",
+    97: "ansi-white",
+  };
+  let lastIndex = 0;
+  let activeClass = "";
+  let match;
+
+  function appendSegment(value) {
+    if (!value) {
+      return;
+    }
+
+    const span = document.createElement("span");
+    span.textContent = value;
+    if (activeClass) {
+      span.className = activeClass;
+    }
+    target.append(span);
+  }
+
+  while ((match = ansiPattern.exec(text)) !== null) {
+    appendSegment(text.slice(lastIndex, match.index));
+    const codes = (match[1] || "0").split(";").map((code) => Number.parseInt(code || "0", 10));
+    if (codes.includes(0)) {
+      activeClass = "";
+    }
+    const colorCode = codes.find((code) => colorMap[code]);
+    if (colorCode) {
+      activeClass = colorMap[colorCode];
+    }
+    lastIndex = ansiPattern.lastIndex;
+  }
+
+  appendSegment(text.slice(lastIndex));
 }
 
 async function sendInstanceConsoleCommand(event) {
@@ -3119,6 +3475,7 @@ function setInstanceDetails(instance = null) {
     setInstanceDetail("ports", "Unavailable");
     setInstanceDetail("tags", "Unavailable");
     setInstanceDetail("workingDirectory", "Unavailable");
+    renderInstanceWorkspaceProfile(null);
     populateInstanceConfigForm(null);
     renderInstanceNetwork(null);
     return;
@@ -3140,6 +3497,8 @@ function setInstanceDetails(instance = null) {
   setInstanceDetail("ports", formatInstancePorts(instance, metrics));
   setInstanceDetail("tags", formatInstanceList(instance.tags));
   setInstanceDetail("workingDirectory", formatInstanceValue(instance.workingDirectory));
+  renderInstanceWorkspaceProfile(instance);
+  renderMinecraftWorkspaceSummary(instance, metrics);
   populateInstanceConfigForm(instance);
   renderInstanceNetwork(instance);
 }
@@ -3237,8 +3596,13 @@ function renderInstanceLogs(payload) {
 
   entries.forEach((entry) => {
     const item = document.createElement("li");
+    const severity = getLogSeverity(entry);
+    item.dataset.stream = entry?.stream || "log";
+    item.dataset.severity = severity;
     item.classList.toggle("is-stderr", entry?.stream === "stderr");
     item.classList.toggle("is-stdin", entry?.stream === "stdin");
+    item.classList.toggle("is-warn", severity === "warn");
+    item.classList.toggle("is-error", severity === "error");
     const time = document.createElement("time");
     time.dateTime = entry?.at || "";
     time.textContent = entry?.at ? formatDateTime(entry.at) : "No timestamp";
@@ -3246,7 +3610,7 @@ function renderInstanceLogs(payload) {
     stream.className = "instance-log-stream";
     stream.textContent = entry?.stream || "log";
     const message = document.createElement("span");
-    message.textContent = entry?.message || "";
+    appendAnsiText(message, entry?.message || "");
     item.append(time, stream, message);
     instancesLogList?.appendChild(item);
   });
@@ -3651,6 +4015,26 @@ async function retryMarketplaceDownload(downloadId) {
   } catch (error) {
     showToast(error?.message || "Download retry failed.");
   }
+}
+
+function handleInstanceBackupAction(action) {
+  const selectedInstance = findInstance();
+
+  if (!selectedInstance) {
+    showToast("Select an instance first.");
+    return;
+  }
+
+  if (action === "backup-now") {
+    showToast("Backup creation uses the shared Backups system. Opening Backups.");
+  } else if (action === "history") {
+    showToast("Opening shared backup history.");
+  } else {
+    showToast("This backup action is not available yet.");
+    return;
+  }
+
+  showPage("backups");
 }
 
 async function refreshMarketplace() {
@@ -7964,6 +8348,9 @@ marketplaceRefreshButton?.addEventListener("click", refreshMarketplace);
 downloadRefreshButton?.addEventListener("click", refreshMarketplaceDownloads);
 marketplaceWizard?.addEventListener("submit", installMarketplaceTemplate);
 marketplaceCancelButton?.addEventListener("click", closeMarketplaceWizard);
+document.querySelectorAll("[data-instance-backup-action]").forEach((button) => {
+  button.addEventListener("click", () => handleInstanceBackupAction(button.dataset.instanceBackupAction));
+});
 instancesSearchInput?.addEventListener("input", filterInstanceRows);
 instancesLogStreamSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesLogLimitSelect?.addEventListener("change", () => refreshInstanceLogs());
@@ -7980,6 +8367,7 @@ document.querySelector('[data-instance-action="clear-console"]')?.addEventListen
 document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);
 document.querySelector('[data-instance-action="download-logs"]')?.addEventListener("click", downloadInstanceLogs);
 instanceConsoleSearchInput?.addEventListener("input", syncConsoleLogSearch);
+instanceConsoleFilterSelect?.addEventListener("change", syncConsoleLogSearch);
 instanceConsoleForm?.addEventListener("submit", sendInstanceConsoleCommand);
 instanceTabs.forEach((button) => {
   button.addEventListener("click", () => setActiveInstanceTab(button.dataset.instanceTab || "overview"));
@@ -8101,6 +8489,7 @@ windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaxi
   setTitlebarWindowState(isMaximized);
 }) || null;
 syncTitlebarWindowState();
+configurePrimaryNavigation();
 loadSettings();
 loadAgentSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });

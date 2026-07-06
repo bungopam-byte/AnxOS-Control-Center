@@ -2510,6 +2510,27 @@ body.is-resizing-files * {
   background: rgba(182, 108, 255, 0.07);
 }
 
+.instance-app-profile {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(185, 148, 255, 0.18);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(96, 49, 162, 0.22), rgba(15, 5, 29, 0.72));
+}
+
+.instance-app-profile strong {
+  display: block;
+  color: var(--text);
+}
+
+.instance-app-profile span:last-child {
+  color: var(--muted);
+}
+
 .instance-minecraft-summary h4,
 .instance-minecraft-settings h4 {
   grid-column: 1 / -1;
@@ -2527,6 +2548,7 @@ body.is-resizing-files * {
 }
 
 .instance-console-toolbar input,
+.instance-console-toolbar select,
 .instance-console-input input,
 .instance-network-row input,
 .instance-network-list input,
@@ -2542,8 +2564,106 @@ body.is-resizing-files * {
   color: #ff9ab1;
 }
 
+.instance-log-viewer li.is-warn {
+  color: #ffd166;
+}
+
+.instance-log-viewer li.is-error {
+  color: #ff8fa3;
+}
+
 .instance-log-viewer li.is-stdin {
   color: #c7a1ff;
+}
+
+.ansi-red {
+  color: #ff8fa3;
+}
+
+.ansi-green {
+  color: #8df7a7;
+}
+
+.ansi-yellow {
+  color: #ffd166;
+}
+
+.ansi-blue {
+  color: #93c5fd;
+}
+
+.ansi-magenta {
+  color: #d8b4fe;
+}
+
+.ansi-cyan {
+  color: #67e8f9;
+}
+
+.ansi-white {
+  color: #f8fafc;
+}
+
+.ansi-gray,
+.ansi-black {
+  color: #94a3b8;
+}
+
+.instance-file-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.instance-file-shortcut {
+  border: 1px solid rgba(185, 148, 255, 0.2);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: var(--text);
+  background: rgba(124, 70, 210, 0.13);
+  cursor: pointer;
+}
+
+.instance-file-shortcut:hover {
+  border-color: rgba(211, 186, 255, 0.5);
+  background: rgba(139, 92, 246, 0.22);
+}
+
+.instance-network-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.instance-network-summary article {
+  padding: 12px;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 5, 29, 0.58);
+}
+
+.instance-network-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.instance-network-summary strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.instance-backup-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.instance-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .instance-files-grid {
@@ -3946,7 +4066,8 @@ dd {
   .instance-advanced-panel,
   .instance-overview-grid,
   .instance-minecraft-summary,
-  .instance-minecraft-settings {
+  .instance-minecraft-settings,
+  .instance-network-summary {
     grid-template-columns: 1fr;
   }
 

@@ -116,7 +116,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Dashboard</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="minecraft" data-page-label="Minecraft" data-tooltip="Minecraft" aria-label="Minecraft">
+          <button class="nav-item" type="button" data-page-target="minecraft" data-page-label="Minecraft" data-tooltip="Minecraft" aria-label="Minecraft" hidden>
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M12 3 4.5 7v10L12 21l7.5-4V7Z"></path>
@@ -126,7 +126,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Minecraft</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="amp" data-page-label="AMP" data-tooltip="AMP" aria-label="AMP">
+          <button class="nav-item" type="button" data-page-target="amp" data-page-label="AMP" data-tooltip="AMP" aria-label="AMP" hidden>
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="5" y="4" width="14" height="5" rx="1.5"></rect>
@@ -200,7 +200,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Files</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="console" data-page-label="Console" data-tooltip="Console" aria-label="Console">
+          <button class="nav-item" type="button" data-page-target="console" data-page-label="Monitoring" data-tooltip="Monitoring" aria-label="Monitoring">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="5" width="16" height="14" rx="2"></rect>
@@ -208,7 +208,7 @@
                 <path d="M13 15h4"></path>
               </svg>
             </span>
-            <span class="nav-item__label" data-nav-label>Console</span>
+            <span class="nav-item__label" data-nav-label>Monitoring</span>
           </button>
           <button class="nav-item" type="button" data-page-target="backups" data-page-label="Backups" data-tooltip="Backups" aria-label="Backups">
             <span class="nav-item__icon" aria-hidden="true">
@@ -220,7 +220,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Backups</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="coolpals" data-page-label="CoolPals" data-tooltip="CoolPals" aria-label="CoolPals">
+          <button class="nav-item" type="button" data-page-target="coolpals" data-page-label="CoolPals" data-tooltip="CoolPals" aria-label="CoolPals" hidden>
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"></path>
@@ -455,85 +455,6 @@
                   <dd data-field="minecraftDashboardVersion">Checking...</dd>
                 </div>
               </dl>
-            </article>
-          </div>
-        </section>
-
-        <section class="page" data-page="minecraft">
-          <header class="page-header">
-            <div>
-              <p class="eyebrow">Game Server</p>
-              <h1>Minecraft</h1>
-              <p class="lede">ATM10 status from the selected AMP Minecraft instance when available.</p>
-            </div>
-          </header>
-
-          <div class="minecraft-page-grid">
-            <article class="status-card minecraft-overview-card">
-              <div class="status-card__top">
-                <span class="service-icon">MC</span>
-                <span class="status-pill status-pill--local" data-field="minecraftPageStatus">Checking...</span>
-              </div>
-              <h3>Server Status</h3>
-              <p data-field="minecraftPageSelectedInstance">Minecraft selection appears when available.</p>
-              <dl class="minecraft-detail-list">
-                <div>
-                  <dt>Selected Instance</dt>
-                  <dd data-field="minecraftPageInstance">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Version</dt>
-                  <dd data-field="minecraftPageVersion">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Ports</dt>
-                  <dd data-field="minecraftPagePorts">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Uptime</dt>
-                  <dd data-field="minecraftPageUptime">Checking...</dd>
-                </div>
-              </dl>
-            </article>
-
-            <article class="status-card minecraft-metric-card">
-              <div class="status-card__top">
-                <span class="service-icon">PLY</span>
-                <span class="status-pill status-pill--local">Live</span>
-              </div>
-              <h3>Players</h3>
-              <p class="metric-value" data-field="minecraftPagePlayers">Checking...</p>
-              <span class="metric-caption">Online / max players</span>
-            </article>
-
-            <article class="status-card minecraft-metric-card">
-              <div class="status-card__top">
-                <span class="service-icon">TPS</span>
-                <span class="status-pill status-pill--local">Tick</span>
-              </div>
-              <h3>TPS</h3>
-              <p class="metric-value" data-field="minecraftPageTps">Checking...</p>
-              <span class="metric-caption">Server tick rate</span>
-            </article>
-
-            <article class="status-card minecraft-metric-card">
-              <div class="status-card__top">
-                <span class="service-icon">RAM</span>
-                <span class="status-pill status-pill--external">AMP</span>
-              </div>
-              <h3>RAM</h3>
-              <p class="metric-value" data-field="minecraftPageRam">Checking...</p>
-              <span class="metric-caption">Memory reported by AMP</span>
-            </article>
-
-            <article class="status-card minecraft-metric-card">
-              <div class="status-card__top">
-                <span class="service-icon">CPU</span>
-                <span class="status-pill status-pill--external">AMP</span>
-              </div>
-              <h3>CPU</h3>
-              <p class="metric-value" data-field="minecraftPageCpu">Checking...</p>
-              <span class="metric-caption">Processor usage reported by AMP</span>
             </article>
           </div>
         </section>
@@ -1180,6 +1101,13 @@
                 </div>
 
                 <div class="instance-tab-panel is-active" data-instance-panel="overview">
+                  <div class="instance-app-profile" data-instance-app-profile hidden>
+                    <span class="service-icon" data-instance-app-icon>APP</span>
+                    <div>
+                      <strong data-instance-app-name>Application</strong>
+                      <span data-instance-app-description>Shared instance workspace</span>
+                    </div>
+                  </div>
                   <div class="instance-overview-grid">
                     <article><span>CPU</span><strong data-instance-detail="cpu">Unavailable</strong></article>
                     <article><span>RAM</span><strong data-instance-detail="memory">Unavailable</strong></article>
@@ -1198,12 +1126,19 @@
                   <div class="instance-minecraft-summary" data-instance-minecraft-summary hidden>
                     <h4>Minecraft</h4>
                     <dl class="docker-details-list">
-                      <div><dt>Version</dt><dd data-minecraft-summary="version">Future</dd></div>
-                      <div><dt>World</dt><dd data-minecraft-summary="world">world</dd></div>
-                      <div><dt>Players</dt><dd data-minecraft-summary="players">Future</dd></div>
-                      <div><dt>TPS</dt><dd data-minecraft-summary="tps">Future</dd></div>
-                      <div><dt>Java</dt><dd data-minecraft-summary="java">Configured executable</dd></div>
-                      <div><dt>Playit</dt><dd data-minecraft-summary="playit">Future</dd></div>
+                      <div><dt>Minecraft Version</dt><dd data-minecraft-summary="version">Unavailable</dd></div>
+                      <div><dt>Server Type</dt><dd data-minecraft-summary="serverType">Unavailable</dd></div>
+                      <div><dt>Java Version</dt><dd data-minecraft-summary="java">Configured executable</dd></div>
+                      <div><dt>Online Players</dt><dd data-minecraft-summary="players">Unavailable</dd></div>
+                      <div><dt>Maximum Players</dt><dd data-minecraft-summary="maxPlayers">Unavailable</dd></div>
+                      <div><dt>TPS</dt><dd data-minecraft-summary="tps">Placeholder</dd></div>
+                      <div><dt>World Name</dt><dd data-minecraft-summary="world">world</dd></div>
+                      <div><dt>Seed</dt><dd data-minecraft-summary="seed">Unavailable</dd></div>
+                      <div><dt>Playit Tunnel</dt><dd data-minecraft-summary="playit">Unavailable</dd></div>
+                      <div><dt>RAM Usage</dt><dd data-minecraft-summary="ram">Unavailable</dd></div>
+                      <div><dt>CPU Usage</dt><dd data-minecraft-summary="cpu">Unavailable</dd></div>
+                      <div><dt>Disk Usage</dt><dd data-minecraft-summary="disk">Unavailable</dd></div>
+                      <div><dt>Uptime</dt><dd data-minecraft-summary="uptime">Unavailable</dd></div>
                     </dl>
                   </div>
                 </div>
@@ -1212,6 +1147,15 @@
                   <div class="instance-console-toolbar">
                     <label class="console-toggle"><input type="checkbox" checked data-instance-console-autoscroll><span>Auto-scroll</span></label>
                     <label class="console-toggle"><input type="checkbox" data-instance-console-pause><span>Pause</span></label>
+                    <select data-instance-console-filter>
+                      <option value="all">All</option>
+                      <option value="info">Info</option>
+                      <option value="warn">Warn</option>
+                      <option value="error">Error</option>
+                      <option value="stdout">stdout</option>
+                      <option value="stderr">stderr</option>
+                      <option value="stdin">stdin</option>
+                    </select>
                     <input type="search" placeholder="Search logs" data-instance-console-search>
                     <button class="inline-action" type="button" data-instance-action="copy-console">Copy</button>
                     <button class="inline-action" type="button" data-instance-action="clear-console">Clear</button>
@@ -1229,6 +1173,7 @@
                 </div>
 
                 <div class="instance-tab-panel" data-instance-panel="files">
+                  <div class="instance-file-shortcuts" data-instance-file-shortcuts hidden></div>
                   <div class="instance-files-toolbar">
                     <button class="inline-action" type="button" data-instance-file-action="up">Up</button>
                     <button class="inline-action" type="button" data-instance-file-action="refresh">Refresh</button>
@@ -1281,17 +1226,39 @@
                 </form>
 
                 <div class="instance-tab-panel" data-instance-panel="networking">
+                  <div class="instance-network-summary" data-instance-network-summary hidden>
+                    <article><span>Local Address</span><strong data-instance-network-detail="localAddress">Unavailable</strong></article>
+                    <article><span>Public Address</span><strong data-instance-network-detail="publicAddress">Unavailable</strong></article>
+                    <article><span>Configured Port</span><strong data-instance-network-detail="configuredPort">Unavailable</strong></article>
+                    <article><span>Playit Tunnel</span><strong data-instance-network-detail="playitTunnel">Unavailable</strong></article>
+                    <article><span>Tunnel Status</span><strong data-instance-network-detail="tunnelStatus">Unavailable</strong></article>
+                  </div>
                   <div class="instance-network-list" data-instance-network-list></div>
                   <div class="ssh-connection-actions"><input type="number" min="1" max="65535" placeholder="Add port" data-instance-network-port><button class="inline-action" type="button" data-instance-network-add>Add Port</button></div>
                   <p class="ssh-password-note">Playit tunnel assignment is planned for a future phase.</p>
                 </div>
 
-                <div class="instance-tab-panel" data-instance-panel="backups"><div class="docker-empty-state"><strong>Backups are planned</strong><span>Scheduled backups will appear here in a future phase.</span></div></div>
+                <div class="instance-tab-panel" data-instance-panel="backups">
+                  <div class="instance-backup-panel">
+                    <div class="panel-heading">
+                      <div><h3 data-instance-backup-title>Backups</h3><span data-instance-backup-description>Use the shared backup system for this instance.</span></div>
+                      <span class="status-pill status-pill--planned">Shared</span>
+                    </div>
+                    <div class="instance-backup-actions">
+                      <button class="inline-action" type="button" data-instance-backup-action="backup-now">Backup Now</button>
+                      <button class="inline-action" type="button" data-instance-backup-action="restore" disabled>Restore</button>
+                      <button class="inline-action" type="button" data-instance-backup-action="schedule" disabled>Scheduled Backups</button>
+                      <button class="inline-action" type="button" data-instance-backup-action="history">Backup History</button>
+                    </div>
+                    <div class="docker-empty-state"><strong data-instance-backup-empty-title>Backup history is shared</strong><span data-instance-backup-empty-message>Open the Backups page to view configured local backup paths.</span></div>
+                  </div>
+                </div>
 
                 <div class="instance-tab-panel instance-advanced-panel" data-instance-panel="advanced">
                   <label class="ssh-field"><span>Executable</span><input data-instance-advanced="executable"></label>
                   <label class="ssh-field"><span>Arguments</span><input data-instance-advanced="args"></label>
                   <label class="ssh-field"><span>Environment Variables</span><input data-instance-advanced="environment"></label>
+                  <label class="ssh-field"><span>Working Directory</span><input data-instance-advanced="workingDirectory"></label>
                   <label class="ssh-field"><span>Tags</span><input data-instance-advanced="tags"></label>
                   <label class="ssh-field"><span>Restart Policy</span><input data-instance-advanced="restartPolicy"></label>
                   <label class="ssh-field"><span>Startup Timeout</span><input data-instance-advanced="startupTimeoutMs"></label>

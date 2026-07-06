@@ -11,6 +11,7 @@ const { getConfig } = require("./config");
 const { handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
 const { handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
+const { handleInstances } = require("./routes/instances");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handleSystemSummary } = require("./routes/system");
 
@@ -77,6 +78,10 @@ async function routeRequest(request, url) {
 
   if (isActionInvokeRoute(request, pathname)) {
     return handleActionInvoke(request, url);
+  }
+
+  if (pathname === "/api/v1/instances" || pathname.startsWith("/api/v1/instances/")) {
+    return handleInstances(request, url);
   }
 
   if (request.method !== "GET") {

@@ -18,6 +18,7 @@ class AgentClientError extends Error {
     this.name = "AgentClientError";
     this.status = details.status || null;
     this.code = details.code || null;
+    this.payload = details.payload || null;
   }
 }
 
@@ -288,7 +289,7 @@ async function requestJson(pathname, options = {}) {
       logAgentRequestFailure(pathname, response.status, responseErrorCode);
       throw new AgentClientError(`Agent request failed with HTTP ${response.status}.`, {
         status: response.status,
-        code: "AGENT_HTTP_ERROR",
+        code: responseErrorCode,
         payload,
       });
     }
@@ -1290,8 +1291,66 @@ async function getFileListing(currentPath = ".") {
   return normalizeFileListing(await getFileList(currentPath));
 }
 
+function encodeInstanceId(instanceId) {
+  return encodeURIComponent(String(instanceId || ""));
+}
+
+async function listInstances() {
+  return requestJson("/api/v1/instances");
+}
+
+async function createInstance(payload = {}) {
+  return requestJson("/api/v1/instances", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function getInstanceStatus(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/status`);
+}
+
+async function getInstanceMetrics(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/metrics`);
+}
+
+async function getInstanceLogs(instanceId, options = {}) {
+  const query = new URLSearchParams({
+    stream: options.stream || "all",
+    limit: String(options.limit || 200),
+  });
+
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`);
+}
+
+async function startInstance(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/start`, {
+    method: "POST",
+  });
+}
+
+async function stopInstance(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/stop`, {
+    method: "POST",
+  });
+}
+
+async function restartInstance(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/restart`, {
+    method: "POST",
+  });
+}
+
+async function deleteInstance(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}`, {
+    method: "DELETE",
+  });
+}
+
 module.exports = {
   AgentClientError,
+  createInstance,
+  deleteInstance,
   getAgentConfigPath,
   getBackendMode,
   getDefaultAgentSettings,
@@ -1306,12 +1365,19 @@ module.exports = {
   getFileList,
   getFileListing,
   getHealth,
+  getInstanceLogs,
+  getInstanceMetrics,
+  getInstanceStatus,
   getPlayitSnapshot,
   getPlayitStatus,
   isHealthy,
+  listInstances,
   loadEnvironment,
   readAgentSettings,
   requestJson,
   saveAgentSettings,
+  restartInstance,
   testConnection,
+  startInstance,
+  stopInstance,
 };

@@ -162,6 +162,16 @@
             </span>
             <span class="nav-item__label" data-nav-label>Docker</span>
           </button>
+          <button class="nav-item" type="button" data-page-target="instances" data-page-label="Instances" data-tooltip="Instances" aria-label="Instances">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="5" width="16" height="5" rx="1.4"></rect>
+                <rect x="4" y="14" width="16" height="5" rx="1.4"></rect>
+                <path d="M8 7.5h.01M8 16.5h.01M12 10v4"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Instances</span>
+          </button>
           <button class="nav-item" type="button" data-page-target="ssh" data-page-label="SSH" data-tooltip="SSH" aria-label="SSH">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -930,6 +940,165 @@
                 </dl>
               </aside>
             </div>
+          </section>
+        </section>
+
+        <section class="page" data-page="instances">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Universal Runtime</p>
+              <h1>Instances</h1>
+              <p class="lede">Create, monitor, and control long-running services managed by the Debian agent.</p>
+            </div>
+          </header>
+
+          <section class="instances-shell" aria-label="Universal instances">
+            <div class="docker-summary-grid instances-summary-grid">
+              <article class="docker-summary-card">
+                <span class="service-icon">INS</span>
+                <div><span>Total Instances</span><strong data-field="instancesTotal">Unavailable</strong></div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">RUN</span>
+                <div><span>Running</span><strong data-field="instancesRunning">Unavailable</strong></div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">CPU</span>
+                <div><span>Selected CPU</span><strong data-field="instancesSelectedCpu">Unavailable</strong></div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">MEM</span>
+                <div><span>Selected RAM</span><strong data-field="instancesSelectedMemory">Unavailable</strong></div>
+              </article>
+            </div>
+
+            <div class="docker-toolbar instances-toolbar">
+              <label class="docker-search">
+                <span>Search instances</span>
+                <input type="search" placeholder="Search by name, ID, type, or tag" data-instances-search disabled>
+              </label>
+              <label class="docker-filter">
+                <span>Logs</span>
+                <select data-instances-log-stream disabled>
+                  <option value="all">All</option>
+                  <option value="stdout">stdout</option>
+                  <option value="stderr">stderr</option>
+                </select>
+              </label>
+              <label class="docker-filter">
+                <span>Limit</span>
+                <select data-instances-log-limit disabled>
+                  <option value="100">100</option>
+                  <option value="200" selected>200</option>
+                  <option value="500">500</option>
+                </select>
+              </label>
+              <div class="docker-actions" aria-label="Instance actions">
+                <button class="inline-action" type="button" data-instance-action="refresh" disabled>Refresh</button>
+                <button class="inline-action" type="button" data-instance-action="create">Create</button>
+                <button class="inline-action" type="button" data-instance-action="start" disabled>Start</button>
+                <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
+                <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
+                <button class="inline-action" type="button" data-instance-action="delete" disabled>Delete</button>
+                <button class="inline-action" type="button" data-instance-action="logs" disabled>Refresh Logs</button>
+              </div>
+            </div>
+
+            <form class="instance-create-form" data-instance-create-form hidden>
+              <label class="ssh-field"><span>ID</span><input type="text" placeholder="discord_bot" data-instance-form="id" autocomplete="off"></label>
+              <label class="ssh-field"><span>Name</span><input type="text" placeholder="Discord Bot" data-instance-form="displayName" autocomplete="off"></label>
+              <label class="ssh-field">
+                <span>Type</span>
+                <select data-instance-form="type">
+                  <option value="custom-command">Custom Command</option>
+                  <option value="node-app">Node.js Application</option>
+                  <option value="python-app">Python Application</option>
+                  <option value="java-app">Java Application</option>
+                  <option value="minecraft-paper">Minecraft Paper Server</option>
+                </select>
+              </label>
+              <label class="ssh-field"><span>Executable</span><input type="text" placeholder="node, python3, java, or /usr/bin/custom" data-instance-form="executable" autocomplete="off"></label>
+              <label class="ssh-field" data-instance-entrypoint-field><span>Entrypoint/JAR</span><input type="text" placeholder="index.js, app.py, app.jar, paper.jar" data-instance-form="entrypoint" autocomplete="off"></label>
+              <label class="ssh-field"><span>Args</span><input type="text" placeholder="--port 3000" data-instance-form="args" autocomplete="off"></label>
+              <label class="ssh-field"><span>Working Dir</span><input type="text" placeholder="data" data-instance-form="workingDirectory" autocomplete="off"></label>
+              <label class="ssh-field"><span>Ports</span><input type="text" placeholder="3000, 25565" data-instance-form="ports" autocomplete="off"></label>
+              <label class="ssh-field"><span>Env Vars</span><input type="text" placeholder="NODE_ENV=production,PORT=3000" data-instance-form="environment" autocomplete="off"></label>
+              <label class="ssh-field"><span>Tags</span><input type="text" placeholder="bot, production" data-instance-form="tags" autocomplete="off"></label>
+              <div class="ssh-connection-actions">
+                <button class="inline-action" type="submit" data-instance-create-submit>Create Instance</button>
+                <button class="inline-action" type="button" data-instance-action="cancel-create">Cancel</button>
+              </div>
+              <p class="ssh-password-note" data-instance-form-message>Commands run without a shell. Secrets are not accepted in environment variable names.</p>
+            </form>
+
+            <div class="instances-workspace">
+              <section class="docker-table-panel instances-table-panel" aria-label="Managed instances">
+                <div class="docker-table-wrap">
+                  <table class="docker-table instances-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Name / ID</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">State</th>
+                        <th scope="col">PID</th>
+                        <th scope="col">Uptime</th>
+                        <th scope="col">CPU</th>
+                        <th scope="col">RAM</th>
+                        <th scope="col">Ports</th>
+                        <th scope="col">Tags</th>
+                      </tr>
+                    </thead>
+                    <tbody data-instances-list></tbody>
+                  </table>
+
+                  <div class="docker-loading-state" data-instances-loading hidden>
+                    <span class="file-loader" aria-hidden="true"></span>
+                    <strong>Loading instances</strong>
+                    <span data-field="instancesLoadingMessage">Checking agent instance status...</span>
+                  </div>
+
+                  <div class="docker-empty-state" data-instances-empty>
+                    <span class="docker-icon" aria-hidden="true"></span>
+                    <strong>No instances available</strong>
+                    <span data-field="instancesEmptyMessage">Create an instance to begin.</span>
+                  </div>
+                </div>
+              </section>
+
+              <aside class="docker-details-panel instances-details-panel" aria-label="Instance details">
+                <div class="panel-heading">
+                  <h3>Instance Details</h3>
+                  <span class="status-pill status-pill--planned" data-field="instanceDetailState">None</span>
+                </div>
+                <dl class="docker-details-list">
+                  <div><dt>Name</dt><dd data-instance-detail="name">None selected</dd></div>
+                  <div><dt>ID</dt><dd data-instance-detail="id">Unavailable</dd></div>
+                  <div><dt>Type</dt><dd data-instance-detail="type">Unavailable</dd></div>
+                  <div><dt>Command</dt><dd data-instance-detail="command">Unavailable</dd></div>
+                  <div><dt>PID</dt><dd data-instance-detail="pid">Unavailable</dd></div>
+                  <div><dt>Uptime</dt><dd data-instance-detail="uptime">Unavailable</dd></div>
+                  <div><dt>CPU</dt><dd data-instance-detail="cpu">Unavailable</dd></div>
+                  <div><dt>RAM</dt><dd data-instance-detail="memory">Unavailable</dd></div>
+                  <div><dt>Disk</dt><dd data-instance-detail="disk">Unavailable</dd></div>
+                  <div><dt>Ports</dt><dd data-instance-detail="ports">Unavailable</dd></div>
+                  <div><dt>Tags</dt><dd data-instance-detail="tags">Unavailable</dd></div>
+                </dl>
+              </aside>
+            </div>
+
+            <section class="instance-log-panel" aria-label="Instance logs">
+              <div class="coolpals-panel-header">
+                <h3>Instance Logs</h3>
+                <span data-instances-log-count>0 lines</span>
+              </div>
+              <div class="instance-log-viewer">
+                <ol data-instances-logs></ol>
+                <div class="coolpals-log-empty" data-instances-log-empty>
+                  <strong>No logs loaded</strong>
+                  <span>Select an instance and refresh logs.</span>
+                </div>
+              </div>
+            </section>
           </section>
         </section>
 

@@ -150,10 +150,59 @@ async function getFileListing() {
   return createUnavailableFileListing("Local file service is not implemented.");
 }
 
+async function listInstances() {
+  try {
+    return await agentClient.listInstances();
+  } catch {
+    throw new AgentUnavailableError();
+  }
+}
+
+async function createInstance(payload) {
+  return agentClient.createInstance(payload);
+}
+
+async function getInstanceStatus(instanceId) {
+  return agentClient.getInstanceStatus(instanceId);
+}
+
+async function getInstanceMetrics(instanceId) {
+  return agentClient.getInstanceMetrics(instanceId);
+}
+
+async function getInstanceLogs(instanceId, options) {
+  return agentClient.getInstanceLogs(instanceId, options);
+}
+
+async function startInstance(instanceId) {
+  return agentClient.startInstance(instanceId);
+}
+
+async function stopInstance(instanceId) {
+  return agentClient.stopInstance(instanceId);
+}
+
+async function restartInstance(instanceId) {
+  return agentClient.restartInstance(instanceId);
+}
+
+async function deleteInstance(instanceId) {
+  return agentClient.deleteInstance(instanceId);
+}
+
 module.exports = {
+  createInstance,
+  deleteInstance,
   getAmpSnapshot,
   getBackendMode,
   getDockerSnapshot,
   getFileListing,
+  getInstanceLogs,
+  getInstanceMetrics,
+  getInstanceStatus,
   getPlayitSnapshot,
+  listInstances,
+  restartInstance,
+  startInstance,
+  stopInstance,
 };

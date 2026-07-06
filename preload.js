@@ -30,6 +30,17 @@ const desktopApi = {
   docker: {
     getSnapshot: () => ipcRenderer.invoke("docker:getSnapshot"),
   },
+  instances: {
+    list: () => ipcRenderer.invoke("instances:list"),
+    create: (payload) => ipcRenderer.invoke("instances:create", payload),
+    getStatus: (instanceId) => ipcRenderer.invoke("instances:getStatus", { instanceId }),
+    getMetrics: (instanceId) => ipcRenderer.invoke("instances:getMetrics", { instanceId }),
+    getLogs: (instanceId, options = {}) => ipcRenderer.invoke("instances:getLogs", { instanceId, ...options }),
+    start: (instanceId) => ipcRenderer.invoke("instances:start", { instanceId }),
+    stop: (instanceId) => ipcRenderer.invoke("instances:stop", { instanceId }),
+    restart: (instanceId) => ipcRenderer.invoke("instances:restart", { instanceId }),
+    delete: (instanceId) => ipcRenderer.invoke("instances:delete", { instanceId }),
+  },
   actions: {
     executeAction: (actionId, params = {}) => ipcRenderer.invoke("action:execute", { actionId, params }),
   },

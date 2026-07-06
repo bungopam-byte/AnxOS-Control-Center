@@ -1652,44 +1652,132 @@
             </div>
           </header>
 
-          <section class="console-shell" aria-label="Console log viewer">
-            <div class="console-toolbar">
-              <label class="console-search">
-                <span>Search logs</span>
-                <input type="search" placeholder="Filter console output" data-console-search>
+          <section class="console-shell console-ops-shell" aria-label="Multi-instance console workspace">
+            <aside class="console-source-panel" aria-label="Console sources">
+              <div class="panel-heading">
+                <h3>Sources</h3>
+                <button class="inline-action" type="button" data-console-action="refresh">Refresh</button>
+              </div>
+              <label class="console-source-search">
+                <span>Find instance</span>
+                <input type="search" placeholder="Search instances" data-console-source-search>
               </label>
-
-              <div class="console-actions">
-                <label class="console-toggle">
-                  <input type="checkbox" checked data-console-autoscroll>
-                  <span>Auto-scroll</span>
-                </label>
-                <label class="console-toggle">
-                  <input type="checkbox" data-console-pause>
-                  <span>Pause scrolling</span>
-                </label>
-                <button class="inline-action" type="button" data-console-clear disabled>Clear</button>
-                <button class="inline-action" type="button" data-console-copy disabled>Copy</button>
-              </div>
-            </div>
-
-            <div class="console-window">
-              <div class="console-titlebar">
-                <span class="console-dot"></span>
-                <span class="console-dot"></span>
-                <span class="console-dot"></span>
-                <strong>Console Output</strong>
-                <span data-console-count>0 lines</span>
-              </div>
-
-              <div class="console-log-viewer" data-console-viewer>
-                <ol class="console-log-list" data-console-log-list></ol>
-                <div class="console-empty-state" data-console-empty>
-                  <strong>No logs yet</strong>
-                  <span>No console stream is connected.</span>
+              <div class="console-source-list" data-console-source-list></div>
+              <div class="console-source-empty" data-console-source-empty>
+                <strong>No instances available</strong>
+                <span>Create an instance or install one from Marketplace to attach a console.</span>
+                <div class="console-empty-actions">
+                  <button class="inline-action" type="button" data-console-nav="instances">Open Instances</button>
+                  <button class="inline-action" type="button" data-console-nav="marketplace">Open Marketplace</button>
                 </div>
               </div>
-            </div>
+            </aside>
+
+            <main class="console-main-panel" aria-label="Live instance console">
+              <div class="console-tabs" data-console-tabs role="tablist" aria-label="Open consoles"></div>
+
+              <div class="console-toolbar">
+                <label class="console-search">
+                  <span>Search logs</span>
+                  <input type="search" placeholder="Filter console output" data-console-search>
+                </label>
+
+                <div class="console-actions">
+                  <label class="console-toggle">
+                    <input type="checkbox" checked data-console-autoscroll>
+                    <span>Auto-scroll</span>
+                  </label>
+                  <label class="console-toggle">
+                    <input type="checkbox" data-console-pause>
+                    <span>Pause scrolling</span>
+                  </label>
+                  <button class="inline-action" type="button" data-console-clear disabled>Clear</button>
+                  <button class="inline-action" type="button" data-console-copy disabled>Copy</button>
+                </div>
+              </div>
+
+              <div class="console-filter-row" data-console-filters aria-label="Log filters">
+                <button class="console-filter-chip is-active" type="button" data-console-filter="all">All</button>
+                <button class="console-filter-chip" type="button" data-console-filter="info">Info</button>
+                <button class="console-filter-chip" type="button" data-console-filter="warn">Warn</button>
+                <button class="console-filter-chip" type="button" data-console-filter="error">Error</button>
+                <button class="console-filter-chip" type="button" data-console-filter="debug">Debug</button>
+                <button class="console-filter-chip" type="button" data-console-filter="chat">Chat</button>
+                <button class="console-filter-chip" type="button" data-console-filter="command">Commands</button>
+              </div>
+
+              <div class="console-alert" data-console-crash-banner hidden>
+                <strong>Possible crash/error detected</strong>
+                <button class="inline-action" type="button" data-console-show-errors>Show errors</button>
+              </div>
+
+              <div class="console-window">
+                <div class="console-titlebar">
+                  <span class="console-dot"></span>
+                  <span class="console-dot"></span>
+                  <span class="console-dot"></span>
+                  <strong data-console-title>Console Output</strong>
+                  <span data-console-count>0 lines</span>
+                </div>
+
+                <div class="console-log-viewer" data-console-viewer>
+                  <ol class="console-log-list" data-console-log-list></ol>
+                  <div class="console-empty-state" data-console-empty>
+                    <strong>No instance selected</strong>
+                    <span>Select an instance from the source list to view live output.</span>
+                  </div>
+                </div>
+
+                <form class="console-command-row" data-console-command-form>
+                  <span class="ssh-prompt" aria-hidden="true">&gt;</span>
+                  <input type="text" placeholder="Select a running instance to send commands" data-console-command disabled>
+                  <button class="inline-action" type="submit" data-console-send disabled>Send</button>
+                </form>
+              </div>
+
+              <footer class="console-status-bar" aria-label="Console status">
+                <span>Agent: <strong data-console-status="agent">Disconnected</strong></span>
+                <span>Instance: <strong data-console-status="instance">None</strong></span>
+                <span>Lines: <strong data-console-status="lines">0</strong></span>
+                <span>Auto-scroll: <strong data-console-status="autoscroll">On</strong></span>
+                <span>Paused: <strong data-console-status="paused">Off</strong></span>
+                <span>Filter: <strong data-console-status="filter">All</strong></span>
+              </footer>
+            </main>
+
+            <aside class="console-status-panel" aria-label="Runtime status">
+              <div class="panel-heading">
+                <h3>Status</h3>
+                <span class="instance-state" data-console-state>Unknown</span>
+              </div>
+              <div class="console-metric-grid">
+                <article><span>CPU</span><strong data-console-metric="cpu">Coming soon</strong></article>
+                <article><span>RAM</span><strong data-console-metric="ram">Coming soon</strong></article>
+                <article><span>Network</span><strong>Coming soon</strong></article>
+              </div>
+              <dl class="docker-details-list console-details-list">
+                <div><dt>PID</dt><dd data-console-detail="pid">Unavailable</dd></div>
+                <div><dt>Uptime</dt><dd data-console-detail="uptime">Unavailable</dd></div>
+                <div><dt>Memory Limit</dt><dd data-console-detail="memoryLimit">Unavailable</dd></div>
+                <div><dt>Restart Policy</dt><dd data-console-detail="restartPolicy">Unavailable</dd></div>
+                <div><dt>Ports</dt><dd data-console-detail="ports">Unavailable</dd></div>
+                <div><dt>Last Started</dt><dd data-console-detail="lastStartedAt">Unavailable</dd></div>
+                <div><dt>Last Stopped</dt><dd data-console-detail="lastStoppedAt">Unavailable</dd></div>
+                <div><dt>Failure Reason</dt><dd data-console-detail="failureReason">Unavailable</dd></div>
+              </dl>
+              <div class="console-quick-actions">
+                <button class="inline-action" type="button" data-console-action="start" disabled>Start</button>
+                <button class="inline-action" type="button" data-console-action="stop" disabled>Stop</button>
+                <button class="inline-action" type="button" data-console-action="restart" disabled>Restart</button>
+                <button class="inline-action" type="button" data-console-action="files" disabled>Open Files</button>
+              </div>
+              <div class="console-activity">
+                <div class="panel-heading">
+                  <h3>Activity</h3>
+                </div>
+                <ol data-console-activity></ol>
+              </div>
+            </aside>
           </section>
         </section>
 

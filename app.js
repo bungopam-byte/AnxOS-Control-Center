@@ -19,6 +19,24 @@ const consoleCountTarget = document.querySelector("[data-console-count]");
 const consoleViewer = document.querySelector("[data-console-viewer]");
 const consoleLogList = document.querySelector("[data-console-log-list]");
 const consoleEmptyState = document.querySelector("[data-console-empty]");
+const consoleSourceSearchInput = document.querySelector("[data-console-source-search]");
+const consoleSourceList = document.querySelector("[data-console-source-list]");
+const consoleSourceEmpty = document.querySelector("[data-console-source-empty]");
+const consoleTabs = document.querySelector("[data-console-tabs]");
+const consoleFilterButtons = document.querySelectorAll("[data-console-filter]");
+const consoleCrashBanner = document.querySelector("[data-console-crash-banner]");
+const consoleShowErrorsButton = document.querySelector("[data-console-show-errors]");
+const consoleTitle = document.querySelector("[data-console-title]");
+const consoleCommandForm = document.querySelector("[data-console-command-form]");
+const consoleCommandInput = document.querySelector("[data-console-command]");
+const consoleSendButton = document.querySelector("[data-console-send]");
+const consoleStateBadge = document.querySelector("[data-console-state]");
+const consoleMetricFields = document.querySelectorAll("[data-console-metric]");
+const consoleDetailFields = document.querySelectorAll("[data-console-detail]");
+const consoleStatusFields = document.querySelectorAll("[data-console-status]");
+const consoleActivityList = document.querySelector("[data-console-activity]");
+const consoleActionButtons = document.querySelectorAll("[data-console-action]");
+const consoleNavButtons = document.querySelectorAll("[data-console-nav]");
 const dockerList = document.querySelector("[data-docker-list]");
 const dockerLoading = document.querySelector("[data-docker-loading]");
 const dockerEmpty = document.querySelector("[data-docker-empty]");
@@ -318,6 +336,12 @@ let monacoEditorStateSyncPaused = false;
 let filesDividerDragState = null;
 let fileEditorWordWrapEnabled = true;
 let fileEditorMinimapEnabled = false;
+let activeConsoleInstanceId = null;
+let activeConsoleFilter = "all";
+let consoleOpenInstanceIds = [];
+let consoleBufferedEntries = [];
+let consoleLogsRequestInFlight = false;
+let consoleSuppressAutoSelect = false;
 const sshProfilesState = {
   servers: [],
   profiles: [],
@@ -1992,6 +2016,18 @@ function showPage(pageName) {
     refreshInstances();
   }
 
+  if (safePageName === "console") {
+    consoleSuppressAutoSelect = false;
+    renderConsoleWorkspace();
+    refreshInstances({ refreshMetrics: false }).then(() => {
+      refreshConsoleMetrics();
+      refreshConsoleLogs({ silent: true });
+    }).catch((error) => {
+      console.warn("[Console] Initial refresh failed.", error);
+      renderConsoleWorkspace();
+    });
+  }
+
   if (safePageName === "marketplace") {
     refreshMarketplace();
     refreshMarketplaceDownloads();
@@ -2660,6 +2696,7 @@ function updateInstanceSnapshot(instanceId, patch = {}) {
     renderInstanceRows(getInstances());
     setInstanceDetails(findInstance(selectedInstanceId));
     updateInstanceActionButtons();
+    renderConsoleWorkspace();
   }
 
   return updated;
@@ -2682,6 +2719,7 @@ function removeInstanceFromSnapshot(instanceId) {
   renderInstanceRows(nextInstances);
   setInstancesEmpty(nextInstances.length === 0);
   updateInstanceActionButtons();
+  renderConsoleWorkspace();
   updateTitlebar();
   return true;
 }
@@ -4009,6 +4047,7 @@ function renderInstancesSnapshot(snapshot) {
   setField("instancesLoadingMessage", "Checking agent instance status...");
   renderInstanceRows(instances);
   selectInstance(selectedInstanceId, { refreshMetrics: false });
+  renderConsoleWorkspace();
   setInstancesLoading(false);
   setInstancesEmpty(instances.length === 0);
   updateInstanceActionButtons();
@@ -4029,6 +4068,10 @@ function renderInstancesUnavailable(message = "Instance manager unavailable.") {
   clearInstanceRows();
   setInstanceDetails(null);
   clearInstanceLogs("Select an instance and refresh logs.");
+  activeConsoleInstanceId = null;
+  consoleOpenInstanceIds = [];
+  consoleBufferedEntries = [];
+  renderConsoleWorkspace();
   updateInstanceActionButtons();
   updateTitlebar();
 }
@@ -7572,17 +7615,241 @@ function getConsoleRows() {
   return consoleLogList ? [...consoleLogList.querySelectorAll("li")] : [];
 }
 
+function getActiveConsoleInstance() {
+  return activeConsoleInstanceId ? findInstance(activeConsoleInstanceId) : null;
+}
+
+function setConsoleDetail(name, value) {
+  consoleDetailFields.forEach((field) => {
+    if (field.dataset.consoleDetail === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setConsoleMetric(name, value) {
+  consoleMetricFields.forEach((field) => {
+    if (field.dataset.consoleMetric === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setConsoleStatus(name, value) {
+  consoleStatusFields.forEach((field) => {
+    if (field.dataset.consoleStatus === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function getConsoleStateLabel(instance) {
+  return instance?.state || "Unknown";
+}
+
+function getConsoleSourceRows() {
+  return consoleSourceList ? [...consoleSourceList.querySelectorAll("[data-console-source-id]")] : [];
+}
+
+function renderConsoleSources() {
+  if (!consoleSourceList) {
+    return;
+  }
+
+  const instances = getInstances();
+  const query = (consoleSourceSearchInput?.value || "").trim().toLowerCase();
+  consoleSourceList.replaceChildren();
+
+  instances.forEach((instance) => {
+    const searchable = [instance.id, instance.displayName, instance.type, instance.state, ...(Array.isArray(instance.tags) ? instance.tags : [])]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    if (query && !searchable.includes(query)) {
+      return;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "console-source-row";
+    button.dataset.consoleSourceId = instance.id || "";
+    button.classList.toggle("is-active", instance.id === activeConsoleInstanceId);
+    button.addEventListener("click", () => selectConsoleInstance(instance.id));
+
+    const dot = document.createElement("span");
+    dot.className = `console-source-dot is-${getInstanceStateClass(instance.state)}`;
+    dot.setAttribute("aria-hidden", "true");
+
+    const copy = document.createElement("span");
+    copy.className = "console-source-copy";
+    const name = document.createElement("strong");
+    name.textContent = instance.displayName || instance.id || "Unnamed instance";
+    const type = document.createElement("small");
+    type.textContent = formatInstanceType(instance.type);
+    copy.append(name, type);
+
+    const state = document.createElement("span");
+    state.className = `instance-state is-${getInstanceStateClass(instance.state)}`;
+    state.textContent = getConsoleStateLabel(instance);
+
+    button.append(dot, copy, state);
+    consoleSourceList.append(button);
+  });
+
+  if (consoleSourceEmpty) {
+    consoleSourceEmpty.hidden = instances.length > 0;
+  }
+}
+
+function renderConsoleTabs() {
+  if (!consoleTabs) {
+    return;
+  }
+
+  consoleTabs.replaceChildren();
+  const openIds = consoleOpenInstanceIds.filter((instanceId) => findInstance(instanceId));
+  consoleOpenInstanceIds = openIds;
+
+  if (openIds.length === 0) {
+    const emptyTab = document.createElement("span");
+    emptyTab.className = "console-tab-empty";
+    emptyTab.textContent = "No open consoles";
+    consoleTabs.append(emptyTab);
+    return;
+  }
+
+  openIds.forEach((instanceId) => {
+    const instance = findInstance(instanceId);
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "console-tab";
+    tab.classList.toggle("is-active", instanceId === activeConsoleInstanceId);
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", instanceId === activeConsoleInstanceId ? "true" : "false");
+    tab.addEventListener("click", () => selectConsoleInstance(instanceId, { keepOpen: true }));
+
+    const label = document.createElement("span");
+    label.textContent = instance?.displayName || instanceId;
+    const close = document.createElement("span");
+    close.className = "console-tab-close";
+    close.textContent = "x";
+    close.title = "Close console tab";
+    close.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeConsoleTab(instanceId);
+    });
+
+    tab.append(label, close);
+    consoleTabs.append(tab);
+  });
+}
+
+function getConsoleLogKind(entry) {
+  const text = String(entry?.message || "").toLowerCase();
+  if (entry?.stream === "stdin" || /^>\s/.test(text) || /\b(command|issued server command)\b/.test(text)) {
+    return "command";
+  }
+  if (entry?.stream === "stderr" || /\b(error|exception|fail|failed|fatal|crash|crashed)\b/.test(text)) {
+    return "error";
+  }
+  if (/\b(warn|warning)\b/.test(text)) {
+    return "warn";
+  }
+  if (/\bdebug\b/.test(text)) {
+    return "debug";
+  }
+  if (/\b(joined|left|chat|say|tellraw|whisper)\b/.test(text)) {
+    return "chat";
+  }
+  return "info";
+}
+
+function hasConsoleCrashSignal(entries = consoleBufferedEntries) {
+  return entries.some((entry) => {
+    const text = String(entry?.message || "").toLowerCase();
+    return entry?.stream === "stderr" || /\b(error|exception|fatal|crash|crashed)\b/.test(text);
+  });
+}
+
+function renderConsoleLogs(entries = consoleBufferedEntries) {
+  consoleLogList?.replaceChildren();
+
+  entries.forEach((entry) => {
+    const item = document.createElement("li");
+    const kind = getConsoleLogKind(entry);
+    item.dataset.stream = entry?.stream || "log";
+    item.dataset.severity = kind;
+    item.classList.toggle("is-stderr", entry?.stream === "stderr");
+    item.classList.toggle("is-stdin", entry?.stream === "stdin");
+    item.classList.toggle("is-warn", kind === "warn");
+    item.classList.toggle("is-error", kind === "error");
+    item.classList.toggle("is-debug", kind === "debug");
+    item.classList.toggle("is-chat", kind === "chat");
+    const time = document.createElement("time");
+    time.dateTime = entry?.at || "";
+    time.textContent = entry?.at ? formatDateTime(entry.at) : "No timestamp";
+    const stream = document.createElement("span");
+    stream.className = "instance-log-stream";
+    stream.textContent = entry?.stream || "log";
+    const message = document.createElement("span");
+    appendAnsiText(message, entry?.message || "");
+    item.append(time, stream, message);
+    consoleLogList?.append(item);
+  });
+
+  filterConsoleRows();
+  if (consoleAutoscrollInput?.checked && !consolePauseInput?.checked && consoleViewer) {
+    consoleViewer.scrollTop = consoleViewer.scrollHeight;
+  }
+  if (consoleCrashBanner) {
+    consoleCrashBanner.hidden = !hasConsoleCrashSignal(entries);
+  }
+}
+
+function getConsoleEmptyMessage() {
+  const desktopApiState = getDesktopApiState();
+  const instance = getActiveConsoleInstance();
+
+  if (!desktopApiState.hasInstances) {
+    return ["Connection unavailable", "The instance API bridge is unavailable."];
+  }
+
+  if (!instance) {
+    return ["No instance selected", "Select an instance from the source list to view live output."];
+  }
+
+  if (!isInstanceRunning(instance)) {
+    return ["Instance stopped", "Start the instance to watch live output, or refresh logs to view previous output."];
+  }
+
+  if (consoleLogsRequestInFlight) {
+    return ["Loading logs", "Fetching recent output from the selected instance."];
+  }
+
+  return ["No logs yet", "No output has been captured for this instance yet."];
+}
+
 function updateConsoleEmptyState() {
   const rows = getConsoleRows();
   const visibleRows = rows.filter((row) => !row.hidden);
   const hasRows = rows.length > 0;
+  const [title, message] = getConsoleEmptyMessage();
 
   if (consoleEmptyState) {
     consoleEmptyState.hidden = hasRows;
+    const titleTarget = consoleEmptyState.querySelector("strong");
+    const messageTarget = consoleEmptyState.querySelector("span");
+    if (titleTarget) {
+      titleTarget.textContent = title;
+    }
+    if (messageTarget) {
+      messageTarget.textContent = message;
+    }
   }
 
   if (consoleCountTarget) {
-    consoleCountTarget.textContent = `${visibleRows.length} ${visibleRows.length === 1 ? "line" : "lines"}`;
+    consoleCountTarget.textContent = `${visibleRows.length}/${rows.length} ${rows.length === 1 ? "line" : "lines"}`;
   }
 
   if (consoleClearButton) {
@@ -7592,25 +7859,52 @@ function updateConsoleEmptyState() {
   if (consoleCopyButton) {
     consoleCopyButton.disabled = visibleRows.length === 0;
   }
+
+  setConsoleStatus("lines", `${visibleRows.length}/${rows.length}`);
+  setConsoleStatus("autoscroll", consoleAutoscrollInput?.checked ? "On" : "Off");
+  setConsoleStatus("paused", consolePauseInput?.checked ? "On" : "Off");
+  setConsoleStatus("filter", activeConsoleFilter[0]?.toUpperCase() + activeConsoleFilter.slice(1));
+}
+
+function matchesConsoleFilter(row, filter) {
+  if (filter === "all") {
+    return true;
+  }
+
+  return row.dataset.severity === filter || row.dataset.stream === filter || (filter === "error" && row.dataset.stream === "stderr");
 }
 
 function filterConsoleRows() {
   const query = (consoleSearchInput?.value || "").trim().toLowerCase();
 
   getConsoleRows().forEach((row) => {
-    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+    const matchesQuery = !query || row.textContent.toLowerCase().includes(query);
+    row.hidden = !matchesQuery || !matchesConsoleFilter(row, activeConsoleFilter);
   });
 
   updateConsoleEmptyState();
 }
 
-function clearConsoleRows() {
+async function clearConsoleRows() {
   if (!consoleLogList) {
     return;
   }
 
+  const instance = getActiveConsoleInstance();
+  if (instance && getDesktopApiState().hasInstances) {
+    try {
+      await getDesktopApiState().api.instances.clearLogs(instance.id, { stream: "all" });
+    } catch (error) {
+      console.warn("[Console] Clear logs failed.", error);
+      showToast(getAgentErrorMessage(error, "Clear logs failed."));
+      return;
+    }
+  }
+
+  consoleBufferedEntries = [];
   consoleLogList.replaceChildren();
   updateConsoleEmptyState();
+  showToast(instance ? "Console logs cleared." : "Console cleared.");
 }
 
 async function copyConsoleRows() {
@@ -7644,6 +7938,367 @@ function syncConsoleScrollMode() {
   if (consoleAutoscrollInput.checked) {
     consoleViewer.scrollTop = consoleViewer.scrollHeight;
   }
+
+  updateConsoleEmptyState();
+}
+
+function setConsoleFilter(filter) {
+  activeConsoleFilter = filter || "all";
+  consoleFilterButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.consoleFilter === activeConsoleFilter);
+  });
+  filterConsoleRows();
+}
+
+function selectConsoleInstance(instanceId, options = {}) {
+  const instance = findInstance(instanceId);
+  activeConsoleInstanceId = instance?.id || null;
+  consoleSuppressAutoSelect = false;
+
+  if (activeConsoleInstanceId && !consoleOpenInstanceIds.includes(activeConsoleInstanceId)) {
+    consoleOpenInstanceIds.push(activeConsoleInstanceId);
+  }
+
+  if (!options.keepLogs) {
+    consoleBufferedEntries = [];
+    consoleLogList?.replaceChildren();
+  }
+
+  renderConsoleWorkspace();
+
+  if (activeConsoleInstanceId && options.refreshLogs !== false) {
+    refreshConsoleMetrics();
+    refreshConsoleLogs({ silent: true });
+  }
+}
+
+function closeConsoleTab(instanceId) {
+  consoleOpenInstanceIds = consoleOpenInstanceIds.filter((candidate) => candidate !== instanceId);
+  if (activeConsoleInstanceId === instanceId) {
+    activeConsoleInstanceId = consoleOpenInstanceIds[consoleOpenInstanceIds.length - 1] || null;
+    consoleBufferedEntries = [];
+    consoleLogList?.replaceChildren();
+    consoleSuppressAutoSelect = !activeConsoleInstanceId;
+    if (activeConsoleInstanceId) {
+      refreshConsoleLogs({ silent: true });
+    }
+  }
+  renderConsoleWorkspace();
+}
+
+function getConsoleCommandPlaceholder(instance) {
+  if (!instance) {
+    return "Select a running instance to send commands";
+  }
+
+  if (!isInstanceRunning(instance)) {
+    return "Start this instance to enable command input";
+  }
+
+  return isMinecraftInstance(instance) ? "Minecraft command: say hello, list, stop" : "Type a command and press Enter";
+}
+
+function updateConsoleCommandState() {
+  const desktopApiState = getDesktopApiState();
+  const instance = getActiveConsoleInstance();
+  const canSend = Boolean(instance && isInstanceRunning(instance) && desktopApiState.hasInstances);
+
+  if (consoleCommandInput) {
+    consoleCommandInput.disabled = !canSend;
+    consoleCommandInput.placeholder = desktopApiState.hasInstances
+      ? getConsoleCommandPlaceholder(instance)
+      : "Command input is not connected yet";
+  }
+
+  if (consoleSendButton) {
+    consoleSendButton.disabled = !canSend;
+  }
+}
+
+function renderConsoleActivity(instance) {
+  if (!consoleActivityList) {
+    return;
+  }
+
+  consoleActivityList.replaceChildren();
+  const events = [
+    ["Created", instance?.createdAt],
+    ["Updated", instance?.updatedAt],
+    ["Last started", instance?.lastStartedAt],
+    ["Last stopped", instance?.lastStoppedAt],
+    ["Failure", instance?.failureReason],
+  ].filter(([, value]) => value);
+
+  if (!instance || events.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "No activity timestamps available.";
+    consoleActivityList.append(item);
+    return;
+  }
+
+  events.forEach(([label, value]) => {
+    const item = document.createElement("li");
+    const strong = document.createElement("strong");
+    strong.textContent = label;
+    const span = document.createElement("span");
+    span.textContent = label === "Failure" ? String(value) : formatDateTime(value);
+    item.append(strong, span);
+    consoleActivityList.append(item);
+  });
+}
+
+function renderConsoleStatusPanel() {
+  const instance = getActiveConsoleInstance();
+  const metrics = instance ? getInstanceMetrics(instance.id) : null;
+  const state = getConsoleStateLabel(instance);
+
+  if (consoleStateBadge) {
+    consoleStateBadge.textContent = state;
+    consoleStateBadge.className = `instance-state is-${getInstanceStateClass(state)}`;
+  }
+
+  setConsoleMetric("cpu", metrics ? formatInstanceCpu(metrics) : "Coming soon");
+  setConsoleMetric("ram", metrics ? formatInstanceMemory(metrics) : "Coming soon");
+  setConsoleDetail("pid", formatInstanceValue(instance?.pid));
+  setConsoleDetail("uptime", formatDuration(metrics?.uptimeSeconds));
+  setConsoleDetail("memoryLimit", formatInstanceValue(instance?.memoryLimit));
+  setConsoleDetail("restartPolicy", formatInstanceValue(instance?.restartPolicy));
+  setConsoleDetail("ports", formatInstancePorts(instance, metrics));
+  setConsoleDetail("lastStartedAt", formatDateTime(instance?.lastStartedAt));
+  setConsoleDetail("lastStoppedAt", formatDateTime(instance?.lastStoppedAt));
+  setConsoleDetail("failureReason", formatInstanceValue(instance?.failureReason));
+  renderConsoleActivity(instance);
+}
+
+function updateConsoleActionButtons() {
+  const instance = getActiveConsoleInstance();
+  const desktopApiState = getDesktopApiState();
+  consoleActionButtons.forEach((button) => {
+    const action = button.dataset.consoleAction;
+    if (action === "refresh") {
+      button.disabled = !desktopApiState.hasInstances || consoleLogsRequestInFlight;
+      return;
+    }
+    if (action === "files") {
+      button.disabled = !instance;
+      return;
+    }
+    if (action === "start") {
+      button.disabled = !desktopApiState.hasInstances || !canStartInstance(instance) || instanceActionRequestInFlight;
+      return;
+    }
+    if (action === "stop") {
+      button.disabled = !desktopApiState.hasInstances || !canStopInstance(instance) || instanceActionRequestInFlight;
+      return;
+    }
+    if (action === "restart") {
+      button.disabled = !desktopApiState.hasInstances || !canRestartInstance(instance) || instanceActionRequestInFlight;
+    }
+  });
+}
+
+function renderConsoleWorkspace() {
+  const instances = getInstances();
+  if (activeConsoleInstanceId && !findInstance(activeConsoleInstanceId)) {
+    activeConsoleInstanceId = null;
+    consoleBufferedEntries = [];
+    consoleLogList?.replaceChildren();
+  }
+
+  if (!activeConsoleInstanceId && instances.length > 0 && getActivePageName() === "console" && !consoleSuppressAutoSelect) {
+    activeConsoleInstanceId = instances[0].id;
+    if (activeConsoleInstanceId && !consoleOpenInstanceIds.includes(activeConsoleInstanceId)) {
+      consoleOpenInstanceIds.push(activeConsoleInstanceId);
+    }
+  }
+
+  const instance = getActiveConsoleInstance();
+  renderConsoleSources();
+  renderConsoleTabs();
+  renderConsoleStatusPanel();
+  updateConsoleCommandState();
+  updateConsoleActionButtons();
+  updateConsoleEmptyState();
+
+  if (consoleTitle) {
+    consoleTitle.textContent = instance ? `${instance.displayName || instance.id} Console` : "Console Output";
+  }
+
+  setConsoleStatus("agent", getDesktopApiState().hasInstances ? agentConnectionState || "Connected" : "Unavailable");
+  setConsoleStatus("instance", instance?.displayName || instance?.id || "None");
+}
+
+async function refreshConsoleMetrics() {
+  const instance = getActiveConsoleInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!instance || !desktopApiState.hasInstances) {
+    renderConsoleStatusPanel();
+    return;
+  }
+
+  try {
+    latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(instance.id));
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      console.warn("[Console] Selected instance no longer exists.", error);
+      await refreshInstances({ refreshMetrics: false });
+    } else {
+      console.warn("[Console] Metrics unavailable.", error);
+    }
+  } finally {
+    renderConsoleWorkspace();
+  }
+}
+
+async function refreshConsoleLogs(options = {}) {
+  const instance = getActiveConsoleInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!instance) {
+    consoleBufferedEntries = [];
+    renderConsoleLogs([]);
+    return;
+  }
+
+  if (!desktopApiState.hasInstances || consoleLogsRequestInFlight) {
+    renderConsoleWorkspace();
+    return;
+  }
+
+  consoleLogsRequestInFlight = true;
+  updateConsoleActionButtons();
+  updateConsoleEmptyState();
+
+  try {
+    const payload = await desktopApiState.api.instances.getLogs(instance.id, {
+      stream: "all",
+      limit: 500,
+    });
+    consoleBufferedEntries = Array.isArray(payload?.entries) ? payload.entries : [];
+    renderConsoleLogs(consoleBufferedEntries);
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      console.warn("[Console] Logs requested for missing instance.", error);
+      await refreshInstances({ refreshMetrics: false });
+      showToast("Selected instance no longer exists.", "warning");
+    } else {
+      console.warn("[Console] Log request failed.", error);
+      if (!options.silent) {
+        showToast(getAgentErrorMessage(error, "Console logs unavailable."));
+      }
+    }
+  } finally {
+    consoleLogsRequestInFlight = false;
+    renderConsoleWorkspace();
+  }
+}
+
+async function sendConsoleCommand(event) {
+  event?.preventDefault();
+  const instance = getActiveConsoleInstance();
+  const command = consoleCommandInput?.value?.trim() || "";
+
+  if (!instance || !command || !getDesktopApiState().hasInstances) {
+    return;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.sendCommand(instance.id, command);
+    consoleCommandInput.value = "";
+    showToast("Command sent.");
+    await refreshConsoleLogs({ silent: true });
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await refreshInstances({ refreshMetrics: false });
+      showToast("Selected instance no longer exists.", "warning");
+    } else {
+      console.warn("[Console] Command failed.", error);
+      showToast(getAgentErrorMessage(error, "Command failed."));
+    }
+  }
+}
+
+async function verifyConsoleJavaJarBeforeLaunch(instance) {
+  if (!isJavaJarInstance(instance)) {
+    return true;
+  }
+
+  const jarPath = getConfiguredJarPath(instance);
+  if (!jarPath) {
+    window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
+    return false;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.readFile(instance.id, jarPath);
+    return true;
+  } catch (error) {
+    if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
+      window.alert(`${getFileNameFromPath(jarPath)} was not found.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`);
+      return false;
+    }
+    if (isInstanceNotFoundError(error)) {
+      await refreshInstances({ refreshMetrics: false });
+      showToast("Selected instance no longer exists.", "warning");
+      return false;
+    }
+    console.warn("[Console] Jar preflight failed.", error);
+    showToast(getAgentErrorMessage(error, "Could not verify the configured server JAR."));
+    return false;
+  }
+}
+
+async function runConsoleInstanceAction(actionName) {
+  const instance = getActiveConsoleInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!instance || !desktopApiState.hasInstances || !["start", "stop", "restart"].includes(actionName)) {
+    updateConsoleActionButtons();
+    return;
+  }
+
+  if ((actionName === "start" || actionName === "restart") && !(await verifyConsoleJavaJarBeforeLaunch(instance))) {
+    return;
+  }
+
+  instanceActionRequestInFlight = true;
+  updateConsoleActionButtons();
+
+  try {
+    await desktopApiState.api.instances[actionName](instance.id);
+    showToast(`Instance ${actionName} request completed.`);
+    await refreshInstances({ refreshMetrics: false });
+    await refreshConsoleMetrics();
+    await refreshConsoleLogs({ silent: true });
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await refreshInstances({ refreshMetrics: false });
+      showToast("Selected instance no longer exists.", "warning");
+    } else {
+      console.warn(`[Console] ${actionName} failed.`, error);
+      updateInstanceSnapshot(instance.id, {
+        state: actionName === "stop" ? instance.state : "Failed",
+        failureReason: getAgentErrorMessage(error, `Instance ${actionName} failed.`),
+      });
+      showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
+    }
+  } finally {
+    instanceActionRequestInFlight = false;
+    renderConsoleWorkspace();
+  }
+}
+
+function openConsoleInstanceFiles() {
+  const instance = getActiveConsoleInstance();
+  if (!instance) {
+    return;
+  }
+
+  showPage("instances");
+  selectInstance(instance.id, { refreshMetrics: false });
+  setActiveInstanceTab("files");
+  refreshInstanceFiles(".");
 }
 
 function getSshSessionList() {
@@ -8830,6 +9485,29 @@ consoleClearButton?.addEventListener("click", clearConsoleRows);
 consoleCopyButton?.addEventListener("click", copyConsoleRows);
 consoleAutoscrollInput?.addEventListener("change", syncConsoleScrollMode);
 consolePauseInput?.addEventListener("change", syncConsoleScrollMode);
+consoleSourceSearchInput?.addEventListener("input", debounce(renderConsoleSources, 120));
+consoleFilterButtons.forEach((button) => {
+  button.addEventListener("click", () => setConsoleFilter(button.dataset.consoleFilter || "all"));
+});
+consoleShowErrorsButton?.addEventListener("click", () => setConsoleFilter("error"));
+consoleCommandForm?.addEventListener("submit", sendConsoleCommand);
+consoleActionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.consoleAction;
+    if (action === "refresh") {
+      refreshInstances({ refreshMetrics: false });
+      refreshConsoleMetrics();
+      refreshConsoleLogs();
+    } else if (action === "files") {
+      openConsoleInstanceFiles();
+    } else {
+      runConsoleInstanceAction(action);
+    }
+  });
+});
+consoleNavButtons.forEach((button) => {
+  button.addEventListener("click", () => showPage(button.dataset.consoleNav));
+});
 updateConsoleEmptyState();
 sshCopyButton?.addEventListener("click", copySshOutput);
 sshClearButton?.addEventListener("click", clearSshOutput);
@@ -9307,10 +9985,16 @@ registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);
 registerRefreshTask(refreshPlayitStatus, 5000);
 registerRefreshTask(refreshDockerStatus, 5000);
 registerRefreshTask(() => {
-  if (getActivePageName() === "instances" || getActivePageName() === "dashboard") {
+  if (getActivePageName() === "instances" || getActivePageName() === "dashboard" || getActivePageName() === "console") {
     refreshInstances();
   }
 }, 5000);
+registerRefreshTask(() => {
+  if (getActivePageName() === "console") {
+    refreshConsoleMetrics();
+    refreshConsoleLogs({ silent: true });
+  }
+}, 3000);
 registerRefreshTask(() => {
   if (getActivePageName() === "marketplace") {
     refreshMarketplaceDownloads();

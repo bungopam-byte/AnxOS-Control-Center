@@ -12,7 +12,17 @@
     "startupType": "java-jar",
     "defaultRam": "2G",
     "defaultPorts": [25565],
-    "downloadSource": { "type": "manual", "fileName": "server.jar" },
+    "downloadSource": { "type": "url", "fileName": "server.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "mojang-vanilla",
+        "destination": "data/server.jar",
+        "fileName": "server.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
     "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
     "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
   },
@@ -31,10 +41,20 @@
     "defaultPorts": [25565],
     "downloadSource": {
       "type": "url",
-      "urlTemplate": "https://api.papermc.io/v2/projects/paper/versions/{version}/builds/{build}/downloads/paper-{version}-{build}.jar",
       "fileName": "paper.jar",
-      "required": false
+      "required": true
     },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "papermc",
+        "project": "paper",
+        "destination": "data/paper.jar",
+        "fileName": "paper.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
     "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
     "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
   },
@@ -51,7 +71,17 @@
     "startupType": "java-jar",
     "defaultRam": "4G",
     "defaultPorts": [25565],
-    "downloadSource": { "type": "manual", "fileName": "purpur.jar" },
+    "downloadSource": { "type": "url", "fileName": "purpur.jar", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "purpur",
+        "destination": "data/purpur.jar",
+        "fileName": "purpur.jar",
+        "required": true,
+        "overwrite": true
+      }
+    ],
     "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
     "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
   },

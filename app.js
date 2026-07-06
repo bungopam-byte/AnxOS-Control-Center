@@ -4018,6 +4018,8 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     DOWNLOAD_FAILED: "The template download failed.",
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
+    DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
+    STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
     MARKETPLACE_INSTALL_FAILED: "Template install failed.",
   };
 

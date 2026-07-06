@@ -101,6 +101,7 @@ const startupMessage = document.querySelector("[data-startup-message]");
 const startupDetail = document.querySelector("[data-startup-detail]");
 const playitStatusCard = document.querySelector("[data-playit-status-card]");
 const playitStatusPill = document.querySelector("[data-playit-status-pill]");
+const ampPanelLink = document.querySelector("[data-amp-panel-link]");
 const startupSteps = {
   app: document.querySelector('[data-startup-step="app"]'),
   services: document.querySelector('[data-startup-step="services"]'),
@@ -1765,8 +1766,10 @@ function renderPlayitSnapshot(snapshot) {
   const tunnelId = snapshot?.tunnelId || "Unavailable";
   const installed = snapshot?.installed === true;
   const running = snapshot?.running === true;
-  const connected = snapshot?.connected === true;
-  const connectedLabel = connected ? "Connected" : running ? "Not connected" : "Disconnected";
+  const connected = snapshot?.connected === true ? true : snapshot?.connected === false ? false : null;
+  const hasTunnelMetadata = Boolean(snapshot?.tunnelAddress || snapshot?.localTarget || snapshot?.tunnelId);
+  const connectedLabel =
+    connected === true ? "Connected" : connected === false ? (running ? "Not connected" : "Disconnected") : running ? "Unknown" : "Disconnected";
   const state = !installed ? "missing" : connected ? "connected" : running ? "running" : "stopped";
 
   setPlayitVisualState(state);
@@ -1783,10 +1786,18 @@ function renderPlayitSnapshot(snapshot) {
   setField("playitTraffic", "Unavailable");
   setField(
     "playitSummary",
-    connected
+    connected === true
       ? "Playit tunnel is running and forwarding traffic."
-      : running
-        ? "Playit is running, but no connected tunnel was detected."
+      : connected === false
+        ? running
+          ? "Playit is running, but no connected tunnel was detected."
+          : installed
+            ? "Playit is installed, but the tunnel process is stopped."
+            : "Playit is not installed."
+        : running
+          ? hasTunnelMetadata
+            ? "Playit is running and tunnel metadata was detected, but the connection state could not be confirmed."
+            : "Playit is running, but the connection state could not be confirmed."
         : installed
           ? "Playit is installed, but the tunnel process is stopped."
           : "Playit is not installed.",
@@ -3275,6 +3286,40 @@ function formatAmpConnection(snapshot) {
   return `${label}: ${message}${formatAmpDiagnostics(snapshot.diagnostics)}`;
 }
 
+function getConfiguredAmpUrl() {
+  const value = readStoredSettings()["amp.url"];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function getAmpPanelUrl(snapshot) {
+  return (
+    snapshot?.diagnostics?.loadedAmpUrl ||
+    snapshot?.diagnostics?.ampUrl ||
+    getConfiguredAmpUrl() ||
+    ""
+  );
+}
+
+function updateAmpPanelLink(snapshot) {
+  const panelUrl = getAmpPanelUrl(snapshot);
+  setField("ampPanelUrl", panelUrl || "Unavailable");
+
+  if (!ampPanelLink) {
+    return;
+  }
+
+  if (panelUrl) {
+    ampPanelLink.href = panelUrl;
+    ampPanelLink.textContent = "Open panel";
+    ampPanelLink.removeAttribute("aria-disabled");
+    return;
+  }
+
+  ampPanelLink.removeAttribute("href");
+  ampPanelLink.textContent = "Unavailable";
+  ampPanelLink.setAttribute("aria-disabled", "true");
+}
+
 function formatPlayerSummary(summary) {
   const players = Number.isFinite(summary?.playerCount) ? summary.playerCount : "Unavailable";
   const maxPlayers = Number.isFinite(summary?.maxPlayers) ? summary.maxPlayers : "Unavailable";
@@ -3359,6 +3404,8 @@ function setMinecraftPageUnavailable(status, selection) {
 }
 
 function renderAmpSnapshot(snapshot) {
+  updateAmpPanelLink(snapshot);
+
   if (!snapshot?.configured) {
     setField("ampStatus", "Unconfigured");
     setField("ampConnection", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
@@ -3436,6 +3483,7 @@ async function refreshAmpDashboard() {
   if (!desktopApiState.hasAmp) {
     const message = desktopApiState.hasBridge ? "AMP IPC bridge unavailable." : "Desktop preload bridge unavailable.";
     latestAmpSnapshot = null;
+    updateAmpPanelLink(null);
     setField("ampConnection", message);
     setField("ampStatus", "Unavailable");
     setField("ampInstances", "Unavailable");
@@ -3473,6 +3521,7 @@ async function refreshAmpDashboard() {
   } catch (error) {
     const message = `AMP IPC request failed: ${error?.message || "Unknown error"}`;
     latestAmpSnapshot = null;
+    updateAmpPanelLink(null);
     setField("ampConnection", message);
     setField("ampStatus", "Unavailable");
     setField("ampInstances", "Unavailable");

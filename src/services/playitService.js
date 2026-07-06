@@ -42,6 +42,12 @@ function getConfigCandidates() {
   return unique([
     process.env.PLAYIT_CONFIG_PATH,
     path.join(process.cwd(), "playit.toml"),
+    process.platform === "win32" && process.env.PROGRAMDATA ? path.join(process.env.PROGRAMDATA, "playit_gg", "playit.toml") : null,
+    process.platform === "win32" && process.env.PROGRAMDATA ? path.join(process.env.PROGRAMDATA, "playit", "playit.toml") : null,
+    process.platform === "win32" && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "playit_gg", "playit.toml") : null,
+    process.platform === "win32" && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "playit", "playit.toml") : null,
+    process.platform === "win32" && process.env.APPDATA ? path.join(process.env.APPDATA, "playit_gg", "playit.toml") : null,
+    process.platform === "win32" && process.env.APPDATA ? path.join(process.env.APPDATA, "playit", "playit.toml") : null,
     process.platform === "win32" ? null : path.join("/etc", "playit", "playit.toml"),
     path.join(os.homedir(), ".config", "playit_gg", "playit.toml"),
     path.join(os.homedir(), ".config", "playit", "playit.toml"),
@@ -55,10 +61,16 @@ function getWindowsInstallCandidates() {
   }
 
   return unique([
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Programs", "playit_gg", "bin", "playit.exe") : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Programs", "playit_gg", "playit.exe") : null,
     process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Programs", "playit", "playit.exe") : null,
     process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "Programs", "playit", "playit", "playit.exe") : null,
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "playit_gg", "bin", "playit.exe") : null,
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "playit_gg", "playit.exe") : null,
     process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "playit", "playit.exe") : null,
     process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "playit", "playit", "playit.exe") : null,
+    process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "playit_gg", "bin", "playit.exe") : null,
+    process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "playit_gg", "playit.exe") : null,
     process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "playit", "playit.exe") : null,
     process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "playit", "playit", "playit.exe") : null,
   ]);
@@ -67,6 +79,14 @@ function getWindowsInstallCandidates() {
 function getLogCandidates() {
   return unique([
     process.env.PLAYIT_LOG_PATH,
+    process.env.PROGRAMDATA ? path.join(process.env.PROGRAMDATA, "playit_gg", "logs", "playitd.log") : null,
+    process.env.PROGRAMDATA ? path.join(process.env.PROGRAMDATA, "playit_gg", "logs", "playit.log") : null,
+    process.env.PROGRAMDATA ? path.join(process.env.PROGRAMDATA, "playit", "logs", "playitd.log") : null,
+    process.env.PROGRAMDATA ? path.join(process.env.PROGRAMDATA, "playit", "logs", "playit.log") : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "playit_gg", "logs", "playitd.log") : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "playit_gg", "logs", "playit.log") : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "playit", "logs", "playitd.log") : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, "playit", "logs", "playit.log") : null,
     path.join(os.homedir(), ".config", "playit_gg", "playit.log"),
     path.join(os.homedir(), ".config", "playit", "playit.log"),
     path.join(os.homedir(), ".playit", "playit.log"),
@@ -484,7 +504,7 @@ function parseConnected(cliOutput, tunnelAddress) {
     return false;
   }
 
-  if (/(connected|forwarding|tunnel.+active|online)/i.test(cliOutput) && tunnelAddress) {
+  if (/(connected|forwarding|tunnel.+active|online)/i.test(cliOutput)) {
     return true;
   }
 
@@ -668,15 +688,15 @@ async function isPlayitProcessRunning(cliOutput = "") {
 }
 
 async function getWindowsPlayitProcesses() {
-  const result = await exec("powershell.exe", [
+  const cimResult = await exec("powershell.exe", [
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
     "-Command",
     "Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^playit' -or $_.CommandLine -match 'playit' -or $_.ExecutablePath -match 'playit' } | Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
   ]);
-  const rows = parseJsonArray(result.stdout);
-  const processes = rows
+  const cimRows = parseJsonArray(cimResult.stdout);
+  const cimProcesses = cimRows
     .map((row) => ({
       processId: row.ProcessId || null,
       name: row.Name || null,
@@ -685,13 +705,100 @@ async function getWindowsPlayitProcesses() {
     }))
     .filter((row) => [row.name, row.executablePath, row.commandLine].filter(Boolean).join(" ").match(/\bplayit(?:\.exe|d)?\b/i));
 
+  const checks = [
+    {
+      method: "Get-CimInstance Win32_Process playit",
+      ok: cimResult.ok,
+      errorCode: cimResult.errorCode,
+      hasOutput: cimProcesses.length > 0,
+    },
+  ];
+
+  if (cimProcesses.length > 0) {
+    return {
+      processes: cimProcesses,
+      diagnostics: checks[0],
+    };
+  }
+
+  const getProcessResult = await exec("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "Get-Process -ErrorAction SilentlyContinue playit,playitd | Select-Object Id,ProcessName,Path | ConvertTo-Json -Compress",
+  ]);
+  const getProcessRows = parseJsonArray(getProcessResult.stdout);
+  const getProcessProcesses = getProcessRows
+    .map((row) => ({
+      processId: row.Id || null,
+      name: row.ProcessName || null,
+      executablePath: row.Path || null,
+      commandLine: "",
+    }))
+    .filter((row) => [row.name, row.executablePath].filter(Boolean).join(" ").match(/\bplayit(?:\.exe|d)?\b/i));
+
+  checks.push({
+    method: "Get-Process playit,playitd",
+    ok: getProcessResult.ok,
+    errorCode: getProcessResult.errorCode,
+    hasOutput: getProcessProcesses.length > 0,
+  });
+
+  if (getProcessProcesses.length > 0) {
+    return {
+      processes: getProcessProcesses,
+      diagnostics: {
+        method: "Get-Process playit,playitd",
+        ok: getProcessResult.ok,
+        errorCode: getProcessResult.errorCode,
+        hasOutput: true,
+        checks,
+      },
+    };
+  }
+
+  const tasklistResult = await exec("tasklist.exe", ["/FO", "CSV"]);
+  const tasklistLines = tasklistResult.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /\bplayit(?:d)?\.exe\b/i.test(line));
+  const tasklistProcesses = tasklistLines.map((line) => ({
+    processId: null,
+    name: line.replace(/^"([^"]+)".*$/, "$1") || null,
+    executablePath: null,
+    commandLine: "",
+  }));
+
+  checks.push({
+    method: "tasklist.exe /FO CSV",
+    ok: tasklistResult.ok,
+    errorCode: tasklistResult.errorCode,
+    hasOutput: tasklistProcesses.length > 0,
+  });
+
+  if (tasklistProcesses.length > 0) {
+    return {
+      processes: tasklistProcesses,
+      diagnostics: {
+        method: "tasklist.exe /FO CSV",
+        ok: tasklistResult.ok,
+        errorCode: tasklistResult.errorCode,
+        hasOutput: true,
+        checks,
+      },
+    };
+  }
+
   return {
-    processes,
+    processes: [],
     diagnostics: {
       method: "Get-CimInstance Win32_Process playit",
-      ok: result.ok,
-      errorCode: result.errorCode,
-      hasOutput: processes.length > 0,
+      ok: cimResult.ok,
+      errorCode: cimResult.errorCode,
+      hasOutput: false,
+      checks,
     },
   };
 }
@@ -780,6 +887,28 @@ async function getPlayitSnapshot() {
       },
     })),
     {
+      name: configResult.path || "playit config file",
+      content: configResult.content,
+      diagnostics: {
+        checked: true,
+        ok: Boolean(configResult.path),
+        errorCode: configResult.path ? null : configResult.diagnostics?.find((item) => item.found === false)?.errorCode || null,
+        hasOutput: Boolean(configResult.content),
+        reason: configResult.path ? null : "not_found",
+      },
+    },
+    {
+      name: logResult.path || "playit log file",
+      content: logResult.content,
+      diagnostics: {
+        checked: true,
+        ok: Boolean(logResult.path),
+        errorCode: logResult.path ? null : logResult.diagnostics?.find((item) => item.found === false)?.errorCode || null,
+        hasOutput: Boolean(logResult.content),
+        reason: logResult.path ? null : "not_found",
+      },
+    },
+    {
       name: "/etc/playit/playit.toml",
       content: systemConfig.content,
       diagnostics: systemConfig.diagnostics,
@@ -806,7 +935,9 @@ async function getPlayitSnapshot() {
     ...splitHostPort(localTarget),
   };
   const running = process.platform === "win32" ? (binary.installed ? parseRunning(cli.output, processState.running) : false) : processState.running;
-  const connected = binary.installed && running ? parseConnected(cli.output, tunnelAddress) : false;
+  const connected = binary.installed && running
+    ? parseConnected(cli.output, tunnelAddress || localTarget || tunnelMetadata.tunnelId)
+    : false;
 
   return {
     installed: binary.installed,

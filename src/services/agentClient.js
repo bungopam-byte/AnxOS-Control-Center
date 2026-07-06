@@ -560,7 +560,7 @@ function normalizePlayitSnapshot(payload) {
   return {
     installed: candidate.installed ?? false,
     running: candidate.running ?? false,
-    connected: candidate.connected ?? false,
+    connected: candidate.connected === true ? true : candidate.connected === false ? false : null,
     tunnelAddress: candidate.tunnelAddress || null,
     tunnelDomain: candidate.tunnelDomain || (candidate.tunnelAddress ? String(candidate.tunnelAddress).split(":")[0] : null),
     localTarget: candidate.localTarget || null,

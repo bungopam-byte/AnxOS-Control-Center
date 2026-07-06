@@ -38,20 +38,74 @@ function uniquePaths(paths) {
   return [...new Set(paths.filter(Boolean))];
 }
 
+function trimValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getElectronApp() {
+  if (!process.versions?.electron) {
+    return null;
+  }
+
+  try {
+    const electron = require("electron");
+    return electron && typeof electron === "object" ? electron.app || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function getPackagedConfigDirectory() {
+  const app = getElectronApp();
+
+  if (!app?.isPackaged) {
+    return null;
+  }
+
+  try {
+    return path.join(app.getPath("userData"), "config");
+  } catch {
+    return null;
+  }
+}
+
+function getPrimaryEnvPath() {
+  const explicitPath = trimValue(process.env.ANXHUB_ENV_PATH);
+
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  const packagedConfigDirectory = getPackagedConfigDirectory();
+
+  if (packagedConfigDirectory) {
+    return path.join(packagedConfigDirectory, ".env");
+  }
+
+  return path.join(process.cwd(), ".env");
+}
+
 function getEnvCandidates() {
+  const packagedConfigDirectory = getPackagedConfigDirectory();
+
   return uniquePaths([
     process.env.ANXHUB_ENV_PATH,
+    packagedConfigDirectory ? path.join(packagedConfigDirectory, ".env") : null,
+    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
     path.join(process.cwd(), ".env"),
     process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env") : null,
-    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
     path.join(__dirname, "..", "..", ".env"),
   ]);
 }
 
 function getEnvExampleCandidates() {
+  const packagedConfigDirectory = getPackagedConfigDirectory();
+
   return uniquePaths([
     process.env.ANXHUB_ENV_EXAMPLE_PATH,
+    packagedConfigDirectory ? path.join(packagedConfigDirectory, ".env.example") : null,
+    process.execPath ? path.join(path.dirname(process.execPath), ".env.example") : null,
     path.join(process.cwd(), ".env.example"),
     process.resourcesPath ? path.join(process.resourcesPath, ".env.example") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env.example") : null,
@@ -59,15 +113,52 @@ function getEnvExampleCandidates() {
   ]);
 }
 
+function getFallbackEnvTemplate() {
+  return `${REQUIRED_ENV.map((key) => `${key}=`).join("\n")}\n`;
+}
+
 function bootstrapEnvFile(candidates) {
-  const targetPath = process.env.ANXHUB_ENV_PATH || path.join(process.cwd(), ".env");
-  const existingPath = process.env.ANXHUB_ENV_PATH
-    ? (fs.existsSync(process.env.ANXHUB_ENV_PATH) ? process.env.ANXHUB_ENV_PATH : null)
-    : candidates.find((candidate) => fs.existsSync(candidate));
+  const targetPath = getPrimaryEnvPath();
+  const resolvedTargetPath = path.resolve(targetPath);
+  const existingPath = candidates.find((candidate) => fs.existsSync(candidate));
+
+  if (fs.existsSync(targetPath)) {
+    return {
+      resolvedEnvPath: targetPath,
+      envFileExists: true,
+      envAutoCreated: false,
+      envTemplatePath: null,
+      envCreateErrorCode: null,
+    };
+  }
+
+  if (existingPath && path.resolve(existingPath) !== resolvedTargetPath) {
+    try {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.copyFileSync(existingPath, targetPath, fs.constants.COPYFILE_EXCL);
+
+      return {
+        resolvedEnvPath: targetPath,
+        envFileExists: true,
+        envAutoCreated: true,
+        envTemplatePath: existingPath,
+        envCreateErrorCode: null,
+      };
+    } catch (error) {
+      return {
+        resolvedEnvPath: existingPath,
+        envFileExists: true,
+        envAutoCreated: false,
+        envTemplatePath: targetPath,
+        envCreateErrorCode: getSafeErrorCode(error),
+      };
+    }
+  }
 
   if (existingPath) {
     return {
       resolvedEnvPath: existingPath,
+      envFileExists: true,
       envAutoCreated: false,
       envTemplatePath: null,
       envCreateErrorCode: null,
@@ -85,20 +176,18 @@ function bootstrapEnvFile(candidates) {
 
   const templatePath = getEnvExampleCandidates().find((candidate) => fs.existsSync(candidate));
 
-  if (!templatePath) {
-    return {
-      resolvedEnvPath: targetPath,
-      envAutoCreated: false,
-      envTemplatePath: null,
-      envCreateErrorCode: "ENOENT",
-    };
-  }
-
   try {
-    fs.copyFileSync(templatePath, targetPath, fs.constants.COPYFILE_EXCL);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+    if (templatePath) {
+      fs.copyFileSync(templatePath, targetPath, fs.constants.COPYFILE_EXCL);
+    } else {
+      fs.writeFileSync(targetPath, getFallbackEnvTemplate(), "utf8");
+    }
 
     return {
       resolvedEnvPath: targetPath,
+      envFileExists: true,
       envAutoCreated: true,
       envTemplatePath: templatePath,
       envCreateErrorCode: null,
@@ -106,6 +195,7 @@ function bootstrapEnvFile(candidates) {
   } catch (error) {
     return {
       resolvedEnvPath: targetPath,
+      envFileExists: fs.existsSync(targetPath),
       envAutoCreated: false,
       envTemplatePath: templatePath,
       envCreateErrorCode: getSafeErrorCode(error),
@@ -113,34 +203,72 @@ function bootstrapEnvFile(candidates) {
   }
 }
 
+function loadEnvValues(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return {
+      values: {},
+      errorCode: null,
+    };
+  }
+
+  try {
+    return {
+      values: dotenv.parse(fs.readFileSync(filePath)),
+      errorCode: null,
+    };
+  } catch (error) {
+    return {
+      values: {},
+      errorCode: error?.code || error?.name || "INVALID_ENV_FILE",
+    };
+  }
+}
+
+function pickEnvValue(parsed, key) {
+  const explicitValue = trimValue(process.env[key]);
+
+  if (explicitValue) {
+    return explicitValue;
+  }
+
+  const parsedValue = trimValue(parsed[key]);
+  return parsedValue || null;
+}
+
 function loadEnv() {
   const candidates = getEnvCandidates();
   const bootstrap = bootstrapEnvFile(candidates);
-  const result = dotenv.config({ path: bootstrap.resolvedEnvPath, quiet: true });
+  const loaded = loadEnvValues(bootstrap.resolvedEnvPath);
+  const values = {
+    AMP_URL: pickEnvValue(loaded.values, "AMP_URL"),
+    AMP_USERNAME: pickEnvValue(loaded.values, "AMP_USERNAME"),
+    AMP_PASSWORD: pickEnvValue(loaded.values, "AMP_PASSWORD"),
+  };
 
   return {
     cwd: process.cwd(),
     resolvedEnvPath: bootstrap.resolvedEnvPath,
-    envFileExists: fs.existsSync(bootstrap.resolvedEnvPath),
+    envFileExists: bootstrap.envFileExists ?? fs.existsSync(bootstrap.resolvedEnvPath),
     envAutoCreated: bootstrap.envAutoCreated,
     envTemplatePath: bootstrap.envTemplatePath,
     envCreateErrorCode: bootstrap.envCreateErrorCode,
-    envLoadErrorCode: result.error?.code || null,
-    ampUrlLoaded: Boolean(process.env.AMP_URL),
+    envLoadErrorCode: loaded.errorCode,
+    ampUrlLoaded: Boolean(values.AMP_URL),
+    ampUrl: values.AMP_URL,
+    values,
   };
 }
 
-const ENV_LOAD_INFO = loadEnv();
-
 function getConfig() {
+  const envInfo = loadEnv();
   const config = {
-    url: process.env.AMP_URL,
-    username: process.env.AMP_USERNAME,
-    password: process.env.AMP_PASSWORD,
+    url: envInfo.values.AMP_URL,
+    username: envInfo.values.AMP_USERNAME,
+    password: envInfo.values.AMP_PASSWORD,
   };
 
   const missing = REQUIRED_ENV.filter((key) => {
-    const value = process.env[key];
+    const value = envInfo.values[key];
     return !value || PLACEHOLDER_ENV_VALUES.has(String(value).trim().toLowerCase());
   });
 
@@ -149,9 +277,7 @@ function getConfig() {
     configured: missing.length === 0,
     missing,
     env: {
-      ...ENV_LOAD_INFO,
-      ampUrlLoaded: Boolean(process.env.AMP_URL),
-      ampUrl: process.env.AMP_URL || null,
+      ...envInfo,
     },
   };
 }

@@ -10,7 +10,7 @@ const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 
-const APP_ICON_PATH = path.join(__dirname, "src", "assets", "anxos-logo.jpg");
+const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");

@@ -3075,24 +3075,19 @@ body.is-resizing-files * {
 
 .instances-shell {
   display: grid;
-  grid-template-columns: minmax(620px, 1fr) minmax(330px, 0.42fr);
+  grid-template-columns: minmax(0, 1fr) 360px;
   grid-template-rows: auto auto 1fr;
-  gap: 14px;
+  gap: 16px;
   align-items: start;
   min-width: 0;
   overflow: hidden;
-}
-
-.instances-summary-grid {
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  min-height: calc(100vh - 150px);
 }
 
 .instances-toolbar {
-  grid-column: 1 / -1;
+  grid-column: 1;
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(220px, 0.42fr) minmax(160px, 0.26fr) auto;
+  grid-template-columns: minmax(320px, 1fr) minmax(220px, 0.44fr) auto;
   align-items: end;
   padding: 16px;
   gap: 12px;
@@ -3106,6 +3101,7 @@ body.is-resizing-files * {
 
 .instances-toolbar__title {
   min-width: 0;
+  padding-right: 8px;
 }
 
 .instances-toolbar__title .eyebrow,
@@ -3114,8 +3110,8 @@ body.is-resizing-files * {
 }
 
 .instances-toolbar__title h1 {
-  margin: 2px 0 4px;
-  font-size: clamp(1.8rem, 2.2vw, 2.45rem);
+  margin: 2px 0 5px;
+  font-size: clamp(2rem, 2.5vw, 2.7rem);
   letter-spacing: 0;
 }
 
@@ -3126,10 +3122,11 @@ body.is-resizing-files * {
 .instances-toolbar .docker-actions {
   justify-content: flex-end;
   align-self: end;
+  grid-column: auto;
 }
 
 .instances-toolbar__future {
-  grid-column: 2 / 4;
+  grid-column: 1 / 2;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -3149,17 +3146,8 @@ body.is-resizing-files * {
   white-space: nowrap;
 }
 
-.instances-log-control {
-  display: none;
-}
-
-.instances-summary-grid .docker-summary-card {
-  min-height: 82px;
-  padding: 14px;
-}
-
 .instance-create-form {
-  grid-column: 1 / -1;
+  grid-column: 1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
@@ -3243,40 +3231,71 @@ body.is-resizing-files * {
   display: contents;
 }
 
+.instances-main-shell,
 .instances-table-panel,
-.instances-details-panel {
+.instances-details-panel,
+.instance-workspace-card {
   min-width: 0;
+}
+
+.instances-main-shell {
+  grid-column: 1;
+  grid-row: 3;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 16px;
+  min-height: calc(100vh - 250px);
 }
 
 .instances-table-panel {
   grid-column: 1;
-  grid-row: 3;
+  grid-row: 1;
 }
 
 .instances-details-panel {
   grid-column: 2;
-  grid-row: 3;
+  grid-row: 1 / span 3;
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  align-self: start;
+  min-height: calc(100vh - 150px);
+  border: 1px solid rgba(185, 171, 200, 0.16);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(31, 17, 49, 0.96), rgba(16, 9, 29, 0.98)),
+    rgba(16, 10, 29, 0.96);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
 }
 
 .instances-table-panel .docker-table-wrap {
-  min-height: clamp(520px, 68vh, 780px);
-  max-height: calc(100vh - 210px);
+  min-height: 100%;
+  max-height: none;
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(26, 14, 43, 0.92), rgba(14, 8, 26, 0.96)),
+    rgba(17, 21, 31, 0.82);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.22);
 }
 
 .instance-name-cell {
   display: grid;
-  gap: 3px;
+  gap: 4px;
 }
 
 .instance-name-cell strong {
   color: var(--text);
-  font-size: 0.92rem;
+  font-size: 0.96rem;
+  line-height: 1.3;
 }
 
 .instance-name-cell span,
 .instance-meta-list {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
 }
 
 .instance-header-meta,
@@ -3297,14 +3316,14 @@ body.is-resizing-files * {
 
 .instances-table th {
   color: rgba(224, 214, 239, 0.68);
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .instances-table td {
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding-top: 13px;
+  padding-bottom: 13px;
 }
 
 .instances-table tbody tr {
@@ -3396,6 +3415,39 @@ body.is-resizing-files * {
   opacity: 0.52;
 }
 
+.instance-workspace-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(26, 14, 43, 0.92), rgba(14, 8, 26, 0.96)),
+    rgba(17, 21, 31, 0.82);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.instance-workspace-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(185, 171, 200, 0.12);
+}
+
+.instance-workspace-card__header h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.instance-workspace-card__header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .download-item__logs {
   margin-top: 8px;
   color: var(--muted);
@@ -3460,18 +3512,6 @@ body.is-resizing-files * {
   border-radius: var(--radius);
   background: rgba(13, 7, 22, 0.82);
   overflow: hidden;
-}
-
-.instance-workspace {
-  min-height: clamp(520px, 68vh, 780px);
-  border: 1px solid rgba(185, 171, 200, 0.14);
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(26, 14, 43, 0.92), rgba(13, 7, 22, 0.92)),
-    rgba(17, 21, 31, 0.82);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
-  overflow: hidden;
-  max-width: 100%;
 }
 
 .instance-workspace-header {
@@ -3571,10 +3611,10 @@ body.is-resizing-files * {
 
 .instance-tab-panel {
   display: none;
-  padding: 14px;
+  padding: 18px;
   min-width: 0;
   overflow: auto;
-  max-height: calc(100vh - 355px);
+  max-height: none;
 }
 
 .instance-tab-panel.is-active {
@@ -3599,6 +3639,10 @@ body.is-resizing-files * {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.instance-overview-grid--wide {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .instance-overview-grid article {
@@ -3661,6 +3705,76 @@ body.is-resizing-files * {
 
 .instance-overview-list .instance-copy-button {
   flex: 0 0 auto;
+}
+
+.instances-inspector-sections {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  overflow: auto;
+}
+
+.instances-inspector-panel .instance-overview-grid {
+  grid-template-columns: 1fr;
+}
+
+.instance-workspace-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(185, 171, 200, 0.12);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at top right, rgba(156, 111, 255, 0.14), transparent 40%),
+    rgba(11, 7, 20, 0.56);
+}
+
+.instance-workspace-label {
+  display: block;
+  margin-bottom: 7px;
+  color: rgba(224, 214, 239, 0.58);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.instance-workspace-hero strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.18rem;
+}
+
+.instance-workspace-hero small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.instance-workspace-meta {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.instance-workspace-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.84rem;
+}
+
+.instance-settings-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(185, 171, 200, 0.12);
+  border-radius: 12px;
+  background: rgba(8, 10, 15, 0.24);
 }
 
 .instance-minecraft-summary,
@@ -3979,7 +4093,9 @@ body.is-resizing-files * {
 
 .instance-config-form,
 .instance-advanced-panel {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .instance-config-form .ssh-connection-actions,
@@ -5476,15 +5592,15 @@ dd {
   }
 
   .instances-shell {
-    grid-template-columns: minmax(560px, 1fr) minmax(320px, 0.46fr);
+    grid-template-columns: minmax(0, 1fr) 340px;
   }
 
   .instances-toolbar {
-    grid-template-columns: minmax(320px, 1fr) minmax(180px, 0.36fr) auto;
+    grid-template-columns: minmax(280px, 1fr) minmax(180px, 0.42fr) auto;
   }
 
   .instances-toolbar__future {
-    grid-column: 2 / 3;
+    grid-column: 1 / 2;
   }
 
   .instance-files-grid {
@@ -5678,6 +5794,8 @@ dd {
   .instances-toolbar__title,
   .instances-toolbar__future,
   .instances-toolbar .docker-actions,
+  .instances-main-shell,
+  .instance-workspace-card,
   .instances-table-panel,
   .instances-details-panel {
     grid-column: 1 / -1;
@@ -5685,6 +5803,8 @@ dd {
 
   .instances-details-panel {
     grid-row: auto;
+    position: static;
+    min-height: auto;
   }
 
   .settings-section,
@@ -5728,8 +5848,8 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .instances-workspace,
   .instances-shell,
+  .instances-main-shell,
   .instance-create-form,
   .instance-template-grid,
   .instance-files-grid,
@@ -5738,9 +5858,10 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .instances-summary-grid,
   .instances-toolbar,
   .instance-create-form,
+  .instances-main-shell,
+  .instance-workspace-card,
   .instances-table-panel,
   .instances-details-panel {
     grid-column: 1;
@@ -5829,8 +5950,7 @@ dd {
   .ssh-workspace-shell,
   .console-ops-shell,
   .instances-shell,
-  .instances-summary-grid,
-  .instances-workspace,
+  .instances-main-shell,
   .instance-create-form,
   .instance-template-grid,
   .instance-files-grid,
@@ -5843,9 +5963,10 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .instances-summary-grid,
   .instances-toolbar,
   .instance-create-form,
+  .instances-main-shell,
+  .instance-workspace-card,
   .instances-table-panel,
   .instances-details-panel {
     grid-column: 1;

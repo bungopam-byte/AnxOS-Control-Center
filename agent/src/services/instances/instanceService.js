@@ -33,7 +33,7 @@ const MAX_LOG_LINES = 1000;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
-const VERSION_CACHE_VERSION = 3;
+const VERSION_CACHE_VERSION = 4;
 const FIVEM_LICENSE_MESSAGE = "FiveM needs a valid license key in server.cfg before it can start.";
 const FIVEM_LICENSE_PLACEHOLDERS = new Set([
   "CHANGE_ME",
@@ -491,15 +491,21 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     shutdownTimeoutMs: validatePositiveInteger(payload.shutdownTimeoutMs, DEFAULT_SHUTDOWN_TIMEOUT_MS, 10 * 60 * 1000),
     memoryLimit: payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null,
     ports: normalizePorts(payload.ports),
+    game: payload.game ? String(payload.game).slice(0, 80) : null,
     version: payload.version ? String(payload.version).slice(0, 80) : null,
     versionName: payload.versionName ? String(payload.versionName).slice(0, 80) : null,
     serverVersion: payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null,
     serverSoftware: payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null,
     minecraftVersion: payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null,
+    gameVersion: payload.gameVersion ? String(payload.gameVersion).slice(0, 80) : null,
+    softwareVersion: payload.softwareVersion ? String(payload.softwareVersion).slice(0, 80) : null,
+    displayVersion: payload.displayVersion ? String(payload.displayVersion).slice(0, 120) : null,
+    displayVersionDetail: payload.displayVersionDetail ? String(payload.displayVersionDetail).slice(0, 120) : null,
     templateVersion: payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null,
     templateId: payload.templateId ? String(payload.templateId).slice(0, 80) : null,
     buildNumber: payload.buildNumber ? String(payload.buildNumber).slice(0, 80) : null,
     paperBuild: payload.paperBuild ? String(payload.paperBuild).slice(0, 80) : null,
+    buildDate: payload.buildDate ? String(payload.buildDate).slice(0, 80) : null,
     detectedVersionAt: payload.detectedVersionAt || null,
     versionCacheVersion: payload.versionCacheVersion || null,
     connectionHost: payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null,
@@ -515,6 +521,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     signal: existingConfig?.signal || null,
     failureReason: existingConfig?.failureReason || null,
   };
+
+  config.versionInfo = normalizeVersionInfo(payload.versionInfo, config);
 
   if (payload.state || payload.pid || payload.exitCode || payload.signal) {
     throw createInstanceError("RUNTIME_FIELDS_READ_ONLY");
@@ -542,6 +550,36 @@ function cleanVersionValue(value) {
   return text.slice(0, 80);
 }
 
+function extractGenericVersion(value) {
+  return String(value || "").match(/\b\d+(?:\.\d+){1,4}\b/)?.[0] || null;
+}
+
+function inferGameFamily(config = {}) {
+  const searchable = [
+    config.game,
+    config.templateId,
+    config.type,
+    config.displayName,
+    config.id,
+    config.serverSoftware,
+    ...(Array.isArray(config.tags) ? config.tags : []),
+    ...(Array.isArray(config.args) ? config.args : []),
+  ].join(" ").toLowerCase();
+
+  if (isMinecraftSoftwareName(searchable)) return "minecraft";
+  if (searchable.includes("terraria") || searchable.includes("tshock")) return "terraria";
+  if (searchable.includes("fivem") || searchable.includes("fxserver")) return "fivem";
+  if (searchable.includes("valheim")) return "valheim";
+  if (searchable.includes("palworld")) return "palworld";
+  if (searchable.includes("counter-strike") || searchable.includes("cs2")) return "cs2";
+  if (searchable.includes("rust")) return "rust";
+  return null;
+}
+
+function isMinecraftSoftwareName(value) {
+  return /minecraft|paper|purpur|spigot|bukkit|fabric|quilt|forge|neoforge|mohist|magma|arclight|vanilla/i.test(String(value || ""));
+}
+
 function inferServerSoftware(config) {
   const searchable = [
     config.serverSoftware,
@@ -560,6 +598,128 @@ function inferServerSoftware(config) {
   if (searchable.includes("paper")) return "Paper";
   if (searchable.includes("vanilla") || searchable.includes("minecraft")) return "Vanilla";
   return config.serverSoftware || null;
+}
+
+function formatVersionDetailLabel(software, softwareVersion, buildNumber, game) {
+  const normalizedSoftware = cleanVersionValue(software);
+  const normalizedVersion = cleanVersionValue(softwareVersion);
+  const normalizedBuild = cleanVersionValue(buildNumber);
+  const lowerSoftware = String(normalizedSoftware || "").toLowerCase();
+  const lowerGame = String(game || "").toLowerCase();
+
+  if (lowerGame === "minecraft") {
+    if ((/paper|purpur/.test(lowerSoftware)) && normalizedBuild) {
+      return `${normalizedSoftware} Build ${normalizedBuild}`;
+    }
+    if ((/fabric|quilt/.test(lowerSoftware)) && normalizedVersion) {
+      return `${normalizedSoftware} Loader ${normalizedVersion}`;
+    }
+    if ((/forge|neoforge|mohist|magma|arclight/.test(lowerSoftware)) && normalizedVersion) {
+      return `${normalizedSoftware} ${normalizedVersion}`;
+    }
+    if (normalizedBuild) {
+      return `${normalizedSoftware || "Build"} ${normalizedBuild}`;
+    }
+    if (normalizedVersion) {
+      return `${normalizedSoftware || "Software"} ${normalizedVersion}`;
+    }
+  }
+
+  if (lowerGame === "terraria") {
+    return normalizedVersion && normalizedSoftware ? `${normalizedSoftware} ${normalizedVersion}` : normalizedVersion || normalizedSoftware;
+  }
+
+  if (lowerGame === "fivem") {
+    if (normalizedBuild) {
+      return `${normalizedSoftware || "FXServer"} Artifact ${normalizedBuild}`;
+    }
+    return normalizedVersion && normalizedSoftware ? `${normalizedSoftware} ${normalizedVersion}` : normalizedVersion || normalizedSoftware;
+  }
+
+  if (normalizedVersion && normalizedSoftware) {
+    return `${normalizedSoftware} ${normalizedVersion}`;
+  }
+  return normalizedBuild || normalizedVersion || normalizedSoftware;
+}
+
+function normalizeVersionInfo(versionInfo = null, config = {}) {
+  const input = versionInfo && typeof versionInfo === "object" ? versionInfo : {};
+  const game = cleanVersionValue(
+    input.game ||
+      input.gameFamily ||
+      config.game ||
+      inferGameFamily(config)
+  );
+  const software = cleanVersionValue(
+    input.software ||
+      input.serverSoftware ||
+      config.serverSoftware ||
+      inferServerSoftware(config)
+  );
+  const combinedVersionText = [
+    input.displayVersion,
+    input.displayVersionDetail,
+    input.gameVersion,
+    input.softwareVersion,
+    config.versionName,
+    config.version,
+    config.serverVersion,
+  ].filter(Boolean).join(" ");
+  const minecraftVersion = parseMinecraftVersion(
+    input.gameVersion ||
+      input.minecraftVersion ||
+      config.minecraftVersion ||
+      combinedVersionText
+  );
+  const genericVersion = extractGenericVersion(
+    input.gameVersion ||
+      input.displayVersion ||
+      config.serverVersion ||
+      config.versionName ||
+      config.version
+  );
+  const softwareVersion = cleanVersionValue(
+    input.softwareVersion ||
+      input.loaderVersion ||
+      input.serverVersion ||
+      (game === "minecraft"
+        ? (cleanVersionValue(config.buildNumber || config.paperBuild || config.serverVersion) || null)
+        : null)
+  );
+  const buildNumber = cleanVersionValue(input.buildNumber || input.paperBuild || config.buildNumber || config.paperBuild);
+  const gameVersion = cleanVersionValue(
+    input.gameVersion ||
+      input.minecraftVersion ||
+      (game === "minecraft" ? minecraftVersion : genericVersion)
+  );
+  const displayVersion = cleanVersionValue(
+    input.displayVersion ||
+      (game === "minecraft"
+        ? (gameVersion || softwareVersion || buildNumber)
+        : game === "fivem"
+          ? (buildNumber ? `Artifact ${buildNumber}` : softwareVersion || genericVersion)
+          : gameVersion || softwareVersion || buildNumber || config.version)
+  );
+  const displayVersionDetail = cleanVersionValue(
+    input.displayVersionDetail ||
+      formatVersionDetailLabel(software, softwareVersion, buildNumber, game)
+  );
+
+  if (!game && !software && !gameVersion && !softwareVersion && !displayVersion && !displayVersionDetail && !buildNumber) {
+    return null;
+  }
+
+  return {
+    game: game || null,
+    software: software || null,
+    gameVersion: gameVersion || null,
+    softwareVersion: softwareVersion || null,
+    buildNumber: buildNumber || null,
+    buildDate: cleanVersionValue(input.buildDate || config.buildDate),
+    displayVersion: displayVersion || null,
+    displayVersionDetail: displayVersionDetail || null,
+    isMinecraft: game === "minecraft",
+  };
 }
 
 function isFiveMInstance(config) {
@@ -781,11 +941,18 @@ async function detectFromKnownFiles(config) {
       const parsed = await readJson(filePath);
       const id = parsed.minecraftVersion || parsed.serverVersion || parsed.id || parsed.minecraftArguments || parsed.version || parsed.versionName || parsed.minecraft;
       detections.push({
+        game: parsed.game || parsed.versionInfo?.game || null,
         serverSoftware: parsed.serverSoftware || null,
         minecraftVersion: parseMinecraftVersion(id),
+        gameVersion: parsed.gameVersion || parsed.versionInfo?.gameVersion || extractGenericVersion(parsed.version || parsed.serverVersion || parsed.displayVersion || ""),
+        softwareVersion: parsed.softwareVersion || parsed.versionInfo?.softwareVersion || null,
+        displayVersion: parsed.displayVersion || parsed.versionInfo?.displayVersion || parsed.version || null,
+        displayVersionDetail: parsed.displayVersionDetail || parsed.versionInfo?.displayVersionDetail || null,
         buildNumber: parsed.buildNumber || parsed.paperBuild || parseBuildNumber(JSON.stringify(parsed)),
         paperBuild: parsed.paperBuild || null,
+        buildDate: parsed.buildDate || parsed.versionInfo?.buildDate || null,
         versionName: parsed.versionName || parsed.version || null,
+        versionInfo: parsed.versionInfo || null,
       });
     } catch {}
   }
@@ -996,6 +1163,9 @@ async function detectFromMinecraftStatus(config) {
 }
 
 function buildVersionLabel(metadata) {
+  if (metadata.versionInfo?.displayVersion) {
+    return cleanVersionValue(metadata.versionInfo.displayVersion);
+  }
   const software = metadata.serverSoftware || null;
   const minecraftVersion = cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.versionName || metadata.version);
   const savedVersion = cleanVersionValue(metadata.versionName || metadata.version);
@@ -1014,8 +1184,8 @@ function buildVersionLabel(metadata) {
 }
 
 async function detectInstanceVersion(config) {
-  const cached = cleanVersionValue(config.versionName || config.version || config.serverVersion || config.minecraftVersion);
-  if (cached && config.versionCacheVersion === VERSION_CACHE_VERSION) {
+  const cached = cleanVersionValue(config.versionInfo?.displayVersion || config.displayVersion || config.versionName || config.version || config.serverVersion || config.minecraftVersion);
+  if ((cached || config.versionInfo) && config.versionCacheVersion === VERSION_CACHE_VERSION) {
     return config;
   }
 
@@ -1032,8 +1202,19 @@ async function detectInstanceVersion(config) {
     paperBuild: cleanVersionValue(known.paperBuild || jar.paperBuild || logs.paperBuild || config.paperBuild),
     versionName: cleanVersionValue(known.versionName || config.versionName),
   };
-  const label = buildVersionLabel({ ...config, ...detected });
-  if (!label && !detected.minecraftVersion && !detected.serverSoftware) {
+  const versionInfo = normalizeVersionInfo({
+    ...config.versionInfo,
+    ...(known.versionInfo || {}),
+    game: known.game || config.game || null,
+    gameVersion: known.gameVersion || config.gameVersion || detected.minecraftVersion || null,
+    softwareVersion: known.softwareVersion || config.softwareVersion || null,
+    displayVersion: known.displayVersion || config.displayVersion || null,
+    displayVersionDetail: known.displayVersionDetail || config.displayVersionDetail || null,
+    buildDate: known.buildDate || config.buildDate || null,
+    ...detected,
+  }, { ...config, ...detected });
+  const label = buildVersionLabel({ ...config, ...detected, versionInfo });
+  if (!label && !detected.minecraftVersion && !detected.serverSoftware && !versionInfo) {
     return {
       ...config,
       detectedVersionAt: nowIso(),
@@ -1044,6 +1225,13 @@ async function detectInstanceVersion(config) {
   return {
     ...config,
     ...detected,
+    versionInfo,
+    game: versionInfo?.game || config.game || null,
+    gameVersion: versionInfo?.gameVersion || config.gameVersion || detected.minecraftVersion || null,
+    softwareVersion: versionInfo?.softwareVersion || config.softwareVersion || null,
+    displayVersion: versionInfo?.displayVersion || config.displayVersion || label || detected.minecraftVersion || null,
+    displayVersionDetail: versionInfo?.displayVersionDetail || config.displayVersionDetail || null,
+    buildDate: versionInfo?.buildDate || config.buildDate || null,
     serverVersion: detected.minecraftVersion || config.serverVersion || null,
     version: label || detected.minecraftVersion || config.version || null,
     detectedVersionAt: nowIso(),
@@ -1058,6 +1246,12 @@ async function backfillInstanceVersion(config) {
     next.serverVersion !== config.serverVersion ||
     next.serverSoftware !== config.serverSoftware ||
     next.minecraftVersion !== config.minecraftVersion ||
+    next.game !== config.game ||
+    next.gameVersion !== config.gameVersion ||
+    next.softwareVersion !== config.softwareVersion ||
+    next.displayVersion !== config.displayVersion ||
+    next.displayVersionDetail !== config.displayVersionDetail ||
+    JSON.stringify(next.versionInfo || null) !== JSON.stringify(config.versionInfo || null) ||
     next.buildNumber !== config.buildNumber ||
     next.paperBuild !== config.paperBuild ||
     next.versionName !== config.versionName ||
@@ -1207,15 +1401,21 @@ async function updateInstance(instanceId, payload = {}) {
       ? (payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null)
       : current.memoryLimit,
     ports: payload.ports !== undefined ? normalizePorts(payload.ports) : current.ports,
+    game: payload.game !== undefined ? (payload.game ? String(payload.game).slice(0, 80) : null) : current.game,
     version: payload.version !== undefined ? (payload.version ? String(payload.version).slice(0, 80) : null) : current.version,
     versionName: payload.versionName !== undefined ? (payload.versionName ? String(payload.versionName).slice(0, 80) : null) : current.versionName,
     serverVersion: payload.serverVersion !== undefined ? (payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null) : current.serverVersion,
     serverSoftware: payload.serverSoftware !== undefined ? (payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null) : current.serverSoftware,
     minecraftVersion: payload.minecraftVersion !== undefined ? (payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null) : current.minecraftVersion,
+    gameVersion: payload.gameVersion !== undefined ? (payload.gameVersion ? String(payload.gameVersion).slice(0, 80) : null) : current.gameVersion,
+    softwareVersion: payload.softwareVersion !== undefined ? (payload.softwareVersion ? String(payload.softwareVersion).slice(0, 80) : null) : current.softwareVersion,
+    displayVersion: payload.displayVersion !== undefined ? (payload.displayVersion ? String(payload.displayVersion).slice(0, 120) : null) : current.displayVersion,
+    displayVersionDetail: payload.displayVersionDetail !== undefined ? (payload.displayVersionDetail ? String(payload.displayVersionDetail).slice(0, 120) : null) : current.displayVersionDetail,
     templateVersion: payload.templateVersion !== undefined ? (payload.templateVersion ? String(payload.templateVersion).slice(0, 80) : null) : current.templateVersion,
     templateId: payload.templateId !== undefined ? (payload.templateId ? String(payload.templateId).slice(0, 80) : null) : current.templateId,
     buildNumber: payload.buildNumber !== undefined ? (payload.buildNumber ? String(payload.buildNumber).slice(0, 80) : null) : current.buildNumber,
     paperBuild: payload.paperBuild !== undefined ? (payload.paperBuild ? String(payload.paperBuild).slice(0, 80) : null) : current.paperBuild,
+    buildDate: payload.buildDate !== undefined ? (payload.buildDate ? String(payload.buildDate).slice(0, 80) : null) : current.buildDate,
     detectedVersionAt: payload.detectedVersionAt !== undefined ? payload.detectedVersionAt : current.detectedVersionAt,
     versionCacheVersion: payload.versionCacheVersion !== undefined ? payload.versionCacheVersion : current.versionCacheVersion,
     connectionHost: payload.connectionHost !== undefined ? (payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null) : current.connectionHost,
@@ -1228,6 +1428,8 @@ async function updateInstance(instanceId, payload = {}) {
     tags: payload.tags !== undefined ? normalizeTags(payload.tags) : current.tags,
     updatedAt: nowIso(),
   };
+
+  next.versionInfo = normalizeVersionInfo(payload.versionInfo !== undefined ? payload.versionInfo : current.versionInfo, next);
 
   assertExecutableAllowed(next.executable);
   assertSafeArguments(next.args);

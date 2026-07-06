@@ -96,6 +96,7 @@ const instanceMinecraftSummary = document.querySelector("[data-instance-minecraf
 const instanceMinecraftSummaryFields = document.querySelectorAll("[data-minecraft-summary]");
 const instanceAppProfile = document.querySelector("[data-instance-app-profile]");
 const instanceAppIcon = document.querySelector("[data-instance-app-icon]");
+const instanceInspectorIcons = document.querySelectorAll("[data-instance-inspector-icon]");
 const instanceAppName = document.querySelector("[data-instance-app-name]");
 const instanceAppDescription = document.querySelector("[data-instance-app-description]");
 const minecraftPropertyInputs = document.querySelectorAll("[data-minecraft-property]");
@@ -2911,6 +2912,10 @@ function extractMinecraftVersion(value) {
   return cleanInstanceVersionValue(value).match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || "";
 }
 
+function extractGenericVersion(value) {
+  return cleanInstanceVersionValue(value).match(/\b\d+(?:\.\d+){1,4}\b/)?.[0] || "";
+}
+
 function normalizeSoftwareName(value) {
   const text = cleanInstanceVersionValue(value);
   if (!text) {
@@ -2926,10 +2931,80 @@ function isMinecraftSoftwareName(value) {
   return /minecraft|paper|purpur|spigot|bukkit|fabric|quilt|forge|neoforge|mohist|magma|arclight|vanilla/i.test(String(value || ""));
 }
 
+function formatVersionDetailLabel(software, softwareVersion, buildNumber, gameFamily) {
+  const normalizedSoftware = normalizeSoftwareName(software);
+  const normalizedVersion = cleanInstanceVersionValue(softwareVersion);
+  const normalizedBuild = cleanInstanceVersionValue(buildNumber);
+  const lowerSoftware = normalizedSoftware.toLowerCase();
+  const lowerGame = String(gameFamily || "").toLowerCase();
+
+  if (lowerGame === "minecraft") {
+    if ((/paper|purpur/.test(lowerSoftware)) && normalizedBuild) {
+      return `${normalizedSoftware} Build ${normalizedBuild}`;
+    }
+    if ((/fabric|quilt/.test(lowerSoftware)) && normalizedVersion) {
+      return `${normalizedSoftware} Loader ${normalizedVersion}`;
+    }
+    if ((/forge|neoforge|mohist|magma|arclight/.test(lowerSoftware)) && normalizedVersion) {
+      return `${normalizedSoftware} ${normalizedVersion}`;
+    }
+    if (normalizedBuild) {
+      return `${normalizedSoftware || "Build"} ${normalizedBuild}`;
+    }
+    if (normalizedVersion) {
+      return `${normalizedSoftware || "Software"} ${normalizedVersion}`;
+    }
+  }
+
+  if (lowerGame === "terraria") {
+    return normalizedVersion && normalizedSoftware ? `${normalizedSoftware} ${normalizedVersion}` : normalizedVersion || normalizedSoftware;
+  }
+
+  if (lowerGame === "fivem") {
+    if (normalizedBuild) {
+      return `${normalizedSoftware || "FXServer"} Artifact ${normalizedBuild}`;
+    }
+    return normalizedVersion && normalizedSoftware ? `${normalizedSoftware} ${normalizedVersion}` : normalizedVersion || normalizedSoftware;
+  }
+
+  if (normalizedVersion && normalizedSoftware) {
+    return `${normalizedSoftware} ${normalizedVersion}`;
+  }
+  return normalizedBuild || normalizedVersion || normalizedSoftware;
+}
+
 function getInstanceVersionMetadata(instance) {
   const metadata = instance?.metadata || {};
   const marketplace = instance?.marketplace || {};
   const template = getInstanceTemplateMetadata(instance);
+  const resolvedInfo = instance?.versionInfo || metadata.versionInfo || marketplace.versionInfo || null;
+  if (resolvedInfo && typeof resolvedInfo === "object") {
+    const software = normalizeSoftwareName(resolvedInfo.software || resolvedInfo.serverSoftware || "");
+    const game = cleanInstanceVersionValue(resolvedInfo.game || resolvedInfo.gameFamily || "") || (resolvedInfo.isMinecraft ? "minecraft" : "");
+    const gameVersion = cleanInstanceVersionValue(
+      resolvedInfo.gameVersion || resolvedInfo.minecraftVersion || resolvedInfo.displayVersion || resolvedInfo.version
+    );
+    const softwareVersion = cleanInstanceVersionValue(
+      resolvedInfo.softwareVersion || resolvedInfo.serverVersion || resolvedInfo.buildVersion || resolvedInfo.loaderVersion
+    );
+    const buildNumber = cleanInstanceVersionValue(resolvedInfo.buildNumber || resolvedInfo.paperBuild);
+    const detail = cleanInstanceVersionValue(
+      resolvedInfo.displayVersionDetail || formatVersionDetailLabel(software, softwareVersion, buildNumber, game)
+    );
+    const main = cleanInstanceVersionValue(resolvedInfo.displayVersion || gameVersion || softwareVersion || buildNumber);
+    return {
+      game,
+      isMinecraft: game === "minecraft" || resolvedInfo.isMinecraft === true,
+      main: main || "Unknown version",
+      secondary: detail,
+      software: software || formatInstanceType(instance?.type || template?.category || "Application"),
+      gameVersion: gameVersion || (game === "minecraft" ? "Unknown version" : main || "Unknown version"),
+      softwareVersion: softwareVersion || buildNumber || "",
+      buildNumber,
+      buildDate: formatInstanceValue(resolvedInfo.buildDate || instance?.buildDate || metadata.buildDate || marketplace.buildDate),
+    };
+  }
+
   const serverSoftware = cleanInstanceVersionValue(
     instance?.serverSoftware ||
       metadata.serverSoftware ||
@@ -2992,11 +3067,12 @@ function getInstanceVersionMetadata(instance) {
     }
 
     return {
+      game: "minecraft",
       isMinecraft: true,
       main: minecraftVersion || "Unknown version",
       secondary,
       software: software || "Minecraft",
-      minecraftVersion: minecraftVersion || "Unknown version",
+      gameVersion: minecraftVersion || "Unknown version",
       softwareVersion: softwareVersion || buildNumber || "",
       buildNumber,
       buildDate: formatInstanceValue(instance?.buildDate || metadata.buildDate || marketplace.buildDate),
@@ -3007,11 +3083,12 @@ function getInstanceVersionMetadata(instance) {
     .map(cleanInstanceVersionValue)
     .find(Boolean);
   return {
+    game: cleanInstanceVersionValue(instance?.game || metadata.game || marketplace.game) || "",
     isMinecraft: false,
     main: main || "Unknown version",
     secondary: software && main && !main.toLowerCase().includes(software.toLowerCase()) ? software : "",
     software: software || formatInstanceType(instance?.type || template?.category || "Application"),
-    minecraftVersion: "N/A",
+    gameVersion: extractGenericVersion(main) || main || "Unknown version",
     softwareVersion: softwareVersion || savedVersion || "",
     buildNumber,
     buildDate: formatInstanceValue(instance?.buildDate || metadata.buildDate || marketplace.buildDate),
@@ -3183,6 +3260,9 @@ function renderInstanceWorkspaceProfile(instance) {
   if (instanceAppIcon) {
     instanceAppIcon.textContent = profile?.icon || "APP";
   }
+  instanceInspectorIcons.forEach((icon) => {
+    icon.textContent = profile?.icon || "APP";
+  });
   if (instanceAppName) {
     instanceAppName.textContent = profile?.label || "Application";
   }
@@ -3253,7 +3333,7 @@ function renderMinecraftWorkspaceSummary(instance, metrics) {
     return;
   }
 
-  setMinecraftSummaryField("version", getInstanceVersionMetadata(instance).minecraftVersion || inferMinecraftVersion(instance));
+  setMinecraftSummaryField("version", getInstanceVersionMetadata(instance).gameVersion || inferMinecraftVersion(instance));
   setMinecraftSummaryField("serverType", inferMinecraftServerType(instance));
   setMinecraftSummaryField("java", instance?.executable || "java");
   setMinecraftSummaryField("players", "Unavailable");
@@ -4315,11 +4395,12 @@ function setInstanceDetails(instance = null) {
     setInstanceDetail("id", "Unavailable");
     setInstanceDetail("version", "Unknown version");
     setInstanceDetail("address", "No port configured");
+    setInstanceDetail("inspectorAddress", "No port configured");
     setInstanceDetail("connectionHost", "Unavailable");
     setInstanceDetail("queryPort", "Unavailable");
     setInstanceDetail("rconPort", "Unavailable");
     setInstanceDetail("versionSoftware", "Unavailable");
-    setInstanceDetail("minecraftVersion", "Unavailable");
+    setInstanceDetail("gameVersion", "Unavailable");
     setInstanceDetail("versionBuild", "Unavailable");
     setInstanceDetail("buildDate", "Unavailable");
     setInstanceDetail("node", "Unavailable");
@@ -4356,11 +4437,12 @@ function setInstanceDetails(instance = null) {
   setInstanceDetail("id", formatInstanceValue(instance.id));
   setInstanceDetail("version", version.main);
   setInstanceDetail("address", address);
+  setInstanceDetail("inspectorAddress", address);
   setInstanceDetail("connectionHost", getInstanceConnectionHost(instance));
   setInstanceDetail("queryPort", primaryPort ? String(primaryPort) : "Unavailable");
   setInstanceDetail("rconPort", rconPort ? String(rconPort) : "Unavailable");
   setInstanceDetail("versionSoftware", version.software || "Unavailable");
-  setInstanceDetail("minecraftVersion", version.minecraftVersion || "N/A");
+  setInstanceDetail("gameVersion", version.gameVersion || "Unavailable");
   setInstanceDetail("versionBuild", version.secondary || version.softwareVersion || version.buildNumber || "Unavailable");
   setInstanceDetail("buildDate", version.buildDate || "Unavailable");
   setInstanceDetail("node", getInstanceNodeLabel(instance));
@@ -5746,7 +5828,7 @@ function setInstanceCreateFormVisible(visible) {
   }
 
   if (instancesCreateToggleButton) {
-    instancesCreateToggleButton.textContent = instanceCreateFormVisible ? "Hide Form" : "Create";
+    instancesCreateToggleButton.textContent = instanceCreateFormVisible ? "Hide Form" : "Create Instance";
   }
 
   syncInstanceCreateTypeFields();
@@ -11144,7 +11226,10 @@ instancesStartButton?.addEventListener("click", () => runInstanceAction("start")
 instancesStopButton?.addEventListener("click", () => runInstanceAction("stop"));
 instancesRestartButton?.addEventListener("click", () => runInstanceAction("restart"));
 instancesDeleteButton?.addEventListener("click", () => runInstanceAction("delete"));
-instancesLogsButton?.addEventListener("click", () => refreshInstanceLogs());
+instancesLogsButton?.addEventListener("click", () => {
+  setActiveInstanceTab("console");
+  refreshInstanceLogs();
+});
 document.querySelector('[data-instance-action="force-kill"]')?.addEventListener("click", () => runInstanceAction("forceKill"));
 document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);
 document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);

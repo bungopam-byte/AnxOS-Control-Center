@@ -1075,6 +1075,73 @@ function getTemplateServerSoftware(template = {}) {
   return template.serverSoftware || null;
 }
 
+function getTemplateGameFamily(template = {}) {
+  const searchable = [template.id, template.displayName, template.instanceType, ...(Array.isArray(template.tags) ? template.tags : [])].join(" ").toLowerCase();
+  if (template.category === "Minecraft" || searchable.includes("minecraft")) return "minecraft";
+  if (searchable.includes("terraria") || searchable.includes("tshock")) return "terraria";
+  if (searchable.includes("fivem") || searchable.includes("fxserver")) return "fivem";
+  if (searchable.includes("valheim")) return "valheim";
+  if (searchable.includes("rust")) return "rust";
+  if (searchable.includes("palworld")) return "palworld";
+  if (searchable.includes("counter-strike") || searchable.includes("cs2")) return "cs2";
+  return null;
+}
+
+function buildTemplateVersionInfo(template, values = {}) {
+  const game = values.game || getTemplateGameFamily(template);
+  const software = values.software || getTemplateServerSoftware(template) || template.displayName || template.id;
+  const gameVersion = values.gameVersion || values.minecraftVersion || values.serverVersion || null;
+  const softwareVersion = values.softwareVersion || null;
+  const buildNumber = values.buildNumber || values.paperBuild || null;
+  const buildDate = values.buildDate || null;
+  let displayVersion = values.displayVersion || null;
+  let displayVersionDetail = values.displayVersionDetail || null;
+
+  if (!displayVersion) {
+    if (game === "minecraft") {
+      displayVersion = gameVersion || softwareVersion || buildNumber || null;
+    } else if (game === "fivem" && buildNumber) {
+      displayVersion = `Artifact ${buildNumber}`;
+    } else {
+      displayVersion = gameVersion || softwareVersion || buildNumber || null;
+    }
+  }
+
+  if (!displayVersionDetail) {
+    if (game === "minecraft") {
+      if ((/paper|purpur/i.test(software)) && buildNumber) {
+        displayVersionDetail = `${software} Build ${buildNumber}`;
+      } else if ((/fabric|quilt/i.test(software)) && softwareVersion) {
+        displayVersionDetail = `${software} Loader ${softwareVersion}`;
+      } else if ((/forge|neoforge|mohist|magma|arclight/i.test(software)) && softwareVersion) {
+        displayVersionDetail = `${software} ${softwareVersion}`;
+      } else if (softwareVersion && softwareVersion !== gameVersion) {
+        displayVersionDetail = `${software} ${softwareVersion}`;
+      } else if (buildNumber) {
+        displayVersionDetail = `${software} Build ${buildNumber}`;
+      }
+    } else if (game === "terraria" && softwareVersion) {
+      displayVersionDetail = `${software} ${softwareVersion}`;
+    } else if (game === "fivem" && buildNumber) {
+      displayVersionDetail = `${software} Artifact ${buildNumber}`;
+    } else if (softwareVersion && softwareVersion !== displayVersion) {
+      displayVersionDetail = `${software} ${softwareVersion}`;
+    }
+  }
+
+  return {
+    game,
+    software,
+    gameVersion,
+    softwareVersion,
+    buildNumber,
+    buildDate,
+    displayVersion,
+    displayVersionDetail,
+    isMinecraft: game === "minecraft",
+  };
+}
+
 function buildInstancePayload(template, options, ports) {
   const name = normalizeName(options.name, template.displayName || "AnxOS Instance");
   const id = slugify(options.id || name);
@@ -1083,17 +1150,29 @@ function buildInstancePayload(template, options, ports) {
   const tags = normalizeTemplateTags(template, isMinecraft);
   const environment = {};
   const serverSoftware = getTemplateServerSoftware(template);
+  const game = getTemplateGameFamily(template);
   const requestedVersion = options.version && String(options.version).trim() ? String(options.version).trim() : "";
   const serverVersion = requestedVersion || template.serverVersion || template.gameVersion || (isMinecraft ? "latest" : null);
   const cleanInitialVersion = serverVersion && serverVersion !== "latest" ? serverVersion : null;
+  const initialVersionInfo = buildTemplateVersionInfo(template, {
+    game,
+    software: serverSoftware,
+    gameVersion: cleanInitialVersion,
+    displayVersion: cleanInitialVersion,
+  });
   const metadata = {
+    game,
     version: cleanInitialVersion,
     serverVersion: cleanInitialVersion,
     serverSoftware,
     minecraftVersion: isMinecraft ? cleanInitialVersion : null,
+    gameVersion: cleanInitialVersion,
+    displayVersion: initialVersionInfo.displayVersion || cleanInitialVersion,
+    displayVersionDetail: initialVersionInfo.displayVersionDetail || null,
     templateVersion: template.version || null,
     templateId: template.id || null,
     primaryPort: ports[0] || null,
+    versionInfo: initialVersionInfo,
   };
 
   if (ports[0]) {
@@ -1416,19 +1495,36 @@ async function writeTemplateConfigFiles(template, options, ports, instanceId, ag
 
 function buildResolvedVersionMetadata(template, resolved = {}) {
   const serverSoftware = getTemplateServerSoftware(template);
+  const game = getTemplateGameFamily(template);
   const minecraftVersion = template.category === "Minecraft" ? resolved.version || null : null;
+  const gameVersion = game === "minecraft" ? minecraftVersion : resolved.version || null;
   const build = resolved.build || null;
   const isPaper = serverSoftware === "Paper";
-  const buildSuffix = build && String(build) !== String(minecraftVersion) ? ` build ${build}` : "";
-  const version = serverSoftware && minecraftVersion ? `${serverSoftware} ${minecraftVersion}${buildSuffix}` : resolved.version || null;
+  const versionInfo = buildTemplateVersionInfo(template, {
+    game,
+    software: serverSoftware,
+    gameVersion,
+    softwareVersion: game === "minecraft" && /fabric|forge|neoforge|quilt/i.test(serverSoftware || "") ? build : null,
+    buildNumber: build,
+    displayVersion: game === "minecraft"
+      ? (minecraftVersion || resolved.version || null)
+      : (game === "fivem" ? `Artifact ${build || resolved.version}` : resolved.version || null),
+  });
+  const version = versionInfo.displayVersion || resolved.version || null;
   return {
+    game,
     version,
     versionName: version,
     serverVersion: resolved.version || null,
     serverSoftware,
     minecraftVersion,
+    gameVersion,
+    softwareVersion: versionInfo.softwareVersion || null,
+    displayVersion: versionInfo.displayVersion || null,
+    displayVersionDetail: versionInfo.displayVersionDetail || null,
     buildNumber: build,
     paperBuild: isPaper ? build : null,
+    versionInfo,
     detectedVersionAt: new Date().toISOString(),
     versionCacheVersion: INSTANCE_VERSION_CACHE_VERSION,
   };
@@ -1450,11 +1546,24 @@ async function detectInstalledTemplateMetadata(template, instanceId, agentConfig
       const manifest = await agentClient.readInstanceFile(instanceId, manifestPath, agentConfig);
       const parsed = parseSteamAppManifest(manifest?.content || "");
       if (parsed.buildId) {
+        const versionInfo = buildTemplateVersionInfo(template, {
+          game: getTemplateGameFamily(template),
+          software: parsed.name || template.displayName || template.id,
+          gameVersion: null,
+          buildNumber: parsed.buildId,
+          displayVersion: parsed.buildId,
+        });
         return {
-          version: `${template.displayName || parsed.name || template.id} build ${parsed.buildId}`,
+          game: versionInfo.game || null,
+          version: versionInfo.displayVersion || parsed.buildId,
           serverVersion: parsed.buildId,
           serverSoftware: parsed.name || template.displayName || template.id,
+          gameVersion: versionInfo.gameVersion || null,
+          softwareVersion: versionInfo.softwareVersion || null,
+          displayVersion: versionInfo.displayVersion || null,
+          displayVersionDetail: versionInfo.displayVersionDetail || null,
           buildNumber: parsed.buildId,
+          versionInfo,
           detectedVersionAt: new Date().toISOString(),
           versionCacheVersion: INSTANCE_VERSION_CACHE_VERSION,
         };

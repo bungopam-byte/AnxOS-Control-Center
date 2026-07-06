@@ -191,24 +191,25 @@ function assertMarketplaceVersionMetadata() {
     version: "1.21.8",
     build: 42,
   });
+  assert.strictEqual(paper.game, "minecraft", "Paper metadata should save the game family.");
   assert.strictEqual(paper.serverSoftware, "Paper", "Paper metadata should save server software.");
   assert.strictEqual(paper.minecraftVersion, "1.21.8", "Paper metadata should save Minecraft version.");
+  assert.strictEqual(paper.gameVersion, "1.21.8", "Paper metadata should save gameVersion.");
   assert.strictEqual(paper.buildNumber, 42, "Paper metadata should save build number.");
   assert.strictEqual(paper.paperBuild, 42, "Paper metadata should save paperBuild.");
-  assert.match(paper.versionName, /Paper 1\.21\.8 build 42/, "Paper metadata should save versionName.");
-  assert.match(paper.version, /Paper 1\.21\.8 build 42/, "Paper display version should include build number.");
+  assert.strictEqual(paper.displayVersion, "1.21.8", "Paper displayVersion should use the Minecraft version only.");
+  assert.strictEqual(paper.displayVersionDetail, "Paper Build 42", "Paper display detail should include the build.");
+  assert.strictEqual(paper.versionInfo?.displayVersion, "1.21.8", "Paper versionInfo should persist displayVersion.");
 
   const vanilla = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-vanilla"), {
     version: "1.21.8",
   });
-  assert.strictEqual(vanilla.version, "Vanilla 1.21.8", "Vanilla display version should use the Mojang version.");
+  assert.strictEqual(vanilla.displayVersion, "1.21.8", "Vanilla displayVersion should use the Mojang version.");
 
   const source = fs.readFileSync(appPath, "utf8");
-  assert(source.includes("cleanInstanceVersionValue"), "Renderer should clean version candidates before display.");
-  assert(source.includes("getInstanceTemplateVersionLabel"), "Renderer should have a template metadata fallback.");
   assert(source.includes("getInstanceVersionMetadata"), "Renderer should normalize version metadata before display.");
-  assert(source.includes("main: minecraftVersion || \"Unknown version\""), "Minecraft table version should use the game version as the main value.");
-  assert(source.includes("secondary = `${software || \"Minecraft\"} Build ${buildNumber}`"), "Minecraft build/software info should be secondary metadata.");
+  assert(source.includes("resolvedInfo.displayVersion"), "Renderer should prefer normalized versionInfo display values.");
+  assert(source.includes("gameVersion: minecraftVersion || \"Unknown version\""), "Minecraft table version should use the game version as the main value.");
 }
 
 function assertFiveMStartupSafety() {
@@ -302,7 +303,8 @@ async function assertPaperMetadataBackfill() {
     assert.strictEqual(status.serverSoftware, "Paper", "Paper backfill should persist serverSoftware.");
     assert.strictEqual(status.minecraftVersion, "1.21.8", "Paper backfill should persist minecraftVersion.");
     assert.strictEqual(status.paperBuild, "42", "Paper backfill should persist paperBuild.");
-    assert.strictEqual(status.version, "Paper 1.21.8 build 42", "Paper backfill should normalize display version.");
+    assert.strictEqual(status.versionInfo?.displayVersion, "1.21.8", "Paper backfill should normalize displayVersion.");
+    assert.strictEqual(status.versionInfo?.displayVersionDetail, "Paper Build 42", "Paper backfill should normalize display detail.");
   } finally {
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;
@@ -342,6 +344,7 @@ async function assertMinecraftPropertiesVersionBackfill() {
     const status = await instanceService.getStatus("minecraft-properties-version-smoke");
     assert.strictEqual(status.minecraftVersion, "1.21.8", "Minecraft server.properties backfill should persist minecraftVersion.");
     assert.strictEqual(status.serverSoftware, "Paper", "Minecraft server.properties backfill should preserve inferred server software.");
+    assert.strictEqual(status.versionInfo?.displayVersion, "1.21.8", "Minecraft server.properties backfill should set displayVersion.");
   } finally {
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;

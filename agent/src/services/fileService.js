@@ -1,4 +1,5 @@
-const fs = require("fs/promises");
+const fs = require("fs");
+const fsPromises = require("fs/promises");
 const path = require("path");
 
 const DEFAULT_TEXT_READ_LIMIT_BYTES = 1024 * 1024;
@@ -22,7 +23,7 @@ async function getAllowedRoots() {
 
   for (const root of getConfiguredRoots()) {
     try {
-      roots.push(await fs.realpath(path.resolve(root)));
+      roots.push(await fsPromises.realpath(path.resolve(root)));
     } catch {
       continue;
     }
@@ -65,7 +66,7 @@ async function resolveAllowedPath(requestedPath) {
   let realPath;
 
   try {
-    realPath = await fs.realpath(resolvedPath);
+    realPath = await fsPromises.realpath(resolvedPath);
   } catch (error) {
     if (error?.code === "ENOENT") {
       throw createFileError("PATH_NOT_FOUND", 404);
@@ -110,7 +111,7 @@ function normalizeMetadata(filePath, stats) {
 }
 
 async function statResolvedPath(resolvedPath) {
-  const stats = await fs.stat(resolvedPath.path);
+  const stats = await fsPromises.stat(resolvedPath.path);
 
   return {
     path: resolvedPath.path,
@@ -125,18 +126,18 @@ async function statPath(requestedPath) {
 
 async function listFiles(requestedPath) {
   const resolvedPath = await resolveAllowedPath(requestedPath);
-  const stats = await fs.stat(resolvedPath.path);
+  const stats = await fsPromises.stat(resolvedPath.path);
 
   if (!stats.isDirectory()) {
     throw createFileError("PATH_NOT_DIRECTORY", 400);
   }
 
-  const entries = await fs.readdir(resolvedPath.path, { withFileTypes: true });
+  const entries = await fsPromises.readdir(resolvedPath.path, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
     const entryPath = path.join(resolvedPath.path, entry.name);
 
     try {
-      const entryStats = await fs.stat(entryPath);
+      const entryStats = await fsPromises.stat(entryPath);
       return {
         path: entryPath,
         ...normalizeMetadata(entryPath, entryStats),
@@ -169,7 +170,7 @@ function hasBinaryBytes(buffer) {
 }
 
 async function isTextFile(filePath) {
-  const handle = await fs.open(filePath, "r");
+  const handle = await fsPromises.open(filePath, "r");
 
   try {
     const buffer = Buffer.alloc(BINARY_SAMPLE_BYTES);
@@ -191,7 +192,7 @@ async function isTextFile(filePath) {
 
 async function readTextFile(requestedPath) {
   const resolvedPath = await resolveAllowedPath(requestedPath);
-  const stats = await fs.stat(resolvedPath.path);
+  const stats = await fsPromises.stat(resolvedPath.path);
 
   if (!stats.isFile()) {
     throw createFileError("PATH_NOT_FILE", 400);
@@ -224,11 +225,30 @@ async function readTextFile(requestedPath) {
     root: resolvedPath.root,
     ...normalizeMetadata(resolvedPath.path, stats),
     supported: true,
-    content: await fs.readFile(resolvedPath.path, "utf8"),
+    content: await fsPromises.readFile(resolvedPath.path, "utf8"),
+  };
+}
+
+async function createFileDownload(requestedPath) {
+  const resolvedPath = await resolveAllowedPath(requestedPath);
+  const stats = await fsPromises.stat(resolvedPath.path);
+
+  if (!stats.isFile()) {
+    throw createFileError("PATH_NOT_FILE", 400);
+  }
+
+  return {
+    path: resolvedPath.path,
+    root: resolvedPath.root,
+    name: path.basename(resolvedPath.path),
+    size: stats.size,
+    modified: stats.mtime.toISOString(),
+    stream: fs.createReadStream(resolvedPath.path),
   };
 }
 
 module.exports = {
+  createFileDownload,
   listFiles,
   readTextFile,
   statPath,

@@ -1,4 +1,12 @@
-const { listFiles, readTextFile, statPath } = require("../services/fileService");
+const { createFileDownload, listFiles, readTextFile, statPath } = require("../services/fileService");
+
+function buildContentDisposition(filename) {
+  const fallbackName = String(filename || "download")
+    .replace(/["\r\n]/g, "_");
+  const encodedName = encodeURIComponent(String(filename || "download"));
+
+  return `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`;
+}
 
 function getPathParam(url) {
   return url.searchParams.get("path") || "";
@@ -25,7 +33,26 @@ async function handleFilesRead(url) {
   };
 }
 
+async function handleFilesDownload(url) {
+  const download = await createFileDownload(getPathParam(url));
+
+  return {
+    statusCode: 200,
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(download.size),
+      "Content-Disposition": buildContentDisposition(download.name),
+      "Last-Modified": new Date(download.modified).toUTCString(),
+      "Cache-Control": "no-store",
+      "X-AnxHub-File-Name": encodeURIComponent(download.name),
+      "X-AnxHub-File-Size": String(download.size),
+    },
+    stream: download.stream,
+  };
+}
+
 module.exports = {
+  handleFilesDownload,
   handleFilesList,
   handleFilesRead,
   handleFilesStat,

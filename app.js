@@ -169,6 +169,7 @@ let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
 let latestPlayitSnapshot = null;
 let latestDockerSnapshot = null;
+let lastLoggedAmpUrlSource = null;
 let latestFilesListing = null;
 let latestFileDocument = null;
 let selectedDockerContainerId = null;
@@ -1167,20 +1168,18 @@ function getTitlebarConnectionState(pageName = getActivePageName()) {
   switch (pageName) {
     case "amp":
     case "minecraft": {
-      const connected =
-        latestAmpSnapshot?.status === "connected" ||
-        latestAmpSnapshot?.connection?.status === "connected" ||
-        latestAmpSnapshot?.connected === true;
+      const connected = latestAmpSnapshot?.connected === true;
       return {
         connected,
         label: connected ? "Connected" : "Disconnected",
       };
     }
     case "playit": {
-      const connected = latestPlayitSnapshot?.connected === true;
+      const playitState = getPlayitState(latestPlayitSnapshot, getConfiguredPlayitAddress());
+      const connected = playitState.state === "connected" || playitState.state === "running";
       return {
         connected,
-        label: connected ? "Connected" : "Disconnected",
+        label: playitState.label === "Unknown" ? "Disconnected" : playitState.label,
       };
     }
     case "docker": {
@@ -1610,6 +1609,45 @@ function formatPercent(value) {
   return Number.isFinite(value) ? `${value.toFixed(1)}%` : "Unavailable";
 }
 
+function toFiniteNumber(value) {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean" || Array.isArray(value)) {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeAmpPercentValue(value) {
+  const number = toFiniteNumber(value);
+
+  if (number === null) {
+    return null;
+  }
+
+  return number <= 1 ? number * 100 : number;
+}
+
+function parseAmpDurationSeconds(value) {
+  if (typeof value === "string") {
+    const parts = value.split(":").map((part) => toFiniteNumber(part));
+
+    if (!parts.some((part) => part === null)) {
+      if (parts.length === 4) {
+        const [days, hours, minutes, seconds] = parts;
+        return days * 86400 + hours * 3600 + minutes * 60 + seconds;
+      }
+
+      if (parts.length === 3) {
+        const [hours, minutes, seconds] = parts;
+        return hours * 3600 + minutes * 60 + seconds;
+      }
+    }
+  }
+
+  return toFiniteNumber(value);
+}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) {
     return "Unavailable";
@@ -1756,26 +1794,95 @@ function setPlayitVisualState(state) {
   });
 }
 
+function getPlayitState(snapshot, configuredAddress = null) {
+  const installed = snapshot?.installed === true;
+  const running = snapshot?.running === true;
+  const connected = snapshot?.connected === true ? true : snapshot?.connected === false ? false : null;
+  const hasTunnelDomainEvidence = Boolean(snapshot?.tunnelAddress || snapshot?.tunnelDomain);
+  const hasConfiguredAddress = Boolean(configuredAddress);
+  const hasTunnelEvidence = hasTunnelDomainEvidence || Boolean(snapshot?.localTarget || snapshot?.tunnelId);
+  const hasAnyEvidence = installed || running || hasTunnelDomainEvidence || hasConfiguredAddress;
+  const isPartialRunning = running && hasTunnelDomainEvidence && connected !== true;
+
+  if (connected === true) {
+    return {
+      installed,
+      running,
+      connected,
+      state: "connected",
+      label: "Connected",
+      summary: "Playit tunnel is running and forwarding traffic.",
+      hasTunnelEvidence,
+    };
+  }
+
+  if (running) {
+    return {
+      installed,
+      running,
+      connected,
+      state: "running",
+      label: "Running",
+      summary: isPartialRunning
+        ? "Playit is running and tunnel domain is available."
+        : hasTunnelEvidence
+          ? "Playit is running and partial tunnel diagnostics are available."
+          : "Playit is running.",
+      hasTunnelEvidence,
+    };
+  }
+
+  if (installed) {
+    return {
+      installed,
+      running,
+      connected,
+      state: "stopped",
+      label: "Disconnected",
+      summary: "Playit is installed, but the tunnel process is stopped.",
+      hasTunnelEvidence,
+    };
+  }
+
+  if (hasAnyEvidence) {
+    return {
+      installed,
+      running,
+      connected,
+      state: "running",
+      label: "Running",
+      summary: "Playit tunnel details were detected, but the running state could not be verified.",
+      hasTunnelEvidence,
+    };
+  }
+
+  return {
+    installed,
+    running,
+    connected,
+    state: "missing",
+    label: "Unknown",
+    summary: "Playit status could not be determined.",
+    hasTunnelEvidence: false,
+  };
+}
+
 function renderPlayitSnapshot(snapshot) {
   latestPlayitSnapshot = snapshot;
   const configuredAddress = getConfiguredPlayitAddress();
+  const playitState = getPlayitState(snapshot, configuredAddress);
   const tunnelAddress = snapshot?.tunnelAddress || snapshot?.tunnelDomain || configuredAddress || "Unavailable";
   const localIp = snapshot?.localIp || "Unavailable";
   const localPort = snapshot?.localPort || "Unavailable";
   const protocol = snapshot?.protocol || "Unavailable";
   const tunnelId = snapshot?.tunnelId || "Unavailable";
-  const installed = snapshot?.installed === true;
-  const running = snapshot?.running === true;
-  const connected = snapshot?.connected === true ? true : snapshot?.connected === false ? false : null;
-  const hasTunnelMetadata = Boolean(snapshot?.tunnelAddress || snapshot?.localTarget || snapshot?.tunnelId);
-  const connectedLabel =
-    connected === true ? "Connected" : connected === false ? (running ? "Not connected" : "Disconnected") : running ? "Unknown" : "Disconnected";
-  const state = !installed ? "missing" : connected ? "connected" : running ? "running" : "stopped";
+  const installed = playitState.installed;
+  const running = playitState.running;
 
-  setPlayitVisualState(state);
+  setPlayitVisualState(playitState.state);
   setField("playitInstalled", installed ? "Installed" : "Missing");
   setField("playitRunning", running ? "Running" : "Stopped");
-  setField("playitConnected", connectedLabel);
+  setField("playitConnected", playitState.label);
   setField("playitTunnelAddress", tunnelAddress);
   setField("playitLocalIp", localIp);
   setField("playitLocalPort", localPort);
@@ -1784,24 +1891,7 @@ function renderPlayitSnapshot(snapshot) {
   setField("playitLastSuccessfulRefresh", formatDateTime(snapshot?.lastSuccessfulRefreshAt));
   setField("playitLatency", "Unavailable");
   setField("playitTraffic", "Unavailable");
-  setField(
-    "playitSummary",
-    connected === true
-      ? "Playit tunnel is running and forwarding traffic."
-      : connected === false
-        ? running
-          ? "Playit is running, but no connected tunnel was detected."
-          : installed
-            ? "Playit is installed, but the tunnel process is stopped."
-            : "Playit is not installed."
-        : running
-          ? hasTunnelMetadata
-            ? "Playit is running and tunnel metadata was detected, but the connection state could not be confirmed."
-            : "Playit is running, but the connection state could not be confirmed."
-        : installed
-          ? "Playit is installed, but the tunnel process is stopped."
-          : "Playit is not installed.",
-  );
+  setField("playitSummary", playitState.summary);
   updateTitlebar();
 }
 
@@ -3182,7 +3272,101 @@ function normalizeAmpInstanceForRenderer(instance) {
     state:
       findAmpValue(instance, ["state", "State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState"]) ||
       "Unknown",
+    playerCount: toFiniteNumber(findAmpValue(instance, [
+      "playerCount",
+      "Players",
+      "PlayerCount",
+      "CurrentPlayers",
+      "ActiveUsers",
+      "UsersOnline",
+      "OnlinePlayers",
+      "PlayersOnline",
+    ])),
+    maxPlayers: toFiniteNumber(findAmpValue(instance, ["maxPlayers", "MaxPlayers", "MaximumPlayers", "PlayerLimit", "MaxUsers"])),
+    tps: toFiniteNumber(findAmpValue(instance, ["tps", "TPS", "TicksPerSecond", "ServerTPS", "CurrentTPS"])),
+    cpuUsage: normalizeAmpPercentValue(findAmpValue(instance, ["cpuUsage", "CPUUsage", "CpuUsage", "CPU", "ProcessorUsage", "PercentCPU"])),
+    ramUsage: toFiniteNumber(findAmpValue(instance, [
+      "ramUsage",
+      "MemoryUsageMB",
+      "MemoryMB",
+      "MemoryUsage",
+      "RAMUsage",
+      "UsedMemory",
+      "Memory",
+      "MemUsageMB",
+    ])),
+    ports: (() => {
+      const value = findAmpValue(instance, ["ports", "Ports", "Port", "PortMappings", "ApplicationEndpoints", "NetworkPorts", "Endpoint", "Endpoints"]);
+
+      if (Array.isArray(value)) {
+        return value
+          .map((port) => {
+            if (typeof port === "number" || typeof port === "string") {
+              return String(port);
+            }
+
+            if (!port || typeof port !== "object") {
+              return null;
+            }
+
+            const portNumber = findAmpValue(port, ["Port", "port", "HostPort", "ContainerPort", "PublicPort"]);
+            const protocol = findAmpValue(port, ["Protocol", "protocol"]);
+            return portNumber ? `${portNumber}${protocol ? `/${protocol}` : ""}` : null;
+          })
+          .filter(Boolean);
+      }
+
+      if (value && typeof value === "object") {
+        return Object.values(value)
+          .map((port) => (typeof port === "object" ? findAmpValue(port, ["Port", "port", "HostPort", "PublicPort"]) : port))
+          .filter((port) => port !== null && port !== undefined)
+          .map(String);
+      }
+
+      const singlePort = toFiniteNumber(value);
+      return singlePort === null ? [] : [String(singlePort)];
+    })(),
+    uptime: parseAmpDurationSeconds(findAmpValue(instance, ["uptime", "Uptime", "UptimeSeconds", "RunningSeconds", "StartedFor", "UptimeSec"])),
+    version: findAmpValue(instance, [
+      "version",
+      "Version",
+      "AppVersion",
+      "ApplicationVersion",
+      "ServerVersion",
+      "MinecraftVersion",
+      "ProductVersion",
+      "ReleaseStream",
+      "Build",
+    ]),
   };
+}
+
+function hasAmpDataEvidence(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return false;
+  }
+
+  if (Array.isArray(snapshot.instances) && snapshot.instances.length > 0) {
+    return true;
+  }
+
+  if (snapshot.selectedInstance && typeof snapshot.selectedInstance === "object") {
+    return true;
+  }
+
+  const summary = snapshot.summary;
+  if (!summary || typeof summary !== "object") {
+    return false;
+  }
+
+  return [
+    summary.playerCount,
+    summary.maxPlayers,
+    summary.tps,
+    summary.cpuUsage,
+    summary.ramUsage,
+    summary.uptime,
+  ].some((value) => Number.isFinite(value)) || Boolean(summary.version) || (Array.isArray(summary.ports) && summary.ports.length > 0);
 }
 
 function normalizeAmpSnapshotForRenderer(snapshot) {
@@ -3199,13 +3383,61 @@ function normalizeAmpSnapshotForRenderer(snapshot) {
   const minecraftInstances = Array.isArray(snapshot.minecraftInstances)
     ? snapshot.minecraftInstances.map(normalizeAmpInstanceForRenderer)
     : normalizedInstances.filter((instance) => instance.isMinecraft);
+  const primaryInstance = selectedInstance || minecraftInstances[0] || normalizedInstances[0] || null;
+  const summary = {
+    ...(snapshot.summary && typeof snapshot.summary === "object" ? snapshot.summary : {}),
+    selectedInstanceId: snapshot.summary?.selectedInstanceId || selectedInstance?.id || null,
+    selectedInstanceName: snapshot.summary?.selectedInstanceName || selectedInstance?.name || null,
+    minecraftInstanceCount: Number.isFinite(snapshot.summary?.minecraftInstanceCount)
+      ? snapshot.summary.minecraftInstanceCount
+      : minecraftInstances.length,
+    minecraftSelectionMode:
+      snapshot.summary?.minecraftSelectionMode ||
+      snapshot.minecraftSelectionMode ||
+      (minecraftInstances.length === 0 ? "none" : selectedInstance ? "auto" : minecraftInstances.length === 1 ? "auto" : "multiple"),
+    state: snapshot.summary?.state || primaryInstance?.state || null,
+    playerCount: Number.isFinite(snapshot.summary?.playerCount) ? snapshot.summary.playerCount : primaryInstance?.playerCount ?? null,
+    maxPlayers: Number.isFinite(snapshot.summary?.maxPlayers) ? snapshot.summary.maxPlayers : primaryInstance?.maxPlayers ?? null,
+    tps: Number.isFinite(snapshot.summary?.tps) ? snapshot.summary.tps : primaryInstance?.tps ?? null,
+    cpuUsage: Number.isFinite(snapshot.summary?.cpuUsage) ? snapshot.summary.cpuUsage : primaryInstance?.cpuUsage ?? null,
+    ramUsage: Number.isFinite(snapshot.summary?.ramUsage) ? snapshot.summary.ramUsage : primaryInstance?.ramUsage ?? null,
+    ports: Array.isArray(snapshot.summary?.ports) && snapshot.summary.ports.length > 0 ? snapshot.summary.ports : primaryInstance?.ports || [],
+    uptime: Number.isFinite(snapshot.summary?.uptime) ? snapshot.summary.uptime : primaryInstance?.uptime ?? null,
+    version: snapshot.summary?.version || primaryInstance?.version || null,
+  };
+  const derivedConnected =
+    hasAmpDataEvidence({
+      ...snapshot,
+      instances: normalizedInstances,
+      selectedInstance,
+      summary,
+    }) &&
+    snapshot.status !== "auth_failed" &&
+    snapshot.status !== "unconfigured";
+  const connected = snapshot.connected === true || snapshot.status === "connected" || snapshot.connection?.status === "connected" || derivedConnected;
+  const status = connected ? "connected" : snapshot.status;
+  const message = connected ? "Connected to AMP." : snapshot.message;
+  const connection = {
+    ...(snapshot.connection && typeof snapshot.connection === "object" ? snapshot.connection : {}),
+    status,
+    label: connected ? "Connected" : snapshot.connection?.label || "Unavailable",
+    message: connected ? "Connected to AMP." : snapshot.connection?.message || message || "AMP unavailable.",
+    connected,
+    unreachable: !connected && (status === "unreachable" || status === "error"),
+    authFailed: !connected && status === "auth_failed",
+  };
 
   return {
     ...snapshot,
+    connected,
+    status,
+    message,
+    connection,
     instanceCount: Number.isFinite(snapshot.instanceCount) ? snapshot.instanceCount : normalizedInstances.length,
     instances: normalizedInstances,
     selectedInstance,
     minecraftInstances,
+    summary,
   };
 }
 
@@ -3253,23 +3485,68 @@ function formatMinecraftSelection(snapshot) {
   return "No Minecraft auto-selection";
 }
 
-function formatAmpDiagnostics(diagnostics) {
+function getAmpUrlSource(snapshot) {
+  if (snapshot?.diagnostics?.ampUrlPresent || snapshot?.diagnostics?.ampUrlLoaded) {
+    return "env";
+  }
+
+  if (getConfiguredAmpUrl()) {
+    return "settings";
+  }
+
+  if (snapshot?.diagnostics?.loadedAmpUrl || snapshot?.diagnostics?.ampUrl) {
+    return "runtime config";
+  }
+
+  return "missing";
+}
+
+function formatAmpDiagnostics(diagnostics, snapshot = null) {
   if (!diagnostics) {
     return "";
   }
 
   const status = diagnostics.httpStatus ? `HTTP ${diagnostics.httpStatus}` : "No HTTP status";
   const code = diagnostics.networkErrorCode || diagnostics.errorCode ? `Error ${diagnostics.networkErrorCode || diagnostics.errorCode}` : "No error code";
+  const urlSource = getAmpUrlSource(snapshot);
   const reachability = diagnostics.loginFailed
     ? "Login failed"
     : diagnostics.serverUnreachable
       ? "Server unreachable"
       : "Connected";
-  const ampUrlLoaded = diagnostics.ampUrlLoaded ? "AMP_URL loaded" : "AMP_URL not loaded";
-  const envStatus = diagnostics.envFileExists ? "env exists" : "env missing";
-  const envError = diagnostics.envLoadErrorCode ? `env error ${diagnostics.envLoadErrorCode}` : "env load ok";
-  const envPath = diagnostics.resolvedEnvPath ? `env ${diagnostics.resolvedEnvPath}` : "env path unavailable";
+  const ampUrlLoaded =
+    urlSource === "env"
+      ? diagnostics.ampUrlPresent || diagnostics.ampUrlLoaded
+        ? "AMP_URL loaded"
+        : "AMP_URL not loaded"
+      : urlSource === "settings"
+        ? "AMP URL from settings"
+        : urlSource === "runtime config"
+          ? "AMP URL from runtime config"
+          : "AMP_URL unavailable";
+  const envStatus =
+    urlSource === "env"
+      ? diagnostics.envExists || diagnostics.envFileExists
+        ? "env exists"
+        : "env missing"
+      : `source ${urlSource}`;
+  const envError =
+    urlSource === "env"
+      ? diagnostics.envLoaded
+        ? "env load ok"
+        : diagnostics.envLoadErrorCode
+          ? `env error ${diagnostics.envLoadErrorCode}`
+          : "env load ok"
+      : "runtime URL active";
+  const envPath =
+    diagnostics.envPath || diagnostics.resolvedEnvPath
+      ? `env ${diagnostics.envPath || diagnostics.resolvedEnvPath}`
+      : urlSource === "env"
+        ? "env path unavailable"
+        : "env path not required";
   const cwd = diagnostics.cwd ? `cwd ${diagnostics.cwd}` : "cwd unavailable";
+  const sourceDetail = urlSource !== "env" ? `source ${urlSource}` : envStatus;
+  return ` · ${getAmpPanelUrl(snapshot) || diagnostics.loadedAmpUrl || diagnostics.ampUrl || "AMP_URL unavailable"} · ${ampUrlLoaded} · ${sourceDetail} · ${envError} · ${envPath} · ${cwd} · ${status} · ${code} · ${reachability}`;
 
   return ` · ${diagnostics.loadedAmpUrl || diagnostics.ampUrl || "AMP_URL unavailable"} · ${ampUrlLoaded} · ${envStatus} · ${envError} · ${envPath} · ${cwd} · ${status} · ${code} · ${reachability}`;
 }
@@ -3283,7 +3560,7 @@ function formatAmpConnection(snapshot) {
 
   const label = snapshot?.connection?.label || "Unavailable";
   const message = snapshot?.connection?.message || snapshot?.message || "AMP unavailable.";
-  return `${label}: ${message}${formatAmpDiagnostics(snapshot.diagnostics)}`;
+  return `${label}: ${message}${formatAmpDiagnostics(snapshot.diagnostics, snapshot)}`;
 }
 
 function getConfiguredAmpUrl() {
@@ -3302,6 +3579,18 @@ function getAmpPanelUrl(snapshot) {
 
 function updateAmpPanelLink(snapshot) {
   const panelUrl = getAmpPanelUrl(snapshot);
+  const ampUrlSource = getAmpUrlSource(snapshot);
+  const logPayload = JSON.stringify({
+    source: ampUrlSource,
+    hasUrl: Boolean(panelUrl),
+    connected: snapshot?.connected === true,
+  });
+
+  if (logPayload !== lastLoggedAmpUrlSource) {
+    lastLoggedAmpUrlSource = logPayload;
+    console.info(`[AnxHub][AMP] URL source=${ampUrlSource} connected=${snapshot?.connected === true ? "true" : "false"} hasUrl=${panelUrl ? "true" : "false"}`);
+  }
+
   setField("ampPanelUrl", panelUrl || "Unavailable");
 
   if (!ampPanelLink) {

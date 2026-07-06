@@ -18,6 +18,7 @@ class AgentClientError extends Error {
     this.name = "AgentClientError";
     this.status = details.status || null;
     this.code = details.code || null;
+    this.payload = details.payload || null;
   }
 }
 
@@ -245,6 +246,22 @@ function logAgentRequestFailure(pathname, status, errorCode = null) {
 
 function getTransportErrorCode(error) {
   return error?.cause?.code || error?.code || null;
+}
+
+function parseAgentPayload(buffer, contentType) {
+  if (!buffer || buffer.length === 0) {
+    return null;
+  }
+
+  if (String(contentType || "").includes("application/json")) {
+    try {
+      return JSON.parse(buffer.toString("utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  return buffer.toString("utf8");
 }
 
 async function requestJson(pathname, options = {}) {
@@ -498,6 +515,75 @@ async function isHealthy(configOverride = null) {
     return isHealthyPayload(await getHealth(configOverride));
   } catch {
     return false;
+  }
+}
+
+async function requestBuffer(pathname, options = {}) {
+  const {
+    config: configOverride = null,
+    method = "GET",
+    body = null,
+  } = options;
+  const config = getAgentConfig(configOverride);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const headers = {
+      Accept: "application/octet-stream, application/json",
+    };
+
+    if (config.token) {
+      headers.Authorization = `Bearer ${config.token}`;
+    }
+
+    if (body !== null) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(buildAgentUrl(pathname, configOverride), {
+      method,
+      headers,
+      body: body === null ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const contentType = response.headers.get("content-type") || "";
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    if (!response.ok) {
+      const payload = parseAgentPayload(buffer, contentType);
+      const responseErrorCode =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? payload.error?.code || "AGENT_HTTP_ERROR"
+          : "AGENT_HTTP_ERROR";
+      logAgentRequestFailure(pathname, response.status, responseErrorCode);
+      throw new AgentClientError(`Agent request failed with HTTP ${response.status}.`, {
+        status: response.status,
+        code: "AGENT_HTTP_ERROR",
+        payload,
+      });
+    }
+
+    return {
+      buffer,
+      contentType,
+      headers: Object.fromEntries(response.headers.entries()),
+    };
+  } catch (error) {
+    if (error instanceof AgentClientError) {
+      throw error;
+    }
+
+    const errorCode = error?.name === "AbortError"
+      ? "AGENT_TIMEOUT"
+      : getTransportErrorCode(error) || "AGENT_UNAVAILABLE";
+    logAgentRequestFailure(pathname, null, errorCode);
+    throw new AgentClientError("Agent unavailable.", {
+      code: errorCode,
+    });
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -830,12 +916,49 @@ function normalizeAmpInstance(instance) {
 }
 
 function getAmpSummaryCandidate(payload) {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const hasTopLevelStatus =
+      payload.connected !== undefined ||
+      payload.configured !== undefined ||
+      payload.status !== undefined ||
+      payload.message !== undefined ||
+      payload.connection !== undefined ||
+      payload.diagnostics !== undefined;
+
+    if (hasTopLevelStatus) {
+      return payload;
+    }
+  }
+
   const unwrapped = unwrapPayload(payload, "summary");
   return unwrapped && typeof unwrapped === "object" && !Array.isArray(unwrapped)
     ? unwrapped
     : payload && typeof payload === "object" && !Array.isArray(payload)
       ? payload
       : {};
+}
+
+function hasAmpDataEvidence(instances, selectedInstance, summary) {
+  if (Array.isArray(instances) && instances.length > 0) {
+    return true;
+  }
+
+  if (selectedInstance && typeof selectedInstance === "object") {
+    return true;
+  }
+
+  if (!summary || typeof summary !== "object") {
+    return false;
+  }
+
+  return [
+    summary.playerCount,
+    summary.maxPlayers,
+    summary.tps,
+    summary.cpuUsage,
+    summary.ramUsage,
+    summary.uptime,
+  ].some((value) => Number.isFinite(value)) || Boolean(summary.version) || (Array.isArray(summary.ports) && summary.ports.length > 0);
 }
 
 function selectAmpMinecraftInstance(instances) {
@@ -947,6 +1070,7 @@ function getAmpConnectionLabel(status) {
 
 function normalizeAmpSnapshot(statusPayload, instancesPayload) {
   const statusCandidate = getAmpSummaryCandidate(statusPayload);
+  const summaryCandidate = unwrapPayload(statusPayload, "summary");
   const instanceRows = asAmpArray(unwrapPayload(instancesPayload, "instances"));
   const normalizedInstances = instanceRows.map(normalizeAmpInstance).filter(Boolean);
   const explicitSelected = statusCandidate.selectedInstance ? normalizeAmpInstance(statusCandidate.selectedInstance) : null;
@@ -962,8 +1086,7 @@ function normalizeAmpSnapshot(statusPayload, instancesPayload) {
     : selection.minecraftInstances;
   const configured = typeof statusCandidate.configured === "boolean" ? statusCandidate.configured : true;
   const connected = typeof statusCandidate.connected === "boolean" ? statusCandidate.connected : coerceBoolean(statusCandidate.status, false);
-  const status = statusCandidate.status || (connected ? "connected" : "unreachable");
-  const message = statusCandidate.message || getAmpStatusMessage(status, connected);
+  const rawStatus = statusCandidate.status || (connected ? "connected" : "unreachable");
   const diagnostics = statusCandidate.diagnostics && typeof statusCandidate.diagnostics === "object"
     ? {
         ...statusCandidate.diagnostics,
@@ -978,29 +1101,39 @@ function normalizeAmpSnapshot(statusPayload, instancesPayload) {
       };
   const summary = summarizeAmpInstances(
     normalizedInstances,
-    statusCandidate.summary || statusCandidate,
+    summaryCandidate && typeof summaryCandidate === "object" && !Array.isArray(summaryCandidate) ? summaryCandidate : statusCandidate.summary || statusCandidate,
     selectedInstance,
     statusCandidate.minecraftSelectionMode || selection.mode,
   );
+  const derivedConnected =
+    hasAmpDataEvidence(normalizedInstances, selectedInstance, summary) &&
+    rawStatus !== "auth_failed" &&
+    rawStatus !== "unconfigured";
+  const effectiveConnected = connected || derivedConnected;
+  const status = effectiveConnected ? "connected" : rawStatus;
+  const message = effectiveConnected ? "Connected to AMP." : statusCandidate.message || getAmpStatusMessage(status, connected);
   const connection = statusCandidate.connection && typeof statusCandidate.connection === "object"
     ? {
         ...statusCandidate.connection,
-        status: statusCandidate.connection.status || status,
-        label: statusCandidate.connection.label || getAmpConnectionLabel(status),
-        message: statusCandidate.connection.message || message,
+        status,
+        label: getAmpConnectionLabel(status),
+        message: effectiveConnected ? "Connected to AMP." : statusCandidate.connection.message || message,
+        connected: effectiveConnected,
+        unreachable: !effectiveConnected && (status === "unreachable" || status === "error"),
+        authFailed: !effectiveConnected && status === "auth_failed",
       }
     : {
         status,
         label: getAmpConnectionLabel(status),
         message,
-        connected: status === "connected",
-        unreachable: status === "unreachable" || status === "error",
-        authFailed: status === "auth_failed",
+        connected: effectiveConnected,
+        unreachable: !effectiveConnected && (status === "unreachable" || status === "error"),
+        authFailed: !effectiveConnected && status === "auth_failed",
         diagnostics,
       };
 
   return {
-    connected: connected || status === "connected",
+    connected: effectiveConnected,
     configured,
     status,
     message,
@@ -1290,8 +1423,45 @@ async function getFileListing(currentPath = ".") {
   return normalizeFileListing(await getFileList(currentPath));
 }
 
+function parseContentDispositionFilename(contentDisposition = "") {
+  const utfMatch = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
+
+  if (utfMatch?.[1]) {
+    try {
+      return decodeURIComponent(utfMatch[1]);
+    } catch {
+      return utfMatch[1];
+    }
+  }
+
+  const fallbackMatch = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition);
+  return fallbackMatch?.[1] || null;
+}
+
+async function downloadFile(currentPath) {
+  const query = new URLSearchParams({
+    path: currentPath || ".",
+  });
+  const response = await requestBuffer(`/api/v1/files/download?${query.toString()}`);
+  const headers = response.headers || {};
+
+  return {
+    path: currentPath || ".",
+    name:
+      parseContentDispositionFilename(headers["content-disposition"]) ||
+      (headers["x-anxhub-file-name"] ? decodeURIComponent(headers["x-anxhub-file-name"]) : null) ||
+      getBaseName(currentPath) ||
+      "download",
+    size: Number.parseInt(headers["x-anxhub-file-size"] || headers["content-length"] || "0", 10) || response.buffer.length,
+    modifiedAt: headers["last-modified"] || null,
+    contentType: response.contentType || "application/octet-stream",
+    buffer: response.buffer,
+  };
+}
+
 module.exports = {
   AgentClientError,
+  downloadFile,
   getAgentConfigPath,
   getBackendMode,
   getDefaultAgentSettings,
@@ -1311,6 +1481,7 @@ module.exports = {
   isHealthy,
   loadEnvironment,
   readAgentSettings,
+  requestBuffer,
   requestJson,
   saveAgentSettings,
   testConnection,

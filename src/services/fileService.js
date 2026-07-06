@@ -1,7 +1,9 @@
 const fs = require("fs");
+const fsPromises = require("fs/promises");
 const path = require("path");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
+const { AgentClientError, downloadFile, getAgentConfig, getBackendMode } = require("./agentClient");
 const { SshService, SshServiceError } = require("./sshService");
 
 const posixPath = path.posix;
@@ -26,6 +28,14 @@ function trimValue(value) {
 
 function createProfileLookup() {
   return new SshService();
+}
+
+function getAgentHost() {
+  try {
+    return new URL(getAgentConfig().url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
 }
 
 function getWindowForDialogs() {
@@ -205,6 +215,58 @@ function mapFileOperationError(error, fallbackMessage) {
   return new FileServiceError(fallbackMessage || "Remote file operation failed.", {
     code: code || "FILES_OPERATION_FAILED",
     status: 400,
+  });
+}
+
+function mapAgentFileOperationError(error, fallbackMessage) {
+  if (error instanceof FileServiceError) {
+    return error;
+  }
+
+  if (!(error instanceof AgentClientError)) {
+    return mapFileOperationError(error, fallbackMessage);
+  }
+
+  const code = error?.payload?.error?.code || error.code || null;
+
+  if (code === "PATH_NOT_FOUND") {
+    return new FileServiceError("Remote path not found.", {
+      code: "FILES_PATH_NOT_FOUND",
+      status: 404,
+    });
+  }
+
+  if (code === "PATH_NOT_ALLOWED") {
+    return new FileServiceError("Permission denied for that remote path.", {
+      code: "FILES_PERMISSION_DENIED",
+      status: 403,
+    });
+  }
+
+  if (code === "PATH_NOT_FILE") {
+    return new FileServiceError("Only files can be downloaded from this view.", {
+      code: "FILES_DOWNLOAD_FILE_ONLY",
+      status: 400,
+    });
+  }
+
+  if (code === "AGENT_TIMEOUT") {
+    return new FileServiceError("Agent download timed out.", {
+      code,
+      status: 504,
+    });
+  }
+
+  if (code === "AGENT_UNAVAILABLE") {
+    return new FileServiceError("Agent unavailable. Check Agent settings.", {
+      code,
+      status: 503,
+    });
+  }
+
+  return new FileServiceError(fallbackMessage || error.message || "Remote file operation failed.", {
+    code: code || "FILES_OPERATION_FAILED",
+    status: error.status || 400,
   });
 }
 
@@ -650,7 +712,71 @@ class FileService {
     }
   }
 
+  shouldUseAgentDownload(options = {}) {
+    if (trimValue(options.transport).toLowerCase() === "agent") {
+      return true;
+    }
+
+    if (getBackendMode() !== "agent") {
+      return false;
+    }
+
+    const remotePath = normalizeRemotePath(options.path);
+
+    if (!remotePath || remotePath === ".") {
+      return false;
+    }
+
+    if (!trimValue(options.profileId)) {
+      return true;
+    }
+
+    try {
+      const profile = this.getProfile(options.profileId);
+      const profileHost = trimValue(profile?.host).toLowerCase();
+      const agentHost = getAgentHost();
+      return Boolean(profileHost) && Boolean(agentHost) && profileHost === agentHost;
+    } catch {
+      return false;
+    }
+  }
+
+  async downloadFromAgent(remotePath) {
+    try {
+      const selection = await showSaveDialog({
+        title: "Download remote file",
+        defaultPath: path.join(process.env.USERPROFILE || process.cwd(), posixPath.basename(remotePath)),
+      });
+
+      if (selection.canceled || !selection.filePath) {
+        return {
+          canceled: true,
+        };
+      }
+
+      const response = await downloadFile(remotePath);
+      await fsPromises.writeFile(selection.filePath, response.buffer);
+      console.info(`[Files] Download completed via agent (${remotePath} -> ${selection.filePath})`);
+
+      return {
+        canceled: false,
+        remotePath,
+        localPath: selection.filePath,
+        downloaded: true,
+        transport: "agent",
+      };
+    } catch (error) {
+      throw mapAgentFileOperationError(error, "Remote download failed.");
+    }
+  }
+
   async download(options = {}) {
+    if (this.shouldUseAgentDownload(options)) {
+      const remotePath = normalizeRemotePath(options.path);
+      console.info(`[Files] Download transport selected: agent (${remotePath})`);
+      return this.downloadFromAgent(remotePath);
+    }
+
     const session = await this.ensureSession(options);
     const remotePath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
 
@@ -675,6 +801,7 @@ class FileService {
         };
       }
 
+      console.info(`[Files] Download transport selected: sftp (${remotePath})`);
       await new Promise((resolve, reject) => {
         session.sftp.fastGet(remotePath, selection.filePath, (error) => {
           if (error) {

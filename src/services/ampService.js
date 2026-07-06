@@ -43,10 +43,6 @@ function trimValue(value) {
 }
 
 function getElectronApp() {
-  if (!process.versions?.electron) {
-    return null;
-  }
-
   try {
     const electron = require("electron");
     return electron && typeof electron === "object" ? electron.app || null : null;
@@ -55,10 +51,10 @@ function getElectronApp() {
   }
 }
 
-function getPackagedConfigDirectory() {
+function getElectronConfigDirectory() {
   const app = getElectronApp();
 
-  if (!app?.isPackaged) {
+  if (!app) {
     return null;
   }
 
@@ -69,6 +65,18 @@ function getPackagedConfigDirectory() {
   }
 }
 
+function isPackagedElectronRuntime() {
+  return Boolean(getElectronApp()?.isPackaged);
+}
+
+function getRepoEnvPath() {
+  return path.join(__dirname, "..", "..", ".env");
+}
+
+function getRepoEnvExamplePath() {
+  return path.join(__dirname, "..", "..", ".env.example");
+}
+
 function getPrimaryEnvPath() {
   const explicitPath = trimValue(process.env.ANXHUB_ENV_PATH);
 
@@ -76,40 +84,48 @@ function getPrimaryEnvPath() {
     return explicitPath;
   }
 
-  const packagedConfigDirectory = getPackagedConfigDirectory();
+  if (isPackagedElectronRuntime()) {
+    const electronConfigDirectory = getElectronConfigDirectory();
 
-  if (packagedConfigDirectory) {
-    return path.join(packagedConfigDirectory, ".env");
+    if (electronConfigDirectory) {
+      return path.join(electronConfigDirectory, ".env");
+    }
   }
 
-  return path.join(process.cwd(), ".env");
+  return getRepoEnvPath();
 }
 
 function getEnvCandidates() {
-  const packagedConfigDirectory = getPackagedConfigDirectory();
+  const electronConfigDirectory = getElectronConfigDirectory();
+  const packagedEnvPath = isPackagedElectronRuntime() && electronConfigDirectory
+    ? path.join(electronConfigDirectory, ".env")
+    : null;
 
   return uniquePaths([
     process.env.ANXHUB_ENV_PATH,
-    packagedConfigDirectory ? path.join(packagedConfigDirectory, ".env") : null,
-    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
+    packagedEnvPath,
+    getRepoEnvPath(),
     path.join(process.cwd(), ".env"),
+    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env") : null,
-    path.join(__dirname, "..", "..", ".env"),
   ]);
 }
 
 function getEnvExampleCandidates() {
-  const packagedConfigDirectory = getPackagedConfigDirectory();
+  const electronConfigDirectory = getElectronConfigDirectory();
+  const packagedEnvExamplePath = isPackagedElectronRuntime() && electronConfigDirectory
+    ? path.join(electronConfigDirectory, ".env.example")
+    : null;
 
   return uniquePaths([
     process.env.ANXHUB_ENV_EXAMPLE_PATH,
-    packagedConfigDirectory ? path.join(packagedConfigDirectory, ".env.example") : null,
-    process.execPath ? path.join(path.dirname(process.execPath), ".env.example") : null,
+    packagedEnvExamplePath,
+    getRepoEnvExamplePath(),
     path.join(process.cwd(), ".env.example"),
+    process.execPath ? path.join(path.dirname(process.execPath), ".env.example") : null,
     process.resourcesPath ? path.join(process.resourcesPath, ".env.example") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env.example") : null,
-    path.join(__dirname, "..", "..", ".env.example"),
   ]);
 }
 
@@ -239,6 +255,9 @@ function loadEnv() {
   const candidates = getEnvCandidates();
   const bootstrap = bootstrapEnvFile(candidates);
   const loaded = loadEnvValues(bootstrap.resolvedEnvPath);
+  const envPath = bootstrap.resolvedEnvPath || null;
+  const envExists = envPath ? (bootstrap.envFileExists ?? fs.existsSync(envPath)) : false;
+  const envLoaded = Boolean(envExists && !loaded.errorCode);
   const values = {
     AMP_URL: pickEnvValue(loaded.values, "AMP_URL"),
     AMP_USERNAME: pickEnvValue(loaded.values, "AMP_USERNAME"),
@@ -247,13 +266,18 @@ function loadEnv() {
 
   return {
     cwd: process.cwd(),
-    resolvedEnvPath: bootstrap.resolvedEnvPath,
-    envFileExists: bootstrap.envFileExists ?? fs.existsSync(bootstrap.resolvedEnvPath),
+    resolvedEnvPath: envPath,
+    envPath,
+    envPathResolved: Boolean(envPath),
+    envFileExists: envExists,
+    envExists,
+    envLoaded,
     envAutoCreated: bootstrap.envAutoCreated,
     envTemplatePath: bootstrap.envTemplatePath,
     envCreateErrorCode: bootstrap.envCreateErrorCode,
     envLoadErrorCode: loaded.errorCode,
     ampUrlLoaded: Boolean(values.AMP_URL),
+    ampUrlPresent: Boolean(values.AMP_URL),
     ampUrl: values.AMP_URL,
     values,
   };
@@ -347,12 +371,17 @@ function createDiagnostics(config, stage, details = {}) {
     ampUrl: config.url || null,
     cwd: config.env?.cwd || null,
     resolvedEnvPath: config.env?.resolvedEnvPath || null,
+    envPath: config.env?.envPath || config.env?.resolvedEnvPath || null,
+    envPathResolved: config.env?.envPathResolved ?? Boolean(config.env?.resolvedEnvPath),
     envFileExists: config.env?.envFileExists ?? false,
+    envExists: config.env?.envExists ?? (config.env?.envFileExists ?? false),
+    envLoaded: config.env?.envLoaded ?? false,
     envAutoCreated: config.env?.envAutoCreated ?? false,
     envTemplatePath: config.env?.envTemplatePath || null,
     envCreateErrorCode: config.env?.envCreateErrorCode || null,
     envLoadErrorCode: config.env?.envLoadErrorCode || null,
     ampUrlLoaded: config.env?.ampUrlLoaded ?? false,
+    ampUrlPresent: config.env?.ampUrlPresent ?? (config.env?.ampUrlLoaded ?? false),
     loadedAmpUrl: config.env?.ampUrl || null,
     httpStatus: details.httpStatus ?? null,
     errorCode: details.errorCode ?? null,

@@ -9,7 +9,7 @@ const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console")
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
-const { handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
+const { handleFilesDownload, handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handleSystemSummary } = require("./routes/system");
@@ -30,6 +30,47 @@ function sendJson(response, statusCode, body) {
     "Cache-Control": "no-store",
   });
   response.end(payload);
+}
+
+function sendRaw(response, statusCode, body, headers = {}) {
+  const payload = Buffer.isBuffer(body) ? body : Buffer.from(String(body ?? ""), "utf8");
+  const finalHeaders = {
+    "Cache-Control": "no-store",
+    "Content-Length": Buffer.byteLength(payload),
+    ...headers,
+  };
+
+  response.writeHead(statusCode, finalHeaders);
+  response.end(payload);
+}
+
+function sendStream(response, statusCode, stream, headers = {}) {
+  response.writeHead(statusCode, {
+    "Cache-Control": "no-store",
+    ...headers,
+  });
+
+  stream.on("error", () => {
+    if (!response.destroyed) {
+      response.destroy();
+    }
+  });
+
+  stream.pipe(response);
+}
+
+function sendResult(response, result) {
+  if (result?.stream) {
+    sendStream(response, result.statusCode || 200, result.stream, result.headers || {});
+    return;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(result || {}, "rawBody")) {
+    sendRaw(response, result.statusCode || 200, result.rawBody, result.headers || {});
+    return;
+  }
+
+  sendJson(response, result?.statusCode || 200, result?.body);
 }
 
 function sendError(response, statusCode, code) {
@@ -143,6 +184,10 @@ async function routeRequest(request, url) {
     return handleFilesRead(url);
   }
 
+  if (pathname === "/api/v1/files/download") {
+    return handleFilesDownload(url);
+  }
+
   if (pathname === "/api/v1/console/commands") {
     return handleConsoleCommands();
   }
@@ -196,7 +241,7 @@ async function handleRequest(request, response) {
     }
 
     const result = await routeRequest(request, url);
-    sendJson(response, result.statusCode, result.body);
+    sendResult(response, result);
   } catch (error) {
     if (!response.headersSent) {
       sendError(response, error.statusCode || 500, error.code || (error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR"));

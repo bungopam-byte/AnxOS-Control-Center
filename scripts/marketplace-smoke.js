@@ -1,5 +1,6 @@
 const assert = require("assert");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const marketplaceService = require("../src/services/marketplaceService");
@@ -185,6 +186,82 @@ function assertNonMinecraftServerTypeIsCleared() {
   assert(source.includes("serverType: isMinecraft ?"), "Renderer option collection should gate serverType by template category.");
 }
 
+function assertMarketplaceVersionMetadata() {
+  const paper = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-paper"), {
+    version: "1.21.8",
+    build: 42,
+  });
+  assert.strictEqual(paper.serverSoftware, "Paper", "Paper metadata should save server software.");
+  assert.strictEqual(paper.minecraftVersion, "1.21.8", "Paper metadata should save Minecraft version.");
+  assert.strictEqual(paper.buildNumber, 42, "Paper metadata should save build number.");
+  assert.match(paper.version, /Paper 1\.21\.8 build 42/, "Paper display version should include build number.");
+
+  const vanilla = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-vanilla"), {
+    version: "1.21.8",
+  });
+  assert.strictEqual(vanilla.version, "Vanilla 1.21.8", "Vanilla display version should use the Mojang version.");
+
+  const source = fs.readFileSync(appPath, "utf8");
+  assert(source.includes("cleanInstanceVersionValue"), "Renderer should clean version candidates before display.");
+  assert(source.includes("getInstanceTemplateVersionLabel"), "Renderer should have a template metadata fallback.");
+}
+
+function assertFiveMStartupSafety() {
+  const fivem = findTemplate("fivem");
+  const configLines = fivem.configFiles?.flatMap((file) => file.lines || []) || [];
+  assert(configLines.includes('sv_licenseKey "CHANGE_ME_FIVEM_LICENSE_KEY"'), "FiveM server.cfg should use the explicit license placeholder.");
+  assert.strictEqual(fivem.startup?.restartPolicy, "never", "FiveM must not auto-restart on license failures.");
+  assert.strictEqual(fivem.manualStartRequired, true, "FiveM should require manual start after license setup.");
+
+  const agentSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "services", "instances", "instanceService.js"), "utf8");
+  assert(agentSource.includes("FIVEM_LICENSE_REQUIRED"), "Agent should expose a FiveM license-required failure reason.");
+  assert(agentSource.includes("Invalid key format specified|Could not authenticate server license key|HTTP 429"), "Agent should detect FiveM license/auth log failures.");
+  assert(agentSource.includes("suppressRestart"), "Agent should suppress restart loops for known FiveM license failures.");
+}
+
+async function assertFiveMPlaceholderStartIsBlocked() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-fivem-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "fivem-license-smoke",
+      displayName: "FiveM License Smoke",
+      type: "custom-command",
+      workingDirectory: "data/server",
+      executable: "bash",
+      args: ["-lc", "exit 1"],
+      restartPolicy: "always",
+      tags: ["fivem"],
+      templateId: "fivem",
+    });
+    await instanceService.writeInstanceFile(
+      "fivem-license-smoke",
+      "server/server.cfg",
+      'sv_licenseKey "CHANGE_ME_FIVEM_LICENSE_KEY"\n'
+    );
+    await assert.rejects(
+      () => instanceService.startInstance("fivem-license-smoke"),
+      (error) => error?.code === "FIVEM_LICENSE_REQUIRED" && /valid license key/i.test(error.message || "")
+    );
+    const status = await instanceService.getStatus("fivem-license-smoke");
+    assert.strictEqual(status.failureReason, "FIVEM_LICENSE_REQUIRED", "FiveM placeholder start should set a license failure reason.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function assertImportEcosystemSupport() {
   const support = marketplaceService.getImportSupport();
   assert.strictEqual(support.communityTemplates.supported, true, "Community template import support should be advertised.");
@@ -241,6 +318,9 @@ async function main() {
   assertGameTemplateCreatePayloadsAreAgentSafe();
   assertTemplateFilePathsAreDataRelative();
   assertNonMinecraftServerTypeIsCleared();
+  assertMarketplaceVersionMetadata();
+  assertFiveMStartupSafety();
+  await assertFiveMPlaceholderStartIsBlocked();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   console.log("Marketplace smoke checks passed.");

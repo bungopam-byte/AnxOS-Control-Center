@@ -48,7 +48,7 @@ function errorResult(error) {
   return result(error.statusCode || 500, {
     error: {
       code: error.code || "INSTANCE_REQUEST_FAILED",
-      message: "Request failed.",
+      message: error.message && error.message !== error.code ? error.message : "Request failed.",
     },
   });
 }

@@ -33,7 +33,13 @@ const MAX_LOG_LINES = 1000;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
-const VERSION_CACHE_VERSION = 1;
+const VERSION_CACHE_VERSION = 2;
+const FIVEM_LICENSE_MESSAGE = "FiveM needs a valid license key in server.cfg before it can start.";
+const FIVEM_LICENSE_PLACEHOLDERS = new Set([
+  "CHANGE_ME",
+  "CHANGE_ME_FIVEM_LICENSE_KEY",
+]);
+const FIVEM_LICENSE_FAILURE_PATTERN = /Invalid key format specified|Could not authenticate server license key|HTTP 429/i;
 const DEFAULT_EXECUTABLE_ROOTS = [
   "/bin",
   "/usr/bin",
@@ -554,6 +560,49 @@ function inferServerSoftware(config) {
   return config.serverSoftware || null;
 }
 
+function isFiveMInstance(config) {
+  const searchable = [
+    config.templateId,
+    config.type,
+    config.displayName,
+    config.id,
+    config.serverSoftware,
+    ...(Array.isArray(config.tags) ? config.tags : []),
+    ...(Array.isArray(config.args) ? config.args : []),
+  ].join(" ").toLowerCase();
+  return searchable.includes("fivem") || searchable.includes("fxserver");
+}
+
+function extractFiveMLicenseKey(configText) {
+  const match = String(configText || "").match(/^\s*sv_licenseKey\s+"?([^"\s#]+)"?/im);
+  return match ? match[1].trim() : "";
+}
+
+function isValidFiveMLicenseKey(value) {
+  const key = String(value || "").trim();
+  return Boolean(key) && !FIVEM_LICENSE_PLACEHOLDERS.has(key) && /^[A-Za-z0-9_-]{8,}$/.test(key);
+}
+
+async function assertFiveMCanStart(config) {
+  if (!isFiveMInstance(config)) {
+    return;
+  }
+
+  const configText = await readTextIfExists(path.join(instancePath(config.id), "data", "server", "server.cfg"), 128 * 1024);
+  if (!isValidFiveMLicenseKey(extractFiveMLicenseKey(configText))) {
+    await appendLog(config.id, "stderr", FIVEM_LICENSE_MESSAGE);
+    await updateRuntimeState(config.id, {
+      state: INSTANCE_STATES.FAILED,
+      pid: null,
+      failureReason: "FIVEM_LICENSE_REQUIRED",
+      lastStoppedAt: nowIso(),
+    });
+    const error = createInstanceError("FIVEM_LICENSE_REQUIRED", 409);
+    error.message = FIVEM_LICENSE_MESSAGE;
+    throw error;
+  }
+}
+
 function parseMinecraftVersion(value) {
   return String(value || "").match(/\b1\.\d+(?:\.\d+)?\b/)?.[0] || null;
 }
@@ -717,10 +766,19 @@ async function detectFromJars(config) {
 function buildVersionLabel(metadata) {
   const software = metadata.serverSoftware || null;
   const minecraftVersion = cleanVersionValue(metadata.minecraftVersion || metadata.serverVersion || metadata.version);
-  if (software && minecraftVersion) {
-    return `${software} ${minecraftVersion}`;
+  const savedVersion = cleanVersionValue(metadata.version);
+  if (savedVersion && savedVersion !== minecraftVersion) {
+    return savedVersion;
   }
-  return cleanVersionValue(metadata.serverVersion || metadata.version || metadata.minecraftVersion) || null;
+  const buildNumber = cleanVersionValue(metadata.buildNumber);
+  const buildSuffix = buildNumber && buildNumber !== minecraftVersion ? ` build ${buildNumber}` : "";
+  if (software && minecraftVersion) {
+    return `${software} ${minecraftVersion}${buildSuffix}`;
+  }
+  const templateVersion = cleanVersionValue(metadata.templateVersion);
+  return cleanVersionValue(metadata.version || metadata.serverVersion || metadata.minecraftVersion) ||
+    (buildNumber ? `Build ${buildNumber}` : null) ||
+    (templateVersion ? `Template v${templateVersion}` : null);
 }
 
 async function detectInstanceVersion(config) {
@@ -1024,6 +1082,7 @@ async function startInstance(instanceId) {
   const workingDirectory = resolveRelativeManagedPath(config.id, config.workingDirectory, "data");
   assertExecutableAllowed(config.executable);
   await fs.mkdir(workingDirectory, { recursive: true });
+  await assertFiveMCanStart(config);
   await appendLog(config.id, "stdout", `Starting ${config.displayName}`);
 
   config = await updateRuntimeState(config.id, {
@@ -1060,6 +1119,8 @@ async function startInstance(instanceId) {
     child,
     startedAt: Date.now(),
     requestedStop: false,
+    suppressRestart: false,
+    failureReason: null,
     startupTimer: null,
   });
 
@@ -1076,7 +1137,15 @@ async function startInstance(instanceId) {
   }
 
   child.stdout.on("data", (chunk) => {
+    const text = String(chunk || "");
     appendLog(config.id, "stdout", chunk).catch(() => {});
+    if (isFiveMInstance(config) && FIVEM_LICENSE_FAILURE_PATTERN.test(text)) {
+      const entry = runningProcesses.get(config.id);
+      if (entry) {
+        entry.suppressRestart = true;
+        entry.failureReason = "FIVEM_LICENSE_REQUIRED";
+      }
+    }
     if (/Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running/i.test(String(chunk))) {
       updateRuntimeState(config.id, {
         state: INSTANCE_STATES.RUNNING,
@@ -1086,7 +1155,15 @@ async function startInstance(instanceId) {
   });
 
   child.stderr.on("data", (chunk) => {
+    const text = String(chunk || "");
     appendLog(config.id, "stderr", chunk).catch(() => {});
+    if (isFiveMInstance(config) && FIVEM_LICENSE_FAILURE_PATTERN.test(text)) {
+      const entry = runningProcesses.get(config.id);
+      if (entry) {
+        entry.suppressRestart = true;
+        entry.failureReason = "FIVEM_LICENSE_REQUIRED";
+      }
+    }
   });
 
   child.on("error", () => {
@@ -1101,6 +1178,8 @@ async function startInstance(instanceId) {
   child.on("exit", (exitCode, signal) => {
     const entry = runningProcesses.get(config.id);
     const requestedStop = entry?.requestedStop || false;
+    const suppressRestart = entry?.suppressRestart || false;
+    const failureReason = entry?.failureReason || "PROCESS_EXITED";
 
     if (entry?.startupTimer) {
       clearTimeout(entry.startupTimer);
@@ -1115,14 +1194,14 @@ async function startInstance(instanceId) {
       pid: null,
       exitCode,
       signal,
-      failureReason: failed ? "PROCESS_EXITED" : null,
+      failureReason: failed ? failureReason : null,
       lastStoppedAt: nowIso(),
     }).then((updatedConfig) => {
       appendLog(config.id, "stdout", `Stopped ${updatedConfig.displayName} exitCode=${exitCode ?? "null"} signal=${signal || "null"}`).catch(() => {});
 
-      if (failed && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
+      if (failed && !suppressRestart && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
         setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
-      } else if (!failed && updatedConfig.restartPolicy === "always" && !requestedStop) {
+      } else if (!failed && !suppressRestart && updatedConfig.restartPolicy === "always" && !requestedStop) {
         setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
       }
     }).catch(() => {});
@@ -1139,10 +1218,13 @@ async function startInstance(instanceId) {
     }
   }, config.startupTimeoutMs);
 
+  const existingEntry = runningProcesses.get(config.id);
   runningProcesses.set(config.id, {
     child,
     startedAt: Date.now(),
-    requestedStop: false,
+    requestedStop: existingEntry?.requestedStop || false,
+    suppressRestart: existingEntry?.suppressRestart || false,
+    failureReason: existingEntry?.failureReason || null,
     startupTimer,
   });
 

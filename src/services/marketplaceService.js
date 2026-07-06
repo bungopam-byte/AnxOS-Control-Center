@@ -13,6 +13,7 @@ const FORGE_MAVEN_METADATA_URL = "https://maven.minecraftforge.net/net/minecraft
 const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
 const BUNGEECORD_JAR_URL = "https://hub.spigotmc.org/jenkins/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar";
 const COMMUNITY_TEMPLATE_FORMAT_VERSION = 1;
+const INSTANCE_VERSION_CACHE_VERSION = 2;
 
 const downloads = new Map();
 
@@ -1416,15 +1417,17 @@ async function writeTemplateConfigFiles(template, options, ports, instanceId, ag
 function buildResolvedVersionMetadata(template, resolved = {}) {
   const serverSoftware = getTemplateServerSoftware(template);
   const minecraftVersion = template.category === "Minecraft" ? resolved.version || null : null;
-  const version = serverSoftware && minecraftVersion ? `${serverSoftware} ${minecraftVersion}` : resolved.version || null;
+  const build = resolved.build || null;
+  const buildSuffix = build && String(build) !== String(minecraftVersion) ? ` build ${build}` : "";
+  const version = serverSoftware && minecraftVersion ? `${serverSoftware} ${minecraftVersion}${buildSuffix}` : resolved.version || null;
   return {
     version,
     serverVersion: resolved.version || null,
     serverSoftware,
     minecraftVersion,
-    buildNumber: resolved.build || null,
+    buildNumber: build,
     detectedVersionAt: new Date().toISOString(),
-    versionCacheVersion: 1,
+    versionCacheVersion: INSTANCE_VERSION_CACHE_VERSION,
   };
 }
 
@@ -1450,7 +1453,7 @@ async function detectInstalledTemplateMetadata(template, instanceId, agentConfig
           serverSoftware: parsed.name || template.displayName || template.id,
           buildNumber: parsed.buildId,
           detectedVersionAt: new Date().toISOString(),
-          versionCacheVersion: 1,
+          versionCacheVersion: INSTANCE_VERSION_CACHE_VERSION,
         };
       }
     } catch {}
@@ -1906,6 +1909,7 @@ async function installTemplate(payload = {}) {
 module.exports = {
   _test: {
     buildInstancePayload,
+    buildResolvedVersionMetadata,
     buildTemplateInstallerScript,
     getTemplateInstallPlan,
     normalizeTemplateDownloads,

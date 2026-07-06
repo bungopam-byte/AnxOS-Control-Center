@@ -521,7 +521,7 @@
       "executable": "bash",
       "args": ["-lc", "chmod +x ./run.sh 2>/dev/null || true; exec ./run.sh +exec server.cfg"],
       "workingDirectory": "data/server",
-      "restartPolicy": "on-failure"
+      "restartPolicy": "never"
     },
     "configFiles": [
       {
@@ -533,7 +533,7 @@
           "sets sv_projectName \"{name}\"",
           "sets sv_projectDesc \"Managed by AnxHub\"",
           "sv_maxclients 32",
-          "sv_licenseKey \"CHANGE_ME\""
+          "sv_licenseKey \"CHANGE_ME_FIVEM_LICENSE_KEY\""
         ]
       }
     ],
@@ -544,7 +544,7 @@
       "source": "runtime.fivem.net Linux FXServer artifacts",
       "notes": "Requires tar with xz support. A Cfx.re license key must be added to server.cfg before start."
     },
-    "configNotes": "Edit server.cfg and replace CHANGE_ME with a Cfx.re license key before starting.",
+    "configNotes": "Edit server.cfg and replace CHANGE_ME_FIVEM_LICENSE_KEY with a valid Cfx.re license key before starting.",
     "installScript": ["create-instance", "verify-instance", "create-folders", "download", "install-archive", "write-config", "verify", "manual-start"],
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },

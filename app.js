@@ -2876,27 +2876,58 @@ function getInstancePrimaryPort(instance) {
   return getInstancePorts(instance)[0] || null;
 }
 
+function cleanInstanceVersionValue(value) {
+  const text = String(value || "").trim();
+  if (!text || text === "latest" || text === "Unknown version" || /\blatest\b/i.test(text)) {
+    return "";
+  }
+  return text;
+}
+
+function getInstanceTemplateVersionLabel(instance) {
+  const templateId = instance?.templateId || instance?.metadata?.templateId || instance?.marketplace?.templateId;
+  const template = templateId ? findMarketplaceTemplate(templateId) : null;
+  const templateVersion = cleanInstanceVersionValue(instance?.templateVersion || instance?.metadata?.templateVersion || template?.version);
+  const templateServerVersion = cleanInstanceVersionValue(template?.serverVersion || template?.gameVersion);
+  const templateSoftware = cleanInstanceVersionValue(template?.serverSoftware);
+  if (templateSoftware && templateServerVersion) {
+    return `${templateSoftware} ${templateServerVersion}`;
+  }
+  if (templateServerVersion) {
+    return templateServerVersion;
+  }
+  if (templateVersion) {
+    return `Template v${templateVersion}`;
+  }
+  return "";
+}
+
 function getInstanceVersion(instance) {
-  const serverSoftware = String(instance?.serverSoftware || instance?.metadata?.serverSoftware || "").trim();
-  const minecraftVersion = String(instance?.minecraftVersion || instance?.metadata?.minecraftVersion || "").trim();
-  if (serverSoftware && minecraftVersion && minecraftVersion !== "latest") {
-    return `${serverSoftware} ${minecraftVersion}`;
+  const savedVersion = cleanInstanceVersionValue(instance?.version || instance?.metadata?.version || instance?.marketplace?.version);
+  if (savedVersion) {
+    return savedVersion;
+  }
+
+  const serverSoftware = cleanInstanceVersionValue(instance?.serverSoftware || instance?.metadata?.serverSoftware);
+  const minecraftVersion = cleanInstanceVersionValue(instance?.minecraftVersion || instance?.metadata?.minecraftVersion);
+  const buildNumber = cleanInstanceVersionValue(instance?.buildNumber || instance?.metadata?.buildNumber);
+  if (serverSoftware && minecraftVersion) {
+    const buildSuffix = buildNumber && buildNumber !== minecraftVersion ? ` build ${buildNumber}` : "";
+    return `${serverSoftware} ${minecraftVersion}${buildSuffix}`;
   }
 
   const candidates = [
-    instance?.version,
     instance?.serverVersion,
     minecraftVersion,
     instance?.gameVersion,
     instance?.minecraftVersion,
-    serverSoftware,
     instance?.metadata?.serverVersion,
-    instance?.metadata?.version,
     instance?.marketplace?.serverVersion,
-    instance?.marketplace?.version,
+    serverSoftware,
+    getInstanceTemplateVersionLabel(instance),
   ];
-  const value = candidates.find((candidate) => candidate !== null && candidate !== undefined && String(candidate).trim());
-  return value ? String(value).trim() : "Unknown version";
+  const value = candidates.map(cleanInstanceVersionValue).find(Boolean);
+  return value || "Unknown version";
 }
 
 function getSelectedNodeAgentUrl() {
@@ -4441,6 +4472,7 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     TEMPLATE_INSTALL_TIMEOUT: "The template installer did not finish in time.",
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
     MARKETPLACE_INSTALL_FAILED: "Template install failed.",
+    FIVEM_LICENSE_REQUIRED: "FiveM needs a valid license key in server.cfg before it can start.",
   };
 
   if (friendlyMessages[effectiveCode]) {

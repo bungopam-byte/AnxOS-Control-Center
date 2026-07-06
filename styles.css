@@ -2335,6 +2335,8 @@ body.is-resizing-files * {
 .instances-shell {
   display: grid;
   gap: 18px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .instances-summary-grid {
@@ -2349,6 +2351,9 @@ body.is-resizing-files * {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 14px;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -2427,6 +2432,12 @@ body.is-resizing-files * {
   grid-template-columns: minmax(320px, 0.82fr) minmax(420px, 1.18fr);
   gap: 18px;
   align-items: start;
+  min-width: 0;
+}
+
+.instances-table-panel,
+.instances-details-panel {
+  min-width: 0;
 }
 
 .instances-table-panel .docker-table-wrap {
@@ -2497,6 +2508,7 @@ body.is-resizing-files * {
   border-radius: var(--radius);
   background: rgba(17, 21, 31, 0.82);
   overflow: hidden;
+  max-width: 100%;
 }
 
 .instance-workspace-header {
@@ -2546,6 +2558,8 @@ body.is-resizing-files * {
 .instance-tab-panel {
   display: none;
   padding: 16px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .instance-tab-panel.is-active {
@@ -2734,6 +2748,15 @@ body.is-resizing-files * {
 .instance-backup-panel {
   display: grid;
   gap: 14px;
+  min-width: 0;
+}
+
+.instance-backup-panel .docker-empty-state {
+  position: static;
+  min-height: 180px;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 5, 29, 0.42);
 }
 
 .instance-backup-actions {

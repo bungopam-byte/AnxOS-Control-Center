@@ -30,6 +30,7 @@ const dockerRefreshButton = document.querySelector('[data-docker-action="refresh
 const dockerStartButton = document.querySelector('[data-docker-action="start"]');
 const dockerStopButton = document.querySelector('[data-docker-action="stop"]');
 const dockerRestartButton = document.querySelector('[data-docker-action="restart"]');
+const instancesDetailsPanel = document.querySelector(".instances-details-panel");
 const instancesList = document.querySelector("[data-instances-list]");
 const instancesLoading = document.querySelector("[data-instances-loading]");
 const instancesEmpty = document.querySelector("[data-instances-empty]");
@@ -266,6 +267,7 @@ let marketplaceSelectedTemplateId = null;
 let marketplaceActiveCategory = "All";
 let selectedInstanceId = null;
 let instanceCreateFormVisible = false;
+let lastMissingInstanceNoticeAt = 0;
 let activeInstanceTab = "overview";
 let latestMinecraftProperties = {};
 let instanceConfigSnapshot = "";
@@ -3045,7 +3047,12 @@ async function updateInstancePorts(ports) {
     showToast("Ports updated.");
     await refreshInstances();
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "Port update failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error);
+    } else {
+      console.warn("[Instances] Port update failed.", error);
+      showToast(getAgentErrorMessage(error, "Port update failed."));
+    }
   }
 }
 
@@ -3072,7 +3079,12 @@ async function saveInstanceConfiguration(event) {
     await refreshInstances();
     await loadMinecraftProperties();
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "Configuration save failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error);
+    } else {
+      console.warn("[Instances] Configuration save failed.", error);
+      showToast(getAgentErrorMessage(error, "Configuration save failed."));
+    }
   } finally {
     instanceActionRequestInFlight = false;
     syncInstanceConfigDirtyState();
@@ -3091,7 +3103,12 @@ async function loadMinecraftProperties() {
   try {
     const payload = await desktopApiState.api.instances.getMinecraftProperties(selectedInstance.id);
     populateMinecraftProperties(payload?.properties || {});
-  } catch {
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error);
+      return;
+    }
+    console.warn("[Instances] Minecraft properties unavailable.", error);
     populateMinecraftProperties({});
   }
 }
@@ -3585,11 +3602,21 @@ function selectInstance(instanceId, options = {}) {
 function renderInstancesSnapshot(snapshot) {
   latestInstancesSnapshot = normalizeInstancesPayload(snapshot);
   const instances = getInstances();
+  const previousSelectedInstanceId = selectedInstanceId;
+  const rememberedInstanceId = readLastInstanceId();
+  const previousExists = Boolean(previousSelectedInstanceId && findInstance(previousSelectedInstanceId));
+  const rememberedExists = Boolean(rememberedInstanceId && findInstance(rememberedInstanceId));
   const selected =
-    findInstance(selectedInstanceId) ||
-    findInstance(readLastInstanceId()) ||
+    findInstance(previousSelectedInstanceId) ||
+    findInstance(rememberedInstanceId) ||
     instances[0] ||
     null;
+
+  if ((previousSelectedInstanceId && !previousExists) || (rememberedInstanceId && !rememberedExists && !previousExists)) {
+    notifyMissingSelectedInstance();
+    storeLastInstanceId(null);
+  }
+
   selectedInstanceId = selected?.id || null;
 
   setField("instancesTotal", String(instances.length));
@@ -3694,6 +3721,11 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   const backendMessage = error?.payload?.error?.message;
   const wrappedMessage = String(error?.message || "");
   const wrappedCode = wrappedMessage.match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
+  const effectiveCode = backendCode && backendCode !== "AGENT_HTTP_ERROR" ? backendCode : wrappedCode;
+
+  if (effectiveCode === "INSTANCE_NOT_FOUND" || effectiveCode === "NOT_FOUND") {
+    return "Selected instance no longer exists.";
+  }
 
   if (backendCode && backendCode !== "AGENT_HTTP_ERROR") {
     return backendMessage && backendMessage !== "Request failed."
@@ -3706,6 +3738,47 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   }
 
   return error?.message || fallback;
+}
+
+function getAgentErrorCode(error) {
+  const backendCode = error?.payload?.error?.code || error?.code;
+  if (backendCode && backendCode !== "AGENT_HTTP_ERROR") {
+    return backendCode;
+  }
+
+  return String(error?.message || "").match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
+}
+
+function isInstanceNotFoundError(error) {
+  const code = getAgentErrorCode(error);
+  return code === "INSTANCE_NOT_FOUND" || code === "NOT_FOUND";
+}
+
+function notifyMissingSelectedInstance(error = null) {
+  if (error) {
+    console.warn("[Instances] Selected instance no longer exists.", error);
+  }
+
+  const now = Date.now();
+  if (now - lastMissingInstanceNoticeAt > 5000) {
+    showToast("Selected instance no longer exists.", "warning");
+    lastMissingInstanceNoticeAt = now;
+  }
+}
+
+async function handleMissingSelectedInstance(error = null) {
+  notifyMissingSelectedInstance(error);
+  selectedInstanceId = null;
+  latestInstanceMetrics = null;
+  storeLastInstanceId(null);
+  clearInstanceLogs("Selected instance no longer exists.");
+  setInstanceDetails(null);
+  updateInstanceActionButtons();
+  if (instancesRequestInFlight) {
+    window.setTimeout(() => refreshInstances(), 0);
+  } else {
+    await refreshInstances();
+  }
 }
 
 function getMarketplaceField(name) {
@@ -4327,6 +4400,10 @@ function setInstanceCreateFormVisible(visible) {
     instanceCreateForm.hidden = !instanceCreateFormVisible;
   }
 
+  if (instancesDetailsPanel) {
+    instancesDetailsPanel.hidden = instanceCreateFormVisible;
+  }
+
   if (instancesCreateToggleButton) {
     instancesCreateToggleButton.textContent = instanceCreateFormVisible ? "Hide Form" : "Create";
   }
@@ -4366,6 +4443,11 @@ async function refreshSelectedInstanceMetrics() {
     return;
   }
 
+  if (!findInstance(selectedInstanceId)) {
+    await handleMissingSelectedInstance();
+    return;
+  }
+
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasInstances) {
@@ -4376,14 +4458,24 @@ async function refreshSelectedInstanceMetrics() {
     latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(selectedInstanceId));
     renderInstanceRows(getInstances());
     selectInstance(selectedInstanceId, { refreshMetrics: false });
-  } catch {
+  } catch (error) {
     latestInstanceMetrics = null;
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error);
+      return;
+    }
+    console.warn("[Instances] Metrics request failed.", error);
     setInstanceDetails(findInstance());
   }
 }
 
 async function refreshInstanceLogs(options = {}) {
   if (!selectedInstanceId || instanceLogsRequestInFlight) {
+    return;
+  }
+
+  if (!findInstance(selectedInstanceId)) {
+    await handleMissingSelectedInstance();
     return;
   }
 
@@ -4405,8 +4497,13 @@ async function refreshInstanceLogs(options = {}) {
       limit: Number.isFinite(limit) ? limit : 200,
     }));
   } catch (error) {
-    if (!options.silent) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error);
+    } else if (!options.silent) {
+      console.warn("[Instances] Log request failed.", error);
       showToast(getAgentErrorMessage(error, "Log request failed."));
+    } else {
+      console.warn("[Instances] Silent log request failed.", error);
     }
   } finally {
     instanceLogsRequestInFlight = false;
@@ -4513,7 +4610,12 @@ async function runInstanceAction(actionName) {
 
     await refreshInstances();
   } catch (error) {
-    showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error);
+    } else {
+      console.warn(`[Instances] ${actionName} failed.`, error);
+      showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
+    }
   } finally {
     instanceActionRequestInFlight = false;
     updateInstanceActionButtons();

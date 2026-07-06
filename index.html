@@ -1321,114 +1321,137 @@
             </div>
           </header>
 
-          <section class="ssh-shell" aria-label="SSH terminal">
-            <div class="ssh-connect-bar">
-              <label class="ssh-field">
-                <span>Server</span>
-                <select data-ssh-server disabled>
-                  <option>No servers configured</option>
-                </select>
-              </label>
-              <label class="ssh-field">
-                <span>Profile</span>
-                <select data-ssh-profile disabled>
-                  <option>No profiles configured</option>
-                </select>
-              </label>
-              <div class="ssh-connection-actions">
-                <button class="inline-action" type="button" data-ssh-connect disabled>Connect</button>
-                <button class="inline-action" type="button" data-ssh-disconnect disabled>Disconnect</button>
-                <button class="inline-action" type="button" data-ssh-profile-toggle>New Session</button>
+          <section class="ssh-shell ssh-workspace-shell" aria-label="SSH terminal workspace">
+            <aside class="ssh-sidebar-panel" aria-label="SSH sessions and profiles">
+              <div class="panel-heading">
+                <h3>Sessions</h3>
+                <button class="inline-action" type="button" data-ssh-profile-toggle>New</button>
               </div>
-            </div>
 
-            <form class="ssh-profile-form" data-ssh-profile-form hidden>
-              <label class="ssh-field">
-                <span>Name</span>
-                <input type="text" placeholder="Debian" data-ssh-profile-name>
-              </label>
-              <label class="ssh-field">
-                <span>Host</span>
-                <input type="text" placeholder="192.168.1.134" data-ssh-profile-host>
-              </label>
-              <label class="ssh-field">
-                <span>Port</span>
-                <input type="number" min="1" max="65535" placeholder="22" data-ssh-profile-port>
-              </label>
-              <label class="ssh-field">
-                <span>Username</span>
-                <input type="text" placeholder="anx" data-ssh-profile-username>
-              </label>
-              <label class="ssh-field">
-                <span>Auth</span>
-                <select data-ssh-profile-auth>
-                  <option value="password">password</option>
-                  <option value="privateKey">privateKey</option>
-                </select>
-              </label>
-              <label class="ssh-field" data-ssh-private-key-field hidden>
-                <span>Private key path</span>
-                <input type="text" placeholder="C:\Users\you\.ssh\id_rsa" data-ssh-profile-private-key>
-              </label>
-              <div class="ssh-connection-actions">
-                <button class="inline-action" type="submit" data-ssh-profile-save>Save Profile</button>
-                <button class="inline-action" type="button" data-ssh-profile-cancel>Cancel</button>
-              </div>
-            </form>
-
-            <div class="ssh-password-prompt" data-ssh-password-prompt hidden>
-              <label class="ssh-field">
-                <span>Password</span>
-                <input type="password" placeholder="Enter SSH password" autocomplete="current-password" data-ssh-password>
-              </label>
-              <div class="ssh-connection-actions">
-                <button class="inline-action" type="button" data-ssh-password-submit>Connect Now</button>
-                <button class="inline-action" type="button" data-ssh-password-cancel>Cancel</button>
-              </div>
-              <p class="ssh-password-note" data-ssh-password-message>Password is used for this session only and is not saved.</p>
-            </div>
-
-            <div class="ssh-session-tabs" role="tablist" aria-label="SSH sessions">
-              <button class="ssh-tab is-active" type="button" role="tab" aria-selected="true" disabled>New Session</button>
-              <button class="ssh-tab" type="button" role="tab" aria-selected="false" disabled>+</button>
-            </div>
-
-            <div class="ssh-terminal-card">
-              <div class="ssh-terminal-toolbar">
-                <div class="ssh-status">
-                  <span class="ssh-status-dot" aria-hidden="true"></span>
-                  <strong>Disconnected</strong>
-                </div>
-                <div class="ssh-tools">
-                  <label class="console-toggle">
-                    <input type="checkbox" checked data-ssh-autoscroll>
-                    <span>Auto-scroll</span>
-                  </label>
-                  <button class="inline-action" type="button" data-ssh-copy disabled>Copy Output</button>
-                  <button class="inline-action" type="button" data-ssh-clear disabled>Clear</button>
-                  <button class="inline-action" type="button" data-ssh-fullscreen>Fullscreen</button>
+              <div class="ssh-connect-bar">
+                <label class="ssh-field">
+                  <span>Server</span>
+                  <select data-ssh-server disabled>
+                    <option>No servers configured</option>
+                  </select>
+                </label>
+                <label class="ssh-field">
+                  <span>Profile</span>
+                  <select data-ssh-profile disabled>
+                    <option>No profiles configured</option>
+                  </select>
+                </label>
+                <div class="ssh-connection-actions">
+                  <button class="inline-action" type="button" data-ssh-connect disabled>Connect</button>
+                  <button class="inline-action" type="button" data-ssh-disconnect disabled>Disconnect</button>
                 </div>
               </div>
 
-              <div class="ssh-terminal-window" data-ssh-terminal>
-                <ol class="ssh-terminal-output" data-ssh-output></ol>
-                <div class="ssh-loading-state" data-ssh-loading hidden>
-                  <span class="file-loader" aria-hidden="true"></span>
-                  <strong>Connecting</strong>
-                  <span>SSH service is disconnected.</span>
-                </div>
-                <div class="ssh-empty-state" data-ssh-empty>
-                  <strong>No SSH session connected</strong>
-                  <span>No SSH session is connected.</span>
-                </div>
+              <div class="ssh-session-tabs" role="tablist" aria-label="SSH sessions">
+                <button class="ssh-tab is-active" type="button" role="tab" aria-selected="true" disabled>New Session</button>
+                <button class="ssh-tab" type="button" role="tab" aria-selected="false" disabled>+</button>
               </div>
 
-              <form class="ssh-command-row" data-ssh-command-form>
-                <span class="ssh-prompt" aria-hidden="true">$</span>
-                <input type="text" placeholder="Connect to enable command input" data-ssh-command disabled>
-                <button class="inline-action" type="submit" disabled>Send</button>
+              <div class="ssh-sidebar-summary" aria-label="SSH session summary">
+                <div><span>Profile</span><strong data-ssh-status="profile">None</strong></div>
+                <div><span>Host</span><strong data-ssh-status="host">Unavailable</strong></div>
+                <div><span>Output</span><strong data-ssh-status="lines">0 lines</strong></div>
+              </div>
+            </aside>
+
+            <main class="ssh-main-panel" aria-label="SSH terminal">
+              <form class="ssh-profile-form" data-ssh-profile-form hidden>
+                <label class="ssh-field">
+                  <span>Name</span>
+                  <input type="text" placeholder="Debian" data-ssh-profile-name>
+                </label>
+                <label class="ssh-field">
+                  <span>Host</span>
+                  <input type="text" placeholder="192.168.1.134" data-ssh-profile-host>
+                </label>
+                <label class="ssh-field">
+                  <span>Port</span>
+                  <input type="number" min="1" max="65535" placeholder="22" data-ssh-profile-port>
+                </label>
+                <label class="ssh-field">
+                  <span>Username</span>
+                  <input type="text" placeholder="anx" data-ssh-profile-username>
+                </label>
+                <label class="ssh-field">
+                  <span>Auth</span>
+                  <select data-ssh-profile-auth>
+                    <option value="password">password</option>
+                    <option value="privateKey">privateKey</option>
+                  </select>
+                </label>
+                <label class="ssh-field" data-ssh-private-key-field hidden>
+                  <span>Private key path</span>
+                  <input type="text" placeholder="C:\Users\you\.ssh\id_rsa" data-ssh-profile-private-key>
+                </label>
+                <div class="ssh-connection-actions">
+                  <button class="inline-action" type="submit" data-ssh-profile-save>Save Profile</button>
+                  <button class="inline-action" type="button" data-ssh-profile-cancel>Cancel</button>
+                </div>
               </form>
-            </div>
+
+              <div class="ssh-password-prompt" data-ssh-password-prompt hidden>
+                <label class="ssh-field">
+                  <span>Password</span>
+                  <input type="password" placeholder="Enter SSH password" autocomplete="current-password" data-ssh-password>
+                </label>
+                <div class="ssh-connection-actions">
+                  <button class="inline-action" type="button" data-ssh-password-submit>Connect Now</button>
+                  <button class="inline-action" type="button" data-ssh-password-cancel>Cancel</button>
+                </div>
+                <p class="ssh-password-note" data-ssh-password-message>Password is used for this session only and is not saved.</p>
+              </div>
+
+              <div class="ssh-terminal-card">
+                <div class="ssh-terminal-toolbar">
+                  <div class="ssh-status">
+                    <span class="ssh-status-dot" aria-hidden="true"></span>
+                    <strong>Disconnected</strong>
+                    <span data-ssh-status="message">No SSH session is connected.</span>
+                  </div>
+                  <div class="ssh-tools">
+                    <label class="console-toggle">
+                      <input type="checkbox" checked data-ssh-autoscroll>
+                      <span>Auto-scroll</span>
+                    </label>
+                    <button class="inline-action" type="button" data-ssh-copy disabled>Copy</button>
+                    <button class="inline-action" type="button" data-ssh-clear disabled>Clear</button>
+                    <button class="inline-action" type="button" data-ssh-fullscreen>Fullscreen</button>
+                  </div>
+                </div>
+
+                <div class="ssh-terminal-window" data-ssh-terminal>
+                  <ol class="ssh-terminal-output" data-ssh-output></ol>
+                  <div class="ssh-loading-state" data-ssh-loading hidden>
+                    <span class="file-loader" aria-hidden="true"></span>
+                    <strong>Connecting</strong>
+                    <span>SSH service is disconnected.</span>
+                  </div>
+                  <div class="ssh-empty-state" data-ssh-empty>
+                    <strong>No SSH session connected</strong>
+                    <span>No SSH session is connected.</span>
+                  </div>
+                </div>
+
+                <form class="ssh-command-row" data-ssh-command-form>
+                  <span class="ssh-prompt" aria-hidden="true">$</span>
+                  <input type="text" placeholder="Connect to enable command input" data-ssh-command disabled>
+                  <button class="inline-action" type="submit" disabled>Send</button>
+                </form>
+
+                <footer class="ssh-status-bar" aria-label="SSH status">
+                  <span>Status: <strong data-ssh-status="state">Disconnected</strong></span>
+                  <span>Session: <strong data-ssh-status="session">None</strong></span>
+                  <span>Endpoint: <strong data-ssh-status="endpoint">Unavailable</strong></span>
+                  <span>Lines: <strong data-ssh-status="lines">0 lines</strong></span>
+                  <span>Auto-scroll: <strong data-ssh-status="autoscroll">On</strong></span>
+                </footer>
+              </div>
+            </main>
           </section>
         </section>
 

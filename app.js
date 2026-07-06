@@ -247,6 +247,7 @@ const sshCopyButton = document.querySelector("[data-ssh-copy]");
 const sshClearButton = document.querySelector("[data-ssh-clear]");
 const sshFullscreenButton = document.querySelector("[data-ssh-fullscreen]");
 const sshAutoscrollInput = document.querySelector("[data-ssh-autoscroll]");
+const sshWorkspaceStatusFields = document.querySelectorAll("[data-ssh-status]");
 const settingsForm = document.querySelector("[data-settings-form]");
 const settingsInputs = document.querySelectorAll("[data-setting]");
 const settingsResetButton = document.querySelector("[data-settings-reset]");
@@ -8437,10 +8438,21 @@ function getSshRows() {
   return getSshRenderableRows(getActiveSshSession());
 }
 
+function setSshWorkspaceStatus(name, value) {
+  sshWorkspaceStatusFields.forEach((field) => {
+    if (field.dataset.sshStatus === name) {
+      field.textContent = value;
+    }
+  });
+}
+
 function setSshStatus(status, message = "") {
   if (sshStatusLabel) {
     sshStatusLabel.textContent = status;
   }
+
+  setSshWorkspaceStatus("state", status);
+  setSshWorkspaceStatus("message", message || "No SSH session is connected.");
 
   if (sshStatusDot) {
     const isConnected = status === "Connected";
@@ -8497,6 +8509,7 @@ function syncSshScrollMode() {
   if (sshAutoscrollInput?.checked && sshTerminalWindow) {
     sshTerminalWindow.scrollTop = sshTerminalWindow.scrollHeight;
   }
+  updateSshWorkspaceStatus();
 }
 
 function renderSshOutput(session) {
@@ -8514,6 +8527,7 @@ function renderSshOutput(session) {
 
   updateSshActions();
   syncSshScrollMode();
+  updateSshWorkspaceStatus();
 }
 
 function clearSshOutput() {
@@ -8655,6 +8669,24 @@ function getSshSessionMessage(session) {
   return session.message || (session.status === "connected" ? `Connected to ${session.label}.` : "SSH session is disconnected.");
 }
 
+function updateSshWorkspaceStatus() {
+  const session = getActiveSshSession();
+  const profile = session?.profileId ? getSshProfileById(session.profileId) : getActiveSshProfile();
+  const rows = getSshRenderableRows(session);
+  const endpoint = session
+    ? `${session.username || profile?.username || "user"}@${session.host || profile?.host || "host"}:${session.port || profile?.port || 22}`
+    : profile
+      ? `${profile.username}@${profile.host}:${profile.port}`
+      : "Unavailable";
+
+  setSshWorkspaceStatus("profile", profile?.displayName || session?.label || "None");
+  setSshWorkspaceStatus("host", endpoint);
+  setSshWorkspaceStatus("session", session?.label || "None");
+  setSshWorkspaceStatus("endpoint", endpoint);
+  setSshWorkspaceStatus("lines", `${rows.length} ${rows.length === 1 ? "line" : "lines"}`);
+  setSshWorkspaceStatus("autoscroll", sshAutoscrollInput?.checked ? "On" : "Off");
+}
+
 function getSshFilteredProfiles() {
   return sshProfilesState.profiles.filter((profile) => {
     if (!sshSelectedServerId) {
@@ -8735,16 +8767,27 @@ function renderSshSessionTabs() {
     draftTab.type = "button";
     draftTab.role = "tab";
     draftTab.setAttribute("aria-selected", "true");
-    draftTab.textContent = "New Session";
+    draftTab.innerHTML = "<strong>New Session</strong><span>Select a profile and connect.</span>";
     sshSessionTabs.appendChild(draftTab);
   } else {
     sessions.forEach((session) => {
+      const rows = getSshRenderableRows(session);
       const tab = document.createElement("button");
       tab.className = `ssh-tab${session.id === activeSshSessionId ? " is-active" : ""}`;
       tab.type = "button";
       tab.role = "tab";
       tab.setAttribute("aria-selected", session.id === activeSshSessionId ? "true" : "false");
-      tab.textContent = session.label;
+      const state = document.createElement("span");
+      state.className = `ssh-tab-state is-${session.status || "disconnected"}`;
+      state.setAttribute("aria-hidden", "true");
+      const copy = document.createElement("span");
+      copy.className = "ssh-tab-copy";
+      const title = document.createElement("strong");
+      title.textContent = session.label;
+      const meta = document.createElement("span");
+      meta.textContent = `${getSshSessionStatusLabel(session)} · ${rows.length} ${rows.length === 1 ? "line" : "lines"}`;
+      copy.append(title, meta);
+      tab.append(state, copy);
       tab.addEventListener("click", () => {
         activeSshSessionId = session.id;
 
@@ -8767,7 +8810,7 @@ function renderSshSessionTabs() {
   addTab.type = "button";
   addTab.role = "tab";
   addTab.setAttribute("aria-selected", activeSshSessionId === null ? "true" : "false");
-  addTab.textContent = "+";
+  addTab.innerHTML = "<strong>New Session</strong><span>Open another connection</span>";
   addTab.disabled = sshProfilesState.profiles.length === 0;
   addTab.addEventListener("click", () => {
     activeSshSessionId = null;
@@ -8846,6 +8889,7 @@ function renderSshView() {
 
   setSshStatus(getSshSessionStatusLabel(session), getSshSessionMessage(session));
   renderSshOutput(session);
+  updateSshWorkspaceStatus();
 }
 
 function measureSshTerminalSize() {

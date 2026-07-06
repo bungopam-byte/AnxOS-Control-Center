@@ -5,6 +5,7 @@ const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerDockerIpc } = require("./src/ipc/dockerIpc");
 const { disposeFilesIpc, registerFilesIpc } = require("./src/ipc/filesIpc");
+const { registerInstancesIpc } = require("./src/ipc/instancesIpc");
 const { registerPlayitIpc } = require("./src/ipc/playitIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
@@ -147,6 +148,7 @@ app.whenReady().then(() => {
   registerAmpIpc();
   registerPlayitIpc();
   registerDockerIpc();
+  registerInstancesIpc();
   registerFilesIpc();
   registerSettingsIpc();
   registerSshIpc();

@@ -2256,6 +2256,141 @@ body.is-resizing-files * {
   gap: 14px;
 }
 
+.instances-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.instances-summary-grid {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.instances-toolbar {
+  align-items: end;
+}
+
+.instance-create-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.74);
+}
+
+.instance-create-form .ssh-connection-actions,
+.instance-create-form .ssh-password-note {
+  grid-column: 1 / -1;
+}
+
+.instances-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  gap: 18px;
+  align-items: start;
+}
+
+.instances-table-panel .docker-table-wrap {
+  min-height: 360px;
+}
+
+.instance-name-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.instance-name-cell strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.instance-name-cell span,
+.instance-meta-list {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.instance-state {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(185, 171, 200, 0.26);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.instance-state.is-running {
+  border-color: rgba(69, 224, 143, 0.34);
+  background: rgba(69, 224, 143, 0.1);
+  color: var(--success);
+}
+
+.instance-state.is-starting,
+.instance-state.is-restarting,
+.instance-state.is-stopping {
+  border-color: rgba(245, 196, 81, 0.34);
+  background: rgba(245, 196, 81, 0.1);
+  color: #f5c451;
+}
+
+.instance-state.is-failed {
+  border-color: rgba(255, 107, 138, 0.36);
+  background: rgba(255, 107, 138, 0.1);
+  color: var(--danger);
+}
+
+.instance-log-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(13, 7, 22, 0.82);
+  overflow: hidden;
+}
+
+.instance-log-viewer {
+  position: relative;
+  min-height: 260px;
+  max-height: 420px;
+  overflow: auto;
+  background: #090c12;
+}
+
+.instance-log-viewer ol {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.79rem;
+  line-height: 1.55;
+}
+
+.instance-log-viewer li {
+  display: grid;
+  grid-template-columns: 155px 58px minmax(0, 1fr);
+  gap: 10px;
+  color: #d8d0e4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.instance-log-viewer time,
+.instance-log-stream {
+  color: #8e7aa7;
+}
+
+.instance-log-stream {
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 .coolpals-shell {
   display: grid;
   gap: 14px;
@@ -3206,6 +3341,11 @@ dd {
     min-height: auto;
   }
 
+  .instances-workspace,
+  .instance-create-form {
+    grid-template-columns: 1fr;
+  }
+
   .coolpals-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3278,7 +3418,10 @@ dd {
   .status-grid,
   .status-grid--two,
   .minecraft-page-grid,
-  .minecraft-detail-list {
+  .minecraft-detail-list,
+  .instances-summary-grid,
+  .instances-workspace,
+  .instance-create-form {
     grid-template-columns: 1fr;
   }
 

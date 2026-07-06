@@ -30,6 +30,30 @@ const dockerRefreshButton = document.querySelector('[data-docker-action="refresh
 const dockerStartButton = document.querySelector('[data-docker-action="start"]');
 const dockerStopButton = document.querySelector('[data-docker-action="stop"]');
 const dockerRestartButton = document.querySelector('[data-docker-action="restart"]');
+const instancesList = document.querySelector("[data-instances-list]");
+const instancesLoading = document.querySelector("[data-instances-loading]");
+const instancesEmpty = document.querySelector("[data-instances-empty]");
+const instancesDetailFields = document.querySelectorAll("[data-instance-detail]");
+const instancesSearchInput = document.querySelector("[data-instances-search]");
+const instancesLogStreamSelect = document.querySelector("[data-instances-log-stream]");
+const instancesLogLimitSelect = document.querySelector("[data-instances-log-limit]");
+const instanceActionButtons = document.querySelectorAll("[data-instance-action]");
+const instancesRefreshButton = document.querySelector('[data-instance-action="refresh"]');
+const instancesCreateToggleButton = document.querySelector('[data-instance-action="create"]');
+const instancesStartButton = document.querySelector('[data-instance-action="start"]');
+const instancesStopButton = document.querySelector('[data-instance-action="stop"]');
+const instancesRestartButton = document.querySelector('[data-instance-action="restart"]');
+const instancesDeleteButton = document.querySelector('[data-instance-action="delete"]');
+const instancesLogsButton = document.querySelector('[data-instance-action="logs"]');
+const instanceCreateForm = document.querySelector("[data-instance-create-form]");
+const instanceCreateSubmitButton = document.querySelector("[data-instance-create-submit]");
+const instanceFormInputs = document.querySelectorAll("[data-instance-form]");
+const instanceTypeSelect = document.querySelector('[data-instance-form="type"]');
+const instanceEntrypointField = document.querySelector("[data-instance-entrypoint-field]");
+const instanceFormMessage = document.querySelector("[data-instance-form-message]");
+const instancesLogList = document.querySelector("[data-instances-logs]");
+const instancesLogEmpty = document.querySelector("[data-instances-log-empty]");
+const instancesLogCount = document.querySelector("[data-instances-log-count]");
 const filesPage = document.querySelector('[data-page="files"]');
 const fileManagerShell = filesPage?.querySelector(".file-manager-shell");
 const fileWorkspace = filesPage?.querySelector(".file-workspace");
@@ -159,6 +183,9 @@ let ampRequestInFlight = false;
 let playitRequestInFlight = false;
 let dockerRequestInFlight = false;
 let dockerActionRequestInFlight = false;
+let instancesRequestInFlight = false;
+let instanceActionRequestInFlight = false;
+let instanceLogsRequestInFlight = false;
 let filesRequestInFlight = false;
 let filesActionRequestInFlight = false;
 let agentSettingsRequestInFlight = false;
@@ -170,6 +197,10 @@ let latestAmpSnapshot = null;
 let latestPlayitSnapshot = null;
 let latestDockerSnapshot = null;
 let lastLoggedAmpUrlSource = null;
+let latestInstancesSnapshot = null;
+let latestInstanceMetrics = null;
+let selectedInstanceId = null;
+let instanceCreateFormVisible = false;
 let latestFilesListing = null;
 let latestFileDocument = null;
 let selectedDockerContainerId = null;
@@ -299,6 +330,16 @@ function getDesktopApiState() {
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasDocker: typeof api?.docker?.getSnapshot === "function",
+    hasInstances:
+      typeof api?.instances?.list === "function" &&
+      typeof api?.instances?.create === "function" &&
+      typeof api?.instances?.getStatus === "function" &&
+      typeof api?.instances?.getMetrics === "function" &&
+      typeof api?.instances?.getLogs === "function" &&
+      typeof api?.instances?.start === "function" &&
+      typeof api?.instances?.stop === "function" &&
+      typeof api?.instances?.restart === "function" &&
+      typeof api?.instances?.delete === "function",
     hasActions: typeof api?.actions?.executeAction === "function",
     hasFiles:
       typeof api?.files?.list === "function" &&
@@ -1189,6 +1230,13 @@ function getTitlebarConnectionState(pageName = getActivePageName()) {
         label: connected ? "Connected" : "Disconnected",
       };
     }
+    case "instances": {
+      const connected = Array.isArray(latestInstancesSnapshot?.instances);
+      return {
+        connected,
+        label: connected ? "Connected" : "Disconnected",
+      };
+    }
     case "ssh": {
       const session = getActiveSshSession();
       return {
@@ -1580,6 +1628,10 @@ function showPage(pageName) {
 
   if (pageName === "docker") {
     refreshDockerStatus();
+  }
+
+  if (pageName === "instances") {
+    refreshInstances();
   }
 
   if (pageName === "files") {
@@ -2177,6 +2229,719 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setDockerEmpty(true);
   updateDockerActionButtons();
   updateTitlebar();
+}
+
+function normalizeInstancesPayload(payload) {
+  const instances = Array.isArray(payload?.instances)
+    ? payload.instances
+    : Array.isArray(payload?.data?.instances)
+      ? payload.data.instances
+      : [];
+
+  return {
+    root: payload?.root || payload?.data?.root || null,
+    instances,
+  };
+}
+
+function normalizeInstanceResponse(payload) {
+  return payload?.instance && typeof payload.instance === "object" ? payload.instance : payload;
+}
+
+function normalizeMetricsResponse(payload) {
+  return payload?.metrics && typeof payload.metrics === "object" ? payload.metrics : payload;
+}
+
+function getInstances() {
+  return Array.isArray(latestInstancesSnapshot?.instances) ? latestInstancesSnapshot.instances : [];
+}
+
+function findInstance(instanceId = selectedInstanceId) {
+  if (!instanceId) {
+    return null;
+  }
+
+  return getInstances().find((instance) => instance?.id === instanceId) || null;
+}
+
+function setInstanceDetail(name, value) {
+  instancesDetailFields.forEach((field) => {
+    if (field.dataset.instanceDetail === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function formatInstanceValue(value) {
+  return value === null || value === undefined || value === "" ? "Unavailable" : String(value);
+}
+
+function formatInstanceType(value) {
+  return formatInstanceValue(value).replace(/-/g, " ");
+}
+
+function formatInstanceList(value) {
+  if (!Array.isArray(value)) {
+    return formatInstanceValue(value);
+  }
+
+  return value.length > 0 ? value.join(", ") : "Unavailable";
+}
+
+function formatInstancePorts(instance, metrics = null) {
+  const metricPorts = Array.isArray(metrics?.ports) ? metrics.ports : null;
+
+  if (metricPorts && metricPorts.length > 0) {
+    return metricPorts.map((entry) => `${entry.port}${entry.open ? " open" : " closed"}`).join(", ");
+  }
+
+  return formatInstanceList(instance?.ports);
+}
+
+function getInstanceMetrics(instanceId = selectedInstanceId) {
+  return latestInstanceMetrics?.id === instanceId ? latestInstanceMetrics : null;
+}
+
+function formatInstanceCpu(metrics) {
+  if (!metrics) {
+    return "Unavailable";
+  }
+
+  const percent = Number.isFinite(metrics.cpuPercent) ? `${metrics.cpuPercent.toFixed(1)}%` : "CPU warming";
+  const seconds = Number.isFinite(metrics.cpuSeconds) ? `${metrics.cpuSeconds.toFixed(2)}s` : "seconds unavailable";
+  return `${percent} · ${seconds}`;
+}
+
+function formatInstanceMemory(metrics) {
+  return Number.isFinite(metrics?.memoryRssBytes) ? formatBytes(metrics.memoryRssBytes) : "Unavailable";
+}
+
+function formatInstanceDisk(metrics) {
+  return Number.isFinite(metrics?.diskBytes) ? formatBytes(metrics.diskBytes) : "Unavailable";
+}
+
+function getInstanceStateClass(state) {
+  return String(state || "stopped").trim().toLowerCase();
+}
+
+function isInstanceRunning(instance) {
+  return ["running", "starting", "restarting"].includes(getInstanceStateClass(instance?.state));
+}
+
+function canStartInstance(instance) {
+  return instance && ["stopped", "failed"].includes(getInstanceStateClass(instance.state));
+}
+
+function canStopInstance(instance) {
+  return instance && ["running", "starting", "restarting"].includes(getInstanceStateClass(instance.state));
+}
+
+function canRestartInstance(instance) {
+  return instance && ["running", "starting", "failed"].includes(getInstanceStateClass(instance.state));
+}
+
+function updateInstanceActionButtons() {
+  const desktopApiState = getDesktopApiState();
+  const selectedInstance = findInstance();
+  const busy = instancesRequestInFlight || instanceActionRequestInFlight;
+  const hasInstancesBridge = desktopApiState.hasInstances;
+
+  if (instancesRefreshButton) {
+    instancesRefreshButton.disabled = instancesRequestInFlight || instanceActionRequestInFlight || !hasInstancesBridge;
+  }
+
+  if (instancesCreateToggleButton) {
+    instancesCreateToggleButton.disabled = busy || !hasInstancesBridge;
+  }
+
+  if (instanceCreateSubmitButton) {
+    instanceCreateSubmitButton.disabled = busy || !hasInstancesBridge;
+  }
+
+  if (instancesSearchInput) {
+    instancesSearchInput.disabled = !hasInstancesBridge || getInstances().length === 0;
+  }
+
+  if (instancesLogStreamSelect) {
+    instancesLogStreamSelect.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
+  }
+
+  if (instancesLogLimitSelect) {
+    instancesLogLimitSelect.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
+  }
+
+  if (instancesStartButton) {
+    instancesStartButton.disabled = busy || !hasInstancesBridge || !canStartInstance(selectedInstance);
+  }
+
+  if (instancesStopButton) {
+    instancesStopButton.disabled = busy || !hasInstancesBridge || !canStopInstance(selectedInstance);
+  }
+
+  if (instancesRestartButton) {
+    instancesRestartButton.disabled = busy || !hasInstancesBridge || !canRestartInstance(selectedInstance);
+  }
+
+  if (instancesDeleteButton) {
+    instancesDeleteButton.disabled = busy || !hasInstancesBridge || !selectedInstance || isInstanceRunning(selectedInstance);
+  }
+
+  if (instancesLogsButton) {
+    instancesLogsButton.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
+  }
+}
+
+function setInstancesLoading(isLoading) {
+  if (instancesLoading) {
+    instancesLoading.hidden = !isLoading;
+  }
+}
+
+function setInstancesEmpty(isVisible, message = "Create an instance to begin.") {
+  if (instancesEmpty) {
+    instancesEmpty.hidden = !isVisible;
+  }
+
+  setField("instancesEmptyMessage", message);
+}
+
+function clearInstanceRows() {
+  instancesList?.replaceChildren();
+}
+
+function addInstanceCell(row, value) {
+  const cell = document.createElement("td");
+
+  if (value instanceof Node) {
+    cell.appendChild(value);
+  } else {
+    cell.textContent = value;
+  }
+
+  row.appendChild(cell);
+}
+
+function buildInstanceNameCell(instance) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "instance-name-cell";
+  const title = document.createElement("strong");
+  title.textContent = instance?.displayName || instance?.id || "Unnamed instance";
+  const meta = document.createElement("span");
+  meta.textContent = instance?.id || "missing-id";
+  wrapper.append(title, meta);
+  return wrapper;
+}
+
+function buildInstanceStatePill(instance) {
+  const pill = document.createElement("span");
+  const state = instance?.state || "Stopped";
+  pill.className = `instance-state is-${getInstanceStateClass(state)}`;
+  pill.textContent = state;
+  return pill;
+}
+
+function renderInstanceRows(instances) {
+  clearInstanceRows();
+
+  if (!instancesList) {
+    return;
+  }
+
+  instances.forEach((instance) => {
+    const metrics = getInstanceMetrics(instance.id);
+    const row = document.createElement("tr");
+    row.dataset.instanceId = instance.id || "";
+    row.tabIndex = 0;
+    row.addEventListener("click", () => selectInstance(instance.id));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectInstance(instance.id);
+      }
+    });
+
+    addInstanceCell(row, buildInstanceNameCell(instance));
+    addInstanceCell(row, formatInstanceType(instance.type));
+    addInstanceCell(row, buildInstanceStatePill(instance));
+    addInstanceCell(row, formatInstanceValue(instance.pid));
+    addInstanceCell(row, formatDuration(metrics?.uptimeSeconds));
+    addInstanceCell(row, formatInstanceCpu(metrics));
+    addInstanceCell(row, formatInstanceMemory(metrics));
+    addInstanceCell(row, formatInstancePorts(instance, metrics));
+    addInstanceCell(row, formatInstanceList(instance.tags));
+    instancesList.appendChild(row);
+  });
+
+  filterInstanceRows();
+}
+
+function setInstanceDetails(instance = null) {
+  const metrics = instance ? getInstanceMetrics(instance.id) : null;
+
+  if (!instance) {
+    setField("instanceDetailState", "None");
+    setField("instancesSelectedCpu", "Unavailable");
+    setField("instancesSelectedMemory", "Unavailable");
+    setInstanceDetail("name", "None selected");
+    setInstanceDetail("id", "Unavailable");
+    setInstanceDetail("type", "Unavailable");
+    setInstanceDetail("command", "Unavailable");
+    setInstanceDetail("pid", "Unavailable");
+    setInstanceDetail("uptime", "Unavailable");
+    setInstanceDetail("cpu", "Unavailable");
+    setInstanceDetail("memory", "Unavailable");
+    setInstanceDetail("disk", "Unavailable");
+    setInstanceDetail("ports", "Unavailable");
+    setInstanceDetail("tags", "Unavailable");
+    return;
+  }
+
+  const command = [instance.executable, ...(Array.isArray(instance.args) ? instance.args : [])].filter(Boolean).join(" ");
+  setField("instanceDetailState", instance.state || "Unavailable");
+  setField("instancesSelectedCpu", formatInstanceCpu(metrics));
+  setField("instancesSelectedMemory", formatInstanceMemory(metrics));
+  setInstanceDetail("name", formatInstanceValue(instance.displayName));
+  setInstanceDetail("id", formatInstanceValue(instance.id));
+  setInstanceDetail("type", formatInstanceType(instance.type));
+  setInstanceDetail("command", command || "Unavailable");
+  setInstanceDetail("pid", formatInstanceValue(instance.pid));
+  setInstanceDetail("uptime", formatDuration(metrics?.uptimeSeconds));
+  setInstanceDetail("cpu", formatInstanceCpu(metrics));
+  setInstanceDetail("memory", formatInstanceMemory(metrics));
+  setInstanceDetail("disk", formatInstanceDisk(metrics));
+  setInstanceDetail("ports", formatInstancePorts(instance, metrics));
+  setInstanceDetail("tags", formatInstanceList(instance.tags));
+}
+
+function selectInstance(instanceId, options = {}) {
+  const previousSelectedInstanceId = selectedInstanceId;
+  const selectedInstance = findInstance(instanceId);
+  selectedInstanceId = selectedInstance?.id || null;
+  if (previousSelectedInstanceId !== selectedInstanceId) {
+    clearInstanceLogs(selectedInstanceId ? "Refresh logs to load the selected instance." : "Select an instance and refresh logs.");
+  }
+  setInstanceDetails(selectedInstance);
+
+  if (instancesList) {
+    [...instancesList.querySelectorAll("tr")].forEach((row) => {
+      row.classList.toggle("is-selected", row.dataset.instanceId === selectedInstanceId);
+    });
+  }
+
+  updateInstanceActionButtons();
+
+  if (selectedInstanceId && options.refreshMetrics !== false) {
+    refreshSelectedInstanceMetrics();
+  }
+}
+
+function renderInstancesSnapshot(snapshot) {
+  latestInstancesSnapshot = normalizeInstancesPayload(snapshot);
+  const instances = getInstances();
+  const selected =
+    findInstance(selectedInstanceId) ||
+    instances[0] ||
+    null;
+  selectedInstanceId = selected?.id || null;
+
+  setField("instancesTotal", String(instances.length));
+  setField("instancesRunning", String(instances.filter(isInstanceRunning).length));
+  setField("instancesLoadingMessage", "Checking agent instance status...");
+  renderInstanceRows(instances);
+  selectInstance(selectedInstanceId, { refreshMetrics: false });
+  setInstancesLoading(false);
+  setInstancesEmpty(instances.length === 0);
+  updateInstanceActionButtons();
+  updateTitlebar();
+}
+
+function renderInstancesUnavailable(message = "Instance manager unavailable.") {
+  latestInstancesSnapshot = null;
+  latestInstanceMetrics = null;
+  selectedInstanceId = null;
+  setField("instancesTotal", "Unavailable");
+  setField("instancesRunning", "Unavailable");
+  setField("instancesSelectedCpu", "Unavailable");
+  setField("instancesSelectedMemory", "Unavailable");
+  setInstancesLoading(false);
+  setInstancesEmpty(true, message);
+  clearInstanceRows();
+  setInstanceDetails(null);
+  clearInstanceLogs("Select an instance and refresh logs.");
+  updateInstanceActionButtons();
+  updateTitlebar();
+}
+
+function filterInstanceRows() {
+  const query = (instancesSearchInput?.value || "").trim().toLowerCase();
+
+  if (!instancesList) {
+    return;
+  }
+
+  [...instancesList.querySelectorAll("tr")].forEach((row) => {
+    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+  });
+}
+
+function clearInstanceLogs(message = "Select an instance and refresh logs.") {
+  instancesLogList?.replaceChildren();
+
+  if (instancesLogEmpty) {
+    instancesLogEmpty.hidden = false;
+    const messageTarget = instancesLogEmpty.querySelector("span:last-child");
+    if (messageTarget) {
+      messageTarget.textContent = message;
+    }
+  }
+
+  if (instancesLogCount) {
+    instancesLogCount.textContent = "0 lines";
+  }
+}
+
+function renderInstanceLogs(payload) {
+  const entries = Array.isArray(payload?.entries) ? payload.entries : [];
+  instancesLogList?.replaceChildren();
+
+  entries.forEach((entry) => {
+    const item = document.createElement("li");
+    const time = document.createElement("time");
+    time.dateTime = entry?.at || "";
+    time.textContent = entry?.at ? formatDateTime(entry.at) : "No timestamp";
+    const stream = document.createElement("span");
+    stream.className = "instance-log-stream";
+    stream.textContent = entry?.stream || "log";
+    const message = document.createElement("span");
+    message.textContent = entry?.message || "";
+    item.append(time, stream, message);
+    instancesLogList?.appendChild(item);
+  });
+
+  if (instancesLogEmpty) {
+    instancesLogEmpty.hidden = entries.length > 0;
+  }
+
+  if (instancesLogCount) {
+    instancesLogCount.textContent = `${entries.length} ${entries.length === 1 ? "line" : "lines"}`;
+  }
+}
+
+function getAgentErrorMessage(error, fallback = "Instance request failed.") {
+  const backendCode = error?.payload?.error?.code || error?.code;
+  const backendMessage = error?.payload?.error?.message;
+  const wrappedMessage = String(error?.message || "");
+  const wrappedCode = wrappedMessage.match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
+
+  if (backendCode && backendCode !== "AGENT_HTTP_ERROR") {
+    return backendMessage && backendMessage !== "Request failed."
+      ? `${backendCode}: ${backendMessage}`
+      : backendCode;
+  }
+
+  if (wrappedCode) {
+    return wrappedCode;
+  }
+
+  return error?.message || fallback;
+}
+
+function parseCsv(value) {
+  return String(value || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function parseArgs(value) {
+  const raw = String(value || "").trim();
+
+  if (!raw) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.map((entry) => String(entry));
+    }
+  } catch {}
+
+  return raw.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, "")) || [];
+}
+
+function parseEnvironment(value) {
+  return parseCsv(value).reduce((environment, entry) => {
+    const separatorIndex = entry.indexOf("=");
+    if (separatorIndex <= 0) {
+      return environment;
+    }
+
+    const key = entry.slice(0, separatorIndex).trim();
+    const envValue = entry.slice(separatorIndex + 1).trim();
+    if (key) {
+      environment[key] = envValue;
+    }
+    return environment;
+  }, {});
+}
+
+function getInstanceFormValue(name) {
+  return document.querySelector(`[data-instance-form="${name}"]`)?.value?.trim() || "";
+}
+
+function setInstanceFormMessage(message) {
+  if (instanceFormMessage) {
+    instanceFormMessage.textContent = message;
+  }
+}
+
+function syncInstanceCreateTypeFields() {
+  const type = instanceTypeSelect?.value || "custom-command";
+  const executableInput = document.querySelector('[data-instance-form="executable"]');
+  const entrypointInput = document.querySelector('[data-instance-form="entrypoint"]');
+
+  if (instanceEntrypointField) {
+    instanceEntrypointField.hidden = type === "custom-command";
+  }
+
+  if (executableInput && !executableInput.value.trim()) {
+    executableInput.placeholder =
+      type === "custom-command" ? "node" :
+        type === "node-app" ? "node" :
+          type === "python-app" ? "python3" :
+            "java";
+  }
+
+  if (entrypointInput) {
+    entrypointInput.placeholder =
+      type === "node-app" ? "index.js" :
+        type === "python-app" ? "app.py" :
+          type === "java-app" ? "app.jar" :
+            type === "minecraft-paper" ? "paper.jar" :
+              "";
+  }
+}
+
+function buildInstanceCreatePayload() {
+  const id = getInstanceFormValue("id");
+  const displayName = getInstanceFormValue("displayName");
+  const type = getInstanceFormValue("type") || "custom-command";
+  const executable = getInstanceFormValue("executable");
+  const entrypoint = getInstanceFormValue("entrypoint");
+  const workingDirectory = getInstanceFormValue("workingDirectory");
+  const args = parseArgs(getInstanceFormValue("args"));
+  const ports = parseCsv(getInstanceFormValue("ports")).map((port) => Number.parseInt(port, 10)).filter(Number.isFinite);
+  const tags = parseCsv(getInstanceFormValue("tags"));
+  const environment = parseEnvironment(getInstanceFormValue("environment"));
+
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$/.test(id)) {
+    throw new Error("Use an ID with 2-64 letters, numbers, underscores, or dashes.");
+  }
+
+  const payload = {
+    id,
+    displayName: displayName || id,
+    type,
+    args,
+    ports,
+    tags,
+    environment,
+  };
+
+  if (executable) {
+    payload.executable = executable;
+  }
+
+  if (workingDirectory) {
+    payload.workingDirectory = workingDirectory;
+  }
+
+  if (entrypoint && type !== "custom-command") {
+    if (type === "java-app" || type === "minecraft-paper") {
+      payload.jar = entrypoint;
+    } else {
+      payload.entrypoint = entrypoint;
+    }
+  }
+
+  return payload;
+}
+
+function setInstanceCreateFormVisible(visible) {
+  instanceCreateFormVisible = Boolean(visible);
+
+  if (instanceCreateForm) {
+    instanceCreateForm.hidden = !instanceCreateFormVisible;
+  }
+
+  if (instancesCreateToggleButton) {
+    instancesCreateToggleButton.textContent = instanceCreateFormVisible ? "Hide Form" : "Create";
+  }
+
+  syncInstanceCreateTypeFields();
+}
+
+async function refreshInstances() {
+  if (instancesRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasInstances) {
+    renderInstancesUnavailable(desktopApiState.hasBridge ? "Instances IPC bridge unavailable." : "Desktop preload bridge unavailable.");
+    return;
+  }
+
+  instancesRequestInFlight = true;
+  setInstancesLoading(true);
+  updateInstanceActionButtons();
+
+  try {
+    renderInstancesSnapshot(await desktopApiState.api.instances.list());
+    await refreshSelectedInstanceMetrics();
+  } catch (error) {
+    renderInstancesUnavailable(`Instance request failed: ${getAgentErrorMessage(error)}`);
+  } finally {
+    instancesRequestInFlight = false;
+    updateInstanceActionButtons();
+  }
+}
+
+async function refreshSelectedInstanceMetrics() {
+  if (!selectedInstanceId || instanceActionRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasInstances) {
+    return;
+  }
+
+  try {
+    latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(selectedInstanceId));
+    renderInstanceRows(getInstances());
+    selectInstance(selectedInstanceId, { refreshMetrics: false });
+  } catch {
+    latestInstanceMetrics = null;
+    setInstanceDetails(findInstance());
+  }
+}
+
+async function refreshInstanceLogs(options = {}) {
+  if (!selectedInstanceId || instanceLogsRequestInFlight) {
+    return;
+  }
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasInstances) {
+    clearInstanceLogs("Instances IPC bridge unavailable.");
+    return;
+  }
+
+  instanceLogsRequestInFlight = true;
+  updateInstanceActionButtons();
+
+  try {
+    const stream = instancesLogStreamSelect?.value || "all";
+    const limit = Number.parseInt(instancesLogLimitSelect?.value || "200", 10);
+    renderInstanceLogs(await desktopApiState.api.instances.getLogs(selectedInstanceId, {
+      stream,
+      limit: Number.isFinite(limit) ? limit : 200,
+    }));
+  } catch (error) {
+    if (!options.silent) {
+      showToast(getAgentErrorMessage(error, "Log request failed."));
+    }
+  } finally {
+    instanceLogsRequestInFlight = false;
+    updateInstanceActionButtons();
+  }
+}
+
+async function createInstanceFromForm(event) {
+  event?.preventDefault();
+
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasInstances || instanceActionRequestInFlight) {
+    return;
+  }
+
+  let payload;
+
+  try {
+    payload = buildInstanceCreatePayload();
+  } catch (error) {
+    setInstanceFormMessage(error?.message || "Check instance form values.");
+    return;
+  }
+
+  instanceActionRequestInFlight = true;
+  updateInstanceActionButtons();
+  setInstanceFormMessage("Creating instance...");
+
+  try {
+    const response = await desktopApiState.api.instances.create(payload);
+    const instance = normalizeInstanceResponse(response);
+    selectedInstanceId = instance?.id || payload.id;
+    setInstanceCreateFormVisible(false);
+    instanceCreateForm?.reset();
+    setInstanceFormMessage("Commands run without a shell. Secrets are not accepted in environment variable names.");
+    showToast("Instance created.");
+    await refreshInstances();
+  } catch (error) {
+    setInstanceFormMessage(getAgentErrorMessage(error, "Create instance failed."));
+  } finally {
+    instanceActionRequestInFlight = false;
+    updateInstanceActionButtons();
+  }
+}
+
+async function runInstanceAction(actionName) {
+  const selectedInstance = findInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!selectedInstance || !desktopApiState.hasInstances || instanceActionRequestInFlight) {
+    updateInstanceActionButtons();
+    return;
+  }
+
+  const label = selectedInstance.displayName || selectedInstance.id;
+
+  if (actionName === "delete") {
+    const typed = window.prompt(`Delete ${label}? This cannot be undone.\nType DELETE ${selectedInstance.id} to confirm.`, "");
+    if (typed !== `DELETE ${selectedInstance.id}`) {
+      showToast("Delete canceled.");
+      return;
+    }
+  } else if (!window.confirm(`${actionName[0].toUpperCase()}${actionName.slice(1)} ${label}?`)) {
+    return;
+  }
+
+  instanceActionRequestInFlight = true;
+  updateInstanceActionButtons();
+
+  try {
+    await desktopApiState.api.instances[actionName](selectedInstance.id);
+    showToast(`Instance ${actionName} request completed.`);
+
+    if (actionName === "delete") {
+      selectedInstanceId = null;
+      latestInstanceMetrics = null;
+      clearInstanceLogs();
+    }
+
+    await refreshInstances();
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
+  } finally {
+    instanceActionRequestInFlight = false;
+    updateInstanceActionButtons();
+  }
 }
 
 function setFileDetail(name, value) {
@@ -6061,6 +6826,28 @@ dockerStartButton?.addEventListener("click", () => handleDockerAction("start"));
 dockerStopButton?.addEventListener("click", () => handleDockerAction("stop"));
 dockerRestartButton?.addEventListener("click", () => handleDockerAction("restart"));
 updateDockerActionButtons();
+instancesSearchInput?.addEventListener("input", filterInstanceRows);
+instancesLogStreamSelect?.addEventListener("change", () => refreshInstanceLogs());
+instancesLogLimitSelect?.addEventListener("change", () => refreshInstanceLogs());
+instancesRefreshButton?.addEventListener("click", refreshInstances);
+instancesCreateToggleButton?.addEventListener("click", () => setInstanceCreateFormVisible(!instanceCreateFormVisible));
+document.querySelector('[data-instance-action="cancel-create"]')?.addEventListener("click", () => setInstanceCreateFormVisible(false));
+instancesStartButton?.addEventListener("click", () => runInstanceAction("start"));
+instancesStopButton?.addEventListener("click", () => runInstanceAction("stop"));
+instancesRestartButton?.addEventListener("click", () => runInstanceAction("restart"));
+instancesDeleteButton?.addEventListener("click", () => runInstanceAction("delete"));
+instancesLogsButton?.addEventListener("click", () => refreshInstanceLogs());
+instanceCreateForm?.addEventListener("submit", createInstanceFromForm);
+instanceTypeSelect?.addEventListener("change", syncInstanceCreateTypeFields);
+instanceFormInputs.forEach((input) => {
+  input.addEventListener("input", () => {
+    if (instanceFormMessage) {
+      setInstanceFormMessage("Commands run without a shell. Secrets are not accepted in environment variable names.");
+    }
+  });
+});
+syncInstanceCreateTypeFields();
+updateInstanceActionButtons();
 settingsInputs.forEach((input) => {
   input.addEventListener("input", saveSettings);
   input.addEventListener("change", saveSettings);
@@ -6083,3 +6870,8 @@ registerRefreshTask(refreshDashboard, 1000);
 registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);
 registerRefreshTask(refreshPlayitStatus, 5000);
 registerRefreshTask(refreshDockerStatus, 5000);
+registerRefreshTask(() => {
+  if (getActivePageName() === "instances") {
+    refreshInstances();
+  }
+}, 5000);

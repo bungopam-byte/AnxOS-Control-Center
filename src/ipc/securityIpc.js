@@ -3,6 +3,7 @@ const {
   getStatus,
   login,
   logout,
+  logoutAllSessions,
   rotateAgentToken,
   setupAdmin,
 } = require("../services/securityService");
@@ -24,6 +25,7 @@ function registerSecurityIpc() {
   ipcMain.handle("security:setupAdmin", async (_, payload = {}) => invokeSecurityOperation(() => setupAdmin(payload)));
   ipcMain.handle("security:login", async (_, payload = {}) => invokeSecurityOperation(() => login(payload)));
   ipcMain.handle("security:logout", async () => invokeSecurityOperation(() => logout()));
+  ipcMain.handle("security:logoutAllSessions", async () => invokeSecurityOperation(() => logoutAllSessions()));
   ipcMain.handle("security:rotateAgentToken", async () => invokeSecurityOperation(() => rotateAgentToken()));
 }
 

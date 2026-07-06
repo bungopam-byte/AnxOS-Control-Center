@@ -45,6 +45,10 @@
           <span>Password</span>
           <input type="password" autocomplete="current-password" data-security-field="password" required>
         </label>
+        <label class="security-option" data-security-stay-row>
+          <input type="checkbox" data-security-field="staySignedIn">
+          <span>Stay signed in for 30 days on this device</span>
+        </label>
         <div class="settings-actions">
           <button class="inline-action" type="submit" data-security-submit>Continue</button>
         </div>
@@ -2006,6 +2010,7 @@
               <div class="settings-actions">
                 <button class="inline-action" type="button" data-security-action="rotate-agent-token">Rotate Agent Token</button>
                 <button class="inline-action" type="button" data-security-action="logout">Logout</button>
+                <button class="inline-action" type="button" data-security-action="logout-all-sessions">Log out of all sessions</button>
                 <span class="settings-inline-status" data-security-settings-message>Security state unavailable.</span>
               </div>
             </section>

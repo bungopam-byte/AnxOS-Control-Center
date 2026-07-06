@@ -135,6 +135,56 @@ function assertGameTemplateInstallPlans() {
   }
 }
 
+function assertGameTemplateCreatePayloadsAreAgentSafe() {
+  const ids = [
+    "minecraft-vanilla",
+    "minecraft-paper",
+    "minecraft-purpur",
+    "minecraft-fabric",
+    "minecraft-forge",
+    "minecraft-neoforge",
+    "terraria-tshock",
+    "valheim",
+    "rust",
+    "cs2",
+    "fivem",
+    "palworld",
+  ];
+
+  for (const id of ids) {
+    const template = findTemplate(id);
+    const payload = marketplaceService._test.buildInstancePayload(template, { name: `${id} smoke`, version: "latest" }, template.defaultPorts || []);
+    assert(Array.isArray(payload.tags), `${id} create payload should include tags.`);
+    for (const tag of payload.tags) {
+      assert(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,63}$/.test(tag), `${id} tag must be accepted by the agent: ${tag}`);
+      assert(!/\s/.test(tag), `${id} tag must not contain whitespace: ${tag}`);
+    }
+    if (template.category !== "Minecraft") {
+      assert.strictEqual(payload.minecraftVersion, null, `${id} should not inherit Minecraft version metadata.`);
+    }
+  }
+}
+
+function assertTemplateFilePathsAreDataRelative() {
+  for (const template of templates.filter((entry) => !entry.disabled && !entry.comingSoon)) {
+    const downloads = marketplaceService._test.normalizeTemplateDownloads(template);
+    for (const download of downloads) {
+      assert(!path.isAbsolute(download.destination), `${template.id} destination must be relative.`);
+      assert(!download.destination.startsWith("data/"), `${template.id} destination should be relative to the agent data root.`);
+      assert(!download.destination.split(/[\\/]/).includes(".."), `${template.id} destination must not escape the data root.`);
+    }
+  }
+
+  const source = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceService.js"), "utf8");
+  assert(!source.includes('createInstanceFolder(createdInstanceId, ".",'), "Marketplace must not mkdir the agent data root through the file API.");
+}
+
+function assertNonMinecraftServerTypeIsCleared() {
+  const source = fs.readFileSync(appPath, "utf8");
+  assert(source.includes("delete options.serverType;"), "Renderer must not send hidden Minecraft serverType for non-Minecraft templates.");
+  assert(source.includes("serverType: isMinecraft ?"), "Renderer option collection should gate serverType by template category.");
+}
+
 function assertImportEcosystemSupport() {
   const support = marketplaceService.getImportSupport();
   assert.strictEqual(support.communityTemplates.supported, true, "Community template import support should be advertised.");
@@ -188,6 +238,9 @@ async function main() {
   assertMarketplaceMetadata();
   assertRendererTemplateIdWiring();
   assertGameTemplateInstallPlans();
+  assertGameTemplateCreatePayloadsAreAgentSafe();
+  assertTemplateFilePathsAreDataRelative();
+  assertNonMinecraftServerTypeIsCleared();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   console.log("Marketplace smoke checks passed.");

@@ -129,6 +129,7 @@ const desktopApi = {
     setupAdmin: (payload) => ipcRenderer.invoke("security:setupAdmin", payload),
     login: (payload) => ipcRenderer.invoke("security:login", payload),
     logout: () => ipcRenderer.invoke("security:logout"),
+    logoutAllSessions: () => ipcRenderer.invoke("security:logoutAllSessions"),
     rotateAgentToken: () => ipcRenderer.invoke("security:rotateAgentToken"),
   },
 };

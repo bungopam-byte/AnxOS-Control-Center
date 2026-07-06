@@ -1,8 +1,9 @@
 const crypto = require("crypto");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { app } = require("electron");
+const { app, safeStorage } = require("electron");
 const {
   getAgentConfigPath,
   readAgentSettings,
@@ -10,6 +11,7 @@ const {
 } = require("./agentClient");
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 10;
 const BCRYPT_ROUNDS = 12;
 const ROLE_PERMISSIONS = {
@@ -46,6 +48,10 @@ function getSecurityPath() {
   return path.join(getConfigDirectory(), "security.json");
 }
 
+function getPersistentSessionPath() {
+  return path.join(getConfigDirectory(), "session.dat");
+}
+
 function getAuditPath() {
   return path.join(getConfigDirectory(), "audit.log");
 }
@@ -59,15 +65,19 @@ function readSecurityState() {
     const parsed = JSON.parse(fs.readFileSync(getSecurityPath(), "utf8"));
     return {
       users: Array.isArray(parsed.users) ? parsed.users : [],
+      persistentSessions: Array.isArray(parsed.persistentSessions) ? parsed.persistentSessions : [],
       settings: {
         sessionTtlMs: Number.parseInt(parsed.settings?.sessionTtlMs, 10) || SESSION_TTL_MS,
+        persistentSessionTtlMs: Number.parseInt(parsed.settings?.persistentSessionTtlMs, 10) || PERSISTENT_SESSION_TTL_MS,
       },
     };
   } catch {
     return {
       users: [],
+      persistentSessions: [],
       settings: {
         sessionTtlMs: SESSION_TTL_MS,
+        persistentSessionTtlMs: PERSISTENT_SESSION_TTL_MS,
       },
     };
   }
@@ -76,6 +86,100 @@ function readSecurityState() {
 function writeSecurityState(state) {
   ensureConfigDirectory();
   fs.writeFileSync(getSecurityPath(), `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+}
+
+function removePersistentSessionFile() {
+  try {
+    fs.rmSync(getPersistentSessionPath(), { force: true });
+  } catch {}
+}
+
+function getFallbackEncryptionKey() {
+  let username = "local-user";
+  try {
+    username = os.userInfo().username || username;
+  } catch {}
+
+  return crypto.scryptSync(
+    `${username}:${os.hostname()}:${getSecurityPath()}`,
+    "anxhub-local-session",
+    32
+  );
+}
+
+function encryptLocalSession(value) {
+  const payload = Buffer.from(JSON.stringify(value), "utf8");
+  if (safeStorage?.isEncryptionAvailable?.()) {
+    return {
+      method: "safeStorage",
+      data: safeStorage.encryptString(payload.toString("utf8")).toString("base64"),
+    };
+  }
+
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", getFallbackEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
+  return {
+    method: "aes-256-gcm",
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+    data: encrypted.toString("base64"),
+  };
+}
+
+function decryptLocalSession(record) {
+  if (!record || typeof record !== "object") {
+    return null;
+  }
+
+  if (record.method === "safeStorage" && safeStorage?.isEncryptionAvailable?.()) {
+    return JSON.parse(safeStorage.decryptString(Buffer.from(record.data || "", "base64")));
+  }
+
+  if (record.method === "aes-256-gcm") {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", getFallbackEncryptionKey(), Buffer.from(record.iv || "", "base64"));
+    decipher.setAuthTag(Buffer.from(record.tag || "", "base64"));
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(record.data || "", "base64")), decipher.final()]);
+    return JSON.parse(decrypted.toString("utf8"));
+  }
+
+  return null;
+}
+
+function writePersistentSessionFile(payload) {
+  ensureConfigDirectory();
+  fs.writeFileSync(getPersistentSessionPath(), `${JSON.stringify(encryptLocalSession(payload))}\n`, { mode: 0o600 });
+}
+
+function readPersistentSessionFile() {
+  try {
+    return decryptLocalSession(JSON.parse(fs.readFileSync(getPersistentSessionPath(), "utf8")));
+  } catch {
+    removePersistentSessionFile();
+    return null;
+  }
+}
+
+function getPasswordHashDigest(user) {
+  return crypto.createHash("sha256").update(String(user?.passwordHash || "")).digest("base64url");
+}
+
+function pruneExpiredPersistentSessions(state, now = Date.now()) {
+  const originalCount = state.persistentSessions.length;
+  state.persistentSessions = state.persistentSessions.filter((session) => Date.parse(session.expiresAt || "") > now);
+  return state.persistentSessions.length !== originalCount;
+}
+
+function removePersistentSessionRecord(sessionId) {
+  if (!sessionId) {
+    return;
+  }
+  const state = readSecurityState();
+  const nextSessions = state.persistentSessions.filter((entry) => entry.id !== sessionId);
+  if (nextSessions.length !== state.persistentSessions.length) {
+    state.persistentSessions = nextSessions;
+    writeSecurityState(state);
+  }
 }
 
 function publicUser(user) {
@@ -94,17 +198,111 @@ function publicUser(user) {
 }
 
 function getCurrentUser() {
+  restorePersistentSession();
   if (!currentSession || currentSession.expiresAt <= Date.now()) {
+    if (currentSession?.persistent) {
+      removePersistentSessionFile();
+    }
     currentSession = null;
     return null;
   }
 
   const user = readSecurityState().users.find((entry) => entry.id === currentSession.userId);
   if (!user) {
+    if (currentSession.persistent) {
+      removePersistentSessionFile();
+    }
     currentSession = null;
     return null;
   }
 
+  if (currentSession.persistent && currentSession.passwordHashDigest !== getPasswordHashDigest(user)) {
+    removePersistentSessionRecord(currentSession.persistentSessionId);
+    removePersistentSessionFile();
+    currentSession = null;
+    return null;
+  }
+
+  return publicUser(user);
+}
+
+async function createPersistentSession(state, user) {
+  const rawToken = crypto.randomBytes(48).toString("base64url");
+  const session = {
+    id: crypto.randomUUID(),
+    userId: user.id,
+    tokenHash: await bcrypt.hash(rawToken, BCRYPT_ROUNDS),
+    passwordHashDigest: getPasswordHashDigest(user),
+    createdAt: new Date().toISOString(),
+    lastUsedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + (state.settings.persistentSessionTtlMs || PERSISTENT_SESSION_TTL_MS)).toISOString(),
+  };
+  state.persistentSessions.push(session);
+  writePersistentSessionFile({
+    sessionId: session.id,
+    token: rawToken,
+    expiresAt: session.expiresAt,
+  });
+  return session;
+}
+
+function createRuntimeSession(user, expiresAt, persistent = false, persistentSessionId = null) {
+  currentSession = {
+    token: crypto.randomBytes(32).toString("base64url"),
+    userId: user.id,
+    expiresAt,
+    persistent,
+    persistentSessionId,
+    passwordHashDigest: getPasswordHashDigest(user),
+  };
+}
+
+function restorePersistentSession() {
+  if (currentSession) {
+    return null;
+  }
+
+  const localSession = readPersistentSessionFile();
+  if (!localSession?.sessionId || !localSession?.token) {
+    return null;
+  }
+
+  const state = readSecurityState();
+  const now = Date.now();
+  let changed = pruneExpiredPersistentSessions(state, now);
+  const session = state.persistentSessions.find((entry) => entry.id === localSession.sessionId);
+  const user = session ? state.users.find((entry) => entry.id === session.userId) : null;
+
+  if (!session || !user || Date.parse(session.expiresAt || "") <= now || session.passwordHashDigest !== getPasswordHashDigest(user)) {
+    removePersistentSessionFile();
+    if (session) {
+      state.persistentSessions = state.persistentSessions.filter((entry) => entry.id !== session.id);
+      changed = true;
+    }
+    if (changed) {
+      writeSecurityState(state);
+    }
+    return null;
+  }
+
+  let ok = false;
+  try {
+    ok = bcrypt.compareSync(String(localSession.token), session.tokenHash);
+  } catch {
+    ok = false;
+  }
+
+  if (!ok) {
+    removePersistentSessionFile();
+    state.persistentSessions = state.persistentSessions.filter((entry) => entry.id !== session.id);
+    writeSecurityState(state);
+    return null;
+  }
+
+  session.lastUsedAt = new Date().toISOString();
+  writeSecurityState(state);
+  createRuntimeSession(user, Date.parse(session.expiresAt), true, session.id);
+  audit({ action: "security.session.restore", outcome: "ok", actor: publicUser(user) });
   return publicUser(user);
 }
 
@@ -168,8 +366,11 @@ function validatePassword(value) {
 }
 
 function getStatus() {
-  const state = readSecurityState();
   const user = getCurrentUser();
+  const state = readSecurityState();
+  if (pruneExpiredPersistentSessions(state)) {
+    writeSecurityState(state);
+  }
   const hasAdminUser = state.users.some((entry) => entry.role === "Owner" || entry.role === "Admin");
   return {
     setupRequired: !hasAdminUser,
@@ -178,6 +379,8 @@ function getStatus() {
     roles: Object.keys(ROLE_PERMISSIONS),
     permissions: user ? ROLE_PERMISSIONS[user.role] || [] : [],
     agentTokenConfigured: Boolean(readAgentSettings().agentToken),
+    persistentSession: Boolean(currentSession?.persistent),
+    persistentSessionCount: state.persistentSessions.length,
     securityPath: getSecurityPath(),
     auditPath: getAuditPath(),
   };
@@ -207,7 +410,7 @@ async function setupAdmin(payload = {}) {
   state.users.push(user);
   writeSecurityState(state);
   audit({ action: "security.setup", outcome: "ok", actor: publicUser(user) });
-  return login({ username, password: payload.password });
+  return login({ username, password: payload.password, staySignedIn: payload.staySignedIn });
 }
 
 async function login(payload = {}) {
@@ -226,25 +429,50 @@ async function login(payload = {}) {
 
   user.lastLoginAt = new Date().toISOString();
   user.updatedAt = new Date().toISOString();
+  pruneExpiredPersistentSessions(state);
+  let persistentSession = null;
+  if (payload.staySignedIn === true) {
+    persistentSession = await createPersistentSession(state, user);
+  } else {
+    removePersistentSessionFile();
+  }
   writeSecurityState(state);
-  currentSession = {
-    token: crypto.randomBytes(32).toString("base64url"),
-    userId: user.id,
-    expiresAt: Date.now() + (state.settings.sessionTtlMs || SESSION_TTL_MS),
-  };
+  const expiresAt = persistentSession
+    ? Date.parse(persistentSession.expiresAt)
+    : Date.now() + (state.settings.sessionTtlMs || SESSION_TTL_MS);
+  createRuntimeSession(user, expiresAt, Boolean(persistentSession), persistentSession?.id || null);
   audit({ action: "security.login", outcome: "ok", actor: publicUser(user) });
 
   return {
     token: currentSession.token,
     expiresAt: new Date(currentSession.expiresAt).toISOString(),
+    persistent: Boolean(persistentSession),
     user: publicUser(user),
   };
 }
 
 function logout() {
   const actor = getCurrentUser();
+  const persistentSessionId = currentSession?.persistentSessionId || null;
+  if (persistentSessionId) {
+    const state = readSecurityState();
+    state.persistentSessions = state.persistentSessions.filter((entry) => entry.id !== persistentSessionId);
+    writeSecurityState(state);
+    removePersistentSessionFile();
+  }
   currentSession = null;
   audit({ action: "security.logout", outcome: "ok", actor });
+  return { ok: true };
+}
+
+function logoutAllSessions() {
+  const actor = requirePermission("settings:write", "security-sessions");
+  const state = readSecurityState();
+  state.persistentSessions = [];
+  writeSecurityState(state);
+  removePersistentSessionFile();
+  currentSession = null;
+  audit({ action: "security.sessions.logoutAll", outcome: "ok", actor });
   return { ok: true };
 }
 
@@ -310,6 +538,7 @@ module.exports = {
   getStatus,
   login,
   logout,
+  logoutAllSessions,
   requirePermission,
   rotateAgentToken,
   setupAdmin,

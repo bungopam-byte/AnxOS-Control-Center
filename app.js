@@ -271,6 +271,8 @@ const securityStatus = document.querySelector("[data-security-status]");
 const securityCurrentUser = document.querySelector("[data-security-current-user]");
 const securityCurrentRole = document.querySelector("[data-security-current-role]");
 const securitySettingsMessage = document.querySelector("[data-security-settings-message]");
+const securityStaySignedIn = document.querySelector('[data-security-field="staySignedIn"]');
+const securityStaySignedInRow = document.querySelector("[data-security-stay-row]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -4414,7 +4416,7 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   const wrappedCode = wrappedMessage.match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
   const effectiveCode = backendCode && backendCode !== "AGENT_HTTP_ERROR" ? backendCode : wrappedCode;
   const friendlyMessages = {
-    INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
+    INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
     INSTANCE_NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
     NOT_FOUND: "The selected instance no longer exists.",
@@ -4717,9 +4719,14 @@ function openMarketplaceWizard(templateId) {
     versionField.value = "latest";
   }
   if (serverTypeField) {
-    const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
-    serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
-    serverTypeField.disabled = true;
+    if (template.category === "Minecraft") {
+      const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
+      serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
+      serverTypeField.disabled = true;
+    } else {
+      serverTypeField.value = "";
+      serverTypeField.disabled = false;
+    }
   }
   if (storageField) {
     storageField.value = "data";
@@ -4766,10 +4773,12 @@ function closeMarketplaceWizard() {
 function collectMarketplaceInstallOptions() {
   const portValue = Number.parseInt(getMarketplaceField("port")?.value || "", 10);
   const ports = Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? [portValue] : [];
+  const template = findMarketplaceTemplate();
+  const isMinecraft = template?.category === "Minecraft";
   return {
     name: getMarketplaceField("name")?.value || "",
     version: getMarketplaceField("version")?.value || "",
-    serverType: getMarketplaceField("serverType")?.value || "",
+    serverType: isMinecraft ? getMarketplaceField("serverType")?.value || "" : "",
     storageLocation: getMarketplaceField("storageLocation")?.value || "data",
     memory: normalizeMemoryLimit(getMarketplaceField("memory")?.value || ""),
     port: ports[0] || undefined,
@@ -5352,9 +5361,11 @@ async function installMarketplaceTemplate(event) {
       serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
     }
     options = collectMarketplaceInstallOptions();
-    options.serverType = template.category === "Minecraft"
-      ? (template.displayName || template.id || "").replace(/^Minecraft\s+/i, "")
-      : options.serverType;
+    if (template.category === "Minecraft") {
+      options.serverType = (template.displayName || template.id || "").replace(/^Minecraft\s+/i, "");
+    } else {
+      delete options.serverType;
+    }
   } catch (error) {
     setMarketplaceMessage(error?.message || "Check install settings.", "error");
     showToast(error?.message || "Check install settings.", "warning");
@@ -10067,6 +10078,9 @@ function renderSecurityState() {
   if (securitySubmit) {
     securitySubmit.textContent = setup ? "Create Owner" : "Sign In";
   }
+  if (securityStaySignedInRow) {
+    securityStaySignedInRow.hidden = false;
+  }
   if (securityStatus) {
     securityStatus.textContent = authenticated ? "Signed in" : setup ? "Setup required" : "Locked";
   }
@@ -10078,7 +10092,7 @@ function renderSecurityState() {
   }
   if (securitySettingsMessage) {
     securitySettingsMessage.textContent = authenticated
-      ? `Audit log: ${securityState.auditPath || "configured"}`
+      ? `Audit log: ${securityState.auditPath || "configured"} · remembered sessions: ${securityState.persistentSessionCount || 0}`
       : "Sign in to manage security settings.";
   }
 }
@@ -10107,11 +10121,15 @@ async function submitSecurityForm(event) {
   }
   const username = document.querySelector('[data-security-field="username"]')?.value || "";
   const password = document.querySelector('[data-security-field="password"]')?.value || "";
+  const staySignedIn = Boolean(securityStaySignedIn?.checked);
   try {
     if (securityState.setupRequired) {
-      await desktopApiState.api.security.setupAdmin({ username, password });
+      await desktopApiState.api.security.setupAdmin({ username, password, staySignedIn });
     } else {
-      await desktopApiState.api.security.login({ username, password });
+      await desktopApiState.api.security.login({ username, password, staySignedIn });
+    }
+    if (securityStaySignedIn) {
+      securityStaySignedIn.checked = false;
     }
     if (securityMessage) {
       securityMessage.textContent = "";
@@ -10132,6 +10150,17 @@ async function logoutSecuritySession() {
     return;
   }
   await desktopApiState.api.security.logout().catch(() => {});
+  await refreshSecurityState();
+}
+
+async function logoutAllSecuritySessions() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasSecurity || typeof desktopApiState.api.security.logoutAllSessions !== "function") {
+    return;
+  }
+  await desktopApiState.api.security.logoutAllSessions().catch((error) => {
+    showToast(error?.message || "Could not log out of all sessions.");
+  });
   await refreshSecurityState();
 }
 
@@ -11128,6 +11157,7 @@ agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 securityForm?.addEventListener("submit", submitSecurityForm);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
+document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
 document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);
 nodeTargetSelects.forEach((select) => {
   select.addEventListener("change", () => selectNode(select.value || "default"));

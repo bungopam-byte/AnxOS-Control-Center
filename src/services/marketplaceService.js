@@ -54,7 +54,7 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
 
   const code = getAgentErrorCode(error);
   const friendlyMessages = {
-    INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
+    INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
     INSTANCE_NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
     NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
     INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
@@ -243,6 +243,25 @@ function slugify(value) {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 48) || `instance-${Date.now()}`;
+}
+
+function normalizeTagValue(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function normalizeTemplateTags(template, isMinecraft = template?.category === "Minecraft") {
+  const rawTags = [
+    template?.category,
+    template?.id,
+    ...(Array.isArray(template?.tags) ? template.tags : []),
+    isMinecraft ? "minecraft" : null,
+  ];
+  return [...new Set(rawTags.map(normalizeTagValue).filter((tag) => /^[a-z0-9][a-z0-9_.:-]{0,63}$/.test(tag)))].slice(0, 32);
 }
 
 function parsePorts(value, fallback = []) {
@@ -753,9 +772,10 @@ async function resolveFiveMDownload(download = {}, options = {}, context = {}) {
     });
   }
 
+  const version = String(href).match(/\/([^/]+)\/fx\.tar\.xz$/i)?.[1] || "latest";
   return {
     url: new URL(href, listingUrl).toString(),
-    version: "latest",
+    version,
   };
 }
 
@@ -1059,15 +1079,17 @@ function buildInstancePayload(template, options, ports) {
   const id = slugify(options.id || name);
   const memory = normalizeName(options.memory, template.defaultRam || "");
   const isMinecraft = template.category === "Minecraft";
-  const tags = [...new Set([template.category?.toLowerCase(), template.id, isMinecraft ? "minecraft" : null].filter(Boolean))];
+  const tags = normalizeTemplateTags(template, isMinecraft);
   const environment = {};
   const serverSoftware = getTemplateServerSoftware(template);
-  const serverVersion = options.version || template.serverVersion || template.gameVersion || (isMinecraft ? "latest" : null);
+  const requestedVersion = options.version && String(options.version).trim() ? String(options.version).trim() : "";
+  const serverVersion = requestedVersion || template.serverVersion || template.gameVersion || (isMinecraft ? "latest" : null);
+  const cleanInitialVersion = serverVersion && serverVersion !== "latest" ? serverVersion : null;
   const metadata = {
-    version: serverVersion,
-    serverVersion,
+    version: cleanInitialVersion,
+    serverVersion: cleanInitialVersion,
     serverSoftware,
-    minecraftVersion: isMinecraft ? serverVersion : null,
+    minecraftVersion: isMinecraft ? cleanInitialVersion : null,
     templateVersion: template.version || null,
     templateId: template.id || null,
     primaryPort: ports[0] || null,
@@ -1401,7 +1423,57 @@ function buildResolvedVersionMetadata(template, resolved = {}) {
     serverSoftware,
     minecraftVersion,
     buildNumber: resolved.build || null,
+    detectedVersionAt: new Date().toISOString(),
+    versionCacheVersion: 1,
   };
+}
+
+function parseSteamAppManifest(content) {
+  const text = String(content || "");
+  return {
+    name: text.match(/"name"\s+"([^"]+)"/i)?.[1] || null,
+    buildId: text.match(/"buildid"\s+"([^"]+)"/i)?.[1] || null,
+  };
+}
+
+async function detectInstalledTemplateMetadata(template, instanceId, agentConfig = null) {
+  if (template.installer?.type === "steamcmd" && template.installer.appId) {
+    const installDir = normalizeInstanceFilePath(template.installer.installDir || "server");
+    const manifestPath = normalizeInstanceFilePath(`${installDir}/steamapps/appmanifest_${template.installer.appId}.acf`);
+    try {
+      const manifest = await agentClient.readInstanceFile(instanceId, manifestPath, agentConfig);
+      const parsed = parseSteamAppManifest(manifest?.content || "");
+      if (parsed.buildId) {
+        return {
+          version: `${template.displayName || parsed.name || template.id} build ${parsed.buildId}`,
+          serverVersion: parsed.buildId,
+          serverSoftware: parsed.name || template.displayName || template.id,
+          buildNumber: parsed.buildId,
+          detectedVersionAt: new Date().toISOString(),
+          versionCacheVersion: 1,
+        };
+      }
+    } catch {}
+  }
+
+  return {};
+}
+
+async function persistMarketplaceMetadata(instanceId, metadata, agentConfig = null) {
+  const cleanMetadata = Object.entries(metadata || {}).reduce((result, [key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      result[key] = value;
+    }
+    return result;
+  }, {});
+
+  if (Object.keys(cleanMetadata).length === 0) {
+    return {};
+  }
+
+  await agentClient.updateInstance(instanceId, cleanMetadata, agentConfig);
+  await writeInstanceText(instanceId, "metadata.json", `${JSON.stringify(cleanMetadata, null, 2)}\n`, agentConfig);
+  return cleanMetadata;
 }
 
 async function downloadOneToInstance(template, download, options, instanceId, progress, agentConfig = null) {
@@ -1685,7 +1757,7 @@ async function installTemplate(payload = {}) {
       templateId: template.id,
       generatedInstanceId: instancePayload.id,
       displayName: instancePayload.displayName,
-      selectedServerType: options.serverType || null,
+      selectedServerType: isMinecraft ? options.serverType || null : null,
     });
     pushStep(progress, "Create instance", "running", `Creating ${instancePayload.id}.`);
     const createResult = await agentClient.createInstance(instancePayload, agentConfig);
@@ -1708,7 +1780,6 @@ async function installTemplate(payload = {}) {
     pushStep(progress, "Create instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
 
     pushStep(progress, "Create folders", "running");
-    await agentClient.createInstanceFolder(createdInstanceId, ".", agentConfig);
     await agentClient.createInstanceFolder(createdInstanceId, "runtime", agentConfig);
     pushStep(progress, "Create folders", "complete", `Prepared folders for ${createdInstanceId}.`);
 
@@ -1722,8 +1793,8 @@ async function installTemplate(payload = {}) {
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig);
     if (downloadResult.metadata && Object.keys(downloadResult.metadata).length > 0) {
       pushStep(progress, "Detecting version", "running", "Saving resolved server version metadata.");
-      await agentClient.updateInstance(createdInstanceId, downloadResult.metadata, agentConfig);
-      Object.assign(instance, downloadResult.metadata);
+      const savedMetadata = await persistMarketplaceMetadata(createdInstanceId, downloadResult.metadata, agentConfig);
+      Object.assign(instance, savedMetadata);
       pushStep(progress, "Detecting version", "complete", downloadResult.metadata.version || downloadResult.metadata.serverVersion || "Version metadata saved.");
     }
     try {
@@ -1757,6 +1828,14 @@ async function installTemplate(payload = {}) {
     pushStep(progress, "Write config", "complete", "Configuration files generated.");
 
     await runTemplatePostInstall(template, options, createdInstanceId, progress, agentConfig);
+
+    const installedMetadata = await detectInstalledTemplateMetadata(template, createdInstanceId, agentConfig);
+    if (Object.keys(installedMetadata).length > 0) {
+      pushStep(progress, "Detecting version", "running", "Saving installed server version metadata.");
+      const savedMetadata = await persistMarketplaceMetadata(createdInstanceId, installedMetadata, agentConfig);
+      Object.assign(instance, savedMetadata);
+      pushStep(progress, "Detecting version", "complete", savedMetadata.version || savedMetadata.serverVersion || "Installed version metadata saved.");
+    }
 
     const startupPatch = buildStartupPatch(template, options, ports);
     if (startupPatch) {
@@ -1797,6 +1876,10 @@ async function installTemplate(payload = {}) {
     }
 
     pushStep(progress, "Complete", "complete", "Installation finished.");
+    try {
+      const refreshed = await agentClient.getInstanceStatus(createdInstanceId, agentConfig);
+      startedInstance = refreshed.instance || refreshed || startedInstance;
+    } catch {}
 
     return {
       template,
@@ -1822,9 +1905,11 @@ async function installTemplate(payload = {}) {
 
 module.exports = {
   _test: {
+    buildInstancePayload,
     buildTemplateInstallerScript,
     getTemplateInstallPlan,
     normalizeTemplateDownloads,
+    normalizeTemplateTags,
     parsePorts,
   },
   cancelDownload,

@@ -1,4 +1,5 @@
 const assert = require("assert");
+const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -8,16 +9,44 @@ process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
 process.env.AGENT_BACKUP_ROOT = path.join(root, "backups");
 
-const security = require("../src/services/securityService");
+const securityPath = require.resolve("../src/services/securityService");
+let security = require(securityPath);
 const nodeService = require("../src/services/nodeService");
 const backupService = require("../agent/src/services/backupService");
 
 async function main() {
   assert.strictEqual(security.getStatus().setupRequired, true, "Security setup should be required in a fresh config.");
-  await security.setupAdmin({ username: "owner", password: "correct horse battery staple" });
+  await security.setupAdmin({ username: "owner", password: "correct horse battery staple", staySignedIn: true });
   const status = security.getStatus();
   assert.strictEqual(status.setupRequired, false, "Owner setup should complete.");
   assert.strictEqual(status.user.role, "Owner", "First user should be Owner.");
+  assert.strictEqual(status.persistentSession, true, "Stay signed in should create a persistent session.");
+  assert.strictEqual(status.persistentSessionCount, 1, "Persistent session should be tracked.");
+  const sessionFile = fs.readFileSync(path.join(process.env.ANXHUB_CONFIG_DIR, "session.dat"), "utf8");
+  assert(!sessionFile.includes("correct horse battery staple"), "Persistent session file must not contain the password.");
+  delete require.cache[securityPath];
+  security = require(securityPath);
+  const restoredStatus = security.getStatus();
+  assert.strictEqual(restoredStatus.authenticated, true, "Persistent session should restore after relaunch.");
+  assert.strictEqual(restoredStatus.user.username, "owner", "Restored session should belong to the Owner.");
+  const securityConfigPath = path.join(process.env.ANXHUB_CONFIG_DIR, "security.json");
+  const securityConfig = JSON.parse(fs.readFileSync(securityConfigPath, "utf8"));
+  securityConfig.users[0].passwordHash = bcrypt.hashSync("new correct horse battery staple", 12);
+  fs.writeFileSync(securityConfigPath, `${JSON.stringify(securityConfig, null, 2)}\n`);
+  delete require.cache[securityPath];
+  security = require(securityPath);
+  const passwordChangedStatus = security.getStatus();
+  assert.strictEqual(passwordChangedStatus.authenticated, false, "Owner password changes should invalidate remembered sessions.");
+  await security.login({ username: "owner", password: "new correct horse battery staple", staySignedIn: true });
+  delete require.cache[securityPath];
+  security = require(securityPath);
+  assert.strictEqual(security.getStatus().authenticated, true, "New remembered session should restore.");
+  security.logoutAllSessions();
+  delete require.cache[securityPath];
+  security = require(securityPath);
+  const invalidatedStatus = security.getStatus();
+  assert.strictEqual(invalidatedStatus.authenticated, false, "Log out of all sessions should invalidate persistent restore.");
+  await security.login({ username: "owner", password: "new correct horse battery staple" });
   const rotated = security.rotateAgentToken();
   assert(/^anx_/.test(rotated.token), "Agent token should be generated and displayed once.");
   const savedNode = nodeService.saveNode({

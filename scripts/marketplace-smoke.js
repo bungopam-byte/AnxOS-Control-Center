@@ -5,6 +5,7 @@ const path = require("path");
 const marketplaceService = require("../src/services/marketplaceService");
 
 const catalogPath = path.join(__dirname, "..", "config", "marketplace-templates.json");
+const appPath = path.join(__dirname, "..", "app.js");
 const templates = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 
 function findTemplate(id) {
@@ -79,6 +80,61 @@ function assertMarketplaceMetadata() {
   }
 }
 
+function assertRendererTemplateIdWiring() {
+  const source = fs.readFileSync(appPath, "utf8");
+  assert(source.includes("openMarketplaceWizard(template.id)"), "Renderer cards must open wizard with template.id.");
+  assert(source.includes("templateId: template.id"), "Renderer installs must submit template.id.");
+}
+
+function assertGameTemplateInstallPlans() {
+  const expected = [
+    "minecraft-vanilla",
+    "minecraft-paper",
+    "minecraft-purpur",
+    "minecraft-fabric",
+    "minecraft-forge",
+    "minecraft-neoforge",
+    "terraria-tshock",
+    "valheim",
+    "rust",
+    "cs2",
+    "fivem",
+    "palworld",
+    "hytale",
+  ];
+
+  const requiredSteps = [
+    "Validate template",
+    "Create instance",
+    "Create folders",
+    "Resolve download",
+    "Download files",
+    "Extract files",
+    "Configure startup",
+    "Write config",
+    "Verify installation",
+    "Optional start",
+  ];
+
+  for (const id of expected) {
+    const template = findTemplate(id);
+    const plan = marketplaceService._test.getTemplateInstallPlan(id);
+    assert.strictEqual(plan.templateId, id, `${id} plan should use the exact template id.`);
+    for (const step of requiredSteps) {
+      assert(plan.steps.includes(step), `${id} plan should include ${step}.`);
+    }
+
+    if (id === "hytale") {
+      assert.strictEqual(plan.installable, false, "Hytale must not be installable.");
+      assert.strictEqual(plan.disabled, true, "Hytale must stay disabled.");
+      assert.match(plan.reason || template.comingSoonMessage || "", /official hytale dedicated server binaries/i);
+    } else {
+      assert.strictEqual(plan.installable, true, `${id} must route to an automatic workflow.`);
+      assert(["download", "steamcmd", "archive", "docker"].includes(plan.workflow), `${id} should declare an actionable workflow.`);
+    }
+  }
+}
+
 function assertImportEcosystemSupport() {
   const support = marketplaceService.getImportSupport();
   assert.strictEqual(support.communityTemplates.supported, true, "Community template import support should be advertised.");
@@ -130,6 +186,8 @@ async function main() {
   assertSteamCmdTemplates();
   assertDockerTemplates();
   assertMarketplaceMetadata();
+  assertRendererTemplateIdWiring();
+  assertGameTemplateInstallPlans();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   console.log("Marketplace smoke checks passed.");

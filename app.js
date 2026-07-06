@@ -4404,6 +4404,13 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   const backendCode = error?.payload?.error?.code || error?.code;
   const backendMessage = error?.payload?.error?.message;
   const wrappedMessage = String(error?.message || "");
+  const detailedMessage = [wrappedMessage, backendMessage].find((message) => {
+    const text = String(message || "");
+    return text.includes("templateId=") || text.includes(" | url=") || text.includes(" | status=");
+  });
+  if (detailedMessage) {
+    return detailedMessage;
+  }
   const wrappedCode = wrappedMessage.match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
   const effectiveCode = backendCode && backendCode !== "AGENT_HTTP_ERROR" ? backendCode : wrappedCode;
   const friendlyMessages = {
@@ -4842,7 +4849,27 @@ function renderMarketplaceDownloads(downloads = []) {
 
     const meta = document.createElement("small");
     const eta = Number.isFinite(download.etaSeconds) ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
-    meta.textContent = `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}`;
+    const url = download.url ? ` · ${download.url}` : "";
+    meta.textContent = `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
+
+    const logs = document.createElement("details");
+    logs.className = "download-item__logs";
+    const summary = document.createElement("summary");
+    summary.textContent = "Logs";
+    logs.append(summary);
+    (Array.isArray(download.logs) ? download.logs : []).forEach((entry) => {
+      const line = document.createElement("pre");
+      line.textContent = [
+        entry.at,
+        entry.level || "info",
+        entry.step,
+        entry.message,
+        entry.url ? `url=${entry.url}` : "",
+        entry.status ? `status=${entry.status}` : "",
+        entry.body ? `body=${entry.body}` : "",
+      ].filter(Boolean).join(" | ");
+      logs.append(line);
+    });
 
     const actions = document.createElement("div");
     actions.className = "download-item__actions";
@@ -4860,7 +4887,7 @@ function renderMarketplaceDownloads(downloads = []) {
     retry.addEventListener("click", () => retryMarketplaceDownload(download.id));
     actions.append(cancel, retry);
 
-    item.append(header, bar, meta, actions);
+    item.append(header, bar, meta, logs, actions);
     downloadList.append(item);
   });
 }
@@ -5350,8 +5377,9 @@ async function installMarketplaceTemplate(event) {
   }
   setMarketplaceInstallState("Installing", "running");
   renderMarketplaceProgress([
-    { label: "Creating folders", status: "running", detail: "Sending install request to the Debian agent." },
+    { label: "Validate template", status: "running", detail: `Sending install request for ${template.id}.` },
   ]);
+  const downloadPoll = window.setInterval(refreshMarketplaceDownloads, 1000);
 
   try {
     const result = await desktopApiState.api.marketplace.installTemplate({
@@ -5376,6 +5404,7 @@ async function installMarketplaceTemplate(event) {
     setMarketplaceMessage(getAgentErrorMessage(error, "Template install failed."), "error");
     showToast(getAgentErrorMessage(error, "Template install failed."));
   } finally {
+    window.clearInterval(downloadPoll);
     marketplaceInstallInFlight = false;
     if (marketplaceInstallButton) {
       marketplaceInstallButton.disabled = false;

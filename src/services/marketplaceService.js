@@ -33,7 +33,7 @@ function formatErrorDetails(details = {}) {
   if (details.templateId) parts.push(`templateId=${details.templateId}`);
   if (details.step) parts.push(`step=${details.step}`);
   if (details.url) parts.push(`url=${details.url}`);
-  if (details.status) parts.push(`status=${details.status}`);
+  if (details.status !== undefined && details.status !== null) parts.push(`status=${details.status}`);
   if (details.body) parts.push(`body=${truncateText(details.body, 500)}`);
   if (details.message) parts.push(`message=${details.message}`);
   return parts.length ? ` (${parts.join(" | ")})` : "";
@@ -48,6 +48,10 @@ function getAgentErrorCode(error) {
 }
 
 function mapMarketplaceError(error, fallback = "Template install failed.") {
+  if (error?.details?.templateId || error?.details?.step) {
+    return error.message || fallback;
+  }
+
   const code = getAgentErrorCode(error);
   const friendlyMessages = {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists.",
@@ -98,6 +102,48 @@ function listTemplates() {
   return {
     categories: CATEGORIES,
     templates,
+  };
+}
+
+function getTemplateInstallPlan(templateId) {
+  const template = findTemplate(templateId);
+  const downloads = normalizeTemplateDownloads(template);
+  const steps = [
+    "Validate template",
+    "Create instance",
+    "Create folders",
+    "Resolve download",
+    "Download files",
+    "Extract files",
+    "Configure startup",
+    "Write config",
+    "Verify installation",
+    "Optional start",
+  ];
+
+  if (template.disabled || template.comingSoon) {
+    return {
+      templateId: template.id,
+      installable: false,
+      disabled: true,
+      reason: template.comingSoonMessage || "Template is disabled.",
+      steps,
+    };
+  }
+
+  const hasAutomaticDownload = downloads.some((download) => ["url", "inline", "generated", "steamcmd"].includes(download.type));
+  const hasInstaller = Boolean(template.installer?.type);
+  const hasDocker = template.runtime === "docker" || template.startupType === "docker-image";
+  const installable = hasAutomaticDownload || hasInstaller || hasDocker;
+
+  return {
+    templateId: template.id,
+    installable,
+    disabled: false,
+    workflow: hasDocker ? "docker" : hasInstaller ? template.installer.type : hasAutomaticDownload ? "download" : "manual",
+    reason: installable ? null : "Template does not define an automatic installer or download source.",
+    downloadCount: downloads.length,
+    steps,
   };
 }
 
@@ -271,8 +317,32 @@ function createDownloadRecord(template, fileName) {
     updatedAt: new Date().toISOString(),
     canRetry: false,
     canCancel: false,
+    logs: [{
+      at: new Date().toISOString(),
+      level: "info",
+      message: `Queued ${fileName || template.displayName || template.id}.`,
+      templateId: template.id,
+      step: "Validate template",
+    }],
   };
   downloads.set(id, record);
+  return record;
+}
+
+function appendDownloadLog(record, entry = {}) {
+  const logs = Array.isArray(record.logs) ? record.logs : [];
+  logs.push({
+    at: new Date().toISOString(),
+    level: entry.level || "info",
+    message: entry.message || "",
+    templateId: entry.templateId || record.templateId,
+    step: entry.step || null,
+    url: entry.url || null,
+    status: entry.status || null,
+    body: entry.body ? truncateText(entry.body) : null,
+  });
+  record.logs = logs.slice(-50);
+  downloads.set(record.id, record);
   return record;
 }
 
@@ -364,13 +434,44 @@ function resolveUrlTemplate(download, options = {}) {
   return url;
 }
 
-async function fetchJson(url, label) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw createMarketplaceError(`${label} failed with HTTP ${response.status}.`, "DOWNLOAD_RESOLVE_FAILED");
+async function fetchTextWithDetails(url, label, context = {}) {
+  try {
+    const response = await fetch(url);
+    const body = await response.text();
+    if (!response.ok) {
+      throw createMarketplaceStepError(`${label} failed with HTTP ${response.status}.`, context.code || "DOWNLOAD_RESOLVE_FAILED", {
+        ...context,
+        url,
+        status: response.status,
+        body,
+        message: `${label} failed with HTTP ${response.status}.`,
+      });
+    }
+    return { body, response };
+  } catch (error) {
+    if (error?.code) {
+      throw error;
+    }
+    throw createMarketplaceStepError(`${label} failed: ${error?.message || "Network request failed."}`, context.code || "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url,
+      message: error?.message || "Network request failed.",
+    });
   }
+}
 
-  return response.json();
+async function fetchJson(url, label, context = {}) {
+  const { body } = await fetchTextWithDetails(url, label, context);
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    throw createMarketplaceStepError(`${label} returned invalid JSON.`, context.code || "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url,
+      body,
+      message: error?.message || "Invalid JSON.",
+    });
+  }
 }
 
 function latestFromList(values) {
@@ -400,10 +501,10 @@ function inferNeoForgeMinecraftVersion(version) {
   return modern ? `1.${Number.parseInt(modern[1], 10)}.${Number.parseInt(modern[2], 10)}` : "";
 }
 
-async function resolvePaperDownload(download, options = {}) {
+async function resolvePaperDownload(download, options = {}, context = {}) {
   const project = download.project || "paper";
   const projectUrl = `https://fill.papermc.io/v3/projects/${encodeURIComponent(project)}`;
-  const versionsPayload = await fetchJson(`${projectUrl}/versions`, "Paper version lookup");
+  const versionsPayload = await fetchJson(`${projectUrl}/versions`, "Paper version lookup", context);
   const requestedVersion = options.version || download.version || "latest";
   const versionEntries = Array.isArray(versionsPayload?.versions) ? versionsPayload.versions : [];
   const candidateVersions = String(requestedVersion).toLowerCase() === "latest"
@@ -411,7 +512,7 @@ async function resolvePaperDownload(download, options = {}) {
     : [requestedVersion];
 
   for (const version of candidateVersions) {
-    const builds = await fetchJson(`${projectUrl}/versions/${encodeURIComponent(String(version))}/builds`, "Paper build lookup");
+    const builds = await fetchJson(`${projectUrl}/versions/${encodeURIComponent(String(version))}/builds`, "Paper build lookup", context);
     const buildEntries = Array.isArray(builds) ? builds : Array.isArray(builds?.builds) ? builds.builds : [];
     const requestedBuild = options.build || download.build || PAPER_DEFAULT_BUILD;
     const stableBuilds = buildEntries.filter((build) => String(build?.channel || "").toUpperCase() === "STABLE");
@@ -431,13 +532,17 @@ async function resolvePaperDownload(download, options = {}) {
     }
   }
 
-  throw createMarketplaceError("Unable to resolve latest stable Paper build.", "DOWNLOAD_RESOLVE_FAILED");
+  throw createMarketplaceStepError("Unable to resolve latest stable Paper build.", "DOWNLOAD_RESOLVE_FAILED", {
+    ...context,
+    url: `${projectUrl}/versions`,
+    message: "No stable Paper build with a server download was found.",
+  });
 }
 
-async function resolvePaperProjectDownload(download, options = {}) {
+async function resolvePaperProjectDownload(download, options = {}, context = {}) {
   const project = download.project || "paper";
   const projectUrl = `https://fill.papermc.io/v3/projects/${encodeURIComponent(project)}`;
-  const versionsPayload = await fetchJson(`${projectUrl}/versions`, `${project} version lookup`);
+  const versionsPayload = await fetchJson(`${projectUrl}/versions`, `${project} version lookup`, context);
   const requestedVersion = options.version || download.version || "latest";
   const versionEntries = Array.isArray(versionsPayload?.versions) ? versionsPayload.versions : [];
   const candidateVersions = String(requestedVersion).toLowerCase() === "latest"
@@ -445,7 +550,7 @@ async function resolvePaperProjectDownload(download, options = {}) {
     : [requestedVersion];
 
   for (const version of candidateVersions) {
-    const builds = await fetchJson(`${projectUrl}/versions/${encodeURIComponent(String(version))}/builds`, `${project} build lookup`);
+    const builds = await fetchJson(`${projectUrl}/versions/${encodeURIComponent(String(version))}/builds`, `${project} build lookup`, context);
     const buildEntries = Array.isArray(builds) ? builds : Array.isArray(builds?.builds) ? builds.builds : [];
     const requestedBuild = options.build || download.build || "latest";
     const stableBuilds = buildEntries.filter((build) => String(build?.channel || "").toUpperCase() === "STABLE");
@@ -465,22 +570,30 @@ async function resolvePaperProjectDownload(download, options = {}) {
     }
   }
 
-  throw createMarketplaceError("Unable to resolve proxy download.", "PROXY_RESOLVE_FAILED");
+  throw createMarketplaceStepError("Unable to resolve proxy download.", "PROXY_RESOLVE_FAILED", {
+    ...context,
+    url: `${projectUrl}/versions`,
+    message: "No proxy build with a server download was found.",
+  });
 }
 
-async function resolvePurpurDownload(download, options = {}) {
+async function resolvePurpurDownload(download, options = {}, context = {}) {
   const projectUrl = "https://api.purpurmc.org/v2/purpur";
-  const projectPayload = await fetchJson(projectUrl, "Purpur version lookup");
+  const projectPayload = await fetchJson(projectUrl, "Purpur version lookup", context);
   const requestedVersion = options.version || download.version || "latest";
   const version = String(requestedVersion).toLowerCase() === "latest"
     ? latestFromList(projectPayload?.versions)
     : requestedVersion;
 
   if (!version) {
-    throw createMarketplaceError("Unable to resolve latest Purpur version.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve latest Purpur version.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url: projectUrl,
+      message: "Purpur API did not return a usable version.",
+    });
   }
 
-  const versionPayload = await fetchJson(`${projectUrl}/${encodeURIComponent(String(version))}`, "Purpur build lookup");
+  const versionPayload = await fetchJson(`${projectUrl}/${encodeURIComponent(String(version))}`, "Purpur build lookup", context);
   const builds = versionPayload?.builds;
   const allBuilds = Array.isArray(builds?.all) ? builds.all : Array.isArray(builds) ? builds : [];
   const requestedBuild = options.build || download.build || "latest";
@@ -489,7 +602,11 @@ async function resolvePurpurDownload(download, options = {}) {
     : requestedBuild;
 
   if (!build) {
-    throw createMarketplaceError("Unable to resolve latest Purpur build.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve latest Purpur build.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url: `${projectUrl}/${encodeURIComponent(String(version))}`,
+      message: "Purpur API did not return a usable build.",
+    });
   }
 
   return {
@@ -499,10 +616,10 @@ async function resolvePurpurDownload(download, options = {}) {
   };
 }
 
-async function resolveFabricDownload(download, options = {}) {
-  const games = await fetchJson(`${FABRIC_META_URL}/versions/game`, "Fabric game version lookup");
-  const loaders = await fetchJson(`${FABRIC_META_URL}/versions/loader`, "Fabric loader lookup");
-  const installers = await fetchJson(`${FABRIC_META_URL}/versions/installer`, "Fabric installer lookup");
+async function resolveFabricDownload(download, options = {}, context = {}) {
+  const games = await fetchJson(`${FABRIC_META_URL}/versions/game`, "Fabric game version lookup", context);
+  const loaders = await fetchJson(`${FABRIC_META_URL}/versions/loader`, "Fabric loader lookup", context);
+  const installers = await fetchJson(`${FABRIC_META_URL}/versions/installer`, "Fabric installer lookup", context);
   const requestedVersion = options.version || download.version || "latest";
   const game = String(requestedVersion).toLowerCase() === "latest"
     ? games.find((entry) => entry.stable)?.version
@@ -511,7 +628,11 @@ async function resolveFabricDownload(download, options = {}) {
   const installer = installers.find((entry) => entry.stable)?.version || installers[0]?.version;
 
   if (!game || !loader || !installer) {
-    throw createMarketplaceError("Unable to resolve Fabric download.", "FABRIC_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve Fabric download.", "FABRIC_RESOLVE_FAILED", {
+      ...context,
+      url: `${FABRIC_META_URL}/versions/loader`,
+      message: "Fabric metadata did not include a usable game, loader, or installer version.",
+    });
   }
 
   return {
@@ -521,12 +642,12 @@ async function resolveFabricDownload(download, options = {}) {
   };
 }
 
-async function resolveForgeDownload(download, options = {}) {
+async function resolveForgeDownload(download, options = {}, context = {}) {
   const requestedVersion = options.version || download.version || "latest";
   let forgeVersion = "";
 
   if (String(requestedVersion).toLowerCase() !== "latest") {
-    const promotions = await fetchJson(FORGE_PROMOTIONS_URL, "Forge promotions lookup");
+    const promotions = await fetchJson(FORGE_PROMOTIONS_URL, "Forge promotions lookup", context);
     const promos = promotions?.promos || {};
     const forgeBuild = promos[`${requestedVersion}-recommended`] || promos[`${requestedVersion}-latest`];
     if (forgeBuild) {
@@ -535,16 +656,16 @@ async function resolveForgeDownload(download, options = {}) {
   }
 
   if (!forgeVersion) {
-    const response = await fetch(FORGE_MAVEN_METADATA_URL);
-    if (!response.ok) {
-      throw createMarketplaceError("Unable to download Forge installer.", "FORGE_RESOLVE_FAILED");
-    }
-    const metadata = await response.text();
+    const { body: metadata } = await fetchTextWithDetails(FORGE_MAVEN_METADATA_URL, "Forge metadata lookup", { ...context, code: "FORGE_RESOLVE_FAILED" });
     forgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
   }
 
   if (!forgeVersion) {
-    throw createMarketplaceError("Unable to download Forge installer.", "FORGE_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to download Forge installer.", "FORGE_RESOLVE_FAILED", {
+      ...context,
+      url: FORGE_MAVEN_METADATA_URL,
+      message: "Forge metadata did not include a usable release or latest version.",
+    });
   }
 
   return {
@@ -554,14 +675,9 @@ async function resolveForgeDownload(download, options = {}) {
   };
 }
 
-async function resolveNeoForgeDownload(download, options = {}) {
+async function resolveNeoForgeDownload(download, options = {}, context = {}) {
   const requestedVersion = options.version || download.version || "latest";
-  const response = await fetch(NEOFORGE_MAVEN_METADATA_URL);
-  if (!response.ok) {
-    throw createMarketplaceError("Unable to download NeoForge installer.", "NEOFORGE_RESOLVE_FAILED");
-  }
-
-  const metadata = await response.text();
+  const { body: metadata } = await fetchTextWithDetails(NEOFORGE_MAVEN_METADATA_URL, "NeoForge metadata lookup", { ...context, code: "NEOFORGE_RESOLVE_FAILED" });
   const versions = extractXmlTags(metadata, "version");
   let neoForgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
   if (String(requestedVersion).toLowerCase() !== "latest") {
@@ -569,7 +685,11 @@ async function resolveNeoForgeDownload(download, options = {}) {
   }
 
   if (!neoForgeVersion) {
-    throw createMarketplaceError("Unable to download NeoForge installer.", "NEOFORGE_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to download NeoForge installer.", "NEOFORGE_RESOLVE_FAILED", {
+      ...context,
+      url: NEOFORGE_MAVEN_METADATA_URL,
+      message: "NeoForge metadata did not include a usable release or latest version.",
+    });
   }
 
   return {
@@ -586,13 +706,17 @@ async function resolveBungeeCordDownload() {
   };
 }
 
-async function resolveGithubReleaseDownload(download) {
+async function resolveGithubReleaseDownload(download, options = {}, context = {}) {
   const repo = String(download.repo || "").trim();
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
-    throw createMarketplaceError("GitHub release resolver is missing a repo.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("GitHub release resolver is missing a repo.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      message: "Template download metadata must include a GitHub owner/repo.",
+    });
   }
 
-  const release = await fetchJson(`https://api.github.com/repos/${repo}/releases/latest`, "GitHub release lookup");
+  const releaseUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+  const release = await fetchJson(releaseUrl, "GitHub release lookup", context);
   const assets = Array.isArray(release?.assets) ? release.assets : [];
   const pattern = download.assetPattern ? new RegExp(download.assetPattern, "i") : null;
   const asset = assets.find((entry) => {
@@ -600,7 +724,12 @@ async function resolveGithubReleaseDownload(download) {
   });
 
   if (!asset?.browser_download_url) {
-    throw createMarketplaceError("Unable to resolve GitHub release asset.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve GitHub release asset.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url: releaseUrl,
+      body: JSON.stringify({ tag: release?.tag_name || null, assets: assets.map((entry) => entry?.name).filter(Boolean).slice(0, 25) }),
+      message: "The latest GitHub release did not contain a matching downloadable asset.",
+    });
   }
 
   return {
@@ -610,18 +739,18 @@ async function resolveGithubReleaseDownload(download) {
   };
 }
 
-async function resolveFiveMDownload() {
+async function resolveFiveMDownload(download = {}, options = {}, context = {}) {
   const listingUrl = "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/";
-  const response = await fetch(listingUrl);
-  if (!response.ok) {
-    throw createMarketplaceError(`FiveM artifact lookup failed with HTTP ${response.status}.`, "DOWNLOAD_RESOLVE_FAILED");
-  }
-
-  const html = await response.text();
+  const { body: html } = await fetchTextWithDetails(listingUrl, "FiveM artifact lookup", context);
   const hrefs = [...html.matchAll(/href="([^"]+fx\.tar\.xz)"/gi)].map((match) => match[1]);
   const href = hrefs[0];
   if (!href) {
-    throw createMarketplaceError("Unable to resolve latest FiveM FXServer artifact.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve latest FiveM FXServer artifact.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url: listingUrl,
+      body: html,
+      message: "FiveM artifact listing did not include an fx.tar.xz download.",
+    });
   }
 
   return {
@@ -630,8 +759,8 @@ async function resolveFiveMDownload() {
   };
 }
 
-async function resolveVanillaDownload(download, options = {}) {
-  const manifest = await fetchJson(download.manifestUrl || MOJANG_VERSION_MANIFEST_URL, "Mojang version lookup");
+async function resolveVanillaDownload(download, options = {}, context = {}) {
+  const manifest = await fetchJson(download.manifestUrl || MOJANG_VERSION_MANIFEST_URL, "Mojang version lookup", context);
   const requestedVersion = options.version || download.version || "latest";
   const versionId = String(requestedVersion).toLowerCase() === "latest"
     ? manifest?.latest?.release
@@ -641,13 +770,22 @@ async function resolveVanillaDownload(download, options = {}) {
     : null;
 
   if (!versionEntry?.url) {
-    throw createMarketplaceError("Unable to resolve latest Vanilla server version.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve latest Vanilla server version.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url: download.manifestUrl || MOJANG_VERSION_MANIFEST_URL,
+      message: "Mojang manifest did not include the requested server version.",
+    });
   }
 
-  const versionPayload = await fetchJson(versionEntry.url, "Mojang server download lookup");
+  const versionPayload = await fetchJson(versionEntry.url, "Mojang server download lookup", context);
   const url = versionPayload?.downloads?.server?.url;
   if (!url) {
-    throw createMarketplaceError("Unable to resolve Vanilla server jar URL.", "DOWNLOAD_RESOLVE_FAILED");
+    throw createMarketplaceStepError("Unable to resolve Vanilla server jar URL.", "DOWNLOAD_RESOLVE_FAILED", {
+      ...context,
+      url: versionEntry.url,
+      body: JSON.stringify(versionPayload?.downloads || {}),
+      message: "Mojang version metadata did not include a server jar URL.",
+    });
   }
 
   return {
@@ -656,29 +794,29 @@ async function resolveVanillaDownload(download, options = {}) {
   };
 }
 
-async function resolveDownloadUrl(download, options = {}) {
+async function resolveDownloadUrl(download, options = {}, context = {}) {
   if (download.resolver === "papermc") {
-    return resolvePaperDownload(download, options);
+    return resolvePaperDownload(download, options, context);
   }
 
   if (download.resolver === "paper-project") {
-    return resolvePaperProjectDownload(download, options);
+    return resolvePaperProjectDownload(download, options, context);
   }
 
   if (download.resolver === "purpur") {
-    return resolvePurpurDownload(download, options);
+    return resolvePurpurDownload(download, options, context);
   }
 
   if (download.resolver === "fabric") {
-    return resolveFabricDownload(download, options);
+    return resolveFabricDownload(download, options, context);
   }
 
   if (download.resolver === "forge") {
-    return resolveForgeDownload(download, options);
+    return resolveForgeDownload(download, options, context);
   }
 
   if (download.resolver === "neoforge") {
-    return resolveNeoForgeDownload(download, options);
+    return resolveNeoForgeDownload(download, options, context);
   }
 
   if (download.resolver === "bungeecord") {
@@ -686,15 +824,15 @@ async function resolveDownloadUrl(download, options = {}) {
   }
 
   if (download.resolver === "github-release") {
-    return resolveGithubReleaseDownload(download, options);
+    return resolveGithubReleaseDownload(download, options, context);
   }
 
   if (download.resolver === "fivem-linux") {
-    return resolveFiveMDownload(download, options);
+    return resolveFiveMDownload(download, options, context);
   }
 
   if (download.resolver === "mojang-vanilla") {
-    return resolveVanillaDownload(download, options);
+    return resolveVanillaDownload(download, options, context);
   }
 
   return { url: resolveUrlTemplate(download, options) };
@@ -1128,7 +1266,7 @@ function buildStartupPatch(template, options, ports) {
   };
 }
 
-async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = null) {
+async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = null, context = {}) {
   const started = Date.now();
   let last = null;
   while (Date.now() - started < timeoutMs) {
@@ -1138,7 +1276,11 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
       return last;
     }
     if (state === "Failed") {
-      throw createMarketplaceError("Template installer failed.", "MARKETPLACE_INSTALL_FAILED");
+      throw createMarketplaceStepError("Template installer failed.", "MARKETPLACE_INSTALL_FAILED", {
+        ...context,
+        message: "The installer process entered Failed state.",
+        body: JSON.stringify(last),
+      });
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
@@ -1146,7 +1288,11 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
   try {
     await agentClient.forceKillInstance(instanceId, agentConfig);
   } catch {}
-  throw createMarketplaceError("The template installer did not finish in time.", "TEMPLATE_INSTALL_TIMEOUT");
+  throw createMarketplaceStepError("The template installer did not finish in time.", "TEMPLATE_INSTALL_TIMEOUT", {
+    ...context,
+    message: `Installer exceeded ${timeoutMs}ms timeout.`,
+    body: last ? JSON.stringify(last) : "",
+  });
 }
 
 async function runTemplatePostInstall(template, options, instanceId, progress, agentConfig = null) {
@@ -1159,7 +1305,7 @@ async function runTemplatePostInstall(template, options, instanceId, progress, a
   await agentClient.readInstanceFile(instanceId, installerJar, agentConfig);
   const installerArgs = ["-jar", fileNameFromDestination(installerJar), ...resolveTemplateArgs(postInstall.args || ["--installServer"], template, options)];
 
-  pushStep(progress, "Installing", "running", `Running ${fileNameFromDestination(installerJar)}.`);
+  pushStep(progress, "Extract files", "running", `Running ${fileNameFromDestination(installerJar)}.`);
   await agentClient.updateInstance(instanceId, {
     executable: "java",
     args: installerArgs,
@@ -1168,13 +1314,16 @@ async function runTemplatePostInstall(template, options, instanceId, progress, a
     startupTimeoutMs: postInstall.timeoutMs || 300000,
   }, agentConfig);
   await agentClient.startInstance(instanceId, agentConfig);
-  await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig);
+  await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig, {
+    templateId: template.id,
+    step: "Extract files",
+  });
 
   const requiredFiles = Array.isArray(postInstall.requiredFiles) ? postInstall.requiredFiles : [];
   for (const requiredFile of requiredFiles) {
     await agentClient.readInstanceFile(instanceId, requiredFile, agentConfig);
   }
-  pushStep(progress, "Installing", "complete", "Server installer finished.");
+  pushStep(progress, "Extract files", "complete", "Server installer finished.");
 }
 
 async function runTemplateInstaller(template, options, instanceId, progress, agentConfig = null) {
@@ -1189,7 +1338,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
 
   const scriptPath = "runtime/marketplace-install.sh";
   await writeInstanceText(instanceId, scriptPath, script, agentConfig);
-  pushStep(progress, "Installing", "running", `Running ${template.installer.type} installer.`);
+  pushStep(progress, "Extract files", "running", `Running ${template.installer.type} installer.`);
   await agentClient.updateInstance(instanceId, {
     executable: "bash",
     args: [scriptPath],
@@ -1198,13 +1347,32 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
     startupTimeoutMs: template.installer.timeoutMs || 600000,
   }, agentConfig);
   await agentClient.startInstance(instanceId, agentConfig);
-  await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig);
+  await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
+    templateId: template.id,
+    step: "Extract files",
+  });
 
   const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
   for (const requiredFile of requiredFiles) {
     await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
   }
-  pushStep(progress, "Installing", "complete", "Server installer finished.");
+  pushStep(progress, "Extract files", "complete", "Server installer finished.");
+}
+
+function finishInstallerDownloadRecords(records = [], status, message) {
+  for (const record of records) {
+    if (!record || !["queued", "resolving"].includes(record.status)) {
+      continue;
+    }
+    appendDownloadLog(record, { step: "Extract files", level: status === "complete" ? "info" : "error", message });
+    updateDownload(record, {
+      status,
+      progress: status === "complete" ? 100 : record.progress,
+      error: status === "failed" ? message : null,
+      canRetry: status === "failed",
+      canCancel: false,
+    });
+  }
 }
 
 async function writeTemplateConfigFiles(template, options, ports, instanceId, agentConfig = null) {
@@ -1240,73 +1408,122 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   const destination = normalizeInstanceFilePath(download.destination || download.fileName || "server.jar");
   const fileName = fileNameFromDestination(destination);
   const downloadRequired = download.required === true;
+  const record = createDownloadRecord(template, fileName);
+  const baseContext = {
+    templateId: template.id,
+    step: "Resolve download",
+  };
 
   if (options.skipDownload || !download.type || download.type === "manual" || download.type === "docker" || download.type === "docker-compose") {
     if (downloadRequired) {
-      throw createMarketplaceError(`${fileName} is required for this template.`, "DOWNLOAD_REQUIRED");
+      appendDownloadLog(record, { level: "error", step: "Validate template", message: `${fileName} is required for this template.` });
+      updateDownload(record, { status: "failed", error: `${fileName} is required for this template.`, canRetry: false });
+      throw createMarketplaceStepError(`${fileName} is required for this template.`, "DOWNLOAD_REQUIRED", { ...baseContext, step: "Validate template" });
     }
-    pushStep(progress, "Downloading", "skipped", `No direct download is required for ${fileName}.`);
-    return { downloaded: false, record: null };
+    appendDownloadLog(record, { step: "Validate template", message: `No direct download is required for ${fileName}.` });
+    updateDownload(record, { status: "skipped", progress: 100, canRetry: false, canCancel: false });
+    pushStep(progress, "Download files", "skipped", `No direct download is required for ${fileName}.`);
+    return { downloaded: false, record };
   }
 
   if (download.type === "inline") {
-    const record = createDownloadRecord(template, fileName);
     updateDownload(record, { status: "running", startedAt: new Date().toISOString(), canCancel: false });
+    appendDownloadLog(record, { step: "Download files", message: `Generating ${destination}.` });
     await writeInstanceText(instanceId, destination, download.content || "", agentConfig);
     updateDownload(record, { status: "complete", progress: 100, bytesReceived: String(download.content || "").length, bytesTotal: String(download.content || "").length });
-    pushStep(progress, "Downloading", "complete", `Generated ${fileName}.`);
+    appendDownloadLog(record, { step: "Download files", message: `Generated ${destination}.` });
+    pushStep(progress, "Download files", "complete", `Generated ${fileName}.`);
     return { downloaded: true, record };
   }
 
   if (download.type === "generated") {
-    pushStep(progress, "Downloading", "skipped", "Generated starter project locally.");
-    return { downloaded: true, record: null };
+    appendDownloadLog(record, { step: "Download files", message: "Generated starter project locally." });
+    updateDownload(record, { status: "complete", progress: 100, canRetry: false, canCancel: false });
+    pushStep(progress, "Download files", "skipped", "Generated starter project locally.");
+    return { downloaded: true, record };
   }
 
   if (download.type === "steamcmd") {
-    pushStep(progress, "Downloading", "skipped", "SteamCMD will download server files during installation.");
-    return { downloaded: false, record: null };
+    appendDownloadLog(record, { step: "Download files", message: `SteamCMD will install app ${download.appId || template.installer?.appId || "unknown"} during Extract files.` });
+    updateDownload(record, { status: "queued", progress: 0, canRetry: false, canCancel: false });
+    pushStep(progress, "Download files", "skipped", "SteamCMD will download server files during installation.");
+    return { downloaded: false, record };
   }
 
   if (download.type !== "url") {
-    pushStep(progress, "Downloading", "skipped", "Template source is handled by a future installer.");
-    return { downloaded: false, record: null };
+    appendDownloadLog(record, { step: "Validate template", message: `Unsupported download type: ${download.type || "missing"}.`, level: "error" });
+    updateDownload(record, { status: "failed", error: `Unsupported download type: ${download.type || "missing"}.`, canRetry: false });
+    pushStep(progress, "Download files", "failed", "Template source is not supported by the automatic installer.");
+    if (downloadRequired) {
+      throw createMarketplaceStepError("Template source is not supported by the automatic installer.", "INSTALLER_NOT_SUPPORTED", {
+        ...baseContext,
+        step: "Validate template",
+        message: `Unsupported download type: ${download.type || "missing"}.`,
+      });
+    }
+    return { downloaded: false, record };
   }
 
   let resolved;
   try {
-    pushStep(progress, "Resolving download", "running", `Resolving ${fileName}.`);
-    resolved = await resolveDownloadUrl(download, options);
-    pushStep(progress, "Resolving download", "complete", `Resolved ${fileName}${resolved.version ? ` for ${resolved.version}` : ""}${resolved.build ? ` build ${resolved.build}` : ""}.`);
+    updateDownload(record, { status: "resolving", startedAt: new Date().toISOString(), canCancel: false });
+    appendDownloadLog(record, { step: "Resolve download", message: `Resolving ${fileName}.` });
+    pushStep(progress, "Resolve download", "running", `Resolving ${fileName}.`);
+    resolved = await resolveDownloadUrl(download, options, baseContext);
+    appendDownloadLog(record, { step: "Resolve download", message: `Resolved ${resolved.url || "download URL"}.`, url: resolved.url });
+    pushStep(progress, "Resolve download", "complete", `Resolved ${fileName}${resolved.version ? ` for ${resolved.version}` : ""}${resolved.build ? ` build ${resolved.build}` : ""}.`);
   } catch (error) {
+    appendDownloadLog(record, {
+      step: "Resolve download",
+      level: "error",
+      message: error?.message || "Download resolver failed.",
+      url: error?.details?.url,
+      status: error?.details?.status,
+      body: error?.details?.body,
+    });
+    updateDownload(record, { status: "failed", error: error?.message || "Download resolver failed.", canRetry: true });
     if (downloadRequired) {
       throw error;
     }
-    pushStep(progress, "Downloading", "skipped", mapMarketplaceError(error, "Download skipped."));
-    return { downloaded: false, record: null };
+    pushStep(progress, "Download files", "skipped", mapMarketplaceError(error, "Download skipped."));
+    return { downloaded: false, record };
   }
   const url = resolved?.url || "";
   if (!url || url.includes("{")) {
     if (downloadRequired) {
-      throw createMarketplaceError("Template download URL is incomplete.", "DOWNLOAD_URL_INCOMPLETE");
+      const error = createMarketplaceStepError("Template download URL is incomplete.", "DOWNLOAD_URL_INCOMPLETE", { ...baseContext, url });
+      appendDownloadLog(record, { step: "Resolve download", level: "error", message: error.message, url });
+      updateDownload(record, { status: "failed", error: error.message, canRetry: true });
+      throw error;
     }
-    pushStep(progress, "Downloading", "skipped", "Download URL requires version/build data.");
-    return { downloaded: false, record: null };
+    appendDownloadLog(record, { step: "Resolve download", level: "warning", message: "Download URL requires version/build data.", url });
+    updateDownload(record, { status: "skipped", error: "Download URL requires version/build data.", canRetry: true });
+    pushStep(progress, "Download files", "skipped", "Download URL requires version/build data.");
+    return { downloaded: false, record };
   }
 
-  const record = createDownloadRecord(template, fileName);
   const controller = new AbortController();
   updateDownload(record, {
     status: "running",
     startedAt: new Date().toISOString(),
     canCancel: true,
     controller,
+    url,
   });
+  appendDownloadLog(record, { step: "Download files", message: `Downloading ${url}.`, url });
 
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) {
-      throw createMarketplaceError(`Download failed with HTTP ${response.status}.`, "DOWNLOAD_FAILED");
+      const body = await response.text().catch(() => "");
+      throw createMarketplaceStepError(`Download failed with HTTP ${response.status}.`, "DOWNLOAD_FAILED", {
+        ...baseContext,
+        step: "Download files",
+        url,
+        status: response.status,
+        body,
+        message: `Download failed with HTTP ${response.status}.`,
+      });
     }
 
     const total = Number.parseInt(response.headers.get("content-length") || "", 10);
@@ -1350,23 +1567,38 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
       canCancel: false,
       canRetry: false,
     });
-    pushStep(progress, "Downloading", "complete", `Downloaded ${fileName}.`);
-    pushStep(progress, "Verifying files", "complete", `${destination} is available.`);
+    appendDownloadLog(record, { step: "Download files", message: `Downloaded ${fileName}.`, url });
+    pushStep(progress, "Download files", "complete", `Downloaded ${fileName}.`);
+    pushStep(progress, "Verify installation", "complete", `${destination} is available.`);
     return { downloaded: true, record, metadata: buildResolvedVersionMetadata(template, resolved) };
   } catch (error) {
     const cancelled = error?.name === "AbortError";
+    const effectiveError = error?.code ? error : createMarketplaceStepError(error?.message || "Download failed.", "DOWNLOAD_FAILED", {
+      ...baseContext,
+      step: "Download files",
+      url,
+      message: error?.message || "Download failed.",
+    });
     updateDownload(record, {
       status: cancelled ? "cancelled" : "failed",
-      error: cancelled ? null : error.message,
+      error: cancelled ? null : effectiveError.message,
       canCancel: false,
       canRetry: true,
     });
+    appendDownloadLog(record, {
+      step: "Download files",
+      level: cancelled ? "warning" : "error",
+      message: cancelled ? "Download cancelled." : effectiveError.message || "Download failed.",
+      url: effectiveError?.details?.url || url,
+      status: effectiveError?.details?.status,
+      body: effectiveError?.details?.body,
+    });
 
     if (downloadRequired) {
-      throw error;
+      throw effectiveError;
     }
 
-    pushStep(progress, "Downloading", "skipped", error.message || "Download skipped.");
+    pushStep(progress, "Download files", "skipped", effectiveError.message || "Download skipped.");
     return { downloaded: false, record };
   } finally {
     delete record.controller;
@@ -1376,7 +1608,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
 async function downloadToInstance(template, options, instanceId, progress, agentConfig = null) {
   const templateDownloads = normalizeTemplateDownloads(template);
   if (!templateDownloads.length) {
-    pushStep(progress, "Downloading", "skipped", "No direct download is required for this template.");
+    pushStep(progress, "Download files", "skipped", "No direct download is required for this template.");
     return { downloaded: false, records: [] };
   }
 
@@ -1403,18 +1635,20 @@ async function downloadToInstance(template, options, instanceId, progress, agent
 
 async function installTemplate(payload = {}) {
   const template = findTemplate(payload.templateId, payload.template);
+  const progress = [];
+  pushStep(progress, "Validate template", "running", `Validating ${template.id}.`);
   if (template.comingSoon || template.disabled) {
     throw createMarketplaceError(template.comingSoonMessage || "This template is not ready yet.", "TEMPLATE_NOT_READY");
   }
+  pushStep(progress, "Validate template", "complete", `${template.id} is installable.`);
 
   const options = payload.options || {};
   const agentConfig = payload.nodeId && payload.nodeId !== "default" ? getNodeAgentConfig(payload.nodeId) : null;
-  const progress = [];
   const ports = parsePorts(options.ports || options.port, template.defaultPorts);
 
   if (template.runtime === "docker" || template.startupType === "docker-image") {
     try {
-      pushStep(progress, "Creating container", "running", `Creating ${template.displayName}.`);
+      pushStep(progress, "Create instance", "running", `Creating ${template.displayName}.`);
       const portMappings = ports.map((port) => `${port}:${port}`);
       const result = await agentClient.createDockerContainer({
         name: slugify(options.id || options.name || template.id),
@@ -1425,7 +1659,7 @@ async function installTemplate(payload = {}) {
         start: options.start !== false,
         command: template.docker?.command || [],
       }, agentConfig);
-      pushStep(progress, "Creating container", "complete", "Docker container created.");
+      pushStep(progress, "Create instance", "complete", "Docker container created.");
       pushStep(progress, "Complete", "complete", "Installation finished.");
       return {
         template,
@@ -1453,7 +1687,7 @@ async function installTemplate(payload = {}) {
       displayName: instancePayload.displayName,
       selectedServerType: options.serverType || null,
     });
-    pushStep(progress, "Creating instance", "running", `Creating ${instancePayload.id}.`);
+    pushStep(progress, "Create instance", "running", `Creating ${instancePayload.id}.`);
     const createResult = await agentClient.createInstance(instancePayload, agentConfig);
     createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
     const createRecord = createResult?.instance || createResult?.data?.instance || createResult?.data || createResult || {};
@@ -1471,18 +1705,18 @@ async function installTemplate(payload = {}) {
       resolvedCreatedId: createdInstanceId,
       refreshedInstanceIds: createdIds,
     });
-    pushStep(progress, "Creating instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
+    pushStep(progress, "Create instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
 
-    pushStep(progress, "Creating folders", "running");
+    pushStep(progress, "Create folders", "running");
     await agentClient.createInstanceFolder(createdInstanceId, ".", agentConfig);
     await agentClient.createInstanceFolder(createdInstanceId, "runtime", agentConfig);
-    pushStep(progress, "Creating folders", "complete", `Prepared folders for ${createdInstanceId}.`);
+    pushStep(progress, "Create folders", "complete", `Prepared folders for ${createdInstanceId}.`);
 
     const generated = generatedFileForTemplate(template, options, ports);
     if (generated) {
-      pushStep(progress, "Installing", "running", `Writing ${generated.path}.`);
+      pushStep(progress, "Download files", "running", `Writing ${generated.path}.`);
       await writeInstanceText(createdInstanceId, generated.path, generated.content, agentConfig);
-      pushStep(progress, "Installing", "complete", "Starter project generated.");
+      pushStep(progress, "Download files", "complete", "Starter project generated.");
     }
 
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig);
@@ -1492,9 +1726,15 @@ async function installTemplate(payload = {}) {
       Object.assign(instance, downloadResult.metadata);
       pushStep(progress, "Detecting version", "complete", downloadResult.metadata.version || downloadResult.metadata.serverVersion || "Version metadata saved.");
     }
-    await runTemplateInstaller(template, options, createdInstanceId, progress, agentConfig);
+    try {
+      await runTemplateInstaller(template, options, createdInstanceId, progress, agentConfig);
+      finishInstallerDownloadRecords(downloadResult.records, "complete", "Installer completed.");
+    } catch (error) {
+      finishInstallerDownloadRecords(downloadResult.records, "failed", error?.message || "Installer failed.");
+      throw error;
+    }
 
-    pushStep(progress, "Configuring", "running");
+    pushStep(progress, "Write config", "running");
     if (isMinecraft) {
       await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`, agentConfig);
       await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports), agentConfig);
@@ -1514,19 +1754,19 @@ async function installTemplate(payload = {}) {
         agentConfig
       );
     }
-    pushStep(progress, "Configuring", "complete", "Configuration files generated.");
+    pushStep(progress, "Write config", "complete", "Configuration files generated.");
 
     await runTemplatePostInstall(template, options, createdInstanceId, progress, agentConfig);
 
     const startupPatch = buildStartupPatch(template, options, ports);
     if (startupPatch) {
-      pushStep(progress, "Finalizing installation", "running", "Configuring startup command.");
+      pushStep(progress, "Configure startup", "running", "Configuring startup command.");
       const updated = await agentClient.updateInstance(createdInstanceId, startupPatch, agentConfig);
       const updatedInstance = updated?.instance || updated;
       if (updatedInstance?.executable !== startupPatch.executable || !Array.isArray(updatedInstance?.args) || updatedInstance.args.join("\n") !== startupPatch.args.join("\n")) {
         throw createMarketplaceError("Startup command was not configured.", "STARTUP_CONFIGURATION_FAILED");
       }
-      pushStep(progress, "Finalizing installation", "complete", `Startup command configured: ${startupPatch.executable} ${startupPatch.args.join(" ")}.`);
+      pushStep(progress, "Configure startup", "complete", `Startup command configured: ${startupPatch.executable} ${startupPatch.args.join(" ")}.`);
     }
 
     let startedInstance = instance;
@@ -1534,7 +1774,7 @@ async function installTemplate(payload = {}) {
     if (needsDownloadedArtifact && downloadResult.downloaded) {
       const jarPath = getPrimaryArtifactPath(template, options);
       await agentClient.readInstanceFile(createdInstanceId, jarPath, agentConfig);
-      pushStep(progress, "Verifying files", "complete", `${jarPath} is available.`);
+      pushStep(progress, "Verify installation", "complete", `${jarPath} is available.`);
     }
 
     if (startupPatch) {
@@ -1542,18 +1782,18 @@ async function installTemplate(payload = {}) {
       if (!startupPatch.executable || !Array.isArray(startupPatch.args) || startupPatch.args.length === 0) {
         throw createMarketplaceError("Startup command was not configured.", "STARTUP_CONFIGURATION_FAILED");
       }
-      pushStep(progress, "Verifying instance", "complete", `Verified ${createdInstanceId}. Agent instances: ${refreshedIds.join(", ") || "none"}.`);
+      pushStep(progress, "Verify installation", "complete", `Verified ${createdInstanceId}. Agent instances: ${refreshedIds.join(", ") || "none"}.`);
     }
 
     if (template.manualStartRequired) {
-      pushStep(progress, "Starting", "skipped", template.manualStartMessage || "Manual setup is required before this server can start.");
+      pushStep(progress, "Optional start", "skipped", template.manualStartMessage || "Manual setup is required before this server can start.");
     } else if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
-      pushStep(progress, "Starting", "running");
+      pushStep(progress, "Optional start", "running");
       const started = await agentClient.startInstance(createdInstanceId, agentConfig);
       startedInstance = started.instance || started;
-      pushStep(progress, "Starting", "complete", "Instance start requested.");
+      pushStep(progress, "Optional start", "complete", "Instance start requested.");
     } else {
-      pushStep(progress, "Starting", "skipped", needsDownloadedArtifact ? "Start skipped until the server jar is available." : "Start was disabled for this install.");
+      pushStep(progress, "Optional start", "skipped", needsDownloadedArtifact ? "Start skipped until the server jar is available." : "Start was disabled for this install.");
     }
 
     pushStep(progress, "Complete", "complete", "Installation finished.");
@@ -1583,6 +1823,7 @@ async function installTemplate(payload = {}) {
 module.exports = {
   _test: {
     buildTemplateInstallerScript,
+    getTemplateInstallPlan,
     normalizeTemplateDownloads,
     parsePorts,
   },

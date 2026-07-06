@@ -3286,6 +3286,30 @@ body.is-resizing-files * {
   opacity: 0.52;
 }
 
+.download-item__logs {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.download-item__logs summary {
+  cursor: pointer;
+  width: max-content;
+}
+
+.download-item__logs pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  max-height: 140px;
+  overflow: auto;
+  border: 1px solid rgba(185, 171, 200, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.42);
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .instance-state {
   display: inline-flex;
   align-items: center;

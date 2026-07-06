@@ -800,6 +800,19 @@ function markStaleInstanceId(instanceId, error = null) {
   return wasAdded;
 }
 
+function logInstanceCreateFlow(message, details = {}) {
+  console.info("[Instances] Create flow:", message, details);
+}
+
+function logInstanceStaleCleanup(instanceId, reason, details = {}) {
+  console.warn("[Instances] Stale cleanup triggered.", {
+    instanceId,
+    reason,
+    refreshedInstanceIds: details.refreshedInstanceIds || getInstances().map((instance) => instance.id),
+    errorCode: details.error ? getAgentErrorCode(details.error) : null,
+  });
+}
+
 function debounce(callback, waitMs = 120) {
   let timeoutId = null;
   return (...args) => {
@@ -2926,7 +2939,7 @@ function collectInstanceConfigPayload() {
   const selectedInstance = findInstance();
   const args = parseArgs(getInstanceConfigValue("args"));
   const jar = getInstanceConfigValue("jar");
-  const memory = getInstanceConfigValue("memoryLimit");
+  const memory = normalizeMemoryLimit(getInstanceConfigValue("memoryLimit"));
 
   if (jar && (selectedInstance?.type === "java-app" || selectedInstance?.type === "minecraft-paper")) {
     const nextArgs = [];
@@ -2966,7 +2979,12 @@ function collectInstanceConfigPayload() {
 }
 
 function syncInstanceConfigDirtyState() {
-  const configDirty = JSON.stringify(collectInstanceConfigPayload()) !== instanceConfigSnapshot;
+  let configDirty = true;
+  try {
+    configDirty = JSON.stringify(collectInstanceConfigPayload()) !== instanceConfigSnapshot;
+  } catch {
+    configDirty = true;
+  }
   const minecraftDirty = JSON.stringify(collectMinecraftProperties()) !== instanceMinecraftSnapshot;
   const dirty = configDirty || minecraftDirty;
 
@@ -3877,10 +3895,11 @@ function notifyMissingSelectedInstance(error = null) {
   }
 }
 
-async function handleMissingSelectedInstance(error = null, instanceId = selectedInstanceId) {
+async function handleMissingSelectedInstance(error = null, instanceId = selectedInstanceId, reason = "instance-not-found") {
   const missingInstanceId = instanceId || selectedInstanceId;
 
   if (missingInstanceId) {
+    logInstanceStaleCleanup(missingInstanceId, reason, { error });
     markStaleInstanceId(missingInstanceId, error);
   } else {
     notifyMissingSelectedInstance(error);
@@ -4139,7 +4158,7 @@ function collectMarketplaceInstallOptions() {
     version: getMarketplaceField("version")?.value || "",
     serverType: getMarketplaceField("serverType")?.value || "",
     storageLocation: getMarketplaceField("storageLocation")?.value || "data",
-    memory: getMarketplaceField("memory")?.value || "",
+    memory: normalizeMemoryLimit(getMarketplaceField("memory")?.value || ""),
     port: ports[0] || undefined,
     ports,
     playitTunnel: Boolean(getMarketplaceField("playitTunnel")?.checked),
@@ -4330,7 +4349,14 @@ async function installMarketplaceTemplate(event) {
     return;
   }
 
-  const options = collectMarketplaceInstallOptions();
+  let options;
+  try {
+    options = collectMarketplaceInstallOptions();
+  } catch (error) {
+    setMarketplaceMessage(error?.message || "Check install settings.", "error");
+    showToast(error?.message || "Check install settings.", "warning");
+    return;
+  }
   if (!options.name.trim()) {
     setMarketplaceMessage("Enter a name before installing.", "error");
     getMarketplaceField("name")?.focus();
@@ -4403,6 +4429,21 @@ function parseArgs(value) {
   return raw.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, "")) || [];
 }
 
+function normalizeMemoryLimit(value) {
+  const memory = String(value || "").trim();
+
+  if (!memory) {
+    return "";
+  }
+
+  const match = memory.match(/^([1-9][0-9]{0,5})([kKmMgG]?)$/);
+  if (!match) {
+    throw new Error("Use memory like 512M, 2G, or 2048M.");
+  }
+
+  return `${match[1]}${match[2] ? match[2].toUpperCase() : ""}`;
+}
+
 function parseEnvironment(value) {
   return parseCsv(value).reduce((environment, entry) => {
     const separatorIndex = entry.indexOf("=");
@@ -4472,7 +4513,7 @@ function buildInstanceCreatePayload() {
   const entrypoint = getInstanceFormValue("entrypoint");
   const workingDirectory = getInstanceFormValue("workingDirectory");
   const args = parseArgs(getInstanceFormValue("args"));
-  const memoryLimit = getInstanceFormValue("memoryLimit");
+  const memoryLimit = normalizeMemoryLimit(getInstanceFormValue("memoryLimit"));
   const ports = parseCsv(getInstanceFormValue("ports")).map((port) => Number.parseInt(port, 10)).filter(Number.isFinite);
   const tags = parseCsv(getInstanceFormValue("tags"));
   const environment = parseEnvironment(getInstanceFormValue("environment"));
@@ -4536,16 +4577,16 @@ function setInstanceCreateFormVisible(visible) {
   syncInstanceCreateTypeFields();
 }
 
-async function refreshInstances() {
+async function refreshInstances(options = {}) {
   if (instancesRequestInFlight) {
-    return;
+    return getInstances();
   }
 
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasInstances) {
     renderInstancesUnavailable(desktopApiState.hasBridge ? "Instances IPC bridge unavailable." : "Desktop preload bridge unavailable.");
-    return;
+    return getInstances();
   }
 
   instancesRequestInFlight = true;
@@ -4554,13 +4595,17 @@ async function refreshInstances() {
 
   try {
     renderInstancesSnapshot(await desktopApiState.api.instances.list());
-    await refreshSelectedInstanceMetrics();
+    if (options.refreshMetrics !== false) {
+      await refreshSelectedInstanceMetrics();
+    }
   } catch (error) {
     renderInstancesUnavailable(`Instance request failed: ${getAgentErrorMessage(error)}`);
   } finally {
     instancesRequestInFlight = false;
     updateInstanceActionButtons();
   }
+
+  return getInstances();
 }
 
 async function refreshSelectedInstanceMetrics() {
@@ -4661,19 +4706,47 @@ async function createInstanceFromForm(event) {
   instanceActionRequestInFlight = true;
   updateInstanceActionButtons();
   setInstanceFormMessage("Creating instance...");
+  let createdInstanceId = null;
+  let createdInstanceAccepted = false;
 
   try {
+    logInstanceCreateFlow("submitting create request", {
+      requestedId: payload.id,
+      type: payload.type,
+      memoryLimit: payload.memoryLimit || null,
+    });
     const response = await desktopApiState.api.instances.create(payload);
     const instance = normalizeInstanceResponse(response);
-    selectedInstanceId = instance?.id || payload.id;
-    forgetStaleInstanceId(selectedInstanceId);
+    createdInstanceId = instance?.id || payload.id;
+    selectedInstanceId = createdInstanceId;
+    forgetStaleInstanceId(createdInstanceId);
+    logInstanceCreateFlow("created instance", {
+      createdId: createdInstanceId,
+      responseId: instance?.id || null,
+    });
+
+    const refreshedInstances = await refreshInstances({ refreshMetrics: false });
+    const refreshedInstanceIds = refreshedInstances.map((candidate) => candidate.id);
+    logInstanceCreateFlow("refreshed after create", {
+      createdId: createdInstanceId,
+      refreshedInstanceIds,
+    });
+
+    if (!refreshedInstanceIds.includes(createdInstanceId)) {
+      await handleMissingSelectedInstance(null, createdInstanceId, "create-refresh-missing");
+      setInstanceFormMessage("Created instance was not returned by the agent refresh. Removed stale entry from the list.");
+      return;
+    }
+
+    createdInstanceAccepted = true;
+    selectInstance(createdInstanceId, { refreshMetrics: false });
 
     if (payload.type === "minecraft-paper") {
       const acceptEula = document.querySelector('[data-instance-form="acceptEula"]')?.checked === true;
       if (acceptEula) {
-        await desktopApiState.api.instances.writeFile(selectedInstanceId, "eula.txt", "eula=true\n");
+        await desktopApiState.api.instances.writeFile(createdInstanceId, "eula.txt", "eula=true\n");
       }
-      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstanceId, {
+      await desktopApiState.api.instances.saveMinecraftProperties(createdInstanceId, {
         "server-port": payload.ports?.[0] ? String(payload.ports[0]) : "25565",
         motd: payload.displayName || payload.id,
         "max-players": "20",
@@ -4698,8 +4771,32 @@ async function createInstanceFromForm(event) {
     await refreshInstances();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error, selectedInstanceId || payload.id);
-      setInstanceFormMessage("Created instance was not available. Removed stale entry from the list.");
+      const candidateId = createdInstanceId || selectedInstanceId || payload.id;
+      const refreshedInstances = await refreshInstances({ refreshMetrics: false });
+      const refreshedInstanceIds = refreshedInstances.map((candidate) => candidate.id);
+      logInstanceCreateFlow("not-found during create follow-up", {
+        createdId: candidateId,
+        createdInstanceAccepted,
+        refreshedInstanceIds,
+        errorCode: getAgentErrorCode(error),
+      });
+
+      if (!refreshedInstanceIds.includes(candidateId)) {
+        await handleMissingSelectedInstance(error, candidateId, "create-follow-up-not-found-and-missing-after-refresh");
+        setInstanceFormMessage("Created instance was not available. Removed stale entry from the list.");
+      } else {
+        console.warn("[Instances] Create follow-up request returned not found, but the created instance is present after refresh.", {
+          createdId: candidateId,
+          refreshedInstanceIds,
+          error,
+        });
+        selectedInstanceId = candidateId;
+        selectInstance(candidateId, { refreshMetrics: false });
+        setInstanceCreateFormVisible(false);
+        instanceCreateForm?.reset();
+        setInstanceFormMessage("Instance created. A follow-up configuration step was not available yet; refresh or open Configuration to retry.");
+        showToast("Instance created. Some setup could not be applied yet.", "warning");
+      }
     } else {
       setInstanceFormMessage(getAgentErrorMessage(error, "Create instance failed."));
     }
@@ -8726,6 +8823,16 @@ instanceConfigInputs.forEach((input) => {
 minecraftPropertyInputs.forEach((input) => {
   input.addEventListener("input", syncInstanceConfigDirtyState);
   input.addEventListener("change", syncInstanceConfigDirtyState);
+});
+document.querySelectorAll('[data-instance-form="memoryLimit"], [data-instance-config="memoryLimit"], [data-marketplace-field="memory"]').forEach((input) => {
+  input.addEventListener("blur", () => {
+    try {
+      input.value = normalizeMemoryLimit(input.value);
+    } catch {}
+    if (input.dataset.instanceConfig === "memoryLimit") {
+      syncInstanceConfigDirtyState();
+    }
+  });
 });
 instanceNetworkAddButton?.addEventListener("click", () => {
   const selectedInstance = findInstance();

@@ -279,6 +279,11 @@ const backupActionButtons = document.querySelectorAll("[data-backup-action]");
 const backupTableBody = document.querySelector(".backup-table tbody");
 const backupEmptyState = document.querySelector(".backup-empty-state");
 const backupLoadingState = document.querySelector(".backup-loading-state");
+const backupSummaryFields = document.querySelectorAll("[data-backup-summary]");
+const backupStatusFields = document.querySelectorAll("[data-backup-status]");
+const backupScheduleFields = document.querySelectorAll("[data-backup-schedule]");
+const backupRestoreFields = document.querySelectorAll("[data-backup-restore]");
+const backupEmptyMessage = document.querySelector("[data-backup-empty-message]");
 const aboutFields = document.querySelectorAll("[data-about-field]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
@@ -296,7 +301,17 @@ let agentConnectionTestInFlight = false;
 let securityState = { setupRequired: false, authenticated: false, user: null };
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
-let backupsState = { backups: [], selectedBackupId: null };
+let backupsState = {
+  backups: [],
+  selectedBackupId: null,
+  root: null,
+  roots: [],
+  summary: null,
+  schedules: [],
+  scheduleSupported: null,
+  connected: false,
+  error: null,
+};
 let sshConnectRequestInFlight = false;
 let lastAmpRefreshAt = 0;
 let ampRendererReceiveCount = 0;
@@ -614,7 +629,8 @@ function getDesktopApiState() {
       typeof api?.backups?.restore === "function" &&
       typeof api?.backups?.delete === "function" &&
       typeof api?.backups?.download === "function" &&
-      typeof api?.backups?.import === "function" &&
+      typeof api?.backups?.import === "function",
+    hasBackupSchedules:
       typeof api?.backups?.listSchedules === "function" &&
       typeof api?.backups?.saveSchedule === "function" &&
       typeof api?.backups?.deleteSchedule === "function",
@@ -4741,14 +4757,139 @@ function getSelectedBackup() {
   return backupsState.backups.find((backup) => backup.id === backupsState.selectedBackupId) || null;
 }
 
+function setBackupSummaryField(name, value) {
+  backupSummaryFields.forEach((field) => {
+    if (field.dataset.backupSummary === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setBackupStatusField(name, value) {
+  backupStatusFields.forEach((field) => {
+    if (field.dataset.backupStatus === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setBackupScheduleField(name, value) {
+  backupScheduleFields.forEach((field) => {
+    if (field.dataset.backupSchedule === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function setBackupRestoreField(name, value) {
+  backupRestoreFields.forEach((field) => {
+    if (field.dataset.backupRestore === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function getBackupsConnected() {
+  return getDesktopApiState().hasBackups && (backupsState.connected || agentConnectionState === "connected");
+}
+
+function getBackupRootLabel() {
+  return backupsState.root || backupsState.roots?.[0] || backupsState.summary?.root || "No backup root reported";
+}
+
+function getMostRecentBackup() {
+  return backupsState.backups
+    .slice()
+    .sort((left, right) => String(right.createdAt || "").localeCompare(String(left.createdAt || "")))[0] || null;
+}
+
+function getRelevantBackupSchedule() {
+  const schedules = Array.isArray(backupsState.schedules) ? backupsState.schedules : [];
+  const selectedBackup = getSelectedBackup();
+  const targetInstanceId = selectedBackup?.instanceId || selectedInstanceId || "";
+  return schedules.find((schedule) => schedule.instanceId === targetInstanceId)
+    || schedules.find((schedule) => schedule.enabled !== false)
+    || schedules[0]
+    || null;
+}
+
+function formatBackupScheduleSummary() {
+  if (backupsState.scheduleSupported === false || !backupsState.schedules.length) {
+    return "No schedule configured";
+  }
+  const enabledCount = backupsState.schedules.filter((schedule) => schedule.enabled !== false).length;
+  if (enabledCount === 0) {
+    return "No schedule configured";
+  }
+  return enabledCount === 1 ? "1 schedule configured" : `${enabledCount} schedules configured`;
+}
+
+function renderBackupSummary() {
+  const connected = getBackupsConnected();
+  const mostRecent = getMostRecentBackup();
+  const totalBackups = Number.isFinite(backupsState.summary?.totalBackups)
+    ? backupsState.summary.totalBackups
+    : backupsState.backups.length;
+
+  setBackupSummaryField("total", connected ? String(totalBackups) : "Unavailable");
+  setBackupSummaryField("last", connected ? (mostRecent?.createdAt ? formatDateTime(mostRecent.createdAt) : "No backups yet") : "Unavailable");
+  setBackupSummaryField("destination", connected ? getBackupRootLabel() : "Unavailable");
+  setBackupSummaryField("schedule", connected ? formatBackupScheduleSummary() : "Unavailable");
+}
+
+function renderBackupSchedulePanel() {
+  const connected = getBackupsConnected();
+  const schedule = getRelevantBackupSchedule();
+  const noScheduleText = connected ? "No schedule configured" : "Unavailable";
+
+  setBackupStatusField("schedule", connected && schedule ? "Configured" : noScheduleText);
+  setBackupScheduleField("frequency", schedule ? `Every ${schedule.intervalHours} hour(s) · ${schedule.type || "full"}` : noScheduleText);
+  setBackupScheduleField("nextRun", schedule?.nextRunAt ? formatDateTime(schedule.nextRunAt) : noScheduleText);
+  setBackupScheduleField(
+    "retention",
+    schedule ? `Keep last ${schedule.keepLast || "default"} · ${schedule.maxAgeDays || "default"} day max age` : noScheduleText,
+  );
+  setBackupScheduleField("targetPath", connected ? getBackupRootLabel() : "Unavailable");
+}
+
+function renderBackupRestorePanel() {
+  const connected = getBackupsConnected();
+  const selected = getSelectedBackup();
+
+  setBackupStatusField("restore", connected ? (selected ? "Ready" : "Select a backup") : "Unavailable");
+  if (!connected) {
+    setBackupRestoreField("title", "Backup service unavailable");
+    setBackupRestoreField("message", backupsState.error || "Agent backup state is unavailable.");
+    return;
+  }
+  if (!selected) {
+    setBackupRestoreField("title", "No backup selected");
+    setBackupRestoreField("message", "Select a backup from Backup History to restore it.");
+    return;
+  }
+
+  setBackupRestoreField("title", selected.name || selected.id);
+  setBackupRestoreField(
+    "message",
+    `${selected.instanceId || "Unknown instance"} · ${selected.type || "full"} · ${formatBytes(Number(selected.size) || 0)} · ${formatDateTime(selected.createdAt)}`,
+  );
+}
+
 function renderBackups() {
   if (!backupTableBody) {
     return;
   }
 
+  const connected = getBackupsConnected();
+
   backupTableBody.replaceChildren();
   if (backupEmptyState) {
     backupEmptyState.hidden = backupRequestInFlight || backupsState.backups.length > 0;
+  }
+  if (backupEmptyMessage) {
+    backupEmptyMessage.textContent = connected
+      ? "No backups have been created yet."
+      : backupsState.error || "Agent backup state is unavailable.";
   }
   if (backupLoadingState) {
     backupLoadingState.hidden = !backupRequestInFlight;
@@ -4770,16 +4911,31 @@ function renderBackups() {
   });
 
   const selected = getSelectedBackup();
+  setBackupStatusField("history", backupRequestInFlight ? "Loading" : connected ? "Connected" : "Unavailable");
+  renderBackupSummary();
+  renderBackupSchedulePanel();
+  renderBackupRestorePanel();
   backupActionButtons.forEach((button) => {
     const action = button.dataset.backupAction;
-    button.disabled = backupRequestInFlight || (["restore", "delete", "download"].includes(action) && !selected);
+    button.disabled = backupRequestInFlight || !getDesktopApiState().hasBackups || (["restore", "delete", "download"].includes(action) && !selected);
   });
 }
 
 async function refreshBackups() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasBackups) {
-    backupsState = { backups: [], selectedBackupId: null };
+    backupsState = {
+      ...backupsState,
+      backups: [],
+      selectedBackupId: null,
+      root: null,
+      roots: [],
+      summary: null,
+      schedules: [],
+      scheduleSupported: false,
+      connected: false,
+      error: desktopApiState.hasBridge ? "Backup IPC bridge unavailable." : "Desktop preload bridge unavailable.",
+    };
     renderBackups();
     return;
   }
@@ -4788,13 +4944,39 @@ async function refreshBackups() {
   renderBackups();
   try {
     const result = await desktopApiState.api.backups.list();
+    let scheduleResult = { schedules: [] };
+    let scheduleSupported = desktopApiState.hasBackupSchedules;
+    if (desktopApiState.hasBackupSchedules) {
+      try {
+        scheduleResult = await desktopApiState.api.backups.listSchedules();
+      } catch {
+        scheduleSupported = false;
+      }
+    }
     backupsState.backups = Array.isArray(result?.backups) ? result.backups : [];
+    backupsState.root = result?.root || result?.diagnostics?.roots?.[0]?.path || null;
+    backupsState.roots = Array.isArray(result?.roots) ? result.roots : [];
+    backupsState.summary = result?.summary || null;
+    backupsState.schedules = Array.isArray(scheduleResult?.schedules) ? scheduleResult.schedules : [];
+    backupsState.scheduleSupported = scheduleSupported;
+    backupsState.connected = true;
+    backupsState.error = null;
     if (!getSelectedBackup()) {
       backupsState.selectedBackupId = backupsState.backups[0]?.id || null;
     }
   } catch (error) {
     showToast(error?.message || "Backups could not be loaded.");
-    backupsState.backups = [];
+    backupsState = {
+      ...backupsState,
+      backups: [],
+      selectedBackupId: null,
+      root: null,
+      roots: [],
+      summary: null,
+      schedules: [],
+      connected: false,
+      error: error?.message || "Backups could not be loaded.",
+    };
   } finally {
     backupRequestInFlight = false;
     renderBackups();
@@ -4902,7 +5084,7 @@ async function importBackupForInstance() {
 
 async function configureBackupSchedule(instanceId) {
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasBackups || !instanceId) {
+  if (!desktopApiState.hasBackupSchedules || !instanceId) {
     showToast("Backup scheduling is unavailable.");
     return;
   }
@@ -4923,6 +5105,7 @@ async function configureBackupSchedule(instanceId) {
       enabled: true,
     });
     showToast("Backup schedule saved.");
+    await refreshBackups();
   } catch (error) {
     showToast(error?.message || "Backup schedule could not be saved.");
   }
@@ -9972,6 +10155,9 @@ function setAgentConnectionDisplay(status, message, options = {}) {
   }
 
   updateTitlebar();
+  if (getActivePageName() === "backups") {
+    renderBackups();
+  }
 }
 
 function getAgentConfigSourceText(settingsPayload) {

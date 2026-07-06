@@ -1853,28 +1853,28 @@
                 <span class="service-icon">BK</span>
                 <div>
                   <span>Total Backups</span>
-                  <strong>Unavailable</strong>
+                  <strong data-backup-summary="total">Unavailable</strong>
                 </div>
               </article>
               <article class="backup-summary-card">
                 <span class="service-icon">LAST</span>
                 <div>
                   <span>Last Backup</span>
-                  <strong>Unavailable</strong>
+                  <strong data-backup-summary="last">Unavailable</strong>
                 </div>
               </article>
               <article class="backup-summary-card">
                 <span class="service-icon">SCH</span>
                 <div>
                   <span>Schedule</span>
-                  <strong>Not configured</strong>
+                  <strong data-backup-summary="schedule">No schedule configured</strong>
                 </div>
               </article>
               <article class="backup-summary-card">
                 <span class="service-icon">DST</span>
                 <div>
                   <span>Destination</span>
-                  <strong>Unavailable</strong>
+                  <strong data-backup-summary="destination">Unavailable</strong>
                 </div>
               </article>
             </div>
@@ -1898,7 +1898,7 @@
               <section class="backup-table-panel" aria-label="Backup list">
                 <div class="backup-panel-header">
                   <h3>Backup History</h3>
-                  <span class="status-pill status-pill--external">Disconnected</span>
+                  <span class="status-pill status-pill--external" data-backup-status="history">Unavailable</span>
                 </div>
                 <div class="backup-table-wrap">
                   <table class="backup-table">
@@ -1916,12 +1916,12 @@
                   <div class="backup-empty-state">
                     <span class="backup-icon" aria-hidden="true"></span>
                     <strong>No backups available</strong>
-                    <span>Connect a backup source to display local backup history.</span>
+                    <span data-backup-empty-message>No backups have been created yet.</span>
                   </div>
                   <div class="backup-loading-state" hidden>
                     <span class="file-loader" aria-hidden="true"></span>
                     <strong>Loading backups...</strong>
-                    <span>Backup service is disconnected.</span>
+                    <span>Reading backup state from the agent.</span>
                   </div>
                 </div>
               </section>
@@ -1930,24 +1930,24 @@
                 <section class="backup-panel-card">
                   <div class="backup-panel-header">
                     <h3>Schedule</h3>
-                    <span class="status-pill status-pill--planned">Disconnected</span>
+                    <span class="status-pill status-pill--planned" data-backup-status="schedule">No schedule configured</span>
                   </div>
                   <dl class="backup-details-list">
                     <div>
                       <dt>Frequency</dt>
-                      <dd>Not configured</dd>
+                      <dd data-backup-schedule="frequency">No schedule configured</dd>
                     </div>
                     <div>
                       <dt>Next Run</dt>
-                      <dd>Unavailable</dd>
+                      <dd data-backup-schedule="nextRun">No schedule configured</dd>
                     </div>
                     <div>
                       <dt>Retention</dt>
-                      <dd>Unavailable</dd>
+                      <dd data-backup-schedule="retention">No schedule configured</dd>
                     </div>
                     <div>
                       <dt>Target Path</dt>
-                      <dd>Unavailable</dd>
+                      <dd data-backup-schedule="targetPath">Unavailable</dd>
                     </div>
                   </dl>
                 </section>
@@ -1955,11 +1955,11 @@
                 <section class="backup-panel-card">
                   <div class="backup-panel-header">
                     <h3>Restore</h3>
-                    <span class="status-pill status-pill--manual">Manual</span>
+                    <span class="status-pill status-pill--manual" data-backup-status="restore">Ready</span>
                   </div>
                   <div class="backup-restore-state">
-                    <strong>No backup selected</strong>
-                    <span>No backup is selected.</span>
+                    <strong data-backup-restore="title">No backup selected</strong>
+                    <span data-backup-restore="message">No backup is selected.</span>
                   <button class="inline-action" type="button" data-backup-action="restore" disabled>Restore Selected</button>
                   </div>
                 </section>

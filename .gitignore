@@ -14,3 +14,7 @@ dist/
 .tmp-agent-config-test/
 
 .tmp-agent-config-test-save/
+
+# Codex temporary Electron smoke test profiles
+.tmp-electron-smoke-profile*
+.tmp-sidebar-*.js

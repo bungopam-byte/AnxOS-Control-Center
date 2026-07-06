@@ -3,7 +3,7 @@ const path = require("path");
 const agentClient = require("./agentClient");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
-const CATEGORIES = ["Minecraft", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
+const CATEGORIES = ["Minecraft", "Game Servers", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
 const PAPER_DEFAULT_BUILD = "latest";
 const MOJANG_VERSION_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const FABRIC_META_URL = "https://meta.fabricmc.net/v2";
@@ -36,12 +36,15 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
     DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
+    INSTALLER_NOT_SUPPORTED: "This server template cannot be fully automated yet.",
+    MANUAL_SETUP_REQUIRED: "This server requires manual setup before AnxHub can start it.",
     FABRIC_RESOLVE_FAILED: "Unable to resolve Fabric download.",
     FORGE_RESOLVE_FAILED: "Unable to download Forge installer.",
     NEOFORGE_RESOLVE_FAILED: "Unable to download NeoForge installer.",
     PROXY_RESOLVE_FAILED: "Unable to resolve proxy download.",
     TEMPLATE_NOT_READY: "This template is not ready yet.",
     TEMPLATE_INSTALL_TIMEOUT: "The template installer did not finish in time.",
+    TEMPLATE_INSTALL_FAILED: "The server installer failed. Check the instance logs for setup details.",
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
   };
 
@@ -487,6 +490,50 @@ async function resolveBungeeCordDownload() {
   };
 }
 
+async function resolveGithubReleaseDownload(download) {
+  const repo = String(download.repo || "").trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    throw createMarketplaceError("GitHub release resolver is missing a repo.", "DOWNLOAD_RESOLVE_FAILED");
+  }
+
+  const release = await fetchJson(`https://api.github.com/repos/${repo}/releases/latest`, "GitHub release lookup");
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const pattern = download.assetPattern ? new RegExp(download.assetPattern, "i") : null;
+  const asset = assets.find((entry) => {
+    return entry?.browser_download_url && (!pattern || pattern.test(entry.name || ""));
+  });
+
+  if (!asset?.browser_download_url) {
+    throw createMarketplaceError("Unable to resolve GitHub release asset.", "DOWNLOAD_RESOLVE_FAILED");
+  }
+
+  return {
+    url: asset.browser_download_url,
+    version: release?.tag_name || "latest",
+    size: asset.size || null,
+  };
+}
+
+async function resolveFiveMDownload() {
+  const listingUrl = "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/";
+  const response = await fetch(listingUrl);
+  if (!response.ok) {
+    throw createMarketplaceError(`FiveM artifact lookup failed with HTTP ${response.status}.`, "DOWNLOAD_RESOLVE_FAILED");
+  }
+
+  const html = await response.text();
+  const hrefs = [...html.matchAll(/href="([^"]+fx\.tar\.xz)"/gi)].map((match) => match[1]);
+  const href = hrefs[0];
+  if (!href) {
+    throw createMarketplaceError("Unable to resolve latest FiveM FXServer artifact.", "DOWNLOAD_RESOLVE_FAILED");
+  }
+
+  return {
+    url: new URL(href, listingUrl).toString(),
+    version: "latest",
+  };
+}
+
 async function resolveVanillaDownload(download, options = {}) {
   const manifest = await fetchJson(download.manifestUrl || MOJANG_VERSION_MANIFEST_URL, "Mojang version lookup");
   const requestedVersion = options.version || download.version || "latest";
@@ -542,6 +589,14 @@ async function resolveDownloadUrl(download, options = {}) {
     return resolveBungeeCordDownload(download, options);
   }
 
+  if (download.resolver === "github-release") {
+    return resolveGithubReleaseDownload(download, options);
+  }
+
+  if (download.resolver === "fivem-linux") {
+    return resolveFiveMDownload(download, options);
+  }
+
   if (download.resolver === "mojang-vanilla") {
     return resolveVanillaDownload(download, options);
   }
@@ -575,6 +630,145 @@ function buildMinecraftProperties(options, ports) {
     "generate-structures": options.generateStructures === false ? "false" : "true",
     "level-seed": options.seed || "",
   };
+}
+
+function firstPort(ports, fallback = 3000) {
+  return Array.isArray(ports) && ports[0] ? ports[0] : fallback;
+}
+
+function shellQuote(value) {
+  return `'${String(value ?? "").replace(/'/g, "'\"'\"'")}'`;
+}
+
+function templateValue(key, template, options = {}, ports = []) {
+  const values = {
+    id: slugify(options.id || options.name || template.id),
+    name: normalizeName(options.name, template.displayName || template.id),
+    displayName: template.displayName || template.id,
+    memory: normalizeName(options.memory, template.defaultRam || ""),
+    port: String(firstPort(ports, firstPort(template.defaultPorts, 3000))),
+    version: options.version || "latest",
+    jar: getPrimaryArtifactName(template, options),
+  };
+
+  return values[key] ?? "";
+}
+
+function expandTemplateString(value, template, options = {}, ports = []) {
+  return String(value ?? "").replace(/\{([a-zA-Z0-9_-]+)\}/g, (_, key) => {
+    return String(templateValue(key, template, options, ports));
+  });
+}
+
+function expandTemplateArray(values = [], template, options = {}, ports = []) {
+  return Array.isArray(values)
+    ? values.map((value) => expandTemplateString(value, template, options, ports))
+    : [];
+}
+
+function buildConfigFileContent(configFile, template, options, ports) {
+  if (Array.isArray(configFile.lines)) {
+    return `${configFile.lines.map((line) => expandTemplateString(line, template, options, ports)).join("\n")}\n`;
+  }
+
+  if (configFile.content !== undefined) {
+    return expandTemplateString(configFile.content, template, options, ports);
+  }
+
+  return "";
+}
+
+function buildSteamCmdInstallerScript(installer) {
+  const installDir = installer.installDir || "server";
+  const login = installer.login === "required"
+    ? [
+      "echo \"This server requires a Steam account login and cannot be installed automatically yet.\" >&2",
+      "exit 42",
+    ].join("\n")
+    : "login anonymous";
+  const validate = installer.validate === false ? "" : " validate";
+  const extraCommands = Array.isArray(installer.extraCommands) ? installer.extraCommands : [];
+  const commandParts = [
+    "+force_install_dir", "\"$INSTALL_DIR\"",
+    `+${login}`,
+    "+app_update", String(installer.appId), validate.trim(),
+    ...extraCommands.map((command) => `+${command}`),
+    "+quit",
+  ].filter(Boolean);
+
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "if ! command -v steamcmd >/dev/null 2>&1; then",
+    "  echo \"SteamCMD is required for this template. Install steamcmd on the host, then retry.\" >&2",
+    "  exit 127",
+    "fi",
+    `INSTALL_DIR="${installDir}"`,
+    "mkdir -p \"$INSTALL_DIR\"",
+    `steamcmd ${commandParts.join(" ")}`,
+    "",
+  ].join("\n");
+}
+
+function buildArchiveInstallerScript(installer) {
+  const archivePath = installer.archive || getPrimaryArtifactPath(installer.template || {}, {});
+  const extractDir = installer.extractDir || "server";
+  const stripComponents = Number.isInteger(installer.stripComponents) ? installer.stripComponents : 0;
+  const tarFlags = String(archivePath).endsWith(".tar.xz") ? "-xJf" : String(archivePath).endsWith(".tar.gz") || String(archivePath).endsWith(".tgz") ? "-xzf" : "";
+
+  if (tarFlags) {
+    return [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      "if ! command -v tar >/dev/null 2>&1; then",
+      "  echo \"tar is required to extract this server runtime.\" >&2",
+      "  exit 127",
+      "fi",
+      `mkdir -p ${shellQuote(extractDir)}`,
+      `tar ${tarFlags} ${shellQuote(archivePath)} -C ${shellQuote(extractDir)}${stripComponents > 0 ? ` --strip-components=${stripComponents}` : ""}`,
+      "",
+    ].join("\n");
+  }
+
+  return [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "if ! command -v unzip >/dev/null 2>&1; then",
+    "  echo \"unzip is required to extract this server runtime.\" >&2",
+    "  exit 127",
+    "fi",
+    `mkdir -p ${shellQuote(extractDir)}`,
+    `unzip -o ${shellQuote(archivePath)} -d ${shellQuote(extractDir)}`,
+    "",
+  ].join("\n");
+}
+
+function buildTemplateInstallerScript(template) {
+  const installer = template.installer || null;
+  if (!installer) {
+    return null;
+  }
+
+  if (installer.type === "steamcmd") {
+    if (!installer.appId) {
+      throw createMarketplaceError("SteamCMD template is missing an app ID.", "INVALID_TEMPLATE_CATALOG");
+    }
+    return buildSteamCmdInstallerScript(installer);
+  }
+
+  if (installer.type === "archive") {
+    return buildArchiveInstallerScript({
+      ...installer,
+      archive: normalizeInstanceFilePath(installer.archive || getPrimaryArtifactPath(template)),
+      template,
+    });
+  }
+
+  if (installer.type === "manual") {
+    throw createMarketplaceError(installer.message || "This server requires manual setup.", "MANUAL_SETUP_REQUIRED");
+  }
+
+  throw createMarketplaceError("This installer type is not supported.", "INSTALLER_NOT_SUPPORTED");
 }
 
 function generatedFileForTemplate(template, options, ports) {
@@ -775,9 +969,7 @@ function templateNeedsDownloadedArtifact(template, generated) {
 
 function resolveTemplateArgs(args = [], template, options = {}) {
   return Array.isArray(args)
-    ? args.map((arg) => String(arg)
-      .replaceAll("{memory}", normalizeName(options.memory, template.defaultRam || ""))
-      .replaceAll("{jar}", getPrimaryArtifactName(template, options)))
+    ? args.map((arg) => expandTemplateString(arg, template, options, parsePorts(options.ports || options.port, template.defaultPorts)))
     : [];
 }
 
@@ -862,6 +1054,51 @@ async function runTemplatePostInstall(template, options, instanceId, progress) {
   pushStep(progress, "Installing", "complete", "Server installer finished.");
 }
 
+async function runTemplateInstaller(template, options, instanceId, progress) {
+  if (!template.installer) {
+    return;
+  }
+
+  const script = buildTemplateInstallerScript(template);
+  if (!script) {
+    return;
+  }
+
+  const scriptPath = "runtime/marketplace-install.sh";
+  await writeInstanceText(instanceId, scriptPath, script);
+  pushStep(progress, "Installing", "running", `Running ${template.installer.type} installer.`);
+  await agentClient.updateInstance(instanceId, {
+    executable: "bash",
+    args: [scriptPath],
+    workingDirectory: "data",
+    restartPolicy: "never",
+    startupTimeoutMs: template.installer.timeoutMs || 600000,
+  });
+  await agentClient.startInstance(instanceId);
+  await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000);
+
+  const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
+  for (const requiredFile of requiredFiles) {
+    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile));
+  }
+  pushStep(progress, "Installing", "complete", "Server installer finished.");
+}
+
+async function writeTemplateConfigFiles(template, options, ports, instanceId) {
+  const files = Array.isArray(template.configFiles) ? template.configFiles : [];
+  for (const configFile of files) {
+    if (!configFile?.path) {
+      continue;
+    }
+    await writeInstanceText(
+      instanceId,
+      normalizeInstanceFilePath(configFile.path),
+      buildConfigFileContent(configFile, template, options, ports)
+    );
+    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(configFile.path));
+  }
+}
+
 async function downloadOneToInstance(template, download, options, instanceId, progress) {
   const destination = normalizeInstanceFilePath(download.destination || download.fileName || "server.jar");
   const fileName = fileNameFromDestination(destination);
@@ -887,6 +1124,11 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   if (download.type === "generated") {
     pushStep(progress, "Downloading", "skipped", "Generated starter project locally.");
     return { downloaded: true, record: null };
+  }
+
+  if (download.type === "steamcmd") {
+    pushStep(progress, "Downloading", "skipped", "SteamCMD will download server files during installation.");
+    return { downloaded: false, record: null };
   }
 
   if (download.type !== "url") {
@@ -1066,6 +1308,7 @@ async function installTemplate(payload = {}) {
     }
 
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress);
+    await runTemplateInstaller(template, options, createdInstanceId, progress);
 
     pushStep(progress, "Configuring", "running");
     if (isMinecraft) {
@@ -1073,6 +1316,8 @@ async function installTemplate(payload = {}) {
       await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports));
       await agentClient.readInstanceFile(createdInstanceId, "eula.txt");
       await agentClient.readInstanceFile(createdInstanceId, "server.properties");
+    } else if (Array.isArray(template.configFiles) && template.configFiles.length > 0) {
+      await writeTemplateConfigFiles(template, options, ports, createdInstanceId);
     } else if (!generated && !normalizeTemplateDownloads(template).length && !template.startup) {
       await writeInstanceText(
         createdInstanceId,
@@ -1115,7 +1360,9 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Verifying instance", "complete", `Verified ${createdInstanceId}. Agent instances: ${refreshedIds.join(", ") || "none"}.`);
     }
 
-    if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
+    if (template.manualStartRequired) {
+      pushStep(progress, "Starting", "skipped", template.manualStartMessage || "Manual setup is required before this server can start.");
+    } else if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
       pushStep(progress, "Starting", "running");
       const started = await agentClient.startInstance(createdInstanceId);
       startedInstance = started.instance || started;
@@ -1141,6 +1388,11 @@ async function installTemplate(payload = {}) {
 }
 
 module.exports = {
+  _test: {
+    buildTemplateInstallerScript,
+    normalizeTemplateDownloads,
+    parsePorts,
+  },
   cancelDownload,
   getDownloads: () => sanitizeDownloads(getDownloads()),
   installTemplate,

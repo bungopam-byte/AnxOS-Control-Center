@@ -4330,6 +4330,7 @@ function getFilteredMarketplaceTemplates() {
       template.version,
       template.category,
       template.id,
+      Array.isArray(template.tags) ? template.tags.join(" ") : "",
     ].filter(Boolean).join(" ").toLowerCase();
     return matchesCategory && (!query || haystack.includes(query));
   });
@@ -4479,7 +4480,7 @@ function openMarketplaceWizard(templateId) {
     acceptEulaField.checked = false;
   }
   if (startField) {
-    startField.checked = true;
+    startField.checked = !template.manualStartRequired;
   }
 
   syncMarketplaceWizardFields(template);

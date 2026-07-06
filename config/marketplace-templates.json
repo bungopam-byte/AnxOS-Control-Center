@@ -294,6 +294,327 @@
     "configurationSchema": ["name", "storageLocation", "port", "memory"]
   },
   {
+    "id": "terraria-tshock",
+    "displayName": "Terraria TShock",
+    "description": "Terraria dedicated server with TShock administration and plugin support.",
+    "icon": "TER",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "native",
+    "defaultRam": "1G",
+    "defaultPorts": [7777],
+    "tags": ["terraria", "tshock", "game-server"],
+    "downloadSource": { "type": "url", "resolver": "github-release", "repo": "Pryaxis/TShock", "assetPattern": "linux.*x64.*\\.zip$", "fileName": "tshock.zip", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "github-release",
+        "repo": "Pryaxis/TShock",
+        "assetPattern": "linux.*x64.*\\.zip$",
+        "destination": "data/tshock.zip",
+        "fileName": "tshock.zip",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "installer": {
+      "type": "archive",
+      "archive": "tshock.zip",
+      "extractDir": "server",
+      "verifyFiles": ["server/TShock.Server"],
+      "timeoutMs": 300000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["-lc", "chmod +x ./TShock.Server 2>/dev/null || true; exec ./TShock.Server -port {port} -world ./Worlds/world.wld -autocreate 2"],
+      "workingDirectory": "data/server",
+      "restartPolicy": "on-failure"
+    },
+    "installMetadata": {
+      "method": "github-release",
+      "source": "Pryaxis/TShock latest Linux x64 release archive",
+      "notes": "Requires unzip on the host. TShock may ask for an initial setup token in the console on first start."
+    },
+    "configNotes": "The first TShock start prints a setup code in the console. Use it to claim server admin in-game.",
+    "installScript": ["create-instance", "verify-instance", "create-folders", "download", "install-archive", "write-config", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "valheim",
+    "displayName": "Valheim Dedicated Server",
+    "description": "Valheim dedicated server installed with SteamCMD anonymous login.",
+    "icon": "VAL",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "steamcmd-native",
+    "defaultRam": "2G",
+    "defaultPorts": [2456, 2457, 2458],
+    "tags": ["valheim", "steamcmd", "game-server"],
+    "downloadSource": { "type": "steamcmd", "appId": 896660, "login": "anonymous", "required": true },
+    "installer": {
+      "type": "steamcmd",
+      "appId": 896660,
+      "installDir": "server",
+      "login": "anonymous",
+      "validate": true,
+      "verifyFiles": ["server/valheim_server.x86_64"],
+      "timeoutMs": 600000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["-lc", "chmod +x ./valheim_server.x86_64 2>/dev/null || true; export SteamAppId=892970; exec ./valheim_server.x86_64 -nographics -batchmode -name \"{name}\" -port {port} -world Dedicated -password changeme123 -public 1 -savedir saves"],
+      "workingDirectory": "data/server",
+      "restartPolicy": "on-failure"
+    },
+    "installMetadata": {
+      "method": "steamcmd",
+      "appId": 896660,
+      "login": "anonymous",
+      "notes": "Requires steamcmd and compatible Linux dedicated-server dependencies on the host."
+    },
+    "configNotes": "Change the default Valheim password before exposing the server publicly.",
+    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "rust",
+    "displayName": "Rust Dedicated Server",
+    "description": "Rust dedicated server installed with SteamCMD anonymous login.",
+    "icon": "RST",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "steamcmd-native",
+    "defaultRam": "6G",
+    "defaultPorts": [28015, 28016],
+    "tags": ["rust", "steamcmd", "game-server"],
+    "downloadSource": { "type": "steamcmd", "appId": 258550, "login": "anonymous", "required": true },
+    "installer": {
+      "type": "steamcmd",
+      "appId": 258550,
+      "installDir": "server",
+      "login": "anonymous",
+      "validate": true,
+      "verifyFiles": ["server/RustDedicated"],
+      "timeoutMs": 900000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["-lc", "chmod +x ./RustDedicated 2>/dev/null || true; exec ./RustDedicated -batchmode +server.port {port} +server.queryport 28016 +server.identity anxhub +server.hostname \"{name}\" +server.maxplayers 50 +server.worldsize 3500 +server.seed 12345 +server.saveinterval 300"],
+      "workingDirectory": "data/server",
+      "restartPolicy": "on-failure"
+    },
+    "configFiles": [
+      {
+        "path": "server/server/anxhub/server.cfg",
+        "lines": [
+          "server.hostname \"{name}\"",
+          "server.port {port}",
+          "server.queryport 28016",
+          "server.maxplayers 50",
+          "server.description \"Managed by AnxHub\""
+        ]
+      }
+    ],
+    "installMetadata": {
+      "method": "steamcmd",
+      "appId": 258550,
+      "login": "anonymous",
+      "notes": "Requires steamcmd and Linux native runtime dependencies on the host."
+    },
+    "configNotes": "RCON, owner IDs, Oxide/uMod, and production server identity should be configured after installation.",
+    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "cs2",
+    "displayName": "Counter-Strike 2 Dedicated Server",
+    "description": "CS2 dedicated server installed with SteamCMD anonymous login.",
+    "icon": "CS2",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "steamcmd-native",
+    "defaultRam": "4G",
+    "defaultPorts": [27015],
+    "tags": ["cs2", "counter-strike", "steamcmd", "game-server"],
+    "downloadSource": { "type": "steamcmd", "appId": 730, "login": "anonymous", "required": true },
+    "installer": {
+      "type": "steamcmd",
+      "appId": 730,
+      "installDir": "server",
+      "login": "anonymous",
+      "validate": true,
+      "verifyFiles": ["server/game/bin/linuxsteamrt64/cs2"],
+      "timeoutMs": 1200000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["-lc", "chmod +x ./game/bin/linuxsteamrt64/cs2 2>/dev/null || true; exec ./game/bin/linuxsteamrt64/cs2 -dedicated -usercon -port {port} +game_type 0 +game_mode 1 +map de_dust2 +servercfgfile server.cfg"],
+      "workingDirectory": "data/server",
+      "restartPolicy": "on-failure"
+    },
+    "configFiles": [
+      {
+        "path": "server/game/csgo/cfg/server.cfg",
+        "lines": [
+          "hostname \"{name}\"",
+          "sv_lan 0",
+          "sv_region 255",
+          "log on"
+        ]
+      }
+    ],
+    "installMetadata": {
+      "method": "steamcmd",
+      "appId": 730,
+      "login": "anonymous",
+      "notes": "Requires steamcmd. Public Internet servers may require a Steam Game Server Login Token configured by the operator."
+    },
+    "configNotes": "Set a Steam Game Server Login Token before publishing a public CS2 server.",
+    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "fivem",
+    "displayName": "FiveM FXServer",
+    "description": "FiveM FXServer runtime with a generated basic server.cfg.",
+    "icon": "FIV",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "fxserver",
+    "defaultRam": "2G",
+    "defaultPorts": [30120],
+    "tags": ["fivem", "fxserver", "gta", "game-server"],
+    "downloadSource": { "type": "url", "resolver": "fivem-linux", "fileName": "fx.tar.xz", "required": true },
+    "downloads": [
+      {
+        "type": "url",
+        "resolver": "fivem-linux",
+        "destination": "data/fx.tar.xz",
+        "fileName": "fx.tar.xz",
+        "required": true,
+        "overwrite": true
+      }
+    ],
+    "installer": {
+      "type": "archive",
+      "archive": "fx.tar.xz",
+      "extractDir": "server",
+      "verifyFiles": ["server/run.sh"],
+      "timeoutMs": 300000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["-lc", "chmod +x ./run.sh 2>/dev/null || true; exec ./run.sh +exec server.cfg"],
+      "workingDirectory": "data/server",
+      "restartPolicy": "on-failure"
+    },
+    "configFiles": [
+      {
+        "path": "server/server.cfg",
+        "lines": [
+          "endpoint_add_tcp \"0.0.0.0:{port}\"",
+          "endpoint_add_udp \"0.0.0.0:{port}\"",
+          "sv_hostname \"{name}\"",
+          "sets sv_projectName \"{name}\"",
+          "sets sv_projectDesc \"Managed by AnxHub\"",
+          "sv_maxclients 32",
+          "sv_licenseKey \"CHANGE_ME\""
+        ]
+      }
+    ],
+    "manualStartRequired": true,
+    "manualStartMessage": "FiveM requires a real Cfx.re license key in server.cfg before startup.",
+    "installMetadata": {
+      "method": "fivem-artifact",
+      "source": "runtime.fivem.net Linux FXServer artifacts",
+      "notes": "Requires tar with xz support. A Cfx.re license key must be added to server.cfg before start."
+    },
+    "configNotes": "Edit server.cfg and replace CHANGE_ME with a Cfx.re license key before starting.",
+    "installScript": ["create-instance", "verify-instance", "create-folders", "download", "install-archive", "write-config", "verify", "manual-start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "palworld",
+    "displayName": "Palworld Dedicated Server",
+    "description": "Palworld dedicated server installed with SteamCMD anonymous login.",
+    "icon": "PAL",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "steamcmd-native",
+    "defaultRam": "8G",
+    "defaultPorts": [8211, 27015],
+    "tags": ["palworld", "steamcmd", "game-server"],
+    "downloadSource": { "type": "steamcmd", "appId": 2394010, "login": "anonymous", "required": true },
+    "installer": {
+      "type": "steamcmd",
+      "appId": 2394010,
+      "installDir": "server",
+      "login": "anonymous",
+      "validate": true,
+      "verifyFiles": ["server/PalServer.sh"],
+      "timeoutMs": 900000
+    },
+    "startup": {
+      "executable": "bash",
+      "args": ["-lc", "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port={port} -players=32 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"],
+      "workingDirectory": "data/server",
+      "restartPolicy": "on-failure"
+    },
+    "installMetadata": {
+      "method": "steamcmd",
+      "appId": 2394010,
+      "login": "anonymous",
+      "notes": "Requires steamcmd and Linux native runtime dependencies on the host."
+    },
+    "configNotes": "Edit Pal/Saved/Config/LinuxServer/PalWorldSettings.ini after first start for production settings.",
+    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
+    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+  },
+  {
+    "id": "hytale",
+    "displayName": "Hytale Dedicated Server",
+    "description": "Coming soon. Official Hytale dedicated server binaries are not publicly available yet, so automated installs are disabled.",
+    "icon": "HYT",
+    "screenshots": [],
+    "author": "AnxOS",
+    "version": "1.0.0",
+    "category": "Game Servers",
+    "instanceType": "custom-command",
+    "startupType": "manual",
+    "defaultRam": "4G",
+    "defaultPorts": [],
+    "tags": ["hytale", "coming-soon", "game-server"],
+    "downloadSource": { "type": "manual", "required": false },
+    "disabled": true,
+    "comingSoon": true,
+    "comingSoonMessage": "Official Hytale dedicated server binaries are not publicly available yet. AnxHub will enable this template only after an official dedicated server install method is released.",
+    "installMetadata": {
+      "method": "manual-pending",
+      "notes": "No automated install is available yet because official dedicated server binaries are not publicly available."
+    },
+    "configNotes": "This card is informational only. It cannot create instances until Hytale publishes an official dedicated server distribution method.",
+    "installScript": [],
+    "configurationSchema": []
+  },
+  {
     "id": "jellyfin",
     "displayName": "Jellyfin",
     "description": "Self-hosted media server template.",

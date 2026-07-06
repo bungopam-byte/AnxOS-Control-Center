@@ -5380,6 +5380,16 @@ function hasOpenFileEditorDocument() {
 
 function setFilesViewMode(mode) {
   const nextMode = mode === "edit" && hasOpenFileEditorDocument() ? "edit" : "browse";
+
+  if (nextMode === "browse" && filesViewMode === "edit" && hasOpenFileEditorDocument()) {
+    if (!confirmDiscardFileEditor("return to Browse Mode")) {
+      renderFilesView();
+      return;
+    }
+
+    resetFileEditor("Select a file to preview or edit.");
+  }
+
   filesViewMode = nextMode;
 
   if (nextMode !== "edit" && fileEditorPanel) {
@@ -5447,7 +5457,7 @@ function toggleFileEditorMinimap() {
   });
 }
 
-function resetFileEditor(message = "Open a text file to view and edit it here.") {
+function resetFileEditor(message = "Select a file to preview or edit.") {
   disposeMonacoModel();
   latestFileDocument = null;
   filesViewMode = "browse";
@@ -5755,9 +5765,21 @@ function getSelectedFileEntry(entries) {
 }
 
 function selectFileEntry(entry) {
+  const nextPath = entry?.path || null;
+  const shouldClearEditor = !entry || entry.isDirectory || (latestFileDocument?.path && latestFileDocument.path !== nextPath);
+
+  if (shouldClearEditor && hasDirtyFileEditor() && !confirmDiscardFileEditor(entry?.isDirectory ? `select ${entry.name}` : "select another item")) {
+    renderFileRows(latestFilesListing?.entries || []);
+    selectFileEntry(getSelectedFileEntry(latestFilesListing?.entries || []));
+    return;
+  }
+
   selectedFileEntryPath = entry?.path || null;
   setFileDetails(entry);
-  if (!latestFileDocument?.path || latestFileDocument?.path === selectedFileEntryPath) {
+
+  if (shouldClearEditor) {
+    resetFileEditor("Select a file to preview or edit.");
+  } else if (!latestFileDocument?.path || latestFileDocument?.path === selectedFileEntryPath) {
     setFileEditorPath(selectedFileEntryPath || null);
   }
 

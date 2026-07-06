@@ -423,6 +423,14 @@ function hexToRgba(hex, alpha) {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
+function hexToMonacoColor(hex, alpha = 1) {
+  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : DEFAULT_ACCENT_COLOR.slice(1);
+  const clampedAlpha = Math.min(Math.max(Number(alpha), 0), 1);
+  const alphaHex = Math.round(clampedAlpha * 255).toString(16).padStart(2, "0");
+
+  return `#${normalized}${alphaHex}`.toUpperCase();
+}
+
 function getSafePageName(pageName) {
   return Array.from(pages).some((page) => page.dataset.page === pageName) ? pageName : DEFAULT_SETTINGS["general.defaultPage"];
 }
@@ -878,6 +886,7 @@ function defineAnxosMonacoTheme(monaco) {
   const muted = styles.getPropertyValue("--muted").trim() || "#b9abc8";
   const success = styles.getPropertyValue("--success").trim() || "#45e08f";
   const danger = styles.getPropertyValue("--danger").trim() || "#ff6b8a";
+  const transparent = "#00000000";
 
   monaco.editor.defineTheme("anxos-dark", {
     base: "vs-dark",
@@ -891,7 +900,7 @@ function defineAnxosMonacoTheme(monaco) {
       { token: "regexp", foreground: "45E08F" },
       { token: "type", foreground: "D8B4FE" },
       { token: "delimiter", foreground: "B9ABC8" },
-      { token: "invalid", foreground: "FFF4F7", background: "E04A68" },
+      { token: "invalid", foreground: "FF9AB1" },
     ],
     colors: {
       "editor.background": "#090C12",
@@ -899,43 +908,43 @@ function defineAnxosMonacoTheme(monaco) {
       "editorLineNumber.foreground": "#6E6180",
       "editorLineNumber.activeForeground": accent,
       "editorCursor.foreground": accent,
-      "editor.selectionBackground": "rgba(182, 108, 255, 0.24)",
-      "editor.inactiveSelectionBackground": "rgba(182, 108, 255, 0.14)",
-      "editor.lineHighlightBackground": "rgba(255, 255, 255, 0.03)",
-      "editor.lineHighlightBorder": "rgba(182, 108, 255, 0.14)",
-      "editorIndentGuide.background1": "rgba(58, 37, 82, 0.72)",
+      "editor.selectionBackground": hexToMonacoColor(accent, 0.24),
+      "editor.inactiveSelectionBackground": hexToMonacoColor(accent, 0.14),
+      "editor.lineHighlightBackground": hexToMonacoColor(accent, 0.08),
+      "editor.lineHighlightBorder": transparent,
+      "editorIndentGuide.background1": hexToMonacoColor(line, 0.72),
       "editorIndentGuide.activeBackground1": accent,
-      "editorBracketMatch.background": "rgba(182, 108, 255, 0.16)",
+      "editorBracketMatch.background": hexToMonacoColor(accent, 0.16),
       "editorBracketMatch.border": accent,
       "editorGutter.background": "#090C12",
       "editorWidget.background": panel,
       "editorWidget.border": line,
       "editorSuggestWidget.background": panel,
       "editorSuggestWidget.border": line,
-      "editorSuggestWidget.selectedBackground": "rgba(182, 108, 255, 0.18)",
+      "editorSuggestWidget.selectedBackground": hexToMonacoColor(accent, 0.18),
       "editorHoverWidget.background": panel,
       "editorHoverWidget.border": line,
-      "editor.findMatchBackground": "rgba(245, 196, 81, 0.22)",
-      "editor.findMatchHighlightBackground": "rgba(245, 196, 81, 0.12)",
-      "editorOverviewRuler.border": "rgba(255,255,255,0)",
+      "editor.findMatchBackground": hexToMonacoColor("#f5c451", 0.22),
+      "editor.findMatchHighlightBackground": hexToMonacoColor("#f5c451", 0.12),
+      "editorOverviewRuler.border": transparent,
       "editorError.foreground": danger,
       "editorWarning.foreground": "#f5c451",
       "editorInfo.foreground": accent,
-      "scrollbarSlider.background": "rgba(182, 108, 255, 0.22)",
-      "scrollbarSlider.hoverBackground": "rgba(182, 108, 255, 0.36)",
-      "scrollbarSlider.activeBackground": "rgba(182, 108, 255, 0.5)",
-      "minimap.selectionHighlight": "rgba(182, 108, 255, 0.16)",
+      "scrollbarSlider.background": hexToMonacoColor(accent, 0.22),
+      "scrollbarSlider.hoverBackground": hexToMonacoColor(accent, 0.36),
+      "scrollbarSlider.activeBackground": hexToMonacoColor(accent, 0.5),
+      "minimap.selectionHighlight": hexToMonacoColor(accent, 0.16),
       "minimap.errorHighlight": danger,
       "minimap.warningHighlight": "#f5c451",
       "badge.background": accent,
       "badge.foreground": background,
       "focusBorder": accent,
-      "inputValidation.errorBackground": "rgba(255, 107, 138, 0.12)",
-      "inputValidation.infoBackground": "rgba(182, 108, 255, 0.14)",
-      "inputValidation.warningBackground": "rgba(245, 196, 81, 0.12)",
+      "inputValidation.errorBackground": hexToMonacoColor(danger, 0.12),
+      "inputValidation.infoBackground": hexToMonacoColor(accent, 0.14),
+      "inputValidation.warningBackground": hexToMonacoColor("#f5c451", 0.12),
       "list.focusOutline": accent,
-      "list.activeSelectionBackground": "rgba(182, 108, 255, 0.16)",
-      "list.hoverBackground": "rgba(255, 255, 255, 0.04)",
+      "list.activeSelectionBackground": hexToMonacoColor(accent, 0.16),
+      "list.hoverBackground": "#FFFFFF0A",
       "statusBar.foreground": muted,
       "statusBar.noFolderBackground": panel,
       "statusBar.debuggingBackground": success,

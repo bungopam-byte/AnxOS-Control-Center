@@ -65,7 +65,7 @@ const instancesCreateToggleButton = document.querySelector('[data-instance-actio
 const instancesStartButton = document.querySelector('[data-instance-action="start"]');
 const instancesStopButton = document.querySelector('[data-instance-action="stop"]');
 const instancesRestartButton = document.querySelector('[data-instance-action="restart"]');
-const instancesDeleteButton = document.querySelector('[data-instance-action="delete"]');
+const instancesDeleteButtons = document.querySelectorAll('[data-instance-action="delete"]');
 const instancesLogsButton = document.querySelector('[data-instance-action="logs"]');
 const instanceCreateForm = document.querySelector("[data-instance-create-form]");
 const instanceCreateSubmitButton = document.querySelector("[data-instance-create-submit]");
@@ -4262,10 +4262,13 @@ function updateInstanceActionButtons() {
     instancesRestartButton.disabled = busy || !hasInstancesBridge || !canRestartInstance(selectedInstance);
   }
 
-  if (instancesDeleteButton) {
-    instancesDeleteButton.disabled = busy || !hasInstancesBridge || !selectedInstance;
-    instancesDeleteButton.textContent = instanceActionRequestInFlight ? "Working..." : "Delete";
-  }
+  instancesDeleteButtons.forEach((button) => {
+    if (!button.dataset.defaultLabel) {
+      button.dataset.defaultLabel = button.textContent || "Delete";
+    }
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance;
+    button.textContent = instanceActionRequestInFlight ? "Working..." : button.dataset.defaultLabel;
+  });
 
   if (instancesLogsButton) {
     instancesLogsButton.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
@@ -11505,7 +11508,9 @@ document.querySelector('[data-instance-action="cancel-create"]')?.addEventListen
 instancesStartButton?.addEventListener("click", () => runInstanceAction("start"));
 instancesStopButton?.addEventListener("click", () => runInstanceAction("stop"));
 instancesRestartButton?.addEventListener("click", () => runInstanceAction("restart"));
-instancesDeleteButton?.addEventListener("click", () => runInstanceAction("delete"));
+instancesDeleteButtons.forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("delete"));
+});
 instancesLogsButton?.addEventListener("click", () => {
   setActiveInstanceTab("console");
   refreshInstanceLogs();

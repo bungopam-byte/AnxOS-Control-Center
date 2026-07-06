@@ -3566,17 +3566,23 @@ body.is-resizing-files * {
 }
 
 .instance-quick-actions {
+  position: relative;
+  z-index: 3;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid rgba(185, 171, 200, 0.12);
   background: rgba(8, 10, 15, 0.24);
+  pointer-events: auto;
 }
 
 .instance-quick-actions .inline-action {
+  position: relative;
+  z-index: 1;
   min-height: 32px;
   padding: 7px 9px;
+  pointer-events: auto;
 }
 
 .instance-quick-actions .instance-danger-action {
@@ -3585,6 +3591,8 @@ body.is-resizing-files * {
 }
 
 .instance-tabs {
+  position: relative;
+  z-index: 2;
   display: flex;
   gap: 6px;
   overflow-x: auto;

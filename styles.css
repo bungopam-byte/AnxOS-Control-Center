@@ -2284,9 +2284,71 @@ body.is-resizing-files * {
   grid-column: 1 / -1;
 }
 
+.instance-wizard-header {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.instance-wizard-header strong {
+  display: block;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.instance-wizard-header span:not(.status-pill) {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.instance-template-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.instance-template-card {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.instance-template-card.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.instance-template-card span {
+  width: max-content;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(182, 108, 255, 0.2);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.instance-template-card small {
+  color: var(--muted);
+}
+
+.instance-wizard-option {
+  align-self: end;
+}
+
 .instances-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(320px, 0.82fr) minmax(420px, 1.18fr);
   gap: 18px;
   align-items: start;
 }
@@ -2351,6 +2413,211 @@ body.is-resizing-files * {
   border-radius: var(--radius);
   background: rgba(13, 7, 22, 0.82);
   overflow: hidden;
+}
+
+.instance-workspace {
+  min-height: 560px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+  overflow: hidden;
+}
+
+.instance-workspace-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.instance-workspace-header h3 {
+  margin: 0 0 4px;
+}
+
+.instance-workspace-header span:not(.instance-state) {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.instance-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(8, 10, 15, 0.36);
+}
+
+.instance-tab {
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.instance-tab.is-active {
+  border-color: rgba(182, 108, 255, 0.45);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.instance-tab-panel {
+  display: none;
+  padding: 16px;
+}
+
+.instance-tab-panel.is-active {
+  display: grid;
+  gap: 16px;
+}
+
+.instance-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.instance-overview-grid article {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 15, 0.44);
+}
+
+.instance-overview-grid span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.instance-minecraft-summary,
+.instance-minecraft-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(182, 108, 255, 0.28);
+  border-radius: var(--radius);
+  background: rgba(182, 108, 255, 0.07);
+}
+
+.instance-minecraft-summary h4,
+.instance-minecraft-settings h4 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.instance-console-toolbar,
+.instance-files-toolbar,
+.instance-console-input,
+.instance-network-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.instance-console-toolbar input,
+.instance-console-input input,
+.instance-network-row input,
+.instance-network-list input,
+.instance-network-list select {
+  min-width: 180px;
+}
+
+.instance-console-input input {
+  flex: 1 1 240px;
+}
+
+.instance-log-viewer li.is-stderr {
+  color: #ff9ab1;
+}
+
+.instance-log-viewer li.is-stdin {
+  color: #c7a1ff;
+}
+
+.instance-files-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1.3fr);
+  gap: 12px;
+  min-height: 360px;
+}
+
+.instance-file-dropzone {
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  text-align: center;
+}
+
+.instance-file-dropzone.is-dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.instance-file-editor {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.instance-file-editor textarea,
+.instance-raw-json {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  border: 0;
+  background: #090c12;
+  color: var(--text);
+  padding: 12px;
+  font: 0.84rem/1.55 "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.instance-config-form,
+.instance-advanced-panel {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.instance-config-form .ssh-connection-actions,
+.instance-raw-json,
+.instance-danger-zone {
+  grid-column: 1 / -1;
+}
+
+.instance-network-list {
+  display: grid;
+  gap: 10px;
+}
+
+.instance-network-row {
+  justify-content: space-between;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(8, 10, 15, 0.42);
+}
+
+.instance-danger-zone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(255, 107, 138, 0.36);
+  border-radius: var(--radius);
+  background: rgba(255, 107, 138, 0.08);
 }
 
 .instance-log-viewer {
@@ -3175,6 +3442,247 @@ dd {
   transform: translateY(0);
 }
 
+.marketplace-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.marketplace-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) 1fr auto;
+  gap: 14px;
+  align-items: end;
+  padding: 16px;
+  border: 1px solid rgba(184, 131, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(18, 8, 32, 0.74);
+}
+
+.marketplace-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.marketplace-category {
+  border: 1px solid rgba(185, 148, 255, 0.24);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: rgba(124, 70, 210, 0.12);
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.marketplace-category:hover,
+.marketplace-category.is-active {
+  color: var(--text);
+  border-color: rgba(201, 168, 255, 0.55);
+  background: rgba(139, 92, 246, 0.24);
+  transform: translateY(-1px);
+}
+
+.marketplace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 390px);
+  gap: 18px;
+  align-items: start;
+}
+
+.marketplace-browser,
+.marketplace-side-panel {
+  min-height: 520px;
+  border: 1px solid rgba(184, 131, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(13, 5, 26, 0.72);
+  box-shadow: 0 18px 42px rgba(4, 1, 12, 0.28);
+}
+
+.marketplace-browser {
+  position: relative;
+  padding: 16px;
+}
+
+.marketplace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.marketplace-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  min-height: 178px;
+  padding: 16px;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(32, 15, 58, 0.88), rgba(18, 8, 34, 0.82));
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.marketplace-card:hover,
+.marketplace-card.is-selected {
+  border-color: rgba(211, 186, 255, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 38px rgba(65, 33, 118, 0.26);
+}
+
+.marketplace-card__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  background: rgba(139, 92, 246, 0.28);
+  border: 1px solid rgba(202, 169, 255, 0.22);
+}
+
+.marketplace-card__body {
+  display: grid;
+  gap: 8px;
+}
+
+.marketplace-card__body strong {
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.marketplace-card__body p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.marketplace-card__meta {
+  color: rgba(216, 203, 238, 0.72);
+  font-size: 0.78rem;
+}
+
+.marketplace-card .inline-action {
+  grid-column: 1 / -1;
+  justify-content: center;
+}
+
+.marketplace-side-panel {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.marketplace-wizard {
+  display: grid;
+  gap: 12px;
+}
+
+.marketplace-wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.marketplace-wizard-steps span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(124, 70, 210, 0.16);
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  font-size: 0.76rem;
+}
+
+.marketplace-install-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.marketplace-progress-empty,
+.marketplace-progress-step {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(185, 148, 255, 0.14);
+  background: rgba(10, 3, 20, 0.52);
+}
+
+.marketplace-progress-empty {
+  color: var(--muted);
+}
+
+.marketplace-progress-step {
+  display: grid;
+  gap: 3px;
+}
+
+.marketplace-progress-step strong {
+  color: var(--text);
+}
+
+.marketplace-progress-step span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.marketplace-progress-step[data-status="running"] {
+  border-color: rgba(147, 197, 253, 0.4);
+}
+
+.marketplace-progress-step[data-status="complete"] {
+  border-color: rgba(134, 239, 172, 0.32);
+}
+
+.marketplace-progress-step[data-status="failed"] {
+  border-color: rgba(248, 113, 113, 0.42);
+}
+
+.download-manager {
+  display: grid;
+  gap: 12px;
+}
+
+.download-list {
+  display: grid;
+  gap: 10px;
+}
+
+.download-item {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(12, 4, 24, 0.6);
+}
+
+.download-item__header,
+.download-item__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.download-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.download-progress span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8b5cf6, #c084fc);
+}
+
+.download-item small {
+  color: var(--muted);
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
@@ -3342,8 +3850,18 @@ dd {
   }
 
   .instances-workspace,
-  .instance-create-form {
+  .instance-create-form,
+  .instance-template-grid,
+  .instance-files-grid,
+  .instance-config-form,
+  .instance-advanced-panel {
     grid-template-columns: 1fr;
+  }
+
+  .instance-overview-grid,
+  .instance-minecraft-summary,
+  .instance-minecraft-settings {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .coolpals-summary-grid {
@@ -3421,7 +3939,14 @@ dd {
   .minecraft-detail-list,
   .instances-summary-grid,
   .instances-workspace,
-  .instance-create-form {
+  .instance-create-form,
+  .instance-template-grid,
+  .instance-files-grid,
+  .instance-config-form,
+  .instance-advanced-panel,
+  .instance-overview-grid,
+  .instance-minecraft-summary,
+  .instance-minecraft-settings {
     grid-template-columns: 1fr;
   }
 
@@ -3538,16 +4063,20 @@ dd {
   }
 
   .docker-summary-grid,
-  .docker-toolbar {
+  .docker-toolbar,
+  .marketplace-toolbar,
+  .marketplace-layout {
     grid-template-columns: 1fr;
   }
 
   .docker-actions,
-  .docker-actions .inline-action {
+  .docker-actions .inline-action,
+  .marketplace-toolbar .inline-action {
     width: 100%;
   }
 
-  .docker-actions .inline-action {
+  .docker-actions .inline-action,
+  .marketplace-toolbar .inline-action {
     justify-content: center;
   }
 

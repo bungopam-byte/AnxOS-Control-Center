@@ -1474,6 +1474,13 @@ async function createInstance(payload = {}) {
   });
 }
 
+async function updateInstance(instanceId, payload = {}) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}`, {
+    method: "PATCH",
+    body: payload,
+  });
+}
+
 async function getInstanceStatus(instanceId) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/status`);
 }
@@ -1489,6 +1496,85 @@ async function getInstanceLogs(instanceId, options = {}) {
   });
 
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`);
+}
+
+async function clearInstanceLogs(instanceId, options = {}) {
+  const query = new URLSearchParams({
+    stream: options.stream || "all",
+  });
+
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+async function sendInstanceCommand(instanceId, command) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/command`, {
+    method: "POST",
+    body: { command },
+  });
+}
+
+async function forceKillInstance(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/force-kill`, {
+    method: "POST",
+  });
+}
+
+async function listInstanceFiles(instanceId, currentPath = ".") {
+  const query = new URLSearchParams({ path: currentPath || "." });
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/files?${query.toString()}`);
+}
+
+async function readInstanceFile(instanceId, filePath) {
+  const query = new URLSearchParams({ path: filePath || "." });
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`);
+}
+
+async function writeInstanceFile(instanceId, filePath, content, options = {}) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
+    method: "PUT",
+    body: {
+      path: filePath,
+      content,
+      encoding: options.encoding,
+    },
+  });
+}
+
+async function deleteInstanceFile(instanceId, filePath) {
+  const query = new URLSearchParams({ path: filePath || "." });
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`, {
+    method: "DELETE",
+  });
+}
+
+async function createInstanceFolder(instanceId, folderPath) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/mkdir`, {
+    method: "POST",
+    body: { path: folderPath },
+  });
+}
+
+async function renameInstanceFile(instanceId, oldPath, newPath) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/rename`, {
+    method: "POST",
+    body: {
+      oldPath,
+      newPath,
+    },
+  });
+}
+
+async function getMinecraftProperties(instanceId) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`);
+}
+
+async function saveMinecraftProperties(instanceId, properties = {}) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`, {
+    method: "PUT",
+    body: { properties },
+  });
 }
 
 async function startInstance(instanceId) {
@@ -1517,9 +1603,13 @@ async function deleteInstance(instanceId) {
 
 module.exports = {
   AgentClientError,
+  clearInstanceLogs,
   downloadFile,
   createInstance,
+  createInstanceFolder,
   deleteInstance,
+  deleteInstanceFile,
+  forceKillInstance,
   getAgentConfigPath,
   getBackendMode,
   getDefaultAgentSettings,
@@ -1537,17 +1627,25 @@ module.exports = {
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
+  getMinecraftProperties,
   getPlayitSnapshot,
   getPlayitStatus,
   isHealthy,
+  listInstanceFiles,
   listInstances,
   loadEnvironment,
   readAgentSettings,
   requestBuffer,
   requestJson,
   saveAgentSettings,
+  saveMinecraftProperties,
+  sendInstanceCommand,
   restartInstance,
   testConnection,
   startInstance,
   stopInstance,
+  readInstanceFile,
+  renameInstanceFile,
+  updateInstance,
+  writeInstanceFile,
 };

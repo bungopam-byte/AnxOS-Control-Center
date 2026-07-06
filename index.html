@@ -172,6 +172,16 @@
             </span>
             <span class="nav-item__label" data-nav-label>Instances</span>
           </button>
+          <button class="nav-item" type="button" data-page-target="marketplace" data-page-label="Marketplace" data-tooltip="Marketplace" aria-label="Marketplace">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 8h14l-1 12H6Z"></path>
+                <path d="M8 8a4 4 0 0 1 8 0"></path>
+                <path d="M9 13h6"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Marketplace</span>
+          </button>
           <button class="nav-item" type="button" data-page-target="ssh" data-page-label="SSH" data-tooltip="SSH" aria-label="SSH">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -943,6 +953,82 @@
           </section>
         </section>
 
+        <section class="page" data-page="marketplace">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Application Templates</p>
+              <h1>Marketplace</h1>
+              <p class="lede">Browse installable server templates and launch managed instances without manual setup.</p>
+            </div>
+          </header>
+
+          <section class="marketplace-shell" aria-label="Application marketplace">
+            <div class="marketplace-toolbar">
+              <label class="docker-search">
+                <span>Search templates</span>
+                <input type="search" placeholder="Search apps, servers, bots, and databases" data-marketplace-search>
+              </label>
+              <div class="marketplace-categories" data-marketplace-categories aria-label="Marketplace categories"></div>
+              <button class="inline-action" type="button" data-marketplace-refresh>Refresh</button>
+            </div>
+
+            <div class="marketplace-layout">
+              <section class="marketplace-browser" aria-label="Installable templates">
+                <div class="marketplace-grid" data-marketplace-grid></div>
+                <div class="docker-loading-state marketplace-loading" data-marketplace-loading hidden>
+                  <span class="file-loader" aria-hidden="true"></span>
+                  <strong>Loading marketplace</strong>
+                  <span>Reading template catalog...</span>
+                </div>
+                <div class="docker-empty-state marketplace-empty" data-marketplace-empty hidden>
+                  <strong>No templates found</strong>
+                  <span>Try another search or category.</span>
+                </div>
+              </section>
+
+              <aside class="marketplace-side-panel" aria-label="Installer">
+                <div class="panel-heading">
+                  <div>
+                    <h3 data-marketplace-selected-name>Select a template</h3>
+                    <span data-marketplace-selected-meta>Installable templates appear as cards.</span>
+                  </div>
+                  <span class="status-pill status-pill--planned" data-marketplace-install-state>Ready</span>
+                </div>
+
+                <form class="marketplace-wizard" data-marketplace-wizard hidden>
+                  <div class="marketplace-wizard-steps" data-marketplace-wizard-steps></div>
+                  <label class="ssh-field"><span>Name</span><input type="text" data-marketplace-field="name" placeholder="My Server"></label>
+                  <label class="ssh-field" data-marketplace-field-wrap="version"><span>Version</span><input type="text" data-marketplace-field="version" placeholder="1.21.4"></label>
+                  <label class="ssh-field" data-marketplace-field-wrap="serverType"><span>Server Type</span><select data-marketplace-field="serverType"><option>Vanilla</option><option selected>Paper</option><option>Purpur</option><option>Fabric</option><option>Forge</option><option>NeoForge</option></select></label>
+                  <label class="ssh-field" data-marketplace-field-wrap="storageLocation"><span>Storage Location</span><input type="text" data-marketplace-field="storageLocation" placeholder="data"></label>
+                  <label class="ssh-field"><span>Memory</span><input type="text" data-marketplace-field="memory" placeholder="4G"></label>
+                  <label class="ssh-field"><span>Port</span><input type="number" min="1" max="65535" data-marketplace-field="port" placeholder="25565"></label>
+                  <label class="console-toggle" data-marketplace-field-wrap="playitTunnel"><input type="checkbox" data-marketplace-field="playitTunnel"><span>Configure Playit tunnel later</span></label>
+                  <label class="console-toggle" data-marketplace-field-wrap="acceptEula"><input type="checkbox" data-marketplace-field="acceptEula"><span>Accept Minecraft EULA</span></label>
+                  <label class="console-toggle"><input type="checkbox" checked data-marketplace-field="start"><span>Start after install</span></label>
+                  <div class="ssh-connection-actions">
+                    <button class="inline-action" type="submit" data-marketplace-install>Install</button>
+                    <button class="inline-action" type="button" data-marketplace-cancel>Cancel</button>
+                  </div>
+                  <p class="ssh-password-note" data-marketplace-message>Templates create instances through the existing Debian agent API.</p>
+                </form>
+
+                <div class="marketplace-install-progress" data-marketplace-progress></div>
+
+                <div class="download-manager">
+                  <div class="panel-heading">
+                    <h3>Download Manager</h3>
+                    <button class="inline-action" type="button" data-download-refresh>Refresh</button>
+                  </div>
+                  <div class="download-list" data-download-list>
+                    <div class="docker-empty-state"><strong>No downloads queued</strong><span>Template downloads will appear here.</span></div>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </section>
+        </section>
+
         <section class="page" data-page="instances">
           <header class="page-header">
             <div>
@@ -981,6 +1067,7 @@
                 <span>Logs</span>
                 <select data-instances-log-stream disabled>
                   <option value="all">All</option>
+                  <option value="stdin">stdin</option>
                   <option value="stdout">stdout</option>
                   <option value="stderr">stderr</option>
                 </select>
@@ -1004,31 +1091,40 @@
               </div>
             </div>
 
-            <form class="instance-create-form" data-instance-create-form hidden>
-              <label class="ssh-field"><span>ID</span><input type="text" placeholder="discord_bot" data-instance-form="id" autocomplete="off"></label>
-              <label class="ssh-field"><span>Name</span><input type="text" placeholder="Discord Bot" data-instance-form="displayName" autocomplete="off"></label>
-              <label class="ssh-field">
-                <span>Type</span>
-                <select data-instance-form="type">
-                  <option value="custom-command">Custom Command</option>
-                  <option value="node-app">Node.js Application</option>
-                  <option value="python-app">Python Application</option>
-                  <option value="java-app">Java Application</option>
-                  <option value="minecraft-paper">Minecraft Paper Server</option>
-                </select>
-              </label>
-              <label class="ssh-field"><span>Executable</span><input type="text" placeholder="node, python3, java, or /usr/bin/custom" data-instance-form="executable" autocomplete="off"></label>
-              <label class="ssh-field" data-instance-entrypoint-field><span>Entrypoint/JAR</span><input type="text" placeholder="index.js, app.py, app.jar, paper.jar" data-instance-form="entrypoint" autocomplete="off"></label>
-              <label class="ssh-field"><span>Args</span><input type="text" placeholder="--port 3000" data-instance-form="args" autocomplete="off"></label>
-              <label class="ssh-field"><span>Working Dir</span><input type="text" placeholder="data" data-instance-form="workingDirectory" autocomplete="off"></label>
-              <label class="ssh-field"><span>Ports</span><input type="text" placeholder="3000, 25565" data-instance-form="ports" autocomplete="off"></label>
-              <label class="ssh-field"><span>Env Vars</span><input type="text" placeholder="NODE_ENV=production,PORT=3000" data-instance-form="environment" autocomplete="off"></label>
-              <label class="ssh-field"><span>Tags</span><input type="text" placeholder="bot, production" data-instance-form="tags" autocomplete="off"></label>
+            <form class="instance-create-form instance-wizard" data-instance-create-form hidden>
+              <div class="instance-wizard-header">
+                <div>
+                  <strong>Create Instance</strong>
+                  <span>Choose a template, then fill in the fields for that runtime.</span>
+                </div>
+                <span class="status-pill status-pill--planned">Wizard</span>
+              </div>
+              <div class="instance-template-grid" role="radiogroup" aria-label="Instance type">
+                <button class="instance-template-card is-active" type="button" data-instance-template="minecraft-paper"><span>MC</span><strong>Minecraft</strong><small>Paper server</small></button>
+                <button class="instance-template-card" type="button" data-instance-template="node-app"><span>JS</span><strong>Node.js</strong><small>App or API</small></button>
+                <button class="instance-template-card" type="button" data-instance-template="python-app"><span>PY</span><strong>Python</strong><small>Script or service</small></button>
+                <button class="instance-template-card" type="button" data-instance-template="java-app"><span>JAR</span><strong>Java</strong><small>Executable jar</small></button>
+                <button class="instance-template-card" type="button" data-instance-template="docker-compose"><span>DKR</span><strong>Docker</strong><small>Placeholder</small></button>
+                <button class="instance-template-card" type="button" data-instance-template="custom-command"><span>CMD</span><strong>Custom</strong><small>Advanced command</small></button>
+              </div>
+              <input type="hidden" data-instance-form="type" value="minecraft-paper">
+              <label class="ssh-field"><span>Name</span><input type="text" placeholder="Survival Server" data-instance-form="displayName" autocomplete="off"></label>
+              <label class="ssh-field"><span>ID</span><input type="text" placeholder="survival_server" data-instance-form="id" autocomplete="off"></label>
+              <label class="ssh-field" data-instance-entrypoint-field><span>Entrypoint / Jar</span><input type="text" placeholder="paper.jar" data-instance-form="entrypoint" autocomplete="off"></label>
+              <label class="ssh-field"><span>Memory</span><input type="text" placeholder="4G" data-instance-form="memoryLimit" autocomplete="off"></label>
+              <label class="ssh-field"><span>Port</span><input type="text" placeholder="25565" data-instance-form="ports" autocomplete="off"></label>
+              <label class="ssh-field"><span>Project Folder</span><input type="text" placeholder="data" data-instance-form="workingDirectory" autocomplete="off"></label>
+              <label class="ssh-field" data-instance-custom-field hidden><span>Executable</span><input type="text" placeholder="node, python3, java, or /usr/bin/custom" data-instance-form="executable" autocomplete="off"></label>
+              <label class="ssh-field" data-instance-custom-field hidden><span>Arguments</span><input type="text" placeholder="--port 3000" data-instance-form="args" autocomplete="off"></label>
+              <label class="ssh-field"><span>Environment</span><input type="text" placeholder="NODE_ENV=production,PORT=3000" data-instance-form="environment" autocomplete="off"></label>
+              <label class="ssh-field"><span>Tags</span><input type="text" placeholder="minecraft, production" data-instance-form="tags" autocomplete="off"></label>
+              <label class="console-toggle instance-wizard-option"><input type="checkbox" data-instance-form="acceptEula"><span>Accept Minecraft EULA</span></label>
+              <label class="console-toggle instance-wizard-option"><input type="checkbox" data-instance-form="playitTunnel"><span>Playit tunnel later</span></label>
               <div class="ssh-connection-actions">
                 <button class="inline-action" type="submit" data-instance-create-submit>Create Instance</button>
                 <button class="inline-action" type="button" data-instance-action="cancel-create">Cancel</button>
               </div>
-              <p class="ssh-password-note" data-instance-form-message>Commands run without a shell. Secrets are not accepted in environment variable names.</p>
+              <p class="ssh-password-note" data-instance-form-message>Only Custom Command exposes raw executable fields. Server downloads are planned; place jars/project files in instance/data for now.</p>
             </form>
 
             <div class="instances-workspace">
@@ -1065,40 +1161,146 @@
                 </div>
               </section>
 
-              <aside class="docker-details-panel instances-details-panel" aria-label="Instance details">
-                <div class="panel-heading">
-                  <h3>Instance Details</h3>
-                  <span class="status-pill status-pill--planned" data-field="instanceDetailState">None</span>
+              <section class="instances-details-panel instance-workspace" aria-label="Instance workspace">
+                <div class="instance-workspace-header">
+                  <div>
+                    <h3 data-instance-detail="name">No instance selected</h3>
+                    <span data-instance-detail="id">Select an instance to manage it.</span>
+                  </div>
+                  <span class="instance-state" data-field="instanceDetailState">None</span>
                 </div>
-                <dl class="docker-details-list">
-                  <div><dt>Name</dt><dd data-instance-detail="name">None selected</dd></div>
-                  <div><dt>ID</dt><dd data-instance-detail="id">Unavailable</dd></div>
-                  <div><dt>Type</dt><dd data-instance-detail="type">Unavailable</dd></div>
-                  <div><dt>Command</dt><dd data-instance-detail="command">Unavailable</dd></div>
-                  <div><dt>PID</dt><dd data-instance-detail="pid">Unavailable</dd></div>
-                  <div><dt>Uptime</dt><dd data-instance-detail="uptime">Unavailable</dd></div>
-                  <div><dt>CPU</dt><dd data-instance-detail="cpu">Unavailable</dd></div>
-                  <div><dt>RAM</dt><dd data-instance-detail="memory">Unavailable</dd></div>
-                  <div><dt>Disk</dt><dd data-instance-detail="disk">Unavailable</dd></div>
-                  <div><dt>Ports</dt><dd data-instance-detail="ports">Unavailable</dd></div>
-                  <div><dt>Tags</dt><dd data-instance-detail="tags">Unavailable</dd></div>
-                </dl>
-              </aside>
-            </div>
+                <div class="instance-tabs" role="tablist" aria-label="Instance workspace tabs">
+                  <button class="instance-tab is-active" type="button" data-instance-tab="overview">Overview</button>
+                  <button class="instance-tab" type="button" data-instance-tab="console">Console</button>
+                  <button class="instance-tab" type="button" data-instance-tab="files">Files</button>
+                  <button class="instance-tab" type="button" data-instance-tab="configuration">Configuration</button>
+                  <button class="instance-tab" type="button" data-instance-tab="networking">Networking</button>
+                  <button class="instance-tab" type="button" data-instance-tab="backups">Backups</button>
+                  <button class="instance-tab" type="button" data-instance-tab="advanced">Advanced</button>
+                </div>
 
-            <section class="instance-log-panel" aria-label="Instance logs">
-              <div class="coolpals-panel-header">
-                <h3>Instance Logs</h3>
-                <span data-instances-log-count>0 lines</span>
-              </div>
-              <div class="instance-log-viewer">
-                <ol data-instances-logs></ol>
-                <div class="coolpals-log-empty" data-instances-log-empty>
-                  <strong>No logs loaded</strong>
-                  <span>Select an instance and refresh logs.</span>
+                <div class="instance-tab-panel is-active" data-instance-panel="overview">
+                  <div class="instance-overview-grid">
+                    <article><span>CPU</span><strong data-instance-detail="cpu">Unavailable</strong></article>
+                    <article><span>RAM</span><strong data-instance-detail="memory">Unavailable</strong></article>
+                    <article><span>Disk</span><strong data-instance-detail="disk">Unavailable</strong></article>
+                    <article><span>Uptime</span><strong data-instance-detail="uptime">Unavailable</strong></article>
+                    <article><span>PID</span><strong data-instance-detail="pid">Unavailable</strong></article>
+                    <article><span>Type</span><strong data-instance-detail="type">Unavailable</strong></article>
+                  </div>
+                  <dl class="docker-details-list instance-overview-list">
+                    <div><dt>Working Directory</dt><dd data-instance-detail="workingDirectory">Unavailable</dd></div>
+                    <div><dt>Command</dt><dd data-instance-detail="command">Unavailable</dd></div>
+                    <div><dt>Ports</dt><dd data-instance-detail="ports">Unavailable</dd></div>
+                    <div><dt>Tags</dt><dd data-instance-detail="tags">Unavailable</dd></div>
+                  </dl>
+                  <label class="console-toggle"><input type="checkbox" data-instance-config="autoStart"><span>Auto Start</span></label>
+                  <div class="instance-minecraft-summary" data-instance-minecraft-summary hidden>
+                    <h4>Minecraft</h4>
+                    <dl class="docker-details-list">
+                      <div><dt>Version</dt><dd data-minecraft-summary="version">Future</dd></div>
+                      <div><dt>World</dt><dd data-minecraft-summary="world">world</dd></div>
+                      <div><dt>Players</dt><dd data-minecraft-summary="players">Future</dd></div>
+                      <div><dt>TPS</dt><dd data-minecraft-summary="tps">Future</dd></div>
+                      <div><dt>Java</dt><dd data-minecraft-summary="java">Configured executable</dd></div>
+                      <div><dt>Playit</dt><dd data-minecraft-summary="playit">Future</dd></div>
+                    </dl>
+                  </div>
                 </div>
-              </div>
-            </section>
+
+                <div class="instance-tab-panel" data-instance-panel="console">
+                  <div class="instance-console-toolbar">
+                    <label class="console-toggle"><input type="checkbox" checked data-instance-console-autoscroll><span>Auto-scroll</span></label>
+                    <label class="console-toggle"><input type="checkbox" data-instance-console-pause><span>Pause</span></label>
+                    <input type="search" placeholder="Search logs" data-instance-console-search>
+                    <button class="inline-action" type="button" data-instance-action="copy-console">Copy</button>
+                    <button class="inline-action" type="button" data-instance-action="clear-console">Clear</button>
+                    <button class="inline-action" type="button" data-instance-action="download-logs">Download</button>
+                  </div>
+                  <div class="instance-log-viewer instance-console-viewer">
+                    <ol data-instances-logs></ol>
+                    <div class="coolpals-log-empty" data-instances-log-empty><strong>No logs loaded</strong><span>Select an instance and refresh logs.</span></div>
+                  </div>
+                  <form class="instance-console-input" data-instance-console-form>
+                    <input type="text" placeholder="command..." data-instance-console-command>
+                    <button class="inline-action" type="submit">Send</button>
+                    <span data-instances-log-count>0 lines</span>
+                  </form>
+                </div>
+
+                <div class="instance-tab-panel" data-instance-panel="files">
+                  <div class="instance-files-toolbar">
+                    <button class="inline-action" type="button" data-instance-file-action="up">Up</button>
+                    <button class="inline-action" type="button" data-instance-file-action="refresh">Refresh</button>
+                    <button class="inline-action" type="button" data-instance-file-action="new-folder">New Folder</button>
+                    <button class="inline-action" type="button" data-instance-file-action="rename">Rename</button>
+                    <button class="inline-action" type="button" data-instance-file-action="delete">Delete</button>
+                    <button class="inline-action" type="button" data-instance-file-action="save" disabled>Save</button>
+                    <span data-instance-file-path>data/</span>
+                  </div>
+                  <div class="instance-file-dropzone" data-instance-file-dropzone>Drop text/config files here to upload into this folder.</div>
+                  <div class="instance-files-grid">
+                    <table class="docker-table"><tbody data-instance-files-list></tbody></table>
+                    <div class="instance-file-editor">
+                      <div class="panel-heading"><h3 data-instance-file-editor-name>No file opened</h3><span data-instance-file-editor-state>Clean</span></div>
+                      <textarea data-instance-file-editor disabled></textarea>
+                    </div>
+                  </div>
+                </div>
+
+                <form class="instance-tab-panel instance-config-form" data-instance-panel="configuration" data-instance-config-form>
+                  <label class="ssh-field"><span>Name</span><input data-instance-config="displayName"></label>
+                  <label class="ssh-field"><span>Instance ID</span><input data-instance-config="id" readonly></label>
+                  <label class="ssh-field"><span>Working Directory</span><input data-instance-config="workingDirectory"></label>
+                  <label class="ssh-field"><span>Java / Executable</span><input data-instance-config="executable"></label>
+                  <label class="ssh-field"><span>Jar</span><input data-instance-config="jar"></label>
+                  <label class="ssh-field"><span>Memory</span><input data-instance-config="memoryLimit"></label>
+                  <label class="ssh-field"><span>Startup Arguments</span><input data-instance-config="args"></label>
+                  <label class="ssh-field"><span>Restart Policy</span><select data-instance-config="restartPolicy"><option value="never">never</option><option value="on-failure">on-failure</option><option value="always">always</option></select></label>
+                  <label class="ssh-field"><span>Startup Timeout</span><input type="number" data-instance-config="startupTimeoutMs"></label>
+                  <label class="ssh-field"><span>Shutdown Timeout</span><input type="number" data-instance-config="shutdownTimeoutMs"></label>
+                  <label class="console-toggle"><input type="checkbox" data-instance-config="autoStart"><span>Auto Start</span></label>
+                  <section class="instance-minecraft-settings" data-instance-minecraft-settings hidden>
+                    <h4>Minecraft Settings</h4>
+                    <label class="ssh-field"><span>Server Port</span><input data-minecraft-property="server-port"></label>
+                    <label class="ssh-field"><span>MOTD</span><input data-minecraft-property="motd"></label>
+                    <label class="ssh-field"><span>Max Players</span><input data-minecraft-property="max-players"></label>
+                    <label class="ssh-field"><span>Difficulty</span><input data-minecraft-property="difficulty"></label>
+                    <label class="ssh-field"><span>Gamemode</span><input data-minecraft-property="gamemode"></label>
+                    <label class="ssh-field"><span>View Distance</span><input data-minecraft-property="view-distance"></label>
+                    <label class="ssh-field"><span>Simulation Distance</span><input data-minecraft-property="simulation-distance"></label>
+                    <label class="ssh-field"><span>Online Mode</span><select data-minecraft-property="online-mode"><option>true</option><option>false</option></select></label>
+                    <label class="ssh-field"><span>Allow Flight</span><select data-minecraft-property="allow-flight"><option>false</option><option>true</option></select></label>
+                    <label class="ssh-field"><span>Spawn Protection</span><input data-minecraft-property="spawn-protection"></label>
+                    <label class="ssh-field"><span>PVP</span><select data-minecraft-property="pvp"><option>true</option><option>false</option></select></label>
+                    <label class="ssh-field"><span>Whitelist</span><select data-minecraft-property="white-list"><option>false</option><option>true</option></select></label>
+                    <label class="ssh-field"><span>Generate Structures</span><select data-minecraft-property="generate-structures"><option>true</option><option>false</option></select></label>
+                    <label class="ssh-field"><span>Seed</span><input data-minecraft-property="level-seed"></label>
+                  </section>
+                  <div class="ssh-connection-actions"><button class="inline-action" type="submit" data-instance-config-save disabled>Save</button><button class="inline-action" type="button" data-instance-config-cancel disabled>Cancel</button><span data-instance-config-dirty>Saved</span></div>
+                </form>
+
+                <div class="instance-tab-panel" data-instance-panel="networking">
+                  <div class="instance-network-list" data-instance-network-list></div>
+                  <div class="ssh-connection-actions"><input type="number" min="1" max="65535" placeholder="Add port" data-instance-network-port><button class="inline-action" type="button" data-instance-network-add>Add Port</button></div>
+                  <p class="ssh-password-note">Playit tunnel assignment is planned for a future phase.</p>
+                </div>
+
+                <div class="instance-tab-panel" data-instance-panel="backups"><div class="docker-empty-state"><strong>Backups are planned</strong><span>Scheduled backups will appear here in a future phase.</span></div></div>
+
+                <div class="instance-tab-panel instance-advanced-panel" data-instance-panel="advanced">
+                  <label class="ssh-field"><span>Executable</span><input data-instance-advanced="executable"></label>
+                  <label class="ssh-field"><span>Arguments</span><input data-instance-advanced="args"></label>
+                  <label class="ssh-field"><span>Environment Variables</span><input data-instance-advanced="environment"></label>
+                  <label class="ssh-field"><span>Tags</span><input data-instance-advanced="tags"></label>
+                  <label class="ssh-field"><span>Restart Policy</span><input data-instance-advanced="restartPolicy"></label>
+                  <label class="ssh-field"><span>Startup Timeout</span><input data-instance-advanced="startupTimeoutMs"></label>
+                  <label class="ssh-field"><span>Shutdown Timeout</span><input data-instance-advanced="shutdownTimeoutMs"></label>
+                  <textarea class="instance-raw-json" data-instance-raw-json readonly></textarea>
+                  <div class="instance-danger-zone"><strong>Danger Zone</strong><button class="inline-action" type="button" data-instance-action="delete">Delete Instance</button><button class="inline-action" type="button" data-instance-action="reset-runtime" disabled>Reset Runtime</button><button class="inline-action" type="button" data-instance-action="force-kill">Force Kill</button></div>
+                </div>
+              </section>
+            </div>
           </section>
         </section>
 

@@ -350,6 +350,27 @@ function resolveRelativeManagedPath(instanceId, value, fallback) {
   return resolved;
 }
 
+function resolveInstanceDataPath(instanceId, value = ".") {
+  const relativePath = String(value || ".").trim();
+
+  if (relativePath.includes("\0") || path.isAbsolute(relativePath)) {
+    throw createInstanceError("INVALID_PATH");
+  }
+
+  const dataRoot = path.join(instancePath(instanceId), "data");
+  const resolved = path.resolve(dataRoot, relativePath);
+
+  if (!isInsideRoot(resolved, dataRoot)) {
+    throw createInstanceError("PATH_NOT_ALLOWED", 403);
+  }
+
+  return {
+    path: resolved,
+    root: dataRoot,
+    relativePath: path.relative(dataRoot, resolved) || ".",
+  };
+}
+
 function buildTypeCommand(type, payload) {
   const args = normalizeStringArray(payload.args, "ARGS", 128);
 
@@ -565,6 +586,48 @@ async function createInstance(payload) {
   return publicConfig(config);
 }
 
+async function updateInstance(instanceId, payload = {}) {
+  const current = await loadInstanceConfig(instanceId);
+
+  if (payload.state || payload.pid || payload.exitCode || payload.signal) {
+    throw createInstanceError("RUNTIME_FIELDS_READ_ONLY");
+  }
+
+  const next = {
+    ...current,
+    displayName: payload.displayName !== undefined || payload.name !== undefined
+      ? validateDisplayName(payload.displayName || payload.name, current.id)
+      : current.displayName,
+    workingDirectory: payload.workingDirectory !== undefined
+      ? path.relative(instancePath(current.id), resolveRelativeManagedPath(current.id, payload.workingDirectory, "data")) || "."
+      : current.workingDirectory,
+    executable: payload.executable !== undefined ? validateExecutable(payload.executable) : current.executable,
+    args: payload.args !== undefined ? normalizeStringArray(payload.args, "ARGS", 128) : current.args,
+    environment: payload.environment !== undefined || payload.env !== undefined
+      ? normalizeEnvironment(payload.environment || payload.env)
+      : current.environment,
+    autoStart: payload.autoStart !== undefined ? validateBoolean(payload.autoStart, current.autoStart) : current.autoStart,
+    restartPolicy: payload.restartPolicy !== undefined ? validateRestartPolicy(payload.restartPolicy) : current.restartPolicy,
+    startupTimeoutMs: payload.startupTimeoutMs !== undefined
+      ? validatePositiveInteger(payload.startupTimeoutMs, current.startupTimeoutMs, 10 * 60 * 1000)
+      : current.startupTimeoutMs,
+    shutdownTimeoutMs: payload.shutdownTimeoutMs !== undefined
+      ? validatePositiveInteger(payload.shutdownTimeoutMs, current.shutdownTimeoutMs, 10 * 60 * 1000)
+      : current.shutdownTimeoutMs,
+    memoryLimit: payload.memoryLimit !== undefined
+      ? (payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null)
+      : current.memoryLimit,
+    ports: payload.ports !== undefined ? normalizePorts(payload.ports) : current.ports,
+    tags: payload.tags !== undefined ? normalizeTags(payload.tags) : current.tags,
+    updatedAt: nowIso(),
+  };
+
+  assertExecutableAllowed(next.executable);
+  assertSafeArguments(next.args);
+  await saveInstanceConfig(next);
+  return publicConfig(next);
+}
+
 async function deleteInstance(instanceId) {
   const config = await reconcileConfigState(await loadInstanceConfig(instanceId));
 
@@ -672,7 +735,7 @@ async function startInstance(instanceId) {
       env: buildSpawnEnvironment(config),
       detached: false,
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
   } catch {
@@ -706,6 +769,12 @@ async function startInstance(instanceId) {
 
   child.stdout.on("data", (chunk) => {
     appendLog(config.id, "stdout", chunk).catch(() => {});
+    if (/Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running/i.test(String(chunk))) {
+      updateRuntimeState(config.id, {
+        state: INSTANCE_STATES.RUNNING,
+        pid: child.pid,
+      }).catch(() => {});
+    }
   });
 
   child.stderr.on("data", (chunk) => {
@@ -774,6 +843,55 @@ async function startInstance(instanceId) {
     pid: child.pid,
   });
 
+  return publicConfig(updated);
+}
+
+async function writeInstanceInput(instanceId, input) {
+  const config = await reconcileConfigState(await loadInstanceConfig(instanceId));
+  const entry = runningProcesses.get(config.id);
+
+  if (!entry?.child?.stdin || !entry.child.stdin.writable) {
+    throw createInstanceError("INSTANCE_STDIN_UNAVAILABLE", 409);
+  }
+
+  const command = String(input || "");
+
+  if (!command.trim() || command.includes("\0") || command.length > 4096) {
+    throw createInstanceError("INVALID_COMMAND");
+  }
+
+  entry.child.stdin.write(command.endsWith("\n") ? command : `${command}\n`);
+  await appendLog(config.id, "stdin", `> ${command.trim()}`);
+
+  return {
+    id: config.id,
+    sent: true,
+  };
+}
+
+async function forceKillInstance(instanceId) {
+  const config = await reconcileConfigState(await loadInstanceConfig(instanceId));
+  const entry = runningProcesses.get(config.id);
+  const pid = entry?.child?.pid || config.pid;
+
+  if (!pid || !isProcessAlive(pid)) {
+    throw createInstanceError("INSTANCE_NOT_RUNNING", 409);
+  }
+
+  if (entry) {
+    entry.requestedStop = true;
+  }
+
+  process.kill(pid, "SIGKILL");
+  const updated = await updateRuntimeState(config.id, {
+    state: INSTANCE_STATES.STOPPED,
+    pid: null,
+    signal: "SIGKILL",
+    lastStoppedAt: nowIso(),
+  });
+
+  runningProcesses.delete(config.id);
+  metricsSamples.delete(config.id);
   return publicConfig(updated);
 }
 
@@ -884,9 +1002,9 @@ async function readLogs(instanceId, options = {}) {
   const config = await loadInstanceConfig(instanceId);
   const limit = Math.min(validatePositiveInteger(options.limit, 200, MAX_LOG_LINES), MAX_LOG_LINES);
   const stream = String(options.stream || "all");
-  const streams = stream === "all" ? ["stdout", "stderr"] : [stream];
+  const streams = stream === "all" ? ["stdin", "stdout", "stderr"] : [stream];
 
-  if (!streams.every((entry) => entry === "stdout" || entry === "stderr")) {
+  if (!streams.every((entry) => entry === "stdin" || entry === "stdout" || entry === "stderr")) {
     throw createInstanceError("INVALID_LOG_STREAM");
   }
 
@@ -897,6 +1015,217 @@ async function readLogs(instanceId, options = {}) {
   return {
     id: config.id,
     entries: entries.sort((left, right) => String(left.at || "").localeCompare(String(right.at || ""))).slice(-limit),
+  };
+}
+
+async function clearLogs(instanceId, options = {}) {
+  const config = await loadInstanceConfig(instanceId);
+  const stream = String(options.stream || "all");
+  const streams = stream === "all" ? ["stdin", "stdout", "stderr"] : [stream];
+
+  if (!streams.every((entry) => entry === "stdin" || entry === "stdout" || entry === "stderr")) {
+    throw createInstanceError("INVALID_LOG_STREAM");
+  }
+
+  await Promise.all(streams.map((streamName) => fs.writeFile(logPath(config.id, streamName), "", { mode: 0o600 }).catch(() => {})));
+  return {
+    id: config.id,
+    cleared: streams,
+  };
+}
+
+async function listInstanceFiles(instanceId, requestedPath = ".") {
+  const config = await loadInstanceConfig(instanceId);
+  const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  const stats = await fs.stat(resolved.path).catch((error) => {
+    if (error?.code === "ENOENT") {
+      throw createInstanceError("PATH_NOT_FOUND", 404);
+    }
+
+    throw createInstanceError("PATH_UNAVAILABLE", 400);
+  });
+
+  if (!stats.isDirectory()) {
+    throw createInstanceError("PATH_NOT_DIRECTORY");
+  }
+
+  const entries = await fs.readdir(resolved.path, { withFileTypes: true });
+  const normalizedEntries = await Promise.all(entries.map(async (entry) => {
+    const entryPath = path.join(resolved.path, entry.name);
+    const entryStats = await fs.stat(entryPath).catch(() => null);
+
+    return {
+      name: entry.name,
+      path: path.relative(resolved.root, entryPath) || ".",
+      type: entry.isDirectory() ? "directory" : "file",
+      isDirectory: entry.isDirectory(),
+      size: entryStats?.size ?? null,
+      modifiedAt: entryStats?.mtime?.toISOString?.() || null,
+    };
+  }));
+
+  return {
+    id: config.id,
+    currentPath: resolved.relativePath,
+    entries: normalizedEntries.sort((left, right) => {
+      if (left.isDirectory !== right.isDirectory) {
+        return left.isDirectory ? -1 : 1;
+      }
+
+      return left.name.localeCompare(right.name);
+    }),
+  };
+}
+
+async function readInstanceFile(instanceId, requestedPath) {
+  const config = await loadInstanceConfig(instanceId);
+  const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  const stats = await fs.stat(resolved.path).catch((error) => {
+    if (error?.code === "ENOENT") {
+      throw createInstanceError("PATH_NOT_FOUND", 404);
+    }
+
+    throw createInstanceError("PATH_UNAVAILABLE", 400);
+  });
+
+  if (!stats.isFile()) {
+    throw createInstanceError("PATH_NOT_FILE");
+  }
+
+  if (stats.size > 1024 * 1024) {
+    return {
+      id: config.id,
+      path: resolved.relativePath,
+      supported: false,
+      reason: "file_too_large",
+      content: "",
+    };
+  }
+
+  return {
+    id: config.id,
+    path: resolved.relativePath,
+    supported: true,
+    content: await fs.readFile(resolved.path, "utf8"),
+  };
+}
+
+async function writeInstanceFile(instanceId, requestedPath, content, options = {}) {
+  const config = await loadInstanceConfig(instanceId);
+  const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  const encoding = options && options.encoding === "base64" ? "base64" : "utf8";
+  const payload = encoding === "base64"
+    ? Buffer.from(String(content || ""), "base64")
+    : String(content ?? "");
+  await fs.mkdir(path.dirname(resolved.path), { recursive: true });
+  await fs.writeFile(resolved.path, payload, encoding === "base64" ? undefined : "utf8");
+  return {
+    id: config.id,
+    path: resolved.relativePath,
+    saved: true,
+  };
+}
+
+async function createInstanceFolder(instanceId, requestedPath) {
+  const config = await loadInstanceConfig(instanceId);
+  const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await fs.mkdir(resolved.path, { recursive: true });
+  return {
+    id: config.id,
+    path: resolved.relativePath,
+    created: true,
+  };
+}
+
+async function renameInstanceFile(instanceId, fromPath, toPath) {
+  const config = await loadInstanceConfig(instanceId);
+  const from = resolveInstanceDataPath(config.id, fromPath);
+  const to = resolveInstanceDataPath(config.id, toPath);
+  await fs.mkdir(path.dirname(to.path), { recursive: true });
+  await fs.rename(from.path, to.path);
+  return {
+    id: config.id,
+    oldPath: from.relativePath,
+    path: to.relativePath,
+    renamed: true,
+  };
+}
+
+async function deleteInstanceFile(instanceId, requestedPath) {
+  const config = await loadInstanceConfig(instanceId);
+  const resolved = resolveInstanceDataPath(config.id, requestedPath);
+
+  if (resolved.relativePath === ".") {
+    throw createInstanceError("PATH_NOT_ALLOWED", 403);
+  }
+
+  await fs.rm(resolved.path, { recursive: true, force: true });
+  return {
+    id: config.id,
+    path: resolved.relativePath,
+    deleted: true,
+  };
+}
+
+function parseProperties(content) {
+  return String(content || "").split(/\r?\n/).reduce((properties, line) => {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith("#")) {
+      return properties;
+    }
+
+    const index = trimmed.indexOf("=");
+
+    if (index > 0) {
+      properties[trimmed.slice(0, index)] = trimmed.slice(index + 1);
+    }
+
+    return properties;
+  }, {});
+}
+
+function serializeProperties(properties) {
+  return Object.entries(properties || {})
+    .filter(([key]) => /^[a-z0-9_.-]+$/i.test(key))
+    .map(([key, value]) => `${key}=${String(value ?? "")}`)
+    .join("\n");
+}
+
+async function readMinecraftProperties(instanceId) {
+  try {
+    const file = await readInstanceFile(instanceId, "server.properties");
+    return {
+      id: file.id,
+      path: file.path,
+      properties: parseProperties(file.content),
+    };
+  } catch (error) {
+    if (error?.code === "PATH_NOT_FOUND") {
+      return {
+        id: validateInstanceId(instanceId),
+        path: "server.properties",
+        properties: {},
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function writeMinecraftProperties(instanceId, properties) {
+  const existing = await readMinecraftProperties(instanceId);
+  const next = {
+    ...existing.properties,
+    ...(properties && typeof properties === "object" && !Array.isArray(properties) ? properties : {}),
+  };
+
+  await writeInstanceFile(instanceId, "server.properties", `${serializeProperties(next)}\n`);
+  return {
+    id: validateInstanceId(instanceId),
+    path: "server.properties",
+    properties: next,
+    saved: true,
   };
 }
 
@@ -1019,11 +1348,23 @@ module.exports = {
   INSTANCE_TYPES: [...INSTANCE_TYPES],
   createInstance,
   deleteInstance,
+  clearLogs,
+  createInstanceFolder,
+  deleteInstanceFile,
+  forceKillInstance,
   getMetrics,
   getStatus,
+  listInstanceFiles,
   listInstances,
+  readInstanceFile,
   readLogs,
+  readMinecraftProperties,
+  renameInstanceFile,
   restartInstance,
   startInstance,
   stopInstance,
+  updateInstance,
+  writeInstanceFile,
+  writeInstanceInput,
+  writeMinecraftProperties,
 };

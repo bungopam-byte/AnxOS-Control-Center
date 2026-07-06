@@ -162,6 +162,10 @@ async function createInstance(payload) {
   return agentClient.createInstance(payload);
 }
 
+async function updateInstance(instanceId, payload) {
+  return agentClient.updateInstance(instanceId, payload);
+}
+
 async function getInstanceStatus(instanceId) {
   return agentClient.getInstanceStatus(instanceId);
 }
@@ -172,6 +176,50 @@ async function getInstanceMetrics(instanceId) {
 
 async function getInstanceLogs(instanceId, options) {
   return agentClient.getInstanceLogs(instanceId, options);
+}
+
+async function clearInstanceLogs(instanceId, options) {
+  return agentClient.clearInstanceLogs(instanceId, options);
+}
+
+async function sendInstanceCommand(instanceId, command) {
+  return agentClient.sendInstanceCommand(instanceId, command);
+}
+
+async function forceKillInstance(instanceId) {
+  return agentClient.forceKillInstance(instanceId);
+}
+
+async function listInstanceFiles(instanceId, currentPath) {
+  return agentClient.listInstanceFiles(instanceId, currentPath);
+}
+
+async function readInstanceFile(instanceId, filePath) {
+  return agentClient.readInstanceFile(instanceId, filePath);
+}
+
+async function writeInstanceFile(instanceId, filePath, content, options = {}) {
+  return agentClient.writeInstanceFile(instanceId, filePath, content, options);
+}
+
+async function deleteInstanceFile(instanceId, filePath) {
+  return agentClient.deleteInstanceFile(instanceId, filePath);
+}
+
+async function createInstanceFolder(instanceId, folderPath) {
+  return agentClient.createInstanceFolder(instanceId, folderPath);
+}
+
+async function renameInstanceFile(instanceId, oldPath, newPath) {
+  return agentClient.renameInstanceFile(instanceId, oldPath, newPath);
+}
+
+async function getMinecraftProperties(instanceId) {
+  return agentClient.getMinecraftProperties(instanceId);
+}
+
+async function saveMinecraftProperties(instanceId, properties) {
+  return agentClient.saveMinecraftProperties(instanceId, properties);
 }
 
 async function startInstance(instanceId) {
@@ -191,8 +239,12 @@ async function deleteInstance(instanceId) {
 }
 
 module.exports = {
+  clearInstanceLogs,
   createInstance,
+  createInstanceFolder,
   deleteInstance,
+  deleteInstanceFile,
+  forceKillInstance,
   getAmpSnapshot,
   getBackendMode,
   getDockerSnapshot,
@@ -200,9 +252,17 @@ module.exports = {
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
+  getMinecraftProperties,
   getPlayitSnapshot,
+  listInstanceFiles,
   listInstances,
+  readInstanceFile,
+  renameInstanceFile,
   restartInstance,
+  saveMinecraftProperties,
+  sendInstanceCommand,
   startInstance,
   stopInstance,
+  updateInstance,
+  writeInstanceFile,
 };

@@ -54,6 +54,53 @@ const instanceFormMessage = document.querySelector("[data-instance-form-message]
 const instancesLogList = document.querySelector("[data-instances-logs]");
 const instancesLogEmpty = document.querySelector("[data-instances-log-empty]");
 const instancesLogCount = document.querySelector("[data-instances-log-count]");
+const instanceTemplateButtons = document.querySelectorAll("[data-instance-template]");
+const instanceCustomFields = document.querySelectorAll("[data-instance-custom-field]");
+const instanceTabs = document.querySelectorAll("[data-instance-tab]");
+const instanceTabPanels = document.querySelectorAll("[data-instance-panel]");
+const instanceConsoleSearchInput = document.querySelector("[data-instance-console-search]");
+const instanceConsoleAutoscrollInput = document.querySelector("[data-instance-console-autoscroll]");
+const instanceConsolePauseInput = document.querySelector("[data-instance-console-pause]");
+const instanceConsoleForm = document.querySelector("[data-instance-console-form]");
+const instanceConsoleCommandInput = document.querySelector("[data-instance-console-command]");
+const instanceConsoleViewer = document.querySelector(".instance-console-viewer");
+const instanceConfigForm = document.querySelector("[data-instance-config-form]");
+const instanceConfigInputs = document.querySelectorAll("[data-instance-config]");
+const instanceConfigSaveButton = document.querySelector("[data-instance-config-save]");
+const instanceConfigCancelButton = document.querySelector("[data-instance-config-cancel]");
+const instanceConfigDirtyLabel = document.querySelector("[data-instance-config-dirty]");
+const instanceMinecraftSettings = document.querySelector("[data-instance-minecraft-settings]");
+const instanceMinecraftSummary = document.querySelector("[data-instance-minecraft-summary]");
+const minecraftPropertyInputs = document.querySelectorAll("[data-minecraft-property]");
+const instanceNetworkList = document.querySelector("[data-instance-network-list]");
+const instanceNetworkPortInput = document.querySelector("[data-instance-network-port]");
+const instanceNetworkAddButton = document.querySelector("[data-instance-network-add]");
+const instanceRawJson = document.querySelector("[data-instance-raw-json]");
+const instanceAdvancedInputs = document.querySelectorAll("[data-instance-advanced]");
+const instanceFilesList = document.querySelector("[data-instance-files-list]");
+const instanceFilePathLabel = document.querySelector("[data-instance-file-path]");
+const instanceFileEditor = document.querySelector("[data-instance-file-editor]");
+const instanceFileEditorName = document.querySelector("[data-instance-file-editor-name]");
+const instanceFileEditorState = document.querySelector("[data-instance-file-editor-state]");
+const instanceFileDropzone = document.querySelector("[data-instance-file-dropzone]");
+const marketplaceSearchInput = document.querySelector("[data-marketplace-search]");
+const marketplaceCategories = document.querySelector("[data-marketplace-categories]");
+const marketplaceRefreshButton = document.querySelector("[data-marketplace-refresh]");
+const marketplaceGrid = document.querySelector("[data-marketplace-grid]");
+const marketplaceLoading = document.querySelector("[data-marketplace-loading]");
+const marketplaceEmpty = document.querySelector("[data-marketplace-empty]");
+const marketplaceSelectedName = document.querySelector("[data-marketplace-selected-name]");
+const marketplaceSelectedMeta = document.querySelector("[data-marketplace-selected-meta]");
+const marketplaceInstallState = document.querySelector("[data-marketplace-install-state]");
+const marketplaceWizard = document.querySelector("[data-marketplace-wizard]");
+const marketplaceWizardSteps = document.querySelector("[data-marketplace-wizard-steps]");
+const marketplaceFields = document.querySelectorAll("[data-marketplace-field]");
+const marketplaceInstallButton = document.querySelector("[data-marketplace-install]");
+const marketplaceCancelButton = document.querySelector("[data-marketplace-cancel]");
+const marketplaceMessage = document.querySelector("[data-marketplace-message]");
+const marketplaceProgress = document.querySelector("[data-marketplace-progress]");
+const downloadRefreshButton = document.querySelector("[data-download-refresh]");
+const downloadList = document.querySelector("[data-download-list]");
 const filesPage = document.querySelector('[data-page="files"]');
 const fileManagerShell = filesPage?.querySelector(".file-manager-shell");
 const fileWorkspace = filesPage?.querySelector(".file-workspace");
@@ -199,8 +246,21 @@ let latestDockerSnapshot = null;
 let lastLoggedAmpUrlSource = null;
 let latestInstancesSnapshot = null;
 let latestInstanceMetrics = null;
+let marketplaceRequestInFlight = false;
+let marketplaceInstallInFlight = false;
+let marketplaceCatalog = { categories: [], templates: [] };
+let marketplaceSelectedTemplateId = null;
+let marketplaceActiveCategory = "All";
 let selectedInstanceId = null;
 let instanceCreateFormVisible = false;
+let activeInstanceTab = "overview";
+let latestMinecraftProperties = {};
+let instanceConfigSnapshot = "";
+let instanceMinecraftSnapshot = "";
+let instanceCurrentFilePath = ".";
+let selectedInstanceFilePath = null;
+let openedInstanceFilePath = null;
+let openedInstanceFileSavedContent = "";
 let latestFilesListing = null;
 let latestFileDocument = null;
 let selectedDockerContainerId = null;
@@ -262,6 +322,7 @@ const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
 const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
+const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const DEFAULT_APP_NAME = "AnxOS Control Center";
 const DEFAULT_ACCENT_COLOR = "#b66cff";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
@@ -330,16 +391,34 @@ function getDesktopApiState() {
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
     hasDocker: typeof api?.docker?.getSnapshot === "function",
+    hasMarketplace:
+      typeof api?.marketplace?.listTemplates === "function" &&
+      typeof api?.marketplace?.installTemplate === "function" &&
+      typeof api?.marketplace?.getDownloads === "function" &&
+      typeof api?.marketplace?.cancelDownload === "function" &&
+      typeof api?.marketplace?.retryDownload === "function",
     hasInstances:
       typeof api?.instances?.list === "function" &&
       typeof api?.instances?.create === "function" &&
+      typeof api?.instances?.update === "function" &&
       typeof api?.instances?.getStatus === "function" &&
       typeof api?.instances?.getMetrics === "function" &&
       typeof api?.instances?.getLogs === "function" &&
+      typeof api?.instances?.clearLogs === "function" &&
+      typeof api?.instances?.sendCommand === "function" &&
       typeof api?.instances?.start === "function" &&
       typeof api?.instances?.stop === "function" &&
       typeof api?.instances?.restart === "function" &&
-      typeof api?.instances?.delete === "function",
+      typeof api?.instances?.forceKill === "function" &&
+      typeof api?.instances?.delete === "function" &&
+      typeof api?.instances?.listFiles === "function" &&
+      typeof api?.instances?.readFile === "function" &&
+      typeof api?.instances?.writeFile === "function" &&
+      typeof api?.instances?.deleteFile === "function" &&
+      typeof api?.instances?.createFolder === "function" &&
+      typeof api?.instances?.renameFile === "function" &&
+      typeof api?.instances?.getMinecraftProperties === "function" &&
+      typeof api?.instances?.saveMinecraftProperties === "function",
     hasActions: typeof api?.actions?.executeAction === "function",
     hasFiles:
       typeof api?.files?.list === "function" &&
@@ -1634,6 +1713,11 @@ function showPage(pageName) {
     refreshInstances();
   }
 
+  if (pageName === "marketplace") {
+    refreshMarketplace();
+    refreshMarketplaceDownloads();
+  }
+
   if (pageName === "files") {
     renderFilesView();
 
@@ -2340,6 +2424,547 @@ function canRestartInstance(instance) {
   return instance && ["running", "starting", "failed"].includes(getInstanceStateClass(instance.state));
 }
 
+function isMinecraftInstance(instance = findInstance()) {
+  const searchable = [instance?.type, ...(Array.isArray(instance?.tags) ? instance.tags : [])].join(" ").toLowerCase();
+  return searchable.includes("minecraft") || instance?.type === "minecraft-paper" || instance?.type === "java-app";
+}
+
+function readStoredInstanceTab() {
+  try {
+    const value = window.localStorage.getItem(INSTANCE_TAB_STORAGE_KEY);
+    return value || "overview";
+  } catch {
+    return "overview";
+  }
+}
+
+function setActiveInstanceTab(tabName) {
+  activeInstanceTab = tabName || "overview";
+  instanceTabs.forEach((button) => {
+    const active = button.dataset.instanceTab === activeInstanceTab;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  instanceTabPanels.forEach((panel) => {
+    panel.classList.toggle("is-active", panel.dataset.instancePanel === activeInstanceTab);
+  });
+
+  try {
+    window.localStorage.setItem(INSTANCE_TAB_STORAGE_KEY, activeInstanceTab);
+  } catch {}
+
+  if (activeInstanceTab === "console") {
+    refreshInstanceLogs({ silent: true });
+  } else if (activeInstanceTab === "files") {
+    refreshInstanceFiles();
+  } else if (activeInstanceTab === "configuration") {
+    loadMinecraftProperties();
+  }
+}
+
+function stringifyArgs(args) {
+  return Array.isArray(args) ? args.join(" ") : "";
+}
+
+function parseMemoryFromArgs(instance) {
+  const memoryArg = Array.isArray(instance?.args) ? instance.args.find((arg) => /^-Xmx/i.test(arg)) : null;
+  return instance?.memoryLimit || (memoryArg ? memoryArg.replace(/^-Xmx/i, "") : "");
+}
+
+function parseJarFromArgs(instance) {
+  const args = Array.isArray(instance?.args) ? instance.args : [];
+  const jarIndex = args.indexOf("-jar");
+  return jarIndex >= 0 ? args[jarIndex + 1] || "" : "";
+}
+
+function getStartupArgsForConfig(instance) {
+  const args = Array.isArray(instance?.args) ? [...instance.args] : [];
+  const jarIndex = args.indexOf("-jar");
+
+  if (jarIndex >= 0) {
+    args.splice(jarIndex, 2);
+  }
+
+  return args.filter((arg) => !/^-Xmx/i.test(arg) && arg !== "nogui").join(" ");
+}
+
+function setInstanceConfigValue(name, value) {
+  instanceConfigInputs.forEach((input) => {
+    if (input.dataset.instanceConfig !== name) {
+      return;
+    }
+
+    if (input.type === "checkbox") {
+      input.checked = Boolean(value);
+    } else {
+      input.value = value ?? "";
+    }
+  });
+}
+
+function getInstanceConfigValue(name) {
+  const input = Array.from(instanceConfigInputs).find((candidate) => candidate.dataset.instanceConfig === name);
+
+  if (!input) {
+    return "";
+  }
+
+  return input.type === "checkbox" ? input.checked : input.value.trim();
+}
+
+function setMinecraftPropertyValue(name, value) {
+  minecraftPropertyInputs.forEach((input) => {
+    if (input.dataset.minecraftProperty === name) {
+      input.value = value ?? "";
+    }
+  });
+}
+
+function collectMinecraftProperties() {
+  return Array.from(minecraftPropertyInputs).reduce((properties, input) => {
+    properties[input.dataset.minecraftProperty] = input.value.trim();
+    return properties;
+  }, {});
+}
+
+function collectInstanceConfigPayload() {
+  const selectedInstance = findInstance();
+  const args = parseArgs(getInstanceConfigValue("args"));
+  const jar = getInstanceConfigValue("jar");
+  const memory = getInstanceConfigValue("memoryLimit");
+
+  if (jar && (selectedInstance?.type === "java-app" || selectedInstance?.type === "minecraft-paper")) {
+    const nextArgs = [];
+    if (memory) {
+      nextArgs.push(`-Xmx${memory}`);
+    }
+    nextArgs.push("-jar", jar);
+    if (selectedInstance?.type === "minecraft-paper") {
+      nextArgs.push("nogui");
+    }
+    nextArgs.push(...args);
+
+    return {
+      displayName: getInstanceConfigValue("displayName"),
+      workingDirectory: getInstanceConfigValue("workingDirectory"),
+      executable: getInstanceConfigValue("executable"),
+      args: nextArgs,
+      memoryLimit: memory || null,
+      restartPolicy: getInstanceConfigValue("restartPolicy"),
+      startupTimeoutMs: Number.parseInt(getInstanceConfigValue("startupTimeoutMs"), 10),
+      shutdownTimeoutMs: Number.parseInt(getInstanceConfigValue("shutdownTimeoutMs"), 10),
+      autoStart: getInstanceConfigValue("autoStart"),
+    };
+  }
+
+  return {
+    displayName: getInstanceConfigValue("displayName"),
+    workingDirectory: getInstanceConfigValue("workingDirectory"),
+    executable: getInstanceConfigValue("executable"),
+    args,
+    memoryLimit: memory || null,
+    restartPolicy: getInstanceConfigValue("restartPolicy"),
+    startupTimeoutMs: Number.parseInt(getInstanceConfigValue("startupTimeoutMs"), 10),
+    shutdownTimeoutMs: Number.parseInt(getInstanceConfigValue("shutdownTimeoutMs"), 10),
+    autoStart: getInstanceConfigValue("autoStart"),
+  };
+}
+
+function syncInstanceConfigDirtyState() {
+  const configDirty = JSON.stringify(collectInstanceConfigPayload()) !== instanceConfigSnapshot;
+  const minecraftDirty = JSON.stringify(collectMinecraftProperties()) !== instanceMinecraftSnapshot;
+  const dirty = configDirty || minecraftDirty;
+
+  if (instanceConfigSaveButton) {
+    instanceConfigSaveButton.disabled = !dirty || !selectedInstanceId || instanceActionRequestInFlight;
+  }
+
+  if (instanceConfigCancelButton) {
+    instanceConfigCancelButton.disabled = !dirty || !selectedInstanceId || instanceActionRequestInFlight;
+  }
+
+  if (instanceConfigDirtyLabel) {
+    instanceConfigDirtyLabel.textContent = dirty ? "Unsaved changes" : "Saved";
+  }
+}
+
+function populateInstanceConfigForm(instance) {
+  if (!instance) {
+    instanceConfigSnapshot = "";
+    instanceMinecraftSnapshot = "";
+    syncInstanceConfigDirtyState();
+    return;
+  }
+
+  setInstanceConfigValue("displayName", instance.displayName || "");
+  setInstanceConfigValue("id", instance.id || "");
+  setInstanceConfigValue("workingDirectory", instance.workingDirectory || "data");
+  setInstanceConfigValue("executable", instance.executable || "");
+  setInstanceConfigValue("jar", parseJarFromArgs(instance));
+  setInstanceConfigValue("memoryLimit", parseMemoryFromArgs(instance));
+  setInstanceConfigValue("args", getStartupArgsForConfig(instance));
+  setInstanceConfigValue("restartPolicy", instance.restartPolicy || "never");
+  setInstanceConfigValue("startupTimeoutMs", instance.startupTimeoutMs || "");
+  setInstanceConfigValue("shutdownTimeoutMs", instance.shutdownTimeoutMs || "");
+  setInstanceConfigValue("autoStart", instance.autoStart === true);
+  instanceConfigSnapshot = JSON.stringify(collectInstanceConfigPayload());
+
+  if (instanceMinecraftSettings) {
+    instanceMinecraftSettings.hidden = !isMinecraftInstance(instance);
+  }
+
+  if (instanceMinecraftSummary) {
+    instanceMinecraftSummary.hidden = !isMinecraftInstance(instance);
+  }
+
+  instanceAdvancedInputs.forEach((input) => {
+    const key = input.dataset.instanceAdvanced;
+    if (key === "args") {
+      input.value = stringifyArgs(instance.args);
+    } else if (key === "environment") {
+      input.value = Object.keys(instance.environment || {}).join(", ");
+    } else if (key === "tags") {
+      input.value = formatInstanceList(instance.tags) === "Unavailable" ? "" : formatInstanceList(instance.tags);
+    } else {
+      input.value = instance[key] ?? "";
+    }
+  });
+
+  if (instanceRawJson) {
+    instanceRawJson.value = JSON.stringify(instance, null, 2);
+  }
+
+  syncInstanceConfigDirtyState();
+}
+
+function populateMinecraftProperties(properties = {}) {
+  const defaults = {
+    "server-port": "25565",
+    motd: "AnxOS Minecraft Server",
+    "max-players": "20",
+    difficulty: "easy",
+    gamemode: "survival",
+    "view-distance": "10",
+    "simulation-distance": "10",
+    "online-mode": "true",
+    "allow-flight": "false",
+    "spawn-protection": "16",
+    pvp: "true",
+    "white-list": "false",
+    "generate-structures": "true",
+    "level-seed": "",
+  };
+
+  latestMinecraftProperties = { ...defaults, ...properties };
+  Object.entries(latestMinecraftProperties).forEach(([key, value]) => setMinecraftPropertyValue(key, value));
+  instanceMinecraftSnapshot = JSON.stringify(collectMinecraftProperties());
+  syncInstanceConfigDirtyState();
+}
+
+function renderInstanceNetwork(instance) {
+  if (!instanceNetworkList) {
+    return;
+  }
+
+  instanceNetworkList.replaceChildren();
+  const ports = Array.isArray(instance?.ports) ? instance.ports : [];
+  const metrics = getInstanceMetrics(instance?.id);
+  const portStatus = new Map((Array.isArray(metrics?.ports) ? metrics.ports : []).map((entry) => [entry.port, entry.open]));
+
+  if (ports.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "ssh-password-note";
+    empty.textContent = "No configured ports.";
+    instanceNetworkList.appendChild(empty);
+    return;
+  }
+
+  ports.forEach((port) => {
+    const row = document.createElement("div");
+    row.className = "instance-network-row";
+    const label = document.createElement("span");
+    label.textContent = `${port} · ${portStatus.has(port) ? (portStatus.get(port) ? "listening" : "closed") : "unchecked"}`;
+    const remove = document.createElement("button");
+    remove.className = "inline-action";
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => updateInstancePorts(ports.filter((candidate) => candidate !== port)));
+    row.append(label, remove);
+    instanceNetworkList.appendChild(row);
+  });
+}
+
+async function updateInstancePorts(ports) {
+  const selectedInstance = findInstance();
+  const uniquePorts = [...new Set(ports.map((port) => Number.parseInt(port, 10)).filter((port) => Number.isFinite(port) && port > 0 && port <= 65535))];
+
+  if (!selectedInstance) {
+    return;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.update(selectedInstance.id, { ports: uniquePorts });
+    showToast("Ports updated.");
+    await refreshInstances();
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "Port update failed."));
+  }
+}
+
+async function saveInstanceConfiguration(event) {
+  event?.preventDefault();
+  const selectedInstance = findInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!selectedInstance || !desktopApiState.hasInstances) {
+    return;
+  }
+
+  instanceActionRequestInFlight = true;
+  syncInstanceConfigDirtyState();
+
+  try {
+    await desktopApiState.api.instances.update(selectedInstance.id, collectInstanceConfigPayload());
+
+    if (isMinecraftInstance(selectedInstance)) {
+      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstance.id, collectMinecraftProperties());
+    }
+
+    showToast("Instance configuration saved.");
+    await refreshInstances();
+    await loadMinecraftProperties();
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "Configuration save failed."));
+  } finally {
+    instanceActionRequestInFlight = false;
+    syncInstanceConfigDirtyState();
+  }
+}
+
+async function loadMinecraftProperties() {
+  const selectedInstance = findInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!selectedInstance || !isMinecraftInstance(selectedInstance) || !desktopApiState.hasInstances) {
+    populateMinecraftProperties({});
+    return;
+  }
+
+  try {
+    const payload = await desktopApiState.api.instances.getMinecraftProperties(selectedInstance.id);
+    populateMinecraftProperties(payload?.properties || {});
+  } catch {
+    populateMinecraftProperties({});
+  }
+}
+
+function syncConsoleLogSearch() {
+  const query = (instanceConsoleSearchInput?.value || "").trim().toLowerCase();
+
+  if (!instancesLogList) {
+    return;
+  }
+
+  [...instancesLogList.querySelectorAll("li")].forEach((row) => {
+    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+  });
+}
+
+async function sendInstanceConsoleCommand(event) {
+  event?.preventDefault();
+  const command = instanceConsoleCommandInput?.value?.trim() || "";
+  const selectedInstance = findInstance();
+
+  if (!command || !selectedInstance) {
+    return;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.sendCommand(selectedInstance.id, command);
+    instanceConsoleCommandInput.value = "";
+    await refreshInstanceLogs();
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "Command failed."));
+  }
+}
+
+async function clearInstanceConsole() {
+  const selectedInstance = findInstance();
+
+  if (!selectedInstance || !window.confirm(`Clear logs for ${selectedInstance.displayName || selectedInstance.id}?`)) {
+    return;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.clearLogs(selectedInstance.id, {
+      stream: instancesLogStreamSelect?.value || "all",
+    });
+    clearInstanceLogs("Logs cleared.");
+    showToast("Logs cleared.");
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "Clear logs failed."));
+  }
+}
+
+async function copyInstanceConsole() {
+  const text = [...(instancesLogList?.querySelectorAll("li:not([hidden])") || [])].map((row) => row.textContent).join("\n");
+
+  if (!text) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Console copied.");
+  } catch {
+    showToast("Console could not be copied.");
+  }
+}
+
+function downloadInstanceLogs() {
+  const text = [...(instancesLogList?.querySelectorAll("li") || [])].map((row) => row.textContent).join("\n");
+  const blob = new Blob([text], { type: "text/plain" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `${selectedInstanceId || "instance"}-logs.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function joinInstancePath(basePath, childName) {
+  const base = String(basePath || ".").replace(/\\/g, "/").replace(/\/+$/, "");
+  return base === "." ? childName : `${base}/${childName}`;
+}
+
+function getInstanceParentPath(currentPath) {
+  const parts = String(currentPath || ".").split("/").filter(Boolean);
+  parts.pop();
+  return parts.length > 0 ? parts.join("/") : ".";
+}
+
+function isEditableInstanceFile(filePath) {
+  return /\.(txt|properties|ya?ml|json|toml|cfg|conf)$/i.test(String(filePath || ""));
+}
+
+async function refreshInstanceFiles(pathValue = instanceCurrentFilePath) {
+  const selectedInstance = findInstance();
+  const desktopApiState = getDesktopApiState();
+
+  if (!selectedInstance || !desktopApiState.hasInstances || !instanceFilesList) {
+    return;
+  }
+
+  try {
+    const listing = await desktopApiState.api.instances.listFiles(selectedInstance.id, pathValue || ".");
+    instanceCurrentFilePath = listing.currentPath || ".";
+    if (instanceFilePathLabel) {
+      instanceFilePathLabel.textContent = `data/${instanceCurrentFilePath === "." ? "" : instanceCurrentFilePath}`;
+    }
+    renderInstanceFileRows(listing.entries || []);
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "File listing failed."));
+  }
+}
+
+function renderInstanceFileRows(entries) {
+  instanceFilesList?.replaceChildren();
+  entries.forEach((entry) => {
+    const row = document.createElement("tr");
+    row.dataset.instanceFilePath = entry.path || entry.name;
+    row.tabIndex = 0;
+    row.addEventListener("click", () => selectInstanceFile(entry.path));
+    row.addEventListener("dblclick", () => activateInstanceFile(entry));
+    const nameCell = document.createElement("td");
+    nameCell.textContent = `${entry.isDirectory ? "DIR" : "TXT"} ${entry.name}`;
+    const typeCell = document.createElement("td");
+    typeCell.textContent = entry.isDirectory ? "Folder" : formatBytes(entry.size);
+    row.append(nameCell, typeCell);
+    instanceFilesList.appendChild(row);
+  });
+}
+
+function selectInstanceFile(filePath) {
+  selectedInstanceFilePath = filePath;
+  [...(instanceFilesList?.querySelectorAll("tr") || [])].forEach((row) => {
+    row.classList.toggle("is-selected", row.dataset.instanceFilePath === selectedInstanceFilePath);
+  });
+}
+
+async function activateInstanceFile(entry) {
+  if (entry.isDirectory) {
+    await refreshInstanceFiles(entry.path);
+    return;
+  }
+
+  if (isEditableInstanceFile(entry.path)) {
+    await openInstanceTextFile(entry.path);
+  }
+}
+
+async function openInstanceTextFile(filePath) {
+  const selectedInstance = findInstance();
+
+  if (!selectedInstance) {
+    return;
+  }
+
+  if (!confirmDiscardInstanceFile("open another file")) {
+    return;
+  }
+
+  try {
+    const file = await getDesktopApiState().api.instances.readFile(selectedInstance.id, filePath);
+    openedInstanceFilePath = file.path || filePath;
+    openedInstanceFileSavedContent = file.supported ? file.content || "" : "";
+    if (instanceFileEditor) {
+      instanceFileEditor.disabled = !file.supported;
+      instanceFileEditor.value = openedInstanceFileSavedContent;
+    }
+    if (instanceFileEditorName) {
+      instanceFileEditorName.textContent = openedInstanceFilePath;
+    }
+    syncInstanceFileDirtyState();
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "Open file failed."));
+  }
+}
+
+function hasDirtyInstanceFile() {
+  return Boolean(openedInstanceFilePath && instanceFileEditor && instanceFileEditor.value !== openedInstanceFileSavedContent);
+}
+
+function confirmDiscardInstanceFile(actionLabel = "continue") {
+  return !hasDirtyInstanceFile() || window.confirm(`Discard unsaved file changes and ${actionLabel}?`);
+}
+
+function syncInstanceFileDirtyState() {
+  const dirty = hasDirtyInstanceFile();
+  const saveButton = document.querySelector('[data-instance-file-action="save"]');
+  if (saveButton) {
+    saveButton.disabled = !dirty;
+  }
+  if (instanceFileEditorState) {
+    instanceFileEditorState.textContent = dirty ? "Unsaved" : "Clean";
+  }
+}
+
+async function saveInstanceTextFile() {
+  const selectedInstance = findInstance();
+
+  if (!selectedInstance || !openedInstanceFilePath || !instanceFileEditor) {
+    return;
+  }
+
+  try {
+    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, openedInstanceFilePath, instanceFileEditor.value);
+    openedInstanceFileSavedContent = instanceFileEditor.value;
+    syncInstanceFileDirtyState();
+    showToast("File saved.");
+  } catch (error) {
+    showToast(getAgentErrorMessage(error, "Save file failed."));
+  }
+}
+
 function updateInstanceActionButtons() {
   const desktopApiState = getDesktopApiState();
   const selectedInstance = findInstance();
@@ -2493,6 +3118,9 @@ function setInstanceDetails(instance = null) {
     setInstanceDetail("disk", "Unavailable");
     setInstanceDetail("ports", "Unavailable");
     setInstanceDetail("tags", "Unavailable");
+    setInstanceDetail("workingDirectory", "Unavailable");
+    populateInstanceConfigForm(null);
+    renderInstanceNetwork(null);
     return;
   }
 
@@ -2511,6 +3139,9 @@ function setInstanceDetails(instance = null) {
   setInstanceDetail("disk", formatInstanceDisk(metrics));
   setInstanceDetail("ports", formatInstancePorts(instance, metrics));
   setInstanceDetail("tags", formatInstanceList(instance.tags));
+  setInstanceDetail("workingDirectory", formatInstanceValue(instance.workingDirectory));
+  populateInstanceConfigForm(instance);
+  renderInstanceNetwork(instance);
 }
 
 function selectInstance(instanceId, options = {}) {
@@ -2606,6 +3237,8 @@ function renderInstanceLogs(payload) {
 
   entries.forEach((entry) => {
     const item = document.createElement("li");
+    item.classList.toggle("is-stderr", entry?.stream === "stderr");
+    item.classList.toggle("is-stdin", entry?.stream === "stdin");
     const time = document.createElement("time");
     time.dateTime = entry?.at || "";
     time.textContent = entry?.at ? formatDateTime(entry.at) : "No timestamp";
@@ -2617,6 +3250,12 @@ function renderInstanceLogs(payload) {
     item.append(time, stream, message);
     instancesLogList?.appendChild(item);
   });
+
+  syncConsoleLogSearch();
+
+  if (instanceConsoleAutoscrollInput?.checked && !instanceConsolePauseInput?.checked && instanceConsoleViewer) {
+    instanceConsoleViewer.scrollTop = instanceConsoleViewer.scrollHeight;
+  }
 
   if (instancesLogEmpty) {
     instancesLogEmpty.hidden = entries.length > 0;
@@ -2644,6 +3283,459 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   }
 
   return error?.message || fallback;
+}
+
+function getMarketplaceField(name) {
+  return document.querySelector(`[data-marketplace-field="${name}"]`);
+}
+
+function setMarketplaceMessage(message, tone = "neutral") {
+  if (!marketplaceMessage) {
+    return;
+  }
+
+  marketplaceMessage.textContent = message;
+  marketplaceMessage.dataset.tone = tone;
+}
+
+function getMarketplaceTemplates() {
+  return Array.isArray(marketplaceCatalog.templates) ? marketplaceCatalog.templates : [];
+}
+
+function findMarketplaceTemplate(templateId = marketplaceSelectedTemplateId) {
+  return getMarketplaceTemplates().find((template) => template.id === templateId) || null;
+}
+
+function setMarketplaceLoading(loading) {
+  marketplaceRequestInFlight = Boolean(loading);
+  if (marketplaceLoading) {
+    marketplaceLoading.hidden = !loading;
+  }
+  if (marketplaceRefreshButton) {
+    marketplaceRefreshButton.disabled = loading;
+  }
+}
+
+function renderMarketplaceCategories() {
+  if (!marketplaceCategories) {
+    return;
+  }
+
+  marketplaceCategories.replaceChildren();
+  const categories = ["All", ...(Array.isArray(marketplaceCatalog.categories) ? marketplaceCatalog.categories : [])];
+
+  categories.forEach((category) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "marketplace-category";
+    button.textContent = category;
+    button.classList.toggle("is-active", category === marketplaceActiveCategory);
+    button.addEventListener("click", () => {
+      marketplaceActiveCategory = category;
+      renderMarketplaceCategories();
+      renderMarketplaceTemplates();
+    });
+    marketplaceCategories.append(button);
+  });
+}
+
+function getFilteredMarketplaceTemplates() {
+  const query = (marketplaceSearchInput?.value || "").trim().toLowerCase();
+  return getMarketplaceTemplates().filter((template) => {
+    const matchesCategory = marketplaceActiveCategory === "All" || template.category === marketplaceActiveCategory;
+    const haystack = [
+      template.displayName,
+      template.name,
+      template.description,
+      template.author,
+      template.version,
+      template.category,
+      template.id,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return matchesCategory && (!query || haystack.includes(query));
+  });
+}
+
+function renderMarketplaceTemplates() {
+  if (!marketplaceGrid) {
+    return;
+  }
+
+  marketplaceGrid.replaceChildren();
+  const templates = getFilteredMarketplaceTemplates();
+  if (marketplaceEmpty) {
+    marketplaceEmpty.hidden = marketplaceRequestInFlight || templates.length > 0;
+  }
+
+  templates.forEach((template) => {
+    const card = document.createElement("article");
+    card.className = "marketplace-card";
+    card.classList.toggle("is-selected", template.id === marketplaceSelectedTemplateId);
+
+    const icon = document.createElement("span");
+    icon.className = "marketplace-card__icon";
+    icon.textContent = template.icon || "APP";
+
+    const body = document.createElement("div");
+    body.className = "marketplace-card__body";
+    const title = document.createElement("strong");
+    title.textContent = template.displayName || template.id;
+    const description = document.createElement("p");
+    description.textContent = template.description || "No description provided.";
+    const meta = document.createElement("span");
+    meta.className = "marketplace-card__meta";
+    meta.textContent = `${template.author || "Unknown"} · v${template.version || "0.0.0"} · ${template.category || "Uncategorized"}`;
+    body.append(title, description, meta);
+
+    const install = document.createElement("button");
+    install.type = "button";
+    install.className = "inline-action";
+    install.textContent = "Install";
+    install.disabled = marketplaceInstallInFlight;
+    install.addEventListener("click", () => openMarketplaceWizard(template.id));
+
+    card.append(icon, body, install);
+    card.addEventListener("dblclick", () => openMarketplaceWizard(template.id));
+    marketplaceGrid.append(card);
+  });
+}
+
+function setMarketplaceInstallState(label, status = "ready") {
+  if (marketplaceInstallState) {
+    marketplaceInstallState.textContent = label;
+    marketplaceInstallState.dataset.status = status;
+  }
+}
+
+function renderMarketplaceWizardSteps(template) {
+  if (!marketplaceWizardSteps) {
+    return;
+  }
+
+  const isMinecraft = template?.category === "Minecraft";
+  const steps = isMinecraft
+    ? ["Server Name", "Version", "Server Type", "Memory", "Port", "Playit", "Accept EULA"]
+    : ["Name", "Storage Location", "Port", "Memory"];
+  marketplaceWizardSteps.replaceChildren();
+  steps.forEach((step, index) => {
+    const item = document.createElement("span");
+    item.textContent = `${index + 1}. ${step}`;
+    marketplaceWizardSteps.append(item);
+  });
+}
+
+function syncMarketplaceWizardFields(template) {
+  const isMinecraft = template?.category === "Minecraft";
+  document.querySelectorAll("[data-marketplace-field-wrap]").forEach((wrapper) => {
+    const field = wrapper.dataset.marketplaceFieldWrap;
+    const shouldShow = isMinecraft
+      ? ["version", "serverType", "playitTunnel", "acceptEula"].includes(field)
+      : ["storageLocation"].includes(field);
+    wrapper.hidden = !shouldShow;
+  });
+}
+
+function openMarketplaceWizard(templateId) {
+  const template = findMarketplaceTemplate(templateId);
+  if (!template) {
+    showToast("Template not found.");
+    return;
+  }
+
+  marketplaceSelectedTemplateId = template.id;
+  if (marketplaceWizard) {
+    marketplaceWizard.hidden = false;
+  }
+
+  if (marketplaceSelectedName) {
+    marketplaceSelectedName.textContent = template.displayName || template.id;
+  }
+  if (marketplaceSelectedMeta) {
+    marketplaceSelectedMeta.textContent = `${template.category || "Template"} · ${template.instanceType || "custom-command"} · ${template.startupType || "runtime"}`;
+  }
+
+  const nameField = getMarketplaceField("name");
+  const versionField = getMarketplaceField("version");
+  const serverTypeField = getMarketplaceField("serverType");
+  const storageField = getMarketplaceField("storageLocation");
+  const memoryField = getMarketplaceField("memory");
+  const portField = getMarketplaceField("port");
+  const acceptEulaField = getMarketplaceField("acceptEula");
+  const startField = getMarketplaceField("start");
+
+  if (nameField) {
+    nameField.value = template.displayName || "";
+  }
+  if (versionField) {
+    versionField.value = "1.21.4";
+  }
+  if (serverTypeField) {
+    const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
+    serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
+  }
+  if (storageField) {
+    storageField.value = "data";
+  }
+  if (memoryField) {
+    memoryField.value = template.defaultRam || "1G";
+  }
+  if (portField) {
+    portField.value = Array.isArray(template.defaultPorts) && template.defaultPorts.length > 0 ? String(template.defaultPorts[0]) : "";
+  }
+  if (acceptEulaField) {
+    acceptEulaField.checked = false;
+  }
+  if (startField) {
+    startField.checked = true;
+  }
+
+  syncMarketplaceWizardFields(template);
+  renderMarketplaceWizardSteps(template);
+  renderMarketplaceTemplates();
+  renderMarketplaceProgress([]);
+  setMarketplaceInstallState("Ready", "ready");
+  setMarketplaceMessage("Review the generated settings, then install.");
+}
+
+function closeMarketplaceWizard() {
+  marketplaceSelectedTemplateId = null;
+  if (marketplaceWizard) {
+    marketplaceWizard.hidden = true;
+  }
+  if (marketplaceSelectedName) {
+    marketplaceSelectedName.textContent = "Select a template";
+  }
+  if (marketplaceSelectedMeta) {
+    marketplaceSelectedMeta.textContent = "Installable templates appear as cards.";
+  }
+  renderMarketplaceTemplates();
+}
+
+function collectMarketplaceInstallOptions() {
+  const portValue = Number.parseInt(getMarketplaceField("port")?.value || "", 10);
+  const ports = Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? [portValue] : [];
+  return {
+    name: getMarketplaceField("name")?.value || "",
+    version: getMarketplaceField("version")?.value || "",
+    serverType: getMarketplaceField("serverType")?.value || "",
+    storageLocation: getMarketplaceField("storageLocation")?.value || "data",
+    memory: getMarketplaceField("memory")?.value || "",
+    port: ports[0] || undefined,
+    ports,
+    playitTunnel: Boolean(getMarketplaceField("playitTunnel")?.checked),
+    acceptEula: Boolean(getMarketplaceField("acceptEula")?.checked),
+    start: Boolean(getMarketplaceField("start")?.checked),
+  };
+}
+
+function renderMarketplaceProgress(steps = []) {
+  if (!marketplaceProgress) {
+    return;
+  }
+
+  marketplaceProgress.replaceChildren();
+  if (!steps.length) {
+    const empty = document.createElement("div");
+    empty.className = "marketplace-progress-empty";
+    empty.textContent = "Install progress will appear here.";
+    marketplaceProgress.append(empty);
+    return;
+  }
+
+  steps.forEach((step) => {
+    const row = document.createElement("div");
+    row.className = "marketplace-progress-step";
+    row.dataset.status = step.status || "pending";
+    const label = document.createElement("strong");
+    label.textContent = step.label || "Step";
+    const detail = document.createElement("span");
+    detail.textContent = step.detail || step.status || "";
+    row.append(label, detail);
+    marketplaceProgress.append(row);
+  });
+}
+
+function formatDownloadSpeed(bytesPerSecond) {
+  return Number.isFinite(bytesPerSecond) && bytesPerSecond > 0 ? `${formatBytes(bytesPerSecond)}/s` : "Idle";
+}
+
+function renderMarketplaceDownloads(downloads = []) {
+  if (!downloadList) {
+    return;
+  }
+
+  downloadList.replaceChildren();
+  if (!downloads.length) {
+    const empty = document.createElement("div");
+    empty.className = "docker-empty-state";
+    const title = document.createElement("strong");
+    title.textContent = "No downloads queued";
+    const detail = document.createElement("span");
+    detail.textContent = "Template downloads will appear here.";
+    empty.append(title, detail);
+    downloadList.append(empty);
+    return;
+  }
+
+  downloads.forEach((download) => {
+    const item = document.createElement("article");
+    item.className = "download-item";
+    const header = document.createElement("div");
+    header.className = "download-item__header";
+    const name = document.createElement("strong");
+    name.textContent = download.name || download.id;
+    const status = document.createElement("span");
+    status.className = "status-pill";
+    status.textContent = download.status || "queued";
+    header.append(name, status);
+
+    const bar = document.createElement("div");
+    bar.className = "download-progress";
+    const fill = document.createElement("span");
+    fill.style.width = `${Math.max(0, Math.min(Number(download.progress) || 0, 100))}%`;
+    bar.append(fill);
+
+    const meta = document.createElement("small");
+    const eta = Number.isFinite(download.etaSeconds) ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
+    meta.textContent = `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}`;
+
+    const actions = document.createElement("div");
+    actions.className = "download-item__actions";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "inline-action";
+    cancel.textContent = "Cancel";
+    cancel.disabled = !download.canCancel;
+    cancel.addEventListener("click", () => cancelMarketplaceDownload(download.id));
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "inline-action";
+    retry.textContent = "Retry";
+    retry.disabled = !download.canRetry;
+    retry.addEventListener("click", () => retryMarketplaceDownload(download.id));
+    actions.append(cancel, retry);
+
+    item.append(header, bar, meta, actions);
+    downloadList.append(item);
+  });
+}
+
+async function refreshMarketplaceDownloads() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasMarketplace) {
+    renderMarketplaceDownloads([]);
+    return;
+  }
+
+  try {
+    const payload = await desktopApiState.api.marketplace.getDownloads();
+    renderMarketplaceDownloads(Array.isArray(payload?.downloads) ? payload.downloads : []);
+  } catch {
+    renderMarketplaceDownloads([]);
+  }
+}
+
+async function cancelMarketplaceDownload(downloadId) {
+  try {
+    await getDesktopApiState().api.marketplace.cancelDownload(downloadId);
+    await refreshMarketplaceDownloads();
+  } catch (error) {
+    showToast(error?.message || "Download cancel failed.");
+  }
+}
+
+async function retryMarketplaceDownload(downloadId) {
+  try {
+    await getDesktopApiState().api.marketplace.retryDownload(downloadId);
+    await refreshMarketplaceDownloads();
+  } catch (error) {
+    showToast(error?.message || "Download retry failed.");
+  }
+}
+
+async function refreshMarketplace() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasMarketplace || marketplaceRequestInFlight) {
+    if (!desktopApiState.hasMarketplace) {
+      marketplaceCatalog = { categories: [], templates: [] };
+      renderMarketplaceCategories();
+      renderMarketplaceTemplates();
+      setMarketplaceMessage("Marketplace bridge is unavailable in this build.", "error");
+    }
+    return;
+  }
+
+  setMarketplaceLoading(true);
+  try {
+    marketplaceCatalog = await desktopApiState.api.marketplace.listTemplates();
+    renderMarketplaceCategories();
+    renderMarketplaceTemplates();
+    setMarketplaceMessage("Template catalog loaded.");
+  } catch (error) {
+    marketplaceCatalog = { categories: [], templates: [] };
+    renderMarketplaceCategories();
+    renderMarketplaceTemplates();
+    setMarketplaceMessage(error?.message || "Marketplace could not be loaded.", "error");
+  } finally {
+    setMarketplaceLoading(false);
+  }
+}
+
+async function installMarketplaceTemplate(event) {
+  event?.preventDefault();
+  const desktopApiState = getDesktopApiState();
+  const template = findMarketplaceTemplate();
+
+  if (!desktopApiState.hasMarketplace || !template || marketplaceInstallInFlight) {
+    return;
+  }
+
+  const options = collectMarketplaceInstallOptions();
+  if (!options.name.trim()) {
+    setMarketplaceMessage("Enter a name before installing.", "error");
+    getMarketplaceField("name")?.focus();
+    return;
+  }
+
+  if (template.category === "Minecraft" && !options.acceptEula) {
+    setMarketplaceMessage("Accept the Minecraft EULA to generate eula.txt.", "error");
+    return;
+  }
+
+  marketplaceInstallInFlight = true;
+  if (marketplaceInstallButton) {
+    marketplaceInstallButton.disabled = true;
+  }
+  setMarketplaceInstallState("Installing", "running");
+  renderMarketplaceProgress([
+    { label: "Creating folders", status: "running", detail: "Sending install request to the Debian agent." },
+  ]);
+
+  try {
+    const result = await desktopApiState.api.marketplace.installTemplate({
+      templateId: template.id,
+      options,
+    });
+    renderMarketplaceProgress(result?.progress || []);
+    renderMarketplaceDownloads(result?.downloads || []);
+    selectedInstanceId = result?.instance?.id || selectedInstanceId;
+    setMarketplaceInstallState("Complete", "complete");
+    setMarketplaceMessage("Install complete. Opening the new instance.");
+    showToast("Template installed.");
+    showPage("instances");
+    await refreshInstances();
+  } catch (error) {
+    setMarketplaceInstallState("Failed", "failed");
+    setMarketplaceMessage(getAgentErrorMessage(error, "Template install failed."), "error");
+    showToast(getAgentErrorMessage(error, "Template install failed."));
+  } finally {
+    marketplaceInstallInFlight = false;
+    if (marketplaceInstallButton) {
+      marketplaceInstallButton.disabled = false;
+    }
+    renderMarketplaceTemplates();
+    refreshMarketplaceDownloads();
+  }
 }
 
 function parseCsv(value) {
@@ -2705,6 +3797,14 @@ function syncInstanceCreateTypeFields() {
     instanceEntrypointField.hidden = type === "custom-command";
   }
 
+  instanceCustomFields.forEach((field) => {
+    field.hidden = type !== "custom-command";
+  });
+
+  instanceTemplateButtons.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.instanceTemplate === type);
+  });
+
   if (executableInput && !executableInput.value.trim()) {
     executableInput.placeholder =
       type === "custom-command" ? "node" :
@@ -2731,6 +3831,7 @@ function buildInstanceCreatePayload() {
   const entrypoint = getInstanceFormValue("entrypoint");
   const workingDirectory = getInstanceFormValue("workingDirectory");
   const args = parseArgs(getInstanceFormValue("args"));
+  const memoryLimit = getInstanceFormValue("memoryLimit");
   const ports = parseCsv(getInstanceFormValue("ports")).map((port) => Number.parseInt(port, 10)).filter(Number.isFinite);
   const tags = parseCsv(getInstanceFormValue("tags"));
   const environment = parseEnvironment(getInstanceFormValue("environment"));
@@ -2748,6 +3849,14 @@ function buildInstanceCreatePayload() {
     tags,
     environment,
   };
+
+  if (memoryLimit) {
+    payload.memoryLimit = memoryLimit;
+  }
+
+  if (type === "minecraft-paper" && !payload.tags.includes("minecraft")) {
+    payload.tags.push("minecraft");
+  }
 
   if (executable) {
     payload.executable = executable;
@@ -2888,6 +3997,30 @@ async function createInstanceFromForm(event) {
     const response = await desktopApiState.api.instances.create(payload);
     const instance = normalizeInstanceResponse(response);
     selectedInstanceId = instance?.id || payload.id;
+
+    if (payload.type === "minecraft-paper") {
+      const acceptEula = document.querySelector('[data-instance-form="acceptEula"]')?.checked === true;
+      if (acceptEula) {
+        await desktopApiState.api.instances.writeFile(selectedInstanceId, "eula.txt", "eula=true\n");
+      }
+      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstanceId, {
+        "server-port": payload.ports?.[0] ? String(payload.ports[0]) : "25565",
+        motd: payload.displayName || payload.id,
+        "max-players": "20",
+        difficulty: "easy",
+        gamemode: "survival",
+        "view-distance": "10",
+        "simulation-distance": "10",
+        "online-mode": "true",
+        "allow-flight": "false",
+        "spawn-protection": "16",
+        pvp: "true",
+        "white-list": "false",
+        "generate-structures": "true",
+        "level-seed": "",
+      });
+    }
+
     setInstanceCreateFormVisible(false);
     instanceCreateForm?.reset();
     setInstanceFormMessage("Commands run without a shell. Secrets are not accepted in environment variable names.");
@@ -6826,6 +7959,11 @@ dockerStartButton?.addEventListener("click", () => handleDockerAction("start"));
 dockerStopButton?.addEventListener("click", () => handleDockerAction("stop"));
 dockerRestartButton?.addEventListener("click", () => handleDockerAction("restart"));
 updateDockerActionButtons();
+marketplaceSearchInput?.addEventListener("input", renderMarketplaceTemplates);
+marketplaceRefreshButton?.addEventListener("click", refreshMarketplace);
+downloadRefreshButton?.addEventListener("click", refreshMarketplaceDownloads);
+marketplaceWizard?.addEventListener("submit", installMarketplaceTemplate);
+marketplaceCancelButton?.addEventListener("click", closeMarketplaceWizard);
 instancesSearchInput?.addEventListener("input", filterInstanceRows);
 instancesLogStreamSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesLogLimitSelect?.addEventListener("change", () => refreshInstanceLogs());
@@ -6837,6 +7975,28 @@ instancesStopButton?.addEventListener("click", () => runInstanceAction("stop"));
 instancesRestartButton?.addEventListener("click", () => runInstanceAction("restart"));
 instancesDeleteButton?.addEventListener("click", () => runInstanceAction("delete"));
 instancesLogsButton?.addEventListener("click", () => refreshInstanceLogs());
+document.querySelector('[data-instance-action="force-kill"]')?.addEventListener("click", () => runInstanceAction("forceKill"));
+document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);
+document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);
+document.querySelector('[data-instance-action="download-logs"]')?.addEventListener("click", downloadInstanceLogs);
+instanceConsoleSearchInput?.addEventListener("input", syncConsoleLogSearch);
+instanceConsoleForm?.addEventListener("submit", sendInstanceConsoleCommand);
+instanceTabs.forEach((button) => {
+  button.addEventListener("click", () => setActiveInstanceTab(button.dataset.instanceTab || "overview"));
+});
+instanceTemplateButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const type = button.dataset.instanceTemplate || "custom-command";
+    if (type === "docker-compose") {
+      showToast("Docker instance wizard is planned. Use Docker page or Custom Command for now.");
+      return;
+    }
+    if (instanceTypeSelect) {
+      instanceTypeSelect.value = type;
+    }
+    syncInstanceCreateTypeFields();
+  });
+});
 instanceCreateForm?.addEventListener("submit", createInstanceFromForm);
 instanceTypeSelect?.addEventListener("change", syncInstanceCreateTypeFields);
 instanceFormInputs.forEach((input) => {
@@ -6846,7 +8006,89 @@ instanceFormInputs.forEach((input) => {
     }
   });
 });
+instanceConfigForm?.addEventListener("submit", saveInstanceConfiguration);
+instanceConfigCancelButton?.addEventListener("click", () => {
+  populateInstanceConfigForm(findInstance());
+  populateMinecraftProperties(latestMinecraftProperties);
+});
+instanceConfigInputs.forEach((input) => {
+  input.addEventListener("input", syncInstanceConfigDirtyState);
+  input.addEventListener("change", syncInstanceConfigDirtyState);
+});
+minecraftPropertyInputs.forEach((input) => {
+  input.addEventListener("input", syncInstanceConfigDirtyState);
+  input.addEventListener("change", syncInstanceConfigDirtyState);
+});
+instanceNetworkAddButton?.addEventListener("click", () => {
+  const selectedInstance = findInstance();
+  const port = Number.parseInt(instanceNetworkPortInput?.value || "", 10);
+  const currentPorts = Array.isArray(selectedInstance?.ports) ? selectedInstance.ports : [];
+  if (!Number.isFinite(port) || port < 1 || port > 65535) {
+    showToast("Enter a valid port.");
+    return;
+  }
+  if (currentPorts.includes(port)) {
+    showToast("Port already exists.");
+    return;
+  }
+  updateInstancePorts([...currentPorts, port]);
+});
+document.querySelector('[data-instance-file-action="refresh"]')?.addEventListener("click", () => refreshInstanceFiles());
+document.querySelector('[data-instance-file-action="up"]')?.addEventListener("click", () => refreshInstanceFiles(getInstanceParentPath(instanceCurrentFilePath)));
+document.querySelector('[data-instance-file-action="new-folder"]')?.addEventListener("click", async () => {
+  const name = window.prompt("New folder name");
+  const selectedInstance = findInstance();
+  if (!name || !selectedInstance) {
+    return;
+  }
+  await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name));
+  refreshInstanceFiles();
+});
+document.querySelector('[data-instance-file-action="rename"]')?.addEventListener("click", async () => {
+  const selectedInstance = findInstance();
+  if (!selectedInstanceFilePath || !selectedInstance) {
+    return;
+  }
+  const nextName = window.prompt("Rename to", selectedInstanceFilePath.split("/").pop());
+  if (!nextName) {
+    return;
+  }
+  await getDesktopApiState().api.instances.renameFile(selectedInstance.id, selectedInstanceFilePath, joinInstancePath(getInstanceParentPath(selectedInstanceFilePath), nextName));
+  refreshInstanceFiles();
+});
+document.querySelector('[data-instance-file-action="delete"]')?.addEventListener("click", async () => {
+  const selectedInstance = findInstance();
+  if (!selectedInstanceFilePath || !selectedInstance || !window.confirm(`Delete ${selectedInstanceFilePath}?`)) {
+    return;
+  }
+  await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath);
+  refreshInstanceFiles();
+});
+document.querySelector('[data-instance-file-action="save"]')?.addEventListener("click", saveInstanceTextFile);
+instanceFileEditor?.addEventListener("input", syncInstanceFileDirtyState);
+instanceFileDropzone?.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  instanceFileDropzone.classList.add("is-dragging");
+});
+instanceFileDropzone?.addEventListener("dragleave", () => {
+  instanceFileDropzone.classList.remove("is-dragging");
+});
+instanceFileDropzone?.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  instanceFileDropzone.classList.remove("is-dragging");
+  const selectedInstance = findInstance();
+  const files = [...(event.dataTransfer?.files || [])];
+  if (!selectedInstance || files.length === 0) {
+    return;
+  }
+  for (const file of files) {
+    const content = await file.text();
+    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, file.name), content);
+  }
+  refreshInstanceFiles();
+});
 syncInstanceCreateTypeFields();
+setActiveInstanceTab(readStoredInstanceTab());
 updateInstanceActionButtons();
 settingsInputs.forEach((input) => {
   input.addEventListener("input", saveSettings);
@@ -6875,3 +8117,8 @@ registerRefreshTask(() => {
     refreshInstances();
   }
 }, 5000);
+registerRefreshTask(() => {
+  if (getActivePageName() === "marketplace") {
+    refreshMarketplaceDownloads();
+  }
+}, 2000);

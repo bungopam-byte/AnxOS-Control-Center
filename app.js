@@ -266,8 +266,10 @@ let marketplaceCatalog = { categories: [], templates: [] };
 let marketplaceSelectedTemplateId = null;
 let marketplaceActiveCategory = "All";
 let selectedInstanceId = null;
+let staleInstanceIdsLoaded = false;
 let instanceCreateFormVisible = false;
 let lastMissingInstanceNoticeAt = 0;
+let lastStaleInstanceRemovedNoticeAt = 0;
 let activeInstanceTab = "overview";
 let latestMinecraftProperties = {};
 let instanceConfigSnapshot = "";
@@ -341,6 +343,8 @@ const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
+const STALE_INSTANCE_STORAGE_KEY = "anxos.instances.staleIds.v1";
+const staleInstanceIds = new Set();
 const PRIMARY_NAVIGATION_ORDER = [
   "dashboard",
   "marketplace",
@@ -712,6 +716,88 @@ function storeLastInstanceId(instanceId) {
       window.localStorage.removeItem(LAST_INSTANCE_STORAGE_KEY);
     }
   } catch {}
+}
+
+function loadStaleInstanceIds() {
+  if (staleInstanceIdsLoaded) {
+    return;
+  }
+
+  staleInstanceIdsLoaded = true;
+  staleInstanceIds.clear();
+
+  try {
+    const parsedValue = JSON.parse(window.localStorage.getItem(STALE_INSTANCE_STORAGE_KEY) || "[]");
+    if (Array.isArray(parsedValue)) {
+      parsedValue
+        .filter((instanceId) => typeof instanceId === "string" && instanceId.trim())
+        .forEach((instanceId) => staleInstanceIds.add(instanceId));
+    }
+  } catch {
+    staleInstanceIds.clear();
+  }
+}
+
+function persistStaleInstanceIds() {
+  try {
+    if (staleInstanceIds.size > 0) {
+      window.localStorage.setItem(STALE_INSTANCE_STORAGE_KEY, JSON.stringify([...staleInstanceIds]));
+    } else {
+      window.localStorage.removeItem(STALE_INSTANCE_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function isStaleInstanceId(instanceId) {
+  loadStaleInstanceIds();
+  return Boolean(instanceId && staleInstanceIds.has(instanceId));
+}
+
+function filterStaleInstances(instances) {
+  loadStaleInstanceIds();
+  return Array.isArray(instances) ? instances.filter((instance) => instance?.id && !staleInstanceIds.has(instance.id)) : [];
+}
+
+function forgetStaleInstanceId(instanceId) {
+  if (!instanceId) {
+    return;
+  }
+
+  loadStaleInstanceIds();
+  if (staleInstanceIds.delete(instanceId)) {
+    persistStaleInstanceIds();
+  }
+}
+
+function notifyStaleInstanceRemoved(error = null) {
+  if (error) {
+    console.warn("[Instances] Removed stale instance from renderer state.", error);
+  }
+
+  const now = Date.now();
+  if (now - lastStaleInstanceRemovedNoticeAt > 5000) {
+    showToast("Removed stale instance from the list.", "warning");
+    lastStaleInstanceRemovedNoticeAt = now;
+  }
+}
+
+function markStaleInstanceId(instanceId, error = null) {
+  if (!instanceId) {
+    return false;
+  }
+
+  loadStaleInstanceIds();
+  const wasAdded = !staleInstanceIds.has(instanceId);
+  staleInstanceIds.add(instanceId);
+  persistStaleInstanceIds();
+
+  if (selectedInstanceId === instanceId) {
+    selectedInstanceId = null;
+    storeLastInstanceId(null);
+  }
+
+  notifyStaleInstanceRemoved(error);
+  return wasAdded;
 }
 
 function debounce(callback, waitMs = 120) {
@@ -2500,7 +2586,7 @@ function normalizeInstancesPayload(payload) {
 
   return {
     root: payload?.root || payload?.data?.root || null,
-    instances,
+    instances: filterStaleInstances(instances),
   };
 }
 
@@ -3048,7 +3134,7 @@ async function updateInstancePorts(ports) {
     await refreshInstances();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error);
+      await handleMissingSelectedInstance(error, selectedInstance.id);
     } else {
       console.warn("[Instances] Port update failed.", error);
       showToast(getAgentErrorMessage(error, "Port update failed."));
@@ -3080,7 +3166,7 @@ async function saveInstanceConfiguration(event) {
     await loadMinecraftProperties();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error);
+      await handleMissingSelectedInstance(error, selectedInstance.id);
     } else {
       console.warn("[Instances] Configuration save failed.", error);
       showToast(getAgentErrorMessage(error, "Configuration save failed."));
@@ -3105,7 +3191,7 @@ async function loadMinecraftProperties() {
     populateMinecraftProperties(payload?.properties || {});
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error);
+      await handleMissingSelectedInstance(error, selectedInstance.id);
       return;
     }
     console.warn("[Instances] Minecraft properties unavailable.", error);
@@ -3213,7 +3299,11 @@ async function sendInstanceConsoleCommand(event) {
     instanceConsoleCommandInput.value = "";
     await refreshInstanceLogs();
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "Command failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Command failed."));
+    }
   }
 }
 
@@ -3231,7 +3321,11 @@ async function clearInstanceConsole() {
     clearInstanceLogs("Logs cleared.");
     showToast("Logs cleared.");
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "Clear logs failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Clear logs failed."));
+    }
   }
 }
 
@@ -3291,7 +3385,11 @@ async function refreshInstanceFiles(pathValue = instanceCurrentFilePath) {
     }
     renderInstanceFileRows(listing.entries || []);
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "File listing failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "File listing failed."));
+    }
   }
 }
 
@@ -3354,7 +3452,11 @@ async function openInstanceTextFile(filePath) {
     }
     syncInstanceFileDirtyState();
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "Open file failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Open file failed."));
+    }
   }
 }
 
@@ -3390,7 +3492,11 @@ async function saveInstanceTextFile() {
     syncInstanceFileDirtyState();
     showToast("File saved.");
   } catch (error) {
-    showToast(getAgentErrorMessage(error, "Save file failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Save file failed."));
+    }
   }
 }
 
@@ -3603,7 +3709,8 @@ function renderInstancesSnapshot(snapshot) {
   latestInstancesSnapshot = normalizeInstancesPayload(snapshot);
   const instances = getInstances();
   const previousSelectedInstanceId = selectedInstanceId;
-  const rememberedInstanceId = readLastInstanceId();
+  const storedInstanceId = readLastInstanceId();
+  const rememberedInstanceId = isStaleInstanceId(storedInstanceId) ? null : storedInstanceId;
   const previousExists = Boolean(previousSelectedInstanceId && findInstance(previousSelectedInstanceId));
   const rememberedExists = Boolean(rememberedInstanceId && findInstance(rememberedInstanceId));
   const selected =
@@ -3612,7 +3719,11 @@ function renderInstancesSnapshot(snapshot) {
     instances[0] ||
     null;
 
-  if ((previousSelectedInstanceId && !previousExists) || (rememberedInstanceId && !rememberedExists && !previousExists)) {
+  if (
+    (previousSelectedInstanceId && !previousExists) ||
+    (storedInstanceId && !rememberedInstanceId) ||
+    (rememberedInstanceId && !rememberedExists && !previousExists)
+  ) {
     notifyMissingSelectedInstance();
     storeLastInstanceId(null);
   }
@@ -3766,14 +3877,27 @@ function notifyMissingSelectedInstance(error = null) {
   }
 }
 
-async function handleMissingSelectedInstance(error = null) {
-  notifyMissingSelectedInstance(error);
+async function handleMissingSelectedInstance(error = null, instanceId = selectedInstanceId) {
+  const missingInstanceId = instanceId || selectedInstanceId;
+
+  if (missingInstanceId) {
+    markStaleInstanceId(missingInstanceId, error);
+  } else {
+    notifyMissingSelectedInstance(error);
+  }
+
   selectedInstanceId = null;
   latestInstanceMetrics = null;
   storeLastInstanceId(null);
   clearInstanceLogs("Selected instance no longer exists.");
   setInstanceDetails(null);
   updateInstanceActionButtons();
+  if (latestInstancesSnapshot) {
+    latestInstancesSnapshot = {
+      ...latestInstancesSnapshot,
+      instances: filterStaleInstances(latestInstancesSnapshot.instances),
+    };
+  }
   if (instancesRequestInFlight) {
     window.setTimeout(() => refreshInstances(), 0);
   } else {
@@ -4235,6 +4359,7 @@ async function installMarketplaceTemplate(event) {
     renderMarketplaceProgress(result?.progress || []);
     renderMarketplaceDownloads(result?.downloads || []);
     selectedInstanceId = result?.instance?.id || selectedInstanceId;
+    forgetStaleInstanceId(selectedInstanceId);
     setMarketplaceInstallState("Complete", "complete");
     setMarketplaceMessage("Install complete. Opening the new instance.");
     showToast("Template installed.");
@@ -4443,8 +4568,10 @@ async function refreshSelectedInstanceMetrics() {
     return;
   }
 
-  if (!findInstance(selectedInstanceId)) {
-    await handleMissingSelectedInstance();
+  const requestInstanceId = selectedInstanceId;
+
+  if (!findInstance(requestInstanceId)) {
+    await handleMissingSelectedInstance(null, requestInstanceId);
     return;
   }
 
@@ -4455,13 +4582,13 @@ async function refreshSelectedInstanceMetrics() {
   }
 
   try {
-    latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(selectedInstanceId));
+    latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(requestInstanceId));
     renderInstanceRows(getInstances());
-    selectInstance(selectedInstanceId, { refreshMetrics: false });
+    selectInstance(requestInstanceId, { refreshMetrics: false });
   } catch (error) {
     latestInstanceMetrics = null;
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error);
+      await handleMissingSelectedInstance(error, requestInstanceId);
       return;
     }
     console.warn("[Instances] Metrics request failed.", error);
@@ -4474,8 +4601,10 @@ async function refreshInstanceLogs(options = {}) {
     return;
   }
 
-  if (!findInstance(selectedInstanceId)) {
-    await handleMissingSelectedInstance();
+  const requestInstanceId = selectedInstanceId;
+
+  if (!findInstance(requestInstanceId)) {
+    await handleMissingSelectedInstance(null, requestInstanceId);
     return;
   }
 
@@ -4492,13 +4621,13 @@ async function refreshInstanceLogs(options = {}) {
   try {
     const stream = instancesLogStreamSelect?.value || "all";
     const limit = Number.parseInt(instancesLogLimitSelect?.value || "200", 10);
-    renderInstanceLogs(await desktopApiState.api.instances.getLogs(selectedInstanceId, {
+    renderInstanceLogs(await desktopApiState.api.instances.getLogs(requestInstanceId, {
       stream,
       limit: Number.isFinite(limit) ? limit : 200,
     }));
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error);
+      await handleMissingSelectedInstance(error, requestInstanceId);
     } else if (!options.silent) {
       console.warn("[Instances] Log request failed.", error);
       showToast(getAgentErrorMessage(error, "Log request failed."));
@@ -4537,6 +4666,7 @@ async function createInstanceFromForm(event) {
     const response = await desktopApiState.api.instances.create(payload);
     const instance = normalizeInstanceResponse(response);
     selectedInstanceId = instance?.id || payload.id;
+    forgetStaleInstanceId(selectedInstanceId);
 
     if (payload.type === "minecraft-paper") {
       const acceptEula = document.querySelector('[data-instance-form="acceptEula"]')?.checked === true;
@@ -4567,7 +4697,12 @@ async function createInstanceFromForm(event) {
     showToast("Instance created.");
     await refreshInstances();
   } catch (error) {
-    setInstanceFormMessage(getAgentErrorMessage(error, "Create instance failed."));
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstanceId || payload.id);
+      setInstanceFormMessage("Created instance was not available. Removed stale entry from the list.");
+    } else {
+      setInstanceFormMessage(getAgentErrorMessage(error, "Create instance failed."));
+    }
   } finally {
     instanceActionRequestInFlight = false;
     updateInstanceActionButtons();
@@ -4600,6 +4735,7 @@ async function runInstanceAction(actionName) {
 
   try {
     await desktopApiState.api.instances[actionName](selectedInstance.id);
+    forgetStaleInstanceId(selectedInstance.id);
     showToast(`Instance ${actionName} request completed.`);
 
     if (actionName === "delete") {
@@ -4611,7 +4747,7 @@ async function runInstanceAction(actionName) {
     await refreshInstances();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      await handleMissingSelectedInstance(error);
+      await handleMissingSelectedInstance(error, selectedInstance.id);
     } else {
       console.warn(`[Instances] ${actionName} failed.`, error);
       showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
@@ -8613,8 +8749,16 @@ document.querySelector('[data-instance-file-action="new-folder"]')?.addEventList
   if (!name || !selectedInstance) {
     return;
   }
-  await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name));
-  refreshInstanceFiles();
+  try {
+    await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name));
+    refreshInstanceFiles();
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Folder creation failed."));
+    }
+  }
 });
 document.querySelector('[data-instance-file-action="rename"]')?.addEventListener("click", async () => {
   const selectedInstance = findInstance();
@@ -8625,16 +8769,32 @@ document.querySelector('[data-instance-file-action="rename"]')?.addEventListener
   if (!nextName) {
     return;
   }
-  await getDesktopApiState().api.instances.renameFile(selectedInstance.id, selectedInstanceFilePath, joinInstancePath(getInstanceParentPath(selectedInstanceFilePath), nextName));
-  refreshInstanceFiles();
+  try {
+    await getDesktopApiState().api.instances.renameFile(selectedInstance.id, selectedInstanceFilePath, joinInstancePath(getInstanceParentPath(selectedInstanceFilePath), nextName));
+    refreshInstanceFiles();
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Rename failed."));
+    }
+  }
 });
 document.querySelector('[data-instance-file-action="delete"]')?.addEventListener("click", async () => {
   const selectedInstance = findInstance();
   if (!selectedInstanceFilePath || !selectedInstance || !window.confirm(`Delete ${selectedInstanceFilePath}?`)) {
     return;
   }
-  await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath);
-  refreshInstanceFiles();
+  try {
+    await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath);
+    refreshInstanceFiles();
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Delete failed."));
+    }
+  }
 });
 document.querySelector('[data-instance-file-action="save"]')?.addEventListener("click", saveInstanceTextFile);
 instanceFileEditor?.addEventListener("input", syncInstanceFileDirtyState);
@@ -8653,11 +8813,19 @@ instanceFileDropzone?.addEventListener("drop", async (event) => {
   if (!selectedInstance || files.length === 0) {
     return;
   }
-  for (const file of files) {
-    const content = await file.text();
-    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, file.name), content);
+  try {
+    for (const file of files) {
+      const content = await file.text();
+      await getDesktopApiState().api.instances.writeFile(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, file.name), content);
+    }
+    refreshInstanceFiles();
+  } catch (error) {
+    if (isInstanceNotFoundError(error)) {
+      await handleMissingSelectedInstance(error, selectedInstance.id);
+    } else {
+      showToast(getAgentErrorMessage(error, "Upload failed."));
+    }
   }
-  refreshInstanceFiles();
 });
 syncInstanceCreateTypeFields();
 setActiveInstanceTab(readStoredInstanceTab());

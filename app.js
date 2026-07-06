@@ -60,13 +60,12 @@ const instancesSearchInput = document.querySelector("[data-instances-search]");
 const instancesLogStreamSelect = document.querySelector("[data-instances-log-stream]");
 const instancesLogLimitSelect = document.querySelector("[data-instances-log-limit]");
 const instanceActionButtons = document.querySelectorAll("[data-instance-action]");
-const instancesRefreshButton = document.querySelector('[data-instance-action="refresh"]');
+const instancesRefreshButtons = document.querySelectorAll('[data-instance-action="refresh"]');
 const instancesCreateToggleButton = document.querySelector('[data-instance-action="create"]');
 const instancesStartButton = document.querySelector('[data-instance-action="start"]');
 const instancesStopButton = document.querySelector('[data-instance-action="stop"]');
 const instancesRestartButton = document.querySelector('[data-instance-action="restart"]');
 const instancesDeleteButtons = document.querySelectorAll('[data-instance-action="delete"]');
-const instancesLogsButton = document.querySelector('[data-instance-action="logs"]');
 const instanceCreateForm = document.querySelector("[data-instance-create-form]");
 const instanceCreateSubmitButton = document.querySelector("[data-instance-create-submit]");
 const instanceFormInputs = document.querySelectorAll("[data-instance-form]");
@@ -4249,9 +4248,9 @@ function updateInstanceActionButtons() {
   const busy = instancesRequestInFlight || instanceActionRequestInFlight;
   const hasInstancesBridge = desktopApiState.hasInstances;
 
-  if (instancesRefreshButton) {
-    instancesRefreshButton.disabled = instancesRequestInFlight || instanceActionRequestInFlight || !hasInstancesBridge;
-  }
+  instancesRefreshButtons.forEach((button) => {
+    button.disabled = instancesRequestInFlight || instanceActionRequestInFlight || !hasInstancesBridge;
+  });
 
   if (instancesCreateToggleButton) {
     instancesCreateToggleButton.disabled = busy || !hasInstancesBridge;
@@ -4293,9 +4292,6 @@ function updateInstanceActionButtons() {
     button.textContent = instanceActionRequestInFlight ? "Working..." : button.dataset.defaultLabel;
   });
 
-  if (instancesLogsButton) {
-    instancesLogsButton.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
-  }
 }
 
 function setInstancesLoading(isLoading) {
@@ -11525,7 +11521,9 @@ document.querySelectorAll("[data-instance-backup-action]").forEach((button) => {
 instancesSearchInput?.addEventListener("input", debounce(filterInstanceRows, 120));
 instancesLogStreamSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesLogLimitSelect?.addEventListener("change", () => refreshInstanceLogs());
-instancesRefreshButton?.addEventListener("click", refreshInstances);
+instancesRefreshButtons.forEach((button) => {
+  button.addEventListener("click", refreshInstances);
+});
 instancesCreateToggleButton?.addEventListener("click", () => setInstanceCreateFormVisible(!instanceCreateFormVisible));
 document.querySelector('[data-instance-action="cancel-create"]')?.addEventListener("click", () => setInstanceCreateFormVisible(false));
 instancesStartButton?.addEventListener("click", () => runInstanceAction("start"));
@@ -11533,10 +11531,6 @@ instancesStopButton?.addEventListener("click", () => runInstanceAction("stop"));
 instancesRestartButton?.addEventListener("click", () => runInstanceAction("restart"));
 instancesDeleteButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("delete"));
-});
-instancesLogsButton?.addEventListener("click", () => {
-  setActiveInstanceTab("console");
-  refreshInstanceLogs();
 });
 document.querySelector('[data-instance-action="force-kill"]')?.addEventListener("click", () => runInstanceAction("forceKill"));
 document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);

@@ -3,6 +3,7 @@ const {
   cancelDownload,
   getDownloads,
   getImportSupport,
+  getMinecraftVersionCatalog,
   importCommunityTemplate,
   installTemplate,
   listTemplates,
@@ -31,6 +32,7 @@ async function invokeMarketplaceOperation(operation) {
 
 function registerMarketplaceIpc() {
   ipcMain.handle("marketplace:listTemplates", async () => invokeMarketplaceOperation(() => listTemplates()));
+  ipcMain.handle("marketplace:getMinecraftVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getMinecraftVersionCatalog(payload.templateId)));
   ipcMain.handle("marketplace:getImportSupport", async () => invokeMarketplaceOperation(() => getImportSupport()));
   ipcMain.handle("marketplace:importCommunityTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
     requirePermission("marketplace:install", payload?.template?.id || payload?.id || "community-template");

@@ -16,6 +16,8 @@ const COMMUNITY_TEMPLATE_FORMAT_VERSION = 1;
 const INSTANCE_VERSION_CACHE_VERSION = 2;
 
 const downloads = new Map();
+const minecraftVersionCatalogCache = new Map();
+const MINECRAFT_VERSION_CATALOG_TTL_MS = 10 * 60 * 1000;
 
 function createMarketplaceError(message, code = "MARKETPLACE_ERROR", details = {}) {
   const error = new Error(message);
@@ -502,6 +504,274 @@ function latestFromList(values) {
   return values[values.length - 1];
 }
 
+function categorizeMinecraftVersion(version, type = "") {
+  const text = String(version || "").trim();
+  const lowerType = String(type || "").toLowerCase();
+  if (lowerType.includes("snapshot") || /\d{2}w\d{2}[a-z]/i.test(text) || /pre|rc/i.test(text)) {
+    return "snapshots";
+  }
+  if (lowerType.includes("old") || /^(rd-|c0\.|a1\.|b1\.|inf-|in-|0\.)/i.test(text)) {
+    return "legacy";
+  }
+  return "releases";
+}
+
+function versionSortKey(version) {
+  const text = String(version || "");
+  const snapshot = text.match(/^(\d{2})w(\d{2})([a-z])$/i);
+  if (snapshot) {
+    return [Number(snapshot[1]) + 2000, Number(snapshot[2]), snapshot[3].toLowerCase().charCodeAt(0) - 96, 0];
+  }
+  const parts = text.match(/\d+/g)?.slice(0, 4).map((part) => Number.parseInt(part, 10)) || [];
+  while (parts.length < 4) parts.push(0);
+  return parts;
+}
+
+function compareMinecraftVersions(left, right) {
+  const leftKey = versionSortKey(left?.id || left?.version || left);
+  const rightKey = versionSortKey(right?.id || right?.version || right);
+  for (let index = 0; index < Math.max(leftKey.length, rightKey.length); index += 1) {
+    const difference = (rightKey[index] || 0) - (leftKey[index] || 0);
+    if (difference !== 0) return difference;
+  }
+  return String(right?.id || right?.version || right).localeCompare(String(left?.id || left?.version || left));
+}
+
+function normalizeVersionEntry(entry = {}) {
+  const id = String(entry.id || entry.version || "").trim();
+  if (!id) return null;
+  return {
+    id,
+    label: entry.label || id,
+    category: entry.category || categorizeMinecraftVersion(id, entry.type),
+    type: entry.type || "",
+    recommended: Boolean(entry.recommended),
+    details: entry.details || "",
+    loaderVersion: entry.loaderVersion || "",
+    softwareVersion: entry.softwareVersion || "",
+    url: entry.url || "",
+    releaseTime: entry.releaseTime || entry.time || "",
+  };
+}
+
+function uniqueVersionEntries(entries = []) {
+  const byId = new Map();
+  for (const rawEntry of entries) {
+    const entry = normalizeVersionEntry(rawEntry);
+    if (!entry) continue;
+    const existing = byId.get(entry.id);
+    byId.set(entry.id, existing ? {
+      ...existing,
+      ...entry,
+      recommended: existing.recommended || entry.recommended,
+      details: entry.details || existing.details,
+      loaderVersion: entry.loaderVersion || existing.loaderVersion,
+      softwareVersion: entry.softwareVersion || existing.softwareVersion,
+    } : entry);
+  }
+  return [...byId.values()].sort(compareMinecraftVersions);
+}
+
+function getLatestReleaseEntry(entries = []) {
+  return entries.find((entry) => entry.category === "releases") || entries[0] || null;
+}
+
+function buildMinecraftCatalogResponse(template, entries, latest = null, extras = {}) {
+  const versions = uniqueVersionEntries(entries);
+  const latestEntry = latest
+    ? normalizeVersionEntry(latest)
+    : getLatestReleaseEntry(versions);
+  const recommended = [
+    ...(latestEntry ? [{ ...latestEntry, recommended: true }] : []),
+    ...versions.filter((entry) => entry.recommended),
+  ];
+  return {
+    templateId: template.id,
+    provider: template.id.replace(/^minecraft-/, ""),
+    fetchedAt: new Date().toISOString(),
+    latest: latestEntry,
+    versions,
+    recommended: uniqueVersionEntries(recommended),
+    filters: ["recommended", "releases", "snapshots", "legacy", "all"],
+    ...extras,
+  };
+}
+
+function getCachedMinecraftVersionCatalog(templateId) {
+  const cached = minecraftVersionCatalogCache.get(templateId);
+  if (cached && Date.now() - cached.cachedAt < MINECRAFT_VERSION_CATALOG_TTL_MS) {
+    return cached.catalog;
+  }
+  return null;
+}
+
+function setCachedMinecraftVersionCatalog(templateId, catalog) {
+  minecraftVersionCatalogCache.set(templateId, {
+    catalog,
+    cachedAt: Date.now(),
+  });
+  return catalog;
+}
+
+async function getVanillaVersionCatalog(template, context = {}) {
+  const manifest = await fetchJson(MOJANG_VERSION_MANIFEST_URL, "Mojang version manifest", {
+    ...context,
+    step: "Resolve version catalog",
+    code: "VERSION_CATALOG_FAILED",
+  });
+  const latestRelease = manifest?.latest?.release || latestFromList(manifest?.versions?.filter((entry) => entry.type === "release").map((entry) => entry.id));
+  const entries = (manifest?.versions || []).map((entry) => ({
+    id: entry.id,
+    type: entry.type,
+    category: categorizeMinecraftVersion(entry.id, entry.type),
+    releaseTime: entry.releaseTime,
+    url: entry.url,
+    recommended: entry.id === latestRelease,
+  }));
+  return buildMinecraftCatalogResponse(template, entries, { id: latestRelease, category: "releases", recommended: true });
+}
+
+async function getPaperVersionCatalog(template, context = {}) {
+  const api = await fetchJson("https://fill.papermc.io/v3/projects/paper/versions", "Paper version catalog", {
+    ...context,
+    step: "Resolve version catalog",
+    code: "VERSION_CATALOG_FAILED",
+  });
+  const rawVersions = Array.isArray(api?.versions) ? api.versions : [];
+  const entries = rawVersions.map((entry) => {
+    const version = typeof entry === "string" ? entry : entry?.version?.id || entry?.id || entry?.version;
+    return {
+      id: version,
+      category: categorizeMinecraftVersion(version, entry?.version?.type || entry?.type),
+      recommended: Boolean(entry?.recommended || entry?.version?.recommended),
+    };
+  });
+  const latest = api?.latest?.release || getLatestReleaseEntry(uniqueVersionEntries(entries))?.id;
+  return buildMinecraftCatalogResponse(template, entries, { id: latest, category: "releases", recommended: true });
+}
+
+async function getPurpurVersionCatalog(template, context = {}) {
+  const api = await fetchJson("https://api.purpurmc.org/v2/purpur", "Purpur version catalog", {
+    ...context,
+    step: "Resolve version catalog",
+    code: "VERSION_CATALOG_FAILED",
+  });
+  const entries = (api?.versions || []).map((version) => ({
+    id: version,
+    category: categorizeMinecraftVersion(version),
+  }));
+  return buildMinecraftCatalogResponse(template, entries, { id: getLatestReleaseEntry(uniqueVersionEntries(entries))?.id, category: "releases", recommended: true });
+}
+
+async function getFabricVersionCatalog(template, context = {}) {
+  const [games, loaders] = await Promise.all([
+    fetchJson(`${FABRIC_META_URL}/versions/game`, "Fabric game version catalog", {
+      ...context,
+      step: "Resolve version catalog",
+      code: "VERSION_CATALOG_FAILED",
+    }),
+    fetchJson(`${FABRIC_META_URL}/versions/loader`, "Fabric loader version catalog", {
+      ...context,
+      step: "Resolve version catalog",
+      code: "VERSION_CATALOG_FAILED",
+    }),
+  ]);
+  const stableLoader = loaders.find((entry) => entry.stable)?.version || loaders[0]?.version || "";
+  const entries = (games || []).map((entry) => ({
+    id: entry.version,
+    category: entry.stable ? "releases" : categorizeMinecraftVersion(entry.version, "snapshot"),
+    recommended: Boolean(entry.stable && entry.version === games.find((game) => game.stable)?.version),
+    loaderVersion: stableLoader,
+    details: stableLoader ? `Fabric Loader ${stableLoader}` : "",
+  }));
+  const latestStable = games.find((entry) => entry.stable)?.version || games[0]?.version;
+  return buildMinecraftCatalogResponse(template, entries, { id: latestStable, category: "releases", recommended: true }, {
+    loaderVersions: loaders.map((entry) => entry.version).filter(Boolean),
+    latestLoader: stableLoader,
+  });
+}
+
+async function getForgeVersionCatalog(template, context = {}) {
+  const [metadataXml, promotions] = await Promise.all([
+    fetchTextWithDetails(FORGE_MAVEN_METADATA_URL, "Forge version metadata", {
+      ...context,
+      step: "Resolve version catalog",
+      code: "VERSION_CATALOG_FAILED",
+    }).then((result) => result.body),
+    fetchJson(FORGE_PROMOTIONS_URL, "Forge promotions", {
+      ...context,
+      step: "Resolve version catalog",
+      code: "VERSION_CATALOG_FAILED",
+    }).catch(() => ({})),
+  ]);
+  const promotionEntries = Object.entries(promotions?.promos || {});
+  const recommendedByVersion = new Map();
+  for (const [key, build] of promotionEntries) {
+    const match = key.match(/^(.+)-(latest|recommended)$/);
+    if (match) {
+      recommendedByVersion.set(match[1], String(build));
+    }
+  }
+  const entries = extractXmlTags(metadataXml, "version").map((forgeVersion) => {
+    const [minecraftVersion, ...forgeParts] = String(forgeVersion).split("-");
+    const forgeBuild = forgeParts.join("-");
+    return {
+      id: minecraftVersion,
+      category: categorizeMinecraftVersion(minecraftVersion),
+      softwareVersion: forgeBuild || forgeVersion,
+      details: forgeBuild ? `Forge ${forgeBuild}` : `Forge ${forgeVersion}`,
+      recommended: recommendedByVersion.has(minecraftVersion),
+    };
+  });
+  const latestVersion = extractXmlTag(metadataXml, "latest");
+  const latestMinecraft = latestVersion ? String(latestVersion).split("-")[0] : entries[0]?.id;
+  return buildMinecraftCatalogResponse(template, entries, { id: latestMinecraft, category: "releases", recommended: true });
+}
+
+async function getNeoForgeVersionCatalog(template, context = {}) {
+  const metadataXml = (await fetchTextWithDetails(NEOFORGE_MAVEN_METADATA_URL, "NeoForge version metadata", {
+    ...context,
+    step: "Resolve version catalog",
+    code: "VERSION_CATALOG_FAILED",
+  })).body;
+  const versions = extractXmlTags(metadataXml, "version");
+  const entries = versions.map((softwareVersion) => {
+    const minecraftVersion = inferNeoForgeMinecraftVersion(softwareVersion);
+    return {
+      id: minecraftVersion || softwareVersion,
+      category: categorizeMinecraftVersion(minecraftVersion || softwareVersion),
+      softwareVersion,
+      details: `NeoForge ${softwareVersion}`,
+    };
+  });
+  const latestSoftware = extractXmlTag(metadataXml, "latest") || latestFromList(versions);
+  const latestMinecraft = inferNeoForgeMinecraftVersion(latestSoftware) || entries[0]?.id;
+  return buildMinecraftCatalogResponse(template, entries, { id: latestMinecraft, category: "releases", recommended: true });
+}
+
+async function getMinecraftVersionCatalog(templateId) {
+  const template = findTemplate(templateId);
+  if (template.category !== "Minecraft") {
+    throw createMarketplaceError("Version catalogs are only available for Minecraft templates.", "VERSION_CATALOG_NOT_SUPPORTED", { templateId });
+  }
+  const cached = getCachedMinecraftVersionCatalog(template.id);
+  if (cached) {
+    return cached;
+  }
+  const context = { templateId: template.id };
+  const resolver = {
+    "minecraft-vanilla": getVanillaVersionCatalog,
+    "minecraft-paper": getPaperVersionCatalog,
+    "minecraft-purpur": getPurpurVersionCatalog,
+    "minecraft-fabric": getFabricVersionCatalog,
+    "minecraft-forge": getForgeVersionCatalog,
+    "minecraft-neoforge": getNeoForgeVersionCatalog,
+  }[template.id] || getVanillaVersionCatalog;
+
+  const catalog = await resolver(template, context);
+  return setCachedMinecraftVersionCatalog(template.id, catalog);
+}
+
 function extractXmlTag(xml, tagName) {
   const match = String(xml || "").match(new RegExp(`<${tagName}>([^<]+)</${tagName}>`));
   return match ? match[1].trim() : "";
@@ -665,6 +935,7 @@ async function resolveFabricDownload(download, options = {}, context = {}) {
 async function resolveForgeDownload(download, options = {}, context = {}) {
   const requestedVersion = options.version || download.version || "latest";
   let forgeVersion = "";
+  let metadata = "";
 
   if (String(requestedVersion).toLowerCase() !== "latest") {
     const promotions = await fetchJson(FORGE_PROMOTIONS_URL, "Forge promotions lookup", context);
@@ -676,8 +947,14 @@ async function resolveForgeDownload(download, options = {}, context = {}) {
   }
 
   if (!forgeVersion) {
-    const { body: metadata } = await fetchTextWithDetails(FORGE_MAVEN_METADATA_URL, "Forge metadata lookup", { ...context, code: "FORGE_RESOLVE_FAILED" });
-    forgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
+    ({ body: metadata } = await fetchTextWithDetails(FORGE_MAVEN_METADATA_URL, "Forge metadata lookup", { ...context, code: "FORGE_RESOLVE_FAILED" }));
+    const versions = extractXmlTags(metadata, "version");
+    if (String(requestedVersion).toLowerCase() !== "latest") {
+      forgeVersion = versions.filter((version) => String(version).startsWith(`${requestedVersion}-`)).at(-1) || "";
+    }
+    if (!forgeVersion) {
+      forgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
+    }
   }
 
   if (!forgeVersion) {
@@ -701,7 +978,9 @@ async function resolveNeoForgeDownload(download, options = {}, context = {}) {
   const versions = extractXmlTags(metadata, "version");
   let neoForgeVersion = extractXmlTag(metadata, "release") || extractXmlTag(metadata, "latest");
   if (String(requestedVersion).toLowerCase() !== "latest") {
-    neoForgeVersion = versions.filter((version) => version.startsWith(`${requestedVersion}.`)).at(-1) || neoForgeVersion;
+    neoForgeVersion = versions.filter((version) => inferNeoForgeMinecraftVersion(version) === String(requestedVersion)).at(-1) ||
+      versions.filter((version) => version.startsWith(`${requestedVersion}.`)).at(-1) ||
+      neoForgeVersion;
   }
 
   if (!neoForgeVersion) {
@@ -1099,7 +1378,12 @@ function buildTemplateVersionInfo(template, values = {}) {
 
   if (!displayVersion) {
     if (game === "minecraft") {
-      displayVersion = gameVersion || softwareVersion || buildNumber || null;
+      displayVersion = [
+        software,
+        gameVersion,
+        buildNumber && /paper|purpur|folia/i.test(String(software || "")) ? `build ${buildNumber}` : null,
+        softwareVersion && !String(softwareVersion).includes(String(gameVersion || "")) && !/paper|purpur|folia/i.test(String(software || "")) ? softwareVersion : null,
+      ].filter(Boolean).join(" ") || gameVersion || softwareVersion || buildNumber || null;
     } else if (game === "fivem" && buildNumber) {
       displayVersion = `Artifact ${buildNumber}`;
     } else {
@@ -1507,7 +1791,7 @@ function buildResolvedVersionMetadata(template, resolved = {}) {
     softwareVersion: game === "minecraft" && /fabric|forge|neoforge|quilt/i.test(serverSoftware || "") ? build : null,
     buildNumber: build,
     displayVersion: game === "minecraft"
-      ? (minecraftVersion || resolved.version || null)
+      ? null
       : (game === "fivem" ? `Artifact ${build || resolved.version}` : resolved.version || null),
   });
   const version = versionInfo.displayVersion || resolved.version || null;
@@ -2023,14 +2307,18 @@ module.exports = {
     buildInstancePayload,
     buildResolvedVersionMetadata,
     buildTemplateInstallerScript,
+    categorizeMinecraftVersion,
+    compareMinecraftVersions,
     getTemplateInstallPlan,
     normalizeTemplateDownloads,
     normalizeTemplateTags,
     parsePorts,
+    uniqueVersionEntries,
   },
   cancelDownload,
   getDownloads: () => sanitizeDownloads(getDownloads()),
   getImportSupport,
+  getMinecraftVersionCatalog,
   importCommunityTemplate,
   installTemplate,
   listTemplates,

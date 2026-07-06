@@ -132,6 +132,12 @@ const marketplaceInstallState = document.querySelector("[data-marketplace-instal
 const marketplaceWizard = document.querySelector("[data-marketplace-wizard]");
 const marketplaceWizardSteps = document.querySelector("[data-marketplace-wizard-steps]");
 const marketplaceFields = document.querySelectorAll("[data-marketplace-field]");
+const marketplaceVersionToggle = document.querySelector("[data-marketplace-version-toggle]");
+const marketplaceVersionPanel = document.querySelector("[data-marketplace-version-panel]");
+const marketplaceVersionStatus = document.querySelector("[data-marketplace-version-status]");
+const marketplaceVersionTabs = document.querySelector("[data-marketplace-version-tabs]");
+const marketplaceVersionSearch = document.querySelector("[data-marketplace-version-search]");
+const marketplaceVersionList = document.querySelector("[data-marketplace-version-list]");
 const marketplaceInstallButton = document.querySelector("[data-marketplace-install]");
 const marketplaceCancelButton = document.querySelector("[data-marketplace-cancel]");
 const marketplaceMessage = document.querySelector("[data-marketplace-message]");
@@ -330,6 +336,20 @@ let marketplaceInstallInFlight = false;
 let marketplaceCatalog = { categories: [], templates: [] };
 let marketplaceSelectedTemplateId = null;
 let marketplaceActiveCategory = "All";
+const MARKETPLACE_VERSION_FILTERS = ["recommended", "releases", "snapshots", "legacy", "all"];
+const MARKETPLACE_VERSION_FILTER_LABELS = {
+  recommended: "Recommended",
+  releases: "Releases",
+  snapshots: "Snapshots",
+  legacy: "Legacy",
+  all: "All",
+};
+let marketplaceVersionCatalog = null;
+let marketplaceVersionFilter = "recommended";
+let marketplaceVersionQuery = "";
+let marketplaceVersionOpen = false;
+let marketplaceVersionRenderLimit = 80;
+let marketplaceVersionRequestId = 0;
 let selectedInstanceId = null;
 let staleInstanceIdsLoaded = false;
 let instanceCreateFormVisible = false;
@@ -576,6 +596,7 @@ function getDesktopApiState() {
       typeof api?.marketplace?.getDownloads === "function" &&
       typeof api?.marketplace?.cancelDownload === "function" &&
       typeof api?.marketplace?.retryDownload === "function",
+    hasMarketplaceVersions: typeof api?.marketplace?.getMinecraftVersions === "function",
     hasInstances:
       typeof api?.instances?.list === "function" &&
       typeof api?.instances?.create === "function" &&
@@ -4887,6 +4908,234 @@ function setMarketplaceInstallState(label, status = "ready") {
   }
 }
 
+function isMinecraftMarketplaceTemplate(template) {
+  return template?.category === "Minecraft";
+}
+
+function resetMarketplaceVersionPicker() {
+  marketplaceVersionCatalog = null;
+  marketplaceVersionFilter = "recommended";
+  marketplaceVersionQuery = "";
+  marketplaceVersionOpen = false;
+  marketplaceVersionRenderLimit = 80;
+  marketplaceVersionRequestId += 1;
+  if (marketplaceVersionPanel) {
+    marketplaceVersionPanel.hidden = true;
+  }
+  if (marketplaceVersionToggle) {
+    marketplaceVersionToggle.disabled = false;
+    marketplaceVersionToggle.textContent = "Browse";
+  }
+  if (marketplaceVersionSearch) {
+    marketplaceVersionSearch.value = "";
+  }
+  if (marketplaceVersionStatus) {
+    marketplaceVersionStatus.textContent = "Select a Minecraft template to browse versions.";
+    marketplaceVersionStatus.dataset.tone = "muted";
+  }
+  marketplaceVersionTabs?.replaceChildren();
+  marketplaceVersionList?.replaceChildren();
+}
+
+function setMarketplaceVersionPanelOpen(open) {
+  marketplaceVersionOpen = Boolean(open);
+  if (marketplaceVersionPanel) {
+    marketplaceVersionPanel.hidden = !marketplaceVersionOpen;
+  }
+  if (marketplaceVersionToggle) {
+    marketplaceVersionToggle.textContent = marketplaceVersionOpen ? "Hide" : "Browse";
+  }
+}
+
+function setMarketplaceVersionStatus(message, tone = "muted") {
+  if (!marketplaceVersionStatus) {
+    return;
+  }
+  marketplaceVersionStatus.textContent = message;
+  marketplaceVersionStatus.dataset.tone = tone;
+}
+
+function getMarketplaceVersionEntries() {
+  if (!marketplaceVersionCatalog) {
+    return [];
+  }
+  const latest = marketplaceVersionCatalog.latest?.id
+    ? [{
+      id: "latest",
+      label: `Latest Stable — ${marketplaceVersionCatalog.latest.id}`,
+      category: "recommended",
+      recommended: true,
+      details: "Shortcut that resolves during install",
+    }]
+    : [{
+      id: "latest",
+      label: "Latest Stable",
+      category: "recommended",
+      recommended: true,
+      details: "Shortcut that resolves during install",
+    }];
+  const recommended = Array.isArray(marketplaceVersionCatalog.recommended) ? marketplaceVersionCatalog.recommended : [];
+  const versions = Array.isArray(marketplaceVersionCatalog.versions) ? marketplaceVersionCatalog.versions : [];
+  const query = marketplaceVersionQuery.trim().toLowerCase();
+  const source = marketplaceVersionFilter === "recommended" && !query ? [...latest, ...recommended] : [...latest, ...versions];
+  const seen = new Set();
+  return source.filter((entry) => {
+    const key = entry.id === "latest" ? "latest" : entry.id;
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    if (marketplaceVersionFilter !== "all" && marketplaceVersionFilter !== "recommended" && entry.category !== marketplaceVersionFilter) {
+      return false;
+    }
+    if (!query) return true;
+    return [
+      entry.id,
+      entry.label,
+      entry.details,
+      entry.loaderVersion,
+      entry.softwareVersion,
+      entry.type,
+      entry.category,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  });
+}
+
+function renderMarketplaceVersionTabs() {
+  if (!marketplaceVersionTabs) {
+    return;
+  }
+  marketplaceVersionTabs.replaceChildren();
+  MARKETPLACE_VERSION_FILTERS.forEach((filter) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "marketplace-version-tab";
+    button.dataset.active = filter === marketplaceVersionFilter ? "true" : "false";
+    button.textContent = MARKETPLACE_VERSION_FILTER_LABELS[filter] || filter;
+    button.addEventListener("click", () => {
+      marketplaceVersionFilter = filter;
+      marketplaceVersionRenderLimit = 80;
+      renderMarketplaceVersionTabs();
+      renderMarketplaceVersionList();
+    });
+    marketplaceVersionTabs.append(button);
+  });
+}
+
+function renderMarketplaceVersionList() {
+  if (!marketplaceVersionList) {
+    return;
+  }
+  marketplaceVersionList.replaceChildren();
+  const entries = getMarketplaceVersionEntries();
+  if (!marketplaceVersionCatalog) {
+    const empty = document.createElement("div");
+    empty.className = "marketplace-version-empty";
+    empty.textContent = "Version catalog has not loaded yet.";
+    marketplaceVersionList.append(empty);
+    return;
+  }
+  if (!entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "marketplace-version-empty";
+    empty.textContent = "No versions match this filter.";
+    marketplaceVersionList.append(empty);
+    return;
+  }
+
+  const shown = entries.slice(0, marketplaceVersionRenderLimit);
+  const currentValue = String(getMarketplaceField("version")?.value || "").trim();
+  shown.forEach((entry) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "marketplace-version-option";
+    option.dataset.selected = currentValue === entry.id ? "true" : "false";
+    option.title = entry.id === "latest" && marketplaceVersionCatalog.latest?.id
+      ? `Use latest stable (${marketplaceVersionCatalog.latest.id})`
+      : `Use ${entry.id}`;
+
+    const main = document.createElement("span");
+    main.className = "marketplace-version-option__main";
+    main.textContent = entry.label || entry.id;
+
+    const meta = document.createElement("span");
+    meta.className = "marketplace-version-option__meta";
+    meta.textContent = entry.details || entry.type || MARKETPLACE_VERSION_FILTER_LABELS[entry.category] || "";
+
+    option.append(main, meta);
+    option.addEventListener("click", () => {
+      const versionField = getMarketplaceField("version");
+      if (versionField) {
+        versionField.value = entry.id;
+        versionField.dispatchEvent(new Event("input", { bubbles: true }));
+        versionField.focus();
+      }
+      renderMarketplaceVersionList();
+      setMarketplaceVersionPanelOpen(false);
+    });
+    marketplaceVersionList.append(option);
+  });
+
+  if (entries.length > shown.length) {
+    const more = document.createElement("div");
+    more.className = "marketplace-version-more";
+    more.textContent = `Showing ${shown.length} of ${entries.length}. Scroll for more.`;
+    marketplaceVersionList.append(more);
+  }
+}
+
+function renderMarketplaceVersionPicker() {
+  renderMarketplaceVersionTabs();
+  renderMarketplaceVersionList();
+}
+
+async function loadMarketplaceVersions(template) {
+  const desktopApiState = getDesktopApiState();
+  if (!isMinecraftMarketplaceTemplate(template)) {
+    resetMarketplaceVersionPicker();
+    return;
+  }
+  marketplaceVersionRequestId += 1;
+  const requestId = marketplaceVersionRequestId;
+  marketplaceVersionCatalog = null;
+  marketplaceVersionFilter = "recommended";
+  marketplaceVersionQuery = "";
+  marketplaceVersionRenderLimit = 80;
+  if (marketplaceVersionSearch) {
+    marketplaceVersionSearch.value = "";
+  }
+  setMarketplaceVersionPanelOpen(false);
+  renderMarketplaceVersionPicker();
+
+  if (!desktopApiState.hasMarketplaceVersions) {
+    setMarketplaceVersionStatus("Version browser is unavailable in this build. Manual entry still works.", "warning");
+    return;
+  }
+
+  setMarketplaceVersionStatus("Loading full provider version list...", "muted");
+  if (marketplaceVersionToggle) {
+    marketplaceVersionToggle.disabled = true;
+  }
+  try {
+    const catalog = await desktopApiState.api.marketplace.getMinecraftVersions(template.id);
+    if (requestId !== marketplaceVersionRequestId) {
+      return;
+    }
+    marketplaceVersionCatalog = catalog;
+    const count = Array.isArray(catalog?.versions) ? catalog.versions.length : 0;
+    const latestText = catalog?.latest?.id ? ` Latest Stable — ${catalog.latest.id}.` : "";
+    setMarketplaceVersionStatus(`${count} versions loaded.${latestText}`, "success");
+    renderMarketplaceVersionPicker();
+  } catch (error) {
+    if (requestId !== marketplaceVersionRequestId) {
+      return;
+    }
+    setMarketplaceVersionStatus(error?.message || "Could not load provider versions. Manual entry still works.", "warning");
+  } finally {
+    if (requestId === marketplaceVersionRequestId && marketplaceVersionToggle) {
+      marketplaceVersionToggle.disabled = false;
+    }
+  }
+}
+
 function renderMarketplaceWizardSteps(template) {
   if (!marketplaceWizardSteps) {
     return;
@@ -4983,6 +5232,10 @@ function openMarketplaceWizard(templateId) {
 
   syncMarketplaceWizardFields(template);
   renderMarketplaceWizardSteps(template);
+  resetMarketplaceVersionPicker();
+  if (template.category === "Minecraft") {
+    loadMarketplaceVersions(template);
+  }
   renderMarketplaceTemplates();
   renderMarketplaceProgress([]);
   setMarketplaceInstallState("Ready", "ready");
@@ -5004,6 +5257,7 @@ function closeMarketplaceWizard() {
   if (serverTypeField) {
     serverTypeField.disabled = false;
   }
+  resetMarketplaceVersionPicker();
   renderMarketplaceTemplates();
 }
 
@@ -11213,6 +11467,32 @@ marketplaceRefreshButton?.addEventListener("click", refreshMarketplace);
 downloadRefreshButton?.addEventListener("click", refreshMarketplaceDownloads);
 marketplaceWizard?.addEventListener("submit", installMarketplaceTemplate);
 marketplaceCancelButton?.addEventListener("click", closeMarketplaceWizard);
+marketplaceVersionToggle?.addEventListener("click", () => {
+  const template = findMarketplaceTemplate();
+  if (!isMinecraftMarketplaceTemplate(template)) {
+    return;
+  }
+  setMarketplaceVersionPanelOpen(!marketplaceVersionOpen);
+  if (marketplaceVersionOpen && !marketplaceVersionCatalog) {
+    loadMarketplaceVersions(template);
+  }
+});
+marketplaceVersionSearch?.addEventListener("input", () => {
+  marketplaceVersionQuery = marketplaceVersionSearch.value || "";
+  marketplaceVersionRenderLimit = 80;
+  renderMarketplaceVersionList();
+});
+marketplaceVersionList?.addEventListener("scroll", () => {
+  if (!marketplaceVersionList || marketplaceVersionList.scrollTop + marketplaceVersionList.clientHeight < marketplaceVersionList.scrollHeight - 48) {
+    return;
+  }
+  const entries = getMarketplaceVersionEntries();
+  if (marketplaceVersionRenderLimit < entries.length) {
+    marketplaceVersionRenderLimit += 80;
+    renderMarketplaceVersionList();
+  }
+});
+getMarketplaceField("version")?.addEventListener("input", renderMarketplaceVersionList);
 document.querySelectorAll("[data-instance-backup-action]").forEach((button) => {
   button.addEventListener("click", () => handleInstanceBackupAction(button.dataset.instanceBackupAction));
 });

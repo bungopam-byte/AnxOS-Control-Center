@@ -39,6 +39,7 @@ const desktopApi = {
   },
   marketplace: {
     listTemplates: () => ipcRenderer.invoke("marketplace:listTemplates"),
+    getMinecraftVersions: (templateId) => ipcRenderer.invoke("marketplace:getMinecraftVersions", { templateId }),
     getImportSupport: () => ipcRenderer.invoke("marketplace:getImportSupport"),
     importCommunityTemplate: (payload = {}) => ipcRenderer.invoke("marketplace:importCommunityTemplate", payload),
     installTemplate: (payload) => ipcRenderer.invoke("marketplace:installTemplate", payload),

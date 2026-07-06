@@ -3567,7 +3567,7 @@ body.is-resizing-files * {
 
 .instance-quick-actions {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid rgba(185, 171, 200, 0.12);
@@ -3580,7 +3580,8 @@ body.is-resizing-files * {
 }
 
 .instance-quick-actions .instance-danger-action {
-  display: none;
+  border-color: rgba(255, 107, 138, 0.34);
+  color: #ff8fa8;
 }
 
 .instance-tabs {
@@ -5184,6 +5185,140 @@ dd {
   background: rgba(124, 70, 210, 0.16);
   border: 1px solid rgba(185, 148, 255, 0.16);
   font-size: 0.76rem;
+}
+
+.marketplace-version-field {
+  display: grid;
+  gap: 8px;
+}
+
+.marketplace-version-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.marketplace-version-toggle {
+  min-width: 78px;
+}
+
+.marketplace-version-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  background: rgba(10, 3, 20, 0.78);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.22);
+}
+
+.marketplace-version-status {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.marketplace-version-status[data-tone="success"] {
+  color: #9ef0c0;
+}
+
+.marketplace-version-status[data-tone="warning"] {
+  color: #facc15;
+}
+
+.marketplace-version-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.marketplace-version-tab {
+  border: 1px solid rgba(185, 148, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(124, 70, 210, 0.12);
+  color: var(--muted);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.marketplace-version-tab[data-active="true"],
+.marketplace-version-tab:hover,
+.marketplace-version-tab:focus-visible {
+  color: var(--text);
+  border-color: rgba(185, 148, 255, 0.34);
+  background: rgba(124, 70, 210, 0.28);
+}
+
+.marketplace-version-search {
+  display: grid;
+  gap: 5px;
+}
+
+.marketplace-version-search span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.marketplace-version-search input {
+  width: 100%;
+}
+
+.marketplace-version-list {
+  display: grid;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.marketplace-version-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(185, 148, 255, 0.12);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.marketplace-version-option:hover,
+.marketplace-version-option:focus-visible,
+.marketplace-version-option[data-selected="true"] {
+  border-color: rgba(185, 148, 255, 0.34);
+  background: rgba(124, 70, 210, 0.2);
+}
+
+.marketplace-version-option__main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.marketplace-version-option__meta {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.marketplace-version-empty,
+.marketplace-version-more {
+  padding: 9px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-align: center;
 }
 
 .marketplace-install-progress {

@@ -7,6 +7,9 @@ const marketplaceService = require("../src/services/marketplaceService");
 
 const catalogPath = path.join(__dirname, "..", "config", "marketplace-templates.json");
 const appPath = path.join(__dirname, "..", "app.js");
+const indexPath = path.join(__dirname, "..", "index.html");
+const preloadPath = path.join(__dirname, "..", "preload.js");
+const marketplaceIpcPath = path.join(__dirname, "..", "src", "ipc", "marketplaceIpc.js");
 const templates = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 
 function findTemplate(id) {
@@ -79,6 +82,27 @@ function assertMarketplaceMetadata() {
       assert(template.installMetadata || template.runtime === "docker", `${template.id} should describe install metadata.`);
     }
   }
+}
+
+function assertMinecraftVersionPickerSupport() {
+  assert.strictEqual(typeof marketplaceService.getMinecraftVersionCatalog, "function", "Marketplace service must expose Minecraft version catalogs.");
+  assert.strictEqual(typeof marketplaceService._test.categorizeMinecraftVersion, "function", "Version catalog categorizer should be testable.");
+  assert.strictEqual(marketplaceService._test.categorizeMinecraftVersion("24w14a", "snapshot"), "snapshots", "Snapshots should be categorized.");
+  assert.strictEqual(marketplaceService._test.categorizeMinecraftVersion("1.20.1", "release"), "releases", "Releases should be categorized.");
+  assert.strictEqual(marketplaceService._test.categorizeMinecraftVersion("b1.7.3", "old_beta"), "legacy", "Legacy versions should be categorized.");
+
+  const indexSource = fs.readFileSync(indexPath, "utf8");
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const preloadSource = fs.readFileSync(preloadPath, "utf8");
+  const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
+  assert(indexSource.includes("data-marketplace-version-panel"), "Version picker panel hook should exist.");
+  assert(indexSource.includes("data-marketplace-version-search"), "Version picker search hook should exist.");
+  assert(indexSource.includes("data-marketplace-version-tabs"), "Version picker tabs hook should exist.");
+  assert(appSource.includes("marketplaceVersionRenderLimit"), "Renderer should lazy-render large version lists.");
+  assert(appSource.includes("Latest Stable"), "Renderer should label the latest shortcut with resolved version text.");
+  assert(appSource.includes("getMinecraftVersions"), "Renderer should request provider version catalogs.");
+  assert(preloadSource.includes("marketplace:getMinecraftVersions"), "Preload should expose Minecraft version catalog IPC.");
+  assert(ipcSource.includes("marketplace:getMinecraftVersions"), "Marketplace IPC should register Minecraft version catalog handler.");
 }
 
 function assertRendererTemplateIdWiring() {
@@ -197,19 +221,19 @@ function assertMarketplaceVersionMetadata() {
   assert.strictEqual(paper.gameVersion, "1.21.8", "Paper metadata should save gameVersion.");
   assert.strictEqual(paper.buildNumber, 42, "Paper metadata should save build number.");
   assert.strictEqual(paper.paperBuild, 42, "Paper metadata should save paperBuild.");
-  assert.strictEqual(paper.displayVersion, "1.21.8", "Paper displayVersion should use the Minecraft version only.");
+  assert.strictEqual(paper.displayVersion, "Paper 1.21.8 build 42", "Paper displayVersion should include software, game version, and build.");
   assert.strictEqual(paper.displayVersionDetail, "Paper Build 42", "Paper display detail should include the build.");
-  assert.strictEqual(paper.versionInfo?.displayVersion, "1.21.8", "Paper versionInfo should persist displayVersion.");
+  assert.strictEqual(paper.versionInfo?.displayVersion, "Paper 1.21.8 build 42", "Paper versionInfo should persist displayVersion.");
 
   const vanilla = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-vanilla"), {
     version: "1.21.8",
   });
-  assert.strictEqual(vanilla.displayVersion, "1.21.8", "Vanilla displayVersion should use the Mojang version.");
+  assert.strictEqual(vanilla.displayVersion, "Vanilla 1.21.8", "Vanilla displayVersion should include the software and Mojang version.");
 
   const source = fs.readFileSync(appPath, "utf8");
   assert(source.includes("getInstanceVersionMetadata"), "Renderer should normalize version metadata before display.");
   assert(source.includes("resolvedInfo.displayVersion"), "Renderer should prefer normalized versionInfo display values.");
-  assert(source.includes("gameVersion: minecraftVersion || \"Unknown version\""), "Minecraft table version should use the game version as the main value.");
+  assert(source.includes("displayVersion || gameVersion"), "Renderer should display normalized software/game version values.");
 }
 
 function assertFiveMStartupSafety() {
@@ -303,7 +327,7 @@ async function assertPaperMetadataBackfill() {
     assert.strictEqual(status.serverSoftware, "Paper", "Paper backfill should persist serverSoftware.");
     assert.strictEqual(status.minecraftVersion, "1.21.8", "Paper backfill should persist minecraftVersion.");
     assert.strictEqual(status.paperBuild, "42", "Paper backfill should persist paperBuild.");
-    assert.strictEqual(status.versionInfo?.displayVersion, "1.21.8", "Paper backfill should normalize displayVersion.");
+    assert.strictEqual(status.versionInfo?.displayVersion, "Paper 1.21.8 build 42", "Paper backfill should normalize displayVersion.");
     assert.strictEqual(status.versionInfo?.displayVersionDetail, "Paper Build 42", "Paper backfill should normalize display detail.");
   } finally {
     if (previousRoot === undefined) {
@@ -344,7 +368,7 @@ async function assertMinecraftPropertiesVersionBackfill() {
     const status = await instanceService.getStatus("minecraft-properties-version-smoke");
     assert.strictEqual(status.minecraftVersion, "1.21.8", "Minecraft server.properties backfill should persist minecraftVersion.");
     assert.strictEqual(status.serverSoftware, "Paper", "Minecraft server.properties backfill should preserve inferred server software.");
-    assert.strictEqual(status.versionInfo?.displayVersion, "1.21.8", "Minecraft server.properties backfill should set displayVersion.");
+    assert.strictEqual(status.versionInfo?.displayVersion, "Paper 1.21.8", "Minecraft server.properties backfill should set displayVersion.");
   } finally {
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;
@@ -407,6 +431,7 @@ async function main() {
   assertSteamCmdTemplates();
   assertDockerTemplates();
   assertMarketplaceMetadata();
+  assertMinecraftVersionPickerSupport();
   assertRendererTemplateIdWiring();
   assertGameTemplateInstallPlans();
   assertGameTemplateCreatePayloadsAreAgentSafe();

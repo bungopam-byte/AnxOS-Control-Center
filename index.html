@@ -1080,13 +1080,16 @@
                 </aside>
               </div>
 
+              <div class="file-workspace-divider" data-files-divider role="separator" aria-orientation="vertical" aria-label="Resize explorer" hidden>
+                <span class="file-workspace-divider__handle" aria-hidden="true"></span>
+              </div>
+
               <section class="file-editor-panel" aria-label="Editor workspace">
                 <div class="file-editor-toolbar">
                   <div class="file-editor-heading">
                     <div class="panel-heading">
                       <h3>Editor</h3>
                       <div class="file-editor-status-cluster">
-                        <span class="file-editor-unsaved" data-file-editor-dirty hidden>Unsaved changes</span>
                         <span class="status-pill status-pill--planned" data-file-editor-status>Read Only</span>
                       </div>
                     </div>
@@ -1095,6 +1098,9 @@
                         <button class="inline-action" type="button" data-file-editor-action="open" disabled>Open Text</button>
                         <button class="inline-action" type="button" data-file-editor-action="save" disabled>Save</button>
                         <button class="inline-action" type="button" data-file-editor-action="revert" disabled>Revert</button>
+                        <button class="inline-action" type="button" data-file-editor-action="copy-path" disabled>Copy Path</button>
+                        <button class="inline-action" type="button" data-file-editor-action="wrap" aria-pressed="true" disabled>Wrap On</button>
+                        <button class="inline-action" type="button" data-file-editor-action="minimap" aria-pressed="false" disabled>Minimap Off</button>
                         <button class="inline-action" type="button" data-file-editor-action="fullscreen">Fullscreen Editor</button>
                       </div>
                       <label class="file-editor-height-control">
@@ -1104,7 +1110,13 @@
                     </div>
                   </div>
                   <div class="file-editor-pathbar">
-                    <span>Full Path</span>
+                    <div class="file-editor-pathbar-topline">
+                      <span>Full Path</span>
+                      <div class="file-editor-fileline">
+                        <strong data-file-editor-name>No file opened</strong>
+                        <span class="file-editor-unsaved" data-file-editor-dirty hidden>Unsaved changes</span>
+                      </div>
+                    </div>
                     <code data-file-editor-path>No file opened</code>
                   </div>
                 </div>

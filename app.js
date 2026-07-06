@@ -62,9 +62,11 @@ const filesDetailsPanel = filesPage?.querySelector(".file-details-panel");
 const filesDetailsStatus = filesDetailsPanel?.querySelector(".panel-heading .status-pill");
 const fileEditorPanel = filesPage?.querySelector(".file-editor-panel");
 const fileEditor = document.querySelector("[data-file-editor]");
+const fileEditorCodeLayer = document.querySelector("[data-file-editor-code-layer]");
 const fileEditorStatus = document.querySelector("[data-file-editor-status]");
 const fileEditorDirtyIndicator = document.querySelector("[data-file-editor-dirty]");
 const fileEditorMessage = document.querySelector("[data-file-editor-message]");
+const fileEditorName = document.querySelector("[data-file-editor-name]");
 const fileEditorPath = document.querySelector("[data-file-editor-path]");
 const fileEditorLines = document.querySelector("[data-file-editor-lines]");
 const fileEditorSurface = document.querySelector("[data-file-editor-surface]");
@@ -73,7 +75,13 @@ const fileEditorActionButtons = document.querySelectorAll("[data-file-editor-act
 const fileEditorOpenButton = document.querySelector('[data-file-editor-action="open"]');
 const fileEditorSaveButton = document.querySelector('[data-file-editor-action="save"]');
 const fileEditorRevertButton = document.querySelector('[data-file-editor-action="revert"]');
+const fileEditorCopyPathButton = document.querySelector('[data-file-editor-action="copy-path"]');
+const fileEditorWrapButton = document.querySelector('[data-file-editor-action="wrap"]');
+const fileEditorMinimapButton = document.querySelector('[data-file-editor-action="minimap"]');
 const fileEditorFullscreenButton = document.querySelector('[data-file-editor-action="fullscreen"]');
+const filesConnectBar = filesPage?.querySelector(".files-connect-bar");
+const fileToolbar = filesPage?.querySelector(".file-toolbar");
+const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
@@ -171,9 +179,20 @@ let filesPasswordPromptVisible = false;
 let filesPendingPasswordProfileId = null;
 let filesViewMode = "browse";
 let fileEditorHeight = 560;
+let filesExplorerWidth = 320;
 let agentConnectionState = "disconnected";
 let titlebarWindowIsMaximized = false;
 let windowMaximizedUnsubscribe = null;
+let monacoLoadPromise = null;
+let monacoApi = null;
+let monacoEditorInstance = null;
+let monacoEditorModel = null;
+let monacoEditorContainer = null;
+let monacoEditorSubscription = null;
+let monacoEditorStateSyncPaused = false;
+let filesDividerDragState = null;
+let fileEditorWordWrapEnabled = true;
+let fileEditorMinimapEnabled = false;
 const sshProfilesState = {
   servers: [],
   profiles: [],
@@ -194,9 +213,14 @@ const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
+const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
+const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const DEFAULT_APP_NAME = "AnxOS Control Center";
 const DEFAULT_ACCENT_COLOR = "#b66cff";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
+const DEFAULT_FILES_EXPLORER_WIDTH = 320;
+const MIN_FILES_EXPLORER_WIDTH = 220;
+const MAX_FILES_EXPLORER_WIDTH = 520;
 const DEFAULT_SETTINGS = {
   "app.displayName": DEFAULT_APP_NAME,
   "appearance.accentColor": DEFAULT_ACCENT_COLOR,
@@ -395,6 +419,506 @@ function getSidebarTitle(displayName) {
   return displayName;
 }
 
+function getFileNameFromPath(value) {
+  const normalizedPath = String(value || "").replace(/\\/g, "/").replace(/\/+$/, "");
+
+  if (!normalizedPath) {
+    return "No file opened";
+  }
+
+  const segments = normalizedPath.split("/").filter(Boolean);
+  return segments[segments.length - 1] || normalizedPath;
+}
+
+function readFilesExplorerWidth() {
+  try {
+    const storedValue = Number(window.localStorage.getItem(FILES_EXPLORER_WIDTH_STORAGE_KEY));
+
+    if (!Number.isFinite(storedValue)) {
+      return DEFAULT_FILES_EXPLORER_WIDTH;
+    }
+
+    return Math.min(Math.max(storedValue, MIN_FILES_EXPLORER_WIDTH), MAX_FILES_EXPLORER_WIDTH);
+  } catch {
+    return DEFAULT_FILES_EXPLORER_WIDTH;
+  }
+}
+
+function readFileEditorPreferences() {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(FILES_EDITOR_PREFS_STORAGE_KEY) || "{}");
+    return {
+      wordWrap: stored.wordWrap !== false,
+      minimap: stored.minimap === true,
+    };
+  } catch {
+    return {
+      wordWrap: true,
+      minimap: false,
+    };
+  }
+}
+
+function persistFileEditorPreferences() {
+  try {
+    window.localStorage.setItem(
+      FILES_EDITOR_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        wordWrap: fileEditorWordWrapEnabled,
+        minimap: fileEditorMinimapEnabled,
+      }),
+    );
+  } catch {}
+}
+
+function setFileEditorName(value) {
+  if (fileEditorName) {
+    fileEditorName.textContent = value || "No file opened";
+  }
+}
+
+function updateFileEditorToggleButtons() {
+  if (fileEditorWrapButton) {
+    fileEditorWrapButton.textContent = fileEditorWordWrapEnabled ? "Wrap On" : "Wrap Off";
+    fileEditorWrapButton.setAttribute("aria-pressed", fileEditorWordWrapEnabled ? "true" : "false");
+  }
+
+  if (fileEditorMinimapButton) {
+    fileEditorMinimapButton.textContent = fileEditorMinimapEnabled ? "Minimap On" : "Minimap Off";
+    fileEditorMinimapButton.setAttribute("aria-pressed", fileEditorMinimapEnabled ? "true" : "false");
+  }
+}
+
+function updateFilesStickyOffsets() {
+  if (!fileManagerShell) {
+    return;
+  }
+
+  const connectHeight = filesConnectBar?.offsetHeight || 0;
+  const passwordHeight = filesPasswordPrompt && !filesPasswordPrompt.hidden ? (filesPasswordPrompt.offsetHeight || 0) + 14 : 0;
+  fileManagerShell.style.setProperty("--files-sticky-offset", `${connectHeight + passwordHeight}px`);
+}
+
+function setFilesExplorerWidth(value, options = {}) {
+  const nextWidth = Math.min(Math.max(Number(value) || DEFAULT_FILES_EXPLORER_WIDTH, MIN_FILES_EXPLORER_WIDTH), MAX_FILES_EXPLORER_WIDTH);
+  filesExplorerWidth = nextWidth;
+
+  if (fileManagerShell) {
+    fileManagerShell.style.setProperty("--files-explorer-width", `${nextWidth}px`);
+  }
+
+  if (options.persist !== false) {
+    try {
+      window.localStorage.setItem(FILES_EXPLORER_WIDTH_STORAGE_KEY, String(nextWidth));
+    } catch {}
+  }
+
+  window.requestAnimationFrame(() => {
+    monacoEditorInstance?.layout?.();
+  });
+}
+
+function startFilesDividerDrag(clientX) {
+  if (filesViewMode !== "edit") {
+    return;
+  }
+
+  filesDividerDragState = {
+    startX: clientX,
+    startWidth: filesExplorerWidth,
+  };
+
+  filesDivider?.classList.add("is-dragging");
+  document.body.classList.add("is-resizing-files");
+}
+
+function updateFilesDividerDrag(clientX) {
+  if (!filesDividerDragState) {
+    return;
+  }
+
+  const delta = clientX - filesDividerDragState.startX;
+  setFilesExplorerWidth(filesDividerDragState.startWidth + delta, { persist: false });
+}
+
+function stopFilesDividerDrag() {
+  if (!filesDividerDragState) {
+    return;
+  }
+
+  filesDividerDragState = null;
+  filesDivider?.classList.remove("is-dragging");
+  document.body.classList.remove("is-resizing-files");
+  setFilesExplorerWidth(filesExplorerWidth);
+}
+
+function isLikelySecretFile(entry) {
+  const fileName = String(entry?.name || "").toLowerCase();
+  const hasSecretTerm = /(token|secret|api[-_. ]?key|private[-_. ]?key|access[-_. ]?key|auth[-_. ]?key|(?:^|[._-])key(?:[._-]|$))/.test(fileName);
+
+  if (!fileName) {
+    return false;
+  }
+
+  if (fileName === ".env" || fileName.startsWith(".env.")) {
+    return true;
+  }
+
+  if (["auth.json", "id_rsa", "id_ed25519"].includes(fileName)) {
+    return true;
+  }
+
+  return hasSecretTerm || (/config/.test(fileName) && hasSecretTerm);
+}
+
+function confirmOpenSensitiveFile(entry) {
+  if (!isLikelySecretFile(entry)) {
+    return true;
+  }
+
+  return window.confirm(`"${entry.name}" looks like it may contain secrets. Open it anyway?`);
+}
+
+function detectMonacoLanguage(filePath) {
+  const name = getFileNameFromPath(filePath).toLowerCase();
+
+  if (name === "dockerfile") {
+    return "dockerfile";
+  }
+
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".")) : "";
+  const languageMap = {
+    ".json": "json",
+    ".jsonl": "json",
+    ".toml": "ini",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".py": "python",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".md": "markdown",
+    ".html": "html",
+    ".css": "css",
+  };
+
+  return languageMap[extension] || "plaintext";
+}
+
+function getFileEditorValue() {
+  if (monacoEditorInstance && monacoEditorModel && !fileEditorCodeLayer?.hidden) {
+    return monacoEditorInstance.getValue();
+  }
+
+  return fileEditor?.value || "";
+}
+
+function setFileEditorValue(value) {
+  const normalizedValue = value !== undefined && value !== null ? String(value) : "";
+
+  if (monacoEditorInstance && monacoEditorModel && !fileEditorCodeLayer?.hidden) {
+    monacoEditorStateSyncPaused = true;
+    monacoEditorInstance.setValue(normalizedValue);
+    monacoEditorStateSyncPaused = false;
+    return;
+  }
+
+  if (fileEditor) {
+    fileEditor.value = normalizedValue;
+  }
+}
+
+function focusFileEditor() {
+  if (monacoEditorInstance && monacoEditorModel && !fileEditorCodeLayer?.hidden) {
+    monacoEditorInstance.focus();
+    return;
+  }
+
+  fileEditor?.focus();
+}
+
+function setMonacoEditorVisibility(visible) {
+  if (fileEditorCodeLayer) {
+    fileEditorCodeLayer.hidden = !visible;
+  }
+
+  fileEditorSurface?.classList.toggle("is-monaco-active", visible);
+
+  if (fileEditor) {
+    fileEditor.hidden = visible;
+  }
+
+  if (fileEditorLines) {
+    fileEditorLines.hidden = visible;
+  }
+}
+
+function updateMonacoEditorOptions() {
+  if (!monacoEditorInstance) {
+    updateFileEditorToggleButtons();
+    return;
+  }
+
+  monacoEditorInstance.updateOptions({
+    wordWrap: fileEditorWordWrapEnabled ? "on" : "off",
+    minimap: {
+      enabled: fileEditorMinimapEnabled,
+    },
+  });
+  updateFileEditorToggleButtons();
+}
+
+function defineAnxosMonacoTheme(monaco) {
+  const styles = window.getComputedStyle(document.documentElement);
+  const background = styles.getPropertyValue("--bg").trim() || "#07020f";
+  const panel = styles.getPropertyValue("--panel").trim() || "#150a24";
+  const line = styles.getPropertyValue("--line").trim() || "#3a2552";
+  const accent = styles.getPropertyValue("--accent").trim() || "#b66cff";
+  const text = styles.getPropertyValue("--text").trim() || "#f8f5ff";
+  const muted = styles.getPropertyValue("--muted").trim() || "#b9abc8";
+  const success = styles.getPropertyValue("--success").trim() || "#45e08f";
+  const danger = styles.getPropertyValue("--danger").trim() || "#ff6b8a";
+
+  monaco.editor.defineTheme("anxos-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "", foreground: "F8F5FF", background: "090C12" },
+      { token: "comment", foreground: "8E7AA7" },
+      { token: "string", foreground: "C7A1FF" },
+      { token: "keyword", foreground: "B66CFF", fontStyle: "bold" },
+      { token: "number", foreground: "F5C451" },
+      { token: "regexp", foreground: "45E08F" },
+      { token: "type", foreground: "D8B4FE" },
+      { token: "delimiter", foreground: "B9ABC8" },
+      { token: "invalid", foreground: "FFF4F7", background: "E04A68" },
+    ],
+    colors: {
+      "editor.background": "#090C12",
+      "editor.foreground": text,
+      "editorLineNumber.foreground": "#6E6180",
+      "editorLineNumber.activeForeground": accent,
+      "editorCursor.foreground": accent,
+      "editor.selectionBackground": "rgba(182, 108, 255, 0.24)",
+      "editor.inactiveSelectionBackground": "rgba(182, 108, 255, 0.14)",
+      "editor.lineHighlightBackground": "rgba(255, 255, 255, 0.03)",
+      "editor.lineHighlightBorder": "rgba(182, 108, 255, 0.14)",
+      "editorIndentGuide.background1": "rgba(58, 37, 82, 0.72)",
+      "editorIndentGuide.activeBackground1": accent,
+      "editorBracketMatch.background": "rgba(182, 108, 255, 0.16)",
+      "editorBracketMatch.border": accent,
+      "editorGutter.background": "#090C12",
+      "editorWidget.background": panel,
+      "editorWidget.border": line,
+      "editorSuggestWidget.background": panel,
+      "editorSuggestWidget.border": line,
+      "editorSuggestWidget.selectedBackground": "rgba(182, 108, 255, 0.18)",
+      "editorHoverWidget.background": panel,
+      "editorHoverWidget.border": line,
+      "editor.findMatchBackground": "rgba(245, 196, 81, 0.22)",
+      "editor.findMatchHighlightBackground": "rgba(245, 196, 81, 0.12)",
+      "editorOverviewRuler.border": "rgba(255,255,255,0)",
+      "editorError.foreground": danger,
+      "editorWarning.foreground": "#f5c451",
+      "editorInfo.foreground": accent,
+      "scrollbarSlider.background": "rgba(182, 108, 255, 0.22)",
+      "scrollbarSlider.hoverBackground": "rgba(182, 108, 255, 0.36)",
+      "scrollbarSlider.activeBackground": "rgba(182, 108, 255, 0.5)",
+      "minimap.selectionHighlight": "rgba(182, 108, 255, 0.16)",
+      "minimap.errorHighlight": danger,
+      "minimap.warningHighlight": "#f5c451",
+      "badge.background": accent,
+      "badge.foreground": background,
+      "focusBorder": accent,
+      "inputValidation.errorBackground": "rgba(255, 107, 138, 0.12)",
+      "inputValidation.infoBackground": "rgba(182, 108, 255, 0.14)",
+      "inputValidation.warningBackground": "rgba(245, 196, 81, 0.12)",
+      "list.focusOutline": accent,
+      "list.activeSelectionBackground": "rgba(182, 108, 255, 0.16)",
+      "list.hoverBackground": "rgba(255, 255, 255, 0.04)",
+      "statusBar.foreground": muted,
+      "statusBar.noFolderBackground": panel,
+      "statusBar.debuggingBackground": success,
+    },
+  });
+}
+
+function getMonacoBaseUrl() {
+  return new URL("./node_modules/monaco-editor/min/vs", window.location.href).href;
+}
+
+function loadMonacoEditorApi() {
+  if (monacoApi) {
+    return Promise.resolve(monacoApi);
+  }
+
+  if (monacoLoadPromise) {
+    return monacoLoadPromise;
+  }
+
+  monacoLoadPromise = new Promise((resolve, reject) => {
+    const loaderUrl = new URL("./node_modules/monaco-editor/min/vs/loader.js", window.location.href).href;
+    const baseUrl = getMonacoBaseUrl();
+    const bootLoader = () => {
+      if (typeof window.require !== "function") {
+        reject(new Error("Monaco AMD loader is unavailable."));
+        return;
+      }
+
+      const workerMainUrl = `${baseUrl}/base/worker/workerMain.js`;
+      const workerBootstrap = `self.MonacoEnvironment={baseUrl:${JSON.stringify(`${baseUrl}/`)}};importScripts(${JSON.stringify(workerMainUrl)});`;
+      const workerDataUrl = `data:text/javascript;charset=utf-8,${encodeURIComponent(workerBootstrap)}`;
+
+      window.MonacoEnvironment = {
+        getWorkerUrl: () => workerDataUrl,
+        getWorker: (_, label) => new Worker(workerDataUrl, {
+          name: `anxos-monaco-${label || "worker"}`,
+        }),
+      };
+
+      window.require.config({
+        paths: {
+          vs: baseUrl,
+        },
+      });
+
+      window.require(["vs/editor/editor.main", "vs/basic-languages/monaco.contribution"], () => {
+        monacoApi = window.monaco;
+
+        if (!monacoApi) {
+          reject(new Error("Monaco editor did not initialize."));
+          return;
+        }
+
+        defineAnxosMonacoTheme(monacoApi);
+        resolve(monacoApi);
+      }, reject);
+    };
+
+    if (typeof window.require === "function" && window.require.config) {
+      bootLoader();
+      return;
+    }
+
+    const existingLoader = document.querySelector('script[data-monaco-loader="true"]');
+
+    if (existingLoader) {
+      existingLoader.addEventListener("load", bootLoader, { once: true });
+      existingLoader.addEventListener("error", () => reject(new Error("Monaco loader failed to load.")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = loaderUrl;
+    script.dataset.monacoLoader = "true";
+    script.addEventListener("load", bootLoader, { once: true });
+    script.addEventListener("error", () => reject(new Error("Monaco loader failed to load.")), { once: true });
+    document.head.appendChild(script);
+  }).catch((error) => {
+    monacoLoadPromise = null;
+    throw error;
+  });
+
+  return monacoLoadPromise;
+}
+
+async function ensureMonacoEditor() {
+  const monaco = await loadMonacoEditorApi();
+
+  if (!fileEditorCodeLayer) {
+    throw new Error("File editor container is unavailable.");
+  }
+
+  if (!monacoEditorContainer) {
+    monacoEditorContainer = document.createElement("div");
+    monacoEditorContainer.className = "file-editor-monaco";
+    fileEditorCodeLayer.replaceChildren(monacoEditorContainer);
+  }
+
+  if (!monacoEditorInstance) {
+    monacoEditorInstance = monaco.editor.create(monacoEditorContainer, {
+      automaticLayout: false,
+      theme: "anxos-dark",
+      language: "plaintext",
+      lineNumbers: "on",
+      folding: true,
+      guides: {
+        indentation: true,
+      },
+      bracketPairColorization: {
+        enabled: true,
+      },
+      matchBrackets: "always",
+      scrollBeyondLastLine: false,
+      renderLineHighlight: "line",
+      smoothScrolling: true,
+      minimap: {
+        enabled: fileEditorMinimapEnabled,
+      },
+      wordWrap: fileEditorWordWrapEnabled ? "on" : "off",
+      fontSize: 13,
+      fontFamily: "\"Cascadia Code\", \"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace",
+      lineHeight: 21,
+      padding: {
+        top: 14,
+        bottom: 14,
+      },
+      scrollbar: {
+        verticalScrollbarSize: 10,
+        horizontalScrollbarSize: 10,
+        alwaysConsumeMouseWheel: false,
+      },
+      overviewRulerBorder: false,
+      contextmenu: true,
+      tabSize: 2,
+      insertSpaces: true,
+      formatOnPaste: true,
+      formatOnType: true,
+    });
+
+    monacoEditorSubscription = monacoEditorInstance.onDidChangeModelContent(() => {
+      if (!monacoEditorStateSyncPaused) {
+        syncFileEditorDirtyState();
+      }
+    });
+
+    monacoEditorInstance.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      saveRemoteTextFile();
+    });
+  }
+
+  defineAnxosMonacoTheme(monaco);
+  monaco.editor.setTheme("anxos-dark");
+  updateMonacoEditorOptions();
+  setMonacoEditorVisibility(true);
+  window.requestAnimationFrame(() => {
+    monacoEditorInstance?.layout?.();
+  });
+  return monaco;
+}
+
+function disposeMonacoModel() {
+  if (monacoEditorModel) {
+    monacoEditorModel.dispose();
+    monacoEditorModel = null;
+  }
+
+  if (monacoEditorInstance) {
+    monacoEditorInstance.setModel(null);
+  }
+}
+
+function disposeMonacoEditorResources() {
+  disposeMonacoModel();
+  monacoEditorSubscription?.dispose?.();
+  monacoEditorSubscription = null;
+  monacoEditorInstance?.dispose?.();
+  monacoEditorInstance = null;
+  monacoEditorContainer?.remove?.();
+  monacoEditorContainer = null;
+}
+
 function setTitlebarWindowState(isMaximized) {
   titlebarWindowIsMaximized = Boolean(isMaximized);
   document.body.classList.toggle("window-is-maximized", titlebarWindowIsMaximized);
@@ -508,6 +1032,11 @@ function applySettings(settings, options = {}) {
   appNameTargets.forEach((target) => {
     target.textContent = displayName;
   });
+
+  if (monacoApi) {
+    defineAnxosMonacoTheme(monacoApi);
+    monacoApi.editor.setTheme("anxos-dark");
+  }
 
   if (sidebarTitleTarget) {
     sidebarTitleTarget.textContent = getSidebarTitle(displayName);
@@ -1372,6 +1901,8 @@ function setFileEditorMessage(message) {
 }
 
 function setFileEditorPath(value) {
+  setFileEditorName(value ? getFileNameFromPath(value) : null);
+
   if (fileEditorPath) {
     fileEditorPath.textContent = value || "No file opened";
   }
@@ -1421,6 +1952,10 @@ function setFileEditorHeight(value) {
   if (fileEditorHeightInput) {
     fileEditorHeightInput.value = `${nextHeight}`;
   }
+
+  window.requestAnimationFrame(() => {
+    monacoEditorInstance?.layout?.();
+  });
 }
 
 function hasOpenFileEditorDocument() {
@@ -1458,7 +1993,46 @@ function toggleFileEditorFullscreen() {
   renderFilesView();
 }
 
+async function copyActiveFilePath() {
+  const value = latestFileDocument?.path || selectedFileEntryPath || filesConnectionState.currentPath || "";
+
+  if (!value) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast("Remote path copied.");
+  } catch {
+    showToast(value);
+  }
+}
+
+function toggleFileEditorWordWrap() {
+  if (!latestFileDocument?.supported) {
+    return;
+  }
+
+  fileEditorWordWrapEnabled = !fileEditorWordWrapEnabled;
+  persistFileEditorPreferences();
+  updateMonacoEditorOptions();
+}
+
+function toggleFileEditorMinimap() {
+  if (!latestFileDocument?.supported) {
+    return;
+  }
+
+  fileEditorMinimapEnabled = !fileEditorMinimapEnabled;
+  persistFileEditorPreferences();
+  updateMonacoEditorOptions();
+  window.requestAnimationFrame(() => {
+    monacoEditorInstance?.layout?.();
+  });
+}
+
 function resetFileEditor(message = "Open a text file to view and edit it here.") {
+  disposeMonacoModel();
   latestFileDocument = null;
   filesViewMode = "browse";
 
@@ -1474,12 +2048,14 @@ function resetFileEditor(message = "Open a text file to view and edit it here.")
 
   setFileEditorDirtyIndicator(false);
   setFileEditorPath(null);
+  setMonacoEditorVisibility(false);
   renderFileEditorLines("");
   syncFileEditorLineScroll();
   if (fileEditorPanel) {
     fileEditorPanel.classList.remove("is-fullscreen");
   }
   setFileEditorMessage(message);
+  syncFileEditorButtons();
 }
 
 function applyFileEditorDocument(documentState) {
@@ -1504,15 +2080,16 @@ function applyFileEditorDocument(documentState) {
   renderFileEditorLines(documentState?.supported ? documentState.content || "" : "");
   syncFileEditorLineScroll();
   setFileEditorMessage(documentState?.message || "Open a text file to view and edit it here.");
+  setMonacoEditorVisibility(Boolean(documentState?.supported && monacoEditorInstance));
   syncFileEditorButtons();
 }
 
 function syncFileEditorDirtyState() {
-  if (!latestFileDocument?.supported || !fileEditor) {
+  if (!latestFileDocument?.supported) {
     return;
   }
 
-  latestFileDocument.content = fileEditor.value;
+  latestFileDocument.content = getFileEditorValue();
   latestFileDocument.dirty = latestFileDocument.content !== latestFileDocument.savedContent;
 
   if (fileEditorStatus) {
@@ -1520,8 +2097,11 @@ function syncFileEditorDirtyState() {
   }
 
   setFileEditorDirtyIndicator(latestFileDocument.dirty);
-  renderFileEditorLines(fileEditor.value);
-  syncFileEditorLineScroll();
+  setFileEditorPath(latestFileDocument.path || selectedFileEntryPath || null);
+  if (!monacoEditorInstance || fileEditorCodeLayer?.hidden) {
+    renderFileEditorLines(getFileEditorValue());
+    syncFileEditorLineScroll();
+  }
   syncFileEditorButtons();
 }
 
@@ -1544,9 +2124,23 @@ function syncFileEditorButtons() {
     fileEditorRevertButton.disabled = !hasEditableDocument || !isDirty || isBusy;
   }
 
+  if (fileEditorCopyPathButton) {
+    fileEditorCopyPathButton.disabled = !(latestFileDocument?.path || selectedFileEntryPath);
+  }
+
+  if (fileEditorWrapButton) {
+    fileEditorWrapButton.disabled = !hasEditableDocument;
+  }
+
+  if (fileEditorMinimapButton) {
+    fileEditorMinimapButton.disabled = !hasEditableDocument;
+  }
+
   if (fileEditorFullscreenButton) {
     fileEditorFullscreenButton.disabled = !hasEditableDocument && !fileEditorPanel?.classList.contains("is-fullscreen");
   }
+
+  updateFileEditorToggleButtons();
 }
 
 function updateFileActionButtons() {
@@ -1766,9 +2360,71 @@ function selectFileEntry(entry) {
   syncFileEditorButtons();
 }
 
+function getFileEntryBadge(entry) {
+  if (entry?.isDirectory) {
+    return "DIR";
+  }
+
+  const lowerName = String(entry?.name || "").toLowerCase();
+
+  if (lowerName === "dockerfile") {
+    return "DOC";
+  }
+
+  const badgeMap = {
+    ".env": "ENV",
+    ".json": "{}",
+    ".jsonl": "{}",
+    ".toml": "CFG",
+    ".yml": "YML",
+    ".yaml": "YML",
+    ".js": "JS",
+    ".ts": "TS",
+    ".py": "PY",
+    ".sh": "SH",
+    ".bash": "SH",
+    ".md": "MD",
+    ".html": "HT",
+    ".css": "CS",
+  };
+
+  const extension = lowerName.includes(".") ? lowerName.slice(lowerName.lastIndexOf(".")) : "";
+  return badgeMap[extension] || "TXT";
+}
+
+function buildFileNameCell(entry) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "file-entry-name";
+
+  const icon = document.createElement("span");
+  icon.className = "file-entry-icon";
+  icon.textContent = getFileEntryBadge(entry);
+  wrapper.appendChild(icon);
+
+  const text = document.createElement("div");
+  text.className = "file-entry-name-text";
+
+  const title = document.createElement("strong");
+  title.textContent = formatFileValue(entry.name);
+  text.appendChild(title);
+
+  const meta = document.createElement("span");
+  meta.textContent = entry.isDirectory ? "Folder" : detectMonacoLanguage(entry.path || entry.name);
+  text.appendChild(meta);
+
+  wrapper.appendChild(text);
+  return wrapper;
+}
+
 function addFileCell(row, value) {
   const cell = document.createElement("td");
-  cell.textContent = value;
+
+  if (value instanceof Node) {
+    cell.appendChild(value);
+  } else {
+    cell.textContent = value;
+  }
+
   row.appendChild(cell);
 }
 
@@ -1810,7 +2466,7 @@ function renderFileRows(entries) {
         selectFileEntry(entry);
       }
     });
-    addFileCell(row, formatFileValue(entry.name));
+    addFileCell(row, buildFileNameCell(entry));
     addFileCell(row, formatFileType(entry));
     addFileCell(row, entry.isDirectory ? "Folder" : formatBytes(entry.size));
     addFileCell(row, formatDateTime(entry.modifiedAt));
@@ -2018,6 +2674,8 @@ function setFilesPasswordPromptState(visible, message = "") {
       filesPasswordInput.value = "";
     }
   }
+
+  updateFilesStickyOffsets();
 }
 
 function focusFilesPasswordPrompt() {
@@ -2159,6 +2817,10 @@ function renderFilesView() {
     fileManagerShell.classList.toggle("is-browse-mode", filesViewMode !== "edit");
   }
 
+  if (filesDivider) {
+    filesDivider.hidden = filesViewMode !== "edit";
+  }
+
   if (filesFolderStatus) {
     filesFolderStatus.textContent = filesConnectionState.connected ? "Connected" : "Disconnected";
     filesFolderStatus.classList.toggle("is-connected", filesConnectionState.connected);
@@ -2175,7 +2837,17 @@ function renderFilesView() {
       : "Fullscreen Editor";
   }
 
+  filesModeButtons.forEach((button) => {
+    const active = button.dataset.filesMode === filesViewMode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+
+  updateFilesStickyOffsets();
   updateFileActionButtons();
+  window.requestAnimationFrame(() => {
+    monacoEditorInstance?.layout?.();
+  });
 }
 
 function formatAmpUsage(summary) {
@@ -2931,9 +3603,15 @@ async function navigateRemoteDirectory(remotePath) {
     return;
   }
 
+  const nextPath = normalizeRemotePathValue(remotePath, filesConnectionState.currentPath || filesConnectionState.homePath || "/");
+
+  if (nextPath !== (filesConnectionState.currentPath || filesConnectionState.homePath || "/") && !confirmDiscardFileEditor(`open ${nextPath}`)) {
+    return;
+  }
+
   await refreshFileListing({
     profileId: getFilesRequestProfileId(),
-    path: normalizeRemotePathValue(remotePath, filesConnectionState.currentPath || filesConnectionState.homePath || "/"),
+    path: nextPath,
     loadingMessage: "Loading remote directory...",
   });
 }
@@ -2961,6 +3639,10 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
     return;
   }
 
+  if (!confirmOpenSensitiveFile(entry)) {
+    return;
+  }
+
   filesActionRequestInFlight = true;
   setFileEditorMessage(`Opening ${entry.name}...`);
   updateFileActionButtons();
@@ -2972,6 +3654,8 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
     });
 
     if (!payload?.supported) {
+      disposeMonacoModel();
+      setMonacoEditorVisibility(false);
       applyFileEditorDocument({
         path: entry.path,
         supported: false,
@@ -2981,6 +3665,21 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
         message: getUnsupportedFileMessage(payload?.reason),
       });
       return;
+    }
+
+    try {
+      const monaco = await ensureMonacoEditor();
+      disposeMonacoModel();
+      monacoEditorStateSyncPaused = true;
+      monacoEditorModel = monaco.editor.createModel(payload.content || "", detectMonacoLanguage(payload.path || entry.path));
+      monacoEditorInstance.setModel(monacoEditorModel);
+      monacoEditorStateSyncPaused = false;
+      monacoEditorInstance.setScrollTop(0);
+      monacoEditorInstance.setScrollLeft(0);
+      setMonacoEditorVisibility(true);
+    } catch (error) {
+      setMonacoEditorVisibility(false);
+      showToast(error?.message || "Monaco editor could not be loaded. Using the fallback editor.");
     }
 
     applyFileEditorDocument({
@@ -2994,7 +3693,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
     filesViewMode = "edit";
     renderFilesView();
     window.requestAnimationFrame(() => {
-      fileEditor?.focus();
+      focusFileEditor();
     });
   } catch (error) {
     resetFileEditor(error?.message || "Remote file could not be opened.");
@@ -3008,9 +3707,11 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
 async function saveRemoteTextFile() {
   const desktopApiState = getDesktopApiState();
 
-  if (!desktopApiState.hasFiles || !latestFileDocument?.supported || !latestFileDocument?.path || !fileEditor) {
+  if (!desktopApiState.hasFiles || !latestFileDocument?.supported || !latestFileDocument?.path) {
     return;
   }
+
+  const nextContent = getFileEditorValue();
 
   filesActionRequestInFlight = true;
   updateFileActionButtons();
@@ -3019,11 +3720,11 @@ async function saveRemoteTextFile() {
     await desktopApiState.api.files.writeText({
       profileId: getFilesRequestProfileId(),
       path: latestFileDocument.path,
-      content: fileEditor.value,
+      content: nextContent,
     });
 
-    latestFileDocument.savedContent = fileEditor.value;
-    latestFileDocument.content = fileEditor.value;
+    latestFileDocument.savedContent = nextContent;
+    latestFileDocument.content = nextContent;
     latestFileDocument.dirty = false;
     latestFileDocument.message = `Saved ${latestFileDocument.path}`;
     applyFileEditorDocument(latestFileDocument);
@@ -3046,9 +3747,7 @@ function revertRemoteTextFile() {
     return;
   }
 
-  if (fileEditor) {
-    fileEditor.value = latestFileDocument.savedContent || "";
-  }
+  setFileEditorValue(latestFileDocument.savedContent || "");
 
   latestFileDocument.content = latestFileDocument.savedContent || "";
   latestFileDocument.dirty = false;
@@ -4670,9 +5369,19 @@ ensureSshEventSubscription();
 loadSshProfiles();
 window.addEventListener("resize", () => {
   resizeActiveSshSession();
+  updateFilesStickyOffsets();
+  monacoEditorInstance?.layout?.();
+});
+window.addEventListener("mousemove", (event) => {
+  updateFilesDividerDrag(event.clientX);
+});
+window.addEventListener("mouseup", () => {
+  stopFilesDividerDrag();
 });
 window.addEventListener("beforeunload", () => {
   windowMaximizedUnsubscribe?.();
+  stopFilesDividerDrag();
+  disposeMonacoEditorResources();
   disconnectAllSshListeners();
 });
 filesServerSelect?.addEventListener("change", () => {
@@ -4731,9 +5440,19 @@ document.querySelector('[data-file-action="new-folder"]')?.addEventListener("cli
 fileEditorOpenButton?.addEventListener("click", () => openRemoteTextFile());
 fileEditorSaveButton?.addEventListener("click", saveRemoteTextFile);
 fileEditorRevertButton?.addEventListener("click", revertRemoteTextFile);
+fileEditorCopyPathButton?.addEventListener("click", copyActiveFilePath);
+fileEditorWrapButton?.addEventListener("click", toggleFileEditorWordWrap);
+fileEditorMinimapButton?.addEventListener("click", toggleFileEditorMinimap);
 fileEditorFullscreenButton?.addEventListener("click", toggleFileEditorFullscreen);
 fileEditorHeightInput?.addEventListener("input", () => {
   setFileEditorHeight(fileEditorHeightInput.value);
+});
+filesDivider?.addEventListener("mousedown", (event) => {
+  event.preventDefault();
+  startFilesDividerDrag(event.clientX);
+});
+filesDivider?.addEventListener("dblclick", () => {
+  setFilesExplorerWidth(DEFAULT_FILES_EXPLORER_WIDTH);
 });
 fileEditor?.addEventListener("input", syncFileEditorDirtyState);
 fileEditor?.addEventListener("scroll", syncFileEditorLineScroll);
@@ -4755,6 +5474,11 @@ window.addEventListener("keydown", (event) => {
     saveRemoteTextFile();
   }
 });
+filesExplorerWidth = readFilesExplorerWidth();
+const fileEditorPreferences = readFileEditorPreferences();
+fileEditorWordWrapEnabled = fileEditorPreferences.wordWrap;
+fileEditorMinimapEnabled = fileEditorPreferences.minimap;
+setFilesExplorerWidth(filesExplorerWidth, { persist: false });
 setFileEditorHeight(fileEditorHeight);
 resetFileEditor();
 renderFilesView();

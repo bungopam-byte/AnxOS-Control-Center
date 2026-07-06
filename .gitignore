@@ -4,3 +4,13 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .env
+
+dist-verify/
+
+dist/
+
+.npm-cache/
+
+.tmp-agent-config-test/
+
+.tmp-agent-config-test-save/

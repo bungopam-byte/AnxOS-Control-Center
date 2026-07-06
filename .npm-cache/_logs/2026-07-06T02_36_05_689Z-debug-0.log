@@ -1,0 +1,594 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.16.0
+2 info using node@v24.18.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\anjor\Desktop\AnxHub\.npmrc
+5 silly config load:file:C:\Users\anjor\.npmrc
+6 silly config load:file:C:\Users\anjor\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install monaco-editor
+8 verbose argv "install" "monaco-editor" "--cache" ".npm-cache"
+9 verbose logfile logs-max:10 dir:C:\Users\anjor\Desktop\AnxHub\.npm-cache\_logs\2026-07-06T02_36_05_689Z-
+10 verbose logfile C:\Users\anjor\Desktop\AnxHub\.npm-cache\_logs\2026-07-06T02_36_05_689Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 silly idealTree buildDeps
+14 silly fetch manifest monaco-editor@*
+15 silly packumentCache full:https://registry.npmjs.org/monaco-editor cache-miss
+16 http fetch GET 200 https://registry.npmjs.org/monaco-editor 416ms (cache miss)
+17 silly packumentCache full:https://registry.npmjs.org/monaco-editor set size:undefined disposed:false
+18 silly placeDep ROOT monaco-editor@0.55.1 OK for: anxos-control-center@1.0.0 want: *
+19 silly fetch manifest marked@14.0.0
+20 silly packumentCache full:https://registry.npmjs.org/marked cache-miss
+21 silly fetch manifest dompurify@3.2.7
+22 silly packumentCache full:https://registry.npmjs.org/dompurify cache-miss
+23 http fetch GET 200 https://registry.npmjs.org/marked 85ms (cache miss)
+24 silly packumentCache full:https://registry.npmjs.org/marked set size:undefined disposed:false
+25 http fetch GET 200 https://registry.npmjs.org/dompurify 269ms (cache miss)
+26 silly packumentCache full:https://registry.npmjs.org/dompurify set size:undefined disposed:false
+27 silly placeDep ROOT dompurify@3.2.7 OK for: monaco-editor@0.55.1 want: 3.2.7
+28 silly placeDep ROOT marked@14.0.0 OK for: monaco-editor@0.55.1 want: 14.0.0
+29 silly fetch manifest @types/trusted-types@^2.0.7
+30 silly packumentCache full:https://registry.npmjs.org/@types%2ftrusted-types cache-miss
+31 http fetch GET 200 https://registry.npmjs.org/@types%2ftrusted-types 83ms (cache miss)
+32 silly packumentCache full:https://registry.npmjs.org/@types%2ftrusted-types set size:undefined disposed:false
+33 silly placeDep ROOT @types/trusted-types@2.0.7 OK for: dompurify@3.2.7 want: ^2.0.7
+34 silly reify moves {}
+35 silly audit bulk request {
+35 silly audit   '@cubecoders/ampapi': [ '1.0.1' ],
+35 silly audit   '@electron-internal/extract-zip': [ '1.0.4' ],
+35 silly audit   '@electron/asar': [ '3.4.1' ],
+35 silly audit   'balanced-match': [ '1.0.2', '4.0.4' ],
+35 silly audit   'brace-expansion': [ '1.1.15', '2.1.1', '5.0.7' ],
+35 silly audit   minimatch: [ '3.1.5', '9.0.9', '5.1.9', '10.2.5' ],
+35 silly audit   '@electron/fuses': [ '1.8.0' ],
+35 silly audit   'fs-extra': [ '9.1.0', '11.3.6', '8.1.0', '7.0.1', '10.1.0', '11.3.1' ],
+35 silly audit   '@electron/get': [ '5.0.0', '3.1.0' ],
+35 silly audit   '@electron/notarize': [ '2.5.0' ],
+35 silly audit   '@electron/osx-sign': [ '1.3.3' ],
+35 silly audit   isbinaryfile: [ '4.0.10', '5.0.7' ],
+35 silly audit   '@electron/rebuild': [ '4.1.0' ],
+35 silly audit   '@electron/universal': [ '2.0.3' ],
+35 silly audit   '@electron/windows-sign': [ '1.2.2' ],
+35 silly audit   '@isaacs/fs-minipass': [ '4.0.1' ],
+35 silly audit   '@malept/cross-spawn-promise': [ '2.0.0' ],
+35 silly audit   '@malept/flatpak-bundler': [ '0.4.0' ],
+35 silly audit   '@noble/hashes': [ '2.2.0', '1.4.0' ],
+35 silly audit   '@peculiar/asn1-schema': [ '2.8.0' ],
+35 silly audit   '@peculiar/json-schema': [ '1.1.12' ],
+35 silly audit   '@peculiar/utils': [ '2.0.3' ],
+35 silly audit   '@peculiar/webcrypto': [ '1.7.1' ],
+35 silly audit   '@sindresorhus/is': [ '4.6.0' ],
+35 silly audit   '@szmarczak/http-timer': [ '4.0.6' ],
+35 silly audit   '@types/cacheable-request': [ '6.0.3' ],
+35 silly audit   '@types/debug': [ '4.1.13' ],
+35 silly audit   '@types/fs-extra': [ '9.0.13' ],
+35 silly audit   '@types/http-cache-semantics': [ '4.2.0' ],
+35 silly audit   '@types/keyv': [ '3.1.4' ],
+35 silly audit   '@types/ms': [ '2.1.0' ],
+35 silly audit   '@types/node': [ '24.13.2' ],
+35 silly audit   '@types/responselike': [ '1.0.3' ],
+35 silly audit   '@xmldom/xmldom': [ '0.8.13' ],
+35 silly audit   abbrev: [ '4.0.0' ],
+35 silly audit   'agent-base': [ '7.1.4' ],
+35 silly audit   ajv: [ '6.15.0', '8.20.0' ],
+35 silly audit   'ansi-regex': [ '5.0.1' ],
+35 silly audit   'ansi-styles': [ '4.3.0' ],
+35 silly audit   'app-builder-lib': [ '26.15.3' ],
+35 silly audit   semver: [ '6.3.1', '7.7.4', '7.8.5', '5.7.2' ],
+35 silly audit   'ci-info': [ '4.3.1', '4.4.0' ],
+35 silly audit   dotenv: [ '16.6.1', '17.4.2' ],
+35 silly audit   'env-paths': [ '2.2.1', '3.0.0' ],
+35 silly audit   'json-schema-traverse': [ '1.0.0', '0.4.1' ],
+35 silly audit   jsonfile: [ '4.0.0', '6.2.1' ],
+35 silly audit   universalify: [ '0.1.2', '2.0.1' ],
+35 silly audit   argparse: [ '2.0.1' ],
+35 silly audit   asn1: [ '0.2.6' ],
+35 silly audit   asn1js: [ '3.0.10' ],
+35 silly audit   'assert-plus': [ '1.0.0' ],
+35 silly audit   async: [ '3.2.6' ],
+35 silly audit   'async-exit-hook': [ '2.0.1' ],
+35 silly audit   asynckit: [ '0.4.0' ],
+35 silly audit   'at-least-node': [ '1.0.0' ],
+35 silly audit   'aws-sign2': [ '0.7.0' ],
+35 silly audit   aws4: [ '1.13.2' ],
+35 silly audit   'base64-js': [ '1.5.1' ],
+35 silly audit   'bcrypt-pbkdf': [ '1.0.2' ],
+35 silly audit   bluebird: [ '3.7.2' ],
+35 silly audit   boolean: [ '3.2.0' ],
+35 silly audit   'buffer-from': [ '1.1.2' ],
+35 silly audit   buildcheck: [ '0.0.7' ],
+35 silly audit   'builder-util': [ '26.15.3' ],
+35 silly audit   'builder-util-runtime': [ '9.7.0' ],
+35 silly audit   bytestreamjs: [ '2.0.1' ],
+35 silly audit   'cacheable-lookup': [ '5.0.4' ],
+35 silly audit   'cacheable-request': [ '7.0.4' ],
+35 silly audit   'call-bind-apply-helpers': [ '1.0.2' ],
+35 silly audit   caseless: [ '0.12.0' ],
+35 silly audit   chalk: [ '4.1.2' ],
+35 silly audit   chownr: [ '3.0.0' ],
+35 silly audit   'chromium-pickle-js': [ '0.2.0' ],
+35 silly audit   cliui: [ '8.0.1' ],
+35 silly audit   'clone-response': [ '1.0.3' ],
+35 silly audit   'color-convert': [ '2.0.1' ],
+35 silly audit   'color-name': [ '1.1.4' ],
+35 silly audit   'combined-stream': [ '1.0.8' ],
+35 silly audit   commander: [ '5.1.0', '9.5.0' ],
+35 silly audit   'compare-version': [ '0.1.2' ],
+35 silly audit   'concat-map': [ '0.0.1' ],
+35 silly audit   'core-util-is': [ '1.0.2' ],
+35 silly audit   'cpu-features': [ '0.0.10' ],
+35 silly audit   'cross-dirname': [ '0.1.0' ],
+35 silly audit   'cross-spawn': [ '7.0.6' ],
+35 silly audit   isexe: [ '2.0.0', '3.1.5', '4.0.0' ],
+35 silly audit   which: [ '2.0.2', '6.0.1', '5.0.0' ],
+35 silly audit   dashdash: [ '1.14.1' ],
+35 silly audit   debug: [ '4.4.3' ],
+35 silly audit   'decompress-response': [ '6.0.0' ],
+35 silly audit   'mimic-response': [ '3.1.0', '1.0.1' ],
+35 silly audit   'defer-to-connect': [ '2.0.1' ],
+35 silly audit   'define-data-property': [ '1.1.4' ],
+35 silly audit   'define-properties': [ '1.2.1' ],
+35 silly audit   'delayed-stream': [ '1.0.0' ],
+35 silly audit   'detect-node': [ '2.1.0' ],
+35 silly audit   'dir-compare': [ '4.2.0' ],
+35 silly audit   'dmg-builder': [ '26.15.3' ],
+35 silly audit   'dotenv-expand': [ '11.0.7' ],
+35 silly audit   'dunder-proto': [ '1.0.1' ],
+35 silly audit   duplexer2: [ '0.1.4' ],
+35 silly audit   'ecc-jsbn': [ '0.1.2' ],
+35 silly audit   ejs: [ '3.1.10' ],
+35 silly audit   electron: [ '43.0.0' ],
+35 silly audit   'electron-builder': [ '26.15.3' ],
+35 silly audit   'electron-builder-squirrel-windows': [ '26.15.3' ],
+35 silly audit   'electron-publish': [ '26.15.3' ],
+35 silly audit   'form-data': [ '4.0.6', '2.3.3' ],
+35 silly audit   'electron-winstaller': [ '5.4.0' ],
+35 silly audit   'emoji-regex': [ '8.0.0' ],
+35 silly audit   'end-of-stream': [ '1.4.5' ],
+35 silly audit   'err-code': [ '2.0.3' ],
+35 silly audit   'es-define-property': [ '1.0.1' ],
+35 silly audit   'es-errors': [ '1.3.0' ],
+35 silly audit   'es-object-atoms': [ '1.1.2' ],
+35 silly audit   'es-set-tostringtag': [ '2.1.0' ],
+35 silly audit   'es6-error': [ '4.1.1' ],
+35 silly audit   escalade: [ '3.2.0' ],
+35 silly audit   'escape-string-regexp': [ '4.0.0' ],
+35 silly audit   'exponential-backoff': [ '3.1.3' ],
+35 silly audit   extend: [ '3.0.2' ],
+35 silly audit   extsprintf: [ '1.3.0' ],
+35 silly audit   'fast-deep-equal': [ '3.1.3' ],
+35 silly audit   'fast-json-stable-stringify': [ '2.1.0' ],
+35 silly audit   'fast-uri': [ '3.1.3' ],
+35 silly audit   fdir: [ '6.5.0' ],
+35 silly audit   filelist: [ '1.0.6' ],
+35 silly audit   'forever-agent': [ '0.6.1' ],
+35 silly audit   'fs.realpath': [ '1.0.0' ],
+35 silly audit   'function-bind': [ '1.1.2' ],
+35 silly audit   'get-caller-file': [ '2.0.5' ],
+35 silly audit   'get-intrinsic': [ '1.3.0' ],
+35 silly audit   'get-proto': [ '1.0.1' ],
+35 silly audit   'get-stream': [ '5.2.0' ],
+35 silly audit   getpass: [ '0.1.7' ],
+35 silly audit   glob: [ '7.2.3' ],
+35 silly audit   'global-agent': [ '3.0.0' ],
+35 silly audit   globalthis: [ '1.0.4' ],
+35 silly audit   gopd: [ '1.2.0' ],
+35 silly audit   got: [ '11.8.6' ],
+35 silly audit   'graceful-fs': [ '4.2.11' ],
+35 silly audit   'har-schema': [ '2.0.0' ],
+35 silly audit   'har-validator': [ '5.1.5' ],
+35 silly audit   'has-flag': [ '4.0.0' ],
+35 silly audit   'has-property-descriptors': [ '1.0.2' ],
+35 silly audit   'has-symbols': [ '1.1.0' ],
+35 silly audit   'has-tostringtag': [ '1.0.2' ],
+35 silly audit   hasown: [ '2.0.4' ],
+35 silly audit   'hosted-git-info': [ '4.1.0' ],
+35 silly audit   'http-cache-semantics': [ '4.2.0' ],
+35 silly audit   'http-proxy-agent': [ '7.0.2' ],
+35 silly audit   'http-signature': [ '1.2.0' ],
+35 silly audit   'http2-wrapper': [ '1.0.3' ],
+35 silly audit   'https-proxy-agent': [ '7.0.6' ],
+35 silly audit   inflight: [ '1.0.6' ],
+35 silly audit   inherits: [ '2.0.4' ],
+35 silly audit   'is-fullwidth-code-point': [ '3.0.0' ],
+35 silly audit   'is-typedarray': [ '1.0.0' ],
+35 silly audit   isarray: [ '1.0.0' ],
+35 silly audit   isstream: [ '0.1.2' ],
+35 silly audit   jake: [ '10.9.4' ],
+35 silly audit   jiti: [ '2.7.0' ],
+35 silly audit   'js-yaml': [ '4.3.0' ],
+35 silly audit   jsbn: [ '0.1.1' ],
+35 silly audit   'json-buffer': [ '3.0.1' ],
+35 silly audit   'json-schema': [ '0.4.0' ],
+35 silly audit   'json-stringify-safe': [ '5.0.1' ],
+35 silly audit   json5: [ '2.2.3' ],
+35 silly audit   jsprim: [ '1.4.2' ],
+35 silly audit   keyv: [ '4.5.4' ],
+35 silly audit   'lazy-val': [ '1.0.5' ],
+35 silly audit   lodash: [ '4.18.1' ],
+35 silly audit   'lowercase-keys': [ '2.0.0' ],
+35 silly audit   'lru-cache': [ '6.0.0' ],
+35 silly audit   matcher: [ '3.0.0' ],
+35 silly audit   'math-intrinsics': [ '1.1.0' ],
+35 silly audit   mime: [ '2.6.0' ],
+35 silly audit   'mime-db': [ '1.52.0' ],
+35 silly audit   'mime-types': [ '2.1.35' ],
+35 silly audit   minimist: [ '1.2.8' ],
+35 silly audit   minipass: [ '7.1.3' ],
+35 silly audit   minizlib: [ '3.1.0' ],
+35 silly audit   mkdirp: [ '0.5.6' ],
+35 silly audit   ms: [ '2.1.3' ],
+35 silly audit   nan: [ '2.28.0' ],
+35 silly audit   'node-abi': [ '4.33.0' ],
+35 silly audit   'node-api-version': [ '0.2.1' ],
+35 silly audit   'node-gyp': [ '12.4.0' ],
+35 silly audit   undici: [ '6.27.0', '7.28.0' ],
+35 silly audit   'node-int64': [ '0.4.0' ],
+35 silly audit   nopt: [ '9.0.0' ],
+35 silly audit   'normalize-url': [ '6.1.0' ],
+35 silly audit   'oauth-sign': [ '0.9.0' ],
+35 silly audit   'object-keys': [ '1.1.1' ],
+35 silly audit   once: [ '1.4.0' ],
+35 silly audit   'p-cancelable': [ '2.1.1' ],
+35 silly audit   'p-limit': [ '3.1.0' ],
+35 silly audit   'path-is-absolute': [ '1.0.1' ],
+35 silly audit   'path-key': [ '3.1.1' ],
+35 silly audit   'pe-library': [ '0.4.1' ],
+35 silly audit   'performance-now': [ '2.1.0' ],
+35 silly audit   picocolors: [ '1.1.1' ],
+35 silly audit   picomatch: [ '4.0.5' ],
+35 silly audit   pkijs: [ '3.4.0' ],
+35 silly audit   plist: [ '3.1.0' ],
+35 silly audit   postject: [ '1.0.0-alpha.6' ],
+35 silly audit   'proc-log': [ '6.1.0' ],
+35 silly audit   'process-nextick-args': [ '2.0.1' ],
+35 silly audit   progress: [ '2.0.3' ],
+35 silly audit   'promise-retry': [ '2.0.1' ],
+35 silly audit   'proper-lockfile': [ '4.1.2' ],
+35 silly audit   psl: [ '1.15.0' ],
+35 silly audit   pump: [ '3.0.4' ],
+35 silly audit   punycode: [ '2.3.1' ],
+35 silly audit   pvtsutils: [ '1.3.6' ],
+35 silly audit   pvutils: [ '1.1.5' ],
+35 silly audit   qs: [ '6.5.5' ],
+35 silly audit   'quick-lru': [ '5.1.1' ],
+35 silly audit   'read-binary-file-arch': [ '1.0.6' ],
+35 silly audit   'readable-stream': [ '2.3.8' ],
+35 silly audit   'safe-buffer': [ '5.1.2', '5.2.1' ],
+35 silly audit   request: [ '2.88.2' ],
+35 silly audit   'require-directory': [ '2.1.1' ],
+35 silly audit   'require-from-string': [ '2.0.2' ],
+35 silly audit   resedit: [ '1.7.2' ],
+35 silly audit   'resolve-alpn': [ '1.2.1' ],
+35 silly audit   responselike: [ '2.0.1' ],
+35 silly audit   retry: [ '0.12.0' ],
+35 silly audit   rimraf: [ '2.6.3' ],
+35 silly audit   roarr: [ '2.15.4' ],
+35 silly audit   'safer-buffer': [ '2.1.2' ],
+35 silly audit   'sanitize-filename': [ '1.6.4' ],
+35 silly audit   sax: [ '1.6.0' ],
+35 silly audit   'semver-compare': [ '1.0.0' ],
+35 silly audit   'serialize-error': [ '7.0.1' ],
+35 silly audit   'shebang-command': [ '2.0.0' ],
+35 silly audit   'shebang-regex': [ '3.0.0' ],
+35 silly audit   'signal-exit': [ '3.0.7' ],
+35 silly audit   'simple-update-notifier': [ '2.0.0' ],
+35 silly audit   'source-map': [ '0.6.1' ],
+35 silly audit   'source-map-support': [ '0.5.21' ],
+35 silly audit   'sprintf-js': [ '1.1.3' ],
+35 silly audit   ssh2: [ '1.17.0' ],
+35 silly audit   sshpk: [ '1.18.0' ],
+35 silly audit   'stat-mode': [ '1.0.0' ],
+35 silly audit   string_decoder: [ '1.1.1' ],
+35 silly audit   'string-width': [ '4.2.3' ],
+35 silly audit   'strip-ansi': [ '6.0.1' ],
+35 silly audit   sumchecker: [ '3.0.1' ],
+35 silly audit   'supports-color': [ '7.2.0' ],
+35 silly audit   tar: [ '7.5.19' ],
+35 silly audit   yallist: [ '5.0.0', '4.0.0' ],
+35 silly audit   temp: [ '0.9.4' ],
+35 silly audit   'temp-file': [ '3.4.0' ],
+35 silly audit   'tiny-async-pool': [ '1.3.0' ],
+35 silly audit   tinyglobby: [ '0.2.17' ],
+35 silly audit   tmp: [ '0.2.7' ],
+35 silly audit   'tmp-promise': [ '3.0.3' ],
+35 silly audit   'tough-cookie': [ '2.5.0' ],
+35 silly audit   'truncate-utf8-bytes': [ '1.0.2' ],
+35 silly audit   tslib: [ '2.8.1' ],
+35 silly audit   'tunnel-agent': [ '0.6.0' ],
+35 silly audit   tweetnacl: [ '0.14.5' ],
+35 silly audit   'type-fest': [ '0.13.1' ],
+35 silly audit   'undici-types': [ '7.18.2' ],
+35 silly audit   unzipper: [ '0.12.5' ],
+35 silly audit   'uri-js': [ '4.4.1' ],
+35 silly audit   'utf8-byte-length': [ '1.0.5' ],
+35 silly audit   'util-deprecate': [ '1.0.2' ],
+35 silly audit   uuid: [ '3.4.0' ],
+35 silly audit   verror: [ '1.10.0' ],
+35 silly audit   'webcrypto-core': [ '1.9.2' ],
+35 silly audit   'wrap-ansi': [ '7.0.0' ],
+35 silly audit   wrappy: [ '1.0.2' ],
+35 silly audit   xmlbuilder: [ '15.1.1' ],
+35 silly audit   y18n: [ '5.0.8' ],
+35 silly audit   yargs: [ '17.7.3' ],
+35 silly audit   'yargs-parser': [ '21.1.1' ],
+35 silly audit   'yocto-queue': [ '0.1.0' ],
+35 silly audit   'monaco-editor': [ '0.55.1' ],
+35 silly audit   dompurify: [ '3.2.7' ],
+35 silly audit   marked: [ '14.0.0' ],
+35 silly audit   '@types/trusted-types': [ '2.0.7' ]
+35 silly audit }
+36 http cache @types/trusted-types@https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz 1ms (cache hit)
+37 http cache marked@https://registry.npmjs.org/marked/-/marked-14.0.0.tgz 0ms (cache hit)
+38 http cache dompurify@https://registry.npmjs.org/dompurify/-/dompurify-3.2.7.tgz 0ms (cache hit)
+39 http cache cpu-features@https://registry.npmjs.org/cpu-features/-/cpu-features-0.0.10.tgz 0ms (cache hit)
+40 silly tarball no local data for @types/trusted-types@https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz. Extracting by manifest.
+41 silly tarball no local data for marked@https://registry.npmjs.org/marked/-/marked-14.0.0.tgz. Extracting by manifest.
+42 silly tarball no local data for dompurify@https://registry.npmjs.org/dompurify/-/dompurify-3.2.7.tgz. Extracting by manifest.
+43 http cache monaco-editor@https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.55.1.tgz 1ms (cache hit)
+44 http cache buildcheck@https://registry.npmjs.org/buildcheck/-/buildcheck-0.0.7.tgz 0ms (cache hit)
+45 silly tarball no local data for monaco-editor@https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.55.1.tgz. Extracting by manifest.
+46 http fetch GET 200 https://registry.npmjs.org/@types/trusted-types/-/trusted-types-2.0.7.tgz 81ms (cache miss)
+47 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 102ms
+48 silly audit report {
+48 silly audit report   'form-data': [
+48 silly audit report     {
+48 silly audit report       id: 1109540,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-fjxv-7rqg-78g4',
+48 silly audit report       title: 'form-data uses unsafe random function in form-data for choosing boundary',
+48 silly audit report       severity: 'critical',
+48 silly audit report       vulnerable_versions: '<2.5.4',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120745,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-hmw2-7cc7-3qxx',
+48 silly audit report       title: 'form-data: CRLF injection in form-data via unescaped multipart field names and filenames',
+48 silly audit report       severity: 'high',
+48 silly audit report       vulnerable_versions: '<2.5.6',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     }
+48 silly audit report   ],
+48 silly audit report   qs: [
+48 silly audit report     {
+48 silly audit report       id: 1113719,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-6rw7-vpxm-498p',
+48 silly audit report       title: "qs's arrayLimit bypass in its bracket notation allows DoS via memory exhaustion",
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<6.14.1',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     }
+48 silly audit report   ],
+48 silly audit report   request: [
+48 silly audit report     {
+48 silly audit report       id: 1096727,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-p8p7-x288-28g6',
+48 silly audit report       title: 'Server-Side Request Forgery in Request',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=2.88.2',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     }
+48 silly audit report   ],
+48 silly audit report   'tough-cookie': [
+48 silly audit report     {
+48 silly audit report       id: 1097682,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-72xf-g2v4-qvf3',
+48 silly audit report       title: 'tough-cookie Prototype Pollution vulnerability',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<4.1.3',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     }
+48 silly audit report   ],
+48 silly audit report   uuid: [
+48 silly audit report     {
+48 silly audit report       id: 1119441,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-w5hq-g745-h8pq',
+48 silly audit report       title: 'uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<11.1.1',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     }
+48 silly audit report   ],
+48 silly audit report   dompurify: [
+48 silly audit report     {
+48 silly audit report       id: 1120800,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-x4vx-rjvf-j5p4',
+48 silly audit report       title: 'DOMPurify: `IN_PLACE` mode trusts attacker-controlled `nodeName` on live non-form nodes, allowing script retention and XSS via attacker-supplied DOM objects',
+48 silly audit report       severity: 'low',
+48 silly audit report       vulnerable_versions: '<=3.4.6',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120801,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-76mc-f452-cxcm',
+48 silly audit report       title: 'DOMPurify: Hook mutation of `data.allowedTags` / `data.allowedAttributes` permanently pollutes `DEFAULT_ALLOWED_TAGS` / `DEFAULT_ALLOWED_ATTR`',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<3.4.7',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120802,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-hpcv-96wg-7vj8',
+48 silly audit report       title: 'DOMPurify: Cross-realm IN_PLACE sanitization leaves executable markup intact via realm-bound `instanceof` checks',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.4.5',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120803,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-r47g-fvhr-h676',
+48 silly audit report       title: 'DOMPurify: IN_PLACE mode preserves attributes of a clobbered root element, allowing XSS via attacker-controlled root DOM',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.4.5',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120805,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-vxr8-fq34-vvx9',
+48 silly audit report       title: 'DOMPurify: Trusted Types policy survives `clearConfig()` and can poison later `RETURN_TRUSTED_TYPE` output',
+48 silly audit report       severity: 'low',
+48 silly audit report       vulnerable_versions: '<3.4.9',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120812,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-gvmj-g25r-r7wr',
+48 silly audit report       title: 'DOMPurify: SAFE_FOR_TEMPLATES bypass - template expressions survive sanitization inside <template> content when using DOM output modes',
+48 silly audit report       severity: 'low',
+48 silly audit report       vulnerable_versions: '>=3.0.0 <=3.4.7',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1120813,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-rp9w-3fw7-7cwq',
+48 silly audit report       title: 'DOMPurify IN_PLACE Sanitization Bypass via Attached Shadow Root Inside <template>.content',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.4.6',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1121192,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-cmwh-pvxp-8882',
+48 silly audit report       title: 'DOMPurify: Permanent `ALLOWED_ATTR` pollution via `setConfig()` bypassing the hook clone-guard (incomplete fix of the 3.4.7 hook-pollution patch)',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.4.10',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1115668,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-v2wj-7wpq-c8vv',
+48 silly audit report       title: 'DOMPurify contains a Cross-site Scripting vulnerability',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '>=3.1.3 <=3.3.1',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1115921,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-cjmm-f4jc-qw8r',
+48 silly audit report       title: 'DOMPurify ADD_ATTR predicate skips URI validation',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.3.1',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1115922,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-cj63-jhhr-wcxv',
+48 silly audit report       title: 'DOMPurify USE_PROFILES prototype pollution allows event handlers',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.3.1',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1116663,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-39q2-94rc-95cp',
+48 silly audit report       title: "DOMPurify's ADD_TAGS function form bypasses FORBID_TAGS due to short-circuit evaluation",
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<=3.3.3',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1117138,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-h7mw-gpvr-xq4m',
+48 silly audit report       title: 'DOMPurify: FORBID_TAGS bypassed by function-based ADD_TAGS predicate (asymmetry with FORBID_ATTR fix)',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<3.4.0',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1117139,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-crv5-9vww-q3g8',
+48 silly audit report       title: 'DOMPurify has a SAFE_FOR_TEMPLATES bypass in RETURN_DOM mode',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '>=1.0.10 <3.4.0',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1117140,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-v9jr-rg53-9pgp',
+48 silly audit report       title: 'DOMPurify: Prototype Pollution to XSS Bypass via CUSTOM_ELEMENT_HANDLING Fallback',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '>=3.0.1 <3.4.0',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     },
+48 silly audit report     {
+48 silly audit report       id: 1117795,
+48 silly audit report       url: 'https://github.com/advisories/GHSA-h8r8-wccr-v5f2',
+48 silly audit report       title: 'DOMPurify is vulnerable to mutation-XSS via Re-Contextualization ',
+48 silly audit report       severity: 'moderate',
+48 silly audit report       vulnerable_versions: '<3.3.2',
+48 silly audit report       cwe: [Array],
+48 silly audit report       cvss: [Object]
+48 silly audit report     }
+48 silly audit report   ]
+48 silly audit report }
+49 silly packumentCache corgi:https://registry.npmjs.org/form-data cache-miss
+50 silly packumentCache corgi:https://registry.npmjs.org/qs cache-miss
+51 silly packumentCache corgi:https://registry.npmjs.org/request cache-miss
+52 silly packumentCache corgi:https://registry.npmjs.org/tough-cookie cache-miss
+53 silly packumentCache corgi:https://registry.npmjs.org/uuid cache-miss
+54 silly packumentCache corgi:https://registry.npmjs.org/dompurify cache-miss
+55 http fetch GET 200 https://registry.npmjs.org/form-data 80ms (cache revalidated)
+56 silly packumentCache corgi:https://registry.npmjs.org/form-data set size:55002 disposed:false
+57 http fetch GET 200 https://registry.npmjs.org/qs 88ms (cache revalidated)
+58 silly packumentCache corgi:https://registry.npmjs.org/qs set size:148003 disposed:false
+59 http fetch GET 200 https://registry.npmjs.org/dompurify/-/dompurify-3.2.7.tgz 314ms (cache miss)
+60 http fetch GET 200 https://registry.npmjs.org/marked/-/marked-14.0.0.tgz 323ms (cache miss)
+61 http fetch GET 200 https://registry.npmjs.org/uuid 232ms (cache revalidated)
+62 silly packumentCache corgi:https://registry.npmjs.org/uuid set size:82973 disposed:false
+63 http fetch GET 200 https://registry.npmjs.org/request 242ms (cache revalidated)
+64 silly packumentCache corgi:https://registry.npmjs.org/request set size:129997 disposed:false
+65 http fetch GET 200 https://registry.npmjs.org/tough-cookie 244ms (cache revalidated)
+66 silly packumentCache corgi:https://registry.npmjs.org/tough-cookie set size:56308 disposed:false
+67 http fetch GET 200 https://registry.npmjs.org/dompurify 292ms (cache miss)
+68 silly packumentCache corgi:https://registry.npmjs.org/dompurify set size:undefined disposed:false
+69 silly packumentCache corgi:https://registry.npmjs.org/@cubecoders%2fampapi cache-miss
+70 http fetch GET 200 https://registry.npmjs.org/@cubecoders%2fampapi 372ms (cache revalidated)
+71 silly packumentCache corgi:https://registry.npmjs.org/@cubecoders%2fampapi set size:3051 disposed:false
+72 silly packumentCache corgi:https://registry.npmjs.org/monaco-editor cache-miss
+73 http fetch GET 200 https://registry.npmjs.org/monaco-editor 135ms (cache miss)
+74 silly packumentCache corgi:https://registry.npmjs.org/monaco-editor set size:undefined disposed:false
+75 http fetch GET 200 https://registry.npmjs.org/monaco-editor/-/monaco-editor-0.55.1.tgz 4831ms (cache miss)
+76 info run cpu-features@0.0.10 install node_modules/cpu-features node buildcheck.js > buildcheck.gypi && node-gyp rebuild
+77 info run cpu-features@0.0.10 install { code: 1, signal: null }
+78 verbose reify failed optional dependency C:\Users\anjor\Desktop\AnxHub\node_modules\cpu-features
+79 silly reify mark deleted [ 'C:\\Users\\anjor\\Desktop\\AnxHub\\node_modules\\cpu-features' ]
+80 verbose reify failed optional dependency C:\Users\anjor\Desktop\AnxHub\node_modules\buildcheck
+81 silly reify mark deleted [ 'C:\\Users\\anjor\\Desktop\\AnxHub\\node_modules\\buildcheck' ]
+82 silly ADD node_modules/@types/trusted-types
+83 silly ADD node_modules/marked
+84 silly ADD node_modules/dompurify
+85 silly ADD node_modules/monaco-editor
+86 silly ADD
+87 silly ADD
+88 warn allow-scripts 2 packages have install scripts not yet covered by allowScripts:
+88 warn allow-scripts   electron-winstaller@5.4.0 (install: (install scripts present))
+88 warn allow-scripts   ssh2@1.17.0 (install: (install scripts present))
+88 warn allow-scripts
+88 warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+89 verbose cwd C:\Users\anjor\Desktop\AnxHub
+90 verbose os Windows_NT 10.0.26200
+91 verbose node v24.18.0
+92 verbose npm  v11.16.0
+93 verbose exit 0
+94 info ok

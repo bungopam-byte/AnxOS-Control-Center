@@ -1415,15 +1415,79 @@ h3 {
 }
 
 .console-alert {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  padding: 10px 12px;
+  min-height: 32px;
+  max-height: 36px;
+  padding: 4px 8px 4px 10px;
   border: 1px solid rgba(255, 107, 138, 0.34);
   border-radius: 8px;
   background: rgba(255, 107, 138, 0.08);
   color: #ffb3c3;
+  opacity: 1;
+  overflow: hidden;
+  transition: opacity 260ms ease, border-color 180ms ease, background 180ms ease;
+  white-space: nowrap;
+}
+
+.console-alert.is-muted {
+  opacity: 0.5;
+}
+
+.console-alert-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 107, 138, 0.16);
+  color: #ffd5dd;
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.console-alert strong {
+  overflow: hidden;
+  min-width: 0;
+  color: #ffd5dd;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+}
+
+.console-alert-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.console-alert .inline-action {
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 0.76rem;
+}
+
+.console-alert-dismiss {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 107, 138, 0.24);
+  border-radius: 6px;
+  background: rgba(8, 10, 15, 0.32);
+  color: #ffd5dd;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.console-alert-dismiss:hover,
+.console-alert-dismiss:focus-visible {
+  border-color: rgba(255, 107, 138, 0.5);
+  background: rgba(255, 107, 138, 0.13);
+  outline: none;
 }
 
 .console-alert[hidden] {
@@ -1439,6 +1503,37 @@ h3 {
 .console-main-panel .console-log-viewer {
   min-height: 0;
   max-height: none;
+}
+
+.console-jump-latest {
+  position: sticky;
+  right: 14px;
+  bottom: 12px;
+  z-index: 4;
+  float: right;
+  min-height: 30px;
+  margin: 8px 0 0 auto;
+  padding: 0 11px;
+  border: 1px solid rgba(182, 108, 255, 0.38);
+  border-radius: 999px;
+  background: rgba(24, 11, 43, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.console-jump-latest[hidden] {
+  display: none;
+}
+
+.console-jump-latest:hover,
+.console-jump-latest:focus-visible {
+  border-color: rgba(199, 161, 255, 0.65);
+  background: rgba(64, 26, 104, 0.96);
+  outline: none;
 }
 
 .console-log-list li {

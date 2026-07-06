@@ -26,6 +26,8 @@ const consoleTabs = document.querySelector("[data-console-tabs]");
 const consoleFilterButtons = document.querySelectorAll("[data-console-filter]");
 const consoleCrashBanner = document.querySelector("[data-console-crash-banner]");
 const consoleShowErrorsButton = document.querySelector("[data-console-show-errors]");
+const consoleDismissAlertButton = document.querySelector("[data-console-dismiss-alert]");
+const consoleJumpLatestButton = document.querySelector("[data-console-jump-latest]");
 const consoleTitle = document.querySelector("[data-console-title]");
 const consoleCommandForm = document.querySelector("[data-console-command-form]");
 const consoleCommandInput = document.querySelector("[data-console-command]");
@@ -343,6 +345,12 @@ let consoleOpenInstanceIds = [];
 let consoleBufferedEntries = [];
 let consoleLogsRequestInFlight = false;
 let consoleSuppressAutoSelect = false;
+let consoleAutoScrollSuppressed = false;
+let consoleLastRenderedLineCount = 0;
+let consoleNewLineCount = 0;
+let consoleLastCrashSignalCount = 0;
+let consoleCrashBannerDismissed = false;
+let consoleCrashFadeTimer = null;
 const sshProfilesState = {
   servers: [],
   profiles: [],
@@ -7795,7 +7803,113 @@ function hasConsoleCrashSignal(entries = consoleBufferedEntries) {
   });
 }
 
+function countConsoleCrashSignals(entries = consoleBufferedEntries) {
+  return entries.filter((entry) => {
+    const text = String(entry?.message || "").toLowerCase();
+    return entry?.stream === "stderr" || /\b(error|exception|fatal|crash|crashed)\b/.test(text);
+  }).length;
+}
+
+function isConsolePinnedToBottom(threshold = 28) {
+  if (!consoleViewer) {
+    return true;
+  }
+
+  return consoleViewer.scrollHeight - consoleViewer.scrollTop - consoleViewer.clientHeight <= threshold;
+}
+
+function scrollConsoleToBottom({ smooth = false } = {}) {
+  if (!consoleViewer) {
+    return;
+  }
+
+  consoleViewer.scrollTo({
+    top: consoleViewer.scrollHeight,
+    behavior: smooth ? "smooth" : "auto",
+  });
+}
+
+function updateConsoleJumpLatestButton() {
+  if (!consoleJumpLatestButton) {
+    return;
+  }
+
+  const shouldShow = Boolean(consoleAutoScrollSuppressed || consoleNewLineCount > 0);
+  consoleJumpLatestButton.hidden = !shouldShow;
+  consoleJumpLatestButton.textContent = consoleNewLineCount > 0
+    ? `${consoleNewLineCount} new ${consoleNewLineCount === 1 ? "line" : "lines"}`
+    : "Jump to Latest ↓";
+}
+
+function jumpConsoleToLatest() {
+  consoleAutoScrollSuppressed = false;
+  consoleNewLineCount = 0;
+
+  if (consolePauseInput) {
+    consolePauseInput.checked = false;
+  }
+
+  if (consoleAutoscrollInput) {
+    consoleAutoscrollInput.checked = true;
+  }
+
+  scrollConsoleToBottom({ smooth: true });
+  updateConsoleJumpLatestButton();
+  updateConsoleEmptyState();
+}
+
+function handleConsoleViewerScroll() {
+  if (!consoleViewer || !consoleAutoscrollInput?.checked || consolePauseInput?.checked) {
+    return;
+  }
+
+  if (isConsolePinnedToBottom()) {
+    consoleAutoScrollSuppressed = false;
+    consoleNewLineCount = 0;
+  } else {
+    consoleAutoScrollSuppressed = true;
+  }
+
+  updateConsoleJumpLatestButton();
+  updateConsoleEmptyState();
+}
+
+function scheduleConsoleCrashBannerFade() {
+  window.clearTimeout(consoleCrashFadeTimer);
+  consoleCrashFadeTimer = window.setTimeout(() => {
+    consoleCrashBanner?.classList.add("is-muted");
+  }, 4500);
+}
+
+function updateConsoleCrashBanner(entries = consoleBufferedEntries) {
+  if (!consoleCrashBanner) {
+    return;
+  }
+
+  const crashCount = countConsoleCrashSignals(entries);
+  const hasNewCrash = crashCount > consoleLastCrashSignalCount;
+
+  if (hasNewCrash) {
+    consoleCrashBannerDismissed = false;
+    consoleCrashBanner.classList.remove("is-muted");
+    scheduleConsoleCrashBannerFade();
+  } else if (crashCount > 0 && !consoleCrashBanner.classList.contains("is-muted")) {
+    scheduleConsoleCrashBannerFade();
+  }
+
+  consoleLastCrashSignalCount = crashCount;
+  consoleCrashBanner.hidden = crashCount === 0 || consoleCrashBannerDismissed;
+}
+
 function renderConsoleLogs(entries = consoleBufferedEntries) {
+  const previousLineCount = consoleLastRenderedLineCount;
+  const wasPinned = isConsolePinnedToBottom();
+  const shouldStayPinned =
+    consoleAutoscrollInput?.checked &&
+    !consolePauseInput?.checked &&
+    !consoleAutoScrollSuppressed &&
+    wasPinned;
+
   consoleLogList?.replaceChildren();
 
   entries.forEach((entry) => {
@@ -7822,11 +7936,25 @@ function renderConsoleLogs(entries = consoleBufferedEntries) {
   });
 
   filterConsoleRows();
-  if (consoleAutoscrollInput?.checked && !consolePauseInput?.checked && consoleViewer) {
-    consoleViewer.scrollTop = consoleViewer.scrollHeight;
+
+  const addedLineCount = Math.max(0, entries.length - previousLineCount);
+  consoleLastRenderedLineCount = entries.length;
+
+  if (shouldStayPinned) {
+    consoleNewLineCount = 0;
+    window.requestAnimationFrame(() => scrollConsoleToBottom());
+  } else if (addedLineCount > 0 && (consoleAutoScrollSuppressed || !wasPinned || consolePauseInput?.checked)) {
+    consoleNewLineCount += addedLineCount;
   }
+
+  updateConsoleJumpLatestButton();
+  updateConsoleCrashBanner(entries);
+}
+
+function dismissConsoleCrashBanner() {
+  consoleCrashBannerDismissed = true;
   if (consoleCrashBanner) {
-    consoleCrashBanner.hidden = !hasConsoleCrashSignal(entries);
+    consoleCrashBanner.hidden = true;
   }
 }
 
@@ -7925,6 +8053,10 @@ async function clearConsoleRows() {
   }
 
   consoleBufferedEntries = [];
+  consoleLastRenderedLineCount = 0;
+  consoleNewLineCount = 0;
+  consoleAutoScrollSuppressed = false;
+  updateConsoleJumpLatestButton();
   consoleLogList.replaceChildren();
   updateConsoleEmptyState();
   showToast(instance ? "Console logs cleared." : "Console cleared.");
@@ -7959,9 +8091,12 @@ function syncConsoleScrollMode() {
   }
 
   if (consoleAutoscrollInput.checked) {
+    consoleAutoScrollSuppressed = false;
+    consoleNewLineCount = 0;
     consoleViewer.scrollTop = consoleViewer.scrollHeight;
   }
 
+  updateConsoleJumpLatestButton();
   updateConsoleEmptyState();
 }
 
@@ -7984,7 +8119,11 @@ function selectConsoleInstance(instanceId, options = {}) {
 
   if (!options.keepLogs) {
     consoleBufferedEntries = [];
+    consoleLastRenderedLineCount = 0;
+    consoleNewLineCount = 0;
+    consoleAutoScrollSuppressed = false;
     consoleLogList?.replaceChildren();
+    updateConsoleJumpLatestButton();
   }
 
   renderConsoleWorkspace();
@@ -8000,7 +8139,11 @@ function closeConsoleTab(instanceId) {
   if (activeConsoleInstanceId === instanceId) {
     activeConsoleInstanceId = consoleOpenInstanceIds[consoleOpenInstanceIds.length - 1] || null;
     consoleBufferedEntries = [];
+    consoleLastRenderedLineCount = 0;
+    consoleNewLineCount = 0;
+    consoleAutoScrollSuppressed = false;
     consoleLogList?.replaceChildren();
+    updateConsoleJumpLatestButton();
     consoleSuppressAutoSelect = !activeConsoleInstanceId;
     if (activeConsoleInstanceId) {
       refreshConsoleLogs({ silent: true });
@@ -8125,7 +8268,11 @@ function renderConsoleWorkspace() {
   if (activeConsoleInstanceId && !findInstance(activeConsoleInstanceId)) {
     activeConsoleInstanceId = null;
     consoleBufferedEntries = [];
+    consoleLastRenderedLineCount = 0;
+    consoleNewLineCount = 0;
+    consoleAutoScrollSuppressed = false;
     consoleLogList?.replaceChildren();
+    updateConsoleJumpLatestButton();
   }
 
   if (!activeConsoleInstanceId && instances.length > 0 && getActivePageName() === "console" && !consoleSuppressAutoSelect) {
@@ -9551,11 +9698,14 @@ consoleClearButton?.addEventListener("click", clearConsoleRows);
 consoleCopyButton?.addEventListener("click", copyConsoleRows);
 consoleAutoscrollInput?.addEventListener("change", syncConsoleScrollMode);
 consolePauseInput?.addEventListener("change", syncConsoleScrollMode);
+consoleViewer?.addEventListener("scroll", debounce(handleConsoleViewerScroll, 80));
+consoleJumpLatestButton?.addEventListener("click", jumpConsoleToLatest);
 consoleSourceSearchInput?.addEventListener("input", debounce(renderConsoleSources, 120));
 consoleFilterButtons.forEach((button) => {
   button.addEventListener("click", () => setConsoleFilter(button.dataset.consoleFilter || "all"));
 });
 consoleShowErrorsButton?.addEventListener("click", () => setConsoleFilter("error"));
+consoleDismissAlertButton?.addEventListener("click", dismissConsoleCrashBanner);
 consoleCommandForm?.addEventListener("submit", sendConsoleCommand);
 consoleActionButtons.forEach((button) => {
   button.addEventListener("click", () => {

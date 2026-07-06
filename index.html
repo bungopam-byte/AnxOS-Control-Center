@@ -1730,8 +1730,12 @@
               </div>
 
               <div class="console-alert" data-console-crash-banner hidden>
+                <span class="console-alert-icon" aria-hidden="true">!</span>
                 <strong>Possible crash/error detected</strong>
-                <button class="inline-action" type="button" data-console-show-errors>Show errors</button>
+                <div class="console-alert-actions">
+                  <button class="inline-action" type="button" data-console-show-errors>Show Errors</button>
+                  <button class="console-alert-dismiss" type="button" data-console-dismiss-alert aria-label="Dismiss crash alert">x</button>
+                </div>
               </div>
 
               <div class="console-window">
@@ -1749,6 +1753,7 @@
                     <strong>No instance selected</strong>
                     <span>Select an instance from the source list to view live output.</span>
                   </div>
+                  <button class="console-jump-latest" type="button" data-console-jump-latest hidden>Jump to Latest ↓</button>
                 </div>
 
                 <form class="console-command-row" data-console-command-form>

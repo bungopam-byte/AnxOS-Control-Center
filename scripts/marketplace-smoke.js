@@ -742,6 +742,11 @@ async function assertProviderInstallSupport() {
     true,
     "Optional server-side Modrinth dependencies should be installable."
   );
+  assert.match(
+    modrinthProvider._test.friendlyHttpMessage("Modrinth", "project", 404, '{"error":"not found"}'),
+    /404 Project not found/,
+    "Modrinth 404 errors should be user friendly."
+  );
 
   assert.throws(
     () => curseforgeProvider._test.requireApiKey({ apiKey: "" }),
@@ -758,6 +763,11 @@ async function assertProviderInstallSupport() {
     "cf-direct-token",
     "CurseForge provider should accept CF-style config aliases."
   );
+  assert.match(
+    curseforgeProvider._test.friendlyHttpMessage("search", 401, '{"message":"invalid"}'),
+    /401 Invalid API key/,
+    "CurseForge 401 errors should mention invalid API key."
+  );
   const cfSecretRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-cf-key-"));
   try {
     const cfSecretPath = path.join(cfSecretRoot, "cf_api_key.secret");
@@ -772,6 +782,11 @@ async function assertProviderInstallSupport() {
   }
 
   assert.strictEqual(marketplaceInstallService._test.safeArchivePath("config/example.toml"), "config/example.toml");
+  assert.match(
+    marketplaceInstallService._test.friendlyHttpMessage("Server runtime", 429, "slow down"),
+    /429 Rate limited/,
+    "Runtime resolver 429 errors should mention rate limiting."
+  );
   assert.throws(
     () => marketplaceInstallService._test.safeArchivePath("../outside.txt"),
     /unsafe path/,

@@ -5301,7 +5301,13 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   if (detailedMessage) {
     return detailedMessage;
   }
+  if (/\bHTTP\s+\d{3}\b/i.test(wrappedMessage) || /Invalid API key|Forbidden|Project not found|Rate limited|Network timeout|Invalid provider metadata|Missing server files|Unsupported modpack/i.test(wrappedMessage)) {
+    return wrappedMessage;
+  }
   const wrappedCode = wrappedMessage.match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] || null;
+  if (wrappedCode === "HTTP") {
+    return wrappedMessage || fallback;
+  }
   const effectiveCode = backendCode && backendCode !== "AGENT_HTTP_ERROR" ? backendCode : wrappedCode;
   const friendlyMessages = {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
@@ -6795,10 +6801,10 @@ async function installMarketplaceTemplate(event) {
     { label: "Validate template", status: "running", detail: `Sending install request for ${template.id}.` },
   ]);
   startMarketplaceInstallProgressListener();
-  const downloadPoll = window.setInterval(refreshMarketplaceDownloads, 1000);
+  const providerInstall = isProviderMarketplaceTemplate(template) && desktopApiState.hasMarketplaceProviderInstall;
+  const downloadPoll = providerInstall ? null : window.setInterval(refreshMarketplaceDownloads, 1000);
 
   try {
-    const providerInstall = isProviderMarketplaceTemplate(template) && desktopApiState.hasMarketplaceProviderInstall;
     const result = providerInstall
       ? await desktopApiState.api.marketplace.installPack({
         templateId: template.id,
@@ -6819,6 +6825,9 @@ async function installMarketplaceTemplate(event) {
       });
     renderMarketplaceProgress(result?.progress || []);
     renderMarketplaceDownloads(result?.downloads || []);
+    if (providerInstall) {
+      await refreshMarketplaceDownloads();
+    }
     selectedInstanceId = result?.instance?.id || selectedInstanceId;
     forgetStaleInstanceId(selectedInstanceId);
     setMarketplaceInstallState("Complete", "complete");
@@ -6834,7 +6843,9 @@ async function installMarketplaceTemplate(event) {
     setMarketplaceMessage(getAgentErrorMessage(error, "Template install failed."), "error");
     showToast(getAgentErrorMessage(error, "Template install failed."));
   } finally {
-    window.clearInterval(downloadPoll);
+    if (downloadPoll) {
+      window.clearInterval(downloadPoll);
+    }
     stopMarketplaceInstallProgressListener();
     marketplaceInstallInFlight = false;
     if (marketplaceInstallButton) {

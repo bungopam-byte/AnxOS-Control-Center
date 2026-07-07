@@ -23,6 +23,38 @@ class CurseForgeProviderError extends Error {
   }
 }
 
+function truncateForLog(value, maxLength = 4000) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function friendlyHttpMessage(label, status, body = "") {
+  const detail = (() => {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed.message || parsed.error || parsed.detail || "";
+    } catch {
+      return String(body || "").trim().slice(0, 240);
+    }
+  })();
+  const prefix = `CurseForge ${label}`;
+  if (status === 401) return `${prefix}: 401 Invalid API key. Check CF_API_KEY.`;
+  if (status === 403) return `${prefix}: 403 Forbidden. Your API key may not have access.`;
+  if (status === 404) return `${prefix}: 404 Project not found.`;
+  if (status === 429) return `${prefix}: 429 Rate limited. Try again later.`;
+  return `${prefix}: HTTP ${status}${detail ? ` - ${detail}` : ""}`;
+}
+
+function logProviderFailure(error, context = {}) {
+  console.error("[Marketplace][CurseForge] Provider request failed.", {
+    ...context,
+    code: error?.code || null,
+    message: error?.message || null,
+    details: error?.details || null,
+    stack: error?.stack || null,
+  });
+}
+
 function loadEnv() {
   if (envLoaded) {
     return;
@@ -121,28 +153,39 @@ function createUrl(pathname, params = {}) {
 }
 
 async function requestJson(url, label, config = {}) {
-  const response = await fetch(url, {
-    headers: {
-      "Accept": "application/json",
-      "x-api-key": requireApiKey(config),
-    },
-  });
-  const body = await response.text();
-  if (!response.ok) {
-    throw new CurseForgeProviderError(`${label} failed with HTTP ${response.status}.`, "CURSEFORGE_REQUEST_FAILED", {
-      status: response.status,
-      body,
-      url: String(url),
-    });
-  }
   try {
-    return JSON.parse(body);
-  } catch (error) {
-    throw new CurseForgeProviderError(`${label} returned invalid JSON.`, "CURSEFORGE_INVALID_JSON", {
-      message: error.message,
-      body,
-      url: String(url),
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "x-api-key": requireApiKey(config),
+      },
     });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_REQUEST_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url: String(url),
+      });
+    }
+    try {
+      return JSON.parse(body);
+    } catch (error) {
+      throw new CurseForgeProviderError(`${label} returned invalid JSON.`, "CURSEFORGE_INVALID_JSON", {
+        message: error.message,
+        body: truncateForLog(body),
+        url: String(url),
+      });
+    }
+  } catch (error) {
+    const effectiveError = error instanceof CurseForgeProviderError
+      ? error
+      : new CurseForgeProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "CURSEFORGE_NETWORK_FAILED", {
+        url: String(url),
+        message: error?.message || "request failed",
+      });
+    logProviderFailure(effectiveError, { label, url: String(url) });
+    throw effectiveError;
   }
 }
 
@@ -151,14 +194,35 @@ async function requestBuffer(url, label) {
   if (!["https:", "http:"].includes(parsed.protocol)) {
     throw new CurseForgeProviderError(`${label} has an unsafe download URL.`, "CURSEFORGE_UNSAFE_URL", { url });
   }
-  const response = await fetch(parsed);
-  if (!response.ok) {
-    throw new CurseForgeProviderError(`${label} failed with HTTP ${response.status}.`, "CURSEFORGE_DOWNLOAD_FAILED", {
-      status: response.status,
-      url,
+  try {
+    const response = await fetch(parsed);
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_DOWNLOAD_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url,
+      });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    const effectiveError = error instanceof CurseForgeProviderError
+      ? error
+      : new CurseForgeProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "CURSEFORGE_NETWORK_FAILED", {
+        url,
+        message: error?.message || "request failed",
+      });
+    logProviderFailure(effectiveError, { label, url });
+    throw effectiveError;
+  }
+}
+
+function assertProviderMetadata(projectId, context = "CurseForge project") {
+  if (!projectId) {
+    throw new CurseForgeProviderError(`${context}: Invalid provider metadata. Missing providerProjectId.`, "INVALID_PROVIDER_METADATA", {
+      projectId,
     });
   }
-  return Buffer.from(await response.arrayBuffer());
 }
 
 function normalizeMod(mod = {}) {
@@ -254,7 +318,7 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
 
 async function getMod(projectId, config = {}) {
   if (!projectId) {
-    throw new CurseForgeProviderError("CurseForge project id is required.", "CURSEFORGE_PROJECT_REQUIRED");
+    assertProviderMetadata(projectId, "CurseForge mod");
   }
   const payload = await requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}`), "CurseForge mod", config);
   return normalizeMod(payload.data || {});
@@ -262,7 +326,7 @@ async function getMod(projectId, config = {}) {
 
 async function getFiles(projectId, minecraftVersion = "", loader = "", config = {}) {
   if (!projectId) {
-    throw new CurseForgeProviderError("CurseForge project id is required.", "CURSEFORGE_PROJECT_REQUIRED");
+    assertProviderMetadata(projectId, "CurseForge files");
   }
   const payload = await requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}/files`, {
     gameVersion: minecraftVersion,
@@ -340,6 +404,7 @@ async function downloadFile(file, destination = "", options = {}) {
 module.exports = {
   _test: {
     cleanSecretValue,
+    friendlyHttpMessage,
     getCurseForgeApiKey,
     normalizeFile,
     normalizeLoader,

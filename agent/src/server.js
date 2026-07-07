@@ -91,12 +91,24 @@ function sendResult(response, result) {
   sendJson(response, result?.statusCode || 200, result?.body);
 }
 
-function sendError(response, statusCode, code) {
+function sendError(response, statusCode, code, message = "Request failed.", details = null) {
   sendJson(response, statusCode, {
     error: {
       code,
-      message: "Request failed.",
+      message,
+      ...(details ? { details } : {}),
     },
+  });
+}
+
+function logRequestError(request, error, statusCode, code) {
+  console.error("[AnxOS Agent] Request failed.", {
+    method: request.method,
+    url: request.url,
+    statusCode,
+    code,
+    message: error?.message || null,
+    stack: error?.stack || null,
   });
 }
 
@@ -282,8 +294,11 @@ async function handleRequest(request, response) {
     const result = await routeRequest(request, url);
     sendResult(response, result);
   } catch (error) {
+    const statusCode = error.statusCode || 500;
+    const code = error.code || (error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR");
+    logRequestError(request, error, statusCode, code);
     if (!response.headersSent) {
-      sendError(response, error.statusCode || 500, error.code || (error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR"));
+      sendError(response, statusCode, code, error.message || "Request failed.");
     }
   }
 }

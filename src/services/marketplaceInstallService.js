@@ -21,6 +21,37 @@ class MarketplaceInstallError extends Error {
   }
 }
 
+function truncateForLog(value, maxLength = 4000) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function logMarketplaceInstallFailure(error, context = {}) {
+  console.error("[Marketplace][Install] Install failed.", {
+    ...context,
+    code: error?.code || null,
+    message: error?.message || null,
+    details: error?.details || null,
+    stack: error?.stack || null,
+  });
+}
+
+function friendlyHttpMessage(label, status, body = "") {
+  const detail = (() => {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed.error || parsed.message || parsed.description || "";
+    } catch {
+      return String(body || "").trim().slice(0, 240);
+    }
+  })();
+  if (status === 401) return `${label}: 401 Invalid API key.`;
+  if (status === 403) return `${label}: 403 Forbidden.`;
+  if (status === 404) return `${label}: 404 Project not found.`;
+  if (status === 429) return `${label}: 429 Rate limited. Try again later.`;
+  return `${label}: HTTP ${status}${detail ? ` - ${detail}` : ""}`;
+}
+
 function friendlyError(error) {
   if (error?.code === "CURSEFORGE_API_KEY_REQUIRED") {
     return "CurseForge API key is required to install CurseForge packs.";
@@ -83,47 +114,101 @@ function validateDownloadUrl(url) {
 }
 
 async function fetchJson(url, label) {
-  const response = await fetch(validateDownloadUrl(url));
-  const body = await response.text();
-  if (!response.ok) {
-    throw new MarketplaceInstallError(`${label} failed with HTTP ${response.status}.`, "DOWNLOAD_RESOLVE_FAILED", {
-      status: response.status,
-      body,
-      url,
-    });
-  }
   try {
-    return JSON.parse(body);
+    const response = await fetch(validateDownloadUrl(url));
+    const body = await response.text();
+    if (!response.ok) {
+      throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_RESOLVE_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url,
+      });
+    }
+    try {
+      return JSON.parse(body);
+    } catch (error) {
+      throw new MarketplaceInstallError(`${label} returned invalid JSON.`, "DOWNLOAD_RESOLVE_FAILED", {
+        message: error.message,
+        body: truncateForLog(body),
+        url,
+      });
+    }
   } catch (error) {
-    throw new MarketplaceInstallError(`${label} returned invalid JSON.`, "DOWNLOAD_RESOLVE_FAILED", {
-      message: error.message,
-      url,
-    });
+    const effectiveError = error instanceof MarketplaceInstallError
+      ? error
+      : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
+        url,
+        message: error?.message || "request failed",
+      });
+    logMarketplaceInstallFailure(effectiveError, { label, url });
+    throw effectiveError;
   }
 }
 
 async function fetchBuffer(url, label) {
-  const response = await fetch(validateDownloadUrl(url));
-  if (!response.ok) {
-    throw new MarketplaceInstallError(`${label} failed with HTTP ${response.status}.`, "DOWNLOAD_FAILED", {
-      status: response.status,
-      url,
-    });
+  try {
+    const response = await fetch(validateDownloadUrl(url));
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url,
+      });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    const effectiveError = error instanceof MarketplaceInstallError
+      ? error
+      : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
+        url,
+        message: error?.message || "request failed",
+      });
+    logMarketplaceInstallFailure(effectiveError, { label, url });
+    throw effectiveError;
   }
-  return Buffer.from(await response.arrayBuffer());
 }
 
 async function fetchText(url, label) {
-  const response = await fetch(validateDownloadUrl(url));
-  const body = await response.text();
-  if (!response.ok) {
-    throw new MarketplaceInstallError(`${label} failed with HTTP ${response.status}.`, "DOWNLOAD_RESOLVE_FAILED", {
-      status: response.status,
-      body,
-      url,
-    });
+  try {
+    const response = await fetch(validateDownloadUrl(url));
+    const body = await response.text();
+    if (!response.ok) {
+      throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_RESOLVE_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url,
+      });
+    }
+    return body;
+  } catch (error) {
+    const effectiveError = error instanceof MarketplaceInstallError
+      ? error
+      : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
+        url,
+        message: error?.message || "request failed",
+      });
+    logMarketplaceInstallFailure(effectiveError, { label, url });
+    throw effectiveError;
   }
-  return body;
+}
+
+function ensureProviderProjectId(projectId, provider) {
+  if (!projectId) {
+    throw new MarketplaceInstallError(`${provider} install failed: Invalid provider metadata. Missing providerProjectId.`, "INVALID_PROVIDER_METADATA");
+  }
+}
+
+function ensureServerFiles(files, provider) {
+  if (!files.length) {
+    throw new MarketplaceInstallError(`${provider} modpack has no server files for the selected Minecraft version/loader.`, "MISSING_SERVER_FILES");
+  }
+}
+
+function ensureSupportedModpack(condition, provider, reason = "Unsupported modpack") {
+  if (!condition) {
+    throw new MarketplaceInstallError(`${provider} install failed: ${reason}.`, "UNSUPPORTED_MODPACK");
+  }
 }
 
 function extractXmlTag(xml, tagName) {
@@ -446,12 +531,11 @@ function buildInstallMetadata(options, serverInfo, records) {
 
 async function installModrinthPack(instanceId, payload, agentConfig, progressState) {
   const projectId = payload.providerProjectId || payload.projectId;
-  if (!projectId) {
-    return { mods: [], downloads: [], source: {} };
-  }
+  ensureProviderProjectId(projectId, "Modrinth");
   emitProgress({ ...progressState, stage: "resolving", message: "Resolving Modrinth version..." });
   const version = await modrinthProvider.resolveVersion(projectId, payload.minecraftVersion || payload.version, payload.loader, payload.providerVersionId || payload.versionId);
   const primary = version.primaryFile || version.files?.[0];
+  ensureSupportedModpack(primary?.url, "Modrinth", "selected version does not expose downloadable files");
   const mods = [];
   const downloads = [];
   const dedupe = createDeduper();
@@ -464,6 +548,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
       if (entryPath === "modrinth.index.json") {
         const index = JSON.parse(content.toString("utf8"));
         const files = Array.isArray(index.files) ? index.files : [];
+        ensureServerFiles(files, "Modrinth");
         let current = 0;
         for (const file of files) {
           current += 1;
@@ -497,6 +582,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
       allowClientFiles: payload.allowClientFiles,
     });
     const files = [version, ...dependencies.map((entry) => entry.version)];
+    ensureServerFiles(files, "Modrinth");
     let current = 0;
     for (const resolvedVersion of files) {
       current += 1;
@@ -523,9 +609,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
 
 async function installCurseForgePack(instanceId, payload, agentConfig, progressState) {
   const projectId = payload.providerProjectId || payload.projectId;
-  if (!projectId) {
-    return { mods: [], downloads: [], source: {} };
-  }
+  ensureProviderProjectId(projectId, "CurseForge");
   emitProgress({ ...progressState, stage: "resolving", message: "Resolving CurseForge file..." });
   const file = await curseforgeProvider.resolveFile(projectId, payload.minecraftVersion || payload.version, payload.loader, payload.providerVersionId || payload.fileId);
   const downloaded = await curseforgeProvider.downloadFile(file);
@@ -550,6 +634,8 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       }
     });
     const manifestFiles = Array.isArray(manifest?.files) ? manifest.files : [];
+    ensureSupportedModpack(manifest, "CurseForge", "server pack did not include a manifest.json");
+    ensureServerFiles(manifestFiles, "CurseForge");
     let current = 0;
     for (const manifestFile of manifestFiles) {
       current += 1;
@@ -566,6 +652,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
     }
   } else {
     const files = [downloaded, ...(await curseforgeProvider.resolveDependencies(file)).map((entry) => entry.file)];
+    ensureServerFiles(files, "CurseForge");
     let current = 0;
     for (const item of files) {
       current += 1;
@@ -596,6 +683,9 @@ async function installPack(payload = {}) {
     provider,
     providerProjectId: payload.providerProjectId || payload.template?.providerProjectId || payload.projectId,
   };
+  if (["modrinth", "curseforge"].includes(provider)) {
+    ensureProviderProjectId(options.providerProjectId, provider === "modrinth" ? "Modrinth" : "CurseForge");
+  }
   if (provider === "curseforge") {
     curseforgeProvider.ensureConfigured();
   }
@@ -649,6 +739,14 @@ async function installPack(payload = {}) {
       progress: [{ label: "Done", status: "complete", detail: "Marketplace pack installed." }],
     };
   } catch (error) {
+    logMarketplaceInstallFailure(error, {
+      provider,
+      instanceId,
+      providerProjectId: options.providerProjectId || null,
+      providerVersionId: options.providerVersionId || options.versionId || null,
+      minecraftVersion: options.minecraftVersion || options.version || null,
+      loader: options.loader || options.serverType || null,
+    });
     emitProgress({ instanceId, stage: "error", message: friendlyError(error), current: 0, total: 0, percent: 0 });
     if (created) {
       try {
@@ -703,6 +801,7 @@ module.exports = {
     buildInstallMetadata,
     buildInstancePayload,
     createDeduper,
+    friendlyHttpMessage,
     safeArchivePath,
     stripArchiveRoot,
   },

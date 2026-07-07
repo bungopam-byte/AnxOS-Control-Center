@@ -13,6 +13,46 @@ class ModrinthProviderError extends Error {
   }
 }
 
+function truncateForLog(value, maxLength = 4000) {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function friendlyHttpMessage(provider, label, status, body = "") {
+  const detail = (() => {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed.description || parsed.error || parsed.message || "";
+    } catch {
+      return String(body || "").trim().slice(0, 240);
+    }
+  })();
+  const prefix = `${provider} ${label}`;
+  if (status === 401) return `${prefix}: 401 Invalid API key.`;
+  if (status === 403) return `${prefix}: 403 Forbidden.`;
+  if (status === 404) return `${prefix}: 404 Project not found.`;
+  if (status === 429) return `${prefix}: 429 Rate limited. Try again later.`;
+  return `${prefix}: HTTP ${status}${detail ? ` - ${detail}` : ""}`;
+}
+
+function logProviderFailure(error, context = {}) {
+  console.error("[Marketplace][Modrinth] Provider request failed.", {
+    ...context,
+    code: error?.code || null,
+    message: error?.message || null,
+    details: error?.details || null,
+    stack: error?.stack || null,
+  });
+}
+
+function assertProviderMetadata(projectIdOrSlug, context = "Modrinth project") {
+  if (!projectIdOrSlug) {
+    throw new ModrinthProviderError(`${context}: Invalid provider metadata. Missing providerProjectId.`, "INVALID_PROVIDER_METADATA", {
+      projectIdOrSlug,
+    });
+  }
+}
+
 function normalizeLoader(loader) {
   return String(loader || "").trim().toLowerCase();
 }
@@ -57,28 +97,39 @@ function createUrl(pathname, params = {}) {
 }
 
 async function requestJson(url, label) {
-  const response = await fetch(url, {
-    headers: {
-      "Accept": "application/json",
-      "User-Agent": USER_AGENT,
-    },
-  });
-  const body = await response.text();
-  if (!response.ok) {
-    throw new ModrinthProviderError(`${label} failed with HTTP ${response.status}.`, "MODRINTH_REQUEST_FAILED", {
-      status: response.status,
-      body,
-      url: String(url),
-    });
-  }
   try {
-    return JSON.parse(body);
-  } catch (error) {
-    throw new ModrinthProviderError(`${label} returned invalid JSON.`, "MODRINTH_INVALID_JSON", {
-      message: error.message,
-      body,
-      url: String(url),
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+      },
     });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new ModrinthProviderError(friendlyHttpMessage("Modrinth", label, response.status, body), "MODRINTH_REQUEST_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url: String(url),
+      });
+    }
+    try {
+      return JSON.parse(body);
+    } catch (error) {
+      throw new ModrinthProviderError(`${label} returned invalid JSON.`, "MODRINTH_INVALID_JSON", {
+        message: error.message,
+        body: truncateForLog(body),
+        url: String(url),
+      });
+    }
+  } catch (error) {
+    const effectiveError = error instanceof ModrinthProviderError
+      ? error
+      : new ModrinthProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "MODRINTH_NETWORK_FAILED", {
+        url: String(url),
+        message: error?.message || "request failed",
+      });
+    logProviderFailure(effectiveError, { label, url: String(url) });
+    throw effectiveError;
   }
 }
 
@@ -87,18 +138,31 @@ async function requestBuffer(url, label) {
   if (!["https:", "http:"].includes(parsed.protocol)) {
     throw new ModrinthProviderError(`${label} has an unsafe download URL.`, "MODRINTH_UNSAFE_URL", { url });
   }
-  const response = await fetch(parsed, {
-    headers: {
-      "User-Agent": USER_AGENT,
-    },
-  });
-  if (!response.ok) {
-    throw new ModrinthProviderError(`${label} failed with HTTP ${response.status}.`, "MODRINTH_DOWNLOAD_FAILED", {
-      status: response.status,
-      url,
+  try {
+    const response = await fetch(parsed, {
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
     });
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new ModrinthProviderError(friendlyHttpMessage("Modrinth", label, response.status, body), "MODRINTH_DOWNLOAD_FAILED", {
+        status: response.status,
+        body: truncateForLog(body),
+        url,
+      });
+    }
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    const effectiveError = error instanceof ModrinthProviderError
+      ? error
+      : new ModrinthProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "MODRINTH_NETWORK_FAILED", {
+        url,
+        message: error?.message || "request failed",
+      });
+    logProviderFailure(effectiveError, { label, url });
+    throw effectiveError;
   }
-  return Buffer.from(await response.arrayBuffer());
 }
 
 function normalizeProject(project = {}) {
@@ -198,17 +262,13 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
 }
 
 async function getProject(projectIdOrSlug) {
-  if (!projectIdOrSlug) {
-    throw new ModrinthProviderError("Modrinth project id is required.", "MODRINTH_PROJECT_REQUIRED");
-  }
+  assertProviderMetadata(projectIdOrSlug, "Modrinth project");
   const project = await requestJson(createUrl(`/project/${encodeURIComponent(projectIdOrSlug)}`), "Modrinth project");
   return normalizeProject(project);
 }
 
 async function getVersions(projectIdOrSlug, minecraftVersion = "", loader = "") {
-  if (!projectIdOrSlug) {
-    throw new ModrinthProviderError("Modrinth project id is required.", "MODRINTH_PROJECT_REQUIRED");
-  }
+  assertProviderMetadata(projectIdOrSlug, "Modrinth versions");
   const params = {};
   if (minecraftVersion) {
     params.game_versions = JSON.stringify([minecraftVersion]);
@@ -301,6 +361,7 @@ async function downloadVersionFiles(version, destination, options = {}) {
 module.exports = {
   _test: {
     buildSearchFacets,
+    friendlyHttpMessage,
     isServerCapableProject,
     normalizeProject,
     normalizeSide,

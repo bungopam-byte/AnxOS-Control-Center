@@ -23,6 +23,17 @@ let progressForwarderRegistered = false;
 function getMarketplaceErrorMessage(error) {
   const code = error?.payload?.error?.code || error?.code;
   const message = error?.payload?.error?.message || error?.message;
+  const details = error?.details || error?.payload?.error?.details || {};
+  const status = details.status || error?.status || error?.payload?.status || null;
+  const url = details.url || null;
+
+  if (message && message !== "Request failed." && message !== "HTTP") {
+    return message;
+  }
+
+  if (status) {
+    return `Marketplace request failed: HTTP ${status}${url ? ` (${url})` : ""}`;
+  }
 
   if (code) {
     return message && message !== "Request failed." ? message : code;
@@ -35,7 +46,19 @@ async function invokeMarketplaceOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    throw new Error(getMarketplaceErrorMessage(error));
+    const message = getMarketplaceErrorMessage(error);
+    console.error("[Marketplace][IPC] Operation failed.", {
+      code: error?.code || error?.payload?.error?.code || null,
+      message,
+      originalMessage: error?.message || null,
+      details: error?.details || error?.payload?.error?.details || null,
+      payload: error?.payload || null,
+      stack: error?.stack || null,
+    });
+    const wrapped = new Error(message);
+    wrapped.code = error?.code || error?.payload?.error?.code || "MARKETPLACE_IPC_ERROR";
+    wrapped.details = error?.details || error?.payload?.error?.details || {};
+    throw wrapped;
   }
 }
 

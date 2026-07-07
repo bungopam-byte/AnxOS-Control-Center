@@ -13,7 +13,8 @@
     "dist": "electron-builder",
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
-    "icons:linux": "node scripts/generate-linux-icons.js"
+    "icons:linux": "node scripts/generate-linux-icons.js",
+    "marketplace:smoke": "node scripts/marketplace-smoke.js"
   },
   "build": {
     "appId": "com.anxos.controlcenter",
@@ -76,7 +77,8 @@
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "monaco-editor": "^0.55.1",
-    "ssh2": "^1.17.0"
+    "ssh2": "^1.17.0",
+    "unzipper": "^0.12.5"
   },
   "allowScripts": {
     "electron-winstaller@5.4.0": true,

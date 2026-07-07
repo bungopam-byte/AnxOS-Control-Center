@@ -346,6 +346,8 @@ let marketplaceInstallInFlight = false;
 let marketplaceCatalog = { categories: [], templates: [] };
 let marketplaceSelectedTemplateId = null;
 let marketplaceActiveCategory = "All";
+let marketplaceInstallProgressEvents = [];
+let unsubscribeMarketplaceInstallProgress = null;
 const MARKETPLACE_VERSION_FILTERS = ["recommended", "releases", "snapshots", "legacy", "all"];
 const MARKETPLACE_VERSION_FILTER_LABELS = {
   recommended: "Recommended",
@@ -621,6 +623,11 @@ function getDesktopApiState() {
       typeof api?.marketplace?.cancelDownload === "function" &&
       typeof api?.marketplace?.retryDownload === "function",
     hasMarketplaceVersions: typeof api?.marketplace?.getMinecraftVersions === "function",
+    hasMarketplaceProviderInstall:
+      typeof api?.marketplace?.installPack === "function" &&
+      typeof api?.marketplace?.searchProviderPacks === "function" &&
+      typeof api?.marketplace?.getProviderPackVersions === "function" &&
+      typeof api?.marketplace?.onInstallProgress === "function",
     hasInstances:
       typeof api?.instances?.list === "function" &&
       typeof api?.instances?.create === "function" &&
@@ -5487,7 +5494,19 @@ function renderMarketplaceTemplates() {
     const meta = document.createElement("span");
     meta.className = "marketplace-card__meta";
     meta.textContent = `${template.author || "Unknown"} · v${template.version || "0.0.0"} · ${template.category || "Uncategorized"}`;
-    body.append(title, description, meta);
+    const badges = document.createElement("div");
+    badges.className = "marketplace-card__badges";
+    [
+      formatMarketplaceProviderLabel(template),
+      formatMarketplaceLoaderLabel(template),
+      template.minecraftVersion || template.gameVersion || template.serverVersion || "",
+    ].filter(Boolean).forEach((label) => {
+      const badge = document.createElement("span");
+      badge.className = "marketplace-card__badge";
+      badge.textContent = label;
+      badges.append(badge);
+    });
+    body.append(title, description, meta, badges);
 
     const install = document.createElement("button");
     install.type = "button";
@@ -5517,6 +5536,25 @@ function setMarketplaceInstallState(label, status = "ready") {
 
 function isMinecraftMarketplaceTemplate(template) {
   return template?.category === "Minecraft";
+}
+
+function getMarketplaceProvider(template) {
+  return String(template?.provider || "anxhub").trim().toLowerCase() || "anxhub";
+}
+
+function isProviderMarketplaceTemplate(template) {
+  return ["modrinth", "curseforge"].includes(getMarketplaceProvider(template)) && Boolean(template?.providerProjectId || template?.projectId);
+}
+
+function formatMarketplaceProviderLabel(template) {
+  const provider = getMarketplaceProvider(template);
+  if (provider === "modrinth") return "Modrinth";
+  if (provider === "curseforge") return "CurseForge";
+  return "AnxHub";
+}
+
+function formatMarketplaceLoaderLabel(template) {
+  return String(template?.loader || template?.serverType || template?.instanceType || "").replace(/^minecraft-/i, "") || "";
 }
 
 function resetMarketplaceVersionPicker() {
@@ -5912,6 +5950,46 @@ function renderMarketplaceProgress(steps = []) {
     row.append(label, detail);
     marketplaceProgress.append(row);
   });
+}
+
+function marketplaceProgressEventToStep(event = {}) {
+  const stageLabels = {
+    resolving: "Resolving dependencies",
+    downloading: "Downloading files",
+    extracting: "Extracting overrides",
+    writing: "Writing instance metadata",
+    done: "Done",
+    error: "Failed",
+  };
+  const status = event.stage === "done"
+    ? "complete"
+    : event.stage === "error" ? "failed" : "running";
+  const count = event.total ? ` (${event.current || 0}/${event.total})` : "";
+  const percent = event.percent ? ` · ${event.percent}%` : "";
+  return {
+    label: stageLabels[event.stage] || "Installing",
+    status,
+    detail: `${event.message || event.stage || "Working"}${count}${percent}`,
+  };
+}
+
+function startMarketplaceInstallProgressListener() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasMarketplaceProviderInstall || unsubscribeMarketplaceInstallProgress) {
+    return;
+  }
+  marketplaceInstallProgressEvents = [];
+  unsubscribeMarketplaceInstallProgress = desktopApiState.api.marketplace.onInstallProgress((event) => {
+    marketplaceInstallProgressEvents = [...marketplaceInstallProgressEvents, event].slice(-8);
+    renderMarketplaceProgress(marketplaceInstallProgressEvents.map(marketplaceProgressEventToStep));
+  });
+}
+
+function stopMarketplaceInstallProgressListener() {
+  if (typeof unsubscribeMarketplaceInstallProgress === "function") {
+    unsubscribeMarketplaceInstallProgress();
+  }
+  unsubscribeMarketplaceInstallProgress = null;
 }
 
 function formatDownloadSpeed(bytesPerSecond) {
@@ -6488,14 +6566,28 @@ async function installMarketplaceTemplate(event) {
   renderMarketplaceProgress([
     { label: "Validate template", status: "running", detail: `Sending install request for ${template.id}.` },
   ]);
+  startMarketplaceInstallProgressListener();
   const downloadPoll = window.setInterval(refreshMarketplaceDownloads, 1000);
 
   try {
-    const result = await desktopApiState.api.marketplace.installTemplate({
-      templateId: template.id,
-      nodeId: getSelectedNodeId(),
-      options,
-    });
+    const providerInstall = isProviderMarketplaceTemplate(template) && desktopApiState.hasMarketplaceProviderInstall;
+    const result = providerInstall
+      ? await desktopApiState.api.marketplace.installPack({
+        templateId: template.id,
+        template,
+        provider: getMarketplaceProvider(template),
+        providerProjectId: template.providerProjectId || template.projectId,
+        minecraftVersion: options.version === "latest" ? template.minecraftVersion || template.gameVersion || "latest" : options.version,
+        loader: template.loader || options.serverType || "vanilla",
+        loaderVersion: options.loaderVersion || template.loaderVersion || "",
+        nodeId: getSelectedNodeId(),
+        options,
+      })
+      : await desktopApiState.api.marketplace.installTemplate({
+        templateId: template.id,
+        nodeId: getSelectedNodeId(),
+        options,
+      });
     renderMarketplaceProgress(result?.progress || []);
     renderMarketplaceDownloads(result?.downloads || []);
     selectedInstanceId = result?.instance?.id || selectedInstanceId;
@@ -6514,6 +6606,7 @@ async function installMarketplaceTemplate(event) {
     showToast(getAgentErrorMessage(error, "Template install failed."));
   } finally {
     window.clearInterval(downloadPoll);
+    stopMarketplaceInstallProgressListener();
     marketplaceInstallInFlight = false;
     if (marketplaceInstallButton) {
       marketplaceInstallButton.disabled = false;

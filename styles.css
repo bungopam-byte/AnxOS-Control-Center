@@ -6089,6 +6089,25 @@ dd {
   font-size: 0.78rem;
 }
 
+.marketplace-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.marketplace-card__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border: 1px solid rgba(202, 169, 255, 0.2);
+  border-radius: 999px;
+  color: rgba(239, 232, 255, 0.9);
+  background: rgba(139, 92, 246, 0.14);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .marketplace-card .inline-action {
   grid-column: 1 / -1;
   justify-content: center;

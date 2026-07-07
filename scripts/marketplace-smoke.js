@@ -4,6 +4,9 @@ const os = require("os");
 const path = require("path");
 
 const marketplaceService = require("../src/services/marketplaceService");
+const marketplaceInstallService = require("../src/services/marketplaceInstallService");
+const modrinthProvider = require("../src/services/providers/modrinthProvider");
+const curseforgeProvider = require("../src/services/providers/curseforgeProvider");
 
 const catalogPath = path.join(__dirname, "..", "config", "marketplace-templates.json");
 const appPath = path.join(__dirname, "..", "app.js");
@@ -702,6 +705,105 @@ function assertMinecraftTemplatesStillPass() {
   }
 }
 
+async function assertProviderInstallSupport() {
+  const preloadSource = fs.readFileSync(preloadPath, "utf8");
+  const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
+  const appSource = fs.readFileSync(appPath, "utf8");
+  assert(preloadSource.includes("marketplace:installPack"), "Preload should expose provider pack install IPC.");
+  assert(preloadSource.includes("marketplace:searchProviderPacks"), "Preload should expose provider pack search IPC.");
+  assert(preloadSource.includes("marketplace:getProviderPackVersions"), "Preload should expose provider version IPC.");
+  assert(preloadSource.includes("marketplace:install-progress"), "Preload should expose install progress events.");
+  assert(ipcSource.includes("marketplace:installPack"), "Marketplace IPC should register provider install.");
+  assert(ipcSource.includes("marketplace:install-progress"), "Marketplace IPC should forward install progress.");
+  assert(appSource.includes("startMarketplaceInstallProgressListener"), "Renderer should register progress listener for provider installs.");
+  assert(appSource.includes("stopMarketplaceInstallProgressListener"), "Renderer should clean up progress listener after installs.");
+
+  assert.deepStrictEqual(
+    modrinthProvider._test.buildSearchFacets("1.21.1", "fabric"),
+    [["project_type:modpack"], ["versions:1.21.1"], ["categories:fabric"], ["server_side:required", "server_side:optional"]],
+    "Modrinth facets should target server-capable modpacks."
+  );
+  assert.strictEqual(
+    modrinthProvider._test.shouldInstallProjectFile({ server_side: "unsupported" }, { allowClientFiles: false }),
+    false,
+    "Client-only Modrinth dependencies should be skipped by default."
+  );
+  assert.strictEqual(
+    modrinthProvider._test.shouldInstallProjectFile({ server_side: "optional" }, { allowClientFiles: false }),
+    true,
+    "Optional server-side Modrinth dependencies should be installable."
+  );
+
+  assert.throws(
+    () => curseforgeProvider._test.requireApiKey({ apiKey: "" }),
+    /CurseForge API key is required to install CurseForge packs/,
+    "CurseForge provider should fail gracefully without an API key."
+  );
+  assert.strictEqual(
+    curseforgeProvider._test.cleanSecretValue("'$11$22$33aaaaaaaaaaaaaaaaaaaaaaaaaa'"),
+    "$11$22$33aaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "CurseForge keys from .env should allow single-quoted dollar values."
+  );
+  assert.strictEqual(
+    curseforgeProvider._test.getCurseForgeApiKey({ cfApiKey: "'cf-direct-token'" }),
+    "cf-direct-token",
+    "CurseForge provider should accept CF-style config aliases."
+  );
+  const cfSecretRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-cf-key-"));
+  try {
+    const cfSecretPath = path.join(cfSecretRoot, "cf_api_key.secret");
+    fs.writeFileSync(cfSecretPath, "'cf-file-token'\n", "utf8");
+    assert.strictEqual(
+      curseforgeProvider._test.getCurseForgeApiKey({ cfApiKeyFile: cfSecretPath }),
+      "cf-file-token",
+      "CurseForge provider should read CF_API_KEY_FILE-style secrets."
+    );
+  } finally {
+    fs.rmSync(cfSecretRoot, { recursive: true, force: true });
+  }
+
+  assert.strictEqual(marketplaceInstallService._test.safeArchivePath("config/example.toml"), "config/example.toml");
+  assert.throws(
+    () => marketplaceInstallService._test.safeArchivePath("../outside.txt"),
+    /unsafe path/,
+    "Archive extraction must reject zip slip paths."
+  );
+
+  const dedupe = marketplaceInstallService._test.createDeduper();
+  assert.strictEqual(dedupe.add("project:file"), true, "First dependency should be accepted.");
+  assert.strictEqual(dedupe.add("project:file"), false, "Duplicate dependency should be skipped.");
+
+  const metadata = marketplaceInstallService._test.buildInstallMetadata(
+    {
+      name: "Provider Smoke",
+      provider: "modrinth",
+      providerProjectId: "provider-smoke",
+      providerVersionId: "version-smoke",
+      minecraftVersion: "1.21.1",
+      loader: "fabric",
+    },
+    {
+      minecraftVersion: "1.21.1",
+      loaderVersion: "0.16.0",
+      serverJar: "fabric-server.jar",
+    },
+    { mods: [{ file: "mods/example.jar" }], downloads: [{ file: "mods/example.jar" }], source: { provider: "smoke" } }
+  );
+  assert.strictEqual(metadata.provider, "modrinth", "Metadata should preserve provider.");
+  assert.strictEqual(metadata.providerProjectId, "provider-smoke", "Metadata should preserve provider project id.");
+  assert.strictEqual(metadata.mods.length, 1, "Metadata should list installed mods.");
+
+  let progressEvents = 0;
+  const listener = () => {
+    progressEvents += 1;
+  };
+  marketplaceInstallService.marketplaceInstallEvents.on("progress", listener);
+  marketplaceInstallService.marketplaceInstallEvents.emit("progress", { stage: "resolving" });
+  marketplaceInstallService.marketplaceInstallEvents.removeListener("progress", listener);
+  marketplaceInstallService.marketplaceInstallEvents.emit("progress", { stage: "resolving" });
+  assert.strictEqual(progressEvents, 1, "Progress listeners should be removable without duplicate events.");
+}
+
 async function main() {
   assertCatalogLoads();
   await assertDisabledTemplatesAreBlocked();
@@ -724,6 +826,7 @@ async function main() {
   await assertCalendarMinecraftVersionMetadata();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
+  await assertProviderInstallSupport();
   console.log("Marketplace smoke checks passed.");
 }
 

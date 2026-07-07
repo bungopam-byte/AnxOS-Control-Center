@@ -50,9 +50,17 @@ const desktopApi = {
   marketplace: {
     listTemplates: () => ipcRenderer.invoke("marketplace:listTemplates"),
     getMinecraftVersions: (templateId) => ipcRenderer.invoke("marketplace:getMinecraftVersions", { templateId }),
+    searchProviderPacks: (payload = {}) => ipcRenderer.invoke("marketplace:searchProviderPacks", payload),
+    getProviderPackVersions: (payload = {}) => ipcRenderer.invoke("marketplace:getProviderPackVersions", payload),
     getImportSupport: () => ipcRenderer.invoke("marketplace:getImportSupport"),
     importCommunityTemplate: (payload = {}) => ipcRenderer.invoke("marketplace:importCommunityTemplate", payload),
     installTemplate: (payload) => ipcRenderer.invoke("marketplace:installTemplate", payload),
+    installPack: (payload) => ipcRenderer.invoke("marketplace:installPack", payload),
+    onInstallProgress: (callback) => {
+      const handler = (_, payload) => callback(payload);
+      ipcRenderer.on("marketplace:install-progress", handler);
+      return () => ipcRenderer.removeListener("marketplace:install-progress", handler);
+    },
     getDownloads: () => ipcRenderer.invoke("marketplace:getDownloads"),
     cancelDownload: (downloadId) => ipcRenderer.invoke("marketplace:cancelDownload", { downloadId }),
     retryDownload: (downloadId) => ipcRenderer.invoke("marketplace:retryDownload", { downloadId }),

@@ -4850,6 +4850,231 @@ body.is-resizing-files * {
   padding: 4px 7px;
 }
 
+/* Instances 3-zone layout: top controls, main table, bottom drawer */
+.page[data-page="instances"] .instances-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(360px, 1fr) auto auto;
+  gap: 12px;
+  min-height: calc(100vh - 132px);
+  overflow: visible;
+}
+
+.page[data-page="instances"] .instances-toolbar,
+.page[data-page="instances"] .instances-summary-grid,
+.page[data-page="instances"] .instances-controlbar,
+.page[data-page="instances"] .instance-create-form,
+.page[data-page="instances"] .instances-table-panel,
+.page[data-page="instances"] .instances-details-panel,
+.page[data-page="instances"] .instance-workspace-card {
+  grid-column: 1;
+}
+
+.page[data-page="instances"] .instances-toolbar {
+  grid-row: 1;
+  min-height: 92px;
+}
+
+.page[data-page="instances"] .instances-summary-grid {
+  grid-row: 2;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+}
+
+.page[data-page="instances"] .instances-controlbar {
+  grid-row: 3;
+  grid-template-columns: minmax(280px, 1fr) minmax(150px, 0.22fr) minmax(170px, 0.24fr) auto auto auto;
+}
+
+.page[data-page="instances"] .instances-controlbar .docker-actions {
+  grid-column: 4;
+}
+
+.page[data-page="instances"] .instance-create-form {
+  grid-row: 4;
+}
+
+.page[data-page="instances"] .instances-main-shell {
+  display: contents;
+}
+
+.page[data-page="instances"] .instances-table-panel {
+  grid-row: 5;
+  min-height: clamp(360px, 46vh, 620px);
+}
+
+.page[data-page="instances"] .instances-table-panel .docker-table-wrap {
+  min-height: clamp(360px, 46vh, 620px);
+  max-height: none;
+  border-radius: 8px;
+}
+
+.page[data-page="instances"] .instances-table {
+  min-width: 1180px;
+}
+
+.page[data-page="instances"] .instances-details-panel {
+  grid-row: 6;
+  position: static;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 10px 10px 0 0;
+  background:
+    linear-gradient(180deg, rgba(31, 17, 49, 0.96), rgba(16, 9, 29, 0.98)),
+    rgba(16, 10, 29, 0.96);
+}
+
+.page[data-page="instances"] .instances-details-panel[hidden],
+.page[data-page="instances"] .instance-workspace-card[hidden] {
+  display: none;
+}
+
+.page[data-page="instances"] .instance-workspace-header {
+  grid-column: 1;
+  grid-row: 1;
+  border-bottom: 0;
+}
+
+.page[data-page="instances"] .instance-workspace-header h3 {
+  font-size: 1.12rem;
+}
+
+.page[data-page="instances"] .instance-header-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.page[data-page="instances"] .instance-quick-actions {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 14px 16px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.page[data-page="instances"] .instance-quick-actions .inline-action {
+  min-width: 74px;
+}
+
+.page[data-page="instances"] .instance-tabs {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  padding: 8px 14px 12px;
+  border-top: 1px solid rgba(185, 171, 200, 0.1);
+  border-bottom: 1px solid rgba(185, 171, 200, 0.12);
+  background: rgba(8, 10, 15, 0.24);
+}
+
+.page[data-page="instances"] .instance-workspace-card {
+  grid-row: 7;
+  display: flex;
+  flex-direction: column;
+  min-height: clamp(340px, 42vh, 620px);
+  max-height: none;
+  overflow: hidden;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+}
+
+.page[data-page="instances"] .instance-workspace-card__header,
+.page[data-page="instances"] .instances-inspector-sections,
+.page[data-page="instances"] .instance-workspace-hero {
+  display: none;
+}
+
+.page[data-page="instances"] .instance-tab-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.page[data-page="instances"] .instance-tab-panel.is-active {
+  flex: 1 1 auto;
+}
+
+.page[data-page="instances"] [data-instance-panel="overview"].is-active {
+  display: block;
+  padding: 16px;
+}
+
+.page[data-page="instances"] .instance-overview-drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.page[data-page="instances"] .instance-overview-section {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(185, 171, 200, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.24);
+}
+
+.page[data-page="instances"] .instance-overview-section .instance-overview-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page[data-page="instances"] .instance-overview-list {
+  border: 0;
+  background: transparent;
+}
+
+.page[data-page="instances"] .instance-overview-list div {
+  grid-template-columns: minmax(98px, 0.36fr) minmax(0, 1fr);
+  padding-inline: 0;
+}
+
+.page[data-page="instances"] [data-instance-panel="console"].is-active {
+  min-height: clamp(340px, 42vh, 620px);
+}
+
+.page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar {
+  padding: 10px 12px;
+}
+
+.page[data-page="instances"] .instance-console-toolbar__row:last-child {
+  grid-template-columns: minmax(120px, 0.2fr) minmax(260px, 1fr) auto auto auto;
+}
+
+.page[data-page="instances"] [data-instance-panel="console"] .instance-console-viewer {
+  min-height: 0;
+}
+
+.page[data-page="instances"] [data-instance-panel="files"].is-active,
+.page[data-page="instances"] [data-instance-panel="settings"].is-active,
+.page[data-page="instances"] [data-instance-panel="backups"].is-active {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.page[data-page="instances"] .instance-files-grid {
+  grid-template-columns: minmax(320px, 0.75fr) minmax(480px, 1.25fr);
+  min-height: 360px;
+}
+
+.page[data-page="instances"] .instance-config-form,
+.page[data-page="instances"] .instance-advanced-panel,
+.page[data-page="instances"] .instance-minecraft-summary,
+.page[data-page="instances"] .instance-minecraft-settings {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page[data-page="instances"] .instance-row-actions {
+  gap: 4px;
+}
+
+.page[data-page="instances"] .instance-row-actions .inline-action {
+  min-width: 0;
+}
+
 .coolpals-shell {
   display: grid;
   gap: 14px;

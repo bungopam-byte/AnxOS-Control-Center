@@ -58,6 +58,7 @@ const dockerLogActionButtons = document.querySelectorAll("[data-docker-log-actio
 const dockerStatsFields = document.querySelectorAll("[data-docker-stat]");
 const dockerInspectViewer = document.querySelector("[data-docker-inspect]");
 const instancesDetailsPanel = document.querySelector(".instances-details-panel");
+const instanceWorkspaceCard = document.querySelector(".instance-workspace-card");
 const instancesList = document.querySelector("[data-instances-list]");
 const instancesLoading = document.querySelector("[data-instances-loading]");
 const instancesEmpty = document.querySelector("[data-instances-empty]");
@@ -4907,6 +4908,12 @@ function renderInstanceSummary(instances) {
 
 function setInstanceDetails(instance = null) {
   const metrics = instance ? getInstanceMetrics(instance.id) : null;
+  if (instancesDetailsPanel) {
+    instancesDetailsPanel.hidden = !instance;
+  }
+  if (instanceWorkspaceCard) {
+    instanceWorkspaceCard.hidden = !instance;
+  }
 
   if (!instance) {
     setField("instanceDetailState", "None");

@@ -1093,10 +1093,6 @@
               </label>
               <div class="docker-actions" aria-label="Instance actions">
                 <button class="inline-action" type="button" data-instance-action="refresh" disabled>Refresh</button>
-                <button class="inline-action" type="button" data-instance-action="start" disabled>Start</button>
-                <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
-                <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
-                <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Remove</button>
                 <button class="inline-action" type="button" data-instance-action="create">Create Instance</button>
               </div>
               <label class="docker-filter instances-log-control">
@@ -1188,7 +1184,7 @@
                 </div>
               </section>
 
-              <section class="instance-workspace-card" aria-label="Instance content workspace">
+              <section class="instance-workspace-card" aria-label="Instance content workspace" hidden>
                 <div class="instance-workspace-card__header">
                   <div>
                     <h3>Workspace</h3>
@@ -1204,33 +1200,44 @@
                       <span data-instance-app-description>Shared instance workspace</span>
                     </div>
                   </div>
-                  <div class="instance-workspace-hero">
-                    <div>
-                      <span class="instance-workspace-label">Selected instance</span>
-                      <strong data-instance-detail="name">No instance selected</strong>
-                      <small data-instance-detail="id">Select an instance to manage it.</small>
-                    </div>
-                    <div class="instance-workspace-meta">
-                      <span class="instance-version-badge" data-instance-detail="version">Unknown version</span>
-                      <span class="instance-workspace-address"><span data-instance-detail="address">No port configured</span><button class="instance-copy-button" type="button" data-instance-address-copy title="Copy address" aria-label="Copy address" disabled>⧉</button></span>
-                    </div>
+                  <div class="instance-overview-drawer-grid">
+                    <section class="instance-overview-section">
+                      <h4>General</h4>
+                      <dl class="docker-details-list instance-overview-list">
+                        <div><dt>Name</dt><dd data-instance-detail="name">Unavailable</dd></div>
+                        <div><dt>Type</dt><dd data-instance-detail="type">Unavailable</dd></div>
+                        <div><dt>Version</dt><dd data-instance-detail="version">Unknown version</dd></div>
+                        <div><dt>Status</dt><dd data-field="instanceDetailState">None</dd></div>
+                      </dl>
+                    </section>
+                    <section class="instance-overview-section">
+                      <h4>Networking</h4>
+                      <dl class="docker-details-list instance-overview-list">
+                        <div><dt>Address</dt><dd><span data-instance-detail="address">No port configured</span><button class="instance-copy-button" type="button" data-instance-address-copy title="Copy address" aria-label="Copy address" disabled>⧉</button></dd></div>
+                        <div><dt>Host</dt><dd data-instance-detail="connectionHost">Unavailable</dd></div>
+                        <div><dt>Query Port</dt><dd data-instance-detail="queryPort">Unavailable</dd></div>
+                        <div><dt>RCON Port</dt><dd data-instance-detail="rconPort">Unavailable</dd></div>
+                      </dl>
+                    </section>
+                    <section class="instance-overview-section">
+                      <h4>Resources</h4>
+                      <div class="instance-overview-grid instance-overview-grid--wide">
+                        <article><span>CPU</span><strong data-instance-detail="cpu">Unavailable</strong></article>
+                        <article><span>Memory</span><strong data-instance-detail="memory">Unavailable</strong></article>
+                        <article><span>Disk</span><strong data-instance-detail="disk">Unavailable</strong></article>
+                        <article><span>Uptime</span><strong data-instance-detail="uptime">Unavailable</strong></article>
+                      </div>
+                    </section>
+                    <section class="instance-overview-section">
+                      <h4>Metadata</h4>
+                      <dl class="docker-details-list instance-overview-list">
+                        <div><dt>Node</dt><dd data-instance-detail="node">Unavailable</dd></div>
+                        <div><dt>Created</dt><dd data-instance-detail="created">Unavailable</dd></div>
+                        <div><dt>Working Directory</dt><dd data-instance-detail="workingDirectory">Unavailable</dd></div>
+                        <div><dt>Tags</dt><dd data-instance-detail="tags">Unavailable</dd></div>
+                      </dl>
+                    </section>
                   </div>
-                  <div class="instance-overview-grid instance-overview-grid--wide">
-                    <article><span>CPU</span><strong data-instance-detail="cpu">Unavailable</strong></article>
-                    <article><span>Memory</span><strong data-instance-detail="memory">Unavailable</strong></article>
-                    <article><span>Disk</span><strong data-instance-detail="disk">Unavailable</strong></article>
-                    <article><span>Uptime</span><strong data-instance-detail="uptime">Unavailable</strong></article>
-                  </div>
-                  <dl class="docker-details-list instance-overview-list">
-                    <div><dt>Type</dt><dd data-instance-detail="type">Unavailable</dd></div>
-                    <div><dt>Node</dt><dd data-instance-detail="node">Unavailable</dd></div>
-                    <div><dt>Game Version</dt><dd data-instance-detail="gameVersion">Unavailable</dd></div>
-                    <div><dt>Loader / Build</dt><dd data-instance-detail="versionBuild">Unavailable</dd></div>
-                    <div><dt>Working Directory</dt><dd data-instance-detail="workingDirectory">Unavailable</dd></div>
-                    <div><dt>Command</dt><dd data-instance-detail="command">Unavailable</dd></div>
-                    <div><dt>Ports</dt><dd data-instance-detail="ports">Unavailable</dd></div>
-                    <div><dt>Tags</dt><dd data-instance-detail="tags">Unavailable</dd></div>
-                  </dl>
                   <div class="instance-minecraft-summary" data-instance-minecraft-summary hidden>
                     <h4>Minecraft</h4>
                     <dl class="docker-details-list">
@@ -1411,12 +1418,17 @@
               </section>
             </section>
 
-            <aside class="instances-details-panel instances-inspector-panel" aria-label="Selected instance inspector">
+            <aside class="instances-details-panel instances-inspector-panel" aria-label="Selected instance details" hidden>
               <div class="instance-workspace-header">
                 <span class="instance-detail-icon" data-instance-inspector-icon>APP</span>
                 <div>
                   <h3 data-instance-detail="name">No instance selected</h3>
                   <span data-instance-detail="id">Select an instance to inspect it.</span>
+                  <div class="instance-header-meta">
+                    <span data-instance-detail="type">Unavailable</span>
+                    <span data-instance-detail="version">Unknown version</span>
+                    <span data-instance-detail="inspectorAddress">No port configured</span>
+                  </div>
                 </div>
                 <span class="instance-state" data-field="instanceDetailState">None</span>
               </div>

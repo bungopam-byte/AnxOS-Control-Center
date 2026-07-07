@@ -404,6 +404,7 @@ function normalizeFile(file = {}) {
     releaseType: file.releaseType || null,
     dependencies: Array.isArray(file.dependencies) ? file.dependencies : [],
     modules: Array.isArray(file.modules) ? file.modules : [],
+    serverPackFileId: file.serverPackFileId || null,
     raw: file,
   };
 }
@@ -495,6 +496,15 @@ async function getFile(projectId, fileId, config = {}) {
   return normalizeFile(payload.data || {});
 }
 
+async function getFileDownloadUrl(projectId, fileId, config = {}) {
+  const payload = await requestJson(
+    createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download-url`),
+    "CurseForge download URL",
+    config
+  );
+  return typeof payload.data === "string" ? payload.data : "";
+}
+
 async function resolveFile(projectId, minecraftVersion = "", loader = "", requestedFileId = "", config = {}) {
   if (requestedFileId && requestedFileId !== "latest") {
     return getFile(projectId, requestedFileId, config);
@@ -537,10 +547,14 @@ async function resolveDependencies(file, config = {}, state = null) {
 }
 
 async function downloadFile(file, destination = "", options = {}) {
-  if (!file?.downloadUrl) {
-    throw new CurseForgeProviderError(`${file?.fileName || "CurseForge file"} has no download URL.`, "CURSEFORGE_DOWNLOAD_URL_MISSING");
+  const downloadUrl = file?.downloadUrl || await getFileDownloadUrl(file?.projectId, file?.id);
+  if (!downloadUrl) {
+    throw new CurseForgeProviderError(`${file?.fileName || "CurseForge file"} has no download URL.`, "CURSEFORGE_DOWNLOAD_URL_MISSING", {
+      projectId: file?.projectId || null,
+      fileId: file?.id || null,
+    });
   }
-  const buffer = await requestBuffer(file.downloadUrl, file.fileName || "CurseForge file");
+  const buffer = await requestBuffer(downloadUrl, file.fileName || "CurseForge file");
   if (destination) {
     fs.mkdirSync(destination, { recursive: true });
     fs.writeFileSync(path.join(destination, file.fileName), buffer);
@@ -548,7 +562,7 @@ async function downloadFile(file, destination = "", options = {}) {
   if (options.returnBuffer === false) {
     return { ...file, buffer: null };
   }
-  return { ...file, buffer };
+  return { ...file, downloadUrl, buffer };
 }
 
 module.exports = {
@@ -568,6 +582,7 @@ module.exports = {
   downloadFile,
   ensureConfigured: requireApiKey,
   getFile,
+  getFileDownloadUrl,
   getFiles,
   getMod,
   logStartupStatus,

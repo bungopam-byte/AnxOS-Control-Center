@@ -101,6 +101,16 @@ function sendError(response, statusCode, code, message = "Request failed.", deta
   });
 }
 
+function getAuthErrorMessage(code) {
+  if (code === "AGENT_TOKEN_MISSING") {
+    return "Agent token is missing on the server. Set AGENT_TOKEN in the agent environment or agent/.env, then restart the agent.";
+  }
+  if (code === "UNAUTHORIZED") {
+    return "Agent token rejected. The desktop app token does not match the server AGENT_TOKEN.";
+  }
+  return "Request failed.";
+}
+
 function logRequestError(request, error, statusCode, code) {
   console.error("[AnxOS Agent] Request failed.", {
     method: request.method,
@@ -264,12 +274,12 @@ async function handleRequest(request, response) {
 
   try {
     const address = request.socket?.remoteAddress || "local";
-    checkRateLimit(`api:${address}`, 900, 60 * 1000);
+    checkRateLimit(`api:${address}`, config.apiRateLimitPerMinute, 60 * 1000);
     if (/\/file$/.test(request.url || "") && request.method === "PUT") {
-      checkRateLimit(`file-write:${address}`, 120, 60 * 1000);
+      checkRateLimit(`file-write:${address}`, config.fileWriteRateLimitPerMinute, 60 * 1000);
     }
     if (/\/command$/.test(request.url || "") && request.method === "POST") {
-      checkRateLimit(`console:${address}`, 120, 60 * 1000);
+      checkRateLimit(`console:${address}`, config.consoleRateLimitPerMinute, 60 * 1000);
     }
 
     request.body = await readRequestBody(request);
@@ -287,7 +297,7 @@ async function handleRequest(request, response) {
         });
       }
 
-      sendError(response, auth.statusCode, auth.code);
+      sendError(response, auth.statusCode, auth.code, getAuthErrorMessage(auth.code));
       return;
     }
 

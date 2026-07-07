@@ -36,6 +36,13 @@ function logMarketplaceInstallFailure(error, context = {}) {
   });
 }
 
+function logMarketplaceInstallStep(message, context = {}) {
+  console.info("[Marketplace][Install]", {
+    message,
+    ...context,
+  });
+}
+
 function friendlyHttpMessage(label, status, body = "") {
   const detail = (() => {
     try {
@@ -247,12 +254,14 @@ function stripArchiveRoot(entryPath) {
 }
 
 async function extractZipBuffer(buffer, onFile) {
+  logMarketplaceInstallStep("Opening zip archive.", { bytes: Buffer.byteLength(buffer || Buffer.alloc(0)) });
   const directory = await unzipper.Open.buffer(Buffer.from(buffer));
   for (const entry of directory.files) {
     if (entry.type === "Directory") {
       continue;
     }
     const safePath = safeArchivePath(entry.path);
+    logMarketplaceInstallStep("Extracting archive entry.", { path: safePath, compressedSize: entry.compressedSize || null, uncompressedSize: entry.uncompressedSize || null });
     const content = await entry.buffer();
     await onFile(safePath, content);
   }
@@ -279,10 +288,12 @@ function createDeduper() {
 }
 
 async function writeText(instanceId, filePath, content, agentConfig) {
+  logMarketplaceInstallStep("Writing text file.", { instanceId, filePath, bytes: Buffer.byteLength(String(content || ""), "utf8") });
   return agentClient.writeInstanceFile(instanceId, filePath, content, { config: agentConfig });
 }
 
 async function writeBuffer(instanceId, filePath, buffer, agentConfig) {
+  logMarketplaceInstallStep("Writing binary file.", { instanceId, filePath, bytes: Buffer.byteLength(buffer || Buffer.alloc(0)) });
   return agentClient.writeInstanceFile(instanceId, filePath, Buffer.from(buffer).toString("base64"), {
     encoding: "base64",
     config: agentConfig,
@@ -292,6 +303,7 @@ async function writeBuffer(instanceId, filePath, buffer, agentConfig) {
 async function writeIfMissing(instanceId, filePath, buffer, agentConfig) {
   try {
     await agentClient.readInstanceFile(instanceId, filePath, agentConfig);
+    logMarketplaceInstallStep("Skipping existing file.", { instanceId, filePath });
     return false;
   } catch {
     await writeBuffer(instanceId, filePath, buffer, agentConfig);
@@ -612,42 +624,102 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
   ensureProviderProjectId(projectId, "CurseForge");
   emitProgress({ ...progressState, stage: "resolving", message: "Resolving CurseForge file..." });
   const file = await curseforgeProvider.resolveFile(projectId, payload.minecraftVersion || payload.version, payload.loader, payload.providerVersionId || payload.fileId);
-  const downloaded = await curseforgeProvider.downloadFile(file);
+  const serverFile = file.serverPackFileId
+    ? await curseforgeProvider.getFile(projectId, file.serverPackFileId)
+    : file;
+  ensureSupportedModpack(!file.serverPackFileId || serverFile?.id, "CurseForge", "server pack file could not be resolved");
+  if (!file.serverPackFileId) {
+    logMarketplaceInstallStep("CurseForge file has no explicit server pack; using selected file.", {
+      instanceId,
+      projectId,
+      fileId: file.id,
+      fileName: file.fileName,
+    });
+  } else {
+    logMarketplaceInstallStep("Resolved CurseForge server pack file.", {
+      instanceId,
+      projectId,
+      clientFileId: file.id,
+      serverPackFileId: serverFile.id,
+      fileName: serverFile.fileName,
+    });
+  }
+  const downloaded = await curseforgeProvider.downloadFile(serverFile);
   const mods = [];
   const downloads = [];
   const dedupe = createDeduper();
+  const isDedicatedServerPack = Boolean(file.serverPackFileId && serverFile.id !== file.id);
 
   if (/\.zip$/i.test(downloaded.fileName)) {
     emitProgress({ ...progressState, stage: "extracting", message: "Extracting CurseForge manifest..." });
     let manifest = null;
+    let bundledModCount = 0;
     await extractZipBuffer(downloaded.buffer, async (entryPath, content) => {
       if (entryPath === "manifest.json") {
-        manifest = JSON.parse(content.toString("utf8"));
+        logMarketplaceInstallStep("Parsing CurseForge manifest.", { instanceId, projectId, fileName: downloaded.fileName });
+        try {
+          manifest = JSON.parse(content.toString("utf8"));
+        } catch (error) {
+          throw new MarketplaceInstallError("CurseForge server pack manifest is invalid JSON.", "INVALID_MANIFEST", {
+            message: error.message,
+            fileName: downloaded.fileName,
+          });
+        }
+        if (isDedicatedServerPack) {
+          await writeBuffer(instanceId, entryPath, content, agentConfig);
+          downloads.push({ file: entryPath, provider: "curseforge-server-pack" });
+        }
         return;
       }
-      if (entryPath.startsWith("overrides/")) {
-        const target = stripArchiveRoot(entryPath);
-        if (target) {
-          await writeBuffer(instanceId, target, content, agentConfig);
-          downloads.push({ file: target, provider: "curseforge-overrides" });
+      if (isDedicatedServerPack) {
+        await writeBuffer(instanceId, entryPath, content, agentConfig);
+        downloads.push({ file: entryPath, provider: "curseforge-server-pack" });
+        if (entryPath.startsWith("mods/") && /\.jar$/i.test(entryPath)) {
+          bundledModCount += 1;
+          mods.push({ file: entryPath, provider: "curseforge-server-pack", bundled: true });
         }
+        return;
+      }
+      if (!entryPath.startsWith("overrides/")) {
+        return;
+      }
+      const target = stripArchiveRoot(entryPath);
+      if (target) {
+        await writeBuffer(instanceId, target, content, agentConfig);
+        downloads.push({ file: target, provider: "curseforge-overrides" });
       }
     });
     const manifestFiles = Array.isArray(manifest?.files) ? manifest.files : [];
     ensureSupportedModpack(manifest, "CurseForge", "server pack did not include a manifest.json");
+    if (isDedicatedServerPack && bundledModCount > 0) {
+      logMarketplaceInstallStep("Using bundled CurseForge server pack files.", {
+        instanceId,
+        projectId,
+        bundledModCount,
+        manifestFiles: manifestFiles.length,
+      });
+      return {
+        mods,
+        downloads,
+        source: { curseForgeFileId: file.id, curseForgeServerPackFileId: serverFile.id, curseForgeFileName: downloaded.fileName },
+      };
+    }
     ensureServerFiles(manifestFiles, "CurseForge");
     let current = 0;
     for (const manifestFile of manifestFiles) {
       current += 1;
-      if (!dedupe.add(`${manifestFile.projectID}:${manifestFile.fileID}`)) {
+      const manifestProjectId = manifestFile.projectID || manifestFile.projectId || manifestFile.project_id;
+      const manifestFileId = manifestFile.fileID || manifestFile.fileId || manifestFile.file_id;
+      ensureSupportedModpack(manifestProjectId && manifestFileId, "CurseForge", "manifest contains a file without projectID/fileID");
+      if (!dedupe.add(`${manifestProjectId}:${manifestFileId}`)) {
         continue;
       }
       emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${manifestFiles.length} mods...`, current, total: manifestFiles.length });
-      const modFile = await curseforgeProvider.getFile(manifestFile.projectID, manifestFile.fileID);
+      const modFile = await curseforgeProvider.getFile(manifestProjectId, manifestFileId);
       const modDownload = await curseforgeProvider.downloadFile(modFile);
       const target = `mods/${safeArchivePath(modDownload.fileName)}`;
       await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
-      mods.push({ file: target, provider: "curseforge", projectId: manifestFile.projectID, fileId: manifestFile.fileID });
+      mods.push({ file: target, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId });
       downloads.push({ file: target, provider: "curseforge" });
     }
   } else {

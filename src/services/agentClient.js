@@ -255,6 +255,20 @@ function getTransportErrorCode(error) {
   return error?.cause?.code || error?.code || null;
 }
 
+function getAgentHttpErrorMessage(status, code, payload) {
+  const payloadMessage = payload?.error?.message;
+  if (payloadMessage && payloadMessage !== "Request failed.") {
+    return payloadMessage;
+  }
+  if (code === "AGENT_TOKEN_MISSING") {
+    return "Agent token is missing on the server. Set AGENT_TOKEN in the agent environment or agent/.env, then restart the agent.";
+  }
+  if (code === "UNAUTHORIZED") {
+    return "Agent token rejected. The desktop app token does not match the server AGENT_TOKEN.";
+  }
+  return `Agent request failed with HTTP ${status}.`;
+}
+
 function parseAgentPayload(buffer, contentType) {
   if (!buffer || buffer.length === 0) {
     return null;
@@ -310,9 +324,7 @@ async function requestJson(pathname, options = {}) {
         payload && typeof payload === "object" && !Array.isArray(payload)
           ? payload.error?.code || "AGENT_HTTP_ERROR"
           : "AGENT_HTTP_ERROR";
-      const message = payload?.error?.message && payload.error.message !== "Request failed."
-        ? payload.error.message
-        : `Agent request failed with HTTP ${response.status}.`;
+      const message = getAgentHttpErrorMessage(response.status, responseErrorCode, payload);
       const error = new AgentClientError(message, {
         status: response.status,
         code: responseErrorCode,
@@ -610,9 +622,7 @@ async function requestBuffer(pathname, options = {}) {
         payload && typeof payload === "object" && !Array.isArray(payload)
           ? payload.error?.code || "AGENT_HTTP_ERROR"
           : "AGENT_HTTP_ERROR";
-      const message = payload?.error?.message && payload.error.message !== "Request failed."
-        ? payload.error.message
-        : `Agent request failed with HTTP ${response.status}.`;
+      const message = getAgentHttpErrorMessage(response.status, responseErrorCode, payload);
       const error = new AgentClientError(message, {
         status: response.status,
         code: "AGENT_HTTP_ERROR",

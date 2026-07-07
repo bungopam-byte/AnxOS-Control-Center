@@ -5313,6 +5313,8 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
     INSTANCE_NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
+    AGENT_TOKEN_MISSING: "Agent token is missing on the server. Set AGENT_TOKEN in the agent environment or agent/.env, then restart the agent.",
+    UNAUTHORIZED: "Agent token rejected. The desktop app token does not match the server AGENT_TOKEN.",
     NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_RUNNING: "Stop the instance before deleting it.",
     INSTANCE_ALREADY_RUNNING: "This instance is already running.",

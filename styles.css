@@ -3553,6 +3553,370 @@ body.is-resizing-files * {
   word-break: break-word;
 }
 
+/* Instances page premium workspace */
+.page[data-page="instances"] {
+  max-width: none;
+}
+
+.instances-shell {
+  grid-template-columns: minmax(760px, 1fr) clamp(360px, 27vw, 420px);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: calc(100vh - 132px);
+}
+
+.instances-toolbar {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  min-height: 104px;
+  padding: 18px 20px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(182, 108, 255, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(43, 20, 74, 0.82), rgba(12, 7, 22, 0.94));
+}
+
+.instances-toolbar__title h1 {
+  margin: 3px 0 6px;
+  font-size: 2.24rem;
+}
+
+.instances-summary-grid {
+  grid-column: 1;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.instances-summary-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 96px;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(145deg, rgba(34, 18, 56, 0.95), rgba(13, 8, 24, 0.96)),
+    rgba(17, 21, 31, 0.82);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.22);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.instances-summary-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 12px 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(199, 161, 255, 0.36), transparent);
+}
+
+.instances-summary-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(199, 161, 255, 0.28);
+}
+
+.instances-summary-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(199, 161, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(156, 111, 255, 0.12);
+  color: #d8c8ff;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.instances-summary-card--running .instances-summary-card__icon {
+  border-color: rgba(69, 224, 143, 0.34);
+  background: rgba(69, 224, 143, 0.1);
+  color: #8df7a7;
+}
+
+.instances-summary-card--stopped .instances-summary-card__icon {
+  border-color: rgba(245, 196, 81, 0.32);
+  background: rgba(245, 196, 81, 0.1);
+  color: #ffd166;
+}
+
+.instances-summary-card span:not(.instances-summary-card__icon) {
+  display: block;
+  color: rgba(224, 214, 239, 0.62);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.instances-summary-card strong {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 1.22rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instances-controlbar {
+  grid-column: 1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(132px, 0.26fr) minmax(150px, 0.3fr) auto auto auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background: rgba(12, 7, 22, 0.78);
+}
+
+.instances-controlbar .docker-actions {
+  grid-column: 4;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.instances-controlbar .instances-log-control {
+  min-width: 94px;
+}
+
+.instances-main-shell {
+  display: contents;
+}
+
+.instances-table-panel {
+  grid-column: 1;
+  grid-row: 4;
+  min-height: calc(100vh - 396px);
+}
+
+.instances-table-panel .docker-table-wrap {
+  min-height: calc(100vh - 396px);
+  border-radius: 8px;
+}
+
+.instances-table {
+  min-width: 1160px;
+  border-collapse: separate;
+  border-spacing: 0 6px;
+}
+
+.instances-table th {
+  padding: 10px 12px;
+  background: rgba(18, 8, 34, 0.98);
+}
+
+.instances-table td {
+  padding: 12px;
+  border-top: 1px solid rgba(185, 171, 200, 0.08);
+  border-bottom: 1px solid rgba(185, 171, 200, 0.08);
+  background: rgba(18, 10, 32, 0.52);
+}
+
+.instances-table td:first-child {
+  border-left: 1px solid rgba(185, 171, 200, 0.08);
+  border-radius: 8px 0 0 8px;
+}
+
+.instances-table td:last-child {
+  border-right: 1px solid rgba(185, 171, 200, 0.08);
+  border-radius: 0 8px 8px 0;
+}
+
+.instances-table tbody tr:hover td {
+  background: rgba(156, 111, 255, 0.1);
+}
+
+.instances-table tbody tr.is-selected td {
+  border-color: rgba(199, 161, 255, 0.24);
+  background: rgba(156, 111, 255, 0.15);
+}
+
+.instances-table tbody tr.is-selected td:first-child {
+  box-shadow: inset 3px 0 0 rgba(199, 161, 255, 0.9);
+}
+
+.instance-name-cell {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.instance-name-cell strong {
+  font-size: 0.94rem;
+}
+
+.instance-metric-cell {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid rgba(185, 171, 200, 0.13);
+  border-radius: 999px;
+  background: rgba(8, 10, 15, 0.34);
+  color: var(--text);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.instance-metric-cell.is-muted {
+  color: rgba(224, 214, 239, 0.48);
+}
+
+.instance-tags-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: rgba(224, 214, 239, 0.5);
+  font-size: 0.78rem;
+}
+
+.instance-tags-cell span {
+  max-width: 94px;
+  padding: 3px 7px;
+  overflow: hidden;
+  border: 1px solid rgba(199, 161, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(156, 111, 255, 0.08);
+  color: rgba(224, 214, 239, 0.78);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instance-row-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.instance-row-actions .inline-action {
+  min-height: 28px;
+  padding: 5px 8px;
+  font-size: 0.72rem;
+}
+
+.instances-details-panel {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  min-height: auto;
+  border-radius: 8px;
+}
+
+.instances-inspector-sections {
+  display: none;
+}
+
+.instance-workspace-card {
+  grid-column: 2;
+  grid-row: 4;
+  min-height: calc(100vh - 396px);
+  border-radius: 8px;
+}
+
+.instance-workspace-card__header {
+  display: none;
+}
+
+.instance-tab-panel {
+  padding: 14px;
+}
+
+.instance-tab-panel.is-active {
+  align-content: start;
+}
+
+.instance-workspace-hero {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 8px;
+}
+
+.instance-workspace-meta {
+  justify-items: start;
+  width: 100%;
+}
+
+.instance-overview-grid,
+.instance-overview-grid--wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.instance-overview-list div {
+  grid-template-columns: minmax(92px, 0.44fr) minmax(0, 1fr);
+}
+
+.instance-console-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.instance-console-toolbar input,
+.instance-console-toolbar select {
+  min-width: 0;
+  width: 100%;
+}
+
+.instance-console-viewer {
+  min-height: 360px;
+  max-height: calc(100vh - 560px);
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background: #070a10;
+}
+
+.instance-log-viewer ol {
+  padding: 12px;
+  font-size: 0.76rem;
+}
+
+.instance-log-viewer li {
+  grid-template-columns: 88px 46px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.instance-console-input {
+  position: sticky;
+  bottom: 0;
+  padding-top: 8px;
+  background: linear-gradient(180deg, transparent, rgba(14, 8, 26, 0.98) 28%);
+}
+
+.instance-console-input input {
+  min-width: 0;
+  flex: 1 1 160px;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+}
+
+.instance-files-grid,
+.instance-config-form,
+.instance-advanced-panel,
+.instance-minecraft-summary,
+.instance-minecraft-settings {
+  grid-template-columns: 1fr;
+}
+
+.instance-files-grid {
+  min-height: 0;
+}
+
+.instance-file-editor textarea,
+.instance-raw-json {
+  min-height: 260px;
+}
+
 .instance-state {
   display: inline-flex;
   align-items: center;
@@ -4254,6 +4618,86 @@ body.is-resizing-files * {
 .instance-log-stream {
   text-transform: uppercase;
   font-weight: 700;
+}
+
+.page[data-page="instances"] .instances-main-shell {
+  display: contents;
+}
+
+.page[data-page="instances"] .instance-workspace-card {
+  grid-column: 2;
+  grid-row: 4;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: calc(100vh - 396px);
+  border-radius: 8px;
+}
+
+.page[data-page="instances"] .instance-workspace-card__header,
+.page[data-page="instances"] .instances-inspector-sections {
+  display: none;
+}
+
+.page[data-page="instances"] .instance-tab-panel {
+  padding: 14px;
+}
+
+.page[data-page="instances"] .instance-overview-grid,
+.page[data-page="instances"] .instance-overview-grid--wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page[data-page="instances"] .instance-console-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.page[data-page="instances"] .instance-console-toolbar input,
+.page[data-page="instances"] .instance-console-toolbar select {
+  min-width: 0;
+  width: 100%;
+}
+
+.page[data-page="instances"] .instance-console-viewer {
+  min-height: 360px;
+  max-height: calc(100vh - 560px);
+  border: 1px solid rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background: #070a10;
+}
+
+.page[data-page="instances"] .instance-log-viewer ol {
+  padding: 12px;
+  font-size: 0.76rem;
+}
+
+.page[data-page="instances"] .instance-log-viewer li {
+  grid-template-columns: 88px 46px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.page[data-page="instances"] .instance-console-input {
+  position: sticky;
+  bottom: 0;
+  padding-top: 8px;
+  background: linear-gradient(180deg, transparent, rgba(14, 8, 26, 0.98) 28%);
+}
+
+.page[data-page="instances"] .instance-files-grid,
+.page[data-page="instances"] .instance-config-form,
+.page[data-page="instances"] .instance-advanced-panel,
+.page[data-page="instances"] .instance-minecraft-summary,
+.page[data-page="instances"] .instance-minecraft-settings {
+  grid-template-columns: 1fr;
+}
+
+.page[data-page="instances"] .instance-files-grid {
+  min-height: 0;
+}
+
+.page[data-page="instances"] .instance-file-editor textarea,
+.page[data-page="instances"] .instance-raw-json {
+  min-height: 260px;
 }
 
 .coolpals-shell {

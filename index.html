@@ -1033,9 +1033,59 @@
                 <h1>Instances</h1>
                 <p class="lede">Create, monitor, and control long-running services managed by the Debian agent.</p>
               </div>
+            </div>
+
+            <div class="instances-summary-grid" aria-label="Instance summary">
+              <article class="instances-summary-card instances-summary-card--running">
+                <span class="instances-summary-card__icon">▶</span>
+                <div>
+                  <span>Running</span>
+                  <strong data-field="instancesRunning">Unavailable</strong>
+                </div>
+              </article>
+              <article class="instances-summary-card instances-summary-card--stopped">
+                <span class="instances-summary-card__icon">■</span>
+                <div>
+                  <span>Stopped</span>
+                  <strong data-field="instancesStopped">Unavailable</strong>
+                </div>
+              </article>
+              <article class="instances-summary-card">
+                <span class="instances-summary-card__icon">CPU</span>
+                <div>
+                  <span>Total CPU</span>
+                  <strong data-field="instancesTotalCpu">Unavailable</strong>
+                </div>
+              </article>
+              <article class="instances-summary-card">
+                <span class="instances-summary-card__icon">RAM</span>
+                <div>
+                  <span>Total RAM</span>
+                  <strong data-field="instancesTotalRam">Unavailable</strong>
+                </div>
+              </article>
+              <article class="instances-summary-card">
+                <span class="instances-summary-card__icon">#</span>
+                <div>
+                  <span>Total Instances</span>
+                  <strong data-field="instancesTotal">Unavailable</strong>
+                </div>
+              </article>
+            </div>
+
+            <div class="instances-controlbar" aria-label="Instances controls">
               <label class="docker-search">
                 <span>Search instances</span>
                 <input type="search" placeholder="Search by name, ID, type, or tag" data-instances-search disabled>
+              </label>
+              <label class="docker-filter">
+                <span>Filter</span>
+                <select data-instances-filter disabled>
+                  <option value="all">All statuses</option>
+                  <option value="running">Running</option>
+                  <option value="stopped">Stopped</option>
+                  <option value="failed">Failed</option>
+                </select>
               </label>
               <label class="docker-filter">
                 <span>Node</span>
@@ -1043,11 +1093,12 @@
               </label>
               <div class="docker-actions" aria-label="Instance actions">
                 <button class="inline-action" type="button" data-instance-action="refresh" disabled>Refresh</button>
+                <button class="inline-action" type="button" data-instance-action="start" disabled>Start</button>
+                <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
+                <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
+                <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Remove</button>
+                <button class="inline-action" type="button" data-instance-action="view-logs" disabled>Logs</button>
                 <button class="inline-action" type="button" data-instance-action="create">Create Instance</button>
-              </div>
-              <div class="instances-toolbar__future" aria-label="Future filters">
-                <span data-field="instancesTotal">Unavailable</span>
-                <span data-field="instancesRunning">running unavailable</span>
               </div>
               <label class="docker-filter instances-log-control">
                 <span>Logs</span>
@@ -1110,12 +1161,15 @@
                   <table class="docker-table instances-table">
                     <thead>
                       <tr>
-                        <th scope="col">Name / ID</th>
+                        <th scope="col">Name</th>
                         <th scope="col">Type</th>
-                        <th scope="col">Version</th>
+                        <th scope="col">Status</th>
                         <th scope="col">IP:Port</th>
-                        <th scope="col">State</th>
-                        <th scope="col">PID</th>
+                        <th scope="col">CPU</th>
+                        <th scope="col">RAM</th>
+                        <th scope="col">Uptime</th>
+                        <th scope="col">Tags</th>
+                        <th scope="col">Actions</th>
                       </tr>
                     </thead>
                     <tbody data-instances-list></tbody>

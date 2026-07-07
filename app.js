@@ -64,15 +64,18 @@ const instancesEmpty = document.querySelector("[data-instances-empty]");
 const instancesDetailFields = document.querySelectorAll("[data-instance-detail]");
 const instanceAddressCopyButton = document.querySelector("[data-instance-address-copy]");
 const instancesSearchInput = document.querySelector("[data-instances-search]");
+const instancesFilterSelect = document.querySelector("[data-instances-filter]");
 const instancesLogStreamSelect = document.querySelector("[data-instances-log-stream]");
 const instancesLogLimitSelect = document.querySelector("[data-instances-log-limit]");
 const instanceActionButtons = document.querySelectorAll("[data-instance-action]");
 const instancesRefreshButtons = document.querySelectorAll('[data-instance-action="refresh"]');
 const instancesCreateToggleButton = document.querySelector('[data-instance-action="create"]');
-const instancesStartButton = document.querySelector('[data-instance-action="start"]');
-const instancesStopButton = document.querySelector('[data-instance-action="stop"]');
-const instancesRestartButton = document.querySelector('[data-instance-action="restart"]');
+const instancesStartButtons = document.querySelectorAll('[data-instance-action="start"]');
+const instancesStopButtons = document.querySelectorAll('[data-instance-action="stop"]');
+const instancesRestartButtons = document.querySelectorAll('[data-instance-action="restart"]');
 const instancesDeleteButtons = document.querySelectorAll('[data-instance-action="delete"]');
+const instancesDownloadLogButtons = document.querySelectorAll('[data-instance-action="download-logs"]');
+const instancesViewLogButtons = document.querySelectorAll('[data-instance-action="view-logs"]');
 const instanceCreateForm = document.querySelector("[data-instance-create-form]");
 const instanceCreateSubmitButton = document.querySelector("[data-instance-create-submit]");
 const instanceFormInputs = document.querySelectorAll("[data-instance-form]");
@@ -3503,6 +3506,41 @@ function getInstanceMetrics(instanceId = selectedInstanceId) {
   return latestInstanceMetrics?.id === instanceId ? latestInstanceMetrics : null;
 }
 
+function getInstanceRowMetrics(instance) {
+  if (!instance?.id) {
+    return null;
+  }
+
+  const selectedMetrics = getInstanceMetrics(instance.id);
+  if (selectedMetrics) {
+    return selectedMetrics;
+  }
+
+  const embeddedMetrics = instance.metrics || instance.stats || null;
+  if (embeddedMetrics) {
+    return embeddedMetrics;
+  }
+
+  const directMetrics = {
+    id: instance.id,
+    cpuPercent: instance.cpuPercent,
+    cpuSeconds: instance.cpuSeconds,
+    memoryRssBytes: instance.memoryRssBytes,
+    diskBytes: instance.diskBytes,
+    uptimeSeconds: instance.uptimeSeconds,
+  };
+  const hasDirectMetric = Object.values(directMetrics).some((value) => Number.isFinite(value));
+  return hasDirectMetric ? directMetrics : null;
+}
+
+function formatInstanceCpuPercent(metrics) {
+  if (!metrics) {
+    return "Unavailable";
+  }
+
+  return Number.isFinite(metrics.cpuPercent) ? `${metrics.cpuPercent.toFixed(1)}%` : "CPU warming";
+}
+
 function formatInstanceCpu(metrics) {
   if (!metrics) {
     return "Unavailable";
@@ -3515,6 +3553,45 @@ function formatInstanceCpu(metrics) {
 
 function formatInstanceMemory(metrics) {
   return Number.isFinite(metrics?.memoryRssBytes) ? formatBytes(metrics.memoryRssBytes) : "Unavailable";
+}
+
+function parseInstanceMemoryLimitBytes(instance) {
+  const memory = parseMemoryFromArgs(instance);
+  const match = String(memory || "").trim().match(/^([\d.]+)\s*([kmgt]?)(?:i?b)?$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const amount = Number.parseFloat(match[1]);
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  const unit = match[2].toLowerCase();
+  const multiplier = {
+    "": 1,
+    k: 1024,
+    m: 1024 ** 2,
+    g: 1024 ** 3,
+    t: 1024 ** 4,
+  }[unit];
+
+  return amount * multiplier;
+}
+
+function formatInstanceMemoryUsage(instance, metrics) {
+  if (!Number.isFinite(metrics?.memoryRssBytes)) {
+    return "Unavailable";
+  }
+
+  const limitBytes = parseInstanceMemoryLimitBytes(instance);
+  if (!Number.isFinite(limitBytes) || limitBytes <= 0) {
+    return formatBytes(metrics.memoryRssBytes);
+  }
+
+  const percent = Math.max(0, Math.min(999, (metrics.memoryRssBytes / limitBytes) * 100));
+  return `${formatBytes(metrics.memoryRssBytes)} / ${formatBytes(limitBytes)} (${percent.toFixed(0)}%)`;
 }
 
 function formatInstanceDisk(metrics) {
@@ -4555,6 +4632,10 @@ function updateInstanceActionButtons() {
     instancesSearchInput.disabled = !hasInstancesBridge || getInstances().length === 0;
   }
 
+  if (instancesFilterSelect) {
+    instancesFilterSelect.disabled = !hasInstancesBridge || getInstances().length === 0;
+  }
+
   if (instancesLogStreamSelect) {
     instancesLogStreamSelect.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
   }
@@ -4563,17 +4644,25 @@ function updateInstanceActionButtons() {
     instancesLogLimitSelect.disabled = !selectedInstance || !hasInstancesBridge || instanceLogsRequestInFlight;
   }
 
-  if (instancesStartButton) {
-    instancesStartButton.disabled = busy || !hasInstancesBridge || !canStartInstance(selectedInstance);
-  }
+  instancesStartButtons.forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !canStartInstance(selectedInstance);
+  });
 
-  if (instancesStopButton) {
-    instancesStopButton.disabled = busy || !hasInstancesBridge || !canStopInstance(selectedInstance);
-  }
+  instancesStopButtons.forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !canStopInstance(selectedInstance);
+  });
 
-  if (instancesRestartButton) {
-    instancesRestartButton.disabled = busy || !hasInstancesBridge || !canRestartInstance(selectedInstance);
-  }
+  instancesRestartButtons.forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !canRestartInstance(selectedInstance);
+  });
+
+  instancesDownloadLogButtons.forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance;
+  });
+
+  instancesViewLogButtons.forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance;
+  });
 
   instancesDeleteButtons.forEach((button) => {
     if (!button.dataset.defaultLabel) {
@@ -4583,6 +4672,9 @@ function updateInstanceActionButtons() {
     button.textContent = instanceActionRequestInFlight ? "Working..." : button.dataset.defaultLabel;
   });
 
+  document.querySelectorAll("[data-instance-row-action]").forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || button.dataset.instanceRowDisabled === "true";
+  });
 }
 
 function setInstancesLoading(isLoading) {
@@ -4687,6 +4779,71 @@ function buildInstanceStatePill(instance) {
   return pill;
 }
 
+function buildInstanceMetricCell(value) {
+  const wrapper = document.createElement("span");
+  wrapper.className = value === "Unavailable" ? "instance-metric-cell is-muted" : "instance-metric-cell";
+  wrapper.textContent = value;
+  return wrapper;
+}
+
+function buildInstanceTagsCell(instance) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "instance-tags-cell";
+  const tags = Array.isArray(instance?.tags) ? instance.tags.filter(Boolean) : [];
+
+  if (tags.length === 0) {
+    wrapper.textContent = "—";
+    return wrapper;
+  }
+
+  tags.slice(0, 3).forEach((tag) => {
+    const badge = document.createElement("span");
+    badge.textContent = tag;
+    wrapper.appendChild(badge);
+  });
+
+  if (tags.length > 3) {
+    const more = document.createElement("span");
+    more.textContent = `+${tags.length - 3}`;
+    wrapper.appendChild(more);
+  }
+
+  return wrapper;
+}
+
+function buildInstanceActionCell(instance) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "instance-row-actions";
+  const actions = [
+    { label: "Start", action: "start", disabled: !canStartInstance(instance) },
+    { label: "Stop", action: "stop", disabled: !canStopInstance(instance) },
+    { label: "Restart", action: "restart", disabled: !canRestartInstance(instance) },
+    { label: "Logs", action: "logs", disabled: false },
+  ];
+
+  actions.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "inline-action";
+    button.dataset.instanceRowAction = item.action;
+    button.dataset.instanceRowDisabled = item.disabled ? "true" : "false";
+    button.textContent = item.label;
+    button.disabled = item.disabled;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectInstance(instance.id);
+      if (item.action === "logs") {
+        viewSelectedInstanceLogs();
+        return;
+      }
+      runInstanceAction(item.action);
+    });
+    wrapper.appendChild(button);
+  });
+
+  return wrapper;
+}
+
 function renderInstanceRows(instances) {
   clearInstanceRows();
 
@@ -4697,6 +4854,7 @@ function renderInstanceRows(instances) {
   instances.forEach((instance) => {
     const row = document.createElement("tr");
     row.dataset.instanceId = instance.id || "";
+    row.dataset.instanceState = getInstanceStateClass(instance?.state);
     row.tabIndex = 0;
     row.addEventListener("click", () => selectInstance(instance.id));
     row.addEventListener("keydown", (event) => {
@@ -4706,16 +4864,43 @@ function renderInstanceRows(instances) {
       }
     });
 
+    const metrics = getInstanceRowMetrics(instance);
     addInstanceCell(row, buildInstanceNameCell(instance));
     addInstanceCell(row, formatInstanceType(instance.type));
-    addInstanceCell(row, buildInstanceVersionCell(instance));
-    addInstanceCell(row, buildInstanceAddressCell(instance));
     addInstanceCell(row, buildInstanceStatePill(instance));
-    addInstanceCell(row, formatInstanceValue(instance.pid));
+    addInstanceCell(row, buildInstanceAddressCell(instance));
+    addInstanceCell(row, buildInstanceMetricCell(formatInstanceCpuPercent(metrics)));
+    addInstanceCell(row, buildInstanceMetricCell(formatInstanceMemoryUsage(instance, metrics)));
+    addInstanceCell(row, buildInstanceMetricCell(formatDuration(metrics?.uptimeSeconds)));
+    addInstanceCell(row, buildInstanceTagsCell(instance));
+    addInstanceCell(row, buildInstanceActionCell(instance));
     instancesList.appendChild(row);
   });
 
   filterInstanceRows();
+}
+
+function renderInstanceSummary(instances) {
+  const runningInstances = instances.filter(isInstanceRunning);
+  const stoppedInstances = instances.filter((instance) => !isInstanceRunning(instance));
+  const aggregateMetrics = instances.reduce((totals, instance) => {
+    const metrics = getInstanceRowMetrics(instance);
+    if (Number.isFinite(metrics?.cpuPercent)) {
+      totals.cpu += metrics.cpuPercent;
+      totals.cpuCount += 1;
+    }
+    if (Number.isFinite(metrics?.memoryRssBytes)) {
+      totals.memory += metrics.memoryRssBytes;
+      totals.memoryCount += 1;
+    }
+    return totals;
+  }, { cpu: 0, cpuCount: 0, memory: 0, memoryCount: 0 });
+
+  setField("instancesTotal", String(instances.length));
+  setField("instancesRunning", String(runningInstances.length));
+  setField("instancesStopped", String(stoppedInstances.length));
+  setField("instancesTotalCpu", aggregateMetrics.cpuCount > 0 ? `${aggregateMetrics.cpu.toFixed(1)}%` : "Unavailable");
+  setField("instancesTotalRam", aggregateMetrics.memoryCount > 0 ? formatBytes(aggregateMetrics.memory) : "Unavailable");
 }
 
 function setInstanceDetails(instance = null) {
@@ -4870,8 +5055,7 @@ function renderInstancesSnapshot(snapshot) {
 
   selectedInstanceId = selected?.id || null;
 
-  setField("instancesTotal", String(instances.length));
-  setField("instancesRunning", String(instances.filter(isInstanceRunning).length));
+  renderInstanceSummary(instances);
   setField("instancesLoadingMessage", "Checking agent instance status...");
   renderInstanceRows(instances);
   selectInstance(selectedInstanceId, { refreshMetrics: false });
@@ -4889,6 +5073,9 @@ function renderInstancesUnavailable(message = "Instance manager unavailable.") {
   storeLastInstanceId(null);
   setField("instancesTotal", "Unavailable");
   setField("instancesRunning", "Unavailable");
+  setField("instancesStopped", "Unavailable");
+  setField("instancesTotalCpu", "Unavailable");
+  setField("instancesTotalRam", "Unavailable");
   setField("instancesSelectedCpu", "Unavailable");
   setField("instancesSelectedMemory", "Unavailable");
   setInstancesLoading(false);
@@ -4906,14 +5093,26 @@ function renderInstancesUnavailable(message = "Instance manager unavailable.") {
 
 function filterInstanceRows() {
   const query = (instancesSearchInput?.value || "").trim().toLowerCase();
+  const statusFilter = (instancesFilterSelect?.value || "all").toLowerCase();
 
   if (!instancesList) {
     return;
   }
 
   [...instancesList.querySelectorAll("tr")].forEach((row) => {
-    row.hidden = query.length > 0 && !row.textContent.toLowerCase().includes(query);
+    const matchesQuery = query.length === 0 || row.textContent.toLowerCase().includes(query);
+    const matchesStatus = statusFilter === "all" || row.dataset.instanceState === statusFilter;
+    row.hidden = !matchesQuery || !matchesStatus;
   });
+}
+
+function viewSelectedInstanceLogs() {
+  if (!selectedInstanceId) {
+    return;
+  }
+
+  setActiveInstanceTab("console");
+  refreshInstanceLogs({ silent: true });
 }
 
 function clearInstanceLogs(message = "Select an instance and refresh logs.") {
@@ -6459,7 +6658,9 @@ async function refreshSelectedInstanceMetrics() {
 
   try {
     latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(requestInstanceId));
-    renderInstanceRows(getInstances());
+    const instances = getInstances();
+    renderInstanceSummary(instances);
+    renderInstanceRows(instances);
     selectInstance(requestInstanceId, { refreshMetrics: false });
   } catch (error) {
     latestInstanceMetrics = null;
@@ -11992,6 +12193,7 @@ document.querySelectorAll("[data-instance-backup-action]").forEach((button) => {
   button.addEventListener("click", () => handleInstanceBackupAction(button.dataset.instanceBackupAction));
 });
 instancesSearchInput?.addEventListener("input", debounce(filterInstanceRows, 120));
+instancesFilterSelect?.addEventListener("change", filterInstanceRows);
 instancesLogStreamSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesLogLimitSelect?.addEventListener("change", () => refreshInstanceLogs());
 instancesRefreshButtons.forEach((button) => {
@@ -11999,16 +12201,27 @@ instancesRefreshButtons.forEach((button) => {
 });
 instancesCreateToggleButton?.addEventListener("click", () => setInstanceCreateFormVisible(!instanceCreateFormVisible));
 document.querySelector('[data-instance-action="cancel-create"]')?.addEventListener("click", () => setInstanceCreateFormVisible(false));
-instancesStartButton?.addEventListener("click", () => runInstanceAction("start"));
-instancesStopButton?.addEventListener("click", () => runInstanceAction("stop"));
-instancesRestartButton?.addEventListener("click", () => runInstanceAction("restart"));
+instancesStartButtons.forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("start"));
+});
+instancesStopButtons.forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("stop"));
+});
+instancesRestartButtons.forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("restart"));
+});
 instancesDeleteButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("delete"));
 });
 document.querySelector('[data-instance-action="force-kill"]')?.addEventListener("click", () => runInstanceAction("forceKill"));
 document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);
 document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);
-document.querySelector('[data-instance-action="download-logs"]')?.addEventListener("click", downloadInstanceLogs);
+instancesDownloadLogButtons.forEach((button) => {
+  button.addEventListener("click", downloadInstanceLogs);
+});
+instancesViewLogButtons.forEach((button) => {
+  button.addEventListener("click", viewSelectedInstanceLogs);
+});
 instanceConsoleSearchInput?.addEventListener("input", syncConsoleLogSearch);
 instanceConsoleFilterSelect?.addEventListener("change", syncConsoleLogSearch);
 instanceConsoleForm?.addEventListener("submit", sendInstanceConsoleCommand);

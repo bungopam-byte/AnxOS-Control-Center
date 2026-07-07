@@ -134,6 +134,13 @@ const marketplaceSearchInput = document.querySelector("[data-marketplace-search]
 const marketplaceCategories = document.querySelector("[data-marketplace-categories]");
 const marketplaceRefreshButton = document.querySelector("[data-marketplace-refresh]");
 const marketplaceGrid = document.querySelector("[data-marketplace-grid]");
+const marketplaceProviderBrowser = document.querySelector("[data-marketplace-provider-browser]");
+const marketplaceProviderStatus = document.querySelector("[data-marketplace-provider-status]");
+const marketplaceProviderTabs = document.querySelector("[data-marketplace-provider-tabs]");
+const marketplaceProviderModes = document.querySelector("[data-marketplace-provider-modes]");
+const marketplaceProviderMinecraftVersion = document.querySelector('[data-marketplace-provider-filter="minecraftVersion"]');
+const marketplaceProviderLoader = document.querySelector('[data-marketplace-provider-filter="loader"]');
+const marketplaceLoadMoreButton = document.querySelector("[data-marketplace-load-more]");
 const marketplaceLoading = document.querySelector("[data-marketplace-loading]");
 const marketplaceEmpty = document.querySelector("[data-marketplace-empty]");
 const marketplaceSelectedName = document.querySelector("[data-marketplace-selected-name]");
@@ -348,6 +355,15 @@ let marketplaceSelectedTemplateId = null;
 let marketplaceActiveCategory = "All";
 let marketplaceInstallProgressEvents = [];
 let unsubscribeMarketplaceInstallProgress = null;
+let marketplaceProviderActive = "modrinth";
+let marketplaceProviderMode = "featured";
+let marketplaceProviderResults = [];
+let marketplaceProviderOffset = 0;
+let marketplaceProviderHasMore = false;
+let marketplaceProviderRequestInFlight = false;
+let marketplaceProviderRequestId = 0;
+const marketplaceProviderTemplates = new Map();
+const MARKETPLACE_PROVIDER_PAGE_SIZE = 24;
 const MARKETPLACE_VERSION_FILTERS = ["recommended", "releases", "snapshots", "legacy", "all"];
 const MARKETPLACE_VERSION_FILTER_LABELS = {
   recommended: "Recommended",
@@ -627,6 +643,7 @@ function getDesktopApiState() {
       typeof api?.marketplace?.installPack === "function" &&
       typeof api?.marketplace?.searchProviderPacks === "function" &&
       typeof api?.marketplace?.getProviderPackVersions === "function" &&
+      typeof api?.marketplace?.getProviderPackDetails === "function" &&
       typeof api?.marketplace?.onInstallProgress === "function",
     hasInstances:
       typeof api?.instances?.list === "function" &&
@@ -5406,6 +5423,11 @@ function setMarketplaceMessage(message, tone = "neutral") {
 }
 
 function getMarketplaceTemplates() {
+  const templates = Array.isArray(marketplaceCatalog.templates) ? marketplaceCatalog.templates : [];
+  return [...templates, ...marketplaceProviderTemplates.values()];
+}
+
+function getStaticMarketplaceTemplates() {
   return Array.isArray(marketplaceCatalog.templates) ? marketplaceCatalog.templates : [];
 }
 
@@ -5429,7 +5451,8 @@ function renderMarketplaceCategories() {
   }
 
   marketplaceCategories.replaceChildren();
-  const categories = ["All", ...(Array.isArray(marketplaceCatalog.categories) ? marketplaceCatalog.categories : [])];
+  const categories = ["All", ...(Array.isArray(marketplaceCatalog.categories) ? marketplaceCatalog.categories : []), "Modpacks"]
+    .filter((category, index, source) => source.indexOf(category) === index);
 
   categories.forEach((category) => {
     const button = document.createElement("button");
@@ -5441,6 +5464,9 @@ function renderMarketplaceCategories() {
       marketplaceActiveCategory = category;
       renderMarketplaceCategories();
       renderMarketplaceTemplates();
+      if (category === "Modpacks" && marketplaceProviderResults.length === 0) {
+        loadMarketplaceProviderPacks({ reset: true });
+      }
     });
     marketplaceCategories.append(button);
   });
@@ -5448,7 +5474,7 @@ function renderMarketplaceCategories() {
 
 function getFilteredMarketplaceTemplates() {
   const query = (marketplaceSearchInput?.value || "").trim().toLowerCase();
-  return getMarketplaceTemplates().filter((template) => {
+  return getStaticMarketplaceTemplates().filter((template) => {
     const matchesCategory = marketplaceActiveCategory === "All" || template.category === marketplaceActiveCategory;
     const haystack = [
       template.displayName,
@@ -5464,15 +5490,22 @@ function getFilteredMarketplaceTemplates() {
   });
 }
 
+function isMarketplaceProviderBrowserActive() {
+  return marketplaceActiveCategory === "Modpacks";
+}
+
 function renderMarketplaceTemplates() {
   if (!marketplaceGrid) {
     return;
   }
 
+  renderMarketplaceProviderControls();
   marketplaceGrid.replaceChildren();
-  const templates = getFilteredMarketplaceTemplates();
+  const templates = isMarketplaceProviderBrowserActive()
+    ? marketplaceProviderResults.map(registerProviderMarketplaceTemplate)
+    : getFilteredMarketplaceTemplates();
   if (marketplaceEmpty) {
-    marketplaceEmpty.hidden = marketplaceRequestInFlight || templates.length > 0;
+    marketplaceEmpty.hidden = marketplaceRequestInFlight || marketplaceProviderRequestInFlight || templates.length > 0;
   }
 
   templates.forEach((template) => {
@@ -5483,7 +5516,14 @@ function renderMarketplaceTemplates() {
 
     const icon = document.createElement("span");
     icon.className = "marketplace-card__icon";
-    icon.textContent = template.icon || "APP";
+    if (template.iconUrl) {
+      const image = document.createElement("img");
+      image.src = template.iconUrl;
+      image.alt = "";
+      icon.append(image);
+    } else {
+      icon.textContent = template.icon || "APP";
+    }
 
     const body = document.createElement("div");
     body.className = "marketplace-card__body";
@@ -5493,7 +5533,8 @@ function renderMarketplaceTemplates() {
     description.textContent = template.description || "No description provided.";
     const meta = document.createElement("span");
     meta.className = "marketplace-card__meta";
-    meta.textContent = `${template.author || "Unknown"} · v${template.version || "0.0.0"} · ${template.category || "Uncategorized"}`;
+    const downloads = template.category === "Modpacks" ? ` · ${formatProviderDownloads(template.downloads)} downloads` : "";
+    meta.textContent = `${template.author || "Unknown"} · v${template.version || "0.0.0"} · ${template.category || "Uncategorized"}${downloads}`;
     const badges = document.createElement("div");
     badges.className = "marketplace-card__badges";
     [
@@ -5527,6 +5568,59 @@ function renderMarketplaceTemplates() {
   });
 }
 
+async function loadMarketplaceProviderPacks({ reset = false } = {}) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasMarketplaceProviderInstall || marketplaceProviderRequestInFlight) {
+    if (!desktopApiState.hasMarketplaceProviderInstall) {
+      setMarketplaceProviderStatus("Provider browser is unavailable in this build.", "warning");
+    }
+    return;
+  }
+
+  marketplaceProviderRequestInFlight = true;
+  marketplaceProviderRequestId += 1;
+  const requestId = marketplaceProviderRequestId;
+  if (reset) {
+    marketplaceProviderOffset = 0;
+    marketplaceProviderHasMore = false;
+    marketplaceProviderResults = [];
+  }
+  renderMarketplaceProviderControls();
+  setMarketplaceProviderStatus(`Loading ${formatMarketplaceProviderLabel({ provider: marketplaceProviderActive })} modpacks...`);
+  if (marketplaceLoading) {
+    marketplaceLoading.hidden = false;
+  }
+
+  try {
+    const payload = getMarketplaceProviderQueryPayload({ reset });
+    const result = await desktopApiState.api.marketplace.searchProviderPacks(payload);
+    if (requestId !== marketplaceProviderRequestId) {
+      return;
+    }
+    const results = Array.isArray(result?.results) ? result.results : [];
+    marketplaceProviderResults = reset ? results : [...marketplaceProviderResults, ...results];
+    marketplaceProviderOffset = Number(result?.nextOffset) || marketplaceProviderResults.length;
+    marketplaceProviderHasMore = Boolean(result?.hasMore);
+    setMarketplaceProviderStatus(`${marketplaceProviderResults.length} ${formatMarketplaceProviderLabel({ provider: marketplaceProviderActive })} modpacks loaded.`, "success");
+    renderMarketplaceTemplates();
+  } catch (error) {
+    if (requestId !== marketplaceProviderRequestId) {
+      return;
+    }
+    setMarketplaceProviderStatus(error?.message || "Provider search failed.", "error");
+    showToast(error?.message || "Provider search failed.");
+    renderMarketplaceTemplates();
+  } finally {
+    if (requestId === marketplaceProviderRequestId) {
+      marketplaceProviderRequestInFlight = false;
+      if (marketplaceLoading) {
+        marketplaceLoading.hidden = true;
+      }
+      renderMarketplaceProviderControls();
+    }
+  }
+}
+
 function setMarketplaceInstallState(label, status = "ready") {
   if (marketplaceInstallState) {
     marketplaceInstallState.textContent = label;
@@ -5535,7 +5629,7 @@ function setMarketplaceInstallState(label, status = "ready") {
 }
 
 function isMinecraftMarketplaceTemplate(template) {
-  return template?.category === "Minecraft";
+  return template?.category === "Minecraft" || template?.game === "minecraft" || template?.type === "modpack";
 }
 
 function getMarketplaceProvider(template) {
@@ -5555,6 +5649,98 @@ function formatMarketplaceProviderLabel(template) {
 
 function formatMarketplaceLoaderLabel(template) {
   return String(template?.loader || template?.serverType || template?.instanceType || "").replace(/^minecraft-/i, "") || "";
+}
+
+function getMarketplaceServerTypeOptionValue(value, fallback = "Paper") {
+  const target = String(value || "").toLowerCase();
+  const options = [...getMarketplaceField("serverType")?.options || []];
+  return options.find((option) => option.value.toLowerCase() === target || option.textContent.toLowerCase() === target)?.value || fallback;
+}
+
+function normalizeProviderLoader(project = {}) {
+  const loaders = Array.isArray(project.loaders) ? project.loaders : [];
+  return loaders.find((loader) => ["fabric", "forge", "neoforge", "quilt"].includes(String(loader).toLowerCase())) || "";
+}
+
+function normalizeProviderMinecraftVersion(project = {}) {
+  const versions = Array.isArray(project.minecraftVersions) ? project.minecraftVersions : [];
+  return versions.find((version) => /^1\.\d+(?:\.\d+)?$/.test(String(version))) || versions[0] || "";
+}
+
+function buildProviderMarketplaceTemplate(project = {}) {
+  const provider = getMarketplaceProvider(project);
+  const providerProjectId = project.providerProjectId || project.id || project.slug;
+  const id = `${provider}-${providerProjectId}`;
+  return {
+    id,
+    displayName: project.name || project.title || project.slug || providerProjectId,
+    description: project.description || "Provider modpack.",
+    icon: project.iconUrl ? "" : provider === "curseforge" ? "CF" : "MR",
+    iconUrl: project.iconUrl || "",
+    author: project.author || project.authors || provider,
+    version: "provider",
+    category: "Modpacks",
+    type: "modpack",
+    game: "minecraft",
+    provider,
+    providerProjectId,
+    minecraftVersion: normalizeProviderMinecraftVersion(project),
+    loader: normalizeProviderLoader(project),
+    loaders: Array.isArray(project.loaders) ? project.loaders : [],
+    minecraftVersions: Array.isArray(project.minecraftVersions) ? project.minecraftVersions : [],
+    downloads: project.downloads || project.downloadCount || 0,
+    updatedAt: project.updatedAt || project.dateModified || "",
+    serverCapable: true,
+    defaultRam: "4G",
+    defaultPorts: [25565],
+  };
+}
+
+function registerProviderMarketplaceTemplate(project = {}) {
+  const template = buildProviderMarketplaceTemplate(project);
+  marketplaceProviderTemplates.set(template.id, template);
+  return template;
+}
+
+function formatProviderDownloads(value) {
+  const count = Number(value) || 0;
+  if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+  if (count >= 1000) return `${Math.round(count / 1000)}K`;
+  return count ? String(count) : "0";
+}
+
+function setMarketplaceProviderStatus(message, tone = "muted") {
+  if (!marketplaceProviderStatus) {
+    return;
+  }
+  marketplaceProviderStatus.textContent = message;
+  marketplaceProviderStatus.dataset.tone = tone;
+}
+
+function renderMarketplaceProviderControls() {
+  marketplaceProviderBrowser?.toggleAttribute("hidden", !isMarketplaceProviderBrowserActive());
+  marketplaceLoadMoreButton?.toggleAttribute("hidden", !isMarketplaceProviderBrowserActive() || !marketplaceProviderHasMore);
+  marketplaceProviderTabs?.querySelectorAll("[data-marketplace-provider]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.marketplaceProvider === marketplaceProviderActive);
+  });
+  marketplaceProviderModes?.querySelectorAll("[data-marketplace-provider-mode]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.marketplaceProviderMode === marketplaceProviderMode);
+  });
+  if (marketplaceLoadMoreButton) {
+    marketplaceLoadMoreButton.disabled = marketplaceProviderRequestInFlight;
+  }
+}
+
+function getMarketplaceProviderQueryPayload({ reset = false } = {}) {
+  return {
+    provider: marketplaceProviderActive,
+    mode: marketplaceProviderMode,
+    query: marketplaceSearchInput?.value || "",
+    minecraftVersion: marketplaceProviderMinecraftVersion?.value || "",
+    loader: marketplaceProviderLoader?.value || "",
+    offset: reset ? 0 : marketplaceProviderOffset,
+    limit: MARKETPLACE_PROVIDER_PAGE_SIZE,
+  };
 }
 
 function resetMarketplaceVersionPicker() {
@@ -5687,7 +5873,11 @@ function renderMarketplaceVersionList() {
   }
 
   const shown = entries.slice(0, marketplaceVersionRenderLimit);
-  const currentValue = String(getMarketplaceField("version")?.value || "").trim();
+  const template = findMarketplaceTemplate();
+  const currentField = getMarketplaceField("version");
+  const currentValue = String(isProviderMarketplaceTemplate(template)
+    ? currentField?.dataset?.providerVersionId || ""
+    : currentField?.value || "").trim();
   shown.forEach((entry) => {
     const option = document.createElement("button");
     option.type = "button";
@@ -5707,11 +5897,20 @@ function renderMarketplaceVersionList() {
 
     option.append(main, meta);
     option.addEventListener("click", () => {
+      const template = findMarketplaceTemplate();
       const versionField = getMarketplaceField("version");
       if (versionField) {
-        versionField.value = entry.id;
+        versionField.value = isProviderMarketplaceTemplate(template)
+          ? entry.minecraftVersions?.[0] || template?.minecraftVersion || ""
+          : entry.id;
+        versionField.dataset.providerVersionId = isProviderMarketplaceTemplate(template) ? entry.id : "";
         versionField.dispatchEvent(new Event("input", { bubbles: true }));
         versionField.focus();
+      }
+      const serverTypeField = getMarketplaceField("serverType");
+      const loader = entry.loaders?.find((value) => [...serverTypeField?.options || []].some((option) => option.value.toLowerCase() === String(value).toLowerCase()));
+      if (serverTypeField && loader) {
+        serverTypeField.value = [...serverTypeField.options].find((option) => option.value.toLowerCase() === String(loader).toLowerCase())?.value || serverTypeField.value;
       }
       renderMarketplaceVersionList();
       setMarketplaceVersionPanelOpen(false);
@@ -5760,13 +5959,36 @@ async function loadMarketplaceVersions(template) {
     marketplaceVersionToggle.disabled = true;
   }
   try {
-    const catalog = await desktopApiState.api.marketplace.getMinecraftVersions(template.id);
+    const catalog = isProviderMarketplaceTemplate(template) && desktopApiState.hasMarketplaceProviderInstall
+      ? await desktopApiState.api.marketplace.getProviderPackVersions({
+        provider: getMarketplaceProvider(template),
+        providerProjectId: template.providerProjectId,
+        minecraftVersion: template.minecraftVersion || "",
+        loader: template.loader || "",
+      })
+      : await desktopApiState.api.marketplace.getMinecraftVersions(template.id);
     if (requestId !== marketplaceVersionRequestId) {
       return;
     }
-    marketplaceVersionCatalog = catalog;
-    const count = Array.isArray(catalog?.versions) ? catalog.versions.length : 0;
-    const latestText = catalog?.latest?.id ? ` Latest Stable — ${catalog.latest.id}.` : "";
+    marketplaceVersionCatalog = isProviderMarketplaceTemplate(template)
+      ? {
+        templateId: template.id,
+        provider: getMarketplaceProvider(template),
+        latest: catalog?.versions?.[0] ? { id: String(catalog.versions[0].id), label: catalog.versions[0].name || catalog.versions[0].fileName || String(catalog.versions[0].id) } : null,
+        versions: (Array.isArray(catalog?.versions) ? catalog.versions : []).map((version) => ({
+          id: String(version.id),
+          label: version.name || version.versionNumber || version.fileName || String(version.id),
+          details: [version.fileName, Array.isArray(version.minecraftVersions) ? version.minecraftVersions.slice(0, 3).join(", ") : "", Array.isArray(version.loaders) ? version.loaders.join(", ") : ""].filter(Boolean).join(" · "),
+          category: "releases",
+          minecraftVersions: version.minecraftVersions || [],
+          loaders: version.loaders || [],
+        })),
+        recommended: [],
+        filters: ["recommended", "releases", "all"],
+      }
+      : catalog;
+    const count = Array.isArray(marketplaceVersionCatalog?.versions) ? marketplaceVersionCatalog.versions.length : 0;
+    const latestText = marketplaceVersionCatalog?.latest?.id ? ` Latest Stable — ${marketplaceVersionCatalog.latest.id}.` : "";
     setMarketplaceVersionStatus(`${count} versions loaded.${latestText}`, "success");
     renderMarketplaceVersionPicker();
   } catch (error) {
@@ -5786,7 +6008,7 @@ function renderMarketplaceWizardSteps(template) {
     return;
   }
 
-  const isMinecraft = template?.category === "Minecraft";
+  const isMinecraft = isMinecraftMarketplaceTemplate(template);
   const steps = isMinecraft
     ? ["Server Name", "Version", "Server Type", "Memory", "Port", "Playit", "Accept EULA"]
     : ["Name", "Storage Location", "Port", "Memory"];
@@ -5799,7 +6021,7 @@ function renderMarketplaceWizardSteps(template) {
 }
 
 function syncMarketplaceWizardFields(template) {
-  const isMinecraft = template?.category === "Minecraft";
+  const isMinecraft = isMinecraftMarketplaceTemplate(template);
   document.querySelectorAll("[data-marketplace-field-wrap]").forEach((wrapper) => {
     const field = wrapper.dataset.marketplaceFieldWrap;
     const shouldShow = isMinecraft
@@ -5847,13 +6069,14 @@ function openMarketplaceWizard(templateId) {
     nameField.value = template.displayName || "";
   }
   if (versionField) {
-    versionField.value = "latest";
+    versionField.value = template.minecraftVersion || template.gameVersion || "latest";
+    versionField.dataset.providerVersionId = "";
   }
   if (serverTypeField) {
-    if (template.category === "Minecraft") {
-      const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
-      serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
-      serverTypeField.disabled = true;
+    if (isMinecraftMarketplaceTemplate(template)) {
+      const serverType = template.loader || (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
+      serverTypeField.value = getMarketplaceServerTypeOptionValue(serverType, "Paper");
+      serverTypeField.disabled = !isProviderMarketplaceTemplate(template);
     } else {
       serverTypeField.value = "";
       serverTypeField.disabled = false;
@@ -5910,10 +6133,12 @@ function collectMarketplaceInstallOptions() {
   const portValue = Number.parseInt(getMarketplaceField("port")?.value || "", 10);
   const ports = Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? [portValue] : [];
   const template = findMarketplaceTemplate();
-  const isMinecraft = template?.category === "Minecraft";
+  const isMinecraft = isMinecraftMarketplaceTemplate(template);
+  const providerVersionId = getMarketplaceField("version")?.dataset?.providerVersionId || "";
   return {
     name: getMarketplaceField("name")?.value || "",
     version: getMarketplaceField("version")?.value || "",
+    providerVersionId,
     serverType: isMinecraft ? getMarketplaceField("serverType")?.value || "" : "",
     storageLocation: getMarketplaceField("storageLocation")?.value || "data",
     memory: normalizeMemoryLimit(getMarketplaceField("memory")?.value || ""),
@@ -6509,6 +6734,9 @@ async function refreshMarketplace() {
     marketplaceCatalog = await desktopApiState.api.marketplace.listTemplates();
     renderMarketplaceCategories();
     renderMarketplaceTemplates();
+    if (isMarketplaceProviderBrowserActive()) {
+      loadMarketplaceProviderPacks({ reset: true });
+    }
     setMarketplaceMessage("Template catalog loaded.");
   } catch (error) {
     marketplaceCatalog = { categories: [], templates: [] };
@@ -6539,7 +6767,7 @@ async function installMarketplaceTemplate(event) {
     options = collectMarketplaceInstallOptions();
     if (template.category === "Minecraft") {
       options.serverType = (template.displayName || template.id || "").replace(/^Minecraft\s+/i, "");
-    } else {
+    } else if (!isMinecraftMarketplaceTemplate(template)) {
       delete options.serverType;
     }
   } catch (error) {
@@ -6553,7 +6781,7 @@ async function installMarketplaceTemplate(event) {
     return;
   }
 
-  if (template.category === "Minecraft" && !options.acceptEula) {
+  if (isMinecraftMarketplaceTemplate(template) && !options.acceptEula) {
     setMarketplaceMessage("Accept the Minecraft EULA to generate eula.txt.", "error");
     return;
   }
@@ -6577,8 +6805,9 @@ async function installMarketplaceTemplate(event) {
         template,
         provider: getMarketplaceProvider(template),
         providerProjectId: template.providerProjectId || template.projectId,
+        providerVersionId: options.providerVersionId || "",
         minecraftVersion: options.version === "latest" ? template.minecraftVersion || template.gameVersion || "latest" : options.version,
-        loader: template.loader || options.serverType || "vanilla",
+        loader: options.serverType || template.loader || "vanilla",
         loaderVersion: options.loaderVersion || template.loaderVersion || "",
         nodeId: getSelectedNodeId(),
         options,
@@ -12456,8 +12685,49 @@ dockerLogActionButtons.forEach((button) => {
   });
 });
 updateDockerActionButtons();
-marketplaceSearchInput?.addEventListener("input", debounce(renderMarketplaceTemplates, 120));
+marketplaceSearchInput?.addEventListener("input", debounce(() => {
+  if (isMarketplaceProviderBrowserActive()) {
+    loadMarketplaceProviderPacks({ reset: true });
+  } else {
+    renderMarketplaceTemplates();
+  }
+}, 180));
 marketplaceRefreshButton?.addEventListener("click", refreshMarketplace);
+marketplaceProviderTabs?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-marketplace-provider]");
+  if (!button) {
+    return;
+  }
+  marketplaceProviderActive = button.dataset.marketplaceProvider || "modrinth";
+  marketplaceProviderResults = [];
+  marketplaceProviderOffset = 0;
+  marketplaceProviderHasMore = false;
+  renderMarketplaceProviderControls();
+  loadMarketplaceProviderPacks({ reset: true });
+});
+marketplaceProviderModes?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-marketplace-provider-mode]");
+  if (!button) {
+    return;
+  }
+  marketplaceProviderMode = button.dataset.marketplaceProviderMode || "featured";
+  marketplaceProviderResults = [];
+  marketplaceProviderOffset = 0;
+  marketplaceProviderHasMore = false;
+  renderMarketplaceProviderControls();
+  loadMarketplaceProviderPacks({ reset: true });
+});
+marketplaceProviderMinecraftVersion?.addEventListener("input", debounce(() => loadMarketplaceProviderPacks({ reset: true }), 220));
+marketplaceProviderLoader?.addEventListener("change", () => loadMarketplaceProviderPacks({ reset: true }));
+marketplaceLoadMoreButton?.addEventListener("click", () => loadMarketplaceProviderPacks({ reset: false }));
+marketplaceGrid?.addEventListener("scroll", () => {
+  if (!isMarketplaceProviderBrowserActive() || !marketplaceProviderHasMore || marketplaceProviderRequestInFlight) {
+    return;
+  }
+  if (marketplaceGrid.scrollTop + marketplaceGrid.clientHeight >= marketplaceGrid.scrollHeight - 160) {
+    loadMarketplaceProviderPacks({ reset: false });
+  }
+});
 downloadRefreshButton?.addEventListener("click", refreshMarketplaceDownloads);
 marketplaceWizard?.addEventListener("submit", installMarketplaceTemplate);
 marketplaceCancelButton?.addEventListener("click", closeMarketplaceWizard);

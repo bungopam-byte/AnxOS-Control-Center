@@ -708,13 +708,22 @@ function assertMinecraftTemplatesStillPass() {
 async function assertProviderInstallSupport() {
   const preloadSource = fs.readFileSync(preloadPath, "utf8");
   const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
+  const indexSource = fs.readFileSync(indexPath, "utf8");
   const appSource = fs.readFileSync(appPath, "utf8");
   assert(preloadSource.includes("marketplace:installPack"), "Preload should expose provider pack install IPC.");
   assert(preloadSource.includes("marketplace:searchProviderPacks"), "Preload should expose provider pack search IPC.");
   assert(preloadSource.includes("marketplace:getProviderPackVersions"), "Preload should expose provider version IPC.");
+  assert(preloadSource.includes("marketplace:getProviderPackDetails"), "Preload should expose provider detail IPC.");
   assert(preloadSource.includes("marketplace:install-progress"), "Preload should expose install progress events.");
   assert(ipcSource.includes("marketplace:installPack"), "Marketplace IPC should register provider install.");
+  assert(ipcSource.includes("marketplace:getProviderPackDetails"), "Marketplace IPC should register provider details.");
   assert(ipcSource.includes("marketplace:install-progress"), "Marketplace IPC should forward install progress.");
+  assert(indexSource.includes("data-marketplace-provider-browser"), "Marketplace should include the dynamic provider browser.");
+  assert(indexSource.includes("data-marketplace-provider=\"curseforge\""), "Marketplace should expose CurseForge provider browsing.");
+  assert(indexSource.includes("data-marketplace-provider=\"modrinth\""), "Marketplace should expose Modrinth provider browsing.");
+  assert(indexSource.includes("data-marketplace-load-more"), "Marketplace should expose provider pagination controls.");
+  assert(appSource.includes("marketplaceActiveCategory === \"Modpacks\""), "Renderer should treat Modpacks as a dynamic category.");
+  assert(appSource.includes("loadMarketplaceProviderPacks"), "Renderer should search dynamic provider packs.");
   assert(appSource.includes("startMarketplaceInstallProgressListener"), "Renderer should register progress listener for provider installs.");
   assert(appSource.includes("stopMarketplaceInstallProgressListener"), "Renderer should clean up progress listener after installs.");
 

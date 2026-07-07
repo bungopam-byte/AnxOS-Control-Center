@@ -955,7 +955,41 @@
 
             <div class="marketplace-layout">
               <section class="marketplace-browser" aria-label="Installable templates">
+                <div class="marketplace-provider-browser" data-marketplace-provider-browser hidden>
+                  <div class="marketplace-provider-header">
+                    <div>
+                      <strong>Modpacks</strong>
+                      <span data-marketplace-provider-status>Browse CurseForge and Modrinth packs dynamically.</span>
+                    </div>
+                    <div class="marketplace-provider-tabs" data-marketplace-provider-tabs>
+                      <button class="marketplace-provider-tab is-active" type="button" data-marketplace-provider="modrinth">Modrinth</button>
+                      <button class="marketplace-provider-tab" type="button" data-marketplace-provider="curseforge">CurseForge</button>
+                    </div>
+                  </div>
+                  <div class="marketplace-provider-tools">
+                    <label class="ssh-field">
+                      <span>Minecraft Version</span>
+                      <input type="text" placeholder="1.21.1" data-marketplace-provider-filter="minecraftVersion">
+                    </label>
+                    <label class="ssh-field">
+                      <span>Loader</span>
+                      <select data-marketplace-provider-filter="loader">
+                        <option value="">Any</option>
+                        <option value="fabric">Fabric</option>
+                        <option value="forge">Forge</option>
+                        <option value="neoforge">NeoForge</option>
+                        <option value="quilt">Quilt</option>
+                      </select>
+                    </label>
+                    <div class="marketplace-provider-modes" data-marketplace-provider-modes>
+                      <button class="marketplace-provider-mode is-active" type="button" data-marketplace-provider-mode="featured">Featured</button>
+                      <button class="marketplace-provider-mode" type="button" data-marketplace-provider-mode="trending">Trending</button>
+                      <button class="marketplace-provider-mode" type="button" data-marketplace-provider-mode="updated">Recently Updated</button>
+                    </div>
+                  </div>
+                </div>
                 <div class="marketplace-grid" data-marketplace-grid></div>
+                <button class="inline-action marketplace-load-more" type="button" data-marketplace-load-more hidden>Load More</button>
                 <div class="docker-loading-state marketplace-loading" data-marketplace-loading hidden>
                   <span class="file-loader" aria-hidden="true"></span>
                   <strong>Loading marketplace</strong>

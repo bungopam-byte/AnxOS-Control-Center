@@ -108,12 +108,15 @@ function normalizeProject(project = {}) {
     name: project.title || project.name || project.slug || project.id,
     description: project.description || "",
     iconUrl: project.icon_url || null,
+    author: project.author || project.team || "Modrinth",
+    downloads: project.downloads || 0,
     provider: "modrinth",
     providerProjectId: project.project_id || project.id || project.slug,
     minecraftVersions: project.versions || project.game_versions || [],
     loaders: project.categories || project.loaders || [],
     serverSide: project.server_side || null,
     clientSide: project.client_side || null,
+    updatedAt: project.date_modified || project.updated || null,
     raw: project,
   };
 }
@@ -143,17 +146,54 @@ function versionMatches(version, minecraftVersion, loader) {
     (!loader || loaders.includes(normalizeLoader(loader)));
 }
 
-async function searchModpacks(query = "", minecraftVersion = "", loader = "") {
-  const url = createUrl("/search", {
-    query,
-    index: "relevance",
+function normalizeSearchOptions(queryOrOptions = "", minecraftVersion = "", loader = "") {
+  if (queryOrOptions && typeof queryOrOptions === "object") {
+    return {
+      query: queryOrOptions.query || "",
+      minecraftVersion: queryOrOptions.minecraftVersion || queryOrOptions.version || "",
+      loader: queryOrOptions.loader || "",
+      mode: queryOrOptions.mode || "featured",
+      offset: Math.max(Number.parseInt(queryOrOptions.offset, 10) || 0, 0),
+      limit: Math.min(Math.max(Number.parseInt(queryOrOptions.limit, 10) || 25, 1), 100),
+    };
+  }
+  return {
+    query: queryOrOptions || "",
+    minecraftVersion,
+    loader,
+    mode: "featured",
+    offset: 0,
     limit: 25,
-    facets: buildSearchFacets(minecraftVersion, loader),
+  };
+}
+
+function getSearchIndex(mode, query) {
+  if (query) return "relevance";
+  if (mode === "trending") return "downloads";
+  if (mode === "updated") return "updated";
+  return "follows";
+}
+
+async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader = "") {
+  const options = normalizeSearchOptions(queryOrOptions, minecraftVersion, loader);
+  const url = createUrl("/search", {
+    query: options.query,
+    index: getSearchIndex(options.mode, options.query),
+    offset: options.offset,
+    limit: options.limit,
+    facets: buildSearchFacets(options.minecraftVersion, options.loader),
   });
   const payload = await requestJson(url, "Modrinth search");
+  const results = (payload.hits || []).filter(isServerCapableProject).map(normalizeProject);
   return {
     provider: "modrinth",
-    results: (payload.hits || []).filter(isServerCapableProject).map(normalizeProject),
+    mode: options.mode,
+    offset: options.offset,
+    limit: options.limit,
+    total: payload.total_hits || results.length,
+    nextOffset: options.offset + results.length,
+    hasMore: options.offset + results.length < (payload.total_hits || 0),
+    results,
   };
 }
 

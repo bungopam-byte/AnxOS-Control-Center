@@ -101,8 +101,13 @@ function requireApiKey(config = {}) {
 
 function normalizeLoader(loader) {
   const value = String(loader || "").trim().toLowerCase();
-  if (value === "neoforge") return "neoForge";
-  return value;
+  const loaderMap = {
+    forge: 1,
+    fabric: 4,
+    quilt: 5,
+    neoforge: 6,
+  };
+  return loaderMap[value] || "";
 }
 
 function createUrl(pathname, params = {}) {
@@ -163,9 +168,13 @@ function normalizeMod(mod = {}) {
     name: mod.name || mod.slug || String(mod.id || ""),
     description: mod.summary || "",
     iconUrl: mod.logo?.url || null,
+    author: Array.isArray(mod.authors) ? mod.authors.map((entry) => entry.name).filter(Boolean).join(", ") : "CurseForge",
+    downloads: mod.downloadCount || 0,
     provider: "curseforge",
     providerProjectId: mod.id,
-    minecraftVersions: mod.latestFilesIndexes?.map((entry) => entry.gameVersion).filter(Boolean) || [],
+    minecraftVersions: [...new Set(mod.latestFilesIndexes?.map((entry) => entry.gameVersion).filter(Boolean) || [])],
+    loaders: [...new Set(mod.latestFilesIndexes?.map((entry) => entry.modLoader).filter(Boolean) || [])],
+    updatedAt: mod.dateModified || mod.dateReleased || null,
     raw: mod,
   };
 }
@@ -185,21 +194,61 @@ function normalizeFile(file = {}) {
   };
 }
 
-async function searchModpacks(query = "", minecraftVersion = "", loader = "", config = {}) {
+function normalizeSearchOptions(queryOrOptions = "", minecraftVersion = "", loader = "", config = {}) {
+  if (queryOrOptions && typeof queryOrOptions === "object") {
+    return {
+      query: queryOrOptions.query || "",
+      minecraftVersion: queryOrOptions.minecraftVersion || queryOrOptions.version || "",
+      loader: queryOrOptions.loader || "",
+      mode: queryOrOptions.mode || "featured",
+      offset: Math.max(Number.parseInt(queryOrOptions.offset, 10) || 0, 0),
+      limit: Math.min(Math.max(Number.parseInt(queryOrOptions.limit, 10) || 25, 1), 50),
+      config,
+    };
+  }
+  return {
+    query: queryOrOptions || "",
+    minecraftVersion,
+    loader,
+    mode: "featured",
+    offset: 0,
+    limit: 25,
+    config,
+  };
+}
+
+function getSortField(mode, query) {
+  if (query) return 2;
+  if (mode === "trending") return 6;
+  if (mode === "updated") return 3;
+  return 2;
+}
+
+async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader = "", config = {}) {
+  const options = normalizeSearchOptions(queryOrOptions, minecraftVersion, loader, config);
   const url = createUrl("/mods/search", {
     gameId: MINECRAFT_GAME_ID,
     classId: MODPACK_CLASS_ID,
-    searchFilter: query,
-    gameVersion: minecraftVersion,
-    modLoaderType: normalizeLoader(loader),
-    sortField: 2,
+    searchFilter: options.query,
+    gameVersion: options.minecraftVersion,
+    modLoaderType: normalizeLoader(options.loader),
+    sortField: getSortField(options.mode, options.query),
     sortOrder: "desc",
-    pageSize: 25,
+    index: options.offset,
+    pageSize: options.limit,
   });
-  const payload = await requestJson(url, "CurseForge search", config);
+  const payload = await requestJson(url, "CurseForge search", options.config);
+  const results = (payload.data || []).map(normalizeMod);
+  const total = payload.pagination?.totalCount || results.length;
   return {
     provider: "curseforge",
-    results: (payload.data || []).map(normalizeMod),
+    mode: options.mode,
+    offset: options.offset,
+    limit: options.limit,
+    total,
+    nextOffset: options.offset + results.length,
+    hasMore: options.offset + results.length < total,
+    results,
   };
 }
 

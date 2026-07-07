@@ -637,6 +637,10 @@ async function installPack(payload = {}) {
     await writeText(instanceId, "metadata.json", `${JSON.stringify(metadata, null, 2)}\n`, agentConfig);
     await writeText(instanceId, "config.json", `${JSON.stringify({ ...instancePayload, status: "stopped", port: instancePayload.primaryPort }, null, 2)}\n`, agentConfig);
     await agentClient.updateInstance(instanceId, metadata, agentConfig);
+    if (options.start) {
+      emitProgress({ instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
+      await agentClient.startInstance(instanceId, agentConfig);
+    }
 
     emitProgress({ instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
     return {
@@ -660,10 +664,10 @@ async function installPack(payload = {}) {
 async function searchProviderPacks(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
   if (provider === "curseforge") {
-    return curseforgeProvider.searchModpacks(payload.query || "", payload.minecraftVersion || payload.version || "", payload.loader || "");
+    return curseforgeProvider.searchModpacks(payload);
   }
   if (provider === "modrinth") {
-    return modrinthProvider.searchModpacks(payload.query || "", payload.minecraftVersion || payload.version || "", payload.loader || "");
+    return modrinthProvider.searchModpacks(payload);
   }
   return { provider, results: [] };
 }
@@ -682,6 +686,18 @@ async function getProviderPackVersions(payload = {}) {
   return { provider, versions: [] };
 }
 
+async function getProviderPackDetails(payload = {}) {
+  const provider = String(payload.provider || "modrinth").toLowerCase();
+  const projectId = payload.providerProjectId || payload.projectId;
+  if (provider === "curseforge") {
+    return { provider, project: await curseforgeProvider.getMod(projectId) };
+  }
+  if (provider === "modrinth") {
+    return { provider, project: await modrinthProvider.getProject(projectId) };
+  }
+  return { provider, project: null };
+}
+
 module.exports = {
   _test: {
     buildInstallMetadata,
@@ -694,4 +710,5 @@ module.exports = {
   marketplaceInstallEvents,
   searchProviderPacks,
   getProviderPackVersions,
+  getProviderPackDetails,
 };

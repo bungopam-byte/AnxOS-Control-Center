@@ -11,6 +11,7 @@ const {
 } = require("../services/marketplaceService");
 const {
   getProviderPackVersions,
+  getProviderPackDetails,
   installPack,
   marketplaceInstallEvents,
   searchProviderPacks,
@@ -54,6 +55,7 @@ function registerMarketplaceIpc() {
   ipcMain.handle("marketplace:getMinecraftVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getMinecraftVersionCatalog(payload.templateId)));
   ipcMain.handle("marketplace:searchProviderPacks", async (_, payload = {}) => invokeMarketplaceOperation(() => searchProviderPacks(payload)));
   ipcMain.handle("marketplace:getProviderPackVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getProviderPackVersions(payload)));
+  ipcMain.handle("marketplace:getProviderPackDetails", async (_, payload = {}) => invokeMarketplaceOperation(() => getProviderPackDetails(payload)));
   ipcMain.handle("marketplace:getImportSupport", async () => invokeMarketplaceOperation(() => getImportSupport()));
   ipcMain.handle("marketplace:importCommunityTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
     requirePermission("marketplace:install", payload?.template?.id || payload?.id || "community-template");

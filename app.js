@@ -11450,6 +11450,102 @@ async function handleSshClipboardShortcut(event) {
   return false;
 }
 
+async function handleSshTerminalInputKeydown(event) {
+  const session = getActiveSshSession();
+
+  if (!session || session.status !== "connected") {
+    return false;
+  }
+
+  if (await handleSshClipboardShortcut(event)) {
+    return true;
+  }
+
+  if (event.key === "Tab") {
+    event.preventDefault();
+    await writeSshInput("\t");
+    return true;
+  }
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    await writeSshInput("\n");
+    sshKeyboardInputBuffer = "";
+    if (sshCommandInput) {
+      sshCommandInput.value = "";
+    }
+    return true;
+  }
+
+  if (event.key === "Backspace") {
+    event.preventDefault();
+
+    if (sshKeyboardInputBuffer) {
+      sshKeyboardInputBuffer = sshKeyboardInputBuffer.slice(0, -1);
+    }
+
+    syncSshKeyboardInputValue();
+    await writeSshInput("\b");
+    return true;
+  }
+
+  if (event.key === "Delete") {
+    event.preventDefault();
+    await writeSshInput("\u001b[3~");
+    return true;
+  }
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    await writeSshInput("\u001b");
+    return true;
+  }
+
+  if (event.key.startsWith("Arrow")) {
+    event.preventDefault();
+    const arrowMap = {
+      ArrowUp: "\u001b[A",
+      ArrowDown: "\u001b[B",
+      ArrowRight: "\u001b[C",
+      ArrowLeft: "\u001b[D",
+    };
+    await writeSshInput(arrowMap[event.key] || "");
+    return true;
+  }
+
+  const navigationKeyMap = {
+    Home: "\u001b[H",
+    End: "\u001b[F",
+    PageUp: "\u001b[5~",
+    PageDown: "\u001b[6~",
+  };
+
+  if (navigationKeyMap[event.key]) {
+    event.preventDefault();
+    await writeSshInput(navigationKeyMap[event.key]);
+    return true;
+  }
+
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+      event.preventDefault();
+      await writeSshInput(String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64));
+      return true;
+    }
+    return false;
+  }
+
+  if (event.key.length === 1) {
+    event.preventDefault();
+    sshKeyboardInputBuffer += event.key;
+    syncSshKeyboardInputValue();
+    await writeSshInput(event.key);
+    return true;
+  }
+
+  return false;
+}
+
 async function disconnectAllSshListeners() {
   sshDataUnsubscribe?.();
   sshStatusUnsubscribe?.();
@@ -12145,13 +12241,7 @@ sshTerminalWindow?.addEventListener("click", () => {
   }
 });
 sshTerminalWindow?.addEventListener("keydown", async (event) => {
-  const session = getActiveSshSession();
-
-  if (!session || session.status !== "connected") {
-    return;
-  }
-
-  await handleSshClipboardShortcut(event);
+  await handleSshTerminalInputKeydown(event);
 });
 sshCommandInput?.addEventListener("focus", () => {
   sshKeyboardMode = true;
@@ -12164,95 +12254,7 @@ sshCommandInput?.addEventListener("blur", () => {
   renderSshView();
 });
 sshCommandInput?.addEventListener("keydown", async (event) => {
-  const session = getActiveSshSession();
-
-  if (!session || session.status !== "connected") {
-    return;
-  }
-
-  if (await handleSshClipboardShortcut(event)) {
-    return;
-  }
-
-  if (event.key === "Tab") {
-    event.preventDefault();
-    await writeSshInput("\t");
-    return;
-  }
-
-  if (event.key === "Enter") {
-    event.preventDefault();
-    await writeSshInput("\n");
-    sshKeyboardInputBuffer = "";
-    if (sshCommandInput) {
-      sshCommandInput.value = "";
-    }
-    return;
-  }
-
-  if (event.key === "Backspace") {
-    event.preventDefault();
-
-    if (sshKeyboardInputBuffer) {
-      sshKeyboardInputBuffer = sshKeyboardInputBuffer.slice(0, -1);
-    }
-
-    syncSshKeyboardInputValue();
-    await writeSshInput("\b");
-    return;
-  }
-
-  if (event.key === "Delete") {
-    event.preventDefault();
-    await writeSshInput("\u001b[3~");
-    return;
-  }
-
-  if (event.key === "Escape") {
-    event.preventDefault();
-    await writeSshInput("\u001b");
-    return;
-  }
-
-  if (event.key.startsWith("Arrow")) {
-    event.preventDefault();
-    const arrowMap = {
-      ArrowUp: "\u001b[A",
-      ArrowDown: "\u001b[B",
-      ArrowRight: "\u001b[C",
-      ArrowLeft: "\u001b[D",
-    };
-    await writeSshInput(arrowMap[event.key] || "");
-    return;
-  }
-
-  const navigationKeyMap = {
-    Home: "\u001b[H",
-    End: "\u001b[F",
-    PageUp: "\u001b[5~",
-    PageDown: "\u001b[6~",
-  };
-
-  if (navigationKeyMap[event.key]) {
-    event.preventDefault();
-    await writeSshInput(navigationKeyMap[event.key]);
-    return;
-  }
-
-  if (event.ctrlKey || event.metaKey || event.altKey) {
-    if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
-      event.preventDefault();
-      await writeSshInput(String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64));
-    }
-    return;
-  }
-
-  if (event.key.length === 1) {
-    event.preventDefault();
-    sshKeyboardInputBuffer += event.key;
-    syncSshKeyboardInputValue();
-    await writeSshInput(event.key);
-  }
+  await handleSshTerminalInputKeydown(event);
 });
 sshCommandInput?.addEventListener("paste", async (event) => {
   const session = getActiveSshSession();

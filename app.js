@@ -5589,6 +5589,10 @@ function isMarketplaceProviderBrowserActive() {
   return marketplaceActiveCategory === "Modpacks";
 }
 
+function isMarketplaceProviderSectionVisible() {
+  return marketplaceActiveCategory === "All" || marketplaceActiveCategory === "Modpacks";
+}
+
 function renderMarketplaceTemplates() {
   if (!marketplaceGrid) {
     return;
@@ -5597,7 +5601,7 @@ function renderMarketplaceTemplates() {
   renderMarketplaceProviderControls();
   marketplaceGrid.replaceChildren();
   const providerBrowserActive = isMarketplaceProviderBrowserActive();
-  const fetchedCount = providerBrowserActive ? marketplaceProviderResults.length : marketplaceTemplates.length;
+  const fetchedCount = providerBrowserActive ? marketplaceProviderResults.length : getStaticMarketplaceTemplates().length;
   const templates = providerBrowserActive
     ? marketplaceProviderResults.map(registerProviderMarketplaceTemplate)
     : getFilteredMarketplaceTemplates();
@@ -5868,7 +5872,7 @@ function setMarketplaceProviderStatus(message, tone = "muted") {
 }
 
 function renderMarketplaceProviderControls() {
-  marketplaceProviderBrowser?.toggleAttribute("hidden", !isMarketplaceProviderBrowserActive());
+  marketplaceProviderBrowser?.toggleAttribute("hidden", !isMarketplaceProviderSectionVisible());
   marketplaceLoadMoreButton?.toggleAttribute("hidden", !isMarketplaceProviderBrowserActive() || !marketplaceProviderHasMore);
   marketplaceProviderTabs?.querySelectorAll("[data-marketplace-provider]").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.marketplaceProvider === marketplaceProviderActive);

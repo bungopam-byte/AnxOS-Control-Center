@@ -989,6 +989,9 @@ async function assertProviderInstallSupport() {
   assert(appSource.includes("loadMarketplaceProviderPacks"), "Renderer should search dynamic provider packs.");
   assert(appSource.includes("startMarketplaceInstallProgressListener"), "Renderer should register progress listener for provider installs.");
   assert(appSource.includes("stopMarketplaceInstallProgressListener"), "Renderer should clean up progress listener after installs.");
+  assert(!appSource.includes("marketplaceTemplates.length"), "Provider diagnostics must not reference an undefined marketplaceTemplates variable.");
+  assert(appSource.includes("getStaticMarketplaceTemplates().length"), "Built-in template render diagnostics should count the static catalog.");
+  assert(appSource.includes("function isMarketplaceProviderSectionVisible"), "Renderer should distinguish provider section visibility from provider grid mode.");
   assert(appSource.includes("[Marketplace][Renderer] Provider refresh requested."), "Renderer should log provider refresh diagnostics.");
   assert(appSource.includes("[Marketplace][Renderer] Provider IPC request."), "Renderer should log provider IPC payloads.");
   assert(appSource.includes("fetchedCount"), "Renderer should log provider fetched/filtered/rendered counts.");

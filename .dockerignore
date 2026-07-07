@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+.npm-cache
+.tmp-agent-config-test
+.tmp-agent-config-test-save
+.tmp-electron-smoke-profile*
+node_modules
+dist
+dist-verify
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example

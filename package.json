@@ -3,15 +3,21 @@
   "productName": "AnxOS Control Center",
   "version": "1.0.0",
   "description": "Private local desktop control center for a Debian server.",
+  "author": "AnxOS",
+  "license": "UNLICENSED",
+  "desktopName": "anxos-control-center.desktop",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "amp:debug": "node scripts/amp-debug.js"
+    "amp:debug": "node scripts/amp-debug.js",
+    "docker:smoke": "node scripts/docker-smoke.js",
+    "icons:linux": "node scripts/generate-linux-icons.js"
   },
   "build": {
     "appId": "com.anxos.controlcenter",
+    "productName": "AnxOS Control Center",
     "files": [
       "main.js",
       "preload.js",
@@ -27,6 +33,33 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "assets/icons/png",
+      "executableName": "anxos-control-center",
+      "syncDesktopName": true,
+      "maintainer": "AnxOS <noreply@anxos.local>",
+      "vendor": "AnxOS",
+      "synopsis": "Private local desktop control center for a Debian server.",
+      "description": "AnxOS Control Center is a private local desktop dashboard for homelab server monitoring and management.",
+      "desktop": {
+        "entry": {
+          "Name": "AnxOS Control Center",
+          "Comment": "Private local desktop control center for a Debian server",
+          "StartupWMClass": "anxos-control-center"
+        }
+      }
+    },
+    "appImage": {
+      "artifactName": "AnxOS-Control-Center.${ext}"
+    },
+    "deb": {
+      "packageCategory": "utils"
     },
     "nsis": {
       "installerIcon": "assets/icon.ico",

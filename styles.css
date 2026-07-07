@@ -2919,7 +2919,7 @@ body.is-resizing-files * {
 
 .docker-workspace {
   display: grid;
-  grid-template-columns: minmax(420px, 1fr) minmax(240px, 0.34fr);
+  grid-template-columns: minmax(520px, 1fr) minmax(320px, 0.38fr);
   gap: 14px;
   align-items: stretch;
 }
@@ -2945,7 +2945,7 @@ body.is-resizing-files * {
 
 .docker-table {
   width: 100%;
-  min-width: 780px;
+  min-width: 1040px;
   border-collapse: collapse;
 }
 
@@ -3071,6 +3071,87 @@ body.is-resizing-files * {
 
 .docker-details-list {
   gap: 14px;
+}
+
+.docker-inspector-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.docker-inspector-tabs button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.62);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.docker-inspector-tabs button.is-active,
+.docker-inspector-tabs button:hover,
+.docker-inspector-tabs button:focus-visible {
+  color: var(--text);
+  border-color: rgba(126, 216, 255, 0.42);
+  background: rgba(126, 216, 255, 0.12);
+}
+
+.docker-inspector-panel {
+  display: none;
+  min-height: 360px;
+}
+
+.docker-inspector-panel.is-active {
+  display: block;
+}
+
+.docker-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.docker-log-toolbar label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-right: auto;
+}
+
+.docker-log-viewer,
+.docker-inspect-viewer {
+  min-height: 360px;
+  max-height: calc(100vh - 430px);
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 7, 11, 0.86);
+  color: #d8f3ff;
+  font: 0.78rem/1.55 "JetBrains Mono", "Fira Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.docker-row-actions {
+  min-width: 250px;
+  white-space: nowrap;
+}
+
+.docker-row-actions .inline-action {
+  min-height: 30px;
+  margin-right: 6px;
+  padding: 0 9px;
+  font-size: 0.76rem;
 }
 
 .instances-shell {

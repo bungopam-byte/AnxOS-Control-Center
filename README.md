@@ -103,6 +103,118 @@ npm start
 
 This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
 
+## Build Desktop Packages
+
+The standard build command remains:
+
+```bash
+npm run dist
+```
+
+On Windows, this keeps the existing Windows installer workflow and produces the NSIS `.exe` installer.
+
+On Debian/Linux, the build produces Linux release artifacts:
+
+- `AnxOS-Control-Center.AppImage`
+- `anxos-control-center_*_amd64.deb`
+
+The AppImage is the recommended Linux download because it runs without installation on most distributions, including Bazzite, Fedora, Ubuntu, Linux Mint, Pop!_OS, Debian, and many others.
+
+### AppImage
+
+```bash
+chmod +x AnxOS-Control-Center.AppImage
+./AnxOS-Control-Center.AppImage
+```
+
+No installation is required. You can keep the AppImage anywhere in your home directory or applications folder.
+
+### Debian Package
+
+```bash
+sudo dpkg -i anxos-control-center_*.deb
+```
+
+If dependencies are missing:
+
+```bash
+sudo apt install -f
+```
+
+The Debian package installs a desktop entry so `AnxOS Control Center` appears in the application launcher. The package uses the generated Linux PNG icon set under `assets/icons/png`.
+
+## Release Artifacts
+
+Recommended GitHub Releases layout:
+
+```text
+Windows
+- AnxOS-Control-Center-Setup.exe
+
+Linux
+- AnxOS-Control-Center.AppImage
+- anxos-control-center_amd64.deb
+
+Future
+- macOS DMG
+```
+
+Validation checklist before publishing a release:
+
+- Windows installer still builds on Windows with `npm run dist`.
+- Linux AppImage and `.deb` build on Debian with `npm run dist`.
+- AppImage launches with `./AnxOS-Control-Center.AppImage`.
+- `.deb` installs with `sudo dpkg -i anxos-control-center_*.deb`.
+- Desktop launcher appears and opens the app.
+- App icons display correctly in the launcher and package metadata.
+- Auto-updater behavior remains unchanged if an updater is added or enabled later.
+
+## Discord Bot Docker Deployment
+
+The repository includes a production Docker setup for a Node.js Discord bot. Secrets are loaded from `.env`; never commit real Discord tokens.
+
+The Docker setup assumes it is placed beside the Discord bot's own `package.json` and that `npm start` is the bot start command. If the bot code lives in a subdirectory, update `docker-compose.yml` `build.context` to that directory or move the Docker files beside the bot package.
+
+Create the environment file:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set:
+
+```text
+DISCORD_TOKEN=your_real_discord_bot_token
+CLIENT_ID=your_discord_application_client_id
+GUILD_ID=your_development_guild_id_if_needed
+```
+
+Deploy on Debian:
+
+```bash
+docker compose up -d --build
+```
+
+Follow logs:
+
+```bash
+docker compose logs -f
+```
+
+Restart:
+
+```bash
+docker compose restart
+```
+
+Stop and remove the container:
+
+```bash
+docker compose down
+```
+
+The container uses Node.js LTS, installs dependencies with `npm ci` when `package-lock.json` exists, and starts with `npm start` from `package.json`. Docker named volumes persist `/app/data`, `/app/logs`, and `/app/config` for bots that store JSON, SQLite, logs, or local config.
+
 ## Debian Agent: Playit Metadata Permissions
 
 The Debian agent can report Playit installed/running state from normal service checks. Tunnel metadata such as the Playit domain, local target, protocol, and tunnel id requires access to the Playit daemon IPC socket, normally:

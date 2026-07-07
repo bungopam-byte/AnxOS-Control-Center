@@ -400,6 +400,28 @@ function normalizePorts(ports) {
   });
 }
 
+function normalizeContainerStats(stats) {
+  if (!stats || typeof stats !== "object" || Array.isArray(stats)) {
+    return null;
+  }
+
+  return {
+    id: stats.id || stats.ID || stats.Container || null,
+    container: stats.container || stats.Container || null,
+    name: normalizeName(stats.name || stats.Name),
+    cpuPercent: stats.cpuPercent ?? stats.CPUPerc ?? stats.CPUPercent ?? null,
+    memoryUsage: stats.memoryUsage || null,
+    memoryLimit: stats.memoryLimit || null,
+    memoryRaw: stats.memoryRaw || stats.MemUsage || null,
+    memoryPercent: stats.memoryPercent ?? stats.MemPerc ?? stats.MemoryPercent ?? null,
+    networkRx: stats.networkRx || null,
+    networkTx: stats.networkTx || null,
+    networkRaw: stats.networkRaw || stats.NetIO || null,
+    blockIo: stats.blockIo || stats.BlockIO || null,
+    pids: stats.pids || stats.PIDs || null,
+  };
+}
+
 function normalizeContainer(container) {
   if (!container || typeof container !== "object") {
     return null;
@@ -416,7 +438,14 @@ function normalizeContainer(container) {
     status,
     state: container.state || container.State || inferState(status),
     ports: normalizePorts(container.ports || container.Ports),
+    rawPorts: container.rawPorts || container.RawPorts || container.Ports || null,
     runningFor: container.runningFor || container.RunningFor || status,
+    stats: normalizeContainerStats(container.stats || container.Stats),
+    cpuPercent: container.cpuPercent || container.CPUPerc || null,
+    memoryUsage: container.memoryUsage || null,
+    memoryLimit: container.memoryLimit || null,
+    memoryRaw: container.memoryRaw || null,
+    memoryPercent: container.memoryPercent || null,
   };
 }
 
@@ -620,8 +649,8 @@ async function getDockerSummary() {
   return requestJson("/api/v1/docker/summary");
 }
 
-async function getDockerContainers() {
-  return requestJson("/api/v1/docker/containers");
+async function getDockerContainers(configOverride = null) {
+  return requestJson("/api/v1/docker/containers", { config: configOverride });
 }
 
 async function getDockerSnapshot(configOverride = null) {
@@ -640,6 +669,31 @@ async function createDockerContainer(payload = {}, configOverride = null) {
     method: "POST",
     body: payload,
   });
+}
+
+async function inspectDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/inspect`, {
+    config: configOverride,
+  });
+}
+
+async function listDockerImages(configOverride = null) {
+  return requestJson("/api/v1/docker/images", { config: configOverride });
+}
+
+async function deleteDockerImage(image, configOverride = null) {
+  return requestJson(`/api/v1/docker/images/${encodeURIComponent(String(image || ""))}`, {
+    config: configOverride,
+    method: "DELETE",
+  });
+}
+
+async function listDockerNetworks(configOverride = null) {
+  return requestJson("/api/v1/docker/networks", { config: configOverride });
+}
+
+async function listDockerVolumes(configOverride = null) {
+  return requestJson("/api/v1/docker/volumes", { config: configOverride });
 }
 
 async function startDockerContainer(container, configOverride = null) {
@@ -1722,6 +1776,7 @@ module.exports = {
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
+  deleteDockerImage,
   downloadFile,
   downloadBackup,
   createInstance,
@@ -1745,6 +1800,7 @@ module.exports = {
   getDockerContainerStats,
   getDockerSnapshot,
   getDockerSummary,
+  inspectDockerContainer,
   getFileList,
   getFileListing,
   getHealth,
@@ -1758,6 +1814,9 @@ module.exports = {
   importBackup,
   listBackupSchedules,
   listBackups,
+  listDockerImages,
+  listDockerNetworks,
+  listDockerVolumes,
   listInstanceFiles,
   listInstances,
   loadEnvironment,

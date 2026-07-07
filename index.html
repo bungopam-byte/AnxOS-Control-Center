@@ -790,38 +790,38 @@
             <div>
               <p class="eyebrow">Containers</p>
               <h1>Docker</h1>
-              <p class="lede">Container management workspace for a configured local Docker daemon.</p>
+              <p class="lede">Container management workspace for the selected node.</p>
             </div>
           </header>
 
           <section class="docker-shell" aria-label="Docker management">
             <div class="docker-summary-grid">
               <article class="docker-summary-card">
-                <span class="service-icon">CNT</span>
-                <div>
-                  <span>Docker</span>
-                  <strong data-field="dockerInstalled">Unavailable</strong>
-                </div>
-              </article>
-              <article class="docker-summary-card">
                 <span class="service-icon">RUN</span>
                 <div>
-                  <span>Daemon</span>
-                  <strong data-field="dockerDaemon">Unavailable</strong>
+                  <span>Running</span>
+                  <strong data-field="dockerRunningContainers">Unavailable</strong>
                 </div>
               </article>
               <article class="docker-summary-card">
                 <span class="service-icon">STP</span>
                 <div>
-                  <span>Running Containers</span>
-                  <strong data-field="dockerRunningContainers">Unavailable</strong>
+                  <span>Stopped</span>
+                  <strong data-field="dockerStoppedContainers">Unavailable</strong>
                 </div>
               </article>
               <article class="docker-summary-card">
                 <span class="service-icon">IMG</span>
                 <div>
-                  <span>Total Containers</span>
-                  <strong data-field="dockerTotalContainers">Unavailable</strong>
+                  <span>Images</span>
+                  <strong data-field="dockerImages">Unavailable</strong>
+                </div>
+              </article>
+              <article class="docker-summary-card">
+                <span class="service-icon">VOL</span>
+                <div>
+                  <span>Volumes</span>
+                  <strong data-field="dockerVolumes">Unavailable</strong>
                 </div>
               </article>
             </div>
@@ -841,13 +841,11 @@
               </label>
               <div class="docker-actions" aria-label="Docker actions">
                 <button class="inline-action" type="button" data-docker-action="refresh" disabled>Refresh</button>
-                <button class="inline-action" type="button" data-docker-action="create">Create</button>
                 <button class="inline-action" type="button" data-docker-action="start" disabled>Start</button>
                 <button class="inline-action" type="button" data-docker-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-docker-action="restart" disabled>Restart</button>
                 <button class="inline-action" type="button" data-docker-action="remove" disabled>Remove</button>
                 <button class="inline-action" type="button" data-docker-action="logs" disabled>Logs</button>
-                <button class="inline-action" type="button" data-docker-action="shell" disabled>Shell</button>
               </div>
             </div>
 
@@ -858,12 +856,13 @@
                     <thead>
                       <tr>
                         <th scope="col">Name</th>
-                        <th scope="col">Status</th>
                         <th scope="col">Image</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Ports</th>
                         <th scope="col">CPU</th>
                         <th scope="col">RAM</th>
-                        <th scope="col">Ports</th>
                         <th scope="col">Uptime</th>
+                        <th scope="col">Actions</th>
                       </tr>
                     </thead>
                     <tbody data-docker-list></tbody>
@@ -885,38 +884,47 @@
 
               <aside class="docker-details-panel" aria-label="Container details">
                 <div class="panel-heading">
-                  <h3>Container Details</h3>
+                  <h3 data-field="dockerInspectorTitle">Container Details</h3>
                   <span class="status-pill status-pill--planned" data-field="dockerDetailState">None</span>
                 </div>
-                <div class="docker-detail-icon" aria-hidden="true">
-                  <span class="docker-icon"></span>
+                <div class="docker-inspector-tabs" role="tablist" aria-label="Docker inspector tabs">
+                  <button type="button" class="is-active" data-docker-tab="overview">Overview</button>
+                  <button type="button" data-docker-tab="logs">Logs</button>
+                  <button type="button" data-docker-tab="stats">Stats</button>
+                  <button type="button" data-docker-tab="inspect">Inspect</button>
                 </div>
-                <dl class="docker-details-list">
-                  <div>
-                    <dt>Name</dt>
-                    <dd data-docker-detail="name">None selected</dd>
+                <div class="docker-inspector-panel is-active" data-docker-panel="overview">
+                  <dl class="docker-details-list">
+                    <div><dt>Name</dt><dd data-docker-detail="name">None selected</dd></div>
+                    <div><dt>Status</dt><dd data-docker-detail="status">Unavailable</dd></div>
+                    <div><dt>Image</dt><dd data-docker-detail="image">Unavailable</dd></div>
+                    <div><dt>Resources</dt><dd data-docker-detail="resources">Unavailable</dd></div>
+                    <div><dt>Ports</dt><dd data-docker-detail="ports">Unavailable</dd></div>
+                    <div><dt>Uptime</dt><dd data-docker-detail="uptime">Unavailable</dd></div>
+                  </dl>
+                </div>
+                <div class="docker-inspector-panel" data-docker-panel="logs">
+                  <div class="docker-log-toolbar">
+                    <label><input type="checkbox" data-docker-logs-pause> Pause</label>
+                    <button class="inline-action" type="button" data-docker-log-action="refresh">Refresh</button>
+                    <button class="inline-action" type="button" data-docker-log-action="copy">Copy</button>
+                    <button class="inline-action" type="button" data-docker-log-action="clear">Clear</button>
                   </div>
-                  <div>
-                    <dt>Status</dt>
-                    <dd data-docker-detail="status">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Image</dt>
-                    <dd data-docker-detail="image">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Resources</dt>
-                    <dd data-docker-detail="resources">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Ports</dt>
-                    <dd data-docker-detail="ports">Unavailable</dd>
-                  </div>
-                  <div>
-                    <dt>Uptime</dt>
-                    <dd data-docker-detail="uptime">Unavailable</dd>
-                  </div>
-                </dl>
+                  <pre class="docker-log-viewer" data-docker-logs>No container selected.</pre>
+                </div>
+                <div class="docker-inspector-panel" data-docker-panel="stats">
+                  <dl class="docker-details-list docker-stats-list">
+                    <div><dt>CPU</dt><dd data-docker-stat="cpu">Unavailable</dd></div>
+                    <div><dt>RAM</dt><dd data-docker-stat="memory">Unavailable</dd></div>
+                    <div><dt>Network RX</dt><dd data-docker-stat="rx">Unavailable</dd></div>
+                    <div><dt>Network TX</dt><dd data-docker-stat="tx">Unavailable</dd></div>
+                    <div><dt>Status</dt><dd data-docker-stat="status">Unavailable</dd></div>
+                    <div><dt>Uptime</dt><dd data-docker-stat="uptime">Unavailable</dd></div>
+                  </dl>
+                </div>
+                <div class="docker-inspector-panel" data-docker-panel="inspect">
+                  <pre class="docker-inspect-viewer" data-docker-inspect>Select a container to inspect.</pre>
+                </div>
               </aside>
             </div>
           </section>

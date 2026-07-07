@@ -170,6 +170,7 @@ async function testNode(nodeId) {
 
 module.exports = {
   deleteNode,
+  getNode,
   getNodeAgentConfig,
   listNodes,
   saveNode,

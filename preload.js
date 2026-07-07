@@ -29,11 +29,21 @@ const desktopApi = {
   },
   docker: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("docker:getSnapshot", payload),
+    listContainers: (payload = {}) => ipcRenderer.invoke("docker:listContainers", payload),
+    inspectContainer: (container, payload = {}) => ipcRenderer.invoke("docker:inspectContainer", { ...payload, container }),
     create: (payload = {}) => ipcRenderer.invoke("docker:create", payload),
     start: (container, payload = {}) => ipcRenderer.invoke("docker:start", { ...payload, container }),
+    startContainer: (container, payload = {}) => ipcRenderer.invoke("docker:start", { ...payload, container }),
     stop: (container, payload = {}) => ipcRenderer.invoke("docker:stop", { ...payload, container }),
+    stopContainer: (container, payload = {}) => ipcRenderer.invoke("docker:stop", { ...payload, container }),
     restart: (container, payload = {}) => ipcRenderer.invoke("docker:restart", { ...payload, container }),
+    restartContainer: (container, payload = {}) => ipcRenderer.invoke("docker:restart", { ...payload, container }),
     delete: (container, payload = {}) => ipcRenderer.invoke("docker:delete", { ...payload, container }),
+    removeContainer: (container, payload = {}) => ipcRenderer.invoke("docker:removeContainer", { ...payload, container }),
+    listImages: (payload = {}) => ipcRenderer.invoke("docker:listImages", payload),
+    removeImage: (image, payload = {}) => ipcRenderer.invoke("docker:removeImage", { ...payload, image }),
+    listNetworks: (payload = {}) => ipcRenderer.invoke("docker:listNetworks", payload),
+    listVolumes: (payload = {}) => ipcRenderer.invoke("docker:listVolumes", payload),
     getLogs: (container, payload = {}) => ipcRenderer.invoke("docker:getLogs", { ...payload, container }),
     getStats: (container, payload = {}) => ipcRenderer.invoke("docker:getStats", { ...payload, container }),
   },
@@ -136,6 +146,7 @@ const desktopApi = {
 };
 
 contextBridge.exposeInMainWorld("anxWindow", windowApi);
+contextBridge.exposeInMainWorld("anx", desktopApi);
 contextBridge.exposeInMainWorld("anxhub", desktopApi);
 contextBridge.exposeInMainWorld("anxos", desktopApi);
 contextBridge.exposeInMainWorld("electronAPI", desktopApi);

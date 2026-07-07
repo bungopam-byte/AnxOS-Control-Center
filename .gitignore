@@ -18,3 +18,8 @@ dist/
 # Codex temporary Electron smoke test profiles
 .tmp-electron-smoke-profile*
 .tmp-sidebar-*.js
+
+# Local Discord bot runtime data if bind mounts are used instead of Docker named volumes.
+data/
+logs/
+bot-config/

@@ -6,6 +6,11 @@ const {
   getDockerContainers,
   getDockerSnapshot,
   getDockerSummary,
+  inspectContainer,
+  listImages,
+  listNetworks,
+  listVolumes,
+  removeImage,
   restartContainer,
   startContainer,
   stopContainer,
@@ -33,7 +38,7 @@ function errorResult(error) {
   return result(error.statusCode || 500, {
     error: {
       code: error.code || "DOCKER_REQUEST_FAILED",
-      message: "Request failed.",
+      message: error.message || "Docker request failed.",
     },
   });
 }
@@ -67,6 +72,14 @@ function getContainerFromPath(pathname, suffix = "") {
   return decodeURIComponent(pathname.slice(prefix.length, suffix ? -suffix.length : undefined).replace(/\/$/, ""));
 }
 
+function getImageFromPath(pathname) {
+  const prefix = "/api/v1/docker/images/";
+  if (!pathname.startsWith(prefix)) {
+    return null;
+  }
+  return decodeURIComponent(pathname.slice(prefix.length).replace(/\/$/, ""));
+}
+
 async function handleDocker(request, url) {
   try {
     if (request.method === "GET" && url.pathname === "/api/v1/docker/snapshot") {
@@ -80,6 +93,23 @@ async function handleDocker(request, url) {
     }
     if (request.method === "POST" && url.pathname === "/api/v1/docker/containers") {
       return result(201, await createContainer(parseJsonBody(request)));
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/docker/images") {
+      return result(200, await listImages());
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/docker/networks") {
+      return result(200, await listNetworks());
+    }
+    if (request.method === "GET" && url.pathname === "/api/v1/docker/volumes") {
+      return result(200, await listVolumes());
+    }
+    const imageId = getImageFromPath(url.pathname);
+    if (request.method === "DELETE" && imageId) {
+      return result(200, await removeImage(imageId));
+    }
+    const inspectId = getContainerFromPath(url.pathname, "/inspect");
+    if (request.method === "GET" && inspectId) {
+      return result(200, await inspectContainer(inspectId));
     }
     const logsId = getContainerFromPath(url.pathname, "/logs");
     if (request.method === "GET" && logsId) {

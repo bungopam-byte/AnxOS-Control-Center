@@ -358,6 +358,13 @@ async function requestJson(url, label, config = {}) {
         headers: buildApiHeaders(config),
       });
       const body = await response.text();
+      console.info("[Marketplace][CurseForge] HTTP response.", {
+        label,
+        url: String(url),
+        status: response.status,
+        ok: response.ok,
+        bodyBytes: Buffer.byteLength(body || "", "utf8"),
+      });
       if (!response.ok) {
         throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_REQUEST_FAILED", {
           status: response.status,
@@ -512,6 +519,7 @@ function getSortField(mode, query) {
 
 async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader = "", config = {}) {
   const options = normalizeSearchOptions(queryOrOptions, minecraftVersion, loader, config);
+  const keyStatus = getApiKeyStatus(options.config);
   const url = createUrl("/mods/search", {
     gameId: MINECRAFT_GAME_ID,
     classId: MODPACK_CLASS_ID,
@@ -523,9 +531,40 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
     index: options.offset,
     pageSize: options.limit,
   });
+  console.info("[Marketplace][CurseForge] Search request.", {
+    provider: "curseforge",
+    mode: options.mode,
+    query: options.query,
+    minecraftVersion: options.minecraftVersion,
+    loader: options.loader,
+    offset: options.offset,
+    limit: options.limit,
+    apiKeyLoaded: keyStatus.loaded,
+    apiKeySource: keyStatus.source,
+    envFileExists: keyStatus.env?.envFileExists,
+    envLoaded: keyStatus.env?.envLoaded,
+    url: String(url),
+  });
   const payload = await requestJson(url, "CurseForge search", options.config);
-  const results = (payload.data || []).map(normalizeMod);
+  const rawRows = Array.isArray(payload.data) ? payload.data : [];
+  const results = rawRows.map(normalizeMod);
   const total = payload.pagination?.totalCount || results.length;
+  const diagnostics = {
+    provider: "curseforge",
+    url: String(url),
+    apiCount: rawRows.length,
+    filteredCount: rawRows.length,
+    parsedCount: results.length,
+    total,
+    apiKeyLoaded: keyStatus.loaded,
+    apiKeySource: keyStatus.source,
+    zeroReason: rawRows.length === 0
+      ? "api_returned_zero"
+      : results.length === 0
+        ? "parser_produced_zero"
+        : null,
+  };
+  console.info("[Marketplace][CurseForge] Search parsed.", diagnostics);
   return {
     provider: "curseforge",
     mode: options.mode,
@@ -534,6 +573,7 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
     total,
     nextOffset: options.offset + results.length,
     hasMore: options.offset + results.length < total,
+    diagnostics,
     results,
   };
 }
@@ -648,6 +688,7 @@ module.exports = {
     getCurseForgeApiKey,
     getEnvCandidates,
     isTransientError,
+    normalizeMod,
     normalizeFile,
     normalizeLoader,
     normalizeMod,

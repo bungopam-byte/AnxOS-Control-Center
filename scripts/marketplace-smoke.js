@@ -989,6 +989,9 @@ async function assertProviderInstallSupport() {
   assert(appSource.includes("loadMarketplaceProviderPacks"), "Renderer should search dynamic provider packs.");
   assert(appSource.includes("startMarketplaceInstallProgressListener"), "Renderer should register progress listener for provider installs.");
   assert(appSource.includes("stopMarketplaceInstallProgressListener"), "Renderer should clean up progress listener after installs.");
+  assert(appSource.includes("[Marketplace][Renderer] Provider refresh requested."), "Renderer should log provider refresh diagnostics.");
+  assert(appSource.includes("[Marketplace][Renderer] Provider IPC request."), "Renderer should log provider IPC payloads.");
+  assert(appSource.includes("fetchedCount"), "Renderer should log provider fetched/filtered/rendered counts.");
   assert(agentRouteSource.includes('getInstanceIdFromPath(url.pathname, "/exists")'), "Agent should expose an explicit instance file exists endpoint.");
   assert(agentClientSource.includes("async function instanceFileExists"), "Desktop agent client should expose instanceFileExists.");
 
@@ -1012,6 +1015,14 @@ async function assertProviderInstallSupport() {
     /404 Project not found/,
     "Modrinth 404 errors should be user friendly."
   );
+  assert.strictEqual(typeof modrinthProvider._test.normalizeProject({
+    project_id: "mr-smoke",
+    project_type: "modpack",
+    title: "MR Smoke",
+    versions: ["1.21.1"],
+    categories: ["fabric"],
+    server_side: "required",
+  }).providerProjectId, "string", "Modrinth current search schema should normalize project_id.");
 
   const cfEnvNames = [
     "CURSEFORGE_API_KEY",
@@ -1069,6 +1080,16 @@ async function assertProviderInstallSupport() {
     curseforgeProvider._test.friendlyHttpMessage("search", 429, '{"message":"rate limit exceeded"}'),
     /429 Rate limited.*rate limit exceeded/,
     "CurseForge 429 errors should include provider response details."
+  );
+  assert.strictEqual(
+    curseforgeProvider._test.normalizeMod({
+      id: 925200,
+      name: "CF Smoke",
+      latestFilesIndexes: [{ gameVersion: "1.21.1", modLoader: 6 }],
+      authors: [{ name: "Smoke" }],
+    }).providerProjectId,
+    925200,
+    "CurseForge current search schema should normalize id/latestFilesIndexes."
   );
   assert(
     curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(".env")),

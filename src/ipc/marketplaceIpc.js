@@ -93,7 +93,25 @@ function registerMarketplaceIpc() {
 
   ipcMain.handle("marketplace:listTemplates", async () => invokeMarketplaceOperation(() => listTemplates()));
   ipcMain.handle("marketplace:getMinecraftVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getMinecraftVersionCatalog(payload.templateId)));
-  ipcMain.handle("marketplace:searchProviderPacks", async (_, payload = {}) => invokeMarketplaceOperation(() => searchProviderPacks(payload)));
+  ipcMain.handle("marketplace:searchProviderPacks", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
+    console.info("[Marketplace][IPC] searchProviderPacks request.", {
+      provider: payload.provider || "modrinth",
+      mode: payload.mode || "featured",
+      query: payload.query || "",
+      minecraftVersion: payload.minecraftVersion || payload.version || "",
+      loader: payload.loader || "",
+      offset: payload.offset || 0,
+      limit: payload.limit || null,
+    });
+    const result = await searchProviderPacks(payload);
+    console.info("[Marketplace][IPC] searchProviderPacks response.", {
+      provider: result?.provider || payload.provider || "modrinth",
+      resultCount: Array.isArray(result?.results) ? result.results.length : 0,
+      responseBytes: Buffer.byteLength(JSON.stringify(result || {}), "utf8"),
+      diagnostics: result?.diagnostics || null,
+    });
+    return result;
+  }));
   ipcMain.handle("marketplace:getProviderPackVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getProviderPackVersions(payload)));
   ipcMain.handle("marketplace:getProviderPackDetails", async (_, payload = {}) => invokeMarketplaceOperation(() => getProviderPackDetails(payload)));
   ipcMain.handle("marketplace:getImportSupport", async () => invokeMarketplaceOperation(() => getImportSupport()));

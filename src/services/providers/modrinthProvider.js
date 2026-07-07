@@ -156,6 +156,13 @@ async function requestJson(url, label) {
         },
       });
       const body = await response.text();
+      console.info("[Marketplace][Modrinth] HTTP response.", {
+        label,
+        url: String(url),
+        status: response.status,
+        ok: response.ok,
+        bodyBytes: Buffer.byteLength(body || "", "utf8"),
+      });
       if (!response.ok) {
         throw new ModrinthProviderError(friendlyHttpMessage("Modrinth", label, response.status, body), "MODRINTH_REQUEST_FAILED", {
           status: response.status,
@@ -318,8 +325,36 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
     limit: options.limit,
     facets: buildSearchFacets(options.minecraftVersion, options.loader),
   });
+  console.info("[Marketplace][Modrinth] Search request.", {
+    provider: "modrinth",
+    mode: options.mode,
+    query: options.query,
+    minecraftVersion: options.minecraftVersion,
+    loader: options.loader,
+    offset: options.offset,
+    limit: options.limit,
+    url: String(url),
+  });
   const payload = await requestJson(url, "Modrinth search");
-  const results = (payload.hits || []).filter(isServerCapableProject).map(normalizeProject);
+  const rawHits = Array.isArray(payload.hits) ? payload.hits : [];
+  const filtered = rawHits.filter(isServerCapableProject);
+  const results = filtered.map(normalizeProject);
+  const diagnostics = {
+    provider: "modrinth",
+    url: String(url),
+    apiCount: rawHits.length,
+    filteredCount: filtered.length,
+    parsedCount: results.length,
+    totalHits: payload.total_hits || 0,
+    zeroReason: rawHits.length === 0
+      ? "api_returned_zero"
+      : filtered.length === 0
+        ? "filters_removed_all"
+        : results.length === 0
+          ? "parser_produced_zero"
+          : null,
+  };
+  console.info("[Marketplace][Modrinth] Search parsed.", diagnostics);
   return {
     provider: "modrinth",
     mode: options.mode,
@@ -328,6 +363,7 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
     total: payload.total_hits || results.length,
     nextOffset: options.offset + results.length,
     hasMore: options.offset + results.length < (payload.total_hits || 0),
+    diagnostics,
     results,
   };
 }

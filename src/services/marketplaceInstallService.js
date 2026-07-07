@@ -1102,13 +1102,33 @@ async function installPack(payload = {}) {
 
 async function searchProviderPacks(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
+  console.info("[Marketplace][ProviderSearch] Dispatch.", {
+    provider,
+    mode: payload.mode || "featured",
+    query: payload.query || "",
+    minecraftVersion: payload.minecraftVersion || payload.version || "",
+    loader: payload.loader || "",
+    offset: payload.offset || 0,
+    limit: payload.limit || null,
+  });
+  let result;
   if (provider === "curseforge") {
-    return curseforgeProvider.searchModpacks(payload);
+    result = await curseforgeProvider.searchModpacks(payload);
+  } else if (provider === "modrinth") {
+    result = await modrinthProvider.searchModpacks(payload);
+  } else {
+    result = {
+      provider,
+      diagnostics: { provider, zeroReason: "unsupported_provider", apiCount: 0, filteredCount: 0, parsedCount: 0 },
+      results: [],
+    };
   }
-  if (provider === "modrinth") {
-    return modrinthProvider.searchModpacks(payload);
-  }
-  return { provider, results: [] };
+  console.info("[Marketplace][ProviderSearch] Result.", {
+    provider,
+    resultCount: Array.isArray(result?.results) ? result.results.length : 0,
+    diagnostics: result?.diagnostics || null,
+  });
+  return result;
 }
 
 async function getProviderPackVersions(payload = {}) {

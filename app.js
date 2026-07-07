@@ -5596,9 +5596,21 @@ function renderMarketplaceTemplates() {
 
   renderMarketplaceProviderControls();
   marketplaceGrid.replaceChildren();
-  const templates = isMarketplaceProviderBrowserActive()
+  const providerBrowserActive = isMarketplaceProviderBrowserActive();
+  const fetchedCount = providerBrowserActive ? marketplaceProviderResults.length : marketplaceTemplates.length;
+  const templates = providerBrowserActive
     ? marketplaceProviderResults.map(registerProviderMarketplaceTemplate)
     : getFilteredMarketplaceTemplates();
+  console.info("[Marketplace][Renderer] renderMarketplaceTemplates.", {
+    category: marketplaceActiveCategory,
+    provider: providerBrowserActive ? marketplaceProviderActive : "static",
+    fetchedCount,
+    filteredCount: templates.length,
+    renderedCount: templates.length,
+    query: marketplaceSearchInput?.value || "",
+    loader: marketplaceProviderLoader?.value || "",
+    minecraftVersion: marketplaceProviderMinecraftVersion?.value || "",
+  });
   if (marketplaceEmpty) {
     marketplaceEmpty.hidden = marketplaceRequestInFlight || marketplaceProviderRequestInFlight || templates.length > 0;
   }
@@ -5665,6 +5677,19 @@ function renderMarketplaceTemplates() {
 
 async function loadMarketplaceProviderPacks({ reset = false } = {}) {
   const desktopApiState = getDesktopApiState();
+  const page = reset ? 1 : Math.floor((Number(marketplaceProviderOffset) || 0) / MARKETPLACE_PROVIDER_PAGE_SIZE) + 1;
+  console.info("[Marketplace][Renderer] Provider refresh requested.", {
+    category: marketplaceActiveCategory,
+    provider: marketplaceProviderActive,
+    mode: marketplaceProviderMode,
+    query: marketplaceSearchInput?.value || "",
+    minecraftVersion: marketplaceProviderMinecraftVersion?.value || "",
+    loader: marketplaceProviderLoader?.value || "",
+    page,
+    reset,
+    inFlight: marketplaceProviderRequestInFlight,
+    providerInstallAvailable: desktopApiState.hasMarketplaceProviderInstall,
+  });
   if (!desktopApiState.hasMarketplaceProviderInstall || marketplaceProviderRequestInFlight) {
     if (!desktopApiState.hasMarketplaceProviderInstall) {
       setMarketplaceProviderStatus("Provider browser is unavailable in this build.", "warning");
@@ -5688,22 +5713,52 @@ async function loadMarketplaceProviderPacks({ reset = false } = {}) {
 
   try {
     const payload = getMarketplaceProviderQueryPayload({ reset });
+    console.info("[Marketplace][Renderer] Provider IPC request.", payload);
     const result = await desktopApiState.api.marketplace.searchProviderPacks(payload);
     if (requestId !== marketplaceProviderRequestId) {
       return;
     }
     const results = Array.isArray(result?.results) ? result.results : [];
+    const fetchedCount = results.length;
     marketplaceProviderResults = reset ? results : [...marketplaceProviderResults, ...results];
     marketplaceProviderOffset = Number(result?.nextOffset) || marketplaceProviderResults.length;
     marketplaceProviderHasMore = Boolean(result?.hasMore);
-    setMarketplaceProviderStatus(`${marketplaceProviderResults.length} ${formatMarketplaceProviderLabel({ provider: marketplaceProviderActive })} modpacks loaded.`, "success");
+    const filteredCount = marketplaceProviderResults.length;
+    const renderedCount = filteredCount;
+    console.info("[Marketplace][Renderer] Provider render counts.", {
+      provider: marketplaceProviderActive,
+      fetchedCount,
+      filteredCount,
+      renderedCount,
+      totalLoaded: marketplaceProviderResults.length,
+      diagnostics: result?.diagnostics || null,
+    });
+    const zeroReason = result?.diagnostics?.zeroReason || null;
+    if (marketplaceProviderResults.length === 0) {
+      const diagnostic = zeroReason ? ` (${zeroReason.replace(/_/g, " ")})` : "";
+      const url = result?.diagnostics?.url ? ` URL: ${result.diagnostics.url}` : "";
+      setMarketplaceProviderStatus(`No ${formatMarketplaceProviderLabel({ provider: marketplaceProviderActive })} modpacks loaded${diagnostic}.${url}`, "warning");
+    } else {
+      setMarketplaceProviderStatus(`${marketplaceProviderResults.length} ${formatMarketplaceProviderLabel({ provider: marketplaceProviderActive })} modpacks loaded.`, "success");
+    }
     renderMarketplaceTemplates();
   } catch (error) {
     if (requestId !== marketplaceProviderRequestId) {
       return;
     }
-    setMarketplaceProviderStatus(error?.message || "Provider search failed.", "error");
-    showToast(error?.message || "Provider search failed.");
+    console.error("[Marketplace][Renderer] Provider search failed.", {
+      provider: marketplaceProviderActive,
+      query: marketplaceSearchInput?.value || "",
+      minecraftVersion: marketplaceProviderMinecraftVersion?.value || "",
+      loader: marketplaceProviderLoader?.value || "",
+      page,
+      message: error?.message || null,
+      stack: error?.stack || null,
+      error,
+    });
+    const message = error?.message || "Provider search failed.";
+    setMarketplaceProviderStatus(message, "error");
+    showToast(message);
     renderMarketplaceTemplates();
   } finally {
     if (requestId === marketplaceProviderRequestId) {

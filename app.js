@@ -9936,6 +9936,12 @@ function getSshShellInputValue() {
   return sshKeyboardMode ? sshKeyboardInputBuffer : sshCommandInput?.value || "";
 }
 
+function syncSshKeyboardInputValue() {
+  if (sshKeyboardMode && sshCommandInput) {
+    sshCommandInput.value = sshKeyboardInputBuffer;
+  }
+}
+
 async function copySshOutput() {
   const output = getSshRows().join("\n");
 
@@ -11283,11 +11289,20 @@ sshCommandInput?.addEventListener("keydown", async (event) => {
   }
 
   if (event.key === "Backspace") {
+    event.preventDefault();
+
     if (sshKeyboardInputBuffer) {
       sshKeyboardInputBuffer = sshKeyboardInputBuffer.slice(0, -1);
     }
 
+    syncSshKeyboardInputValue();
     await writeSshInput("\b");
+    return;
+  }
+
+  if (event.key === "Delete") {
+    event.preventDefault();
+    await writeSshInput("\u001b[3~");
     return;
   }
 
@@ -11309,6 +11324,19 @@ sshCommandInput?.addEventListener("keydown", async (event) => {
     return;
   }
 
+  const navigationKeyMap = {
+    Home: "\u001b[H",
+    End: "\u001b[F",
+    PageUp: "\u001b[5~",
+    PageDown: "\u001b[6~",
+  };
+
+  if (navigationKeyMap[event.key]) {
+    event.preventDefault();
+    await writeSshInput(navigationKeyMap[event.key]);
+    return;
+  }
+
   if (event.ctrlKey || event.metaKey || event.altKey) {
     if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
       event.preventDefault();
@@ -11318,9 +11346,29 @@ sshCommandInput?.addEventListener("keydown", async (event) => {
   }
 
   if (event.key.length === 1) {
+    event.preventDefault();
     sshKeyboardInputBuffer += event.key;
+    syncSshKeyboardInputValue();
     await writeSshInput(event.key);
   }
+});
+sshCommandInput?.addEventListener("paste", async (event) => {
+  const session = getActiveSshSession();
+
+  if (!session || session.status !== "connected") {
+    return;
+  }
+
+  const pastedText = event.clipboardData?.getData("text") || "";
+
+  if (!pastedText) {
+    return;
+  }
+
+  event.preventDefault();
+  sshKeyboardInputBuffer += pastedText;
+  syncSshKeyboardInputValue();
+  await writeSshInput(pastedText);
 });
 sshCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();

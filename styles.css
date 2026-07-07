@@ -5031,6 +5031,48 @@ body.is-resizing-files * {
   padding-inline: 0;
 }
 
+.page[data-page="instances"] .instance-minecraft-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.page[data-page="instances"] .instance-minecraft-summary[hidden] {
+  display: none;
+}
+
+.page[data-page="instances"] .instance-minecraft-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(182, 108, 255, 0.18);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(35, 17, 58, 0.5), rgba(10, 6, 18, 0.34)),
+    rgba(8, 10, 15, 0.24);
+}
+
+.page[data-page="instances"] .instance-minecraft-card h4 {
+  margin: 0 0 10px;
+  color: rgba(224, 214, 239, 0.82);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page[data-page="instances"] .instance-minecraft-card .docker-details-list {
+  border: 0;
+  background: transparent;
+}
+
+.page[data-page="instances"] .instance-minecraft-card .docker-details-list div {
+  grid-template-columns: minmax(88px, 0.46fr) minmax(0, 1fr);
+  padding: 7px 0;
+}
+
 .page[data-page="instances"] [data-instance-panel="console"].is-active {
   min-height: clamp(340px, 42vh, 620px);
 }

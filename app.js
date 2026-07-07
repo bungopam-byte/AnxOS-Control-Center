@@ -3736,6 +3736,100 @@ function renderInstanceBackupProfile(profile) {
   }
 }
 
+function firstPresentValue(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const text = String(value).trim();
+    if (text && text !== "Unavailable" && text !== "Unknown version") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function firstFiniteValue(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) {
+      return number;
+    }
+  }
+  return null;
+}
+
+function formatOptionalMinecraftValue(value) {
+  const present = firstPresentValue(value);
+  return present === null ? "—" : String(present);
+}
+
+function formatMinecraftPlayers(online, max) {
+  const onlineNumber = firstFiniteValue(online);
+  const maxNumber = firstFiniteValue(max);
+
+  if (onlineNumber === null && maxNumber === null) {
+    return "—";
+  }
+
+  return `${onlineNumber === null ? "—" : onlineNumber} / ${maxNumber === null ? "—" : maxNumber}`;
+}
+
+function formatMinecraftTps(value) {
+  const tps = firstFiniteValue(value);
+  if (tps === null) {
+    return "—";
+  }
+  return tps.toFixed(tps % 1 === 0 ? 0 : 1);
+}
+
+function getMinecraftPlayitValue(instance) {
+  const minecraft = instance?.minecraft || {};
+  const metadata = instance?.metadata || {};
+  const network = instance?.network || metadata.network || {};
+  const playit = instance?.playit || metadata.playit || {};
+  const tunnels = Array.isArray(instance?.tunnels) ? instance.tunnels : Array.isArray(metadata.tunnels) ? metadata.tunnels : [];
+  const primaryTunnel = tunnels.find(Boolean) || {};
+  return firstPresentValue(
+    minecraft.playitTunnel,
+    minecraft.playitAddress,
+    network.publicAddress,
+    network.tunnelAddress,
+    playit.tunnelAddress,
+    playit.tunnelDomain,
+    playit.address,
+    primaryTunnel.tunnelAddress,
+    primaryTunnel.tunnelDomain,
+    primaryTunnel.address,
+    primaryTunnel.url,
+    latestPlayitSnapshot?.tunnelAddress,
+    latestPlayitSnapshot?.tunnelDomain
+  );
+}
+
+function getMinecraftSummaryData(instance) {
+  const minecraft = instance?.minecraft || {};
+  const players = minecraft.players || instance?.players || instance?.status?.players || instance?.runtime?.players || {};
+  const metadata = instance?.metadata || {};
+  const config = instance?.config || metadata.config || {};
+  const stats = instance?.stats || {};
+  const runtime = instance?.runtime || {};
+  const version = getInstanceVersionMetadata(instance);
+  return {
+    version: firstPresentValue(minecraft.version, minecraft.minecraftVersion, version.gameVersion, instance?.minecraftVersion, instance?.gameVersion),
+    serverType: firstPresentValue(minecraft.serverType, minecraft.serverSoftware, version.software, instance?.serverSoftware, inferMinecraftServerType(instance)),
+    java: firstPresentValue(minecraft.javaVersion, minecraft.java, instance?.javaVersion, instance?.executable, "java"),
+    players: formatMinecraftPlayers(
+      firstFiniteValue(players.online, minecraft.onlinePlayers, instance?.onlinePlayers, instance?.status?.onlinePlayers),
+      firstFiniteValue(players.max, minecraft.maxPlayers, instance?.maxPlayers, config.maxPlayers, latestMinecraftProperties["max-players"])
+    ),
+    tps: formatMinecraftTps(firstFiniteValue(minecraft.tps, stats.tps, runtime.tps, instance?.tps)),
+    world: firstPresentValue(minecraft.worldName, minecraft.world, instance?.worldName, config.worldName, latestMinecraftProperties["level-name"]),
+    seed: firstPresentValue(minecraft.seed, instance?.seed, config.seed, latestMinecraftProperties["level-seed"]),
+    playit: getMinecraftPlayitValue(instance),
+  };
+}
+
 function renderMinecraftWorkspaceSummary(instance, metrics) {
   if (instanceMinecraftSummary) {
     instanceMinecraftSummary.hidden = !isMinecraftInstance(instance);
@@ -3745,15 +3839,16 @@ function renderMinecraftWorkspaceSummary(instance, metrics) {
     return;
   }
 
-  setMinecraftSummaryField("version", getInstanceVersionMetadata(instance).gameVersion || inferMinecraftVersion(instance));
-  setMinecraftSummaryField("serverType", inferMinecraftServerType(instance));
-  setMinecraftSummaryField("java", instance?.executable || "java");
-  setMinecraftSummaryField("players", "Unavailable");
-  setMinecraftSummaryField("maxPlayers", latestMinecraftProperties["max-players"] || "Unavailable");
-  setMinecraftSummaryField("tps", "Placeholder");
-  setMinecraftSummaryField("world", latestMinecraftProperties["level-name"] || "world");
-  setMinecraftSummaryField("seed", latestMinecraftProperties["level-seed"] || "Unavailable");
-  setMinecraftSummaryField("playit", latestPlayitSnapshot?.connected ? "Connected" : "Unavailable");
+  const summary = getMinecraftSummaryData(instance);
+  setMinecraftSummaryField("version", formatOptionalMinecraftValue(summary.version));
+  setMinecraftSummaryField("serverType", formatOptionalMinecraftValue(summary.serverType));
+  setMinecraftSummaryField("java", formatOptionalMinecraftValue(summary.java));
+  setMinecraftSummaryField("players", summary.players);
+  setMinecraftSummaryField("maxPlayers", firstFiniteValue(instance?.minecraft?.players?.max, latestMinecraftProperties["max-players"]) ?? "—");
+  setMinecraftSummaryField("tps", summary.tps);
+  setMinecraftSummaryField("world", formatOptionalMinecraftValue(summary.world));
+  setMinecraftSummaryField("seed", formatOptionalMinecraftValue(summary.seed));
+  setMinecraftSummaryField("playit", formatOptionalMinecraftValue(summary.playit));
   setMinecraftSummaryField("ram", formatInstanceMemory(metrics));
   setMinecraftSummaryField("cpu", formatInstanceCpu(metrics));
   setMinecraftSummaryField("disk", formatInstanceDisk(metrics));
@@ -10561,6 +10656,71 @@ async function copySshOutput() {
   }
 }
 
+function getSshSelectedText() {
+  const inputSelection = sshCommandInput &&
+    typeof sshCommandInput.selectionStart === "number" &&
+    typeof sshCommandInput.selectionEnd === "number" &&
+    sshCommandInput.selectionEnd > sshCommandInput.selectionStart
+    ? sshCommandInput.value.slice(sshCommandInput.selectionStart, sshCommandInput.selectionEnd)
+    : "";
+
+  if (inputSelection) {
+    return inputSelection;
+  }
+
+  const selection = window.getSelection?.();
+  const selectedText = selection ? selection.toString() : "";
+  if (!selectedText || !sshTerminalWindow) {
+    return "";
+  }
+
+  const anchorNode = selection.anchorNode;
+  const focusNode = selection.focusNode;
+  return sshTerminalWindow.contains(anchorNode) || sshTerminalWindow.contains(focusNode) ? selectedText : "";
+}
+
+async function copySshSelectedText() {
+  const selectedText = getSshSelectedText();
+  if (!selectedText) {
+    return false;
+  }
+
+  try {
+    await navigator.clipboard.writeText(selectedText);
+    return true;
+  } catch {
+    showToast("Selected SSH text could not be copied.");
+    return false;
+  }
+}
+
+async function readSshClipboardText(event = null) {
+  const eventText = event?.clipboardData?.getData?.("text") || "";
+  if (eventText) {
+    return eventText;
+  }
+
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    showToast("Clipboard text could not be read.");
+    return "";
+  }
+}
+
+async function pasteSshText(text) {
+  const session = getActiveSshSession();
+  const pastedText = typeof text === "string" ? text : "";
+
+  if (!session || session.status !== "connected" || !pastedText) {
+    return false;
+  }
+
+  sshKeyboardInputBuffer += pastedText;
+  syncSshKeyboardInputValue();
+  return writeSshInput(pastedText);
+}
+
 function toggleSshFullscreen() {
   if (!sshTerminalCard) {
     return;
@@ -11168,6 +11328,33 @@ async function writeSshInput(input) {
     showToast(error?.message || "SSH input failed.");
     return false;
   }
+}
+
+async function handleSshClipboardShortcut(event) {
+  const isPasteShortcut =
+    ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "v") ||
+    (event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.key === "Insert");
+
+  // Keyboard paste must use the same SSH write path as the native paste event.
+  // The keydown handler below intercepts Ctrl+letter for terminal control codes,
+  // so Ctrl+V/Cmd+V/Shift+Insert need to be handled before that generic branch.
+  if (isPasteShortcut) {
+    event.preventDefault();
+    await pasteSshText(await readSshClipboardText(event));
+    return true;
+  }
+
+  const isCopyShortcut = (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "c";
+
+  // Preserve terminal Ctrl+C semantics: copy selected text when there is a
+  // selection, otherwise allow the normal Ctrl+C path to send ETX/SIGINT.
+  if (isCopyShortcut && getSshSelectedText()) {
+    event.preventDefault();
+    await copySshSelectedText();
+    return true;
+  }
+
+  return false;
 }
 
 async function disconnectAllSshListeners() {
@@ -11859,6 +12046,20 @@ sshPasswordInput?.addEventListener("keydown", (event) => {
     connectSshSession({ password: sshPasswordInput.value || "" });
   }
 });
+sshTerminalWindow?.addEventListener("click", () => {
+  if (!sshCommandInput?.disabled) {
+    sshCommandInput?.focus();
+  }
+});
+sshTerminalWindow?.addEventListener("keydown", async (event) => {
+  const session = getActiveSshSession();
+
+  if (!session || session.status !== "connected") {
+    return;
+  }
+
+  await handleSshClipboardShortcut(event);
+});
 sshCommandInput?.addEventListener("focus", () => {
   sshKeyboardMode = true;
   sshKeyboardInputBuffer = sshCommandInput.value || "";
@@ -11873,6 +12074,10 @@ sshCommandInput?.addEventListener("keydown", async (event) => {
   const session = getActiveSshSession();
 
   if (!session || session.status !== "connected") {
+    return;
+  }
+
+  if (await handleSshClipboardShortcut(event)) {
     return;
   }
 
@@ -11963,16 +12168,14 @@ sshCommandInput?.addEventListener("paste", async (event) => {
     return;
   }
 
-  const pastedText = event.clipboardData?.getData("text") || "";
+  const pastedText = await readSshClipboardText(event);
 
   if (!pastedText) {
     return;
   }
 
   event.preventDefault();
-  sshKeyboardInputBuffer += pastedText;
-  syncSshKeyboardInputValue();
-  await writeSshInput(pastedText);
+  await pasteSshText(pastedText);
 });
 sshCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();

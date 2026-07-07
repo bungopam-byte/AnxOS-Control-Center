@@ -1239,22 +1239,39 @@
                     </section>
                   </div>
                   <div class="instance-minecraft-summary" data-instance-minecraft-summary hidden>
-                    <h4>Minecraft</h4>
-                    <dl class="docker-details-list">
-                      <div><dt>Minecraft Version</dt><dd data-minecraft-summary="version">Unavailable</dd></div>
-                      <div><dt>Server Type</dt><dd data-minecraft-summary="serverType">Unavailable</dd></div>
-                      <div><dt>Java Version</dt><dd data-minecraft-summary="java">Configured executable</dd></div>
-                      <div><dt>Online Players</dt><dd data-minecraft-summary="players">Unavailable</dd></div>
-                      <div><dt>Maximum Players</dt><dd data-minecraft-summary="maxPlayers">Unavailable</dd></div>
-                      <div><dt>TPS</dt><dd data-minecraft-summary="tps">Placeholder</dd></div>
-                      <div><dt>World Name</dt><dd data-minecraft-summary="world">world</dd></div>
-                      <div><dt>Seed</dt><dd data-minecraft-summary="seed">Unavailable</dd></div>
-                      <div><dt>Playit Tunnel</dt><dd data-minecraft-summary="playit">Unavailable</dd></div>
-                      <div><dt>RAM Usage</dt><dd data-minecraft-summary="ram">Unavailable</dd></div>
-                      <div><dt>CPU Usage</dt><dd data-minecraft-summary="cpu">Unavailable</dd></div>
-                      <div><dt>Disk Usage</dt><dd data-minecraft-summary="disk">Unavailable</dd></div>
-                      <div><dt>Uptime</dt><dd data-minecraft-summary="uptime">Unavailable</dd></div>
-                    </dl>
+                    <section class="instance-minecraft-card">
+                      <h4>Server</h4>
+                      <dl class="docker-details-list">
+                        <div><dt>Minecraft Version</dt><dd data-minecraft-summary="version">—</dd></div>
+                        <div><dt>Server Type</dt><dd data-minecraft-summary="serverType">—</dd></div>
+                        <div><dt>Java Version</dt><dd data-minecraft-summary="java">—</dd></div>
+                      </dl>
+                    </section>
+                    <section class="instance-minecraft-card">
+                      <h4>Players</h4>
+                      <dl class="docker-details-list">
+                        <div><dt>Online / Max</dt><dd data-minecraft-summary="players">—</dd></div>
+                      </dl>
+                    </section>
+                    <section class="instance-minecraft-card">
+                      <h4>World</h4>
+                      <dl class="docker-details-list">
+                        <div><dt>Name</dt><dd data-minecraft-summary="world">—</dd></div>
+                        <div><dt>Seed</dt><dd data-minecraft-summary="seed">—</dd></div>
+                      </dl>
+                    </section>
+                    <section class="instance-minecraft-card">
+                      <h4>Network</h4>
+                      <dl class="docker-details-list">
+                        <div><dt>Playit Tunnel</dt><dd data-minecraft-summary="playit">—</dd></div>
+                      </dl>
+                    </section>
+                    <section class="instance-minecraft-card">
+                      <h4>Performance</h4>
+                      <dl class="docker-details-list">
+                        <div><dt>TPS</dt><dd data-minecraft-summary="tps">—</dd></div>
+                      </dl>
+                    </section>
                   </div>
                 </div>
 
@@ -1600,7 +1617,7 @@
                   </div>
                 </div>
 
-                <div class="ssh-terminal-window" data-ssh-terminal>
+                <div class="ssh-terminal-window" data-ssh-terminal tabindex="0">
                   <ol class="ssh-terminal-output" data-ssh-output></ol>
                   <div class="ssh-loading-state" data-ssh-loading hidden>
                     <span class="file-loader" aria-hidden="true"></span>

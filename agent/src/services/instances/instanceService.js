@@ -542,6 +542,110 @@ function publicConfig(config) {
   };
 }
 
+function numericOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function pickString(...values) {
+  for (const value of values) {
+    const text = String(value ?? "").trim();
+    if (text) {
+      return text.slice(0, 255);
+    }
+  }
+  return null;
+}
+
+function pickTunnelAddress(config = {}) {
+  const playit = config.playit && typeof config.playit === "object" ? config.playit : {};
+  const network = config.network && typeof config.network === "object" ? config.network : {};
+  const tunnels = Array.isArray(config.tunnels) ? config.tunnels : [];
+  const primaryTunnel = tunnels.find(Boolean) || {};
+  return pickString(
+    config.playitTunnelAddress,
+    config.playitAddress,
+    config.tunnelAddress,
+    config.tunnelDomain,
+    playit.tunnelAddress,
+    playit.tunnelDomain,
+    playit.address,
+    network.publicAddress,
+    network.tunnelAddress,
+    primaryTunnel.tunnelAddress,
+    primaryTunnel.tunnelDomain,
+    primaryTunnel.address,
+    primaryTunnel.url
+  );
+}
+
+function parseTpsFromMessages(messages = []) {
+  for (const message of [...messages].reverse()) {
+    const text = String(message || "");
+    const match = text.match(/\bTPS\b[^:]*:\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?(?:\s*,\s*(\d+(?:\.\d+)?))?/i) ||
+      text.match(/\bTPS\b\s*[=:]\s*(\d+(?:\.\d+)?)/i) ||
+      text.match(/\b(?:current|server)\s+tps\b[^0-9]*(\d+(?:\.\d+)?)/i);
+    if (match) {
+      const value = numericOrNull(match[1]);
+      if (value !== null) {
+        return value;
+      }
+    }
+  }
+  return null;
+}
+
+async function readRecentLogMessages(instanceId, limit = 250) {
+  const entries = (await Promise.all(["stdout", "stderr"].map((streamName) => {
+    return readRecentLines(logPath(instanceId, streamName), limit).catch(() => []);
+  }))).flat();
+  return entries.map((entry) => entry?.message).filter(Boolean);
+}
+
+async function queryMinecraftRuntimeStatus(config) {
+  for (const port of getMinecraftStatusPorts(config)) {
+    const status = await queryMinecraftStatus(port).catch(() => null);
+    if (status?.version || status?.players) {
+      return status;
+    }
+  }
+  return null;
+}
+
+async function buildMinecraftSummary(config) {
+  if (inferGameFamily(config) !== "minecraft" && !isMinecraftSoftwareName([config.type, config.serverSoftware, config.displayName, config.id].join(" "))) {
+    return null;
+  }
+
+  const properties = (await readMinecraftProperties(config.id).catch(() => ({ properties: {} }))).properties || {};
+  const status = config.state === INSTANCE_STATES.RUNNING ? await queryMinecraftRuntimeStatus(config) : null;
+  const logMessages = await readRecentLogMessages(config.id).catch(() => []);
+  const players = status?.players && typeof status.players === "object" ? status.players : {};
+  const maxPlayers = numericOrNull(players.max) ?? numericOrNull(properties["max-players"]) ?? numericOrNull(config.maxPlayers);
+  const onlinePlayers = numericOrNull(players.online) ?? numericOrNull(config.onlinePlayers);
+  const version = parseMinecraftVersion(status?.version?.name) || config.minecraftVersion || config.gameVersion || config.versionInfo?.gameVersion || null;
+
+  return {
+    version,
+    serverType: config.serverSoftware || inferServerSoftware(config),
+    javaVersion: config.executable || null,
+    players: {
+      online: onlinePlayers,
+      max: maxPlayers,
+    },
+    tps: numericOrNull(config.tps) ?? numericOrNull(config.stats?.tps) ?? numericOrNull(config.runtime?.tps) ?? parseTpsFromMessages(logMessages),
+    worldName: pickString(config.worldName, config.world, properties["level-name"], "world"),
+    seed: pickString(config.seed, config.worldSeed, properties["level-seed"]),
+    playitTunnel: pickTunnelAddress(config),
+  };
+}
+
+async function publicConfigDetailed(config) {
+  const output = publicConfig(config);
+  const minecraft = await buildMinecraftSummary(config).catch(() => null);
+  return minecraft ? { ...output, minecraft } : output;
+}
+
 function cleanVersionValue(value) {
   const text = String(value || "").trim();
   if (!text || text === "latest" || text === "Unknown version" || /\blatest\b/i.test(text)) {
@@ -1513,7 +1617,7 @@ async function listInstances() {
 
   for (const id of ids) {
     try {
-      instances.push(publicConfig(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(id)))));
+      instances.push(await publicConfigDetailed(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(id)))));
     } catch {
       continue;
     }
@@ -1993,7 +2097,7 @@ async function restartInstance(instanceId) {
 }
 
 async function getStatus(instanceId) {
-  return publicConfig(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId))));
+  return publicConfigDetailed(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId))));
 }
 
 async function readRecentLines(filePath, lineLimit) {

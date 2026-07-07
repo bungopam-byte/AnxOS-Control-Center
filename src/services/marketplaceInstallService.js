@@ -687,6 +687,8 @@ async function runServerInstaller(instanceId, serverInfo, agentConfig) {
   await agentClient.updateInstance(instanceId, {
     executable: serverInfo.installer.startup?.executable || "bash",
     args: serverInfo.installer.startup?.args || ["run.sh", "nogui"],
+    startupArguments: serverInfo.installer.startup?.args || ["run.sh", "nogui"],
+    startupScript: (serverInfo.installer.startup?.args || ["run.sh"])[0] || "run.sh",
     workingDirectory: "data",
     restartPolicy: "on-failure",
     startupTimeoutMs: 60000,

@@ -307,6 +307,64 @@ async function assertFiveMPlaceholderStartIsBlocked() {
   }
 }
 
+async function assertScriptMarketplaceStartupIsNotJarWrapped() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-script-startup-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "script-startup-smoke",
+      displayName: "Script Startup Smoke",
+      type: "java-app",
+      workingDirectory: "data",
+      executable: "bash",
+      args: ["run.sh"],
+      startupArguments: ["run.sh"],
+      startupScript: "run.sh",
+      restartPolicy: "on-failure",
+      tags: ["minecraft", "forge"],
+    });
+    await instanceService.writeInstanceFile("script-startup-smoke", "run.sh", "#!/usr/bin/env bash\nexit 0\n");
+    const started = await instanceService.startInstance("script-startup-smoke");
+    assert.deepStrictEqual(started.args, ["run.sh"], "Script startup must not inject -jar.");
+    assert.strictEqual(started.executable, "bash", "Script startup should preserve bash executable.");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const status = await instanceService.getStatus("script-startup-smoke");
+    assert.notStrictEqual(status.failureReason, "SERVER_JAR_MISSING", "Script startup should not require a server jar.");
+
+    await instanceService.createInstance({
+      id: "invalid-script-startup-smoke",
+      displayName: "Invalid Script Startup Smoke",
+      type: "java-app",
+      workingDirectory: "data",
+      executable: "bash",
+      args: ["-j"],
+      startupArguments: ["-j"],
+      restartPolicy: "on-failure",
+      tags: ["minecraft", "forge"],
+    });
+    await instanceService.startInstance("invalid-script-startup-smoke");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const invalidStatus = await instanceService.getStatus("invalid-script-startup-smoke");
+    assert.strictEqual(invalidStatus.exitCode, 2, "Invalid bash option should exit with code 2.");
+    assert.strictEqual(invalidStatus.state, "Failed", "Invalid command should remain failed.");
+    assert.strictEqual(invalidStatus.failureReason, "INVALID_COMMAND", "Invalid command should be marked explicitly.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function assertPaperMetadataBackfill() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-paper-version-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
@@ -1106,6 +1164,7 @@ async function main() {
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMPlaceholderStartIsBlocked();
+  await assertScriptMarketplaceStartupIsNotJarWrapped();
   await assertPaperMetadataBackfill();
   await assertMinecraftPropertiesVersionBackfill();
   await assertOldVanillaInstallerMetadataBackfill();

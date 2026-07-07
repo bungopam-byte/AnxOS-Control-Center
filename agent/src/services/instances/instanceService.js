@@ -449,6 +449,15 @@ function buildTypeCommand(type, payload) {
   }
 
   if (type === "java-app") {
+    if (isScriptExecutable(payload.executable) || args.some(isStartupScript)) {
+      const scriptArgs = args.length > 0
+        ? args
+        : normalizeStringArray(payload.startupArguments, "ARGS", 128);
+      return {
+        executable: validateExecutable(payload.executable || "bash"),
+        args: scriptArgs,
+      };
+    }
     const jar = validateRelativeAssetPath(payload.jar || payload.entrypoint || "app.jar", "JAR");
     return {
       executable: validateExecutable(payload.executable || "java"),
@@ -494,6 +503,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     workingDirectory: path.relative(instancePath(id), resolveRelativeManagedPath(id, payload.workingDirectory, "data")) || ".",
     executable: command.executable,
     args: command.args,
+    startupArguments: payload.startupArguments !== undefined ? normalizeStringArray(payload.startupArguments, "ARGS", 128) : null,
+    startupScript: payload.startupScript ? validateRelativeAssetPath(payload.startupScript, "ENTRYPOINT") : null,
     environment: normalizeEnvironment(payload.environment || payload.env),
     autoStart: validateBoolean(payload.autoStart, false),
     restartPolicy: validateRestartPolicy(payload.restartPolicy),
@@ -1139,6 +1150,41 @@ function replaceJarArg(args = [], jarPath = "server.jar") {
   return ["-jar", jarPath, ...next.filter((arg) => arg !== jarPath)];
 }
 
+function executableName(executable) {
+  return path.basename(String(executable || "").trim()).toLowerCase();
+}
+
+function isScriptExecutable(executable) {
+  return ["bash", "sh", "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executableName(executable));
+}
+
+function isStartupScript(value) {
+  return /^(?:\.\/)?(?:run|start)\.(?:sh|bat|cmd|ps1)$/i.test(path.basename(String(value || "").trim()));
+}
+
+function hasStartupScriptArgs(config = {}) {
+  return (Array.isArray(config.args) ? config.args : []).some(isStartupScript);
+}
+
+function isScriptBasedCommand(config = {}) {
+  return isScriptExecutable(config.executable) || hasStartupScriptArgs(config);
+}
+
+function usesJavaJarCommand(config = {}) {
+  const args = Array.isArray(config.args) ? config.args : [];
+  const executable = executableName(config.executable);
+  if (isScriptBasedCommand(config)) {
+    return false;
+  }
+  return executable === "java" || executable === "java.exe" || args.includes("-jar");
+}
+
+function isInvalidCommandExit(config = {}, exitCode, failureReason = "") {
+  return Number(exitCode) === 2 ||
+    /INVALID_COMMAND|invalid command|invalid option|usage/i.test(String(failureReason || "")) ||
+    (isScriptBasedCommand(config) && Number(exitCode) === 127);
+}
+
 async function findJarPaths(config) {
   const workingDirectory = config.workingDirectory || "data";
   const roots = [
@@ -1164,13 +1210,7 @@ async function findJarPaths(config) {
 }
 
 async function repairConfiguredServerJar(config) {
-  const args = Array.isArray(config.args) ? config.args : [];
-  const executable = String(config.executable || "").toLowerCase();
-  const usesJavaJar = ["java-app", "minecraft-paper"].includes(config.type) ||
-    executable.endsWith("java") ||
-    executable.includes("/java") ||
-    args.includes("-jar");
-  if (!usesJavaJar) {
+  if (!usesJavaJarCommand(config)) {
     return config;
   }
 
@@ -1728,6 +1768,8 @@ async function updateInstance(instanceId, payload = {}) {
       : current.workingDirectory,
     executable: payload.executable !== undefined ? validateExecutable(payload.executable) : current.executable,
     args: payload.args !== undefined ? normalizeStringArray(payload.args, "ARGS", 128) : current.args,
+    startupArguments: payload.startupArguments !== undefined ? normalizeStringArray(payload.startupArguments, "ARGS", 128) : current.startupArguments,
+    startupScript: payload.startupScript !== undefined ? (payload.startupScript ? validateRelativeAssetPath(payload.startupScript, "ENTRYPOINT") : null) : current.startupScript,
     environment: payload.environment !== undefined || payload.env !== undefined
       ? normalizeEnvironment(payload.environment || payload.env)
       : current.environment,
@@ -1972,6 +2014,15 @@ async function startInstance(instanceId) {
   child.stderr.on("data", (chunk) => {
     const text = String(chunk || "");
     appendLog(config.id, "stderr", chunk).catch(() => {});
+    if (/invalid option|usage:|cannot execute|No such file or directory|not found/i.test(text)) {
+      const entry = runningProcesses.get(config.id);
+      if (entry) {
+        entry.failureReason = "INVALID_COMMAND";
+        if (/invalid option|usage:/i.test(text)) {
+          entry.suppressRestart = true;
+        }
+      }
+    }
     if (isFiveMInstance(config) && FIVEM_LICENSE_FAILURE_PATTERN.test(text)) {
       const entry = runningProcesses.get(config.id);
       if (entry) {
@@ -1995,6 +2046,7 @@ async function startInstance(instanceId) {
     const requestedStop = entry?.requestedStop || false;
     const suppressRestart = entry?.suppressRestart || false;
     const failureReason = entry?.failureReason || "PROCESS_EXITED";
+    const invalidCommandExit = isInvalidCommandExit(config, exitCode, failureReason);
 
     if (entry?.startupTimer) {
       clearTimeout(entry.startupTimer);
@@ -2014,9 +2066,13 @@ async function startInstance(instanceId) {
     }).then((updatedConfig) => {
       appendLog(config.id, "stdout", `Stopped ${updatedConfig.displayName} exitCode=${exitCode ?? "null"} signal=${signal || "null"}`).catch(() => {});
 
-      if (failed && !suppressRestart && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
+      if (invalidCommandExit) {
+        appendLog(config.id, "stderr", "Auto-restart disabled after invalid command exit.").catch(() => {});
+      }
+
+      if (failed && !suppressRestart && !invalidCommandExit && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
         setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
-      } else if (!failed && !suppressRestart && updatedConfig.restartPolicy === "always" && !requestedStop) {
+      } else if (!failed && !suppressRestart && !invalidCommandExit && updatedConfig.restartPolicy === "always" && !requestedStop) {
         setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
       }
     }).catch(() => {});

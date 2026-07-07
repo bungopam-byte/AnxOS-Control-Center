@@ -1097,7 +1097,6 @@
                 <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
                 <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Remove</button>
-                <button class="inline-action" type="button" data-instance-action="view-logs" disabled>Logs</button>
                 <button class="inline-action" type="button" data-instance-action="create">Create Instance</button>
               </div>
               <label class="docker-filter instances-log-control">
@@ -1254,21 +1253,26 @@
 
                 <div class="instance-tab-panel" data-instance-panel="console">
                   <div class="instance-console-toolbar">
-                    <label class="console-toggle"><input type="checkbox" checked data-instance-console-autoscroll><span>Auto-scroll</span></label>
-                    <label class="console-toggle"><input type="checkbox" data-instance-console-pause><span>Pause</span></label>
-                    <select data-instance-console-filter>
-                      <option value="all">All</option>
-                      <option value="info">Info</option>
-                      <option value="warn">Warn</option>
-                      <option value="error">Error</option>
-                      <option value="stdout">stdout</option>
-                      <option value="stderr">stderr</option>
-                      <option value="stdin">stdin</option>
-                    </select>
-                    <input type="search" placeholder="Search logs" data-instance-console-search>
-                    <button class="inline-action" type="button" data-instance-action="copy-console">Copy</button>
-                    <button class="inline-action" type="button" data-instance-action="clear-console">Clear</button>
-                    <button class="inline-action" type="button" data-instance-action="download-logs">Download</button>
+                    <div class="instance-console-toolbar__row">
+                      <label class="console-toggle"><input type="checkbox" checked data-instance-console-autoscroll><span>Auto-scroll</span></label>
+                      <label class="console-toggle"><input type="checkbox" data-instance-console-pause><span>Pause</span></label>
+                      <label class="console-toggle"><input type="checkbox" data-instance-console-wrap><span>Wrap</span></label>
+                    </div>
+                    <div class="instance-console-toolbar__row">
+                      <select data-instance-console-filter>
+                        <option value="all">All</option>
+                        <option value="info">Info</option>
+                        <option value="warn">Warn</option>
+                        <option value="error">Error</option>
+                        <option value="stdout">stdout</option>
+                        <option value="stderr">stderr</option>
+                        <option value="stdin">stdin</option>
+                      </select>
+                      <input type="search" placeholder="Search logs" data-instance-console-search>
+                      <button class="inline-action" type="button" data-instance-action="clear-console">Clear</button>
+                      <button class="inline-action" type="button" data-instance-action="copy-console">Copy</button>
+                      <button class="inline-action" type="button" data-instance-action="download-logs">Download</button>
+                    </div>
                   </div>
                   <div class="instance-log-viewer instance-console-viewer">
                     <ol data-instances-logs></ol>
@@ -1421,7 +1425,7 @@
                 <button class="inline-action" type="button" data-instance-action="start" disabled>Start</button>
                 <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
-                <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Delete</button>
+                <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Remove</button>
               </div>
               <div class="instance-tabs" role="tablist" aria-label="Instance workspace tabs">
                 <button class="instance-tab is-active" type="button" data-instance-tab="overview">Overview</button>

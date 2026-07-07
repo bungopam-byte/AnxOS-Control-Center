@@ -75,7 +75,6 @@ const instancesStopButtons = document.querySelectorAll('[data-instance-action="s
 const instancesRestartButtons = document.querySelectorAll('[data-instance-action="restart"]');
 const instancesDeleteButtons = document.querySelectorAll('[data-instance-action="delete"]');
 const instancesDownloadLogButtons = document.querySelectorAll('[data-instance-action="download-logs"]');
-const instancesViewLogButtons = document.querySelectorAll('[data-instance-action="view-logs"]');
 const instanceCreateForm = document.querySelector("[data-instance-create-form]");
 const instanceCreateSubmitButton = document.querySelector("[data-instance-create-submit]");
 const instanceFormInputs = document.querySelectorAll("[data-instance-form]");
@@ -92,6 +91,7 @@ const instanceTabPanels = document.querySelectorAll("[data-instance-panel]");
 const instanceConsoleSearchInput = document.querySelector("[data-instance-console-search]");
 const instanceConsoleAutoscrollInput = document.querySelector("[data-instance-console-autoscroll]");
 const instanceConsolePauseInput = document.querySelector("[data-instance-console-pause]");
+const instanceConsoleWrapInput = document.querySelector("[data-instance-console-wrap]");
 const instanceConsoleForm = document.querySelector("[data-instance-console-form]");
 const instanceConsoleCommandInput = document.querySelector("[data-instance-console-command]");
 const instanceConsoleViewer = document.querySelector(".instance-console-viewer");
@@ -4161,6 +4161,10 @@ function syncConsoleLogSearch() {
   });
 }
 
+function syncConsoleWrap() {
+  instanceConsoleViewer?.classList.toggle("is-wrapped", Boolean(instanceConsoleWrapInput?.checked));
+}
+
 function getLogSeverity(entry) {
   const message = String(entry?.message || "").toLowerCase();
   if (entry?.stream === "stderr" || /\b(error|exception|failed|fatal)\b/.test(message)) {
@@ -4660,10 +4664,6 @@ function updateInstanceActionButtons() {
     button.disabled = busy || !hasInstancesBridge || !selectedInstance;
   });
 
-  instancesViewLogButtons.forEach((button) => {
-    button.disabled = busy || !hasInstancesBridge || !selectedInstance;
-  });
-
   instancesDeleteButtons.forEach((button) => {
     if (!button.dataset.defaultLabel) {
       button.dataset.defaultLabel = button.textContent || "Delete";
@@ -4674,6 +4674,13 @@ function updateInstanceActionButtons() {
 
   document.querySelectorAll("[data-instance-row-action]").forEach((button) => {
     button.disabled = busy || !hasInstancesBridge || button.dataset.instanceRowDisabled === "true";
+  });
+
+  document.querySelectorAll(".instance-quick-actions [data-instance-action='start']").forEach((button) => {
+    button.hidden = Boolean(selectedInstance && isInstanceRunning(selectedInstance));
+  });
+  document.querySelectorAll(".instance-quick-actions [data-instance-action='stop']").forEach((button) => {
+    button.hidden = Boolean(selectedInstance && !isInstanceRunning(selectedInstance));
   });
 }
 
@@ -4818,7 +4825,6 @@ function buildInstanceActionCell(instance) {
     { label: "Start", action: "start", disabled: !canStartInstance(instance) },
     { label: "Stop", action: "stop", disabled: !canStopInstance(instance) },
     { label: "Restart", action: "restart", disabled: !canRestartInstance(instance) },
-    { label: "Logs", action: "logs", disabled: false },
   ];
 
   actions.forEach((item) => {
@@ -4832,10 +4838,6 @@ function buildInstanceActionCell(instance) {
     button.addEventListener("click", (event) => {
       event.stopPropagation();
       selectInstance(instance.id);
-      if (item.action === "logs") {
-        viewSelectedInstanceLogs();
-        return;
-      }
       runInstanceAction(item.action);
     });
     wrapper.appendChild(button);
@@ -5104,15 +5106,6 @@ function filterInstanceRows() {
     const matchesStatus = statusFilter === "all" || row.dataset.instanceState === statusFilter;
     row.hidden = !matchesQuery || !matchesStatus;
   });
-}
-
-function viewSelectedInstanceLogs() {
-  if (!selectedInstanceId) {
-    return;
-  }
-
-  setActiveInstanceTab("console");
-  refreshInstanceLogs({ silent: true });
 }
 
 function clearInstanceLogs(message = "Select an instance and refresh logs.") {
@@ -12219,11 +12212,10 @@ document.querySelector('[data-instance-action="copy-console"]')?.addEventListene
 instancesDownloadLogButtons.forEach((button) => {
   button.addEventListener("click", downloadInstanceLogs);
 });
-instancesViewLogButtons.forEach((button) => {
-  button.addEventListener("click", viewSelectedInstanceLogs);
-});
 instanceConsoleSearchInput?.addEventListener("input", syncConsoleLogSearch);
 instanceConsoleFilterSelect?.addEventListener("change", syncConsoleLogSearch);
+instanceConsoleWrapInput?.addEventListener("change", syncConsoleWrap);
+syncConsoleWrap();
 instanceConsoleForm?.addEventListener("submit", sendInstanceConsoleCommand);
 instanceTabs.forEach((button) => {
   button.addEventListener("click", () => setActiveInstanceTab(button.dataset.instanceTab || "overview"));

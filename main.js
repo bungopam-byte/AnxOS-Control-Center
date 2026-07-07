@@ -15,6 +15,7 @@ const { registerSecurityIpc } = require("./src/ipc/securityIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
+const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services/providers/curseforgeProvider");
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
@@ -238,6 +239,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  logCurseForgeStartupStatus();
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
   registerActionIpc();

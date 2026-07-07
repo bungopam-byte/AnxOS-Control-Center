@@ -7,12 +7,15 @@ const MINECRAFT_GAME_ID = 432;
 const MODPACK_CLASS_ID = 4471;
 const REQUIRED_DEPENDENCY = 3;
 const OPTIONAL_DEPENDENCY = 2;
+const USER_AGENT = "AnxOS-Control-Center/1.0 (+https://anxos.local)";
 
-let envLoaded = false;
 const API_KEY_FIELDS = ["apiKey", "curseForgeApiKey", "curseforgeApiKey", "cfApiKey"];
 const API_KEY_ENV = ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
 const API_KEY_FILE_FIELDS = ["apiKeyFile", "curseForgeApiKeyFile", "curseforgeApiKeyFile", "cfApiKeyFile"];
 const API_KEY_FILE_ENV = ["CURSEFORGE_API_KEY_FILE", "CF_API_KEY_FILE", "ANXHUB_CURSEFORGE_API_KEY_FILE"];
+let envLoaded = false;
+let envLoadInfo = null;
+let startupStatusLogged = false;
 
 class CurseForgeProviderError extends Error {
   constructor(message, code = "CURSEFORGE_ERROR", details = {}) {
@@ -38,10 +41,10 @@ function friendlyHttpMessage(label, status, body = "") {
     }
   })();
   const prefix = `CurseForge ${label}`;
-  if (status === 401) return `${prefix}: 401 Invalid API key. Check CF_API_KEY.`;
-  if (status === 403) return `${prefix}: 403 Forbidden. Your API key may not have access.`;
-  if (status === 404) return `${prefix}: 404 Project not found.`;
-  if (status === 429) return `${prefix}: 429 Rate limited. Try again later.`;
+  if (status === 401) return `${prefix}: 401 Invalid API key. Check CF_API_KEY${detail ? ` - ${detail}` : ""}.`;
+  if (status === 403) return `${prefix}: 403 Forbidden. Your API key may not have access${detail ? ` - ${detail}` : ""}.`;
+  if (status === 404) return `${prefix}: 404 Project not found${detail ? ` - ${detail}` : ""}.`;
+  if (status === 429) return `${prefix}: 429 Rate limited. Try again later${detail ? ` - ${detail}` : ""}.`;
   return `${prefix}: HTTP ${status}${detail ? ` - ${detail}` : ""}`;
 }
 
@@ -55,16 +58,100 @@ function logProviderFailure(error, context = {}) {
   });
 }
 
+function trimValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
+}
+
+function getElectronApp() {
+  try {
+    const electron = require("electron");
+    return electron && typeof electron === "object" ? electron.app || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function getElectronConfigDirectory() {
+  const app = getElectronApp();
+
+  if (!app) {
+    return null;
+  }
+
+  try {
+    return path.join(app.getPath("userData"), "config");
+  } catch {
+    return null;
+  }
+}
+
+function isPackagedElectronRuntime() {
+  return Boolean(getElectronApp()?.isPackaged);
+}
+
+function getRepoEnvPath() {
+  return path.join(__dirname, "..", "..", "..", ".env");
+}
+
+function getEnvCandidates() {
+  const electronConfigDirectory = getElectronConfigDirectory();
+  const packagedEnvPath = isPackagedElectronRuntime() && electronConfigDirectory
+    ? path.join(electronConfigDirectory, ".env")
+    : null;
+
+  return uniquePaths([
+    process.env.ANXHUB_ENV_PATH,
+    packagedEnvPath,
+    getRepoEnvPath(),
+    path.join(process.cwd(), ".env"),
+    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
+    process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
+    process.resourcesPath ? path.join(process.resourcesPath, "app", ".env") : null,
+  ]);
+}
+
+function findEnvPath() {
+  return getEnvCandidates().find((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  }) || null;
+}
+
 function loadEnv() {
   if (envLoaded) {
-    return;
+    return envLoadInfo;
   }
   envLoaded = true;
-  try {
-    dotenv.config({ path: process.env.ANXHUB_ENV_PATH || path.join(process.cwd(), ".env"), quiet: true });
-  } catch {
-    // Optional local environment support only.
+  const resolvedEnvPath = findEnvPath();
+
+  envLoadInfo = {
+    cwd: process.cwd(),
+    resolvedEnvPath,
+    envFileExists: Boolean(resolvedEnvPath),
+    envLoaded: false,
+    envLoadErrorCode: null,
+  };
+
+  if (!resolvedEnvPath) {
+    return envLoadInfo;
   }
+
+  try {
+    const result = dotenv.config({ path: resolvedEnvPath, quiet: true });
+    envLoadInfo.envLoaded = !result.error;
+    envLoadInfo.envLoadErrorCode = result.error?.code || result.error?.name || null;
+  } catch (error) {
+    envLoadInfo.envLoadErrorCode = error?.code || error?.name || "ENV_LOAD_FAILED";
+  }
+
+  return envLoadInfo;
 }
 
 function cleanSecretValue(value) {
@@ -120,6 +207,60 @@ function getCurseForgeApiKey(config = {}) {
   return readSecretFile(secretFile);
 }
 
+function getApiKeyStatus(config = {}) {
+  const envInfo = loadEnv();
+  const directConfigField = API_KEY_FIELDS.find((field) => cleanSecretValue(config[field]));
+  const directEnvName = API_KEY_ENV.find((envName) => cleanSecretValue(process.env[envName]));
+  const fileConfigField = API_KEY_FILE_FIELDS.find((field) => cleanSecretValue(config[field]));
+  const fileEnvName = API_KEY_FILE_ENV.find((envName) => cleanSecretValue(process.env[envName]));
+  const source = directConfigField
+    ? `config:${directConfigField}`
+    : directEnvName
+      ? `env:${directEnvName}`
+      : fileConfigField
+        ? `config:${fileConfigField}`
+        : fileEnvName
+          ? `env:${fileEnvName}`
+          : null;
+  let loaded = false;
+  let errorCode = null;
+
+  try {
+    loaded = Boolean(getCurseForgeApiKey(config));
+  } catch (error) {
+    errorCode = error?.code || error?.name || "CURSEFORGE_API_KEY_STATUS_FAILED";
+  }
+
+  return {
+    loaded,
+    source,
+    errorCode,
+    env: envInfo,
+  };
+}
+
+function logStartupStatus() {
+  if (startupStatusLogged) {
+    return getApiKeyStatus();
+  }
+
+  startupStatusLogged = true;
+  const status = getApiKeyStatus();
+
+  console.info("[Marketplace][CurseForge] API key status.", {
+    loaded: status.loaded,
+    source: status.source,
+    envFileExists: status.env.envFileExists,
+    envLoaded: status.env.envLoaded,
+    envLoadErrorCode: status.env.envLoadErrorCode,
+    apiKeyErrorCode: status.errorCode,
+    resolvedEnvPath: status.env.resolvedEnvPath,
+    cwd: status.env.cwd,
+  });
+
+  return status;
+}
+
 function requireApiKey(config = {}) {
   const apiKey = getCurseForgeApiKey(config);
   if (!apiKey) {
@@ -152,13 +293,18 @@ function createUrl(pathname, params = {}) {
   return url;
 }
 
+function buildApiHeaders(config = {}) {
+  return {
+    "Accept": "application/json",
+    "User-Agent": USER_AGENT,
+    "x-api-key": requireApiKey(config),
+  };
+}
+
 async function requestJson(url, label, config = {}) {
   try {
     const response = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-        "x-api-key": requireApiKey(config),
-      },
+      headers: buildApiHeaders(config),
     });
     const body = await response.text();
     if (!response.ok) {
@@ -195,7 +341,11 @@ async function requestBuffer(url, label) {
     throw new CurseForgeProviderError(`${label} has an unsafe download URL.`, "CURSEFORGE_UNSAFE_URL", { url });
   }
   try {
-    const response = await fetch(parsed);
+    const response = await fetch(parsed, {
+      headers: {
+        "User-Agent": USER_AGENT,
+      },
+    });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_DOWNLOAD_FAILED", {
@@ -403,9 +553,12 @@ async function downloadFile(file, destination = "", options = {}) {
 
 module.exports = {
   _test: {
+    buildApiHeaders,
     cleanSecretValue,
     friendlyHttpMessage,
+    getApiKeyStatus,
     getCurseForgeApiKey,
+    getEnvCandidates,
     normalizeFile,
     normalizeLoader,
     normalizeMod,
@@ -417,6 +570,7 @@ module.exports = {
   getFile,
   getFiles,
   getMod,
+  logStartupStatus,
   resolveDependencies,
   resolveFile,
   searchModpacks,

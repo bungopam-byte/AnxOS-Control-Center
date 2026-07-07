@@ -748,11 +748,34 @@ async function assertProviderInstallSupport() {
     "Modrinth 404 errors should be user friendly."
   );
 
-  assert.throws(
-    () => curseforgeProvider._test.requireApiKey({ apiKey: "" }),
-    /CurseForge API key is required to install CurseForge packs/,
-    "CurseForge provider should fail gracefully without an API key."
-  );
+  const cfEnvNames = [
+    "CURSEFORGE_API_KEY",
+    "CF_API_KEY",
+    "ANXHUB_CURSEFORGE_API_KEY",
+    "CURSEFORGE_API_KEY_FILE",
+    "CF_API_KEY_FILE",
+    "ANXHUB_CURSEFORGE_API_KEY_FILE",
+  ];
+  curseforgeProvider._test.getApiKeyStatus();
+  const previousCfEnv = Object.fromEntries(cfEnvNames.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of cfEnvNames) {
+      delete process.env[name];
+    }
+    assert.throws(
+      () => curseforgeProvider._test.requireApiKey({ apiKey: "" }),
+      /CurseForge API key is required to install CurseForge packs/,
+      "CurseForge provider should fail gracefully without an API key."
+    );
+  } finally {
+    for (const [name, value] of Object.entries(previousCfEnv)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
   assert.strictEqual(
     curseforgeProvider._test.cleanSecretValue("'$11$22$33aaaaaaaaaaaaaaaaaaaaaaaaaa'"),
     "$11$22$33aaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -763,20 +786,53 @@ async function assertProviderInstallSupport() {
     "cf-direct-token",
     "CurseForge provider should accept CF-style config aliases."
   );
+  assert.deepStrictEqual(
+    curseforgeProvider._test.buildApiHeaders({ cfApiKey: "cf-direct-token" }),
+    {
+      "Accept": "application/json",
+      "User-Agent": "AnxOS-Control-Center/1.0 (+https://anxos.local)",
+      "x-api-key": "cf-direct-token",
+    },
+    "CurseForge API requests must include API key and User-Agent headers."
+  );
   assert.match(
     curseforgeProvider._test.friendlyHttpMessage("search", 401, '{"message":"invalid"}'),
-    /401 Invalid API key/,
+    /401 Invalid API key.*invalid/,
     "CurseForge 401 errors should mention invalid API key."
+  );
+  assert.match(
+    curseforgeProvider._test.friendlyHttpMessage("search", 429, '{"message":"rate limit exceeded"}'),
+    /429 Rate limited.*rate limit exceeded/,
+    "CurseForge 429 errors should include provider response details."
+  );
+  assert(
+    curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(".env")),
+    "CurseForge provider should search deterministic .env candidates."
   );
   const cfSecretRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-cf-key-"));
   try {
     const cfSecretPath = path.join(cfSecretRoot, "cf_api_key.secret");
     fs.writeFileSync(cfSecretPath, "'cf-file-token'\n", "utf8");
-    assert.strictEqual(
-      curseforgeProvider._test.getCurseForgeApiKey({ cfApiKeyFile: cfSecretPath }),
-      "cf-file-token",
-      "CurseForge provider should read CF_API_KEY_FILE-style secrets."
-    );
+    const directEnvNames = ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
+    const previousDirectEnv = Object.fromEntries(directEnvNames.map((name) => [name, process.env[name]]));
+    try {
+      for (const name of directEnvNames) {
+        delete process.env[name];
+      }
+      assert.strictEqual(
+        curseforgeProvider._test.getCurseForgeApiKey({ cfApiKeyFile: cfSecretPath }),
+        "cf-file-token",
+        "CurseForge provider should read CF_API_KEY_FILE-style secrets."
+      );
+    } finally {
+      for (const [name, value] of Object.entries(previousDirectEnv)) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
   } finally {
     fs.rmSync(cfSecretRoot, { recursive: true, force: true });
   }

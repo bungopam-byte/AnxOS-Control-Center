@@ -4674,7 +4674,79 @@ function isJavaJarInstance(instance) {
 }
 
 function getConfiguredJarPath(instance) {
-  return parseJarFromArgs(instance) || (instance?.type === "minecraft-paper" ? "paper.jar" : "");
+  return instance?.serverJar ||
+    instance?.serverJarPath ||
+    instance?.startJar ||
+    instance?.jar ||
+    parseJarFromArgs(instance) ||
+    "server.jar";
+}
+
+const commonServerJarCandidates = [
+  "server.jar",
+  "paper.jar",
+  "purpur.jar",
+  "fabric-server.jar",
+  "forge-installer.jar",
+  "neoforge-installer.jar",
+];
+
+function buildArgsWithJar(instance, jarPath) {
+  const args = Array.isArray(instance?.args) ? [...instance.args] : [];
+  const jarIndex = args.findIndex((arg) => arg === "-jar");
+  if (jarIndex >= 0) {
+    if (args[jarIndex + 1]) {
+      args[jarIndex + 1] = jarPath;
+    } else {
+      args.push(jarPath);
+    }
+    return args;
+  }
+  return ["-jar", jarPath, ...args.filter((arg) => arg !== jarPath)];
+}
+
+async function findExistingServerJar(instance, preferredJar = "") {
+  const candidates = [
+    preferredJar,
+    parseJarFromArgs(instance),
+    instance?.serverJar,
+    instance?.serverJarPath,
+    instance?.startJar,
+    ...commonServerJarCandidates,
+  ].map((candidate) => String(candidate || "").trim()).filter(Boolean);
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      await getDesktopApiState().api.instances.readFile(instance.id, candidate);
+      return candidate;
+    } catch (error) {
+      if (getAgentErrorCode(error) !== "PATH_NOT_FOUND") {
+        throw error;
+      }
+    }
+  }
+  return "";
+}
+
+async function repairInstanceServerJar(instance, jarPath) {
+  await getDesktopApiState().api.instances.update(instance.id, {
+    serverJar: jarPath,
+    serverJarPath: jarPath,
+    startJar: jarPath,
+    jar: jarPath,
+    args: buildArgsWithJar(instance, jarPath),
+  });
+  const index = instances.findIndex((entry) => entry.id === instance.id);
+  if (index >= 0) {
+    instances[index] = {
+      ...instances[index],
+      serverJar: jarPath,
+      serverJarPath: jarPath,
+      startJar: jarPath,
+      jar: jarPath,
+      args: buildArgsWithJar(instances[index], jarPath),
+    };
+  }
+  showToast(`Repaired server JAR metadata: ${jarPath}`);
 }
 
 function setMissingInstanceFileHint(filePath) {
@@ -4707,6 +4779,11 @@ async function verifyJavaJarBeforeLaunch(instance) {
 
   const jarPath = getConfiguredJarPath(instance);
   if (!jarPath) {
+    const repairedJar = await findExistingServerJar(instance);
+    if (repairedJar) {
+      await repairInstanceServerJar(instance, repairedJar);
+      return true;
+    }
     window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
     return false;
   }
@@ -4721,6 +4798,11 @@ async function verifyJavaJarBeforeLaunch(instance) {
     }
 
     if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
+      const repairedJar = await findExistingServerJar(instance, jarPath);
+      if (repairedJar) {
+        await repairInstanceServerJar(instance, repairedJar);
+        return true;
+      }
       const message = `${getFileNameFromPath(jarPath)} was not found in this instance.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`;
       window.alert(message);
       showToast(`${getFileNameFromPath(jarPath)} was not found. Upload it in Files or use Marketplace.`, "warning");
@@ -5296,7 +5378,12 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
   const wrappedMessage = String(error?.message || "");
   const detailedMessage = [wrappedMessage, backendMessage].find((message) => {
     const text = String(message || "");
-    return text.includes("templateId=") || text.includes(" | url=") || text.includes(" | status=");
+    return text.includes("templateId=") ||
+      text.includes(" | url=") ||
+      text.includes(" | invalidUrl=") ||
+      text.includes(" | status=") ||
+      text.includes(" | body=") ||
+      text.includes(" | code=");
   });
   if (detailedMessage) {
     return detailedMessage;
@@ -10645,6 +10732,11 @@ async function verifyConsoleJavaJarBeforeLaunch(instance) {
 
   const jarPath = getConfiguredJarPath(instance);
   if (!jarPath) {
+    const repairedJar = await findExistingServerJar(instance);
+    if (repairedJar) {
+      await repairInstanceServerJar(instance, repairedJar);
+      return true;
+    }
     window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
     return false;
   }
@@ -10654,6 +10746,11 @@ async function verifyConsoleJavaJarBeforeLaunch(instance) {
     return true;
   } catch (error) {
     if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
+      const repairedJar = await findExistingServerJar(instance, jarPath);
+      if (repairedJar) {
+        await repairInstanceServerJar(instance, repairedJar);
+        return true;
+      }
       window.alert(`${getFileNameFromPath(jarPath)} was not found.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`);
       return false;
     }

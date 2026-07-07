@@ -23,3 +23,5 @@ dist/
 data/
 logs/
 bot-config/
+.env
+agent/*.log

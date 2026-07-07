@@ -91,6 +91,20 @@ function sendResult(response, result) {
   sendJson(response, result?.statusCode || 200, result?.body);
 }
 
+function sanitizeErrorDetails(error, extra = {}) {
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  return {
+    ...details,
+    ...extra,
+    name: error?.name || null,
+    status: details.status || error?.status || error?.statusCode || extra.status || null,
+    url: details.url || extra.url || null,
+    invalidUrl: details.invalidUrl || null,
+    responseBody: details.body || details.responseBody || extra.responseBody || null,
+    stack: error?.stack || null,
+  };
+}
+
 function sendError(response, statusCode, code, message = "Request failed.", details = null) {
   sendJson(response, statusCode, {
     error: {
@@ -117,7 +131,11 @@ function logRequestError(request, error, statusCode, code) {
     url: request.url,
     statusCode,
     code,
+    name: error?.name || null,
     message: error?.message || null,
+    details: error?.details || null,
+    responseBody: error?.details?.body || error?.details?.responseBody || null,
+    failingUrl: error?.details?.url || error?.details?.invalidUrl || null,
     stack: error?.stack || null,
   });
 }
@@ -308,7 +326,10 @@ async function handleRequest(request, response) {
     const code = error.code || (error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR");
     logRequestError(request, error, statusCode, code);
     if (!response.headersSent) {
-      sendError(response, statusCode, code, error.message || "Request failed.");
+      sendError(response, statusCode, code, error.message || "Request failed.", sanitizeErrorDetails(error, {
+        method: request.method,
+        url: request.url,
+      }));
     }
   }
 }

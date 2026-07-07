@@ -164,6 +164,16 @@ function normalizeTags(value) {
   });
 }
 
+function normalizeOptionalJarPath(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === "") {
+    return null;
+  }
+  return validateRelativeAssetPath(value, "JAR");
+}
+
 function normalizePorts(value) {
   if (value === undefined || value === null) {
     return [];
@@ -490,6 +500,9 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     startupTimeoutMs: validatePositiveInteger(payload.startupTimeoutMs, DEFAULT_STARTUP_TIMEOUT_MS, 10 * 60 * 1000),
     shutdownTimeoutMs: validatePositiveInteger(payload.shutdownTimeoutMs, DEFAULT_SHUTDOWN_TIMEOUT_MS, 10 * 60 * 1000),
     memoryLimit: payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null,
+    serverJar: normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar) || null,
+    serverJarPath: normalizeOptionalJarPath(payload.serverJarPath) || normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar) || null,
+    startJar: normalizeOptionalJarPath(payload.startJar) || normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar) || null,
     ports: normalizePorts(payload.ports),
     game: payload.game ? String(payload.game).slice(0, 80) : null,
     version: payload.version ? String(payload.version).slice(0, 80) : null,
@@ -1085,6 +1098,7 @@ async function unzipText(filePath, entryName) {
 
 function getJarCandidates(config) {
   const candidates = [];
+  candidates.push(config.serverJar, config.serverJarPath, config.startJar, config.jar, config.entrypoint);
   const args = Array.isArray(config.args) ? config.args : [];
   const jarIndex = args.findIndex((arg) => arg === "-jar");
   if (jarIndex >= 0 && args[jarIndex + 1]) {
@@ -1111,6 +1125,20 @@ function getJarCandidates(config) {
   return [...new Set(candidates.map((candidate) => String(candidate || "").trim()).filter(Boolean))];
 }
 
+function replaceJarArg(args = [], jarPath = "server.jar") {
+  const next = Array.isArray(args) ? [...args] : [];
+  const jarIndex = next.findIndex((arg) => arg === "-jar");
+  if (jarIndex >= 0) {
+    if (next[jarIndex + 1]) {
+      next[jarIndex + 1] = jarPath;
+    } else {
+      next.push(jarPath);
+    }
+    return next;
+  }
+  return ["-jar", jarPath, ...next.filter((arg) => arg !== jarPath)];
+}
+
 async function findJarPaths(config) {
   const workingDirectory = config.workingDirectory || "data";
   const roots = [
@@ -1133,6 +1161,48 @@ async function findJarPaths(config) {
     }
   }
   return [...new Set(paths)];
+}
+
+async function repairConfiguredServerJar(config) {
+  const args = Array.isArray(config.args) ? config.args : [];
+  const executable = String(config.executable || "").toLowerCase();
+  const usesJavaJar = ["java-app", "minecraft-paper"].includes(config.type) ||
+    executable.endsWith("java") ||
+    executable.includes("/java") ||
+    args.includes("-jar");
+  if (!usesJavaJar) {
+    return config;
+  }
+
+  const workingDirectory = config.workingDirectory || "data";
+  const dataRoot = resolveRelativeManagedPath(config.id, workingDirectory, "data");
+  const jars = await findJarPaths(config);
+  const jarPath = jars[0] || null;
+  if (!jarPath) {
+    const error = createInstanceError("SERVER_JAR_MISSING", 400);
+    error.message = "No server JAR is configured for this instance. Upload a server JAR to the data folder or install this server from the Marketplace.";
+    throw error;
+  }
+
+  const relativeJar = path.relative(dataRoot, jarPath).replace(/\\/g, "/");
+  const configuredJar = String(config.serverJar || config.serverJarPath || config.startJar || "").trim();
+  const jarIndex = Array.isArray(config.args) ? config.args.findIndex((arg) => arg === "-jar") : -1;
+  const argJar = jarIndex >= 0 ? String(config.args[jarIndex + 1] || "").trim() : "";
+  if (configuredJar === relativeJar && argJar === relativeJar) {
+    return config;
+  }
+
+  const repaired = {
+    ...config,
+    args: replaceJarArg(config.args, relativeJar),
+    serverJar: relativeJar,
+    serverJarPath: relativeJar,
+    startJar: relativeJar,
+    updatedAt: nowIso(),
+  };
+  await saveInstanceConfig(repaired);
+  await appendLog(config.id, "stdout", `Repaired server JAR metadata: ${relativeJar}`).catch(() => {});
+  return repaired;
 }
 
 async function detectFromKnownFiles(config) {
@@ -1672,6 +1742,15 @@ async function updateInstance(instanceId, payload = {}) {
     memoryLimit: payload.memoryLimit !== undefined
       ? (payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null)
       : current.memoryLimit,
+    serverJar: payload.serverJar !== undefined || payload.jar !== undefined
+      ? (normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar))
+      : current.serverJar,
+    serverJarPath: payload.serverJarPath !== undefined || payload.serverJar !== undefined || payload.jar !== undefined
+      ? (normalizeOptionalJarPath(payload.serverJarPath) || normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar))
+      : current.serverJarPath,
+    startJar: payload.startJar !== undefined || payload.serverJar !== undefined || payload.jar !== undefined
+      ? (normalizeOptionalJarPath(payload.startJar) || normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar))
+      : current.startJar,
     ports: payload.ports !== undefined ? normalizePorts(payload.ports) : current.ports,
     game: payload.game !== undefined ? (payload.game ? String(payload.game).slice(0, 80) : null) : current.game,
     version: payload.version !== undefined ? (payload.version ? String(payload.version).slice(0, 80) : null) : current.version,
@@ -1812,6 +1891,7 @@ async function startInstance(instanceId) {
     throw createInstanceError("INSTANCE_ALREADY_RUNNING", 409);
   }
 
+  config = await repairConfiguredServerJar(config);
   const workingDirectory = resolveRelativeManagedPath(config.id, config.workingDirectory, "data");
   assertExecutableAllowed(config.executable);
   await fs.mkdir(workingDirectory, { recursive: true });
@@ -2237,6 +2317,28 @@ async function readInstanceFile(instanceId, requestedPath) {
   };
 }
 
+async function instanceFileExists(instanceId, requestedPath) {
+  const config = await loadInstanceConfig(instanceId);
+  const resolved = resolveInstanceDataPath(config.id, requestedPath);
+  await assertNoInstanceDataEscape(resolved);
+  const stats = await fs.stat(resolved.path).catch((error) => {
+    if (error?.code === "ENOENT") {
+      return null;
+    }
+
+    throw createInstanceError("PATH_UNAVAILABLE", 400);
+  });
+
+  return {
+    id: config.id,
+    path: resolved.relativePath,
+    exists: Boolean(stats),
+    type: stats ? (stats.isDirectory() ? "directory" : stats.isFile() ? "file" : "other") : null,
+    size: stats?.size ?? null,
+    modifiedAt: stats?.mtime?.toISOString?.() || null,
+  };
+}
+
 async function writeInstanceFile(instanceId, requestedPath, content, options = {}) {
   const config = await loadInstanceConfig(instanceId);
   const resolved = resolveInstanceDataPath(config.id, requestedPath);
@@ -2494,6 +2596,7 @@ module.exports = {
   forceKillInstance,
   getMetrics,
   getStatus,
+  instanceFileExists,
   listInstanceFiles,
   listInstances,
   readInstanceFile,

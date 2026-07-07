@@ -7,6 +7,7 @@ const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 
 const INSTALL_FOLDERS = ["mods", "config", "defaultconfigs", "kubejs", "kubejs/scripts", "world", "logs", "backups"];
+const PAPER_DOWNLOADS_API = "https://fill.papermc.io/v3";
 const FORGE_PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
 const FORGE_MAVEN_METADATA_URL = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml";
 const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
@@ -21,19 +22,29 @@ class MarketplaceInstallError extends Error {
   }
 }
 
+function serializeError(error, context = {}) {
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  return {
+    ...context,
+    name: error?.name || null,
+    code: error?.code || null,
+    message: error?.message || null,
+    stack: error?.stack || null,
+    status: details.status || error?.status || error?.statusCode || null,
+    responseBody: details.body || details.responseBody || null,
+    url: details.url || context.url || null,
+    invalidUrl: details.invalidUrl || null,
+    details,
+  };
+}
+
 function truncateForLog(value, maxLength = 4000) {
   const text = String(value || "");
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
 function logMarketplaceInstallFailure(error, context = {}) {
-  console.error("[Marketplace][Install] Install failed.", {
-    ...context,
-    code: error?.code || null,
-    message: error?.message || null,
-    details: error?.details || null,
-    stack: error?.stack || null,
-  });
+  console.error("[Marketplace][Install] Install failed.", serializeError(error, context));
 }
 
 function logMarketplaceInstallStep(message, context = {}) {
@@ -41,6 +52,52 @@ function logMarketplaceInstallStep(message, context = {}) {
     message,
     ...context,
   });
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientStatus(status) {
+  return [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(status));
+}
+
+function isTransientError(error) {
+  const status = error?.details?.status || error?.status || error?.statusCode;
+  const code = error?.code || error?.payload?.error?.code || "";
+  const name = error?.name || error?.payload?.error?.details?.name || "";
+  return isTransientStatus(status) ||
+    ["NETWORK_FAILED", "AGENT_TIMEOUT", "AGENT_UNAVAILABLE", "UND_ERR_CONNECT_TIMEOUT", "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN"].includes(code) ||
+    ["AbortError", "TimeoutError"].includes(name);
+}
+
+async function withRetry(operation, context = {}) {
+  const attempts = Math.max(1, Number(context.attempts) || 3);
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isTransientError(error)) {
+        throw error;
+      }
+      const waitMs = Number(context.delayMs) || 500;
+      logMarketplaceInstallStep("Retrying transient Marketplace operation.", {
+        label: context.label || null,
+        attempt,
+        nextAttempt: attempt + 1,
+        code: error?.code || null,
+        status: error?.details?.status || error?.status || null,
+        url: error?.details?.url || context.url || null,
+        message: error?.message || null,
+      });
+      await delay(waitMs * attempt);
+    }
+  }
+
+  throw lastError;
 }
 
 function friendlyHttpMessage(label, status, body = "") {
@@ -64,6 +121,28 @@ function friendlyError(error) {
     return "CurseForge API key is required to install CurseForge packs.";
   }
   return error?.message || "Marketplace install failed.";
+}
+
+function buildDetailedErrorMessage(error, fallback = "Marketplace install failed.") {
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  const parts = [];
+  const code = error?.code || details.code;
+  const message = error?.message && error.message !== "URL" ? error.message : "";
+  parts.push(message || fallback);
+  if (code) parts.push(`code=${code}`);
+  if (details.status || error?.status || error?.statusCode) parts.push(`status=${details.status || error.status || error.statusCode}`);
+  if (details.provider) parts.push(`provider=${details.provider}`);
+  if (details.fileName) parts.push(`file=${details.fileName}`);
+  if (details.url) parts.push(`url=${details.url}`);
+  if (details.invalidUrl) parts.push(`invalidUrl=${details.invalidUrl}`);
+  if (details.body || details.responseBody) parts.push(`body=${truncateForLog(details.body || details.responseBody, 1000)}`);
+  if (details.recovery) parts.push(`recovery=${details.recovery}`);
+  if (details.suggestion) parts.push(`suggestion=${details.suggestion}`);
+  if (error?.name && error.name !== "Error") parts.push(`error=${error.name}`);
+  if (error?.message === "URL" && !details.invalidUrl && !details.url) {
+    parts.push("hint=A URL constructor failed, but the invalid value was not attached by the throwing code.");
+  }
+  return parts.join(" | ");
 }
 
 function emitProgress(payload = {}) {
@@ -113,39 +192,61 @@ function resolvePort(value) {
 }
 
 function validateDownloadUrl(url) {
-  const parsed = new URL(url);
+  const rawUrl = String(url || "").trim();
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (error) {
+    throw new MarketplaceInstallError("Invalid download URL.", "INVALID_DOWNLOAD_URL", {
+      invalidUrl: rawUrl || String(url),
+      message: error?.message || "Invalid URL",
+      stack: error?.stack || null,
+    });
+  }
   if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new MarketplaceInstallError("Download URL is not allowed.", "DOWNLOAD_URL_UNSAFE", { url });
+    throw new MarketplaceInstallError("Download URL is not allowed.", "DOWNLOAD_URL_UNSAFE", { url: rawUrl });
   }
   return parsed;
 }
 
+function getUrlPathBasename(url, fallback = "download") {
+  try {
+    return path.basename(validateDownloadUrl(url).pathname) || fallback;
+  } catch (error) {
+    logMarketplaceInstallFailure(error, { label: "derive download file name", url });
+    throw error;
+  }
+}
+
 async function fetchJson(url, label) {
   try {
-    const response = await fetch(validateDownloadUrl(url));
-    const body = await response.text();
-    if (!response.ok) {
-      throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_RESOLVE_FAILED", {
-        status: response.status,
-        body: truncateForLog(body),
-        url,
-      });
-    }
-    try {
-      return JSON.parse(body);
-    } catch (error) {
-      throw new MarketplaceInstallError(`${label} returned invalid JSON.`, "DOWNLOAD_RESOLVE_FAILED", {
-        message: error.message,
-        body: truncateForLog(body),
-        url,
-      });
-    }
+    return await withRetry(async () => {
+      const response = await fetch(validateDownloadUrl(url));
+      const body = await response.text();
+      if (!response.ok) {
+        throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_RESOLVE_FAILED", {
+          status: response.status,
+          body: truncateForLog(body),
+          url,
+        });
+      }
+      try {
+        return JSON.parse(body);
+      } catch (error) {
+        throw new MarketplaceInstallError(`${label} returned invalid JSON.`, "DOWNLOAD_RESOLVE_FAILED", {
+          message: error.message,
+          body: truncateForLog(body),
+          url,
+        });
+      }
+    }, { label, url });
   } catch (error) {
     const effectiveError = error instanceof MarketplaceInstallError
       ? error
       : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
         url,
         message: error?.message || "request failed",
+        stack: error?.stack || null,
       });
     logMarketplaceInstallFailure(effectiveError, { label, url });
     throw effectiveError;
@@ -154,22 +255,25 @@ async function fetchJson(url, label) {
 
 async function fetchBuffer(url, label) {
   try {
-    const response = await fetch(validateDownloadUrl(url));
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_FAILED", {
-        status: response.status,
-        body: truncateForLog(body),
-        url,
-      });
-    }
-    return Buffer.from(await response.arrayBuffer());
+    return await withRetry(async () => {
+      const response = await fetch(validateDownloadUrl(url));
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_FAILED", {
+          status: response.status,
+          body: truncateForLog(body),
+          url,
+        });
+      }
+      return Buffer.from(await response.arrayBuffer());
+    }, { label, url });
   } catch (error) {
     const effectiveError = error instanceof MarketplaceInstallError
       ? error
       : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
         url,
         message: error?.message || "request failed",
+        stack: error?.stack || null,
       });
     logMarketplaceInstallFailure(effectiveError, { label, url });
     throw effectiveError;
@@ -178,22 +282,25 @@ async function fetchBuffer(url, label) {
 
 async function fetchText(url, label) {
   try {
-    const response = await fetch(validateDownloadUrl(url));
-    const body = await response.text();
-    if (!response.ok) {
-      throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_RESOLVE_FAILED", {
-        status: response.status,
-        body: truncateForLog(body),
-        url,
-      });
-    }
-    return body;
+    return await withRetry(async () => {
+      const response = await fetch(validateDownloadUrl(url));
+      const body = await response.text();
+      if (!response.ok) {
+        throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_RESOLVE_FAILED", {
+          status: response.status,
+          body: truncateForLog(body),
+          url,
+        });
+      }
+      return body;
+    }, { label, url });
   } catch (error) {
     const effectiveError = error instanceof MarketplaceInstallError
       ? error
       : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
         url,
         message: error?.message || "request failed",
+        stack: error?.stack || null,
       });
     logMarketplaceInstallFailure(effectiveError, { label, url });
     throw effectiveError;
@@ -216,6 +323,18 @@ function ensureSupportedModpack(condition, provider, reason = "Unsupported modpa
   if (!condition) {
     throw new MarketplaceInstallError(`${provider} install failed: ${reason}.`, "UNSUPPORTED_MODPACK");
   }
+}
+
+function isRecoverableProviderFileError(error) {
+  return [
+    "CURSEFORGE_DOWNLOAD_URL_MISSING",
+    "CURSEFORGE_INVALID_DOWNLOAD_URL",
+    "CURSEFORGE_UNSAFE_URL",
+    "CURSEFORGE_DOWNLOAD_FAILED",
+    "MODRINTH_INVALID_DOWNLOAD_URL",
+    "MODRINTH_UNSAFE_URL",
+    "MODRINTH_DOWNLOAD_FAILED",
+  ].includes(error?.code);
 }
 
 function extractXmlTag(xml, tagName) {
@@ -289,26 +408,60 @@ function createDeduper() {
 
 async function writeText(instanceId, filePath, content, agentConfig) {
   logMarketplaceInstallStep("Writing text file.", { instanceId, filePath, bytes: Buffer.byteLength(String(content || ""), "utf8") });
-  return agentClient.writeInstanceFile(instanceId, filePath, content, { config: agentConfig });
+  return withRetry(
+    () => agentClient.writeInstanceFile(instanceId, filePath, content, { config: agentConfig }),
+    { label: "agent write text", attempts: 3 }
+  );
 }
 
 async function writeBuffer(instanceId, filePath, buffer, agentConfig) {
   logMarketplaceInstallStep("Writing binary file.", { instanceId, filePath, bytes: Buffer.byteLength(buffer || Buffer.alloc(0)) });
-  return agentClient.writeInstanceFile(instanceId, filePath, Buffer.from(buffer).toString("base64"), {
-    encoding: "base64",
-    config: agentConfig,
-  });
+  return withRetry(
+    () => agentClient.writeInstanceFile(instanceId, filePath, Buffer.from(buffer).toString("base64"), {
+      encoding: "base64",
+      config: agentConfig,
+    }),
+    { label: "agent write binary", attempts: 3 }
+  );
 }
 
 async function writeIfMissing(instanceId, filePath, buffer, agentConfig) {
-  try {
-    await agentClient.readInstanceFile(instanceId, filePath, agentConfig);
+  const exists = await withRetry(
+    () => agentClient.instanceFileExists(instanceId, filePath, agentConfig),
+    { label: "agent file exists", attempts: 3 }
+  );
+  if (exists?.exists) {
     logMarketplaceInstallStep("Skipping existing file.", { instanceId, filePath });
     return false;
-  } catch {
-    await writeBuffer(instanceId, filePath, buffer, agentConfig);
-    return true;
   }
+  await writeBuffer(instanceId, filePath, buffer, agentConfig);
+  return true;
+}
+
+async function validateInstalledServerJar(instanceId, serverInfo, agentConfig) {
+  const serverJar = String(serverInfo?.serverJar || "").trim();
+  if (!serverJar) {
+    throw new MarketplaceInstallError("Marketplace install did not configure a server jar.", "SERVER_JAR_NOT_CONFIGURED", {
+      instanceId,
+      suggestion: "Install failed before launch metadata could be written.",
+    });
+  }
+  const exists = await withRetry(
+    () => agentClient.instanceFileExists(instanceId, serverJar, agentConfig),
+    { label: "validate installed server jar", attempts: 3 }
+  );
+  if (!exists?.exists) {
+    throw new MarketplaceInstallError(`Marketplace install did not create the configured server jar: ${serverJar}.`, "SERVER_JAR_MISSING", {
+      instanceId,
+      fileName: serverJar,
+      recovery: "install-failed-before-success",
+      suggestion: "Retry the Marketplace install; the server runtime download or loader installer did not produce the expected jar.",
+    });
+  }
+  return {
+    serverJar,
+    exists,
+  };
 }
 
 async function resolveVanillaServerJar(minecraftVersion) {
@@ -328,23 +481,35 @@ async function resolveVanillaServerJar(minecraftVersion) {
 }
 
 async function resolvePaperServerJar(minecraftVersion, project = "paper") {
-  const projectMeta = await fetchJson(`https://api.papermc.io/v2/projects/${encodeURIComponent(project)}`, "PaperMC project metadata");
+  const projectMeta = await fetchJson(`${PAPER_DOWNLOADS_API}/projects/${encodeURIComponent(project)}`, "Paper Downloads project metadata");
+  const versionGroups = projectMeta.versions && typeof projectMeta.versions === "object" && !Array.isArray(projectMeta.versions)
+    ? Object.values(projectMeta.versions).flat()
+    : projectMeta.versions || [];
   const versionId = minecraftVersion && minecraftVersion !== "latest"
     ? minecraftVersion
-    : (projectMeta.versions || [])[projectMeta.versions.length - 1];
-  const builds = await fetchJson(`https://api.papermc.io/v2/projects/${encodeURIComponent(project)}/versions/${encodeURIComponent(versionId)}/builds`, "PaperMC builds");
-  const build = (builds.builds || [])[builds.builds.length - 1];
-  const appName = project === "paper" ? "paper" : project;
-  const fileName = build?.downloads?.application?.name || `${appName}-${versionId}-${build?.build}.jar`;
-  if (!build?.build || !fileName) {
-    throw new MarketplaceInstallError("No PaperMC server jar was found.", "PAPER_VERSION_NOT_FOUND");
+    : versionGroups[0];
+  if (!versionId) {
+    throw new MarketplaceInstallError("No Paper version was found.", "PAPER_VERSION_NOT_FOUND", {
+      url: `${PAPER_DOWNLOADS_API}/projects/${encodeURIComponent(project)}`,
+    });
+  }
+  const buildsPayload = await fetchJson(`${PAPER_DOWNLOADS_API}/projects/${encodeURIComponent(project)}/versions/${encodeURIComponent(versionId)}/builds`, "Paper Downloads builds");
+  const builds = Array.isArray(buildsPayload) ? buildsPayload : buildsPayload.builds || [];
+  const build = [...builds].reverse().find((entry) => entry?.downloads?.["server:default"]?.url) ||
+    [...builds].reverse().find((entry) => entry?.downloads && Object.keys(entry.downloads).length > 0);
+  const serverDownload = build?.downloads?.["server:default"] || build?.downloads?.server || Object.values(build?.downloads || {})[0];
+  if (!build?.id || !serverDownload?.url || !serverDownload?.name) {
+    throw new MarketplaceInstallError("No Paper server jar was found in the Paper Downloads API response.", "PAPER_VERSION_NOT_FOUND", {
+      url: `${PAPER_DOWNLOADS_API}/projects/${encodeURIComponent(project)}/versions/${encodeURIComponent(versionId)}/builds`,
+      body: truncateForLog(JSON.stringify(buildsPayload)),
+    });
   }
   return {
-    url: `https://api.papermc.io/v2/projects/${encodeURIComponent(project)}/versions/${encodeURIComponent(versionId)}/builds/${build.build}/downloads/${encodeURIComponent(fileName)}`,
-    fileName,
-    serverJar: fileName,
+    url: serverDownload.url,
+    fileName: serverDownload.name,
+    serverJar: "server.jar",
     minecraftVersion: versionId,
-    loaderVersion: String(build.build),
+    loaderVersion: String(build.id),
   };
 }
 
@@ -361,7 +526,7 @@ async function resolvePurpurServerJar(minecraftVersion) {
   return {
     url: `https://api.purpurmc.org/v2/purpur/${encodeURIComponent(versionId)}/${encodeURIComponent(String(latest))}/download`,
     fileName: "purpur.jar",
-    serverJar: "purpur.jar",
+    serverJar: "server.jar",
     minecraftVersion: versionId,
     loaderVersion: String(latest),
   };
@@ -470,6 +635,10 @@ function buildInstancePayload(options, serverInfo) {
     workingDirectory: "data",
     executable: "java",
     args: [`-Xmx${memory}`, "-jar", serverInfo.serverJar || "server.jar", "nogui"],
+    jar: serverInfo.serverJar || "server.jar",
+    serverJar: serverInfo.serverJar || "server.jar",
+    serverJarPath: serverInfo.serverJar || "server.jar",
+    startJar: serverInfo.serverJar || "server.jar",
     restartPolicy: "on-failure",
     startupTimeoutMs: 60000,
     shutdownTimeoutMs: 15000,
@@ -534,6 +703,8 @@ function buildInstallMetadata(options, serverInfo, records) {
     loader: options.loader || options.serverType || "vanilla",
     loaderVersion: serverInfo.loaderVersion || options.loaderVersion || "",
     serverJar: serverInfo.serverJar || "server.jar",
+    serverJarPath: serverInfo.serverJar || "server.jar",
+    startJar: serverInfo.serverJar || "server.jar",
     installedAt: new Date().toISOString(),
     mods: records.mods || [],
     downloads: records.downloads || [],
@@ -574,10 +745,23 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
             continue;
           }
           emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
-          const modBuffer = await fetchBuffer(fileUrl, path.posix.basename(filePath));
-          await writeIfMissing(instanceId, filePath, modBuffer, agentConfig);
-          mods.push({ file: filePath, sha1: file.hashes?.sha1 || null, provider: "modrinth" });
-          downloads.push({ file: filePath, provider: "modrinth" });
+          try {
+            const modBuffer = await fetchBuffer(fileUrl, path.posix.basename(filePath));
+            await writeIfMissing(instanceId, filePath, modBuffer, agentConfig);
+            mods.push({ file: filePath, sha1: file.hashes?.sha1 || null, provider: "modrinth" });
+            downloads.push({ file: filePath, provider: "modrinth" });
+          } catch (error) {
+            if (!isRecoverableProviderFileError(error)) {
+              throw error;
+            }
+            logMarketplaceInstallFailure(error, {
+              provider: "modrinth",
+              instanceId,
+              fileName: path.posix.basename(filePath),
+              url: fileUrl,
+              recovery: "skipped-file",
+            });
+          }
         }
         return;
       }
@@ -602,14 +786,34 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
       if (!file?.url || !dedupe.add(file.hashes?.sha1 || file.url)) {
         continue;
       }
-      const fileName = file.filename || path.basename(new URL(file.url).pathname);
+      const fileName = file.filename || getUrlPathBasename(file.url, "modrinth-file.jar");
       emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
-      const buffer = await fetchBuffer(file.url, fileName);
-      const target = `mods/${safeArchivePath(fileName)}`;
-      await writeIfMissing(instanceId, target, buffer, agentConfig);
-      mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id });
-      downloads.push({ file: target, provider: "modrinth" });
+      try {
+        const buffer = await fetchBuffer(file.url, fileName);
+        const target = `mods/${safeArchivePath(fileName)}`;
+        await writeIfMissing(instanceId, target, buffer, agentConfig);
+        mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id });
+        downloads.push({ file: target, provider: "modrinth" });
+      } catch (error) {
+        if (current === 1 || !isRecoverableProviderFileError(error)) {
+          throw error;
+        }
+        logMarketplaceInstallFailure(error, {
+          provider: "modrinth",
+          instanceId,
+          fileName,
+          url: file.url,
+          recovery: "skipped-file",
+        });
+      }
     }
+  }
+
+  if (mods.length === 0 && downloads.length === 0) {
+    throw new MarketplaceInstallError("Modrinth install failed: no usable modpack files could be downloaded.", "MISSING_SERVER_FILES", {
+      projectId,
+      versionId: version.id,
+    });
   }
 
   return {
@@ -708,6 +912,10 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
     let current = 0;
     for (const manifestFile of manifestFiles) {
       current += 1;
+      if (manifestFile.required === false || manifestFile.optional === true) {
+        logMarketplaceInstallStep("Skipping optional CurseForge manifest file.", { instanceId, manifestFile });
+        continue;
+      }
       const manifestProjectId = manifestFile.projectID || manifestFile.projectId || manifestFile.project_id;
       const manifestFileId = manifestFile.fileID || manifestFile.fileId || manifestFile.file_id;
       ensureSupportedModpack(manifestProjectId && manifestFileId, "CurseForge", "manifest contains a file without projectID/fileID");
@@ -715,15 +923,31 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         continue;
       }
       emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${manifestFiles.length} mods...`, current, total: manifestFiles.length });
-      const modFile = await curseforgeProvider.getFile(manifestProjectId, manifestFileId);
-      const modDownload = await curseforgeProvider.downloadFile(modFile);
-      const target = `mods/${safeArchivePath(modDownload.fileName)}`;
-      await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
-      mods.push({ file: target, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId });
-      downloads.push({ file: target, provider: "curseforge" });
+      try {
+        const modFile = await curseforgeProvider.getFile(manifestProjectId, manifestFileId);
+        const modDownload = await curseforgeProvider.downloadFile(modFile);
+        const target = `mods/${safeArchivePath(modDownload.fileName)}`;
+        await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
+        mods.push({ file: target, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId });
+        downloads.push({ file: target, provider: "curseforge" });
+      } catch (error) {
+        if (!isRecoverableProviderFileError(error)) {
+          throw error;
+        }
+        logMarketplaceInstallFailure(error, {
+          provider: "curseforge",
+          instanceId,
+          fileName: manifestFile.fileName || null,
+          projectId: manifestProjectId,
+          fileId: manifestFileId,
+          recovery: "skipped-file",
+        });
+      }
     }
   } else {
-    const files = [downloaded, ...(await curseforgeProvider.resolveDependencies(file)).map((entry) => entry.file)];
+    const files = [downloaded, ...(await curseforgeProvider.resolveDependencies(file, {}, null, {
+      includeOptional: payload.includeOptionalDependencies === true,
+    })).map((entry) => entry.file)];
     ensureServerFiles(files, "CurseForge");
     let current = 0;
     for (const item of files) {
@@ -731,13 +955,34 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       if (!dedupe.add(`${item.projectId}:${item.id}`)) {
         continue;
       }
-      const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item);
-      const target = `mods/${safeArchivePath(modDownload.fileName)}`;
-      emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
-      await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
-      mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id });
-      downloads.push({ file: target, provider: "curseforge" });
+      try {
+        const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item);
+        const target = `mods/${safeArchivePath(modDownload.fileName)}`;
+        emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
+        await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
+        mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id });
+        downloads.push({ file: target, provider: "curseforge" });
+      } catch (error) {
+        if (current === 1 || !isRecoverableProviderFileError(error)) {
+          throw error;
+        }
+        logMarketplaceInstallFailure(error, {
+          provider: "curseforge",
+          instanceId,
+          fileName: item.fileName || null,
+          projectId: item.projectId,
+          fileId: item.id,
+          recovery: "skipped-file",
+        });
+      }
     }
+  }
+  if (mods.length === 0 && downloads.length === 0) {
+    throw new MarketplaceInstallError("CurseForge install failed: no usable modpack files could be downloaded.", "MISSING_SERVER_FILES", {
+      projectId,
+      fileId: file.id,
+      serverPackFileId: serverFile.id,
+    });
   }
   return {
     mods,
@@ -769,10 +1014,16 @@ async function installPack(payload = {}) {
 
   try {
     emitProgress({ instanceId, stage: "resolving", message: "Creating instance folder...", current: 0, total: 1 });
-    const createResult = await agentClient.createInstance(instancePayload, agentConfig);
+    const createResult = await withRetry(
+      () => agentClient.createInstance(instancePayload, agentConfig),
+      { label: "agent create instance", attempts: 3 }
+    );
     created = true;
     for (const folder of INSTALL_FOLDERS) {
-      await agentClient.createInstanceFolder(instanceId, folder, agentConfig);
+      await withRetry(
+        () => agentClient.createInstanceFolder(instanceId, folder, agentConfig),
+        { label: "agent create folder", attempts: 3 }
+      );
     }
 
     emitProgress({ instanceId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
@@ -798,10 +1049,20 @@ async function installPack(payload = {}) {
     const metadata = buildInstallMetadata(options, serverInfo, installRecords);
     await writeText(instanceId, "metadata.json", `${JSON.stringify(metadata, null, 2)}\n`, agentConfig);
     await writeText(instanceId, "config.json", `${JSON.stringify({ ...instancePayload, status: "stopped", port: instancePayload.primaryPort }, null, 2)}\n`, agentConfig);
-    await agentClient.updateInstance(instanceId, metadata, agentConfig);
+    await validateInstalledServerJar(instanceId, serverInfo, agentConfig);
+    await agentClient.updateInstance(instanceId, {
+      ...metadata,
+      jar: serverInfo.serverJar,
+      serverJar: serverInfo.serverJar,
+      serverJarPath: serverInfo.serverJar,
+      startJar: serverInfo.serverJar,
+    }, agentConfig);
     if (options.start) {
       emitProgress({ instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
-      await agentClient.startInstance(instanceId, agentConfig);
+      await withRetry(
+        () => agentClient.startInstance(instanceId, agentConfig),
+        { label: "agent start instance", attempts: 2 }
+      );
     }
 
     emitProgress({ instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
@@ -819,7 +1080,8 @@ async function installPack(payload = {}) {
       minecraftVersion: options.minecraftVersion || options.version || null,
       loader: options.loader || options.serverType || null,
     });
-    emitProgress({ instanceId, stage: "error", message: friendlyError(error), current: 0, total: 0, percent: 0 });
+    const detailedMessage = buildDetailedErrorMessage(error, friendlyError(error));
+    emitProgress({ instanceId, stage: "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
     if (created) {
       try {
         await agentClient.deleteInstance(instanceId, agentConfig);
@@ -827,7 +1089,12 @@ async function installPack(payload = {}) {
         // Failed cleanup should not hide the original install error.
       }
     }
-    throw new MarketplaceInstallError(friendlyError(error), error?.code || "MARKETPLACE_INSTALL_FAILED", error?.details || {});
+    throw new MarketplaceInstallError(detailedMessage, error?.code || "MARKETPLACE_INSTALL_FAILED", {
+      ...(error?.details || {}),
+      originalName: error?.name || null,
+      originalMessage: error?.message || null,
+      originalStack: error?.stack || null,
+    });
   }
 }
 
@@ -874,8 +1141,12 @@ module.exports = {
     buildInstancePayload,
     createDeduper,
     friendlyHttpMessage,
+    isRecoverableProviderFileError,
+    isTransientError,
+    resolvePaperServerJar,
     safeArchivePath,
     stripArchiveRoot,
+    withRetry,
   },
   installPack,
   marketplaceInstallEvents,

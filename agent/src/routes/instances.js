@@ -7,6 +7,7 @@ const {
   forceKillInstance,
   getMetrics,
   getStatus,
+  instanceFileExists,
   listInstanceFiles,
   listInstances,
   readInstanceFile,
@@ -145,6 +146,11 @@ async function handleInstances(request, url) {
 
     if (request.method === "DELETE" && fileId) {
       return result(200, await deleteInstanceFile(fileId, url.searchParams.get("path") || "."));
+    }
+
+    const existsId = getInstanceIdFromPath(url.pathname, "/exists");
+    if (request.method === "GET" && existsId) {
+      return result(200, await instanceFileExists(existsId, url.searchParams.get("path") || "."));
     }
 
     const mkdirId = getInstanceIdFromPath(url.pathname, "/mkdir");

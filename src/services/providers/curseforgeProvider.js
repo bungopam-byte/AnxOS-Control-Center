@@ -26,6 +26,22 @@ class CurseForgeProviderError extends Error {
   }
 }
 
+function serializeError(error, context = {}) {
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  return {
+    ...context,
+    name: error?.name || null,
+    code: error?.code || null,
+    message: error?.message || null,
+    stack: error?.stack || null,
+    status: details.status || error?.status || error?.statusCode || null,
+    responseBody: details.body || details.responseBody || null,
+    url: details.url || context.url || null,
+    invalidUrl: details.invalidUrl || null,
+    details,
+  };
+}
+
 function truncateForLog(value, maxLength = 4000) {
   const text = String(value || "");
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
@@ -49,13 +65,47 @@ function friendlyHttpMessage(label, status, body = "") {
 }
 
 function logProviderFailure(error, context = {}) {
-  console.error("[Marketplace][CurseForge] Provider request failed.", {
-    ...context,
-    code: error?.code || null,
-    message: error?.message || null,
-    details: error?.details || null,
-    stack: error?.stack || null,
-  });
+  console.error("[Marketplace][CurseForge] Provider request failed.", serializeError(error, context));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientStatus(status) {
+  return [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(status));
+}
+
+function isTransientError(error) {
+  const status = error?.details?.status || error?.status || error?.statusCode;
+  const code = error?.code || "";
+  const name = error?.name || "";
+  return isTransientStatus(status) ||
+    ["CURSEFORGE_NETWORK_FAILED", "ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT"].includes(code) ||
+    ["AbortError", "TimeoutError"].includes(name);
+}
+
+async function withRetry(operation, context = {}) {
+  const attempts = Math.max(1, Number(context.attempts) || 3);
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation(attempt);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !isTransientError(error)) {
+        throw error;
+      }
+      logProviderFailure(error, {
+        label: context.label || null,
+        url: context.url || null,
+        attempt,
+        nextAttempt: attempt + 1,
+      });
+      await delay((Number(context.delayMs) || 500) * attempt);
+    }
+  }
+  throw lastError;
 }
 
 function trimValue(value) {
@@ -303,64 +353,85 @@ function buildApiHeaders(config = {}) {
 
 async function requestJson(url, label, config = {}) {
   try {
-    const response = await fetch(url, {
-      headers: buildApiHeaders(config),
-    });
-    const body = await response.text();
-    if (!response.ok) {
-      throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_REQUEST_FAILED", {
-        status: response.status,
-        body: truncateForLog(body),
-        url: String(url),
+    return await withRetry(async () => {
+      const response = await fetch(url, {
+        headers: buildApiHeaders(config),
       });
-    }
-    try {
-      return JSON.parse(body);
-    } catch (error) {
-      throw new CurseForgeProviderError(`${label} returned invalid JSON.`, "CURSEFORGE_INVALID_JSON", {
-        message: error.message,
-        body: truncateForLog(body),
-        url: String(url),
-      });
-    }
+      const body = await response.text();
+      if (!response.ok) {
+        throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_REQUEST_FAILED", {
+          status: response.status,
+          body: truncateForLog(body),
+          url: String(url),
+        });
+      }
+      try {
+        return JSON.parse(body);
+      } catch (error) {
+        throw new CurseForgeProviderError(`${label} returned invalid JSON.`, "CURSEFORGE_INVALID_JSON", {
+          message: error.message,
+          body: truncateForLog(body),
+          url: String(url),
+        });
+      }
+    }, { label, url: String(url) });
   } catch (error) {
     const effectiveError = error instanceof CurseForgeProviderError
       ? error
       : new CurseForgeProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "CURSEFORGE_NETWORK_FAILED", {
         url: String(url),
         message: error?.message || "request failed",
+        stack: error?.stack || null,
       });
     logProviderFailure(effectiveError, { label, url: String(url) });
     throw effectiveError;
   }
 }
 
-async function requestBuffer(url, label) {
-  const parsed = new URL(url);
-  if (!["https:", "http:"].includes(parsed.protocol)) {
-    throw new CurseForgeProviderError(`${label} has an unsafe download URL.`, "CURSEFORGE_UNSAFE_URL", { url });
-  }
+function validateDownloadUrl(url, label = "CurseForge file") {
+  const rawUrl = String(url || "").trim();
+  let parsed;
   try {
-    const response = await fetch(parsed, {
-      headers: {
-        "User-Agent": USER_AGENT,
-      },
+    parsed = new URL(rawUrl);
+  } catch (error) {
+    throw new CurseForgeProviderError(`${label} has an invalid download URL.`, "CURSEFORGE_INVALID_DOWNLOAD_URL", {
+      invalidUrl: rawUrl || String(url),
+      message: error?.message || "Invalid URL",
+      stack: error?.stack || null,
     });
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_DOWNLOAD_FAILED", {
-        status: response.status,
-        body: truncateForLog(body),
-        url,
+  }
+  if (!["https:", "http:"].includes(parsed.protocol)) {
+    throw new CurseForgeProviderError(`${label} has an unsafe download URL.`, "CURSEFORGE_UNSAFE_URL", { url: rawUrl });
+  }
+  return parsed;
+}
+
+async function requestBuffer(url, label) {
+  const parsed = validateDownloadUrl(url, label);
+  try {
+    return await withRetry(async () => {
+      const response = await fetch(parsed, {
+        headers: {
+          "User-Agent": USER_AGENT,
+        },
       });
-    }
-    return Buffer.from(await response.arrayBuffer());
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_DOWNLOAD_FAILED", {
+          status: response.status,
+          body: truncateForLog(body),
+          url,
+        });
+      }
+      return Buffer.from(await response.arrayBuffer());
+    }, { label, url });
   } catch (error) {
     const effectiveError = error instanceof CurseForgeProviderError
       ? error
       : new CurseForgeProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "CURSEFORGE_NETWORK_FAILED", {
         url,
         message: error?.message || "request failed",
+        stack: error?.stack || null,
       });
     logProviderFailure(effectiveError, { label, url });
     throw effectiveError;
@@ -517,7 +588,7 @@ async function resolveFile(projectId, minecraftVersion = "", loader = "", reques
   return file;
 }
 
-async function resolveDependencies(file, config = {}, state = null) {
+async function resolveDependencies(file, config = {}, state = null, options = {}) {
   const resolved = state || {
     seenProjects: new Set(),
     seenFiles: new Set(),
@@ -525,6 +596,9 @@ async function resolveDependencies(file, config = {}, state = null) {
   };
   for (const dependency of Array.isArray(file?.dependencies) ? file.dependencies : []) {
     if (![REQUIRED_DEPENDENCY, OPTIONAL_DEPENDENCY].includes(dependency.relationType)) {
+      continue;
+    }
+    if (dependency.relationType === OPTIONAL_DEPENDENCY && options.includeOptional !== true) {
       continue;
     }
     if (!dependency.modId || resolved.seenProjects.has(dependency.modId)) {
@@ -541,13 +615,13 @@ async function resolveDependencies(file, config = {}, state = null) {
       projectId: dependency.modId,
       dependencyType: dependency.relationType === REQUIRED_DEPENDENCY ? "required" : "optional",
     });
-    await resolveDependencies(dependencyFile, config, resolved);
+    await resolveDependencies(dependencyFile, config, resolved, options);
   }
   return resolved.dependencies;
 }
 
 async function downloadFile(file, destination = "", options = {}) {
-  const downloadUrl = file?.downloadUrl || await getFileDownloadUrl(file?.projectId, file?.id);
+  const downloadUrl = file?.downloadUrl || await getFileDownloadUrl(file?.projectId, file?.id, options.config || {});
   if (!downloadUrl) {
     throw new CurseForgeProviderError(`${file?.fileName || "CurseForge file"} has no download URL.`, "CURSEFORGE_DOWNLOAD_URL_MISSING", {
       projectId: file?.projectId || null,
@@ -573,10 +647,12 @@ module.exports = {
     getApiKeyStatus,
     getCurseForgeApiKey,
     getEnvCandidates,
+    isTransientError,
     normalizeFile,
     normalizeLoader,
     normalizeMod,
     requireApiKey,
+    withRetry,
   },
   CurseForgeProviderError,
   downloadFile,

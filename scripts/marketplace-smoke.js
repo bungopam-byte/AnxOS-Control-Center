@@ -611,6 +611,209 @@ async function assertVanillaInstallVersionPipeline() {
   }
 }
 
+async function assertMarketplaceInstallerSmokeMatrix() {
+  const agentClient = require("../src/services/agentClient");
+  const originalFetch = global.fetch;
+  const originalAgent = {};
+  const originalModrinth = {};
+  const originalCurseForge = {};
+  const patchedAgentMethods = [
+    "createInstance",
+    "createInstanceFolder",
+    "writeInstanceFile",
+    "instanceFileExists",
+    "saveMinecraftProperties",
+    "updateInstance",
+    "startInstance",
+    "getInstanceStatus",
+    "forceKillInstance",
+    "deleteInstance",
+  ];
+  const patchedModrinthMethods = ["resolveVersion", "resolveDependencies"];
+  const patchedCurseForgeMethods = ["ensureConfigured", "resolveFile", "downloadFile", "resolveDependencies"];
+  patchedAgentMethods.forEach((name) => {
+    originalAgent[name] = agentClient[name];
+  });
+  patchedModrinthMethods.forEach((name) => {
+    originalModrinth[name] = modrinthProvider[name];
+  });
+  patchedCurseForgeMethods.forEach((name) => {
+    originalCurseForge[name] = curseforgeProvider[name];
+  });
+
+  const instances = new Map();
+  const files = new Map();
+  const fetchUrls = [];
+  const installerStarts = new Set();
+
+  function jsonResponse(body) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify(body),
+      arrayBuffer: async () => Buffer.from(JSON.stringify(body)).buffer,
+    };
+  }
+
+  function textResponse(body) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "text/plain" },
+      text: async () => body,
+      arrayBuffer: async () => Buffer.from(body).buffer,
+    };
+  }
+
+  function binaryResponse(body = "jar") {
+    const buffer = Buffer.from(body);
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => String(buffer.length) },
+      text: async () => body,
+      arrayBuffer: async () => buffer,
+    };
+  }
+
+  try {
+    global.fetch = async (url) => {
+      const href = String(url);
+      fetchUrls.push(href);
+      if (href.includes("version_manifest_v2.json")) {
+        return jsonResponse({ latest: { release: "1.21.1" }, versions: [{ id: "1.21.1", url: "https://mock.local/mojang/1.21.1.json" }] });
+      }
+      if (href === "https://mock.local/mojang/1.21.1.json") {
+        return jsonResponse({ downloads: { server: { url: "https://mock.local/mojang/server.jar" } } });
+      }
+      if (href === "https://fill.papermc.io/v3/projects/paper") {
+        return jsonResponse({ project_id: "paper", versions: { "1.21": ["1.21.1"] } });
+      }
+      if (href === "https://fill.papermc.io/v3/projects/paper/versions/1.21.1/builds") {
+        return jsonResponse([{ id: 42, downloads: { "server:default": { name: "paper-1.21.1-42.jar", url: "https://mock.local/paper.jar" } } }]);
+      }
+      if (href === "https://api.purpurmc.org/v2/purpur") {
+        return jsonResponse({ versions: ["1.21.1"] });
+      }
+      if (href === "https://api.purpurmc.org/v2/purpur/1.21.1") {
+        return jsonResponse({ builds: { latest: "2280" } });
+      }
+      if (href.includes("meta.fabricmc.net/v2/versions/loader")) {
+        return jsonResponse([{ version: "0.16.10", stable: true }]);
+      }
+      if (href.includes("meta.fabricmc.net/v2/versions/installer")) {
+        return jsonResponse([{ version: "1.0.1", stable: true }]);
+      }
+      if (href === "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json") {
+        return jsonResponse({ promos: { "1.21.1-latest": "52.1.0" } });
+      }
+      if (href === "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml") {
+        return textResponse("<metadata><versioning><latest>21.1.200</latest><release>21.1.200</release><versions><version>21.1.200</version></versions></versioning></metadata>");
+      }
+      if (/mock\.local|maven\.minecraftforge\.net|maven\.neoforged\.net|api\.purpurmc\.org\/v2\/purpur\/1\.21\.1\/2280\/download|meta\.fabricmc\.net\/v2\/versions\/loader\/1\.21\.1/.test(href)) {
+        return binaryResponse(`jar:${href}`);
+      }
+      throw new Error(`Unexpected smoke fetch URL: ${href}`);
+    };
+
+    agentClient.createInstance = async (payload) => {
+      instances.set(payload.id, { ...payload, state: "Stopped" });
+      return { instance: instances.get(payload.id) };
+    };
+    agentClient.createInstanceFolder = async () => ({ ok: true });
+    agentClient.instanceFileExists = async (instanceId, filePath) => ({ exists: files.has(`${instanceId}:${filePath}`), path: filePath });
+    agentClient.writeInstanceFile = async (instanceId, filePath, content) => {
+      files.set(`${instanceId}:${filePath}`, content);
+      return { saved: true, path: filePath };
+    };
+    agentClient.saveMinecraftProperties = async (instanceId, properties) => {
+      files.set(`${instanceId}:server.properties`, JSON.stringify(properties));
+      return { ok: true };
+    };
+    agentClient.updateInstance = async (instanceId, patch) => {
+      instances.set(instanceId, { ...(instances.get(instanceId) || {}), ...patch });
+      return { instance: instances.get(instanceId) };
+    };
+    agentClient.startInstance = async (instanceId) => {
+      installerStarts.add(instanceId);
+      instances.set(instanceId, { ...(instances.get(instanceId) || {}), state: "Running" });
+      return { instance: instances.get(instanceId) };
+    };
+    agentClient.getInstanceStatus = async (instanceId) => ({ instance: { ...(instances.get(instanceId) || {}), state: "Stopped" } });
+    agentClient.forceKillInstance = async () => ({ ok: true });
+    agentClient.deleteInstance = async (instanceId) => {
+      instances.delete(instanceId);
+      return { deleted: true };
+    };
+
+    modrinthProvider.resolveVersion = async () => ({
+      id: "mr-version",
+      name: "Modrinth Smoke",
+      primaryFile: { filename: "modrinth-smoke.jar", url: "https://mock.local/modrinth-smoke.jar", hashes: { sha1: "mr" } },
+      files: [{ filename: "modrinth-smoke.jar", url: "https://mock.local/modrinth-smoke.jar", hashes: { sha1: "mr" } }],
+      dependencies: [],
+    });
+    modrinthProvider.resolveDependencies = async () => [];
+    curseforgeProvider.ensureConfigured = () => true;
+    curseforgeProvider.resolveFile = async () => ({ id: 200, projectId: 100, fileName: "curseforge-smoke.jar", downloadUrl: "https://mock.local/curseforge-smoke.jar", dependencies: [] });
+    curseforgeProvider.downloadFile = async (file) => ({ ...file, buffer: Buffer.from("cf-mod") });
+    curseforgeProvider.resolveDependencies = async () => [];
+
+    const cases = [
+      ["vanilla", { provider: "anxhub", loader: "vanilla" }, "server.jar"],
+      ["paper", { provider: "anxhub", loader: "paper" }, "server.jar"],
+      ["purpur", { provider: "anxhub", loader: "purpur" }, "server.jar"],
+      ["fabric", { provider: "anxhub", loader: "fabric" }, "fabric-server.jar"],
+      ["forge", { provider: "anxhub", loader: "forge" }, "forge-installer.jar"],
+      ["neoforge", { provider: "anxhub", loader: "neoforge" }, "neoforge-installer.jar"],
+      ["curseforge", { provider: "curseforge", loader: "vanilla", providerProjectId: "100" }, "mods/curseforge-smoke.jar"],
+      ["modrinth", { provider: "modrinth", loader: "vanilla", providerProjectId: "mr-pack" }, "mods/modrinth-smoke.jar"],
+    ];
+
+    for (const [name, payload, expectedFile] of cases) {
+      const id = `marketplace-${name}-smoke`;
+      await marketplaceInstallService.installPack({
+        ...payload,
+        id,
+        name: `Marketplace ${name} Smoke`,
+        minecraftVersion: "1.21.1",
+        memory: "2G",
+        port: 25565,
+        acceptEula: true,
+        start: false,
+      });
+      assert(files.has(`${id}:${expectedFile}`), `${name} install should write ${expectedFile}.`);
+      assert(files.has(`${id}:metadata.json`), `${name} install should write metadata.json.`);
+      const instance = instances.get(id);
+      const configuredJar = instance?.serverJar || instance?.serverJarPath || instance?.startJar;
+      assert(configuredJar, `${name} install should configure server jar metadata.`);
+      assert(files.has(`${id}:${configuredJar}`), `${name} configured jar should exist: ${configuredJar}.`);
+      const metadata = JSON.parse(files.get(`${id}:metadata.json`));
+      assert.strictEqual(metadata.serverJar, configuredJar, `${name} metadata should preserve the configured server jar.`);
+      assert.strictEqual(metadata.serverJarPath, configuredJar, `${name} metadata should preserve serverJarPath.`);
+      assert.strictEqual(metadata.startJar, configuredJar, `${name} metadata should preserve startJar.`);
+    }
+
+    assert(fetchUrls.includes("https://fill.papermc.io/v3/projects/paper"), "Paper installer must use the Paper Downloads v3 project API.");
+    assert(fetchUrls.includes("https://fill.papermc.io/v3/projects/paper/versions/1.21.1/builds"), "Paper installer must use the Paper Downloads v3 builds API.");
+    assert(!fetchUrls.some((href) => href.includes("https://api.papermc.io/v2")), "Paper installer must not use deprecated PaperMC v2 endpoints.");
+    assert(installerStarts.has("marketplace-forge-smoke"), "Forge smoke should run the loader installer.");
+    assert(installerStarts.has("marketplace-neoforge-smoke"), "NeoForge smoke should run the loader installer.");
+  } finally {
+    global.fetch = originalFetch;
+    patchedAgentMethods.forEach((name) => {
+      agentClient[name] = originalAgent[name];
+    });
+    patchedModrinthMethods.forEach((name) => {
+      modrinthProvider[name] = originalModrinth[name];
+    });
+    patchedCurseForgeMethods.forEach((name) => {
+      curseforgeProvider[name] = originalCurseForge[name];
+    });
+  }
+}
+
 async function assertCalendarMinecraftVersionMetadata() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-calendar-minecraft-version-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
@@ -710,6 +913,8 @@ async function assertProviderInstallSupport() {
   const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
   const indexSource = fs.readFileSync(indexPath, "utf8");
   const appSource = fs.readFileSync(appPath, "utf8");
+  const agentRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "instances.js"), "utf8");
+  const agentClientSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
   assert(preloadSource.includes("marketplace:installPack"), "Preload should expose provider pack install IPC.");
   assert(preloadSource.includes("marketplace:searchProviderPacks"), "Preload should expose provider pack search IPC.");
   assert(preloadSource.includes("marketplace:getProviderPackVersions"), "Preload should expose provider version IPC.");
@@ -726,6 +931,8 @@ async function assertProviderInstallSupport() {
   assert(appSource.includes("loadMarketplaceProviderPacks"), "Renderer should search dynamic provider packs.");
   assert(appSource.includes("startMarketplaceInstallProgressListener"), "Renderer should register progress listener for provider installs.");
   assert(appSource.includes("stopMarketplaceInstallProgressListener"), "Renderer should clean up progress listener after installs.");
+  assert(agentRouteSource.includes('getInstanceIdFromPath(url.pathname, "/exists")'), "Agent should expose an explicit instance file exists endpoint.");
+  assert(agentClientSource.includes("async function instanceFileExists"), "Desktop agent client should expose instanceFileExists.");
 
   assert.deepStrictEqual(
     modrinthProvider._test.buildSearchFacets("1.21.1", "fabric"),
@@ -903,6 +1110,7 @@ async function main() {
   await assertMinecraftPropertiesVersionBackfill();
   await assertOldVanillaInstallerMetadataBackfill();
   await assertVanillaInstallVersionPipeline();
+  await assertMarketplaceInstallerSmokeMatrix();
   await assertCalendarMinecraftVersionMetadata();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();

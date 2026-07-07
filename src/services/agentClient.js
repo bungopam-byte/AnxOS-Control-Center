@@ -5,7 +5,7 @@ const { app } = require("electron");
 
 const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
-const REQUEST_TIMEOUT_MS = 3500;
+const REQUEST_TIMEOUT_MS = 30000;
 const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
 let environmentLoaded = false;
@@ -235,7 +235,27 @@ function getAgentConfig(configOverride = null) {
 function buildAgentUrl(pathname, configOverride = null) {
   const config = getAgentConfig(configOverride);
   const baseUrl = config.url.endsWith("/") ? config.url : `${config.url}/`;
-  return new URL(pathname, baseUrl).toString();
+  try {
+    return new URL(pathname, baseUrl).toString();
+  } catch (error) {
+    throw new AgentClientError("Invalid agent URL.", {
+      code: "AGENT_INVALID_URL",
+      payload: {
+        error: {
+          code: "AGENT_INVALID_URL",
+          message: "Invalid agent URL.",
+          details: {
+            baseUrl,
+            pathname,
+            invalidUrl: config.url,
+            name: error?.name || null,
+            message: error?.message || null,
+            stack: error?.stack || null,
+          },
+        },
+      },
+    });
+  }
 }
 
 function logAgentRequestFailure(pathname, status, errorCode = null, details = {}) {
@@ -349,14 +369,34 @@ async function requestJson(pathname, options = {}) {
     const errorCode = error?.name === "AbortError"
       ? "AGENT_TIMEOUT"
       : getTransportErrorCode(error) || "AGENT_UNAVAILABLE";
+    const requestUrl = (() => {
+      try {
+        return buildAgentUrl(pathname, configOverride);
+      } catch (urlError) {
+        return urlError?.payload?.error?.details?.invalidUrl || null;
+      }
+    })();
     logAgentRequestFailure(pathname, null, errorCode, {
-      url: buildAgentUrl(pathname, configOverride),
+      url: requestUrl,
       method,
       message: error?.message || null,
       stack: error?.stack || null,
     });
-    throw new AgentClientError("Agent unavailable.", {
+    throw new AgentClientError(error?.message && error.message !== "URL" ? error.message : "Agent unavailable.", {
       code: errorCode,
+      payload: {
+        error: {
+          code: errorCode,
+          message: error?.message || "Agent unavailable.",
+          details: {
+            name: error?.name || null,
+            message: error?.message || null,
+            stack: error?.stack || null,
+            url: requestUrl,
+            payload: error?.payload || null,
+          },
+        },
+      },
     });
   } finally {
     clearTimeout(timeout);
@@ -1686,6 +1726,11 @@ async function readInstanceFile(instanceId, filePath, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`, { config: configOverride });
 }
 
+async function instanceFileExists(instanceId, filePath, configOverride = null) {
+  const query = new URLSearchParams({ path: filePath || "." });
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/exists?${query.toString()}`, { config: configOverride });
+}
+
 async function writeInstanceFile(instanceId, filePath, content, options = {}) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
     config: options.config || null,
@@ -1856,6 +1901,7 @@ module.exports = {
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
+  instanceFileExists,
   getMinecraftProperties,
   getPlayitSnapshot,
   getPlayitStatus,

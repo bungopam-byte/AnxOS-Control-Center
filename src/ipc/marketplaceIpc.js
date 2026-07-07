@@ -25,21 +25,34 @@ function getMarketplaceErrorMessage(error) {
   const message = error?.payload?.error?.message || error?.message;
   const details = error?.details || error?.payload?.error?.details || {};
   const status = details.status || error?.status || error?.payload?.status || null;
-  const url = details.url || null;
+  const url = details.url || details.invalidUrl || null;
+  const body = details.body || details.responseBody || null;
+  const name = details.originalName || error?.name || null;
+  const stack = details.originalStack || error?.stack || null;
 
-  if (message && message !== "Request failed." && message !== "HTTP") {
-    return message;
+  const parts = [];
+  const usefulMessage = message && message !== "Request failed." && message !== "HTTP" && message !== "URL"
+    ? message
+    : null;
+  parts.push(usefulMessage || "Marketplace request failed.");
+  if (code) parts.push(`code=${code}`);
+  if (status) parts.push(`status=${status}`);
+  if (details.provider) parts.push(`provider=${details.provider}`);
+  if (details.fileName) parts.push(`file=${details.fileName}`);
+  if (url) parts.push(`${details.invalidUrl ? "invalidUrl" : "url"}=${url}`);
+  if (body) parts.push(`body=${String(body).slice(0, 1000)}`);
+  if (details.recovery) parts.push(`recovery=${details.recovery}`);
+  if (details.suggestion) parts.push(`suggestion=${details.suggestion}`);
+  if (name && name !== "Error") parts.push(`error=${name}`);
+  if (message === "URL" && !url) parts.push("hint=A URL constructor failed before the invalid value was attached.");
+
+  const detailed = parts.filter(Boolean).join(" | ");
+
+  if (detailed !== "Marketplace request failed.") {
+    return detailed;
   }
 
-  if (status) {
-    return `Marketplace request failed: HTTP ${status}${url ? ` (${url})` : ""}`;
-  }
-
-  if (code) {
-    return message && message !== "Request failed." ? message : code;
-  }
-
-  return message || "Marketplace request failed.";
+  return stack ? `${detailed} | stack=${String(stack).split("\n")[0]}` : detailed;
 }
 
 async function invokeMarketplaceOperation(operation) {
@@ -48,9 +61,13 @@ async function invokeMarketplaceOperation(operation) {
   } catch (error) {
     const message = getMarketplaceErrorMessage(error);
     console.error("[Marketplace][IPC] Operation failed.", {
+      name: error?.name || null,
       code: error?.code || error?.payload?.error?.code || null,
       message,
       originalMessage: error?.message || null,
+      status: error?.status || error?.payload?.status || error?.details?.status || null,
+      url: error?.details?.url || error?.details?.invalidUrl || error?.payload?.error?.details?.url || error?.payload?.error?.details?.invalidUrl || null,
+      responseBody: error?.details?.body || error?.details?.responseBody || error?.payload?.error?.details?.body || error?.payload?.error?.details?.responseBody || null,
       details: error?.details || error?.payload?.error?.details || null,
       payload: error?.payload || null,
       stack: error?.stack || null,

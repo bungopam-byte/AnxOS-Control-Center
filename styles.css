@@ -7704,6 +7704,18 @@ button:disabled {
   grid-template-columns: auto minmax(0, 1fr);
 }
 
+.settings-section--agent .settings-actions {
+  grid-template-columns: repeat(2, 160px);
+}
+
+.settings-section--agent .settings-inline-status {
+  grid-column: 1 / -1;
+}
+
+.settings-section--agent .inline-action {
+  justify-content: center;
+}
+
 .settings-field--color {
   grid-template-columns: minmax(0, 1fr) 48px;
   align-items: end;

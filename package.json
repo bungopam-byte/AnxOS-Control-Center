@@ -1,7 +1,7 @@
 {
   "name": "anxos-control-center",
   "productName": "AnxOS Control Center",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Private local desktop control center for a Debian server.",
   "author": "AnxOS",
   "license": "UNLICENSED",
@@ -11,7 +11,9 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
+    "dist:win": "electron-builder --win --x64 -c.win.signAndEditExecutable=false",
+    "dist:win:installer": "electron-builder --win nsis --x64 -c.win.signAndEditExecutable=false",
+    "dist:win:portable": "electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",
@@ -35,6 +37,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -42,7 +50,6 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "AnxOS-Control-Center-${version}-portable.${ext}",
       "signAndEditExecutable": false
     },
     "linux": {
@@ -72,7 +79,17 @@
     "deb": {
       "packageCategory": "utils"
     },
+    "portable": {
+      "artifactName": "AnxOS-Control-Center-${version}-portable.${ext}"
+    },
     "nsis": {
+      "artifactName": "AnxOS-Control-Center-Setup-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AnxOS Control Center",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico"

@@ -12864,13 +12864,13 @@ function renderUpdateModal(mode = "available") {
 
   if (updateMessage) {
     if (mode === "downloading") {
-      updateMessage.textContent = "Downloading the update to your Downloads folder. Keep AnxOS Control Center open until it finishes.";
+      updateMessage.textContent = "Downloading the installer to your Downloads folder. Keep AnxOS Control Center open until it finishes.";
     } else if (mode === "downloaded") {
-      updateMessage.textContent = "The update is ready. Open it, close this app, then run the downloaded build to install the latest version.";
+      updateMessage.textContent = "The installer is ready. Open it, close this app, then follow the setup prompt to install the latest version.";
     } else if (mode === "error") {
       updateMessage.textContent = "The update could not be downloaded. You can open the release page and download it manually.";
     } else {
-      updateMessage.textContent = "A newer version is available. Download it here instead of using git pull or launcher commands on Windows.";
+      updateMessage.textContent = "A newer version is available. Download the installer here instead of using git pull or launcher commands on Windows.";
     }
   }
 
@@ -12884,7 +12884,7 @@ function renderUpdateModal(mode = "available") {
 
   if (updatePrimaryButton) {
     updatePrimaryButton.disabled = mode === "downloading";
-    updatePrimaryButton.textContent = mode === "downloaded" ? "Open Download" : mode === "downloading" ? "Downloading..." : "Download Update";
+    updatePrimaryButton.textContent = mode === "downloaded" ? "Open Installer" : mode === "downloading" ? "Downloading..." : "Download Installer";
   }
 
   if (mode !== "downloading") {

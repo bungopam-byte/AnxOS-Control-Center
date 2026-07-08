@@ -3,7 +3,7 @@
   "productName": "AnxOS Control Center",
   "version": "1.0.3",
   "description": "Private local desktop control center for a Debian server.",
-  "author": "AnxOS",
+  "author": "Anx",
   "license": "UNLICENSED",
   "desktopName": "anxos-control-center.desktop",
   "main": "main.js",
@@ -11,9 +11,9 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win --x64 -c.win.signAndEditExecutable=false",
-    "dist:win:installer": "electron-builder --win nsis --x64 -c.win.signAndEditExecutable=false",
-    "dist:win:portable": "electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
+    "dist:win": "electron-builder --win --x64",
+    "dist:win:installer": "electron-builder --win nsis --x64",
+    "dist:win:portable": "electron-builder --win portable --x64",
     "dist:linux": "electron-builder --linux deb AppImage --x64",
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
@@ -23,6 +23,7 @@
   "build": {
     "appId": "com.anxos.controlcenter",
     "productName": "AnxOS Control Center",
+    "copyright": "Copyright © 2026 Anx",
     "files": [
       "main.js",
       "preload.js",
@@ -51,7 +52,10 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "signAndEditExecutable": false
+      "verifyUpdateCodeSignature": true,
+      "signtoolOptions": {
+        "publisherName": "Anx"
+      }
     },
     "linux": {
       "target": [

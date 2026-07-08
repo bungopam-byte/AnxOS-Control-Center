@@ -26,8 +26,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Report Windows signing mode
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          if ($env:CSC_LINK -or $env:WIN_CSC_LINK) {
+            "Windows code-signing secret is present. electron-builder will sign Windows artifacts."
+          } else {
+            "No Windows code-signing secret is configured. Windows artifacts will build unsigned and are dev-only until Anx provides a trusted certificate."
+          }
+
       - name: Build Windows installer
         run: npm run dist:win
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

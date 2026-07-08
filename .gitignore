@@ -26,3 +26,15 @@ bot-config/
 .env
 config/marketplace.json
 agent/*.log
+
+# Code-signing certificates and private keys must never be committed.
+*.pfx
+*.p12
+*.cer
+*.crt
+*.key
+*.pem
+*.pvk
+*.spc
+certs/
+signing/

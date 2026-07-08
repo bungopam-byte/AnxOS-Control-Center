@@ -115,10 +115,12 @@ On Windows, this keeps the existing Windows installer workflow and produces the 
 
 On Debian/Linux, the build produces Linux release artifacts:
 
-- `AnxOS-Control-Center.AppImage`
-- `anxos-control-center_*_amd64.deb`
+- `AnxOS-Control-Center-<version>.deb`
+- `AnxOS-Control-Center-<version>.AppImage`
 
-The AppImage is the recommended Linux download because it runs without installation on most distributions, including Bazzite, Fedora, Ubuntu, Linux Mint, Pop!_OS, Debian, and many others.
+The `.deb` package is the recommended Linux installer for Debian-based AnxHub systems. The AppImage remains available as a fallback for systems where installing a package is not desired.
+
+Windows release builds support Authenticode code signing when Anx signing secrets are configured. See [Windows Code Signing](docs/windows-code-signing.md). Unsigned local Windows builds are dev-only and may show `Unknown Publisher`.
 
 ### AppImage
 
@@ -132,7 +134,7 @@ No installation is required. You can keep the AppImage anywhere in your home dir
 ### Debian Package
 
 ```bash
-sudo dpkg -i anxos-control-center_*.deb
+sudo dpkg -i AnxOS-Control-Center-*.deb
 ```
 
 If dependencies are missing:
@@ -149,11 +151,12 @@ Recommended GitHub Releases layout:
 
 ```text
 Windows
-- AnxOS-Control-Center-Setup.exe
+- AnxOS-Control-Center-Setup-<version>.exe
+- AnxOS-Control-Center-<version>-portable.exe
 
 Linux
-- AnxOS-Control-Center.AppImage
-- anxos-control-center_amd64.deb
+- AnxOS-Control-Center-<version>.deb
+- AnxOS-Control-Center-<version>.AppImage
 
 Future
 - macOS DMG
@@ -161,10 +164,11 @@ Future
 
 Validation checklist before publishing a release:
 
-- Windows installer still builds on Windows with `npm run dist`.
-- Linux AppImage and `.deb` build on Debian with `npm run dist`.
+- Windows installer still builds with `npm run dist:win`.
+- Signed Windows releases verify with `signtool verify /pa dist\AnxOS-Control-Center-Setup-<version>.exe` when Anx signing secrets are configured.
+- Linux AppImage and `.deb` build on Debian with `npm run dist:linux`.
 - AppImage launches with `./AnxOS-Control-Center.AppImage`.
-- `.deb` installs with `sudo dpkg -i anxos-control-center_*.deb`.
+- `.deb` installs with `sudo dpkg -i AnxOS-Control-Center-*.deb`.
 - Desktop launcher appears and opens the app.
 - App icons display correctly in the launcher and package metadata.
 - Auto-updater behavior remains unchanged if an updater is added or enabled later.

@@ -38,6 +38,7 @@ echo
 if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
     echo "✅ Nothing to commit."
     echo
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "☁️  Pushing dev to GitHub..."
     git push origin dev
     echo
@@ -81,6 +82,8 @@ git add .
 echo "💾 Creating commit..."
 git commit -m "$MESSAGE"
 
+echo
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "☁️  Pushing dev to GitHub..."
 git push origin dev
 

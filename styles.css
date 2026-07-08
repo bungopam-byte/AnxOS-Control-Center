@@ -7437,33 +7437,37 @@ button:disabled {
 
 /* Settings page refinement */
 .page[data-page="settings"] {
-  max-width: 1280px;
+  max-width: 1440px;
 }
 
 .page[data-page="settings"] .page-header {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .settings-shell {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-areas:
-    "security general"
-    "nodes appearance"
-    "marketplace startup"
-    "minecraft amp"
-    "agent playit"
-    "developer about";
-  gap: 16px;
+    "security security general general"
+    "nodes nodes appearance startup"
+    "marketplace marketplace minecraft playit"
+    "agent agent amp amp"
+    "developer developer about about";
+  gap: 12px;
   align-items: start;
+}
+
+.settings-shell > .settings-section {
+  grid-column: auto;
+  grid-row: auto;
 }
 
 .settings-section {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   min-width: 0;
   min-height: auto;
-  padding: 18px;
+  padding: 16px;
   border-radius: 8px;
 }
 
@@ -7552,7 +7556,7 @@ button:disabled {
 
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -7575,7 +7579,7 @@ button:disabled {
 .settings-field input,
 .settings-field select,
 .settings-field textarea {
-  min-height: 42px;
+  min-height: 40px;
 }
 
 .settings-field input[readonly] {
@@ -7630,8 +7634,8 @@ button:disabled {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
-  min-height: 48px;
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: 9px 12px;
 }
 
 .settings-check--toggle input[type="checkbox"] {
@@ -7764,7 +7768,7 @@ button:disabled {
 }
 
 .settings-section--startup .settings-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .settings-section--startup input[type="range"] {
@@ -7792,6 +7796,23 @@ button:disabled {
   box-shadow:
     inset 3px 0 0 rgba(206, 150, 255, 0.92),
     0 0 24px rgba(182, 108, 255, 0.18);
+}
+
+@media (max-width: 1320px) {
+  .settings-shell {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "security general"
+      "nodes appearance"
+      "marketplace startup"
+      "minecraft amp"
+      "agent playit"
+      "developer about";
+  }
+
+  .settings-section--startup .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1320px) {

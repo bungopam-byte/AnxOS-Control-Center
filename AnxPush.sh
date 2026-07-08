@@ -91,7 +91,15 @@ else
   echo "$LINE"
   echo
 
-  read -rp "📝 Commit Message (Press Enter to use suggested): " MESSAGE
+  if [[ $# -gt 0 ]]; then
+    MESSAGE="$*"
+    echo "📝 Commit Message: $MESSAGE"
+  elif [[ -t 0 ]]; then
+    read -rp "📝 Commit Message (Press Enter to use suggested): " MESSAGE
+  else
+    MESSAGE="$DEFAULT_MESSAGE"
+    echo "📝 Commit Message: $MESSAGE"
+  fi
   MESSAGE="${MESSAGE:-$DEFAULT_MESSAGE}"
 
   echo

@@ -1,94 +1,103 @@
 #!/usr/bin/env bash
 set -e
 
-PROJECT="$HOME/Projects/AnxOS-Control-Center"
+START_TIME=$(date +%s)
+
+PROJECT_DIR="$HOME/Projects/AnxOS-Control-Center"
+PROJECT_NAME="AnxOS-Control-Center"
+USER_NAME="anx"
+HOST_NAME="AnxLab"
+REMOTE_NAME="origin"
+REMOTE_DISPLAY="github.com/bungopam-byte"
+
+BAR="██████████████████████"
+LINE="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+cd "$PROJECT_DIR"
+
+BRANCH=$(git branch --show-current)
+COMMIT_SHORT=$(git rev-parse --short HEAD)
 
 clear
 
-echo "╔════════════════════════════════════════════════════════════╗"
-echo "║                    🚀 AnxPush Utility                     ║"
-echo "║                  AnxHub Git Deployment                    ║"
-echo "╚════════════════════════════════════════════════════════════╝"
+echo "🚀 AnxPush Deployment"
+echo "$LINE"
+echo
+echo "👤 User       $USER_NAME"
+echo "🖥️  Host       $HOST_NAME"
+echo "📂 Project    $PROJECT_NAME"
+echo "🌿 Branch     $BRANCH"
+echo "🔗 Remote     $REMOTE_DISPLAY"
+echo
+echo "$LINE"
 echo
 
-# Verify project
-if [[ ! -d "$PROJECT/.git" ]]; then
-    echo "❌ Git repository not found."
-    echo "📂 Expected: $PROJECT"
-    exit 1
-fi
-
-cd "$PROJECT"
-
-BRANCH="$(git branch --show-current)"
-
-echo "📂 Project"
-echo "   $PROJECT"
+echo "🔍 [$BAR] Checking Repository..."
+git rev-parse --is-inside-work-tree >/dev/null
+echo "✅ Repository Ready"
 echo
 
-echo "🌿 Branch"
-echo "   $BRANCH"
-echo
+echo "📋 [$BAR] Checking Changes..."
 
-echo "📋 Current Changes"
-git status --short
-echo
-
-# Nothing changed?
-if git diff --quiet && git diff --cached --quiet && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
-    echo "✅ Nothing to commit."
-    echo
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "☁️  Pushing dev to GitHub..."
-    git push origin dev
-    echo
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ Successfully pushed to GitHub!"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo
-    exit 0
-fi
-
-echo "🤖 Generating commit message..."
-echo
-
-FILES=$(git status --short | sed 's/^...//')
-
-COUNT=$(echo "$FILES" | wc -l)
-
-if [[ $COUNT -eq 1 ]]; then
-    DEFAULT_MESSAGE="update: $(basename "$FILES")"
-elif [[ $COUNT -le 3 ]]; then
-    DEFAULT_MESSAGE="update: $(echo "$FILES" | paste -sd ', ' -)"
+if [[ -z "$(git status --porcelain)" ]]; then
+  echo "✅ Working Tree Clean"
 else
-    DEFAULT_MESSAGE="update: ${COUNT} files"
+  echo "📝 Changes detected"
+  echo
+
+  git status --short
+  echo
+
+  DEFAULT_MESSAGE="chore: update AnxHub"
+  echo "🤖 Suggested Commit"
+  echo "$LINE"
+  echo "$DEFAULT_MESSAGE"
+  echo "$LINE"
+  echo
+
+  read -rp "📝 Commit Message (Press Enter to use suggested): " MESSAGE
+  MESSAGE="${MESSAGE:-$DEFAULT_MESSAGE}"
+
+  echo
+  echo "📦 Staging files..."
+  git add .
+
+  echo "📝 Creating commit..."
+  git commit -m "$MESSAGE"
+
+  COMMIT_SHORT=$(git rev-parse --short HEAD)
+  echo "✅ Commit Created: $COMMIT_SHORT"
 fi
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "💡 Suggested Commit"
 echo
-echo "   $DEFAULT_MESSAGE"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🔑 [$BAR] Authenticating..."
+echo "ℹ️  SSH may ask for your passphrase."
+echo "✅ SSH Ready"
 echo
 
-read -rp "📝 Commit Message (Press Enter to accept): " MESSAGE
-MESSAGE="${MESSAGE:-$DEFAULT_MESSAGE}"
+echo "🌐 [$BAR] Connecting to GitHub..."
+git ls-remote "$REMOTE_NAME" >/dev/null
+echo "✅ Connection Established"
+echo
+
+echo "📤 [$BAR] Pushing to Origin..."
+git push "$REMOTE_NAME" "$BRANCH"
+echo "✅ Deployment Successful"
+
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+COMMIT_SHORT=$(git rev-parse --short HEAD)
 
 echo
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "📦 Staging files..."
-git add .
-
-echo "💾 Creating commit..."
-git commit -m "$MESSAGE"
-
+echo "$LINE"
 echo
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "☁️  Pushing dev to GitHub..."
-git push origin dev
-
+echo "             🚀 PUSH COMPLETE"
 echo
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "✅ Successfully pushed to GitHub!"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo " 🌿 Branch     $BRANCH"
+echo " 📝 Commit     $COMMIT_SHORT"
+echo " 🔗 Remote     $REMOTE_NAME"
+echo " ⏱ Duration    ${DURATION}s"
 echo
+echo "$LINE"
+echo
+echo "💚 Your code is now live on GitHub."

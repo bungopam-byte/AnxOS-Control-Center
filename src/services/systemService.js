@@ -2,6 +2,8 @@ const { execFile } = require("child_process");
 const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const agentClient = require("./agentClient");
+const { getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
@@ -233,7 +235,7 @@ async function getCpuTemperature() {
   return null;
 }
 
-async function getSystemSnapshot() {
+async function getLocalSystemSnapshot() {
   const [osVersion, disk, network, cpuTemperature] = await Promise.all([
     getOsVersion(),
     getDiskUsage(),
@@ -265,7 +267,61 @@ async function getSystemSnapshot() {
     disk,
     network,
     uptimeSeconds: os.uptime(),
+    source: "local",
   };
+}
+
+function getOptionalSelectedNodeConfig() {
+  const selectedNodeId = getSelectedNodeId();
+  return selectedNodeId && selectedNodeId !== "default" ? getNodeAgentConfig(selectedNodeId) : null;
+}
+
+async function getAgentSystemSnapshot(configOverride = null) {
+  const snapshot = await agentClient.getSystemStats(configOverride);
+  return {
+    ...snapshot,
+    source: snapshot?.source || "agent",
+    diagnostics: {
+      ...(snapshot?.diagnostics && typeof snapshot.diagnostics === "object" ? snapshot.diagnostics : {}),
+      agent: {
+        url: (configOverride || agentClient.getAgentConfig()).agentUrl || (configOverride || agentClient.getAgentConfig()).url || null,
+      },
+    },
+  };
+}
+
+async function getSystemSnapshot() {
+  const backendMode = agentClient.getBackendMode();
+  const nodeConfig = getOptionalSelectedNodeConfig();
+
+  if (nodeConfig) {
+    try {
+      return await getAgentSystemSnapshot(nodeConfig);
+    } catch (error) {
+      console.error("[AnxHub][System] Selected node stats fetch failed.", {
+        nodeUrl: nodeConfig.agentUrl || nodeConfig.url || null,
+        message: error?.message || String(error),
+        stack: error?.stack || null,
+      });
+      throw error;
+    }
+  }
+
+  if (backendMode === "agent") {
+    return getAgentSystemSnapshot();
+  }
+
+  if (backendMode === "auto") {
+    try {
+      return await getAgentSystemSnapshot();
+    } catch (error) {
+      console.warn("[AnxHub][System] Agent stats unavailable; using local system metrics.", {
+        message: error?.message || String(error),
+      });
+    }
+  }
+
+  return getLocalSystemSnapshot();
 }
 
 module.exports = {

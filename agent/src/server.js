@@ -14,7 +14,7 @@ const { handleFilesDownload, handleFilesList, handleFilesRead, handleFilesStat }
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
-const { handleSystemSummary } = require("./routes/system");
+const { handleStats, handleSystemSummary } = require("./routes/system");
 
 const config = getConfig();
 const rateBuckets = new Map();
@@ -206,7 +206,10 @@ async function routeRequest(request, url) {
     return handleHealth();
   }
 
-  if (pathname === "/api/v1/system/summary") {
+  if (pathname === "/api/v1/stats" || pathname === "/api/stats" || pathname === "/api/v1/system/summary") {
+    if (pathname === "/api/v1/stats" || pathname === "/api/stats") {
+      return handleStats();
+    }
     return handleSystemSummary();
   }
 

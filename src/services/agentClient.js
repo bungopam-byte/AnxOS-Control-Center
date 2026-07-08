@@ -614,6 +614,22 @@ async function getHealth(configOverride = null) {
   });
 }
 
+async function getSystemStats(configOverride = null) {
+  try {
+    return await requestJson("/api/v1/stats", {
+      config: configOverride,
+    });
+  } catch (error) {
+    console.warn("[AnxHub][Agent] Stats endpoint unavailable; falling back to system summary.", {
+      message: error?.message || String(error),
+      code: error?.code || null,
+    });
+    return requestJson("/api/v1/system/summary", {
+      config: configOverride,
+    });
+  }
+}
+
 async function isHealthy(configOverride = null) {
   try {
     return isHealthyPayload(await getHealth(configOverride));
@@ -1679,31 +1695,33 @@ async function getInstanceStatus(instanceId, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/status`, { config: configOverride });
 }
 
-async function getInstanceMetrics(instanceId) {
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/metrics`);
+async function getInstanceMetrics(instanceId, configOverride = null) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/metrics`, { config: configOverride });
 }
 
-async function getInstanceLogs(instanceId, options = {}) {
+async function getInstanceLogs(instanceId, options = {}, configOverride = null) {
   const query = new URLSearchParams({
     stream: options.stream || "all",
     limit: String(options.limit || 200),
   });
 
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`);
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`, { config: configOverride });
 }
 
-async function clearInstanceLogs(instanceId, options = {}) {
+async function clearInstanceLogs(instanceId, options = {}, configOverride = null) {
   const query = new URLSearchParams({
     stream: options.stream || "all",
   });
 
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`, {
+    config: configOverride,
     method: "DELETE",
   });
 }
 
-async function sendInstanceCommand(instanceId, command) {
+async function sendInstanceCommand(instanceId, command, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/command`, {
+    config: configOverride,
     method: "POST",
     body: { command },
   });
@@ -1716,9 +1734,9 @@ async function forceKillInstance(instanceId, configOverride = null) {
   });
 }
 
-async function listInstanceFiles(instanceId, currentPath = ".") {
+async function listInstanceFiles(instanceId, currentPath = ".", configOverride = null) {
   const query = new URLSearchParams({ path: currentPath || "." });
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/files?${query.toString()}`);
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/files?${query.toString()}`, { config: configOverride });
 }
 
 async function readInstanceFile(instanceId, filePath, configOverride = null) {
@@ -1731,9 +1749,9 @@ async function instanceFileExists(instanceId, filePath, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/exists?${query.toString()}`, { config: configOverride });
 }
 
-async function writeInstanceFile(instanceId, filePath, content, options = {}) {
+async function writeInstanceFile(instanceId, filePath, content, options = {}, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
-    config: options.config || null,
+    config: configOverride || options.config || null,
     method: "PUT",
     body: {
       path: filePath,
@@ -1759,8 +1777,9 @@ async function createInstanceFolder(instanceId, folderPath, configOverride = nul
   });
 }
 
-async function renameInstanceFile(instanceId, oldPath, newPath) {
+async function renameInstanceFile(instanceId, oldPath, newPath, configOverride = null) {
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/rename`, {
+    config: configOverride,
     method: "POST",
     body: {
       oldPath,
@@ -1769,8 +1788,8 @@ async function renameInstanceFile(instanceId, oldPath, newPath) {
   });
 }
 
-async function getMinecraftProperties(instanceId) {
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`);
+async function getMinecraftProperties(instanceId, configOverride = null) {
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`, { config: configOverride });
 }
 
 async function saveMinecraftProperties(instanceId, properties = {}, configOverride = null) {
@@ -1898,6 +1917,7 @@ module.exports = {
   getFileList,
   getFileListing,
   getHealth,
+  getSystemStats,
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,

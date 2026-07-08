@@ -121,6 +121,10 @@ function getNode(nodeId = "default") {
   return node;
 }
 
+function getSelectedNodeId() {
+  return readNodeState().selectedNodeId || "default";
+}
+
 function getNodeAgentConfig(nodeId = "default") {
   const node = getNode(nodeId);
   return normalizeAgentSettings({
@@ -172,6 +176,7 @@ module.exports = {
   deleteNode,
   getNode,
   getNodeAgentConfig,
+  getSelectedNodeId,
   listNodes,
   saveNode,
   selectNode,

@@ -2,7 +2,7 @@ const localAmpService = require("./ampService");
 const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const agentClient = require("./agentClient");
-const { getNode, getNodeAgentConfig } = require("./nodeService");
+const { getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 
 class AgentUnavailableError extends Error {
   constructor() {
@@ -311,7 +311,8 @@ async function getFileListing() {
 }
 
 function getOptionalNodeConfig(options = {}) {
-  return options?.nodeId && options.nodeId !== "default" ? getNodeAgentConfig(options.nodeId) : null;
+  const nodeId = options?.nodeId || getSelectedNodeId();
+  return nodeId && nodeId !== "default" ? getNodeAgentConfig(nodeId) : null;
 }
 
 async function listInstances(options = {}) {
@@ -330,60 +331,60 @@ async function updateInstance(instanceId, payload, options = {}) {
   return agentClient.updateInstance(instanceId, payload, getOptionalNodeConfig(options));
 }
 
-async function getInstanceStatus(instanceId) {
-  return agentClient.getInstanceStatus(instanceId);
+async function getInstanceStatus(instanceId, options = {}) {
+  return agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options));
 }
 
-async function getInstanceMetrics(instanceId) {
-  return agentClient.getInstanceMetrics(instanceId);
+async function getInstanceMetrics(instanceId, options = {}) {
+  return agentClient.getInstanceMetrics(instanceId, getOptionalNodeConfig(options));
 }
 
 async function getInstanceLogs(instanceId, options) {
-  return agentClient.getInstanceLogs(instanceId, options);
+  return agentClient.getInstanceLogs(instanceId, options, getOptionalNodeConfig(options));
 }
 
 async function clearInstanceLogs(instanceId, options) {
-  return agentClient.clearInstanceLogs(instanceId, options);
+  return agentClient.clearInstanceLogs(instanceId, options, getOptionalNodeConfig(options));
 }
 
-async function sendInstanceCommand(instanceId, command) {
-  return agentClient.sendInstanceCommand(instanceId, command);
+async function sendInstanceCommand(instanceId, command, options = {}) {
+  return agentClient.sendInstanceCommand(instanceId, command, getOptionalNodeConfig(options));
 }
 
-async function forceKillInstance(instanceId) {
-  return agentClient.forceKillInstance(instanceId);
+async function forceKillInstance(instanceId, options = {}) {
+  return agentClient.forceKillInstance(instanceId, getOptionalNodeConfig(options));
 }
 
-async function listInstanceFiles(instanceId, currentPath) {
-  return agentClient.listInstanceFiles(instanceId, currentPath);
+async function listInstanceFiles(instanceId, currentPath, options = {}) {
+  return agentClient.listInstanceFiles(instanceId, currentPath, getOptionalNodeConfig(options));
 }
 
-async function readInstanceFile(instanceId, filePath) {
-  return agentClient.readInstanceFile(instanceId, filePath);
+async function readInstanceFile(instanceId, filePath, options = {}) {
+  return agentClient.readInstanceFile(instanceId, filePath, getOptionalNodeConfig(options));
 }
 
 async function writeInstanceFile(instanceId, filePath, content, options = {}) {
-  return agentClient.writeInstanceFile(instanceId, filePath, content, options);
+  return agentClient.writeInstanceFile(instanceId, filePath, content, options, getOptionalNodeConfig(options));
 }
 
-async function deleteInstanceFile(instanceId, filePath) {
-  return agentClient.deleteInstanceFile(instanceId, filePath);
+async function deleteInstanceFile(instanceId, filePath, options = {}) {
+  return agentClient.deleteInstanceFile(instanceId, filePath, getOptionalNodeConfig(options));
 }
 
-async function createInstanceFolder(instanceId, folderPath) {
-  return agentClient.createInstanceFolder(instanceId, folderPath);
+async function createInstanceFolder(instanceId, folderPath, options = {}) {
+  return agentClient.createInstanceFolder(instanceId, folderPath, getOptionalNodeConfig(options));
 }
 
-async function renameInstanceFile(instanceId, oldPath, newPath) {
-  return agentClient.renameInstanceFile(instanceId, oldPath, newPath);
+async function renameInstanceFile(instanceId, oldPath, newPath, options = {}) {
+  return agentClient.renameInstanceFile(instanceId, oldPath, newPath, getOptionalNodeConfig(options));
 }
 
-async function getMinecraftProperties(instanceId) {
-  return agentClient.getMinecraftProperties(instanceId);
+async function getMinecraftProperties(instanceId, options = {}) {
+  return agentClient.getMinecraftProperties(instanceId, getOptionalNodeConfig(options));
 }
 
-async function saveMinecraftProperties(instanceId, properties) {
-  return agentClient.saveMinecraftProperties(instanceId, properties);
+async function saveMinecraftProperties(instanceId, properties, options = {}) {
+  return agentClient.saveMinecraftProperties(instanceId, properties, getOptionalNodeConfig(options));
 }
 
 async function startInstance(instanceId, options = {}) {

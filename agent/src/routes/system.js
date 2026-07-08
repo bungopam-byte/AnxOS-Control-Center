@@ -7,6 +7,11 @@ async function handleSystemSummary() {
   };
 }
 
+async function handleStats() {
+  return handleSystemSummary();
+}
+
 module.exports = {
+  handleStats,
   handleSystemSummary,
 };

@@ -9377,7 +9377,15 @@ async function refreshDashboard() {
 
   try {
     renderSnapshot(await desktopApiState.api.system.getSnapshot());
-  } catch {
+  } catch (error) {
+    console.warn("[System] Metrics request failed.", {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    });
+    setField("cpuUsage", "Unavailable");
+    setField("memoryUsage", "Unavailable");
+    setField("diskUsage", "Unavailable");
+    setField("networkThroughput", "Unavailable");
     showToast("System metrics are unavailable.");
   } finally {
     markStartupReady("system");
@@ -10824,8 +10832,8 @@ function renderConsoleStatusPanel() {
     consoleStateBadge.className = `instance-state is-${getInstanceStateClass(state)}`;
   }
 
-  setConsoleMetric("cpu", metrics ? formatInstanceCpu(metrics) : "Coming soon");
-  setConsoleMetric("ram", metrics ? formatInstanceMemory(metrics) : "Coming soon");
+  setConsoleMetric("cpu", metrics ? formatInstanceCpu(metrics) : "Unavailable");
+  setConsoleMetric("ram", metrics ? formatInstanceMemory(metrics) : "Unavailable");
   setConsoleDetail("pid", formatInstanceValue(instance?.pid));
   setConsoleDetail("uptime", formatDuration(metrics?.uptimeSeconds));
   setConsoleDetail("memoryLimit", formatInstanceValue(instance?.memoryLimit));
@@ -12324,6 +12332,36 @@ function getSelectedNodeId() {
   return nodesState.selectedNodeId || "default";
 }
 
+function createAgentRobotIcon(state = "offline") {
+  const icon = document.createElement("span");
+  icon.className = `agent-robot-icon agent-robot-icon--${state}`;
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = `
+    <svg viewBox="0 0 24 24" focusable="false">
+      <rect x="6" y="8" width="12" height="10" rx="3"></rect>
+      <path d="M12 5v3"></path>
+      <path d="M8 13h.01"></path>
+      <path d="M16 13h.01"></path>
+      <path d="M10 16h4"></path>
+      <path d="M4 12h2"></path>
+      <path d="M18 12h2"></path>
+    </svg>`;
+  return icon;
+}
+
+function getNodeVisualState(node) {
+  if (node?.installing) {
+    return "installing";
+  }
+  if (node?.error) {
+    return "error";
+  }
+  if (node?.id && node.id === getSelectedNodeId()) {
+    return "online";
+  }
+  return node?.hasToken ? "offline" : "error";
+}
+
 function renderNodes() {
   nodeTargetSelects.forEach((select) => {
     const previous = select.value || getSelectedNodeId();
@@ -12340,6 +12378,7 @@ function renderNodes() {
   if (nodeStatus) {
     const selected = (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId());
     nodeStatus.textContent = selected?.displayName || "Default";
+    nodeStatus.dataset.agentState = getNodeVisualState(selected);
   }
 
   if (nodeMessage) {
@@ -12351,11 +12390,17 @@ function renderNodes() {
     (nodesState.nodes || []).forEach((node) => {
       const item = document.createElement("article");
       item.className = "download-item";
+      item.dataset.agentState = getNodeVisualState(node);
+      item.classList.toggle("is-selected", node.id === getSelectedNodeId());
+      item.append(createAgentRobotIcon(getNodeVisualState(node)));
+      const copy = document.createElement("div");
+      copy.className = "agent-node-copy";
       const title = document.createElement("strong");
       title.textContent = node.displayName || node.id;
       const detail = document.createElement("small");
       detail.textContent = `${node.agentUrl} · token ${node.hasToken ? "configured" : "not set"} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
-      item.append(title, detail);
+      copy.append(title, detail);
+      item.append(copy);
       item.addEventListener("click", () => selectNode(node.id));
       nodeList.append(item);
     });
@@ -12516,6 +12561,7 @@ function setAgentConnectionDisplay(status, message, options = {}) {
     const connected = status === "connected";
     const testing = status === "testing";
     agentConnectionPill.textContent = testing ? "Testing..." : connected ? "Connected" : "Disconnected";
+    agentConnectionPill.dataset.agentState = testing ? "installing" : connected ? "online" : status === "error" ? "error" : "offline";
     agentConnectionPill.classList.toggle("is-connected", connected);
     agentConnectionPill.classList.toggle("is-disconnected", !connected && !testing);
   }

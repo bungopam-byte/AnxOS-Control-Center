@@ -17,6 +17,17 @@ const desktopApi = {
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke("app:getRuntimeInfo"),
   },
+  updates: {
+    check: (options = {}) => ipcRenderer.invoke("updates:check", options),
+    download: () => ipcRenderer.invoke("updates:download"),
+    openDownloaded: () => ipcRenderer.invoke("updates:open-downloaded"),
+    openRelease: () => ipcRenderer.invoke("updates:open-release"),
+    onStatus: (callback) => {
+      const handler = (_, payload) => callback(payload);
+      ipcRenderer.on("updates:status", handler);
+      return () => ipcRenderer.removeListener("updates:status", handler);
+    },
+  },
   window: windowApi,
   system: {
     getSnapshot: () => ipcRenderer.invoke("system:getSnapshot"),

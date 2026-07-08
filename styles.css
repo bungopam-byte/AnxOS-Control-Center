@@ -5948,6 +5948,174 @@ dd {
   border-color: rgba(182, 108, 255, 0.32);
 }
 
+.app-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 2, 15, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.app-modal {
+  display: grid;
+  gap: 18px;
+  width: min(520px, 100%);
+  max-height: min(680px, calc(100vh - 48px));
+  padding: 20px;
+  overflow: auto;
+  border: 1px solid rgba(182, 108, 255, 0.32);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, rgba(33, 16, 51, 0.98), rgba(16, 8, 28, 0.98));
+  box-shadow: 0 28px 80px rgba(4, 1, 12, 0.5);
+}
+
+.app-modal__header,
+.app-modal__actions,
+.app-modal__meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-modal__header {
+  justify-content: space-between;
+}
+
+.app-modal__eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.app-modal h2,
+.app-modal p {
+  margin: 0;
+}
+
+.app-modal h2 {
+  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  line-height: 1.15;
+}
+
+.app-modal__body {
+  display: grid;
+  gap: 16px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.app-modal__meta {
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.app-modal__meta div {
+  min-width: 140px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.app-modal__meta dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.app-modal__meta dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-weight: 900;
+}
+
+.app-modal__progress {
+  display: grid;
+  gap: 8px;
+}
+
+.app-modal__progress-track {
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-modal__progress-track span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  transition: width 160ms ease;
+}
+
+.app-modal__progress-text {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.app-modal__actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.icon-action,
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.icon-action {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 1.2rem;
+}
+
+.primary-button {
+  min-height: 40px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, rgba(182, 108, 255, 0.95), rgba(116, 74, 255, 0.95));
+}
+
+.icon-action:not(:disabled):hover,
+.icon-action:not(:disabled):focus-visible,
+.primary-button:not(:disabled):hover,
+.primary-button:not(:disabled):focus-visible {
+  border-color: rgba(255, 255, 255, 0.32);
+  box-shadow: 0 0 22px rgba(182, 108, 255, 0.28);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.icon-action:disabled,
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .marketplace-shell {
   display: grid;
   gap: 18px;
@@ -7394,6 +7562,17 @@ dd {
 
   .settings-actions .inline-action,
   .settings-check {
+    justify-content: center;
+  }
+
+  .app-modal__actions,
+  .app-modal__actions .inline-action,
+  .app-modal__actions .primary-button {
+    width: 100%;
+  }
+
+  .app-modal__actions .inline-action,
+  .app-modal__actions .primary-button {
     justify-content: center;
   }
 }

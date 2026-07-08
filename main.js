@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
 const { execFileSync } = require("child_process");
 const fs = require("fs");
+const https = require("https");
 const path = require("path");
 const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
@@ -19,9 +20,17 @@ const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
+const UPDATE_STATUS_CHANNEL = "updates:status";
+const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
+const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
 const DEFAULT_WINDOW_BOUNDS = {
   width: 1180,
   height: 820,
+};
+const updateState = {
+  latest: null,
+  downloadedPath: null,
+  downloadInFlight: false,
 };
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
@@ -50,6 +59,274 @@ function getRuntimeInfo() {
     node: process.versions.node || null,
     chromium: process.versions.chrome || null,
   };
+}
+
+function normalizeVersion(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^v/i, "")
+    .split(/[+-]/)[0];
+}
+
+function compareVersions(left, right) {
+  const leftParts = normalizeVersion(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeVersion(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = leftParts[index] || 0;
+    const rightPart = rightParts[index] || 0;
+
+    if (leftPart > rightPart) {
+      return 1;
+    }
+
+    if (leftPart < rightPart) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+function sanitizeFileName(value) {
+  return String(value || "AnxOS-Control-Center-update.exe").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_");
+}
+
+function requestJson(url) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(
+      url,
+      {
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "User-Agent": `AnxOS-Control-Center/${app.getVersion()}`,
+        },
+      },
+      (response) => {
+        if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+          response.resume();
+          requestJson(response.headers.location).then(resolve, reject);
+          return;
+        }
+
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            reject(new Error(`GitHub release check failed with HTTP ${response.statusCode}: ${body.slice(0, 240)}`));
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(new Error(`GitHub release response was not valid JSON: ${error.message}`));
+          }
+        });
+      },
+    );
+
+    request.setTimeout(15000, () => {
+      request.destroy(new Error("GitHub release check timed out."));
+    });
+    request.on("error", reject);
+  });
+}
+
+function pickUpdateAsset(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const viableAssets = assets.filter((asset) => {
+    const name = String(asset?.name || "").toLowerCase();
+    const downloadUrl = String(asset?.browser_download_url || "");
+    const size = Number(asset?.size || 0);
+
+    return downloadUrl && size > 5 * 1024 * 1024 && (name.endsWith(".exe") || name.endsWith(".zip") || name.endsWith(".appimage") || name.endsWith(".deb"));
+  });
+
+  const platformMatchers = process.platform === "win32"
+    ? [/portable.*\.exe$/i, /control center.*\.exe$/i, /win.*\.exe$/i, /win.*\.zip$/i, /\.exe$/i]
+    : process.platform === "linux"
+      ? [/\.appimage$/i, /\.deb$/i]
+      : [/\.dmg$/i, /\.zip$/i];
+
+  for (const matcher of platformMatchers) {
+    const match = viableAssets.find((asset) => matcher.test(asset.name || ""));
+
+    if (match) {
+      return match;
+    }
+  }
+
+  return viableAssets[0] || null;
+}
+
+async function checkForUpdates(options = {}) {
+  try {
+    const release = await requestJson(UPDATE_RELEASES_URL);
+    const latestVersion = normalizeVersion(release?.tag_name || release?.name);
+    const currentVersion = normalizeVersion(app.getVersion());
+    const asset = pickUpdateAsset(release);
+    const hasUpdate = Boolean(latestVersion && compareVersions(latestVersion, currentVersion) > 0 && asset);
+
+    const result = {
+      hasUpdate,
+      currentVersion,
+      latestVersion: latestVersion || null,
+      releaseName: release?.name || release?.tag_name || null,
+      releaseUrl: release?.html_url || `https://github.com/${UPDATE_REPOSITORY}/releases`,
+      publishedAt: release?.published_at || null,
+      asset: asset
+        ? {
+            name: asset.name,
+            size: asset.size,
+            downloadUrl: asset.browser_download_url,
+          }
+        : null,
+    };
+
+    updateState.latest = result;
+
+    if (hasUpdate) {
+      sendUpdateStatus({ type: "available", update: result });
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[Updates] Release check failed.", {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+      url: UPDATE_RELEASES_URL,
+      silent: Boolean(options.silent),
+    });
+    return {
+      hasUpdate: false,
+      error: options.silent ? "Update check failed." : error?.message || "Update check failed.",
+    };
+  }
+}
+
+function sendUpdateStatus(payload) {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(UPDATE_STATUS_CHANNEL, payload);
+    }
+  });
+}
+
+function downloadFile(url, destinationPath, onProgress, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 5) {
+      reject(new Error("Too many redirects while downloading update."));
+      return;
+    }
+
+    const request = https.get(
+      url,
+      {
+        headers: {
+          "User-Agent": `AnxOS-Control-Center/${app.getVersion()}`,
+        },
+      },
+      (response) => {
+        if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+          response.resume();
+          downloadFile(response.headers.location, destinationPath, onProgress, redirectCount + 1).then(resolve, reject);
+          return;
+        }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          response.resume();
+          reject(new Error(`Update download failed with HTTP ${response.statusCode}.`));
+          return;
+        }
+
+        const totalBytes = Number.parseInt(response.headers["content-length"], 10) || 0;
+        let receivedBytes = 0;
+        const fileStream = fs.createWriteStream(destinationPath, { mode: 0o600 });
+
+        response.on("data", (chunk) => {
+          receivedBytes += chunk.length;
+          onProgress?.({
+            receivedBytes,
+            totalBytes,
+            percent: totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : null,
+          });
+        });
+
+        response.pipe(fileStream);
+        fileStream.on("finish", () => {
+          fileStream.close(() => resolve(destinationPath));
+        });
+        fileStream.on("error", (error) => {
+          fs.rm(destinationPath, { force: true }, () => reject(error));
+        });
+      },
+    );
+
+    request.setTimeout(120000, () => {
+      request.destroy(new Error("Update download timed out."));
+    });
+    request.on("error", reject);
+  });
+}
+
+async function downloadLatestUpdate() {
+  if (updateState.downloadInFlight) {
+    return { downloading: true };
+  }
+
+  const update = updateState.latest?.hasUpdate ? updateState.latest : await checkForUpdates({ silent: false });
+
+  if (!update?.hasUpdate || !update.asset?.downloadUrl) {
+    return { downloaded: false, message: "No update is available." };
+  }
+
+  updateState.downloadInFlight = true;
+  updateState.downloadedPath = null;
+  const destinationPath = path.join(app.getPath("downloads"), sanitizeFileName(update.asset.name));
+  sendUpdateStatus({ type: "download-started", update, path: destinationPath });
+
+  try {
+    const downloadedPath = await downloadFile(update.asset.downloadUrl, destinationPath, (progress) => {
+      sendUpdateStatus({ type: "download-progress", progress });
+    });
+    updateState.downloadedPath = downloadedPath;
+    sendUpdateStatus({ type: "downloaded", update, path: downloadedPath });
+    return { downloaded: true, path: downloadedPath, update };
+  } catch (error) {
+    console.error("[Updates] Download failed.", {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+      asset: update.asset?.name || null,
+      url: update.asset?.downloadUrl || null,
+    });
+    sendUpdateStatus({ type: "download-error", message: "Update download failed." });
+    return { downloaded: false, error: error?.message || "Update download failed." };
+  } finally {
+    updateState.downloadInFlight = false;
+  }
+}
+
+function registerUpdatesIpc() {
+  ipcMain.handle("updates:check", (_, options = {}) => checkForUpdates(options));
+  ipcMain.handle("updates:download", () => downloadLatestUpdate());
+  ipcMain.handle("updates:open-downloaded", async () => {
+    if (!updateState.downloadedPath) {
+      return { opened: false, message: "No downloaded update is ready." };
+    }
+
+    await shell.openPath(updateState.downloadedPath);
+    return { opened: true };
+  });
+  ipcMain.handle("updates:open-release", async () => {
+    const releaseUrl = updateState.latest?.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
+    await shell.openExternal(releaseUrl);
+    return { opened: true };
+  });
 }
 
 function getWindowStatePath() {
@@ -242,6 +519,7 @@ app.whenReady().then(() => {
   logCurseForgeStartupStatus();
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
+  registerUpdatesIpc();
   registerActionIpc();
   registerSystemIpc();
   registerAmpIpc();

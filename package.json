@@ -11,6 +11,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
+    "dist:win": "electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",
@@ -32,8 +33,17 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "AnxOS-Control-Center-${version}-portable.${ext}",
+      "signAndEditExecutable": false
     },
     "linux": {
       "target": [

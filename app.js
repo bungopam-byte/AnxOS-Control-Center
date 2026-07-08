@@ -289,6 +289,16 @@ const marketplaceConfigSaveButton = document.querySelector('[data-marketplace-co
 const marketplaceConfigPill = document.querySelector("[data-marketplace-config-pill]");
 const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
+const updateModal = document.querySelector("[data-update-modal]");
+const updateTitle = document.querySelector("[data-update-title]");
+const updateMessage = document.querySelector("[data-update-message]");
+const updateCurrentVersion = document.querySelector("[data-update-current-version]");
+const updateLatestVersion = document.querySelector("[data-update-latest-version]");
+const updateProgress = document.querySelector("[data-update-progress]");
+const updateProgressFill = document.querySelector("[data-update-progress-fill]");
+const updateProgressText = document.querySelector("[data-update-progress-text]");
+const updateStatusMessage = document.querySelector("[data-update-status]");
+const updatePrimaryButton = document.querySelector('[data-update-action="primary"]');
 const securityGate = document.querySelector("[data-security-gate]");
 const securityForm = document.querySelector("[data-security-form]");
 const securityMode = document.querySelector("[data-security-mode]");
@@ -330,6 +340,10 @@ let filesRequestInFlight = false;
 let filesActionRequestInFlight = false;
 let agentSettingsRequestInFlight = false;
 let agentConnectionTestInFlight = false;
+let updateCheckInFlight = false;
+let updateDownloadInFlight = false;
+let latestUpdateInfo = null;
+let downloadedUpdatePath = null;
 let securityState = { setupRequired: false, authenticated: false, user: null };
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
@@ -705,6 +719,12 @@ function getDesktopApiState() {
     hasMarketplaceSettings:
       typeof api?.settings?.getMarketplaceConfig === "function" &&
       typeof api?.settings?.saveMarketplaceConfig === "function",
+    hasUpdates:
+      typeof api?.updates?.check === "function" &&
+      typeof api?.updates?.download === "function" &&
+      typeof api?.updates?.openDownloaded === "function" &&
+      typeof api?.updates?.openRelease === "function" &&
+      typeof api?.updates?.onStatus === "function",
     hasSecurity:
       typeof api?.security?.getStatus === "function" &&
       typeof api?.security?.setupAdmin === "function" &&
@@ -12780,6 +12800,245 @@ async function loadRuntimeInfo() {
   }
 }
 
+function formatUpdateBytes(value) {
+  const bytes = Number(value || 0);
+
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function setUpdateStatusMessage(message) {
+  if (updateStatusMessage) {
+    updateStatusMessage.textContent = message;
+  }
+}
+
+function setUpdateModalVisible(isVisible) {
+  if (!updateModal) {
+    return;
+  }
+
+  updateModal.hidden = !isVisible;
+}
+
+function renderUpdateProgress(progress = null) {
+  if (!updateProgress || !updateProgressFill || !updateProgressText) {
+    return;
+  }
+
+  if (!progress) {
+    updateProgress.hidden = true;
+    updateProgressFill.style.width = "0%";
+    updateProgressText.textContent = "Preparing download...";
+    return;
+  }
+
+  updateProgress.hidden = false;
+  const percent = Number.isFinite(progress.percent) ? Math.max(0, Math.min(progress.percent, 100)) : null;
+  updateProgressFill.style.width = `${percent || 8}%`;
+  const received = formatUpdateBytes(progress.receivedBytes);
+  const total = progress.totalBytes ? formatUpdateBytes(progress.totalBytes) : "unknown size";
+  updateProgressText.textContent = percent === null ? `${received} downloaded of ${total}.` : `${percent}% downloaded (${received} of ${total}).`;
+}
+
+function renderUpdateModal(mode = "available") {
+  const update = latestUpdateInfo || {};
+  const latestVersion = update.latestVersion || "newer build";
+  const currentVersion = update.currentVersion || "current build";
+
+  if (updateTitle) {
+    updateTitle.textContent = mode === "downloaded" ? "Update downloaded" : `AnxOS Control Center ${latestVersion}`;
+  }
+
+  if (updateMessage) {
+    if (mode === "downloading") {
+      updateMessage.textContent = "Downloading the update to your Downloads folder. Keep AnxOS Control Center open until it finishes.";
+    } else if (mode === "downloaded") {
+      updateMessage.textContent = "The update is ready. Open it, close this app, then run the downloaded build to install the latest version.";
+    } else if (mode === "error") {
+      updateMessage.textContent = "The update could not be downloaded. You can open the release page and download it manually.";
+    } else {
+      updateMessage.textContent = "A newer version is available. Download it here instead of using git pull or launcher commands on Windows.";
+    }
+  }
+
+  if (updateCurrentVersion) {
+    updateCurrentVersion.textContent = currentVersion;
+  }
+
+  if (updateLatestVersion) {
+    updateLatestVersion.textContent = latestVersion;
+  }
+
+  if (updatePrimaryButton) {
+    updatePrimaryButton.disabled = mode === "downloading";
+    updatePrimaryButton.textContent = mode === "downloaded" ? "Open Download" : mode === "downloading" ? "Downloading..." : "Download Update";
+  }
+
+  if (mode !== "downloading") {
+    renderUpdateProgress(null);
+  }
+
+  setUpdateModalVisible(true);
+}
+
+function handleUpdateStatus(payload = {}) {
+  if (payload.type === "available") {
+    latestUpdateInfo = payload.update || latestUpdateInfo;
+    downloadedUpdatePath = null;
+    setUpdateStatusMessage(`Update ${latestUpdateInfo?.latestVersion || ""} is available.`);
+    renderUpdateModal("available");
+    return;
+  }
+
+  if (payload.type === "download-started") {
+    updateDownloadInFlight = true;
+    latestUpdateInfo = payload.update || latestUpdateInfo;
+    setUpdateStatusMessage("Downloading update...");
+    renderUpdateModal("downloading");
+    renderUpdateProgress({ receivedBytes: 0, totalBytes: latestUpdateInfo?.asset?.size || 0, percent: 0 });
+    return;
+  }
+
+  if (payload.type === "download-progress") {
+    renderUpdateProgress(payload.progress || null);
+    return;
+  }
+
+  if (payload.type === "downloaded") {
+    updateDownloadInFlight = false;
+    downloadedUpdatePath = payload.path || null;
+    setUpdateStatusMessage("Update downloaded. Open it when you are ready.");
+    renderUpdateModal("downloaded");
+    return;
+  }
+
+  if (payload.type === "download-error") {
+    updateDownloadInFlight = false;
+    setUpdateStatusMessage("Update download failed.");
+    renderUpdateModal("error");
+  }
+}
+
+async function checkForUpdates(options = {}) {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasUpdates || updateCheckInFlight) {
+    if (!options.silent && !desktopApiState.hasUpdates) {
+      showToast("Updates are unavailable in this build.");
+    }
+    return null;
+  }
+
+  updateCheckInFlight = true;
+  setUpdateStatusMessage("Checking for updates...");
+
+  try {
+    const result = await desktopApiState.api.updates.check({ silent: Boolean(options.silent) });
+    latestUpdateInfo = result?.hasUpdate ? result : latestUpdateInfo;
+
+    if (result?.error) {
+      setUpdateStatusMessage("Update check failed.");
+
+      if (!options.silent) {
+        showToast("Update check failed.");
+      }
+    } else if (result?.hasUpdate) {
+      setUpdateStatusMessage(`Update ${result.latestVersion || ""} is available.`);
+      renderUpdateModal("available");
+    } else if (!options.silent) {
+      setUpdateStatusMessage("You are running the latest available version.");
+      showToast("No update available.");
+    } else {
+      setUpdateStatusMessage("Updates check automatically on startup.");
+    }
+
+    return result;
+  } catch (error) {
+    console.error("[Updates] Renderer check failed.", error);
+    setUpdateStatusMessage("Update check failed.");
+
+    if (!options.silent) {
+      showToast("Update check failed.");
+    }
+
+    return null;
+  } finally {
+    updateCheckInFlight = false;
+  }
+}
+
+async function downloadUpdate() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasUpdates || updateDownloadInFlight) {
+    return;
+  }
+
+  if (downloadedUpdatePath) {
+    await desktopApiState.api.updates.openDownloaded();
+    return;
+  }
+
+  updateDownloadInFlight = true;
+  renderUpdateModal("downloading");
+
+  try {
+    const result = await desktopApiState.api.updates.download();
+
+    if (result?.downloaded) {
+      downloadedUpdatePath = result.path || null;
+      renderUpdateModal("downloaded");
+    } else if (!result?.downloading) {
+      renderUpdateModal("error");
+    }
+  } catch (error) {
+    console.error("[Updates] Renderer download failed.", error);
+    setUpdateStatusMessage("Update download failed.");
+    renderUpdateModal("error");
+  } finally {
+    updateDownloadInFlight = false;
+  }
+}
+
+async function openUpdateRelease() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasUpdates) {
+    return;
+  }
+
+  try {
+    await desktopApiState.api.updates.openRelease();
+  } catch {
+    showToast("Release page could not be opened.");
+  }
+}
+
+function setupUpdates() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasUpdates) {
+    setUpdateStatusMessage("Updates are unavailable in this build.");
+    return;
+  }
+
+  desktopApiState.api.updates.onStatus(handleUpdateStatus);
+  window.setTimeout(() => checkForUpdates({ silent: true }), 2500);
+}
+
 async function copyText(value) {
   try {
     await navigator.clipboard.writeText(value);
@@ -13427,6 +13686,21 @@ settingsResetButton?.addEventListener("click", resetSettings);
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 marketplaceConfigSaveButton?.addEventListener("click", saveMarketplaceConfiguration);
+document.querySelectorAll("[data-update-action]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.updateAction;
+
+    if (action === "check") {
+      await checkForUpdates({ silent: false });
+    } else if (action === "primary") {
+      await downloadUpdate();
+    } else if (action === "release") {
+      await openUpdateRelease();
+    } else if (action === "dismiss") {
+      setUpdateModalVisible(false);
+    }
+  });
+});
 securityForm?.addEventListener("submit", submitSecurityForm);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
@@ -13467,6 +13741,7 @@ loadAgentSettings();
 loadMarketplaceSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();
+setupUpdates();
 startStartupFallback();
 refreshDockerStatus();
 

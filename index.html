@@ -2435,6 +2435,10 @@
                   <dd data-about-field="chromium">Unavailable</dd>
                 </div>
               </dl>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-update-action="check">Check for Updates</button>
+                <span class="settings-inline-status" data-update-status>Updates check automatically on startup.</span>
+              </div>
             </section>
           </form>
         </section>
@@ -2442,6 +2446,41 @@
       </div>
     </div>
 
+    <div class="app-modal-backdrop" data-update-modal hidden>
+      <section class="app-modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
+        <header class="app-modal__header">
+          <div>
+            <p class="app-modal__eyebrow">Update Available</p>
+            <h2 id="update-modal-title" data-update-title>AnxOS Control Center update</h2>
+          </div>
+          <button class="icon-action" type="button" aria-label="Close update prompt" data-update-action="dismiss">&times;</button>
+        </header>
+        <div class="app-modal__body">
+          <p data-update-message>A newer version is ready to download.</p>
+          <dl class="app-modal__meta">
+            <div>
+              <dt>Current</dt>
+              <dd data-update-current-version>Unavailable</dd>
+            </div>
+            <div>
+              <dt>Latest</dt>
+              <dd data-update-latest-version>Unavailable</dd>
+            </div>
+          </dl>
+          <div class="app-modal__progress" data-update-progress hidden>
+            <div class="app-modal__progress-track">
+              <span data-update-progress-fill style="width: 0%"></span>
+            </div>
+            <span data-update-progress-text>Preparing download...</span>
+          </div>
+        </div>
+        <footer class="app-modal__actions">
+          <button class="inline-action" type="button" data-update-action="release">Release Notes</button>
+          <button class="inline-action" type="button" data-update-action="dismiss">Later</button>
+          <button class="primary-button" type="button" data-update-action="primary">Download Update</button>
+        </footer>
+      </section>
+    </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="app.js"></script>
   </body>

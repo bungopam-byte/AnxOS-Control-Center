@@ -30,6 +30,8 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_LINES = 1000;
+const STARTUP_EARLY_EXIT_MS = 8000;
+const PROCESS_TAIL_LINE_LIMIT = 20;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
@@ -1889,6 +1891,57 @@ function redactLogLine(line) {
     .replace(/\bBearer\s+[a-zA-Z0-9._~+/-]+=*/g, "Bearer [redacted]");
 }
 
+function appendProcessTail(entry, streamName, chunk) {
+  if (!entry) {
+    return;
+  }
+  const lines = String(chunk || "").split(/\r?\n/).filter(Boolean);
+  if (!Array.isArray(entry.outputTail)) {
+    entry.outputTail = [];
+  }
+  for (const line of lines) {
+    entry.outputTail.push({
+      stream: streamName,
+      message: redactLogLine(line),
+    });
+  }
+  if (entry.outputTail.length > PROCESS_TAIL_LINE_LIMIT) {
+    entry.outputTail.splice(0, entry.outputTail.length - PROCESS_TAIL_LINE_LIMIT);
+  }
+}
+
+function formatCommandForLog(config = {}) {
+  const parts = [config.executable, ...(Array.isArray(config.args) ? config.args : [])]
+    .filter((part) => part !== undefined && part !== null)
+    .map((part) => {
+      const text = redactLogLine(String(part));
+      return /\s/.test(text) ? JSON.stringify(text) : text;
+    });
+  return parts.join(" ");
+}
+
+async function readEulaStatus(config = {}) {
+  if (inferGameFamily(config) !== "minecraft" && !isMinecraftSoftwareName([config.type, config.serverSoftware, config.displayName, config.id].join(" "))) {
+    return "not-applicable";
+  }
+  const workingDirectory = config.workingDirectory || "data";
+  const eulaPath = path.join(resolveRelativeManagedPath(config.id, workingDirectory, "data"), "eula.txt");
+  const text = await readTextIfExists(eulaPath, 16 * 1024);
+  if (!text) {
+    return "missing";
+  }
+  return /^\s*eula\s*=\s*true\s*$/im.test(text) ? "accepted" : "not-accepted";
+}
+
+async function getJavaVersionForLog(executable) {
+  if (!/^java(?:\.exe)?$/i.test(executableName(executable))) {
+    return "not-java";
+  }
+  const result = await execFile(executable, ["-version"], { timeout: 3000, maxBuffer: 64 * 1024 });
+  const output = [result.stderr, result.stdout].filter(Boolean).join("\n").split(/\r?\n/).find(Boolean);
+  return output ? redactLogLine(output) : "unknown";
+}
+
 async function appendLog(instanceId, streamName, chunk) {
   const filePath = logPath(instanceId, streamName);
   const lines = String(chunk || "").split(/\r?\n/).filter(Boolean);
@@ -1939,6 +1992,28 @@ async function startInstance(instanceId) {
   await fs.mkdir(workingDirectory, { recursive: true });
   await assertFiveMCanStart(config);
   await appendLog(config.id, "stdout", `Starting ${config.displayName}`);
+  const commandForLog = formatCommandForLog(config);
+  const javaVersion = await getJavaVersionForLog(config.executable).catch((error) => `unavailable: ${error?.code || error?.message || "unknown"}`);
+  const eulaStatus = await readEulaStatus(config).catch((error) => `unavailable: ${error?.code || error?.message || "unknown"}`);
+  const jarIndex = Array.isArray(config.args) ? config.args.findIndex((arg) => arg === "-jar") : -1;
+  const commandDiagnostics = {
+    command: commandForLog,
+    workingDirectory,
+    executable: config.executable,
+    args: config.args,
+    javaVersion,
+    serverJar: config.serverJar || config.serverJarPath || config.startJar || null,
+    mainClassOrJar: jarIndex >= 0 ? config.args[jarIndex + 1] || null : (isScriptBasedCommand(config) ? config.args?.[0] || null : null),
+    eulaStatus,
+  };
+  console.info("[Instances] Starting instance process.", {
+    instanceId: config.id,
+    ...commandDiagnostics,
+  });
+  await appendLog(config.id, "stdout", `Launch command: ${commandForLog || "unavailable"}`);
+  await appendLog(config.id, "stdout", `Working directory: ${workingDirectory}`);
+  await appendLog(config.id, "stdout", `Java version: ${javaVersion}`);
+  await appendLog(config.id, "stdout", `EULA status: ${eulaStatus}`);
   scheduleVersionRefresh(config.id, 2500);
 
   config = await updateRuntimeState(config.id, {
@@ -1971,14 +2046,16 @@ async function startInstance(instanceId) {
     return publicConfig(failedConfig);
   }
 
-  runningProcesses.set(config.id, {
-    child,
-    startedAt: Date.now(),
-    requestedStop: false,
-    suppressRestart: false,
-    failureReason: null,
-    startupTimer: null,
-  });
+    runningProcesses.set(config.id, {
+      child,
+      startedAt: Date.now(),
+      requestedStop: false,
+      suppressRestart: false,
+      failureReason: null,
+      startupTimer: null,
+      outputTail: [],
+      commandDiagnostics,
+    });
 
   if (!child.pid) {
     const failedConfig = await updateRuntimeState(config.id, {
@@ -1995,6 +2072,7 @@ async function startInstance(instanceId) {
   child.stdout.on("data", (chunk) => {
     const text = String(chunk || "");
     appendLog(config.id, "stdout", chunk).catch(() => {});
+    appendProcessTail(runningProcesses.get(config.id), "stdout", chunk);
     if (isFiveMInstance(config) && FIVEM_LICENSE_FAILURE_PATTERN.test(text)) {
       const entry = runningProcesses.get(config.id);
       if (entry) {
@@ -2014,6 +2092,7 @@ async function startInstance(instanceId) {
   child.stderr.on("data", (chunk) => {
     const text = String(chunk || "");
     appendLog(config.id, "stderr", chunk).catch(() => {});
+    appendProcessTail(runningProcesses.get(config.id), "stderr", chunk);
     if (/invalid option|usage:|cannot execute|No such file or directory|not found/i.test(text)) {
       const entry = runningProcesses.get(config.id);
       if (entry) {
@@ -2047,6 +2126,8 @@ async function startInstance(instanceId) {
     const suppressRestart = entry?.suppressRestart || false;
     const failureReason = entry?.failureReason || "PROCESS_EXITED";
     const invalidCommandExit = isInvalidCommandExit(config, exitCode, failureReason);
+    const runtimeMs = entry?.startedAt ? Date.now() - entry.startedAt : 0;
+    const earlyCleanExit = !requestedStop && Number(exitCode) === 0 && runtimeMs > 0 && runtimeMs < STARTUP_EARLY_EXIT_MS;
 
     if (entry?.startupTimer) {
       clearTimeout(entry.startupTimer);
@@ -2055,22 +2136,47 @@ async function startInstance(instanceId) {
     runningProcesses.delete(config.id);
     metricsSamples.delete(config.id);
 
-    const failed = !requestedStop && exitCode !== 0;
+    const failed = !requestedStop && (exitCode !== 0 || earlyCleanExit);
+    const resolvedFailureReason = earlyCleanExit
+      ? "EARLY_CLEAN_EXIT"
+      : failed ? failureReason : null;
     updateRuntimeState(config.id, {
       state: failed ? INSTANCE_STATES.FAILED : INSTANCE_STATES.STOPPED,
       pid: null,
       exitCode,
       signal,
-      failureReason: failed ? failureReason : null,
+      failureReason: resolvedFailureReason,
       lastStoppedAt: nowIso(),
     }).then((updatedConfig) => {
-      appendLog(config.id, "stdout", `Stopped ${updatedConfig.displayName} exitCode=${exitCode ?? "null"} signal=${signal || "null"}`).catch(() => {});
+      const stopReason = earlyCleanExit
+        ? "Server exited immediately; this modpack may be client-only or missing server files."
+        : `Stopped ${updatedConfig.displayName} exitCode=${exitCode ?? "null"} signal=${signal || "null"}`;
+      console.info("[Instances] Instance process exited.", {
+        instanceId: config.id,
+        pid: child.pid || null,
+        exitCode,
+        signal,
+        runtimeMs,
+        requestedStop,
+        failed,
+        failureReason: resolvedFailureReason,
+        command: entry?.commandDiagnostics?.command || commandForLog,
+        workingDirectory: entry?.commandDiagnostics?.workingDirectory || workingDirectory,
+        javaVersion: entry?.commandDiagnostics?.javaVersion || javaVersion,
+        eulaStatus: entry?.commandDiagnostics?.eulaStatus || eulaStatus,
+        outputTail: entry?.outputTail || [],
+      });
+      appendLog(config.id, failed ? "stderr" : "stdout", stopReason).catch(() => {});
+      if (earlyCleanExit && entry?.outputTail?.length) {
+        const tailLines = entry.outputTail.map((line) => `[${line.stream}] ${line.message}`).join("\n");
+        appendLog(config.id, "stderr", `Last ${Math.min(PROCESS_TAIL_LINE_LIMIT, entry.outputTail.length)} output lines before early exit:\n${tailLines}`).catch(() => {});
+      }
 
       if (invalidCommandExit) {
         appendLog(config.id, "stderr", "Auto-restart disabled after invalid command exit.").catch(() => {});
       }
 
-      if (failed && !suppressRestart && !invalidCommandExit && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
+      if (failed && !suppressRestart && !invalidCommandExit && !earlyCleanExit && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
         setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
       } else if (!failed && !suppressRestart && !invalidCommandExit && updatedConfig.restartPolicy === "always" && !requestedStop) {
         setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
@@ -2097,12 +2203,15 @@ async function startInstance(instanceId) {
     suppressRestart: existingEntry?.suppressRestart || false,
     failureReason: existingEntry?.failureReason || null,
     startupTimer,
+    outputTail: existingEntry?.outputTail || [],
+    commandDiagnostics,
   });
 
   const updated = await updateRuntimeState(config.id, {
     state: INSTANCE_STATES.STARTING,
     pid: child.pid,
   });
+  await appendLog(config.id, "stdout", `Process PID: ${child.pid}`);
 
   return publicConfig(updated);
 }

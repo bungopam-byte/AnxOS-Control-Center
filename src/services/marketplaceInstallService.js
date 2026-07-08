@@ -325,6 +325,24 @@ function ensureSupportedModpack(condition, provider, reason = "Unsupported modpa
   }
 }
 
+function ensureModrinthServerCapable(project = {}) {
+  const serverSide = String(project.serverSide || project.raw?.server_side || "").trim().toLowerCase();
+  if (serverSide === "unsupported") {
+    throw new MarketplaceInstallError(
+      `Modrinth install failed: ${project.name || project.slug || project.id || "selected pack"} is marked client-only and cannot be installed as a server instance.`,
+      "MODRINTH_CLIENT_ONLY_PACK",
+      {
+        provider: "modrinth",
+        projectId: project.providerProjectId || project.id || null,
+        projectName: project.name || null,
+        serverSide,
+        clientSide: project.clientSide || project.raw?.client_side || null,
+        suggestion: "Choose a modpack with server-side support or install the client pack in a launcher instead.",
+      }
+    );
+  }
+}
+
 function isRecoverableProviderFileError(error) {
   if ([
     "CURSEFORGE_DOWNLOAD_URL_MISSING",
@@ -773,6 +791,8 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
   const projectId = payload.providerProjectId || payload.projectId;
   ensureProviderProjectId(projectId, "Modrinth");
   emitProgress({ ...progressState, stage: "resolving", message: "Resolving Modrinth version..." });
+  const project = await modrinthProvider.getProject(projectId);
+  ensureModrinthServerCapable(project);
   const version = await modrinthProvider.resolveVersion(projectId, payload.minecraftVersion || payload.version, payload.loader, payload.providerVersionId || payload.versionId);
   const primary = version.primaryFile || version.files?.[0];
   ensureSupportedModpack(primary?.url, "Modrinth", "selected version does not expose downloadable files");
@@ -1252,6 +1272,7 @@ module.exports = {
     buildInstancePayload,
     createRestrictedCurseForgeFileError,
     createDeduper,
+    ensureModrinthServerCapable,
     friendlyHttpMessage,
     getCurseForgeFileContext,
     isCurseForgeAccessDeniedFileError,

@@ -336,6 +336,7 @@ async function assertScriptMarketplaceStartupIsNotJarWrapped() {
     await new Promise((resolve) => setTimeout(resolve, 250));
     const status = await instanceService.getStatus("script-startup-smoke");
     assert.notStrictEqual(status.failureReason, "SERVER_JAR_MISSING", "Script startup should not require a server jar.");
+    assert.strictEqual(status.failureReason, "EARLY_CLEAN_EXIT", "Clean early script exit should be diagnosed instead of treated as running.");
 
     await instanceService.createInstance({
       id: "invalid-script-startup-smoke",
@@ -687,7 +688,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     "forceKillInstance",
     "deleteInstance",
   ];
-  const patchedModrinthMethods = ["resolveVersion", "resolveDependencies"];
+  const patchedModrinthMethods = ["getProject", "resolveVersion", "resolveDependencies"];
   const patchedCurseForgeMethods = ["ensureConfigured", "resolveFile", "downloadFile", "resolveDependencies"];
   patchedAgentMethods.forEach((name) => {
     originalAgent[name] = agentClient[name];
@@ -805,6 +806,13 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       return { deleted: true };
     };
 
+    modrinthProvider.getProject = async () => ({
+      id: "mr-pack",
+      name: "Modrinth Smoke",
+      providerProjectId: "mr-pack",
+      serverSide: "required",
+      clientSide: "optional",
+    });
     modrinthProvider.resolveVersion = async () => ({
       id: "mr-version",
       name: "Modrinth Smoke",
@@ -1174,6 +1182,17 @@ async function assertProviderInstallSupport() {
     ).message,
     /required-server-mod\.jar.*project 10, file 20.*manually/i,
     "Restricted required CurseForge server files should produce an actionable error."
+  );
+  assert.throws(
+    () => marketplaceInstallService._test.ensureModrinthServerCapable({
+      id: "simply-optimized-smoke",
+      name: "Simply Optimized",
+      providerProjectId: "simply-optimized-smoke",
+      serverSide: "unsupported",
+      clientSide: "required",
+    }),
+    /client-only/i,
+    "Client-only Modrinth packs should be blocked as server instances."
   );
 
   const metadata = marketplaceInstallService._test.buildInstallMetadata(

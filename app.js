@@ -442,6 +442,8 @@ let activeConsoleFilter = "all";
 let consoleOpenInstanceIds = [];
 let consoleBufferedEntries = [];
 let consoleLogsRequestInFlight = false;
+let instanceConsolePollTimerId = null;
+let monitoringConsolePollTimerId = null;
 let consoleSuppressAutoSelect = false;
 let consoleAutoScrollSuppressed = false;
 let consoleLastRenderedLineCount = 0;
@@ -466,6 +468,7 @@ const filesConnectionState = {
 const sshSessions = new Map();
 const AMP_REFRESH_INTERVAL_MS = 2000;
 const DOCKER_STATS_REFRESH_INTERVAL_MS = 5000;
+const CONSOLE_LOG_REFRESH_INTERVAL_MS = 2000;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
@@ -2170,6 +2173,9 @@ function showPage(pageName) {
 
   if (safePageName === "instances") {
     refreshInstances();
+    syncInstanceConsolePolling();
+  } else {
+    stopInstanceConsolePolling();
   }
 
   if (safePageName === "backups") {
@@ -2182,10 +2188,13 @@ function showPage(pageName) {
     refreshInstances({ refreshMetrics: false }).then(() => {
       refreshConsoleMetrics();
       refreshConsoleLogs({ silent: true });
+      syncMonitoringConsolePolling();
     }).catch((error) => {
       console.warn("[Console] Initial refresh failed.", error);
       renderConsoleWorkspace();
     });
+  } else {
+    stopMonitoringConsolePolling();
   }
 
   if (safePageName === "marketplace") {
@@ -3905,10 +3914,15 @@ function setActiveInstanceTab(tabName) {
 
   if (activeInstanceTab === "console") {
     refreshInstanceLogs({ silent: true });
+    syncInstanceConsolePolling();
   } else if (activeInstanceTab === "files") {
+    stopInstanceConsolePolling();
     refreshInstanceFiles();
   } else if (activeInstanceTab === "settings") {
+    stopInstanceConsolePolling();
     loadMinecraftProperties();
+  } else {
+    stopInstanceConsolePolling();
   }
 }
 
@@ -4283,6 +4297,24 @@ function syncConsoleLogSearch() {
 
 function syncConsoleWrap() {
   instanceConsoleViewer?.classList.toggle("is-wrapped", Boolean(instanceConsoleWrapInput?.checked));
+}
+
+function syncInstanceConsoleScrollMode() {
+  if (!instanceConsoleViewer || !instanceConsoleAutoscrollInput || !instanceConsolePauseInput) {
+    return;
+  }
+
+  if (instanceConsolePauseInput.checked) {
+    instanceConsoleAutoscrollInput.checked = false;
+    syncInstanceConsolePolling();
+    return;
+  }
+
+  if (instanceConsoleAutoscrollInput.checked) {
+    instanceConsoleViewer.scrollTop = instanceConsoleViewer.scrollHeight;
+  }
+
+  syncInstanceConsolePolling();
 }
 
 function getLogSeverity(entry) {
@@ -5216,6 +5248,7 @@ function selectInstance(instanceId, options = {}) {
   if (selectedInstanceId && options.refreshMetrics !== false) {
     refreshSelectedInstanceMetrics();
   }
+  syncInstanceConsolePolling();
 }
 
 function renderInstancesSnapshot(snapshot) {
@@ -7291,6 +7324,42 @@ async function refreshInstanceLogs(options = {}) {
     instanceLogsRequestInFlight = false;
     updateInstanceActionButtons();
   }
+}
+
+function shouldPollInstanceConsole() {
+  return getActivePageName() === "instances" &&
+    activeInstanceTab === "console" &&
+    Boolean(selectedInstanceId) &&
+    !instanceConsolePauseInput?.checked;
+}
+
+function startInstanceConsolePolling() {
+  if (instanceConsolePollTimerId) {
+    return;
+  }
+  instanceConsolePollTimerId = window.setInterval(() => {
+    if (!shouldPollInstanceConsole()) {
+      return;
+    }
+    refreshInstanceLogs({ silent: true });
+  }, CONSOLE_LOG_REFRESH_INTERVAL_MS);
+}
+
+function stopInstanceConsolePolling() {
+  if (!instanceConsolePollTimerId) {
+    return;
+  }
+  window.clearInterval(instanceConsolePollTimerId);
+  instanceConsolePollTimerId = null;
+}
+
+function syncInstanceConsolePolling() {
+  if (shouldPollInstanceConsole()) {
+    startInstanceConsolePolling();
+    refreshInstanceLogs({ silent: true });
+    return;
+  }
+  stopInstanceConsolePolling();
 }
 
 async function createInstanceFromForm(event) {
@@ -10482,6 +10551,7 @@ function syncConsoleScrollMode() {
 
   if (consolePauseInput.checked) {
     consoleAutoscrollInput.checked = false;
+    syncMonitoringConsolePolling();
     return;
   }
 
@@ -10493,6 +10563,7 @@ function syncConsoleScrollMode() {
 
   updateConsoleJumpLatestButton();
   updateConsoleEmptyState();
+  syncMonitoringConsolePolling();
 }
 
 function setConsoleFilter(filter) {
@@ -10527,6 +10598,7 @@ function selectConsoleInstance(instanceId, options = {}) {
     refreshConsoleMetrics();
     refreshConsoleLogs({ silent: true });
   }
+  syncMonitoringConsolePolling();
 }
 
 function closeConsoleTab(instanceId) {
@@ -10545,6 +10617,7 @@ function closeConsoleTab(instanceId) {
     }
   }
   renderConsoleWorkspace();
+  syncMonitoringConsolePolling();
 }
 
 function getConsoleCommandPlaceholder(instance) {
@@ -10757,6 +10830,41 @@ async function refreshConsoleLogs(options = {}) {
     consoleLogsRequestInFlight = false;
     renderConsoleWorkspace();
   }
+}
+
+function shouldPollMonitoringConsole() {
+  return getActivePageName() === "console" &&
+    Boolean(activeConsoleInstanceId) &&
+    !consolePauseInput?.checked;
+}
+
+function startMonitoringConsolePolling() {
+  if (monitoringConsolePollTimerId) {
+    return;
+  }
+  monitoringConsolePollTimerId = window.setInterval(() => {
+    if (!shouldPollMonitoringConsole()) {
+      return;
+    }
+    refreshConsoleLogs({ silent: true });
+  }, CONSOLE_LOG_REFRESH_INTERVAL_MS);
+}
+
+function stopMonitoringConsolePolling() {
+  if (!monitoringConsolePollTimerId) {
+    return;
+  }
+  window.clearInterval(monitoringConsolePollTimerId);
+  monitoringConsolePollTimerId = null;
+}
+
+function syncMonitoringConsolePolling() {
+  if (shouldPollMonitoringConsole()) {
+    startMonitoringConsolePolling();
+    refreshConsoleLogs({ silent: true });
+    return;
+  }
+  stopMonitoringConsolePolling();
 }
 
 async function sendConsoleCommand(event) {
@@ -12709,6 +12817,8 @@ window.addEventListener("mouseup", () => {
 window.addEventListener("beforeunload", () => {
   refreshTaskIds.forEach((intervalId) => window.clearInterval(intervalId));
   stopDockerPagePolling();
+  stopInstanceConsolePolling();
+  stopMonitoringConsolePolling();
   windowMaximizedUnsubscribe?.();
   stopFilesDividerDrag();
   disposeMonacoEditorResources();
@@ -12959,6 +13069,8 @@ instancesDownloadLogButtons.forEach((button) => {
 instanceConsoleSearchInput?.addEventListener("input", syncConsoleLogSearch);
 instanceConsoleFilterSelect?.addEventListener("change", syncConsoleLogSearch);
 instanceConsoleWrapInput?.addEventListener("change", syncConsoleWrap);
+instanceConsoleAutoscrollInput?.addEventListener("change", syncInstanceConsoleScrollMode);
+instanceConsolePauseInput?.addEventListener("change", syncInstanceConsoleScrollMode);
 syncConsoleWrap();
 instanceConsoleForm?.addEventListener("submit", sendInstanceConsoleCommand);
 instanceTabs.forEach((button) => {

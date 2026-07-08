@@ -355,6 +355,25 @@ async function assertScriptMarketplaceStartupIsNotJarWrapped() {
     assert.strictEqual(invalidStatus.exitCode, 2, "Invalid bash option should exit with code 2.");
     assert.strictEqual(invalidStatus.state, "Failed", "Invalid command should remain failed.");
     assert.strictEqual(invalidStatus.failureReason, "INVALID_COMMAND", "Invalid command should be marked explicitly.");
+
+    await instanceService.createInstance({
+      id: "java-command-normalization-smoke",
+      displayName: "Java Command Normalization Smoke",
+      type: "java-app",
+      workingDirectory: "data",
+      executable: "java",
+      jar: "server.jar",
+      serverJar: "server.jar",
+      args: ["-jar", "server.jar", "-Xmx2G", "-jar", "server.jar", "nogui"],
+      restartPolicy: "never",
+      tags: ["minecraft", "fabric"],
+    });
+    const javaStatus = await instanceService.getStatus("java-command-normalization-smoke");
+    assert.deepStrictEqual(
+      javaStatus.args,
+      ["-Xmx2G", "-jar", "server.jar", "nogui"],
+      "Java app normalization should keep JVM args before -jar and remove duplicate jar launch args."
+    );
   } finally {
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;

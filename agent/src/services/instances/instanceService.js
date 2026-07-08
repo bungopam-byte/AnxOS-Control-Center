@@ -316,6 +316,41 @@ function validateMemoryValue(value) {
   return memory;
 }
 
+function isJavaJvmArgument(value) {
+  const text = String(value || "");
+  return /^-(?:X|D|agentlib:|agentpath:|javaagent:)/.test(text) ||
+    /^--(?:add-|enable-|illegal-|module-|limit-|patch-|upgrade-|add-|show-|splash|verbose|enable-preview)/.test(text);
+}
+
+function normalizeJavaJarCommandArgs(args = [], jarPath = "app.jar") {
+  const rawArgs = Array.isArray(args) ? args.map((arg) => String(arg || "").trim()).filter(Boolean) : [];
+  const firstJarIndex = rawArgs.findIndex((arg) => arg === "-jar");
+  const detectedJar = firstJarIndex >= 0 && rawArgs[firstJarIndex + 1]
+    ? rawArgs[firstJarIndex + 1]
+    : jarPath;
+  const jar = validateRelativeAssetPath(detectedJar || jarPath, "JAR");
+  const jvmArgs = [];
+  const appArgs = [];
+
+  for (let index = 0; index < rawArgs.length; index += 1) {
+    const arg = rawArgs[index];
+    if (arg === "-jar") {
+      index += 1;
+      continue;
+    }
+    if (arg === jar) {
+      continue;
+    }
+    if (isJavaJvmArgument(arg)) {
+      jvmArgs.push(arg);
+    } else {
+      appArgs.push(arg);
+    }
+  }
+
+  return [...jvmArgs, "-jar", jar, ...appArgs];
+}
+
 function instancePath(instanceId) {
   return path.join(getInstanceRoot(), instanceId);
 }
@@ -460,10 +495,10 @@ function buildTypeCommand(type, payload) {
         args: scriptArgs,
       };
     }
-    const jar = validateRelativeAssetPath(payload.jar || payload.entrypoint || "app.jar", "JAR");
+    const jar = validateRelativeAssetPath(payload.jar || payload.serverJar || payload.entrypoint || "app.jar", "JAR");
     return {
       executable: validateExecutable(payload.executable || "java"),
-      args: ["-jar", jar, ...args],
+      args: normalizeJavaJarCommandArgs(args, jar),
     };
   }
 
@@ -1139,17 +1174,7 @@ function getJarCandidates(config) {
 }
 
 function replaceJarArg(args = [], jarPath = "server.jar") {
-  const next = Array.isArray(args) ? [...args] : [];
-  const jarIndex = next.findIndex((arg) => arg === "-jar");
-  if (jarIndex >= 0) {
-    if (next[jarIndex + 1]) {
-      next[jarIndex + 1] = jarPath;
-    } else {
-      next.push(jarPath);
-    }
-    return next;
-  }
-  return ["-jar", jarPath, ...next.filter((arg) => arg !== jarPath)];
+  return normalizeJavaJarCommandArgs(args, jarPath);
 }
 
 function executableName(executable) {
@@ -1230,20 +1255,21 @@ async function repairConfiguredServerJar(config) {
   const configuredJar = String(config.serverJar || config.serverJarPath || config.startJar || "").trim();
   const jarIndex = Array.isArray(config.args) ? config.args.findIndex((arg) => arg === "-jar") : -1;
   const argJar = jarIndex >= 0 ? String(config.args[jarIndex + 1] || "").trim() : "";
-  if (configuredJar === relativeJar && argJar === relativeJar) {
+  const repairedArgs = replaceJarArg(config.args, relativeJar);
+  if (configuredJar === relativeJar && argJar === relativeJar && JSON.stringify(config.args || []) === JSON.stringify(repairedArgs)) {
     return config;
   }
 
   const repaired = {
     ...config,
-    args: replaceJarArg(config.args, relativeJar),
+    args: repairedArgs,
     serverJar: relativeJar,
     serverJarPath: relativeJar,
     startJar: relativeJar,
     updatedAt: nowIso(),
   };
   await saveInstanceConfig(repaired);
-  await appendLog(config.id, "stdout", `Repaired server JAR metadata: ${relativeJar}`).catch(() => {});
+  await appendLog(config.id, "stdout", `Repaired server JAR command: ${formatCommandForLog(repaired)}`).catch(() => {});
   return repaired;
 }
 

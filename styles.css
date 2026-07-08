@@ -814,9 +814,11 @@ a:focus-visible,
 
 .main-content,
 .console-log-viewer,
+.instance-console-viewer,
 .file-table-wrap,
 .file-editor-surface textarea,
 .ssh-terminal-window,
+.docker-log-viewer,
 .docker-table-wrap,
 .coolpals-table-wrap,
 .coolpals-log-viewer,
@@ -828,9 +830,11 @@ a:focus-visible,
 
 .main-content::-webkit-scrollbar,
 .console-log-viewer::-webkit-scrollbar,
+.instance-console-viewer::-webkit-scrollbar,
 .file-table-wrap::-webkit-scrollbar,
 .file-editor-surface textarea::-webkit-scrollbar,
 .ssh-terminal-window::-webkit-scrollbar,
+.docker-log-viewer::-webkit-scrollbar,
 .docker-table-wrap::-webkit-scrollbar,
 .coolpals-table-wrap::-webkit-scrollbar,
 .coolpals-log-viewer::-webkit-scrollbar,
@@ -842,9 +846,11 @@ a:focus-visible,
 
 .main-content::-webkit-scrollbar-track,
 .console-log-viewer::-webkit-scrollbar-track,
+.instance-console-viewer::-webkit-scrollbar-track,
 .file-table-wrap::-webkit-scrollbar-track,
 .file-editor-surface textarea::-webkit-scrollbar-track,
 .ssh-terminal-window::-webkit-scrollbar-track,
+.docker-log-viewer::-webkit-scrollbar-track,
 .docker-table-wrap::-webkit-scrollbar-track,
 .coolpals-table-wrap::-webkit-scrollbar-track,
 .coolpals-log-viewer::-webkit-scrollbar-track,
@@ -856,9 +862,11 @@ a:focus-visible,
 
 .main-content::-webkit-scrollbar-thumb,
 .console-log-viewer::-webkit-scrollbar-thumb,
+.instance-console-viewer::-webkit-scrollbar-thumb,
 .file-table-wrap::-webkit-scrollbar-thumb,
 .file-editor-surface textarea::-webkit-scrollbar-thumb,
 .ssh-terminal-window::-webkit-scrollbar-thumb,
+.docker-log-viewer::-webkit-scrollbar-thumb,
 .docker-table-wrap::-webkit-scrollbar-thumb,
 .coolpals-table-wrap::-webkit-scrollbar-thumb,
 .coolpals-log-viewer::-webkit-scrollbar-thumb,
@@ -872,9 +880,11 @@ a:focus-visible,
 
 .main-content::-webkit-scrollbar-thumb:hover,
 .console-log-viewer::-webkit-scrollbar-thumb:hover,
+.instance-console-viewer::-webkit-scrollbar-thumb:hover,
 .file-table-wrap::-webkit-scrollbar-thumb:hover,
 .file-editor-surface textarea::-webkit-scrollbar-thumb:hover,
 .ssh-terminal-window::-webkit-scrollbar-thumb:hover,
+.docker-log-viewer::-webkit-scrollbar-thumb:hover,
 .docker-table-wrap::-webkit-scrollbar-thumb:hover,
 .coolpals-table-wrap::-webkit-scrollbar-thumb:hover,
 .coolpals-log-viewer::-webkit-scrollbar-thumb:hover,
@@ -1537,12 +1547,15 @@ h3 {
 .console-main-panel .console-window {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: clamp(460px, 58vh, 730px);
+  height: clamp(420px, 58vh, 680px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .console-main-panel .console-log-viewer {
   min-height: 0;
   max-height: none;
+  overflow: auto;
 }
 
 .console-jump-latest {
@@ -3128,8 +3141,9 @@ body.is-resizing-files * {
 
 .docker-log-viewer,
 .docker-inspect-viewer {
-  min-height: 360px;
-  max-height: calc(100vh - 430px);
+  height: clamp(260px, 44vh, 480px);
+  min-height: 0;
+  max-height: min(520px, calc(100vh - 360px));
   margin: 0;
   padding: 12px;
   overflow: auto;
@@ -5074,7 +5088,10 @@ body.is-resizing-files * {
 }
 
 .page[data-page="instances"] [data-instance-panel="console"].is-active {
-  min-height: clamp(340px, 42vh, 620px);
+  height: clamp(340px, 46vh, 560px);
+  min-height: 0;
+  max-height: min(620px, calc(100vh - 260px));
+  overflow: hidden;
 }
 
 .page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar {
@@ -5087,6 +5104,7 @@ body.is-resizing-files * {
 
 .page[data-page="instances"] [data-instance-panel="console"] .instance-console-viewer {
   min-height: 0;
+  overflow: auto;
 }
 
 .page[data-page="instances"] [data-instance-panel="files"].is-active,
@@ -5336,7 +5354,9 @@ body.is-resizing-files * {
 
 .coolpals-log-viewer {
   position: relative;
-  min-height: 250px;
+  height: clamp(220px, 34vh, 360px);
+  min-height: 0;
+  max-height: min(400px, calc(100vh - 340px));
   overflow: auto;
   color: #d7deea;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -6671,12 +6691,15 @@ dd {
 }
 
 .console-window {
-  min-height: clamp(560px, 72vh, 820px);
+  height: clamp(420px, 58vh, 680px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .console-log-viewer {
-  min-height: calc(clamp(560px, 72vh, 820px) - 42px);
-  max-height: calc(100vh - 210px);
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
 }
 
 .backup-workspace {

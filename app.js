@@ -12962,7 +12962,13 @@ async function checkForUpdates(options = {}) {
     const result = await desktopApiState.api.updates.check({ silent: Boolean(options.silent) });
     latestUpdateInfo = result?.hasUpdate ? result : latestUpdateInfo;
 
-    if (result?.error) {
+    if (result?.releaseUnavailable) {
+      setUpdateStatusMessage(result.message || "No update release is published yet.");
+
+      if (!options.silent) {
+        showToast(result.message || "No update release is published yet.", "warning");
+      }
+    } else if (result?.error) {
       setUpdateStatusMessage("Update check failed.");
 
       if (!options.silent) {

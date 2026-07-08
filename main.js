@@ -117,7 +117,9 @@ function requestJson(url) {
         });
         response.on("end", () => {
           if (response.statusCode < 200 || response.statusCode >= 300) {
-            reject(new Error(`GitHub release check failed with HTTP ${response.statusCode}: ${body.slice(0, 240)}`));
+            const error = new Error(`GitHub release check failed with HTTP ${response.statusCode}: ${body.slice(0, 240)}`);
+            error.statusCode = response.statusCode;
+            reject(error);
             return;
           }
 
@@ -196,6 +198,18 @@ async function checkForUpdates(options = {}) {
 
     return result;
   } catch (error) {
+    if (error?.statusCode === 404) {
+      console.warn("[Updates] No public GitHub release is available yet.", {
+        url: UPDATE_RELEASES_URL,
+        silent: Boolean(options.silent),
+      });
+      return {
+        hasUpdate: false,
+        releaseUnavailable: true,
+        message: "No update release is published yet.",
+      };
+    }
+
     console.error("[Updates] Release check failed.", {
       message: error?.message || String(error),
       stack: error?.stack || null,

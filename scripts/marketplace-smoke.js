@@ -1083,6 +1083,9 @@ async function assertProviderInstallSupport() {
         ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"],
         "Missing CurseForge key errors should include the supported env names."
       );
+      assert(Array.isArray(error.details.envSourcesChecked), "Missing CurseForge key errors should include checked env sources.");
+      assert.strictEqual(typeof error.details.cwd, "string", "Missing CurseForge key errors should include cwd.");
+      assert.strictEqual(typeof error.details.isPackaged, "boolean", "Missing CurseForge key errors should include packaged runtime state.");
       assert.strictEqual(
         typeof error.details.env?.resolvedEnvPath === "string" || error.details.env?.resolvedEnvPath === null,
         true,

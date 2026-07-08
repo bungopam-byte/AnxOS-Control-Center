@@ -43,6 +43,17 @@ function getMarketplaceErrorMessage(error) {
   if (body) parts.push(`body=${String(body).slice(0, 1000)}`);
   if (details.recovery) parts.push(`recovery=${details.recovery}`);
   if (details.suggestion) parts.push(`suggestion=${details.suggestion}`);
+  if (Array.isArray(details.expectedEnvNames)) parts.push(`expectedEnvNames=${details.expectedEnvNames.join(",")}`);
+  if (Array.isArray(details.expectedFileEnvNames)) parts.push(`expectedFileEnvNames=${details.expectedFileEnvNames.join(",")}`);
+  if (Array.isArray(details.envSourcesChecked)) parts.push(`envSourcesChecked=${details.envSourcesChecked.join(";")}`);
+  if (details.cwd || details.env?.cwd) parts.push(`cwd=${details.cwd || details.env.cwd}`);
+  if (details.isPackaged !== undefined || details.env?.isPackaged !== undefined) parts.push(`isPackaged=${details.isPackaged ?? details.env.isPackaged}`);
+  if (details.appPath || details.env?.appPath) parts.push(`appPath=${details.appPath || details.env.appPath}`);
+  if (details.userDataPath || details.env?.userDataPath) parts.push(`userDataPath=${details.userDataPath || details.env.userDataPath}`);
+  if (details.env?.resolvedEnvPath !== undefined) parts.push(`resolvedEnvPath=${details.env.resolvedEnvPath || "none"}`);
+  if (details.env?.envFileExists !== undefined) parts.push(`envFileExists=${details.env.envFileExists}`);
+  if (details.env?.envLoaded !== undefined) parts.push(`envLoaded=${details.env.envLoaded}`);
+  if (details.source !== undefined) parts.push(`keySource=${details.source || "none"}`);
   if (name && name !== "Error") parts.push(`error=${name}`);
   if (message === "URL" && !url) parts.push("hint=A URL constructor failed before the invalid value was attached.");
 

@@ -5418,7 +5418,11 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
       text.includes(" | invalidUrl=") ||
       text.includes(" | status=") ||
       text.includes(" | body=") ||
-      text.includes(" | code=");
+      text.includes(" | code=") ||
+      text.includes("envSourcesChecked=") ||
+      text.includes("expectedEnvNames=") ||
+      text.includes("isPackaged=") ||
+      text.includes("userDataPath=");
   });
   if (detailedMessage) {
     return detailedMessage;

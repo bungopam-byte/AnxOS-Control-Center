@@ -118,7 +118,7 @@ function friendlyHttpMessage(label, status, body = "") {
 
 function friendlyError(error) {
   if (error?.code === "CURSEFORGE_API_KEY_REQUIRED") {
-    return "CurseForge API key is required to install CurseForge packs.";
+    return error?.message || "CurseForge API key is required to install CurseForge packs.";
   }
   return error?.message || "Marketplace install failed.";
 }
@@ -138,6 +138,17 @@ function buildDetailedErrorMessage(error, fallback = "Marketplace install failed
   if (details.body || details.responseBody) parts.push(`body=${truncateForLog(details.body || details.responseBody, 1000)}`);
   if (details.recovery) parts.push(`recovery=${details.recovery}`);
   if (details.suggestion) parts.push(`suggestion=${details.suggestion}`);
+  if (Array.isArray(details.expectedEnvNames)) parts.push(`expectedEnvNames=${details.expectedEnvNames.join(",")}`);
+  if (Array.isArray(details.expectedFileEnvNames)) parts.push(`expectedFileEnvNames=${details.expectedFileEnvNames.join(",")}`);
+  if (Array.isArray(details.envSourcesChecked)) parts.push(`envSourcesChecked=${details.envSourcesChecked.join(";")}`);
+  if (details.cwd || details.env?.cwd) parts.push(`cwd=${details.cwd || details.env.cwd}`);
+  if (details.isPackaged !== undefined || details.env?.isPackaged !== undefined) parts.push(`isPackaged=${details.isPackaged ?? details.env.isPackaged}`);
+  if (details.appPath || details.env?.appPath) parts.push(`appPath=${details.appPath || details.env.appPath}`);
+  if (details.userDataPath || details.env?.userDataPath) parts.push(`userDataPath=${details.userDataPath || details.env.userDataPath}`);
+  if (details.env?.resolvedEnvPath !== undefined) parts.push(`resolvedEnvPath=${details.env.resolvedEnvPath || "none"}`);
+  if (details.env?.envFileExists !== undefined) parts.push(`envFileExists=${details.env.envFileExists}`);
+  if (details.env?.envLoaded !== undefined) parts.push(`envLoaded=${details.env.envLoaded}`);
+  if (details.source !== undefined) parts.push(`keySource=${details.source || "none"}`);
   if (error?.name && error.name !== "Error") parts.push(`error=${error.name}`);
   if (error?.message === "URL" && !details.invalidUrl && !details.url) {
     parts.push("hint=A URL constructor failed, but the invalid value was not attached by the throwing code.");

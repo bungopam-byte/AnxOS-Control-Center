@@ -125,32 +125,45 @@ function getElectronApp() {
   }
 }
 
-function getElectronConfigDirectory() {
+function getElectronRuntimeInfo() {
   const app = getElectronApp();
 
   if (!app) {
-    return null;
+    return {
+      isElectron: false,
+      isPackaged: false,
+      appPath: null,
+      userDataPath: null,
+      configPath: null,
+    };
   }
 
+  let appPath = null;
+  let userDataPath = null;
+
   try {
-    return path.join(app.getPath("userData"), "config");
-  } catch {
-    return null;
-  }
+    appPath = typeof app.getAppPath === "function" ? app.getAppPath() : null;
+  } catch {}
+
+  try {
+    userDataPath = app.getPath("userData");
+  } catch {}
+
+  return {
+    isElectron: true,
+    isPackaged: Boolean(app.isPackaged),
+    appPath,
+    userDataPath,
+    configPath: userDataPath ? path.join(userDataPath, "config") : null,
+  };
+}
+
+function getElectronConfigDirectory() {
+  return getElectronRuntimeInfo().configPath;
 }
 
 function getElectronUserDataDirectory() {
-  const app = getElectronApp();
-
-  if (!app) {
-    return null;
-  }
-
-  try {
-    return app.getPath("userData");
-  } catch {
-    return null;
-  }
+  return getElectronRuntimeInfo().userDataPath;
 }
 
 function getRepoEnvPath() {
@@ -189,10 +202,16 @@ function loadEnv() {
     return envLoadInfo;
   }
   envLoaded = true;
+  const envSourcesChecked = getEnvCandidates();
   const resolvedEnvPath = findEnvPath();
+  const runtime = getElectronRuntimeInfo();
 
   envLoadInfo = {
     cwd: process.cwd(),
+    isPackaged: runtime.isPackaged,
+    appPath: runtime.appPath,
+    userDataPath: runtime.userDataPath,
+    envSourcesChecked,
     resolvedEnvPath,
     envFileExists: Boolean(resolvedEnvPath),
     envLoaded: false,
@@ -329,11 +348,18 @@ function requireApiKey(config = {}) {
       "CurseForge API key is required to install CurseForge packs.",
       "CURSEFORGE_API_KEY_REQUIRED",
       {
+        provider: "curseforge",
         loaded: status.loaded,
         source: status.source,
         env: status.env,
+        envSourcesChecked: status.env.envSourcesChecked,
+        cwd: status.env.cwd,
+        isPackaged: status.env.isPackaged,
+        appPath: status.env.appPath,
+        userDataPath: status.env.userDataPath,
         expectedEnvNames: API_KEY_ENV,
         expectedFileEnvNames: API_KEY_FILE_ENV,
+        recovery: `Set one of ${API_KEY_ENV.join(", ")} in one of the checked .env files, or set ANXHUB_ENV_PATH to the file that contains it.`,
       }
     );
   }

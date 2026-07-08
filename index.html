@@ -2176,7 +2176,7 @@
           </header>
 
           <form class="settings-shell" data-settings-form>
-            <section class="settings-section">
+            <section class="settings-section settings-section--security">
               <div class="settings-section__header">
                 <div>
                   <h2>Security</h2>
@@ -2202,7 +2202,7 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--nodes">
               <div class="settings-section__header">
                 <div>
                   <h2>Nodes</h2>
@@ -2214,7 +2214,7 @@
                 <label class="settings-field"><span>Node name</span><input type="text" data-node-field="displayName" placeholder="Game Node 1"></label>
                 <label class="settings-field"><span>Agent URL</span><input type="url" data-node-field="agentUrl" placeholder="http://127.0.0.1:47131"></label>
                 <label class="settings-field"><span>Agent token</span><input type="password" data-node-field="agentToken" placeholder="Bearer token"></label>
-                <label class="settings-check"><input type="checkbox" data-node-field="dockerEnabled" checked><span>Docker enabled on this node</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-node-field="dockerEnabled" checked><span>Docker enabled on this node</span></label>
               </div>
               <div class="settings-actions">
                 <button class="inline-action" type="button" data-node-action="save">Register Node</button>
@@ -2225,7 +2225,7 @@
               <div class="download-list" data-node-list></div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--marketplace">
               <div class="settings-section__header">
                 <div>
                   <h3>Marketplace</h3>
@@ -2246,9 +2246,12 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--general">
               <div class="settings-section__header">
-                <h3>General</h3>
+                <div>
+                  <h3>General</h3>
+                  <p>Choose launch behavior and the display name used across the app.</p>
+                </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
@@ -2275,26 +2278,38 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--appearance">
               <div class="settings-section__header">
-                <h3>Appearance</h3>
+                <div>
+                  <h3>Appearance</h3>
+                  <p>Tune the AnxHub accent color without changing the dark theme.</p>
+                </div>
                 <span class="status-pill status-pill--local">UI</span>
               </div>
               <div class="settings-grid">
-                <label class="settings-field">
+                <label class="settings-field settings-field--color">
                   <span>Accent color</span>
                   <input type="color" data-setting="appearance.accentColor">
                 </label>
+                <div class="settings-accent-swatches" aria-label="Accent color presets">
+                  <button type="button" data-accent-swatch="#b66cff" style="--swatch-color: #b66cff"><span>Purple</span></button>
+                  <button type="button" data-accent-swatch="#45e08f" style="--swatch-color: #45e08f"><span>Green</span></button>
+                  <button type="button" data-accent-swatch="#7ed8ff" style="--swatch-color: #7ed8ff"><span>Cyan</span></button>
+                  <button type="button" data-accent-swatch="#f5c451" style="--swatch-color: #f5c451"><span>Gold</span></button>
+                </div>
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--startup">
               <div class="settings-section__header">
-                <h3>Startup</h3>
+                <div>
+                  <h3>Startup</h3>
+                  <p>Control the splash screen timing and startup audio.</p>
+                </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
-                <label class="settings-check">
+                <label class="settings-check settings-check--toggle">
                   <input type="checkbox" data-setting="startup.enabled">
                   <span>Enable startup splash</span>
                 </label>
@@ -2302,7 +2317,7 @@
                   <span>Splash minimum duration</span>
                   <input type="number" min="0" max="15000" step="250" data-setting="startup.minimumDurationMs">
                 </label>
-                <label class="settings-check">
+                <label class="settings-check settings-check--toggle">
                   <input type="checkbox" data-setting="startup.sound">
                   <span>Enable startup sound</span>
                 </label>
@@ -2313,9 +2328,12 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--amp">
               <div class="settings-section__header">
-                <h3>AMP</h3>
+                <div>
+                  <h3>AMP</h3>
+                  <p>Store non-sensitive AMP connection defaults for the dashboard.</p>
+                </div>
                 <span class="status-pill status-pill--planned">Password in .env</span>
               </div>
               <p class="settings-note">AMP password is not saved in localStorage. Keep sensitive values in <code>.env</code>.</p>
@@ -2331,9 +2349,12 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--minecraft">
               <div class="settings-section__header">
-                <h3>Minecraft</h3>
+                <div>
+                  <h3>Minecraft</h3>
+                  <p>Set the default server address shown by Minecraft tools.</p>
+                </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
@@ -2344,9 +2365,12 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--playit">
               <div class="settings-section__header">
-                <h3>Playit</h3>
+                <div>
+                  <h3>Playit</h3>
+                  <p>Keep the preferred tunnel address close to the Playit dashboard.</p>
+                </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
@@ -2357,9 +2381,12 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--agent">
               <div class="settings-section__header">
-                <h3>Agent</h3>
+                <div>
+                  <h3>Agent</h3>
+                  <p>Configure the default Agent endpoint and connection mode.</p>
+                </div>
                 <span class="status-pill status-pill--planned" data-agent-connection-pill>Disconnected</span>
               </div>
               <p class="settings-note" data-agent-connection-message>Use the Agent for remote service data when local access is unavailable.</p>
@@ -2388,13 +2415,16 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--developer">
               <div class="settings-section__header">
-                <h3>Developer</h3>
+                <div>
+                  <h3>Developer</h3>
+                  <p>Local troubleshooting controls and disabled future log tools.</p>
+                </div>
                 <span class="status-pill status-pill--manual">Tools</span>
               </div>
               <div class="settings-actions">
-                <label class="settings-check">
+                <label class="settings-check settings-check--toggle">
                   <input type="checkbox" data-setting="developer.debugMode">
                   <span>Debug Mode</span>
                 </label>
@@ -2404,9 +2434,12 @@
               </div>
             </section>
 
-            <section class="settings-section">
+            <section class="settings-section settings-section--about">
               <div class="settings-section__header">
-                <h3>About</h3>
+                <div>
+                  <h3>About</h3>
+                  <p>Runtime versions and update checks for this desktop build.</p>
+                </div>
                 <span class="status-pill status-pill--external">Runtime</span>
               </div>
               <dl class="settings-about-grid">

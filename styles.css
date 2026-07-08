@@ -7435,6 +7435,365 @@ button:disabled {
   box-shadow: 0 18px 48px rgba(4, 1, 12, 0.42);
 }
 
+/* Settings page refinement */
+.page[data-page="settings"] {
+  max-width: 1280px;
+}
+
+.page[data-page="settings"] .page-header {
+  margin-bottom: 20px;
+}
+
+.settings-shell {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "security general"
+    "nodes appearance"
+    "marketplace startup"
+    "minecraft amp"
+    "agent playit"
+    "developer about";
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-section {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  min-height: auto;
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.settings-section--security {
+  grid-area: security;
+}
+
+.settings-section--general {
+  grid-area: general;
+}
+
+.settings-section--nodes {
+  grid-area: nodes;
+}
+
+.settings-section--appearance {
+  grid-area: appearance;
+}
+
+.settings-section--marketplace {
+  grid-area: marketplace;
+}
+
+.settings-section--startup {
+  grid-area: startup;
+}
+
+.settings-section--minecraft {
+  grid-area: minecraft;
+}
+
+.settings-section--amp {
+  grid-area: amp;
+}
+
+.settings-section--agent {
+  grid-area: agent;
+}
+
+.settings-section--playit {
+  grid-area: playit;
+}
+
+.settings-section--developer {
+  grid-area: developer;
+}
+
+.settings-section--about {
+  grid-area: about;
+}
+
+.settings-section__header {
+  align-items: flex-start;
+  margin: 0;
+  padding-bottom: 12px;
+}
+
+.settings-section__header > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-section__header h2,
+.settings-section__header h3 {
+  margin: 0;
+  color: rgba(248, 245, 255, 0.98);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.settings-section__header p {
+  margin: 0;
+  color: rgba(226, 216, 240, 0.66);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.settings-section .status-pill {
+  flex: 0 0 auto;
+  min-width: max-content;
+  justify-content: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+}
+
+.settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.settings-section--marketplace .settings-grid,
+.settings-section--minecraft .settings-grid,
+.settings-section--playit .settings-grid {
+  grid-template-columns: 1fr;
+}
+
+.settings-field,
+.settings-check {
+  min-width: 0;
+}
+
+.settings-field span,
+.settings-check span {
+  overflow-wrap: anywhere;
+}
+
+.settings-field input,
+.settings-field select,
+.settings-field textarea {
+  min-height: 42px;
+}
+
+.settings-field input[readonly] {
+  border-color: rgba(190, 170, 220, 0.1);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(248, 245, 255, 0.76);
+}
+
+.settings-section--security .settings-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(120px, 0.7fr);
+}
+
+.settings-section--security .settings-actions,
+.settings-section--agent .settings-actions,
+.settings-section--nodes .settings-actions,
+.settings-section--marketplace .settings-actions {
+  align-items: flex-start;
+}
+
+.settings-section--security [data-security-action="logout"],
+.settings-section--security [data-security-action="logout-all-sessions"],
+.settings-section--nodes [data-node-action="delete"],
+.settings-section--developer [data-settings-reset] {
+  border-color: rgba(255, 107, 138, 0.24);
+  color: rgba(255, 214, 224, 0.94);
+}
+
+.settings-section--security [data-security-action="logout"]:hover,
+.settings-section--security [data-security-action="logout"]:focus-visible,
+.settings-section--security [data-security-action="logout-all-sessions"]:hover,
+.settings-section--security [data-security-action="logout-all-sessions"]:focus-visible,
+.settings-section--nodes [data-node-action="delete"]:hover,
+.settings-section--nodes [data-node-action="delete"]:focus-visible,
+.settings-section--developer [data-settings-reset]:hover,
+.settings-section--developer [data-settings-reset]:focus-visible {
+  border-color: rgba(255, 107, 138, 0.52);
+  background: rgba(112, 26, 52, 0.28);
+}
+
+.settings-section--nodes .settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-section--nodes .settings-field:nth-child(2),
+.settings-section--nodes .settings-field:nth-child(3),
+.settings-check--toggle {
+  grid-column: 1 / -1;
+}
+
+.settings-check--toggle {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 12px;
+}
+
+.settings-check--toggle input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid rgba(190, 170, 220, 0.2);
+  border-radius: 999px;
+  background: rgba(7, 9, 14, 0.72);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.settings-check--toggle input[type="checkbox"]::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(226, 216, 240, 0.72);
+  content: "";
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.settings-check--toggle input[type="checkbox"]:checked {
+  border-color: rgba(69, 224, 143, 0.44);
+  background: rgba(69, 224, 143, 0.16);
+}
+
+.settings-check--toggle input[type="checkbox"]:checked::after {
+  background: var(--success);
+  transform: translateX(16px);
+}
+
+.settings-check--toggle input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(206, 150, 255, 0.88);
+  outline-offset: 3px;
+}
+
+.download-list[data-node-list] {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.download-list[data-node-list] .download-item {
+  border-color: rgba(190, 170, 220, 0.13);
+  background: rgba(7, 9, 14, 0.32);
+}
+
+.settings-section--marketplace .settings-note,
+.settings-section--agent .settings-note,
+.settings-section--amp .settings-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(190, 170, 220, 0.1);
+  border-radius: 8px;
+  background: rgba(7, 9, 14, 0.28);
+}
+
+.settings-section--marketplace .settings-actions,
+.settings-section--agent .settings-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.settings-field--color {
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: end;
+}
+
+.settings-field--color span {
+  grid-column: 1 / -1;
+}
+
+.settings-field--color input[type="color"] {
+  width: 48px;
+  min-height: 42px;
+  padding: 5px;
+  border-radius: 8px;
+}
+
+.settings-accent-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  align-self: end;
+}
+
+.settings-accent-swatches button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid rgba(190, 170, 220, 0.16);
+  border-radius: 8px;
+  background: rgba(7, 9, 14, 0.42);
+  color: rgba(248, 245, 255, 0.82);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settings-accent-swatches button::before {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: var(--swatch-color);
+  content: "";
+}
+
+.settings-accent-swatches button.is-active,
+.settings-accent-swatches button:hover,
+.settings-accent-swatches button:focus-visible {
+  border-color: rgba(206, 150, 255, 0.56);
+  background: rgba(182, 108, 255, 0.14);
+  outline: none;
+}
+
+.settings-accent-swatches span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-section--startup .settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-section--startup input[type="range"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.settings-about-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-about-grid div {
+  min-width: 0;
+}
+
+.settings-inline-status {
+  align-self: center;
+  min-width: 0;
+  color: rgba(226, 216, 240, 0.64);
+  line-height: 1.4;
+}
+
+.nav-item[data-page-target="settings"].is-active {
+  border-color: rgba(206, 150, 255, 0.52);
+  box-shadow:
+    inset 3px 0 0 rgba(206, 150, 255, 0.92),
+    0 0 24px rgba(182, 108, 255, 0.18);
+}
+
 @media (max-width: 1320px) {
   .ssh-workspace-shell {
     grid-template-columns: minmax(250px, 0.5fr) minmax(600px, 1.5fr);
@@ -8054,6 +8413,55 @@ button:disabled {
   .app-modal__actions .inline-action,
   .app-modal__actions .primary-button {
     justify-content: center;
+  }
+}
+
+@media (max-width: 980px) {
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "security"
+      "general"
+      "nodes"
+      "appearance"
+      "marketplace"
+      "startup"
+      "minecraft"
+      "amp"
+      "agent"
+      "playit"
+      "developer"
+      "about";
+  }
+
+  .settings-section {
+    grid-column: auto;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .settings-grid,
+  .settings-section--security .settings-grid,
+  .settings-section--nodes .settings-grid,
+  .settings-section--startup .settings-grid,
+  .settings-about-grid,
+  .settings-section--marketplace .settings-actions,
+  .settings-section--agent .settings-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-section__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .settings-section .status-pill {
+    min-width: 0;
+  }
+
+  .settings-accent-swatches {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

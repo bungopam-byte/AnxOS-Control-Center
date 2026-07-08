@@ -277,6 +277,7 @@ const sshAutoscrollInput = document.querySelector("[data-ssh-autoscroll]");
 const sshWorkspaceStatusFields = document.querySelectorAll("[data-ssh-status]");
 const settingsForm = document.querySelector("[data-settings-form]");
 const settingsInputs = document.querySelectorAll("[data-setting]");
+const accentSwatchButtons = document.querySelectorAll("[data-accent-swatch]");
 const settingsResetButton = document.querySelector("[data-settings-reset]");
 const agentSettingsInputs = document.querySelectorAll("[data-agent-setting]");
 const agentSettingsSaveButton = document.querySelector('[data-agent-action="save"]');
@@ -12465,6 +12466,15 @@ function setSettingInputValue(input, value) {
   }
 }
 
+function syncAccentSwatches() {
+  const accentInput = document.querySelector('[data-setting="appearance.accentColor"]');
+  const currentAccent = String(accentInput?.value || "").toLowerCase();
+
+  accentSwatchButtons.forEach((button) => {
+    button.classList.toggle("is-active", String(button.dataset.accentSwatch || "").toLowerCase() === currentAccent);
+  });
+}
+
 function getAgentSettingInputValue(input) {
   return typeof input?.value === "string" ? input.value : "";
 }
@@ -12600,6 +12610,7 @@ function loadSettings() {
   });
 
   applySettings(settings);
+  syncAccentSwatches();
 }
 
 function saveSettings() {
@@ -12613,6 +12624,7 @@ function saveSettings() {
 
   writeStoredSettings(settings);
   applySettings(settings);
+  syncAccentSwatches();
   refreshPlayitStatus();
 }
 
@@ -12625,6 +12637,7 @@ function resetSettings() {
   });
 
   applySettings(settings);
+  syncAccentSwatches();
   showToast("Settings reset.");
 }
 
@@ -13681,6 +13694,18 @@ updateInstanceActionButtons();
 settingsInputs.forEach((input) => {
   input.addEventListener("input", saveSettings);
   input.addEventListener("change", saveSettings);
+});
+accentSwatchButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const accentInput = document.querySelector('[data-setting="appearance.accentColor"]');
+
+    if (!accentInput || !button.dataset.accentSwatch) {
+      return;
+    }
+
+    accentInput.value = button.dataset.accentSwatch;
+    saveSettings();
+  });
 });
 settingsResetButton?.addEventListener("click", resetSettings);
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);

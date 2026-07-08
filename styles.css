@@ -6243,6 +6243,12 @@ dd {
   gap: 12px;
 }
 
+.marketplace-wizard[hidden],
+.marketplace-version-panel[hidden] {
+  display: none !important;
+  pointer-events: none;
+}
+
 .marketplace-wizard-steps {
   display: flex;
   flex-wrap: wrap;

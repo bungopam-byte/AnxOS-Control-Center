@@ -354,6 +354,8 @@ let marketplaceCatalog = { categories: [], templates: [] };
 let marketplaceSelectedTemplateId = null;
 let marketplaceActiveCategory = "All";
 let marketplaceInstallProgressEvents = [];
+let marketplaceProgressRenderTimer = null;
+let marketplacePendingProgressSteps = null;
 let unsubscribeMarketplaceInstallProgress = null;
 let marketplaceProviderActive = "modrinth";
 let marketplaceProviderMode = "featured";
@@ -5697,7 +5699,7 @@ function renderMarketplaceTemplates() {
     install.type = "button";
     install.className = "inline-action";
     install.textContent = template.comingSoon || template.disabled ? "Coming soon" : "Install";
-    install.disabled = marketplaceInstallInFlight || Boolean(template.comingSoon || template.disabled);
+    install.disabled = Boolean(template.comingSoon || template.disabled);
     install.addEventListener("click", () => openMarketplaceWizard(template.id));
 
     card.append(icon, body, install);
@@ -6292,9 +6294,17 @@ function openMarketplaceWizard(templateId) {
     loadMarketplaceVersions(template);
   }
   renderMarketplaceTemplates();
-  renderMarketplaceProgress([]);
-  setMarketplaceInstallState("Ready", "ready");
-  setMarketplaceMessage("Review the generated settings, then install.");
+  if (marketplaceInstallButton) {
+    marketplaceInstallButton.disabled = marketplaceInstallInFlight;
+  }
+  if (!marketplaceInstallInFlight) {
+    renderMarketplaceProgress([]);
+    setMarketplaceInstallState("Ready", "ready");
+    setMarketplaceMessage("Review the generated settings, then install.");
+  } else {
+    setMarketplaceInstallState("Installing", "running");
+    setMarketplaceMessage("Install already running. You can keep browsing, but wait for it to finish before starting another install.", "warning");
+  }
 }
 
 function closeMarketplaceWizard() {
@@ -6393,7 +6403,7 @@ function startMarketplaceInstallProgressListener() {
   marketplaceInstallProgressEvents = [];
   unsubscribeMarketplaceInstallProgress = desktopApiState.api.marketplace.onInstallProgress((event) => {
     marketplaceInstallProgressEvents = [...marketplaceInstallProgressEvents, event].slice(-8);
-    renderMarketplaceProgress(marketplaceInstallProgressEvents.map(marketplaceProgressEventToStep));
+    scheduleMarketplaceProgressRender();
   });
 }
 
@@ -6402,6 +6412,30 @@ function stopMarketplaceInstallProgressListener() {
     unsubscribeMarketplaceInstallProgress();
   }
   unsubscribeMarketplaceInstallProgress = null;
+  flushMarketplaceProgressRender();
+}
+
+function scheduleMarketplaceProgressRender() {
+  marketplacePendingProgressSteps = marketplaceInstallProgressEvents.map(marketplaceProgressEventToStep);
+  if (marketplaceProgressRenderTimer) {
+    return;
+  }
+  marketplaceProgressRenderTimer = window.setTimeout(() => {
+    marketplaceProgressRenderTimer = null;
+    flushMarketplaceProgressRender();
+  }, 180);
+}
+
+function flushMarketplaceProgressRender() {
+  if (marketplaceProgressRenderTimer) {
+    window.clearTimeout(marketplaceProgressRenderTimer);
+    marketplaceProgressRenderTimer = null;
+  }
+  if (!marketplacePendingProgressSteps) {
+    return;
+  }
+  renderMarketplaceProgress(marketplacePendingProgressSteps);
+  marketplacePendingProgressSteps = null;
 }
 
 function formatDownloadSpeed(bytesPerSecond) {
@@ -12816,6 +12850,9 @@ window.addEventListener("mouseup", () => {
 });
 window.addEventListener("beforeunload", () => {
   refreshTaskIds.forEach((intervalId) => window.clearInterval(intervalId));
+  if (marketplaceProgressRenderTimer) {
+    window.clearTimeout(marketplaceProgressRenderTimer);
+  }
   stopDockerPagePolling();
   stopInstanceConsolePolling();
   stopMonitoringConsolePolling();

@@ -41,8 +41,6 @@ function getMarketplaceSettingsPayload() {
     curseForge: {
       configured: status.loaded,
       source: status.source,
-      expectedEnvNames: ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"],
-      env: status.env,
     },
   };
 }

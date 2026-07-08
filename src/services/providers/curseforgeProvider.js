@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
-const { getMarketplaceConfigPath, readMarketplaceConfig } = require("../providerConfigService");
+const { getMarketplaceConfigPath, readMarketplaceConfig, saveMarketplaceConfig } = require("../providerConfigService");
 
 const CURSEFORGE_API = "https://api.curseforge.com/v1";
 const MINECRAFT_GAME_ID = 432;
@@ -17,6 +17,7 @@ const API_KEY_FILE_ENV = ["CURSEFORGE_API_KEY_FILE", "CF_API_KEY_FILE", "ANXHUB_
 let envLoaded = false;
 let envLoadInfo = null;
 let startupStatusLogged = false;
+let legacyApiKeyMigrationAttempted = false;
 
 class CurseForgeProviderError extends Error {
   constructor(message, code = "CURSEFORGE_ERROR", details = {}) {
@@ -58,7 +59,7 @@ function friendlyHttpMessage(label, status, body = "") {
     }
   })();
   const prefix = `CurseForge ${label}`;
-  if (status === 401) return `${prefix}: 401 Invalid API key. Check CF_API_KEY${detail ? ` - ${detail}` : ""}.`;
+  if (status === 401) return `${prefix}: 401 Invalid API key. Check the saved CurseForge API key in Settings > Marketplace > CurseForge API Key${detail ? ` - ${detail}` : ""}.`;
   if (status === 403) return `${prefix}: 403 Forbidden. Your API key may not have access${detail ? ` - ${detail}` : ""}.`;
   if (status === 404) return `${prefix}: 404 Project not found${detail ? ` - ${detail}` : ""}.`;
   if (status === 429) return `${prefix}: 429 Rate limited. Try again later${detail ? ` - ${detail}` : ""}.`;
@@ -234,6 +235,18 @@ function loadEnv() {
   return envLoadInfo;
 }
 
+function readEnvFileValues(filePath) {
+  if (!filePath) {
+    return {};
+  }
+
+  try {
+    return dotenv.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 function cleanSecretValue(value) {
   const text = String(value || "").trim();
   if (
@@ -277,18 +290,155 @@ function readSecretFile(filePath) {
   }
 }
 
-function getCurseForgeApiKey(config = {}) {
-  loadEnv();
-  const direct = firstSecretValue(config, API_KEY_FIELDS, API_KEY_ENV);
-  if (direct) {
-    return direct;
+function getLegacyApiKeyCandidate() {
+  if (process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK === "1") {
+    return { key: "", source: null };
   }
+
+  const envFileValues = readEnvFileValues(envLoadInfo?.resolvedEnvPath);
+  for (const envName of API_KEY_ENV) {
+    const value = cleanSecretValue(envFileValues[envName]);
+    if (value) {
+      return {
+        key: value,
+        source: envName,
+      };
+    }
+  }
+  for (const envName of API_KEY_FILE_ENV) {
+    const value = cleanSecretValue(envFileValues[envName]);
+    if (value) {
+      return {
+        key: readSecretFile(value),
+        source: envName,
+      };
+    }
+  }
+
+  const direct = firstSecretValue({}, [], API_KEY_ENV);
+  if (direct) {
+    return {
+      key: direct,
+      source: API_KEY_ENV.find((envName) => cleanSecretValue(process.env[envName])) || "env",
+    };
+  }
+
+  const fileEnvName = API_KEY_FILE_ENV.find((envName) => cleanSecretValue(process.env[envName]));
+  if (fileEnvName) {
+    return {
+      key: readSecretFile(process.env[fileEnvName]),
+      source: fileEnvName,
+    };
+  }
+
+  return { key: "", source: null };
+}
+
+function migrateLegacyApiKeyToConfig() {
+  if (process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION === "1") {
+    return null;
+  }
+
+  if (legacyApiKeyMigrationAttempted) {
+    return null;
+  }
+
+  legacyApiKeyMigrationAttempted = true;
+  const stored = readMarketplaceConfig({ includeSecrets: true });
+  if (firstSecretValue(stored, API_KEY_FIELDS, [])) {
+    return null;
+  }
+
+  let legacy = { key: "", source: null };
+  try {
+    legacy = getLegacyApiKeyCandidate();
+  } catch (error) {
+    console.warn("[Marketplace][CurseForge] Legacy API key migration skipped.", serializeError(error));
+    return null;
+  }
+
+  if (!legacy.key) {
+    return null;
+  }
+
+  try {
+    saveMarketplaceConfig({ curseForgeApiKey: legacy.key });
+    console.info("[Marketplace][CurseForge] Migrated legacy API key to app config.", {
+      source: legacy.source ? `legacy-env:${legacy.source}` : "legacy-env",
+      marketplaceConfigPath: getMarketplaceConfigPath(),
+    });
+    return {
+      migrated: true,
+      source: legacy.source,
+    };
+  } catch (error) {
+    console.warn("[Marketplace][CurseForge] Legacy API key migration failed.", serializeError(error, {
+      source: legacy.source ? `legacy-env:${legacy.source}` : "legacy-env",
+      marketplaceConfigPath: getMarketplaceConfigPath(),
+    }));
+    return null;
+  }
+}
+
+function readStoredApiKeyWithMigration(options = {}) {
   const stored = readMarketplaceConfig({ includeSecrets: true });
   const storedDirect = firstSecretValue(stored, API_KEY_FIELDS, []);
   if (storedDirect) {
-    return storedDirect;
+    return {
+      key: storedDirect,
+      migrated: false,
+    };
   }
-  const secretFile = firstSecretValue(config, API_KEY_FILE_FIELDS, API_KEY_FILE_ENV);
+
+  if (options.migrate === false) {
+    return {
+      key: "",
+      migrated: false,
+    };
+  }
+
+  const migration = migrateLegacyApiKeyToConfig();
+  if (migration?.migrated) {
+    const migratedStored = readMarketplaceConfig({ includeSecrets: true });
+    const migratedDirect = firstSecretValue(migratedStored, API_KEY_FIELDS, []);
+    if (migratedDirect) {
+      return {
+        key: migratedDirect,
+        migrated: true,
+        migrationSource: migration.source,
+      };
+    }
+  }
+
+  return {
+    key: "",
+    migrated: false,
+  };
+}
+
+function getCurseForgeApiKey(config = {}) {
+  loadEnv();
+  const stored = readStoredApiKeyWithMigration({ migrate: false });
+  if (stored.key) {
+    return stored.key;
+  }
+
+  const directConfig = firstSecretValue(config, API_KEY_FIELDS, []);
+  if (directConfig) {
+    return directConfig;
+  }
+
+  const migratedStored = readStoredApiKeyWithMigration();
+  if (migratedStored.key) {
+    return migratedStored.key;
+  }
+
+  const legacy = getLegacyApiKeyCandidate();
+  if (legacy.key) {
+    return legacy.key;
+  }
+
+  const secretFile = firstSecretValue(config, API_KEY_FILE_FIELDS, []);
   return readSecretFile(secretFile);
 }
 
@@ -298,18 +448,22 @@ function getApiKeyStatus(config = {}) {
   const directEnvName = API_KEY_ENV.find((envName) => cleanSecretValue(process.env[envName]));
   const fileConfigField = API_KEY_FILE_FIELDS.find((field) => cleanSecretValue(config[field]));
   const fileEnvName = API_KEY_FILE_ENV.find((envName) => cleanSecretValue(process.env[envName]));
+  const envFallbackDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK === "1";
+  const storedKey = readStoredApiKeyWithMigration({ migrate: false });
   const stored = readMarketplaceConfig({ includeSecrets: true });
-  const storedConfigField = API_KEY_FIELDS.find((field) => cleanSecretValue(stored[field]));
-  const source = directConfigField
-    ? `config:${directConfigField}`
-    : directEnvName
-      ? `env:${directEnvName}`
-      : storedConfigField
-        ? `app-config:${storedConfigField}`
+  const storedConfigField = storedKey.key
+    ? API_KEY_FIELDS.find((field) => cleanSecretValue(stored[field])) || "curseForgeApiKey"
+    : null;
+  const source = storedConfigField
+    ? `app-config:${storedConfigField}`
+    : directConfigField
+      ? `config:${directConfigField}`
+      : directEnvName && !envFallbackDisabled
+        ? `legacy-env:${directEnvName}`
         : fileConfigField
           ? `config:${fileConfigField}`
-          : fileEnvName
-            ? `env:${fileEnvName}`
+          : fileEnvName && !envFallbackDisabled
+            ? `legacy-env:${fileEnvName}`
             : null;
   let loaded = false;
   let errorCode = null;
@@ -370,22 +524,17 @@ function requireApiKey(config = {}) {
         marketplaceConfigPath: getMarketplaceConfigPath(),
         expectedEnvNames: API_KEY_ENV,
         expectedFileEnvNames: API_KEY_FILE_ENV,
-        recovery: `Set the CurseForge API key in Settings > Marketplace, set one of ${API_KEY_ENV.join(", ")} in one of the checked .env files, or set ANXHUB_ENV_PATH to the file that contains it.`,
+        recovery: "Save the CurseForge API key in Settings > Marketplace > CurseForge API Key.",
       }
     );
   }
   return apiKey;
 }
 
-function setRuntimeApiKey(value) {
-  const clean = cleanSecretValue(value);
-  if (clean) {
-    process.env.CF_API_KEY = clean;
-  } else {
-    delete process.env.CF_API_KEY;
-  }
+function setRuntimeApiKey() {
   envLoaded = false;
   envLoadInfo = null;
+  legacyApiKeyMigrationAttempted = false;
 }
 
 function normalizeLoader(loader) {

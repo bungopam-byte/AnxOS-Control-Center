@@ -369,6 +369,7 @@ let marketplaceProviderOffset = 0;
 let marketplaceProviderHasMore = false;
 let marketplaceProviderRequestInFlight = false;
 let marketplaceProviderRequestId = 0;
+let marketplaceProviderError = null;
 const marketplaceProviderTemplates = new Map();
 const MARKETPLACE_PROVIDER_PAGE_SIZE = 24;
 const MARKETPLACE_VERSION_FILTERS = ["recommended", "releases", "snapshots", "legacy", "all"];
@@ -5564,6 +5565,52 @@ function setMarketplaceMessage(message, tone = "neutral") {
   marketplaceMessage.dataset.tone = tone;
 }
 
+function openCurseForgeIntegrationSettings() {
+  showPage("settings");
+  if (marketplaceConfigInput) {
+    marketplaceConfigInput.scrollIntoView({ block: "center", behavior: "smooth" });
+    marketplaceConfigInput.focus();
+  }
+}
+
+function isCurseForgeApiKeyRequiredError(error = {}) {
+  const message = String(error?.message || "").trim();
+  const code = error?.details?.code || error?.payload?.error?.code || error?.code;
+  return code === "CURSEFORGE_API_KEY_REQUIRED" || message === "CurseForge API key required";
+}
+
+function createMarketplaceEmptyStateContent(state = {}) {
+  const title = document.createElement("strong");
+  title.textContent = state.title || "No templates found";
+
+  const detail = document.createElement("span");
+  detail.textContent = state.message || "Try another search or category.";
+
+  if (state.action === "open-settings") {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "inline-action";
+    action.textContent = "Open Settings";
+    action.addEventListener("click", openCurseForgeIntegrationSettings);
+    return [title, detail, action];
+  }
+
+  return [title, detail];
+}
+
+function renderMarketplaceEmptyState(state = null) {
+  if (!marketplaceEmpty) {
+    return;
+  }
+
+  const activeState = state || {
+    title: "No templates found",
+    message: "Try another search or category.",
+  };
+  marketplaceEmpty.replaceChildren(...createMarketplaceEmptyStateContent(activeState));
+  marketplaceEmpty.hidden = marketplaceRequestInFlight || marketplaceProviderRequestInFlight || Boolean(activeState.hidden);
+}
+
 function getMarketplaceTemplates() {
   const templates = Array.isArray(marketplaceCatalog.templates) ? marketplaceCatalog.templates : [];
   return [...templates, ...marketplaceProviderTemplates.values()];
@@ -5604,6 +5651,7 @@ function renderMarketplaceCategories() {
     button.classList.toggle("is-active", category === marketplaceActiveCategory);
     button.addEventListener("click", () => {
       marketplaceActiveCategory = category;
+      marketplaceProviderError = null;
       renderMarketplaceCategories();
       renderMarketplaceTemplates();
       if (category === "Modpacks" && marketplaceProviderResults.length === 0) {
@@ -5662,9 +5710,7 @@ function renderMarketplaceTemplates() {
     loader: marketplaceProviderLoader?.value || "",
     minecraftVersion: marketplaceProviderMinecraftVersion?.value || "",
   });
-  if (marketplaceEmpty) {
-    marketplaceEmpty.hidden = marketplaceRequestInFlight || marketplaceProviderRequestInFlight || templates.length > 0;
-  }
+  renderMarketplaceEmptyState(templates.length > 0 ? { hidden: true } : marketplaceProviderError);
 
   templates.forEach((template) => {
     const card = document.createElement("article");
@@ -5755,6 +5801,7 @@ async function loadMarketplaceProviderPacks({ reset = false } = {}) {
     marketplaceProviderOffset = 0;
     marketplaceProviderHasMore = false;
     marketplaceProviderResults = [];
+    marketplaceProviderError = null;
   }
   renderMarketplaceProviderControls();
   setMarketplaceProviderStatus(`Loading ${formatMarketplaceProviderLabel({ provider: marketplaceProviderActive })} modpacks...`);
@@ -5774,6 +5821,7 @@ async function loadMarketplaceProviderPacks({ reset = false } = {}) {
     marketplaceProviderResults = reset ? results : [...marketplaceProviderResults, ...results];
     marketplaceProviderOffset = Number(result?.nextOffset) || marketplaceProviderResults.length;
     marketplaceProviderHasMore = Boolean(result?.hasMore);
+    marketplaceProviderError = null;
     const filteredCount = marketplaceProviderResults.length;
     const renderedCount = filteredCount;
     console.info("[Marketplace][Renderer] Provider render counts.", {
@@ -5807,9 +5855,25 @@ async function loadMarketplaceProviderPacks({ reset = false } = {}) {
       stack: error?.stack || null,
       error,
     });
-    const message = error?.message || "Provider search failed.";
-    setMarketplaceProviderStatus(message, "error");
-    showToast(message);
+    marketplaceProviderResults = [];
+    marketplaceProviderOffset = 0;
+    marketplaceProviderHasMore = false;
+    if (isCurseForgeApiKeyRequiredError(error)) {
+      marketplaceProviderError = {
+        title: "CurseForge API key required",
+        message: "Save your CurseForge API key in Settings to browse and install CurseForge modpacks.",
+        action: "open-settings",
+      };
+      setMarketplaceProviderStatus("CurseForge API key required", "error");
+      showToast("CurseForge API key required", "warning");
+    } else {
+      marketplaceProviderError = {
+        title: "Provider unavailable",
+        message: "Marketplace provider results could not be loaded. Check the developer console for diagnostics.",
+      };
+      setMarketplaceProviderStatus("Provider unavailable", "error");
+      showToast("Provider unavailable", "warning");
+    }
     renderMarketplaceTemplates();
   } finally {
     if (requestId === marketplaceProviderRequestId) {
@@ -12484,28 +12548,27 @@ function renderAgentSettings(settingsPayload) {
 
 function renderMarketplaceSettings(settingsPayload) {
   const configured = Boolean(settingsPayload?.curseForge?.configured || settingsPayload?.stored?.hasCurseForgeApiKey);
-  const source = settingsPayload?.curseForge?.source || (settingsPayload?.stored?.hasCurseForgeApiKey ? "app-config:curseForgeApiKey" : "none");
   const configPath = settingsPayload?.configPath || "config/marketplace.json";
 
   if (marketplaceConfigInput) {
     marketplaceConfigInput.value = "";
-    marketplaceConfigInput.placeholder = configured ? "Configured - enter a new key to replace" : "Paste API key";
+    marketplaceConfigInput.placeholder = configured ? "Saved - enter a new key to replace" : "Paste API key";
   }
 
   if (marketplaceConfigPill) {
-    marketplaceConfigPill.textContent = configured ? "Configured" : "Missing Key";
+    marketplaceConfigPill.textContent = configured ? "Connected" : "Missing Key";
     marketplaceConfigPill.classList.toggle("is-connected", configured);
     marketplaceConfigPill.classList.toggle("is-disconnected", !configured);
   }
 
   if (marketplaceConfigMessage) {
     marketplaceConfigMessage.textContent = configured
-      ? `CurseForge API key is available from ${source}.`
-      : `CurseForge API key is not configured. Set it here or with CF_API_KEY / CURSEFORGE_API_KEY.`;
+      ? "CurseForge API key is available for Marketplace browsing and installs."
+      : "Save a CurseForge API key to browse and install CurseForge modpacks.";
   }
 
   if (marketplaceConfigSource) {
-    marketplaceConfigSource.textContent = `Saved in ${configPath}.`;
+    marketplaceConfigSource.textContent = `Saved securely in ${configPath}.`;
   }
 }
 
@@ -12648,7 +12711,7 @@ async function saveMarketplaceConfiguration() {
   try {
     const response = await desktopApiState.api.settings.saveMarketplaceConfig({ curseForgeApiKey });
     renderMarketplaceSettings(response);
-    showToast("Marketplace settings saved.");
+    showToast("CurseForge API key saved.");
   } catch (error) {
     showToast(error?.message || "Marketplace settings could not be saved.");
   } finally {
@@ -13111,6 +13174,7 @@ marketplaceProviderTabs?.addEventListener("click", (event) => {
   marketplaceProviderResults = [];
   marketplaceProviderOffset = 0;
   marketplaceProviderHasMore = false;
+  marketplaceProviderError = null;
   renderMarketplaceProviderControls();
   loadMarketplaceProviderPacks({ reset: true });
 });
@@ -13123,6 +13187,7 @@ marketplaceProviderModes?.addEventListener("click", (event) => {
   marketplaceProviderResults = [];
   marketplaceProviderOffset = 0;
   marketplaceProviderHasMore = false;
+  marketplaceProviderError = null;
   renderMarketplaceProviderControls();
   loadMarketplaceProviderPacks({ reset: true });
 });

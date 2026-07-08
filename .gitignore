@@ -24,4 +24,5 @@ data/
 logs/
 bot-config/
 .env
+config/marketplace.json
 agent/*.log

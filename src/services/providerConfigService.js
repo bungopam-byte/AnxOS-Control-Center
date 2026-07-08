@@ -61,6 +61,9 @@ function saveMarketplaceConfig(config = {}) {
   const configPath = getMarketplaceConfigPath();
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  try {
+    fs.chmodSync(configPath, 0o600);
+  } catch {}
   return next;
 }
 

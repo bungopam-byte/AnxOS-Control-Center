@@ -6030,8 +6030,15 @@ dd {
 
 .marketplace-loading,
 .marketplace-empty {
-  pointer-events: none;
   z-index: 0;
+}
+
+.marketplace-loading {
+  pointer-events: none;
+}
+
+.marketplace-empty {
+  pointer-events: auto;
 }
 
 .marketplace-grid {

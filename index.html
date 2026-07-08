@@ -2227,6 +2227,27 @@
 
             <section class="settings-section">
               <div class="settings-section__header">
+                <div>
+                  <h3>Marketplace</h3>
+                  <p>CurseForge API Key</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-marketplace-config-pill>Providers</span>
+              </div>
+              <p class="settings-note" data-marketplace-config-message>Save a CurseForge API key to browse and install CurseForge modpacks.</p>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>CurseForge API key</span>
+                  <input type="password" autocomplete="off" placeholder="Paste API key" data-marketplace-config="curseForgeApiKey">
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-marketplace-config-action="save">Save API Key</button>
+                <span class="settings-inline-status" data-marketplace-config-source>Saved securely in config/marketplace.json.</span>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <div class="settings-section__header">
                 <h3>General</h3>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
@@ -2320,24 +2341,6 @@
                   <span>Default Minecraft address</span>
                   <input type="text" placeholder="server.example.com" data-setting="minecraft.defaultAddress">
                 </label>
-              </div>
-            </section>
-
-            <section class="settings-section">
-              <div class="settings-section__header">
-                <h3>Marketplace</h3>
-                <span class="status-pill status-pill--planned" data-marketplace-config-pill>Providers</span>
-              </div>
-              <p class="settings-note" data-marketplace-config-message>CurseForge installs require an API key. The key is stored locally and is never committed to Git.</p>
-              <div class="settings-grid">
-                <label class="settings-field">
-                  <span>CurseForge API key</span>
-                  <input type="password" autocomplete="off" placeholder="Paste API key" data-marketplace-config="curseForgeApiKey">
-                </label>
-              </div>
-              <div class="settings-actions">
-                <button class="inline-action" type="button" data-marketplace-config-action="save">Save Marketplace Settings</button>
-                <span class="settings-inline-status" data-marketplace-config-source>Saved in config/marketplace.json.</span>
               </div>
             </section>
 

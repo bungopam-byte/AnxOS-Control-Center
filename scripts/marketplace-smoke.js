@@ -7,6 +7,7 @@ const marketplaceService = require("../src/services/marketplaceService");
 const marketplaceInstallService = require("../src/services/marketplaceInstallService");
 const modrinthProvider = require("../src/services/providers/modrinthProvider");
 const curseforgeProvider = require("../src/services/providers/curseforgeProvider");
+const { getMarketplaceConfigPath } = require("../src/services/providerConfigService");
 
 const catalogPath = path.join(__dirname, "..", "config", "marketplace-templates.json");
 const appPath = path.join(__dirname, "..", "app.js");
@@ -1000,6 +1001,10 @@ async function assertProviderInstallSupport() {
   const appSource = fs.readFileSync(appPath, "utf8");
   const agentRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "instances.js"), "utf8");
   const agentClientSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
+  const marketplaceConfigPath = getMarketplaceConfigPath();
+  const originalMarketplaceConfig = fs.existsSync(marketplaceConfigPath)
+    ? fs.readFileSync(marketplaceConfigPath)
+    : null;
   assert(preloadSource.includes("marketplace:installPack"), "Preload should expose provider pack install IPC.");
   assert(preloadSource.includes("marketplace:searchProviderPacks"), "Preload should expose provider pack search IPC.");
   assert(preloadSource.includes("marketplace:getProviderPackVersions"), "Preload should expose provider version IPC.");
@@ -1064,7 +1069,18 @@ async function assertProviderInstallSupport() {
   ];
   curseforgeProvider._test.getApiKeyStatus();
   const previousCfEnv = Object.fromEntries(cfEnvNames.map((name) => [name, process.env[name]]));
+  const previousCfMigrationDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;
+  const previousCfEnvFallbackDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK;
+  const previousMarketplaceConfig = fs.existsSync(marketplaceConfigPath)
+    ? fs.readFileSync(marketplaceConfigPath)
+    : null;
   try {
+    process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION = "1";
+    process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK = "1";
+    curseforgeProvider._test.setRuntimeApiKey("");
+    if (previousMarketplaceConfig) {
+      fs.unlinkSync(marketplaceConfigPath);
+    }
     for (const name of cfEnvNames) {
       delete process.env[name];
     }
@@ -1093,6 +1109,21 @@ async function assertProviderInstallSupport() {
       );
     }
   } finally {
+    if (previousCfMigrationDisabled === undefined) {
+      delete process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;
+    } else {
+      process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION = previousCfMigrationDisabled;
+    }
+    if (previousCfEnvFallbackDisabled === undefined) {
+      delete process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK;
+    } else {
+      process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK = previousCfEnvFallbackDisabled;
+    }
+    curseforgeProvider._test.setRuntimeApiKey("");
+    if (previousMarketplaceConfig) {
+      fs.mkdirSync(path.dirname(marketplaceConfigPath), { recursive: true });
+      fs.writeFileSync(marketplaceConfigPath, previousMarketplaceConfig);
+    }
     for (const [name, value] of Object.entries(previousCfEnv)) {
       if (value === undefined) {
         delete process.env[name];
@@ -1106,25 +1137,54 @@ async function assertProviderInstallSupport() {
     "$11$22$33aaaaaaaaaaaaaaaaaaaaaaaaaa",
     "CurseForge keys from .env should allow single-quoted dollar values."
   );
-  assert.strictEqual(
-    curseforgeProvider._test.getCurseForgeApiKey({ cfApiKey: "'cf-direct-token'" }),
-    "cf-direct-token",
-    "CurseForge provider should accept CF-style config aliases."
-  );
-  assert.strictEqual(
-    curseforgeProvider._test.getCurseForgeApiKey({ curseForgeApiKey: "'cf-saved-token'" }),
-    "cf-saved-token",
-    "CurseForge provider should accept saved Marketplace settings aliases."
-  );
-  assert.deepStrictEqual(
-    curseforgeProvider._test.buildApiHeaders({ cfApiKey: "cf-direct-token" }),
-    {
-      "Accept": "application/json",
-      "User-Agent": "AnxOS-Control-Center/1.0 (+https://anxos.local)",
-      "x-api-key": "cf-direct-token",
-    },
-    "CurseForge API requests must include API key and User-Agent headers."
-  );
+  const previousAliasMigrationDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;
+  const previousAliasEnvFallbackDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK;
+  const previousAliasConfig = fs.existsSync(marketplaceConfigPath)
+    ? fs.readFileSync(marketplaceConfigPath)
+    : null;
+  try {
+    process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION = "1";
+    process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK = "1";
+    curseforgeProvider._test.setRuntimeApiKey("");
+    if (previousAliasConfig) {
+      fs.unlinkSync(marketplaceConfigPath);
+    }
+    assert.strictEqual(
+      curseforgeProvider._test.getCurseForgeApiKey({ cfApiKey: "'cf-direct-token'" }),
+      "cf-direct-token",
+      "CurseForge provider should accept CF-style config aliases."
+    );
+    assert.strictEqual(
+      curseforgeProvider._test.getCurseForgeApiKey({ curseForgeApiKey: "'cf-saved-token'" }),
+      "cf-saved-token",
+      "CurseForge provider should accept saved Marketplace settings aliases."
+    );
+    assert.deepStrictEqual(
+      curseforgeProvider._test.buildApiHeaders({ cfApiKey: "cf-direct-token" }),
+      {
+        "Accept": "application/json",
+        "User-Agent": "AnxOS-Control-Center/1.0 (+https://anxos.local)",
+        "x-api-key": "cf-direct-token",
+      },
+      "CurseForge API requests must include API key and User-Agent headers."
+    );
+  } finally {
+    if (previousAliasMigrationDisabled === undefined) {
+      delete process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;
+    } else {
+      process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION = previousAliasMigrationDisabled;
+    }
+    if (previousAliasEnvFallbackDisabled === undefined) {
+      delete process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK;
+    } else {
+      process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK = previousAliasEnvFallbackDisabled;
+    }
+    curseforgeProvider._test.setRuntimeApiKey("");
+    if (previousAliasConfig) {
+      fs.mkdirSync(path.dirname(marketplaceConfigPath), { recursive: true });
+      fs.writeFileSync(marketplaceConfigPath, previousAliasConfig);
+    }
+  }
   assert.match(
     curseforgeProvider._test.friendlyHttpMessage("search", 401, '{"message":"invalid"}'),
     /401 Invalid API key.*invalid/,
@@ -1159,7 +1219,18 @@ async function assertProviderInstallSupport() {
     fs.writeFileSync(cfSecretPath, "'cf-file-token'\n", "utf8");
     const directEnvNames = ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
     const previousDirectEnv = Object.fromEntries(directEnvNames.map((name) => [name, process.env[name]]));
+    const previousFileMigrationDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;
+    const previousFileEnvFallbackDisabled = process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK;
+    const previousFileConfig = fs.existsSync(marketplaceConfigPath)
+      ? fs.readFileSync(marketplaceConfigPath)
+      : null;
     try {
+      process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION = "1";
+      process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK = "1";
+      curseforgeProvider._test.setRuntimeApiKey("");
+      if (previousFileConfig) {
+        fs.unlinkSync(marketplaceConfigPath);
+      }
       for (const name of directEnvNames) {
         delete process.env[name];
       }
@@ -1169,6 +1240,21 @@ async function assertProviderInstallSupport() {
         "CurseForge provider should read CF_API_KEY_FILE-style secrets."
       );
     } finally {
+      if (previousFileMigrationDisabled === undefined) {
+        delete process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;
+      } else {
+        process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION = previousFileMigrationDisabled;
+      }
+      if (previousFileEnvFallbackDisabled === undefined) {
+        delete process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK;
+      } else {
+        process.env.ANXHUB_DISABLE_CURSEFORGE_ENV_FALLBACK = previousFileEnvFallbackDisabled;
+      }
+      curseforgeProvider._test.setRuntimeApiKey("");
+      if (previousFileConfig) {
+        fs.mkdirSync(path.dirname(marketplaceConfigPath), { recursive: true });
+        fs.writeFileSync(marketplaceConfigPath, previousFileConfig);
+      }
       for (const [name, value] of Object.entries(previousDirectEnv)) {
         if (value === undefined) {
           delete process.env[name];
@@ -1271,6 +1357,13 @@ async function assertProviderInstallSupport() {
   marketplaceInstallService.marketplaceInstallEvents.removeListener("progress", listener);
   marketplaceInstallService.marketplaceInstallEvents.emit("progress", { stage: "resolving" });
   assert.strictEqual(progressEvents, 1, "Progress listeners should be removable without duplicate events.");
+
+  if (originalMarketplaceConfig) {
+    fs.mkdirSync(path.dirname(marketplaceConfigPath), { recursive: true });
+    fs.writeFileSync(marketplaceConfigPath, originalMarketplaceConfig);
+  } else if (fs.existsSync(marketplaceConfigPath)) {
+    fs.unlinkSync(marketplaceConfigPath);
+  }
 }
 
 async function main() {

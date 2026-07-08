@@ -67,11 +67,32 @@ function getMarketplaceErrorMessage(error) {
   return stack ? `${detailed} | stack=${String(stack).split("\n")[0]}` : detailed;
 }
 
+function getMarketplaceUiError(error) {
+  const code = error?.payload?.error?.code || error?.code;
+  if (code === "CURSEFORGE_API_KEY_REQUIRED") {
+    return {
+      code,
+      message: "CurseForge API key required",
+      details: {
+        provider: "curseforge",
+        action: "open-settings",
+      },
+    };
+  }
+
+  return {
+    code: code || "MARKETPLACE_IPC_ERROR",
+    message: "Marketplace request failed.",
+    details: {},
+  };
+}
+
 async function invokeMarketplaceOperation(operation) {
   try {
     return await operation();
   } catch (error) {
     const message = getMarketplaceErrorMessage(error);
+    const uiError = getMarketplaceUiError(error);
     console.error("[Marketplace][IPC] Operation failed.", {
       name: error?.name || null,
       code: error?.code || error?.payload?.error?.code || null,
@@ -84,9 +105,9 @@ async function invokeMarketplaceOperation(operation) {
       payload: error?.payload || null,
       stack: error?.stack || null,
     });
-    const wrapped = new Error(message);
-    wrapped.code = error?.code || error?.payload?.error?.code || "MARKETPLACE_IPC_ERROR";
-    wrapped.details = error?.details || error?.payload?.error?.details || {};
+    const wrapped = new Error(uiError.message);
+    wrapped.code = uiError.code;
+    wrapped.details = uiError.details;
     throw wrapped;
   }
 }

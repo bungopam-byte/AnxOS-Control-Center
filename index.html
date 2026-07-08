@@ -244,6 +244,27 @@
             </span>
             <span class="nav-item__label" data-nav-label>Backups</span>
           </button>
+          <button class="nav-item" type="button" data-page-target="security" data-page-label="Security" data-tooltip="Security" aria-label="Security">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 3 5.5 5.5v5.2c0 4.2 2.6 7.9 6.5 9.3 3.9-1.4 6.5-5.1 6.5-9.3V5.5Z"></path>
+                <path d="M9.5 12.2 11.2 14l3.6-4"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Security</span>
+          </button>
+          <button class="nav-item" type="button" data-page-target="nodes" data-page-label="Nodes" data-tooltip="Nodes" aria-label="Nodes">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="4.5" width="6" height="5" rx="1.4"></rect>
+                <rect x="14" y="4.5" width="6" height="5" rx="1.4"></rect>
+                <rect x="9" y="14.5" width="6" height="5" rx="1.4"></rect>
+                <path d="M10 7h4"></path>
+                <path d="M12 9.5v5"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Nodes</span>
+          </button>
           <button class="nav-item" type="button" data-page-target="coolpals" data-page-label="CoolPals" data-tooltip="CoolPals" aria-label="CoolPals" hidden>
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -2166,16 +2187,16 @@
           </section>
         </section>
 
-        <section class="page" data-page="settings">
+        <section class="page" data-page="security">
           <header class="page-header">
             <div>
-              <p class="eyebrow">Preferences</p>
-              <h1>Settings</h1>
-              <p class="lede">Local preferences for <span data-app-name>AnxOS Control Center</span> behavior, startup, and service addresses.</p>
+              <p class="eyebrow">Access Control</p>
+              <h1>Security</h1>
+              <p class="lede">Manage your local session, account role, and Agent token for <span data-app-name>AnxOS Control Center</span>.</p>
             </div>
           </header>
 
-          <form class="settings-shell" data-settings-form>
+          <div class="settings-shell settings-shell--single">
             <section class="settings-section settings-section--security">
               <div class="settings-section__header">
                 <div>
@@ -2201,7 +2222,19 @@
                 <span class="settings-inline-status" data-security-settings-message>Security state unavailable.</span>
               </div>
             </section>
+          </div>
+        </section>
 
+        <section class="page" data-page="nodes">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Infrastructure</p>
+              <h1>Nodes</h1>
+              <p class="lede">Register AnxOS agents and choose which node handles remote services, Docker, and instance actions.</p>
+            </div>
+          </header>
+
+          <div class="settings-shell settings-shell--single">
             <section class="settings-section settings-section--nodes">
               <div class="settings-section__header">
                 <div>
@@ -2224,7 +2257,19 @@
               </div>
               <div class="download-list" data-node-list></div>
             </section>
+          </div>
+        </section>
 
+        <section class="page" data-page="settings">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Preferences</p>
+              <h1>Settings</h1>
+              <p class="lede">Local preferences for <span data-app-name>AnxOS Control Center</span> behavior, startup, and service addresses.</p>
+            </div>
+          </header>
+
+          <form class="settings-shell" data-settings-form>
             <section class="settings-section settings-section--marketplace">
               <div class="settings-section__header">
                 <div>
@@ -2271,6 +2316,8 @@
                     <option value="files">Files</option>
                     <option value="console">Console</option>
                     <option value="backups">Backups</option>
+                    <option value="security">Security</option>
+                    <option value="nodes">Nodes</option>
                     <option value="coolpals">CoolPals</option>
                     <option value="settings">Settings</option>
                   </select>

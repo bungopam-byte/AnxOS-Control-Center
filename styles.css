@@ -7436,11 +7436,15 @@ button:disabled {
 }
 
 /* Settings page refinement */
-.page[data-page="settings"] {
+.page[data-page="settings"],
+.page[data-page="security"],
+.page[data-page="nodes"] {
   max-width: 1440px;
 }
 
-.page[data-page="settings"] .page-header {
+.page[data-page="settings"] .page-header,
+.page[data-page="security"] .page-header,
+.page[data-page="nodes"] .page-header {
   margin-bottom: 16px;
 }
 
@@ -7448,13 +7452,18 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-areas:
-    "security security general general"
-    "nodes nodes appearance startup"
+    "general general appearance startup"
     "marketplace marketplace minecraft playit"
     "agent agent amp amp"
     "developer developer about about";
   gap: 12px;
   align-items: start;
+}
+
+.settings-shell--single {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main";
+  max-width: 920px;
 }
 
 .settings-shell > .settings-section {
@@ -7517,6 +7526,10 @@ button:disabled {
 
 .settings-section--about {
   grid-area: about;
+}
+
+.settings-shell--single > .settings-section {
+  grid-area: main;
 }
 
 .settings-section__header {
@@ -7803,7 +7816,9 @@ button:disabled {
   line-height: 1.4;
 }
 
-.nav-item[data-page-target="settings"].is-active {
+.nav-item[data-page-target="settings"].is-active,
+.nav-item[data-page-target="security"].is-active,
+.nav-item[data-page-target="nodes"].is-active {
   border-color: rgba(206, 150, 255, 0.52);
   box-shadow:
     inset 3px 0 0 rgba(206, 150, 255, 0.92),
@@ -7814,12 +7829,16 @@ button:disabled {
   .settings-shell {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-areas:
-      "security general"
-      "nodes appearance"
+      "general appearance"
       "marketplace startup"
       "minecraft amp"
       "agent playit"
       "developer about";
+  }
+
+  .settings-shell--single {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main";
   }
 
   .settings-section--startup .settings-grid {
@@ -8453,9 +8472,7 @@ button:disabled {
   .settings-shell {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "security"
       "general"
-      "nodes"
       "appearance"
       "marketplace"
       "startup"
@@ -8465,6 +8482,10 @@ button:disabled {
       "playit"
       "developer"
       "about";
+  }
+
+  .settings-shell--single {
+    grid-template-areas: "main";
   }
 
   .settings-section {

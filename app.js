@@ -515,6 +515,8 @@ const PRIMARY_NAVIGATION_ORDER = [
   "playit",
   "console",
   "backups",
+  "security",
+  "nodes",
   "settings",
 ];
 const LEGACY_PRIMARY_PAGES = new Set(["minecraft", "amp", "coolpals"]);

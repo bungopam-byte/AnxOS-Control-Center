@@ -1073,6 +1073,22 @@ async function assertProviderInstallSupport() {
       /CurseForge API key is required to install CurseForge packs/,
       "CurseForge provider should fail gracefully without an API key."
     );
+    try {
+      curseforgeProvider._test.requireApiKey({ apiKey: "" });
+      assert.fail("CurseForge provider should throw when no key is configured.");
+    } catch (error) {
+      assert.strictEqual(error.code, "CURSEFORGE_API_KEY_REQUIRED");
+      assert.deepStrictEqual(
+        error.details.expectedEnvNames,
+        ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"],
+        "Missing CurseForge key errors should include the supported env names."
+      );
+      assert.strictEqual(
+        typeof error.details.env?.resolvedEnvPath === "string" || error.details.env?.resolvedEnvPath === null,
+        true,
+        "Missing CurseForge key errors should include safe env diagnostics."
+      );
+    }
   } finally {
     for (const [name, value] of Object.entries(previousCfEnv)) {
       if (value === undefined) {
@@ -1124,6 +1140,10 @@ async function assertProviderInstallSupport() {
   assert(
     curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(".env")),
     "CurseForge provider should search deterministic .env candidates."
+  );
+  assert(
+    curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(path.join("agent", ".env"))),
+    "CurseForge provider should check the agent .env fallback used by Debian deployments."
   );
   const cfSecretRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-cf-key-"));
   try {

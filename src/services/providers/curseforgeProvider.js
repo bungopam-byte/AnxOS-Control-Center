@@ -139,8 +139,18 @@ function getElectronConfigDirectory() {
   }
 }
 
-function isPackagedElectronRuntime() {
-  return Boolean(getElectronApp()?.isPackaged);
+function getElectronUserDataDirectory() {
+  const app = getElectronApp();
+
+  if (!app) {
+    return null;
+  }
+
+  try {
+    return app.getPath("userData");
+  } catch {
+    return null;
+  }
 }
 
 function getRepoEnvPath() {
@@ -149,15 +159,15 @@ function getRepoEnvPath() {
 
 function getEnvCandidates() {
   const electronConfigDirectory = getElectronConfigDirectory();
-  const packagedEnvPath = isPackagedElectronRuntime() && electronConfigDirectory
-    ? path.join(electronConfigDirectory, ".env")
-    : null;
+  const electronUserDataDirectory = getElectronUserDataDirectory();
 
   return uniquePaths([
     process.env.ANXHUB_ENV_PATH,
-    packagedEnvPath,
+    electronConfigDirectory ? path.join(electronConfigDirectory, ".env") : null,
+    electronUserDataDirectory ? path.join(electronUserDataDirectory, ".env") : null,
     getRepoEnvPath(),
     path.join(process.cwd(), ".env"),
+    path.join(process.cwd(), "agent", ".env"),
     process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env") : null,
@@ -314,9 +324,17 @@ function logStartupStatus() {
 function requireApiKey(config = {}) {
   const apiKey = getCurseForgeApiKey(config);
   if (!apiKey) {
+    const status = getApiKeyStatus(config);
     throw new CurseForgeProviderError(
       "CurseForge API key is required to install CurseForge packs.",
-      "CURSEFORGE_API_KEY_REQUIRED"
+      "CURSEFORGE_API_KEY_REQUIRED",
+      {
+        loaded: status.loaded,
+        source: status.source,
+        env: status.env,
+        expectedEnvNames: API_KEY_ENV,
+        expectedFileEnvNames: API_KEY_FILE_ENV,
+      }
     );
   }
   return apiKey;

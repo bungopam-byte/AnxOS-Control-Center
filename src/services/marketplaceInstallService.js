@@ -145,6 +145,7 @@ function buildDetailedErrorMessage(error, fallback = "Marketplace install failed
   if (details.isPackaged !== undefined || details.env?.isPackaged !== undefined) parts.push(`isPackaged=${details.isPackaged ?? details.env.isPackaged}`);
   if (details.appPath || details.env?.appPath) parts.push(`appPath=${details.appPath || details.env.appPath}`);
   if (details.userDataPath || details.env?.userDataPath) parts.push(`userDataPath=${details.userDataPath || details.env.userDataPath}`);
+  if (details.marketplaceConfigPath) parts.push(`marketplaceConfigPath=${details.marketplaceConfigPath}`);
   if (details.env?.resolvedEnvPath !== undefined) parts.push(`resolvedEnvPath=${details.env.resolvedEnvPath || "none"}`);
   if (details.env?.envFileExists !== undefined) parts.push(`envFileExists=${details.env.envFileExists}`);
   if (details.env?.envLoaded !== undefined) parts.push(`envLoaded=${details.env.envLoaded}`);

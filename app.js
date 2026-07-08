@@ -284,6 +284,11 @@ const agentSettingsTestButton = document.querySelector('[data-agent-action="test
 const agentConnectionPill = document.querySelector("[data-agent-connection-pill]");
 const agentConnectionMessage = document.querySelector("[data-agent-connection-message]");
 const agentConfigSource = document.querySelector("[data-agent-config-source]");
+const marketplaceConfigInput = document.querySelector("[data-marketplace-config=\"curseForgeApiKey\"]");
+const marketplaceConfigSaveButton = document.querySelector('[data-marketplace-config-action="save"]');
+const marketplaceConfigPill = document.querySelector("[data-marketplace-config-pill]");
+const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
+const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
 const securityGate = document.querySelector("[data-security-gate]");
 const securityForm = document.querySelector("[data-security-form]");
 const securityMode = document.querySelector("[data-security-mode]");
@@ -696,6 +701,9 @@ function getDesktopApiState() {
       typeof api?.settings?.getAgentConfig === "function" &&
       typeof api?.settings?.saveAgentConfig === "function" &&
       typeof api?.settings?.testAgentConnection === "function",
+    hasMarketplaceSettings:
+      typeof api?.settings?.getMarketplaceConfig === "function" &&
+      typeof api?.settings?.saveMarketplaceConfig === "function",
     hasSecurity:
       typeof api?.security?.getStatus === "function" &&
       typeof api?.security?.setupAdmin === "function" &&
@@ -12474,6 +12482,33 @@ function renderAgentSettings(settingsPayload) {
   );
 }
 
+function renderMarketplaceSettings(settingsPayload) {
+  const configured = Boolean(settingsPayload?.curseForge?.configured || settingsPayload?.stored?.hasCurseForgeApiKey);
+  const source = settingsPayload?.curseForge?.source || (settingsPayload?.stored?.hasCurseForgeApiKey ? "app-config:curseForgeApiKey" : "none");
+  const configPath = settingsPayload?.configPath || "config/marketplace.json";
+
+  if (marketplaceConfigInput) {
+    marketplaceConfigInput.value = "";
+    marketplaceConfigInput.placeholder = configured ? "Configured - enter a new key to replace" : "Paste API key";
+  }
+
+  if (marketplaceConfigPill) {
+    marketplaceConfigPill.textContent = configured ? "Configured" : "Missing Key";
+    marketplaceConfigPill.classList.toggle("is-connected", configured);
+    marketplaceConfigPill.classList.toggle("is-disconnected", !configured);
+  }
+
+  if (marketplaceConfigMessage) {
+    marketplaceConfigMessage.textContent = configured
+      ? `CurseForge API key is available from ${source}.`
+      : `CurseForge API key is not configured. Set it here or with CF_API_KEY / CURSEFORGE_API_KEY.`;
+  }
+
+  if (marketplaceConfigSource) {
+    marketplaceConfigSource.textContent = `Saved in ${configPath}.`;
+  }
+}
+
 function loadSettings() {
   const settings = readStoredSettings();
 
@@ -12541,6 +12576,28 @@ async function loadAgentSettings() {
   }
 }
 
+async function loadMarketplaceSettings() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasMarketplaceSettings) {
+    if (marketplaceConfigSaveButton) {
+      marketplaceConfigSaveButton.disabled = true;
+    }
+    if (marketplaceConfigMessage) {
+      marketplaceConfigMessage.textContent = "Marketplace provider settings are unavailable in this build.";
+    }
+    return;
+  }
+
+  try {
+    renderMarketplaceSettings(await desktopApiState.api.settings.getMarketplaceConfig());
+  } catch {
+    if (marketplaceConfigMessage) {
+      marketplaceConfigMessage.textContent = "Marketplace provider settings could not be loaded.";
+    }
+  }
+}
+
 async function saveAgentConfiguration() {
   if (agentSettingsRequestInFlight) {
     return;
@@ -12566,6 +12623,38 @@ async function saveAgentConfiguration() {
   } finally {
     agentSettingsRequestInFlight = false;
     setAgentActionButtonsDisabled(false);
+  }
+}
+
+async function saveMarketplaceConfiguration() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasMarketplaceSettings) {
+    showToast("Marketplace settings are unavailable.");
+    return;
+  }
+
+  const curseForgeApiKey = marketplaceConfigInput?.value || "";
+  if (!curseForgeApiKey.trim()) {
+    showToast("Paste a CurseForge API key before saving.");
+    marketplaceConfigInput?.focus();
+    return;
+  }
+
+  if (marketplaceConfigSaveButton) {
+    marketplaceConfigSaveButton.disabled = true;
+  }
+
+  try {
+    const response = await desktopApiState.api.settings.saveMarketplaceConfig({ curseForgeApiKey });
+    renderMarketplaceSettings(response);
+    showToast("Marketplace settings saved.");
+  } catch (error) {
+    showToast(error?.message || "Marketplace settings could not be saved.");
+  } finally {
+    if (marketplaceConfigSaveButton) {
+      marketplaceConfigSaveButton.disabled = false;
+    }
   }
 }
 
@@ -13272,6 +13361,7 @@ settingsInputs.forEach((input) => {
 settingsResetButton?.addEventListener("click", resetSettings);
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
+marketplaceConfigSaveButton?.addEventListener("click", saveMarketplaceConfiguration);
 securityForm?.addEventListener("submit", submitSecurityForm);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
@@ -13309,6 +13399,7 @@ loadSettings();
 refreshSecurityState();
 refreshNodes();
 loadAgentSettings();
+loadMarketplaceSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();
 startStartupFallback();

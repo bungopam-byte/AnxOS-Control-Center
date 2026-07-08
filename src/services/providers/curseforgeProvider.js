@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
+const { getMarketplaceConfigPath, readMarketplaceConfig } = require("../providerConfigService");
 
 const CURSEFORGE_API = "https://api.curseforge.com/v1";
 const MINECRAFT_GAME_ID = 432;
@@ -282,6 +283,11 @@ function getCurseForgeApiKey(config = {}) {
   if (direct) {
     return direct;
   }
+  const stored = readMarketplaceConfig({ includeSecrets: true });
+  const storedDirect = firstSecretValue(stored, API_KEY_FIELDS, []);
+  if (storedDirect) {
+    return storedDirect;
+  }
   const secretFile = firstSecretValue(config, API_KEY_FILE_FIELDS, API_KEY_FILE_ENV);
   return readSecretFile(secretFile);
 }
@@ -292,15 +298,19 @@ function getApiKeyStatus(config = {}) {
   const directEnvName = API_KEY_ENV.find((envName) => cleanSecretValue(process.env[envName]));
   const fileConfigField = API_KEY_FILE_FIELDS.find((field) => cleanSecretValue(config[field]));
   const fileEnvName = API_KEY_FILE_ENV.find((envName) => cleanSecretValue(process.env[envName]));
+  const stored = readMarketplaceConfig({ includeSecrets: true });
+  const storedConfigField = API_KEY_FIELDS.find((field) => cleanSecretValue(stored[field]));
   const source = directConfigField
     ? `config:${directConfigField}`
     : directEnvName
       ? `env:${directEnvName}`
-      : fileConfigField
-        ? `config:${fileConfigField}`
-        : fileEnvName
-          ? `env:${fileEnvName}`
-          : null;
+      : storedConfigField
+        ? `app-config:${storedConfigField}`
+        : fileConfigField
+          ? `config:${fileConfigField}`
+          : fileEnvName
+            ? `env:${fileEnvName}`
+            : null;
   let loaded = false;
   let errorCode = null;
 
@@ -357,13 +367,25 @@ function requireApiKey(config = {}) {
         isPackaged: status.env.isPackaged,
         appPath: status.env.appPath,
         userDataPath: status.env.userDataPath,
+        marketplaceConfigPath: getMarketplaceConfigPath(),
         expectedEnvNames: API_KEY_ENV,
         expectedFileEnvNames: API_KEY_FILE_ENV,
-        recovery: `Set one of ${API_KEY_ENV.join(", ")} in one of the checked .env files, or set ANXHUB_ENV_PATH to the file that contains it.`,
+        recovery: `Set the CurseForge API key in Settings > Marketplace, set one of ${API_KEY_ENV.join(", ")} in one of the checked .env files, or set ANXHUB_ENV_PATH to the file that contains it.`,
       }
     );
   }
   return apiKey;
+}
+
+function setRuntimeApiKey(value) {
+  const clean = cleanSecretValue(value);
+  if (clean) {
+    process.env.CF_API_KEY = clean;
+  } else {
+    delete process.env.CF_API_KEY;
+  }
+  envLoaded = false;
+  envLoadInfo = null;
 }
 
 function normalizeLoader(loader) {
@@ -753,6 +775,7 @@ module.exports = {
     normalizeLoader,
     normalizeMod,
     requireApiKey,
+    setRuntimeApiKey,
     withRetry,
   },
   CurseForgeProviderError,

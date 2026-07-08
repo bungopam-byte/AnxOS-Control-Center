@@ -1111,6 +1111,11 @@ async function assertProviderInstallSupport() {
     "cf-direct-token",
     "CurseForge provider should accept CF-style config aliases."
   );
+  assert.strictEqual(
+    curseforgeProvider._test.getCurseForgeApiKey({ curseForgeApiKey: "'cf-saved-token'" }),
+    "cf-saved-token",
+    "CurseForge provider should accept saved Marketplace settings aliases."
+  );
   assert.deepStrictEqual(
     curseforgeProvider._test.buildApiHeaders({ cfApiKey: "cf-direct-token" }),
     {

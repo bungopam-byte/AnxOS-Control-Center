@@ -6955,6 +6955,486 @@ dd {
   min-height: clamp(240px, 31vh, 390px);
 }
 
+/* Professional polish layer */
+.app-workspace {
+  background:
+    linear-gradient(180deg, rgba(10, 9, 18, 0.88), rgba(7, 2, 15, 0.74)),
+    rgba(7, 2, 15, 0.58);
+}
+
+.app-titlebar {
+  border-color: rgba(190, 170, 220, 0.2);
+  background:
+    linear-gradient(180deg, rgba(28, 18, 42, 0.94), rgba(13, 8, 24, 0.92)),
+    rgba(8, 5, 15, 0.84);
+}
+
+.sidebar {
+  border-right-color: rgba(190, 170, 220, 0.14);
+  background:
+    linear-gradient(180deg, rgba(13, 14, 22, 0.98), rgba(9, 7, 15, 0.96)),
+    rgba(10, 13, 20, 0.94);
+}
+
+.nav-item {
+  min-height: 44px;
+  padding: 0 13px;
+}
+
+.nav-item.is-active {
+  border-color: rgba(182, 108, 255, 0.38);
+  background: linear-gradient(135deg, rgba(182, 108, 255, 0.18), rgba(69, 224, 143, 0.05));
+  color: var(--text);
+  box-shadow: inset 3px 0 0 rgba(182, 108, 255, 0.82);
+}
+
+.sidebar-footer,
+.status-card,
+.settings-section,
+.docker-summary-card,
+.docker-table-panel,
+.docker-details-panel,
+.ssh-sidebar-panel,
+.ssh-main-panel,
+.ssh-terminal-card,
+.coolpals-main-panel,
+.coolpals-info-panel,
+.coolpals-activity-panel,
+.coolpals-log-panel,
+.backup-table-panel,
+.backup-side-panel,
+.marketplace-browser,
+.marketplace-side-panel,
+.instance-workspace-card,
+.instances-table-panel,
+.instances-details-panel,
+.instance-settings-section,
+.instance-minecraft-card {
+  border-color: rgba(190, 170, 220, 0.15);
+  background:
+    linear-gradient(180deg, rgba(27, 18, 40, 0.78), rgba(13, 10, 22, 0.82)),
+    rgba(17, 21, 31, 0.78);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 16px 38px rgba(4, 1, 12, 0.22);
+}
+
+.status-card,
+.settings-section,
+.docker-summary-card,
+.instances-summary-card,
+.playit-summary-card,
+.coolpals-summary-card,
+.backup-summary-card,
+.marketplace-card,
+.instance-template-card {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    background 160ms ease;
+}
+
+.status-card:hover,
+.settings-section:hover,
+.docker-summary-card:hover,
+.instances-summary-card:hover,
+.playit-summary-card:hover,
+.coolpals-summary-card:hover,
+.backup-summary-card:hover,
+.marketplace-card:hover,
+.instance-template-card:hover {
+  border-color: rgba(206, 190, 232, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 42px rgba(4, 1, 12, 0.28);
+}
+
+.page-header {
+  align-items: flex-start;
+  padding-bottom: 2px;
+}
+
+.page-header h1,
+.instances-toolbar__title h1 {
+  letter-spacing: 0;
+}
+
+.page-header .lede,
+.instances-toolbar__title .lede {
+  color: rgba(226, 216, 240, 0.72);
+}
+
+.eyebrow,
+.docker-search,
+.docker-filter,
+.ssh-field,
+.settings-field,
+.marketplace-card__meta,
+.status-pill {
+  letter-spacing: 0.04em;
+}
+
+.panel-heading,
+.settings-section__header,
+.coolpals-panel-header,
+.instance-workspace-card__header {
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(190, 170, 220, 0.1);
+}
+
+.panel-heading h3,
+.settings-section__header h3,
+.coolpals-panel-header h3 {
+  color: rgba(248, 245, 255, 0.96);
+}
+
+.docker-toolbar,
+.marketplace-toolbar,
+.instances-controlbar,
+.ssh-connect-bar,
+.ssh-profile-form,
+.ssh-password-prompt,
+.instance-create-form,
+.instance-console-toolbar,
+.instance-files-toolbar,
+.backup-toolbar,
+.coolpals-toolbar {
+  border-color: rgba(190, 170, 220, 0.14);
+  background:
+    linear-gradient(180deg, rgba(21, 13, 34, 0.82), rgba(11, 8, 19, 0.84)),
+    rgba(17, 21, 31, 0.66);
+}
+
+.settings-actions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(190, 170, 220, 0.1);
+}
+
+.inline-action,
+.primary-button,
+.icon-action,
+.console-toggle,
+.marketplace-provider-tab,
+.marketplace-provider-mode,
+.marketplace-category,
+.docker-inspector-tabs button,
+.file-mode-button,
+.instance-copy-button,
+.ssh-tab {
+  min-height: 36px;
+  border-color: rgba(190, 170, 220, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
+    rgba(25, 16, 39, 0.82);
+  color: rgba(248, 245, 255, 0.86);
+}
+
+.primary-button {
+  border-color: rgba(210, 185, 255, 0.32);
+  background: linear-gradient(135deg, rgba(182, 108, 255, 0.96), rgba(93, 92, 255, 0.92));
+  color: #fff;
+}
+
+.inline-action:not(:disabled):hover,
+.inline-action:not(:disabled):focus-visible,
+.primary-button:not(:disabled):hover,
+.primary-button:not(:disabled):focus-visible,
+.icon-action:not(:disabled):hover,
+.icon-action:not(:disabled):focus-visible,
+.console-toggle:not(:disabled):hover,
+.console-toggle:not(:disabled):focus-visible,
+.marketplace-provider-tab:hover,
+.marketplace-provider-mode:hover,
+.marketplace-category:hover,
+.docker-inspector-tabs button:hover,
+.docker-inspector-tabs button:focus-visible {
+  border-color: rgba(206, 150, 255, 0.56);
+  background:
+    linear-gradient(180deg, rgba(182, 108, 255, 0.22), rgba(182, 108, 255, 0.1)),
+    rgba(25, 16, 39, 0.92);
+  box-shadow: 0 10px 24px rgba(4, 1, 12, 0.22);
+  transform: translateY(-1px);
+}
+
+.inline-action:disabled,
+.primary-button:disabled,
+.icon-action:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.7);
+  opacity: 0.52;
+}
+
+.docker-search input,
+.docker-filter select,
+.ssh-field input,
+.ssh-field select,
+.ssh-command-row input,
+.settings-field input,
+.settings-field select,
+.settings-field textarea,
+.file-location input,
+.file-search input,
+.coolpals-search input,
+.backup-search input,
+.instance-console-toolbar input,
+.instance-console-toolbar select,
+.instance-console-input input,
+.instance-config-form input,
+.instance-config-form select,
+.instance-advanced-panel input,
+.marketplace-version-search input {
+  min-height: 42px;
+  border-color: rgba(190, 170, 220, 0.16);
+  background: rgba(5, 7, 12, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.docker-search input:focus,
+.docker-filter select:focus,
+.ssh-field input:focus,
+.ssh-field select:focus,
+.ssh-command-row input:focus,
+.settings-field input:focus,
+.settings-field select:focus,
+.settings-field textarea:focus,
+.file-location input:focus,
+.file-search input:focus,
+.coolpals-search input:focus,
+.backup-search input:focus,
+.instance-console-toolbar input:focus,
+.instance-console-toolbar select:focus,
+.instance-console-input input:focus,
+.instance-config-form input:focus,
+.instance-config-form select:focus,
+.instance-advanced-panel input:focus,
+.marketplace-version-search input:focus {
+  border-color: rgba(206, 150, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 3px rgba(182, 108, 255, 0.14);
+  outline: none;
+}
+
+.docker-table,
+.instances-table,
+.file-table,
+.backup-table,
+.instance-files-table {
+  font-size: 0.9rem;
+}
+
+.docker-table th,
+.instances-table th,
+.file-table th,
+.backup-table th,
+.instance-files-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom-color: rgba(190, 170, 220, 0.14);
+  background: rgba(13, 9, 22, 0.96);
+  color: rgba(226, 216, 240, 0.72);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.docker-table td,
+.instances-table td,
+.file-table td,
+.backup-table td,
+.instance-files-table td {
+  color: rgba(248, 245, 255, 0.88);
+  vertical-align: middle;
+}
+
+.docker-table tbody tr,
+.instances-table tbody tr,
+.file-table tbody tr,
+.backup-table tbody tr,
+.instance-files-table tbody tr {
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.docker-table tbody tr:hover,
+.instances-table tbody tr:hover,
+.file-table tbody tr:hover,
+.backup-table tbody tr:hover,
+.instance-files-table tbody tr:hover {
+  background: rgba(182, 108, 255, 0.075);
+}
+
+.docker-table tbody tr.is-selected,
+.instances-table tbody tr.is-selected {
+  background: rgba(182, 108, 255, 0.15);
+  box-shadow: inset 3px 0 0 rgba(182, 108, 255, 0.86);
+}
+
+.docker-details-list {
+  display: grid;
+  gap: 12px;
+}
+
+.docker-details-list div,
+.settings-about-grid div,
+.ssh-sidebar-summary div,
+.instance-overview-list div,
+.backup-summary-grid > *,
+.playit-summary-card,
+.coolpals-summary-card {
+  border-color: rgba(190, 170, 220, 0.13);
+  background: rgba(7, 9, 14, 0.36);
+}
+
+.status-pill {
+  min-height: 28px;
+  padding: 5px 10px;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  white-space: nowrap;
+}
+
+.docker-log-viewer,
+.docker-inspect-viewer,
+.ssh-terminal-window,
+.console-window,
+.instance-console-viewer,
+.instance-file-editor textarea,
+.instance-raw-json,
+.coolpals-log-viewer,
+.backup-log-viewer {
+  border-color: rgba(115, 220, 202, 0.18);
+  background:
+    linear-gradient(180deg, rgba(4, 9, 13, 0.98), rgba(5, 7, 11, 0.98)),
+    #05070b;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(115, 220, 202, 0.035);
+}
+
+.ssh-terminal-toolbar,
+.console-titlebar,
+.instance-console-toolbar {
+  border-color: rgba(115, 220, 202, 0.14);
+}
+
+.ssh-terminal-output,
+.docker-log-viewer,
+.docker-inspect-viewer,
+.instance-log-viewer,
+.console-log-list,
+.coolpals-log-viewer {
+  color: rgba(220, 244, 255, 0.9);
+}
+
+.docker-empty-state,
+.docker-loading-state,
+.ssh-empty-state,
+.ssh-loading-state,
+.file-empty-state,
+.file-loading-state,
+.folder-tree-empty,
+.coolpals-empty-state,
+.coolpals-loading-state,
+.coolpals-feed-empty,
+.coolpals-log-empty,
+.backup-empty-state,
+.backup-loading-state,
+.marketplace-empty,
+.marketplace-loading {
+  border: 1px dashed rgba(190, 170, 220, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(7, 9, 14, 0.36);
+  color: rgba(226, 216, 240, 0.7);
+}
+
+.docker-empty-state strong,
+.docker-loading-state strong,
+.ssh-empty-state strong,
+.ssh-loading-state strong,
+.file-empty-state strong,
+.file-loading-state strong,
+.folder-tree-empty strong,
+.coolpals-empty-state strong,
+.coolpals-loading-state strong,
+.coolpals-feed-empty strong,
+.coolpals-log-empty strong,
+.backup-empty-state strong,
+.backup-loading-state strong,
+.marketplace-empty strong,
+.marketplace-loading strong {
+  color: rgba(248, 245, 255, 0.94);
+}
+
+.marketplace-card {
+  align-items: start;
+}
+
+.marketplace-card__body strong,
+.instance-name-cell strong,
+.docker-table td strong {
+  overflow-wrap: anywhere;
+}
+
+.marketplace-card__body p,
+.marketplace-card__meta,
+.instance-tags-cell span,
+.settings-inline-status,
+.ssh-password-note {
+  overflow-wrap: anywhere;
+}
+
+.marketplace-side-panel,
+.instances-details-panel,
+.instance-workspace-card,
+.docker-details-panel,
+.ssh-main-panel,
+.settings-section {
+  min-width: 0;
+}
+
+.marketplace-install-progress,
+.marketplace-downloads-list,
+.instance-backup-panel,
+.instance-settings-section,
+.instance-minecraft-settings,
+.instance-advanced-panel {
+  border-color: rgba(190, 170, 220, 0.13);
+  background: rgba(7, 9, 14, 0.28);
+}
+
+.app-modal {
+  border-color: rgba(206, 190, 232, 0.24);
+  background:
+    linear-gradient(180deg, rgba(30, 20, 45, 0.98), rgba(12, 8, 21, 0.98)),
+    rgba(17, 21, 31, 0.96);
+}
+
+.app-modal__meta div,
+.app-modal__progress-track {
+  border-color: rgba(190, 170, 220, 0.14);
+  background: rgba(7, 9, 14, 0.42);
+}
+
+.toast {
+  border-color: rgba(190, 170, 220, 0.18);
+  background:
+    linear-gradient(180deg, rgba(31, 22, 43, 0.96), rgba(14, 9, 24, 0.96)),
+    rgba(17, 21, 31, 0.96);
+  box-shadow: 0 18px 48px rgba(4, 1, 12, 0.42);
+}
+
 @media (max-width: 1320px) {
   .ssh-workspace-shell {
     grid-template-columns: minmax(250px, 0.5fr) minmax(600px, 1.5fr);

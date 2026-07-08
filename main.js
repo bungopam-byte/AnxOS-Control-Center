@@ -150,7 +150,7 @@ function pickUpdateAsset(release) {
   const platformMatchers = process.platform === "win32"
     ? [/setup.*\.exe$/i, /installer.*\.exe$/i, /control-center-setup.*\.exe$/i, /portable.*\.exe$/i, /win.*\.exe$/i, /\.exe$/i]
     : process.platform === "linux"
-      ? [/\.appimage$/i, /\.deb$/i]
+      ? [/\.deb$/i, /\.appimage$/i]
       : [/\.dmg$/i, /\.zip$/i];
 
   for (const matcher of platformMatchers) {

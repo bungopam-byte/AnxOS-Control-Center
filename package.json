@@ -1,7 +1,7 @@
 {
   "name": "anxos-control-center",
   "productName": "AnxOS Control Center",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Private local desktop control center for a Debian server.",
   "author": "AnxOS",
   "license": "UNLICENSED",
@@ -14,6 +14,7 @@
     "dist:win": "electron-builder --win --x64 -c.win.signAndEditExecutable=false",
     "dist:win:installer": "electron-builder --win nsis --x64 -c.win.signAndEditExecutable=false",
     "dist:win:portable": "electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
+    "dist:linux": "electron-builder --linux deb AppImage --x64",
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",
@@ -74,9 +75,10 @@
       }
     },
     "appImage": {
-      "artifactName": "AnxOS-Control-Center.${ext}"
+      "artifactName": "AnxOS-Control-Center-${version}.${ext}"
     },
     "deb": {
+      "artifactName": "AnxOS-Control-Center-${version}.${ext}",
       "packageCategory": "utils"
     },
     "portable": {

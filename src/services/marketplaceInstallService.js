@@ -326,7 +326,7 @@ function ensureSupportedModpack(condition, provider, reason = "Unsupported modpa
 }
 
 function isRecoverableProviderFileError(error) {
-  return [
+  if ([
     "CURSEFORGE_DOWNLOAD_URL_MISSING",
     "CURSEFORGE_INVALID_DOWNLOAD_URL",
     "CURSEFORGE_UNSAFE_URL",
@@ -334,7 +334,62 @@ function isRecoverableProviderFileError(error) {
     "MODRINTH_INVALID_DOWNLOAD_URL",
     "MODRINTH_UNSAFE_URL",
     "MODRINTH_DOWNLOAD_FAILED",
-  ].includes(error?.code);
+  ].includes(error?.code)) {
+    return true;
+  }
+
+  const status = Number(error?.details?.status || error?.status || error?.statusCode);
+  return error?.code === "CURSEFORGE_REQUEST_FAILED" && [403, 404].includes(status);
+}
+
+function isCurseForgeAccessDeniedFileError(error) {
+  const status = Number(error?.details?.status || error?.status || error?.statusCode);
+  return error?.code === "CURSEFORGE_REQUEST_FAILED" && [403, 404].includes(status);
+}
+
+function getCurseForgeFileContext(file = {}, fallback = {}) {
+  const required = file.required !== false && file.optional !== true;
+  return {
+    fileName: file.fileName || file.name || fallback.fileName || null,
+    projectId: file.projectID || file.projectId || file.project_id || fallback.projectId || null,
+    fileId: file.fileID || file.fileId || file.file_id || file.id || fallback.fileId || null,
+    dependencyType: fallback.dependencyType || (required ? "required" : "optional"),
+  };
+}
+
+function logSkippedCurseForgeRestrictedFile(error, context = {}) {
+  logMarketplaceInstallStep("Skipping restricted CurseForge dependency file.", {
+    provider: "curseforge",
+    ...context,
+    status: error?.details?.status || error?.status || null,
+    reason: error?.message || "CurseForge denied file download access.",
+    url: error?.details?.url || null,
+    responseBody: error?.details?.body || error?.details?.responseBody || null,
+    recovery: "skipped-restricted-file",
+  });
+}
+
+function createRestrictedCurseForgeFileError(error, context = {}) {
+  const fileName = context.fileName || error?.details?.fileName || "unknown file";
+  const projectId = context.projectId || error?.details?.projectId || "unknown project";
+  const fileId = context.fileId || error?.details?.fileId || "unknown file id";
+  return new MarketplaceInstallError(
+    `CurseForge required server file is restricted: ${fileName} (project ${projectId}, file ${fileId}). Download/import it manually or choose a pack version with accessible server files.`,
+    "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+    {
+      provider: "curseforge",
+      fileName,
+      projectId,
+      fileId,
+      dependencyType: context.dependencyType || "required",
+      status: error?.details?.status || error?.status || null,
+      body: error?.details?.body || error?.details?.responseBody || null,
+      url: error?.details?.url || null,
+      reason: error?.message || "CurseForge denied file download access.",
+      suggestion: "Manually download/import the restricted file, or select another modpack/server-pack version.",
+      cause: serializeError(error),
+    }
+  );
 }
 
 function extractXmlTag(xml, tagName) {
@@ -933,26 +988,43 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         mods.push({ file: target, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId });
         downloads.push({ file: target, provider: "curseforge" });
       } catch (error) {
+        const fileContext = getCurseForgeFileContext(manifestFile, {
+          fileName: error?.details?.fileName || null,
+          projectId: manifestProjectId,
+          fileId: manifestFileId,
+        });
+        if (isCurseForgeAccessDeniedFileError(error) && fileContext.dependencyType === "required") {
+          throw createRestrictedCurseForgeFileError(error, fileContext);
+        }
         if (!isRecoverableProviderFileError(error)) {
           throw error;
         }
+        if (isCurseForgeAccessDeniedFileError(error)) {
+          logSkippedCurseForgeRestrictedFile(error, {
+            instanceId,
+            ...fileContext,
+          });
+          continue;
+        }
         logMarketplaceInstallFailure(error, {
-          provider: "curseforge",
           instanceId,
-          fileName: manifestFile.fileName || null,
-          projectId: manifestProjectId,
-          fileId: manifestFileId,
+          ...fileContext,
           recovery: "skipped-file",
         });
       }
     }
   } else {
-    const files = [downloaded, ...(await curseforgeProvider.resolveDependencies(file, {}, null, {
+    const dependencyEntries = await curseforgeProvider.resolveDependencies(file, {}, null, {
       includeOptional: payload.includeOptionalDependencies === true,
-    })).map((entry) => entry.file)];
-    ensureServerFiles(files, "CurseForge");
+    });
+    const fileEntries = [
+      { file: downloaded, dependencyType: "primary" },
+      ...dependencyEntries.map((entry) => ({ file: entry.file, dependencyType: entry.dependencyType || "required" })),
+    ];
+    ensureServerFiles(fileEntries.map((entry) => entry.file), "CurseForge");
     let current = 0;
-    for (const item of files) {
+    for (const entry of fileEntries) {
+      const item = entry.file;
       current += 1;
       if (!dedupe.add(`${item.projectId}:${item.id}`)) {
         continue;
@@ -960,20 +1032,37 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       try {
         const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item);
         const target = `mods/${safeArchivePath(modDownload.fileName)}`;
-        emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
+        emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
         mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id });
         downloads.push({ file: target, provider: "curseforge" });
       } catch (error) {
-        if (current === 1 || !isRecoverableProviderFileError(error)) {
+        const fileContext = getCurseForgeFileContext(item, {
+          fileName: error?.details?.fileName || null,
+          projectId: item.projectId,
+          fileId: item.id,
+          dependencyType: entry.dependencyType || "required",
+        });
+        if (current === 1) {
           throw error;
+        }
+        if (isCurseForgeAccessDeniedFileError(error) && fileContext.dependencyType === "required") {
+          throw createRestrictedCurseForgeFileError(error, fileContext);
+        }
+        if (!isRecoverableProviderFileError(error)) {
+          throw error;
+        }
+        if (isCurseForgeAccessDeniedFileError(error)) {
+          logSkippedCurseForgeRestrictedFile(error, {
+            instanceId,
+            ...fileContext,
+          });
+          continue;
         }
         logMarketplaceInstallFailure(error, {
           provider: "curseforge",
           instanceId,
-          fileName: item.fileName || null,
-          projectId: item.projectId,
-          fileId: item.id,
+          ...fileContext,
           recovery: "skipped-file",
         });
       }
@@ -1161,8 +1250,11 @@ module.exports = {
   _test: {
     buildInstallMetadata,
     buildInstancePayload,
+    createRestrictedCurseForgeFileError,
     createDeduper,
     friendlyHttpMessage,
+    getCurseForgeFileContext,
+    isCurseForgeAccessDeniedFileError,
     isRecoverableProviderFileError,
     isTransientError,
     resolvePaperServerJar,

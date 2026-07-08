@@ -1141,6 +1141,40 @@ async function assertProviderInstallSupport() {
   const dedupe = marketplaceInstallService._test.createDeduper();
   assert.strictEqual(dedupe.add("project:file"), true, "First dependency should be accepted.");
   assert.strictEqual(dedupe.add("project:file"), false, "Duplicate dependency should be skipped.");
+  assert.strictEqual(
+    marketplaceInstallService._test.isRecoverableProviderFileError({ code: "CURSEFORGE_REQUEST_FAILED", details: { status: 403 } }),
+    true,
+    "CurseForge dependency file download-url 403 should be recoverable for optional/skippable files."
+  );
+  assert.strictEqual(
+    marketplaceInstallService._test.isCurseForgeAccessDeniedFileError({ code: "CURSEFORGE_REQUEST_FAILED", details: { status: 403 } }),
+    true,
+    "CurseForge download-url 403 should be classified as access denied."
+  );
+  assert.deepStrictEqual(
+    marketplaceInstallService._test.getCurseForgeFileContext(
+      { projectID: 10, fileID: 20, fileName: "client-shader.zip", required: false },
+      {}
+    ),
+    { fileName: "client-shader.zip", projectId: 10, fileId: 20, dependencyType: "optional" },
+    "Optional CurseForge manifest files should keep project/file context."
+  );
+  assert.match(
+    marketplaceInstallService._test.createRestrictedCurseForgeFileError(
+      {
+        code: "CURSEFORGE_REQUEST_FAILED",
+        message: "CurseForge download URL: 403 Forbidden.",
+        details: {
+          status: 403,
+          url: "https://api.curseforge.com/v1/mods/10/files/20/download-url",
+          body: '{"message":"access denied"}',
+        },
+      },
+      { fileName: "required-server-mod.jar", projectId: 10, fileId: 20, dependencyType: "required" }
+    ).message,
+    /required-server-mod\.jar.*project 10, file 20.*manually/i,
+    "Restricted required CurseForge server files should produce an actionable error."
+  );
 
   const metadata = marketplaceInstallService._test.buildInstallMetadata(
     {

@@ -661,11 +661,27 @@ async function resolveDependencies(file, config = {}, state = null, options = {}
 }
 
 async function downloadFile(file, destination = "", options = {}) {
-  const downloadUrl = file?.downloadUrl || await getFileDownloadUrl(file?.projectId, file?.id, options.config || {});
+  let downloadUrl = file?.downloadUrl;
+  if (!downloadUrl) {
+    try {
+      downloadUrl = await getFileDownloadUrl(file?.projectId, file?.id, options.config || {});
+    } catch (error) {
+      if (error && typeof error === "object") {
+        error.details = {
+          ...(error.details || {}),
+          fileName: file?.fileName || file?.name || null,
+          projectId: file?.projectId || null,
+          fileId: file?.id || null,
+        };
+      }
+      throw error;
+    }
+  }
   if (!downloadUrl) {
     throw new CurseForgeProviderError(`${file?.fileName || "CurseForge file"} has no download URL.`, "CURSEFORGE_DOWNLOAD_URL_MISSING", {
       projectId: file?.projectId || null,
       fileId: file?.id || null,
+      fileName: file?.fileName || file?.name || null,
     });
   }
   const buffer = await requestBuffer(downloadUrl, file.fileName || "CurseForge file");

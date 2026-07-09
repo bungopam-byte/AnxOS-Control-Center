@@ -412,6 +412,26 @@ function assertStorageManagerArchitecture() {
   assert(appSource.includes("renderStorageConnections") && appSource.includes("startFileTransfer") && appSource.includes("cancelFileTransfer") && appSource.includes("storageId: getFilesRequestStorageId()"), "Renderer should manage provider connections and transfer entries.");
 }
 
+function assertPackagedStartupSafe() {
+  const desktopRuntimeFiles = [
+    "main.js",
+    "app.js",
+    "preload.js",
+    "src/services/agentClient.js",
+    "src/services/serviceRouter.js",
+    "src/services/localInstanceService.js",
+    "src/services/fileService.js",
+    "src/ipc/instancesIpc.js",
+    "src/ipc/filesIpc.js",
+  ];
+  for (const relativePath of desktopRuntimeFiles) {
+    const source = fs.readFileSync(path.join(__dirname, "..", relativePath), "utf8");
+    assert(!source.includes("../../agent/") && !source.includes("agent/src"), `${relativePath} must not import agent source in packaged builds.`);
+  }
+  const localInstanceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "localInstanceService.js"), "utf8");
+  assert(localInstanceSource.includes("../shared/instances/instanceServiceCore"), "Desktop local instances should use the packaged shared instance service.");
+}
+
 function assertMarketplaceVersionMetadata() {
   const paper = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-paper"), {
     version: "1.21.8",
@@ -445,11 +465,11 @@ function assertFiveMStartupSafety() {
   assert.strictEqual(fivem.startup?.restartPolicy, "never", "FiveM must not auto-restart on license failures.");
   assert.strictEqual(fivem.manualStartRequired, true, "FiveM should require manual start after license setup.");
 
-  const agentSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "services", "instances", "instanceService.js"), "utf8");
-  assert(agentSource.includes("FIVEM_LICENSE_REQUIRED"), "Agent should expose a FiveM license-required failure reason.");
-  assert(agentSource.includes("Invalid key format specified|Could not authenticate server license key|HTTP 429"), "Agent should detect FiveM license/auth log failures.");
-  assert(agentSource.includes("suppressRestart"), "Agent should suppress restart loops for known FiveM license failures.");
-  assert(agentSource.includes("detectFromMinecraftStatus"), "Agent should keep a Minecraft status-query fallback for version detection.");
+  const instanceSource = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
+  assert(instanceSource.includes("FIVEM_LICENSE_REQUIRED"), "Shared instance service should expose a FiveM license-required failure reason.");
+  assert(instanceSource.includes("Invalid key format specified|Could not authenticate server license key|HTTP 429"), "Shared instance service should detect FiveM license/auth log failures.");
+  assert(instanceSource.includes("suppressRestart"), "Shared instance service should suppress restart loops for known FiveM license failures.");
+  assert(instanceSource.includes("detectFromMinecraftStatus"), "Shared instance service should keep a Minecraft status-query fallback for version detection.");
 }
 
 async function assertFiveMPlaceholderStartIsBlocked() {
@@ -1795,6 +1815,7 @@ async function main() {
   assertNativeUpdateExperience();
   assertSingleDeviceModeExperience();
   assertStorageManagerArchitecture();
+  assertPackagedStartupSafe();
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMPlaceholderStartIsBlocked();

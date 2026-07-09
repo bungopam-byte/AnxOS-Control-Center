@@ -1,7 +1,6 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
-const { app } = require("electron");
 
 const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
@@ -109,21 +108,9 @@ function getAgentConfigPath() {
   return path.join(getAgentConfigDirectory(), "agent.json");
 }
 
-function ensureLocalInstanceRoot() {
-  if (process.env.AGENT_INSTANCE_ROOT) {
-    return;
-  }
-  try {
-    process.env.AGENT_INSTANCE_ROOT = path.join(app.getPath("userData"), "instances");
-  } catch {
-    process.env.AGENT_INSTANCE_ROOT = path.join(process.cwd(), "anxos-instances");
-  }
-}
-
 function getLocalInstanceService() {
   if (!localInstanceService) {
-    ensureLocalInstanceRoot();
-    localInstanceService = require("../../agent/src/services/instances/instanceService");
+    localInstanceService = require("./localInstanceService");
   }
   return localInstanceService;
 }

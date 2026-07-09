@@ -1,24 +1,9 @@
 const localAmpService = require("./ampService");
 const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
+const localInstanceService = require("./localInstanceService");
 const agentClient = require("./agentClient");
 const { getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
-const path = require("path");
-const { app } = require("electron");
-
-function ensureLocalInstanceRoot() {
-  if (process.env.AGENT_INSTANCE_ROOT) {
-    return;
-  }
-  try {
-    process.env.AGENT_INSTANCE_ROOT = path.join(app.getPath("userData"), "instances");
-  } catch {
-    process.env.AGENT_INSTANCE_ROOT = path.join(process.cwd(), "anxos-instances");
-  }
-}
-
-ensureLocalInstanceRoot();
-const localInstanceService = require("../../agent/src/services/instances/instanceService");
 
 class AgentUnavailableError extends Error {
   constructor() {

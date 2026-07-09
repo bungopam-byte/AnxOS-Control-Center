@@ -118,6 +118,22 @@ function hasChanges() {
   return Boolean(result.stdout.trim());
 }
 
+function restoreTrackedBuildOutputs() {
+  const trackedBuildOutputs = [
+    "dist/linux-unpacked/resources/app.asar",
+  ];
+
+  for (const filePath of trackedBuildOutputs) {
+    const tracked = spawnSync("git", ["ls-files", "--error-unmatch", filePath], {
+      cwd: rootDir,
+      stdio: "ignore",
+    });
+    if (tracked.status === 0) {
+      run("git", ["restore", filePath]);
+    }
+  }
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const currentVersion = getPackageVersion();
@@ -136,6 +152,7 @@ function main() {
   }
 
   run("npm", ["run", "updates:manifest"]);
+  restoreTrackedBuildOutputs();
 
   if (!hasChanges()) {
     console.log("No source changes to commit.");

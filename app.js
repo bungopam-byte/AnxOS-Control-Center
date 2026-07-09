@@ -6568,55 +6568,54 @@ function formatDownloadSpeed(bytesPerSecond) {
   return Number.isFinite(bytesPerSecond) && bytesPerSecond > 0 ? `${formatBytes(bytesPerSecond)}/s` : "Idle";
 }
 
-function getMarketplaceFriendlyError(error, fallback = "Template install failed.") {
-  const code = error?.payload?.error?.code || error?.code;
-  const details = error?.details || error?.payload?.error?.details || {};
-  const message = error?.payload?.error?.message || error?.message || "";
-
-  if (code === "CURSEFORGE_REQUIRED_FILE_RESTRICTED") {
-    const fileName = details.fileName || "unknown file";
-    const projectId = details.projectId || "unknown project";
-    const fileId = details.fileId || "unknown file";
-    const suggestion = details.suggestion || "Manually download/import the restricted file, or select another modpack/server-pack version.";
-    const debug = details.debugMessage || details.originalMessage || message || getAgentErrorMessage(error, fallback);
-    return {
-      code,
-      title: "CurseForge blocked one required server file.",
-      detail: `File: ${fileName} · projectId: ${projectId} · fileId: ${fileId}. ${suggestion}`,
-      toast: "CurseForge blocked one required server file.",
-      debug,
-      actionText: "Retry after importing the file manually, or choose another pack version.",
-    };
+function normalizeMarketplaceError(error, fallback = "Template install failed.") {
+  const helper = window.marketplaceErrorHelper;
+  if (typeof helper?.normalizeMarketplaceError === "function") {
+    return helper.normalizeMarketplaceError(error, { fallback });
   }
 
-  const friendly = getAgentErrorMessage(error, fallback);
+  const cleanMessage = getAgentErrorMessage(error, fallback);
   return {
-    code: code || "MARKETPLACE_INSTALL_FAILED",
-    title: friendly,
-    detail: friendly,
-    toast: friendly,
-    debug: message && message !== friendly ? message : "",
-    actionText: "Retry the install or import the required server files manually.",
+    code: error?.payload?.error?.code || error?.code || "MARKETPLACE_INSTALL_FAILED",
+    title: cleanMessage,
+    body: cleanMessage,
+    action: "Retry the install or import the required server files manually.",
+    file: null,
+    projectId: null,
+    fileId: null,
+    rawMessage: error?.message || "",
+    cleanMessage,
+    debug: error?.message || cleanMessage,
   };
 }
 
-function rememberFailedMarketplaceDownload(template, error, friendlyError) {
+function formatMarketplaceErrorMetadata(normalizedError) {
+  return [
+    normalizedError.file ? `File: ${normalizedError.file}` : "",
+    normalizedError.projectId ? `projectId: ${normalizedError.projectId}` : "",
+    normalizedError.fileId ? `fileId: ${normalizedError.fileId}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function rememberFailedMarketplaceDownload(template, normalizedError) {
   marketplaceLocalDownloadEntries = [{
     id: `failed-${Date.now()}`,
     name: template?.displayName || template?.name || template?.id || "Marketplace install",
     status: "failed",
-    progress: 0,
+    progress: 100,
     speedBytesPerSecond: 0,
     canCancel: false,
     canRetry: false,
-    actionText: friendlyError.actionText || "Retry the install or import the required server files manually.",
+    body: normalizedError.body,
+    metadataText: formatMarketplaceErrorMetadata(normalizedError),
+    actionText: normalizedError.action,
     logs: [
       {
         at: new Date().toISOString(),
         level: "error",
-        step: friendlyError.code || "MARKETPLACE_INSTALL_FAILED",
-        message: `${friendlyError.title}${friendlyError.detail && friendlyError.detail !== friendlyError.title ? ` ${friendlyError.detail}` : ""}`,
-        body: friendlyError.debug || error?.message || "",
+        step: normalizedError.code || "MARKETPLACE_INSTALL_FAILED",
+        message: normalizedError.cleanMessage || normalizedError.title,
+        body: normalizedError.debug || normalizedError.rawMessage || "",
       },
     ],
   }];
@@ -6644,6 +6643,7 @@ function renderMarketplaceDownloads(downloads = []) {
   visibleDownloads.forEach((download) => {
     const item = document.createElement("article");
     item.className = "download-item";
+    item.dataset.status = download.status || "queued";
     const header = document.createElement("div");
     header.className = "download-item__header";
     const name = document.createElement("strong");
@@ -6662,7 +6662,15 @@ function renderMarketplaceDownloads(downloads = []) {
     const meta = document.createElement("small");
     const eta = Number.isFinite(download.etaSeconds) ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
     const url = download.url ? ` · ${download.url}` : "";
-    meta.textContent = download.actionText || `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
+    meta.textContent = download.body || `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
+
+    const metadata = document.createElement("small");
+    metadata.textContent = download.metadataText || "";
+    metadata.hidden = !download.metadataText;
+
+    const actionText = document.createElement("small");
+    actionText.textContent = download.actionText || "";
+    actionText.hidden = !download.actionText;
 
     const logs = document.createElement("details");
     logs.className = "download-item__logs";
@@ -6699,7 +6707,7 @@ function renderMarketplaceDownloads(downloads = []) {
     retry.addEventListener("click", () => retryMarketplaceDownload(download.id));
     actions.append(cancel, retry);
 
-    item.append(header, bar, meta, logs, actions);
+    item.append(header, bar, meta, metadata, actionText, logs, actions);
     downloadList.append(item);
   });
 }
@@ -7233,22 +7241,22 @@ async function installMarketplaceTemplate(event) {
     showPage("instances");
     await refreshInstances();
   } catch (error) {
-    const friendlyError = getMarketplaceFriendlyError(error, "Template install failed.");
+    const normalizedError = normalizeMarketplaceError(error, "Template install failed.");
     setMarketplaceInstallState("Failed", "failed");
-    rememberFailedMarketplaceDownload(template, error, friendlyError);
+    rememberFailedMarketplaceDownload(template, normalizedError);
     renderMarketplaceProgress([
       {
-        label: friendlyError.title,
+        label: normalizedError.title,
         status: "failed",
-        detail: friendlyError.detail,
-        debug: friendlyError.debug,
+        detail: normalizedError.body,
+        debug: normalizedError.debug,
       },
     ]);
     marketplaceInstallProgressEvents = [];
     marketplacePendingProgressSteps = null;
     renderMarketplaceDownloads([]);
-    setMarketplaceMessage(`${friendlyError.title} ${friendlyError.detail}`, "error");
-    showToast(friendlyError.toast || friendlyError.title);
+    setMarketplaceMessage("Install failed. See Download Manager.", "error");
+    showToast(normalizedError.title);
   } finally {
     if (downloadPoll) {
       window.clearInterval(downloadPoll);

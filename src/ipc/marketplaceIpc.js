@@ -74,14 +74,16 @@ function getMarketplaceUiError(error) {
   if (code === "CURSEFORGE_REQUIRED_FILE_RESTRICTED") {
     return {
       code,
-      message: "CurseForge blocked one required server file.",
+      message: "CurseForge blocked one required server file",
       details: {
         ...details,
         provider: "curseforge",
-        fileName: details.fileName || null,
+        friendlyMessage: "Fabulously Optimized needs a server file that CurseForge does not allow AnxHub to download automatically.",
+        file: details.file || details.fileName || null,
+        fileName: details.fileName || details.file || null,
         projectId: details.projectId || null,
         fileId: details.fileId || null,
-        suggestion: details.suggestion || "Manually download/import the restricted file, or select another modpack/server-pack version.",
+        suggestion: details.suggestion || "Download/import the missing file manually, or choose another pack/server version.",
         debugMessage: getMarketplaceErrorMessage(error),
         originalMessage: message,
       },

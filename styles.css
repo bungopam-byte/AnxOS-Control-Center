@@ -6629,6 +6629,7 @@ dd {
 
 .marketplace-progress-step[data-status="failed"] {
   border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(65, 18, 28, 0.62);
 }
 
 .download-manager {
@@ -6662,6 +6663,11 @@ dd {
   background: rgba(12, 4, 24, 0.6);
 }
 
+.download-item[data-status="failed"] {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(65, 18, 28, 0.55);
+}
+
 .download-item__header,
 .download-item__actions {
   display: flex;
@@ -6683,6 +6689,11 @@ dd {
   min-width: 2px;
   border-radius: inherit;
   background: linear-gradient(90deg, #8b5cf6, #c084fc);
+}
+
+.download-item[data-status="failed"] .download-progress span {
+  min-width: 100%;
+  background: linear-gradient(90deg, #ef4444, #fb7185);
 }
 
 .download-item small {

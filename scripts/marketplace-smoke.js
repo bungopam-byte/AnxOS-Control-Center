@@ -8,6 +8,7 @@ const marketplaceInstallService = require("../src/services/marketplaceInstallSer
 const modrinthProvider = require("../src/services/providers/modrinthProvider");
 const curseforgeProvider = require("../src/services/providers/curseforgeProvider");
 const { getMarketplaceConfigPath } = require("../src/services/providerConfigService");
+const { normalizeMarketplaceError, stripIpcErrorWrapper } = require("../src/shared/marketplaceError");
 
 const catalogPath = path.join(__dirname, "..", "config", "marketplace-templates.json");
 const appPath = path.join(__dirname, "..", "app.js");
@@ -999,6 +1000,7 @@ async function assertProviderInstallSupport() {
   const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
   const indexSource = fs.readFileSync(indexPath, "utf8");
   const appSource = fs.readFileSync(appPath, "utf8");
+  const marketplaceErrorSource = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "marketplaceError.js"), "utf8");
   const agentRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "instances.js"), "utf8");
   const agentClientSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
   const marketplaceConfigPath = getMarketplaceConfigPath();
@@ -1326,15 +1328,44 @@ async function assertProviderInstallSupport() {
     "Restricted required CurseForge server files should produce an actionable error."
   );
   assert(
-    fs.readFileSync(marketplaceIpcPath, "utf8").includes("CurseForge blocked one required server file."),
+    fs.readFileSync(marketplaceIpcPath, "utf8").includes("CurseForge blocked one required server file") &&
+      fs.readFileSync(marketplaceIpcPath, "utf8").includes("friendlyMessage"),
     "Marketplace IPC should expose a friendly restricted CurseForge error to the renderer."
   );
+  assert.strictEqual(
+    stripIpcErrorWrapper("Error invoking remote method 'marketplace:installPack': Error: CurseForge blocked one required server file."),
+    "CurseForge blocked one required server file.",
+    "Renderer error normalization should strip one Electron IPC wrapper."
+  );
+  assert.strictEqual(
+    stripIpcErrorWrapper("Error invoking remote method 'marketplace:installPack': Error: Error invoking remote method 'marketplace:installPack': Error: CurseForge blocked one required server file."),
+    "CurseForge blocked one required server file.",
+    "Renderer error normalization should strip nested Electron IPC wrappers."
+  );
+  assert.deepStrictEqual(
+    normalizeMarketplaceError({
+      code: "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+      message: "Error invoking remote method 'marketplace:installPack': Error: CurseForge blocked one required server file.",
+      details: {
+        file: "entityculling-fabric-1.10.2-mc1.21.11.jar",
+        projectId: 448233,
+        fileId: 6999999,
+      },
+    }).title,
+    "CurseForge blocked one required server file",
+    "Renderer normalization should return the clean restricted-file title."
+  );
   assert(
-    appSource.includes("getMarketplaceFriendlyError") &&
-      appSource.includes("CURSEFORGE_REQUIRED_FILE_RESTRICTED") &&
-      appSource.includes("CurseForge blocked one required server file.") &&
-      appSource.includes("marketplaceLocalDownloadEntries"),
+    appSource.includes("normalizeMarketplaceError(error") &&
+      appSource.includes("Install failed. See Download Manager.") &&
+      appSource.includes("marketplaceLocalDownloadEntries") &&
+      marketplaceErrorSource.includes("CURSEFORGE_REQUIRED_FILE_RESTRICTED") &&
+      marketplaceErrorSource.includes("CurseForge blocked one required server file"),
     "Renderer should show the specific restricted-file error and keep a failed Download Manager entry."
+  );
+  assert(
+    indexSource.includes("src/shared/marketplaceError.js"),
+    "Renderer should load the shared Marketplace error normalizer before app.js."
   );
   assert(
     appSource.includes("collapseMarketplaceProgressSteps") &&

@@ -253,6 +253,8 @@ h3 {
 
 .hero-panel,
 .release-card,
+.release-summary-card,
+.release-note-card,
 .feature-card,
 .download-card,
 .steps article,
@@ -267,6 +269,38 @@ h3 {
 
 .hero-panel {
   overflow: hidden;
+}
+
+.release-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.42fr);
+  gap: 28px;
+  align-items: end;
+  padding: 58px 0 28px;
+}
+
+.release-hero h1 {
+  max-width: 760px;
+  font-size: clamp(3.2rem, 8vw, 6.8rem);
+}
+
+.release-summary-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+}
+
+.release-summary-card h2 {
+  margin-bottom: 8px;
+  font-size: 1.8rem;
+}
+
+.release-summary-card p {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .panel-titlebar {
@@ -380,6 +414,13 @@ h3 {
   padding: 18px;
 }
 
+.release-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .release-card__logo {
   display: inline-grid;
   place-items: center;
@@ -399,6 +440,7 @@ h3 {
 }
 
 .release-card p,
+.release-note-card p,
 .feature-card p,
 .download-card p,
 .steps p,
@@ -455,6 +497,55 @@ h3 {
   font-size: 0.82rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.release-notes-list {
+  display: grid;
+  gap: 14px;
+}
+
+.release-note-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.release-note-card__heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.release-note-card__heading h3 {
+  margin-bottom: 0;
+  font-size: 1.28rem;
+}
+
+.release-note-card time {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.release-note-card ul {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.release-note-card li::marker {
+  color: var(--accent);
+}
+
+.release-note-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .feature-grid {
@@ -566,6 +657,7 @@ h3 {
   }
 
   .hero,
+  .release-hero,
   .release-card,
   .install-layout {
     grid-template-columns: 1fr;
@@ -652,5 +744,11 @@ h3 {
   .safety-card {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .release-note-card__heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
   }
 }

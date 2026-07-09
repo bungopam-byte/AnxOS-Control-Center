@@ -1,0 +1,18 @@
+[
+  {
+    "version": "1.0.19",
+    "tag": "v1.0.19",
+    "date": "July 9, 2026",
+    "datetime": "2026-07-09",
+    "title": "Marketplace runtime selector and storefront polish",
+    "summary": "This release fixes Marketplace modpack runtime selection and aligns Marketplace card actions like a proper storefront.",
+    "changes": [
+      "Added a Server Runtime selector so modpacks no longer default to Paper.",
+      "Uses provider loader metadata from CurseForge and Modrinth to preselect Fabric, Forge, NeoForge, Quilt, Paper, Purpur, or Vanilla.",
+      "Added Quilt server runtime install support through the official Quilt metadata and installer flow.",
+      "Stopped the installer from overwriting the selected runtime during submit.",
+      "Aligned Marketplace Install buttons across card rows and clamped long descriptions.",
+      "Updated smoke coverage for runtime detection, no Paper preselect, provider loader metadata, and Quilt install handling."
+    ]
+  }
+]

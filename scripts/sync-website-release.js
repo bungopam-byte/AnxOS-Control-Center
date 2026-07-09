@@ -5,6 +5,7 @@ const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
 const packageJson = require(path.join(rootDir, "package.json"));
 const websiteConfigPath = path.join(rootDir, "website", "config.js");
+const releaseNotesPath = path.join(rootDir, "website", "release-notes.json");
 const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
 
 function formatBytes(size) {
@@ -42,9 +43,51 @@ function formatReleaseDate(date = new Date()) {
   });
 }
 
+function readReleaseNotes() {
+  if (!fs.existsSync(releaseNotesPath)) {
+    return [];
+  }
+
+  try {
+    const notes = JSON.parse(fs.readFileSync(releaseNotesPath, "utf8"));
+    return Array.isArray(notes) ? notes : [];
+  } catch (error) {
+    console.warn(`Could not read website/release-notes.json: ${error.message}`);
+    return [];
+  }
+}
+
+function getReleaseNotes() {
+  const releaseDate = formatReleaseDate();
+  const today = new Date().toISOString().slice(0, 10);
+  const currentTag = `v${packageJson.version}`;
+  const notes = readReleaseNotes().map((entry) => ({
+    ...entry,
+    url: entry.url || `${repositoryUrl}/releases/tag/${entry.tag || `v${entry.version}`}`,
+  }));
+
+  if (!notes.some((entry) => entry.version === packageJson.version || entry.tag === currentTag)) {
+    notes.unshift({
+      version: packageJson.version,
+      tag: currentTag,
+      date: releaseDate,
+      datetime: today,
+      title: `AnxOS ${currentTag}`,
+      summary: "Latest AnxOS-Control-Center release.",
+      changes: [
+        "Updated application build, website metadata, and downloadable release assets.",
+      ],
+      url: `${repositoryUrl}/releases/tag/${currentTag}`,
+    });
+  }
+
+  return notes;
+}
+
 const windows = getAsset(`AnxOS-Control-Center-Setup-${packageJson.version}.exe`);
 const linuxDeb = getAsset(`AnxOS-Control-Center-${packageJson.version}.deb`);
 const linuxAppImage = getAsset(`AnxOS-Control-Center-${packageJson.version}.AppImage`);
+const releaseNotes = getReleaseNotes();
 
 const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   brandName: "AnxOS",
@@ -76,6 +119,7 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
       url: "${linuxAppImage.url}",
     },
   },
+  releaseNotes: ${JSON.stringify(releaseNotes, null, 4).replace(/^/gm, "  ").trimStart()},
 };
 `;
 

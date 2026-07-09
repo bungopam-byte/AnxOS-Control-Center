@@ -351,6 +351,7 @@ const securityStaySignedIn = document.querySelector('[data-security-field="stayS
 const securityStaySignedInRow = document.querySelector("[data-security-stay-row]");
 const localSetupButtons = document.querySelectorAll("[data-local-setup-action]");
 const securitySubmitButton = document.querySelector("[data-security-submit]");
+let securityLastSubmitAt = 0;
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -13349,12 +13350,12 @@ function renderSecurityState() {
     securityMode.textContent = setup ? "Remote Control Setup" : "Security";
   }
   if (securityTitle) {
-    securityTitle.textContent = setup ? "Enable Remote Control" : "Sign in to AnxOS";
+    securityTitle.textContent = setup ? "Enable Remote Control" : "Unlock AnxOS";
   }
   if (securityDescription) {
     securityDescription.textContent = setup
       ? "Create an owner account only if you want to manage another computer or server."
-      : "Use your local AnxOS account to continue.";
+      : "Use the local owner account created on this device. This is not an online Anx account.";
   }
   if (securitySubmit) {
     securitySubmit.textContent = setup ? "Create Owner" : "Sign In";
@@ -13403,9 +13404,11 @@ async function refreshSecurityState() {
 async function submitSecurityForm(event) {
   event?.preventDefault();
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasSecurity || securityRequestInFlight) {
+  const now = Date.now();
+  if (!desktopApiState.hasSecurity || securityRequestInFlight || now - securityLastSubmitAt < 1000) {
     return;
   }
+  securityLastSubmitAt = now;
   securityRequestInFlight = true;
   if (securitySubmitButton) {
     securitySubmitButton.disabled = true;
@@ -13439,7 +13442,7 @@ async function submitSecurityForm(event) {
     securityRequestInFlight = false;
     if (securitySubmitButton) {
       securitySubmitButton.disabled = false;
-      securitySubmitButton.textContent = "Continue";
+      securitySubmitButton.textContent = securityState.setupRequired ? "Create Owner" : "Sign In";
     }
   }
 }

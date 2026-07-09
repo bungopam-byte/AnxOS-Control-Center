@@ -17,6 +17,20 @@ const storageConnections = require("../src/services/storageConnectionService");
 const { FileService } = require("../src/services/fileService");
 const backupService = require("../agent/src/services/backupService");
 
+function countAuditActions(action) {
+  const auditPath = path.join(process.env.ANXHUB_CONFIG_DIR, "audit.log");
+  if (!fs.existsSync(auditPath)) {
+    return 0;
+  }
+  return fs.readFileSync(auditPath, "utf8")
+    .trim()
+    .split(/\n+/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.action === action)
+    .length;
+}
+
 async function main() {
   const firstRunStatus = security.getStatus();
   assert.strictEqual(firstRunStatus.setupRequired, true, "Fresh config should not have Remote Control enabled yet.");
@@ -107,6 +121,13 @@ async function main() {
     "A second failed login should be rejected.",
   );
   await security.login({ username: "owner", password: "new correct horse battery staple" });
+  const loginAuditCount = countAuditActions("security.login");
+  await security.login({ username: "owner", password: "wrong password while already signed in" });
+  assert.strictEqual(
+    countAuditActions("security.login"),
+    loginAuditCount,
+    "Duplicate login calls while already authenticated should not create extra login audit entries.",
+  );
   security.logout();
   await security.login({ username: "owner", password: "new correct horse battery staple" });
   security.logout();

@@ -387,10 +387,15 @@ function assertSingleDeviceModeExperience() {
   assert(indexSource.includes("data-local-setup-gate"), "First launch should include a Single-Device Mode setup surface.");
   assert(indexSource.includes("Use this device"), "First launch should offer Use this device.");
   assert(indexSource.includes("Remote Control is only needed if you want to manage another computer or server."), "Security copy should make Remote Control optional.");
+  assert(indexSource.includes("This is not an online Anx account."), "Security sign-in copy should clarify that AnxOS uses a local device account.");
   assert(appSource.includes("LOCAL_SETUP_STORAGE_KEY"), "Renderer should remember that local setup was completed.");
   assert(appSource.includes("showRemoteControlSetup"), "Renderer should expose optional Remote Control setup.");
+  assert(appSource.includes('securitySubmitButton.textContent = securityState.setupRequired ? "Create Owner" : "Sign In"'), "Failed security requests should restore the correct submit button label.");
+  assert(appSource.includes("securityLastSubmitAt") && appSource.includes("now - securityLastSubmitAt < 1000"), "Renderer should debounce rapid duplicate security submits.");
   assert(nodeSource.includes('displayName: "This Device"') && nodeSource.includes("local:"), "Default node should be a visible local This Device node.");
   assert(securitySource.includes("localMode") && securitySource.includes('username: "This Device"'), "Security should report local mode and allow local no-account actions.");
+  assert(securitySource.includes("not an online Anx account"), "Invalid local login errors should explain that online Anx credentials are not used.");
+  assert(securitySource.includes("already signed in") && securitySource.includes("Login request ignored"), "Security service should make duplicate already-authenticated login requests idempotent.");
   assert(appSource.includes("securityRequestInFlight") && appSource.includes("securitySubmitButton.disabled = true"), "Renderer should prevent duplicate login submits while a request is pending.");
   assert(appSource.includes("normalizeIpcErrorMessage") && appSource.includes("Error invoking remote method"), "Renderer should strip Electron IPC wrappers from Sign In errors.");
   assert(securitySource.includes("recordRateLimitAttempt(rateLimitKey") && securitySource.includes('resetRateLimit(rateLimitKey, "successful-login")'), "Login rate limiting should count failed attempts and reset after successful auth.");

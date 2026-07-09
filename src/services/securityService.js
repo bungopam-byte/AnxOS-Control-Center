@@ -461,6 +461,20 @@ async function setupAdmin(payload = {}) {
 
 async function login(payload = {}) {
   const username = normalizeUsername(payload.username);
+  const activeUser = getCurrentUser();
+  if (activeUser?.username?.toLowerCase() === username.toLowerCase() && currentSession) {
+    console.info("[Security] Login request ignored because the user is already signed in.", {
+      username,
+      persistent: currentSession.persistent === true,
+    });
+    return {
+      token: currentSession.token,
+      expiresAt: new Date(currentSession.expiresAt).toISOString(),
+      persistent: currentSession.persistent === true,
+      user: activeUser,
+    };
+  }
+
   const rateLimitKey = `login:${username.toLowerCase()}`;
   const rateLimitWindowMs = 5 * 60 * 1000;
   const rateLimitLimit = 6;
@@ -488,7 +502,7 @@ async function login(payload = {}) {
   if (!ok) {
     audit({ action: "security.login", outcome: "failed", target: username, reason: "INVALID_CREDENTIALS" });
     recordRateLimitAttempt(rateLimitKey, rateLimitLimit, rateLimitWindowMs, { reason: "INVALID_CREDENTIALS" });
-    const error = new Error("Invalid username or password.");
+    const error = new Error("Invalid username or password. This is the local owner account for this device, not an online Anx account.");
     error.code = "INVALID_CREDENTIALS";
     throw error;
   }

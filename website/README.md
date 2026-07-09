@@ -2,9 +2,9 @@
 
 Static download page for `AnxOS-Control-Center`.
 
-## Edit Release Data
+## Release Data
 
-All public release data is in `config.js`:
+All public release data is generated into `config.js`:
 
 - latest version
 - release date
@@ -13,7 +13,13 @@ All public release data is in `config.js`:
 - file names
 - file sizes
 
-Update that file whenever a new GitHub release is published.
+Run this after building release artifacts:
+
+```bash
+npm run website:sync
+```
+
+The normal `npm run updates:manifest` release step also runs the website sync, so the download site stays aligned with app releases.
 
 ## Local Development
 

@@ -350,6 +350,7 @@ const securitySettingsMessage = document.querySelector("[data-security-settings-
 const securityStaySignedIn = document.querySelector('[data-security-field="staySignedIn"]');
 const securityStaySignedInRow = document.querySelector("[data-security-stay-row]");
 const localSetupButtons = document.querySelectorAll("[data-local-setup-action]");
+const securitySubmitButton = document.querySelector("[data-security-submit]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -528,6 +529,7 @@ let selectedStorageId = "local";
 let storageFormMode = "sftp";
 let editingStorageId = null;
 const fileTransfers = new Map();
+let securityRequestInFlight = false;
 const filesConnectionState = {
   connected: false,
   profileId: null,
@@ -882,6 +884,15 @@ function updateStartupMessage(message, detail) {
   if (startupDetail) {
     startupDetail.textContent = detail;
   }
+}
+
+function normalizeIpcErrorMessage(error, fallback = "Request failed.") {
+  let message = String(error?.message || error || fallback);
+  const ipcPrefixPattern = /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/;
+  while (ipcPrefixPattern.test(message)) {
+    message = message.replace(ipcPrefixPattern, "").trim();
+  }
+  return message || fallback;
 }
 
 function readStoredSettings() {
@@ -13392,8 +13403,13 @@ async function refreshSecurityState() {
 async function submitSecurityForm(event) {
   event?.preventDefault();
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasSecurity) {
+  if (!desktopApiState.hasSecurity || securityRequestInFlight) {
     return;
+  }
+  securityRequestInFlight = true;
+  if (securitySubmitButton) {
+    securitySubmitButton.disabled = true;
+    securitySubmitButton.textContent = securityState.setupRequired ? "Setting up..." : "Signing in...";
   }
   const username = document.querySelector('[data-security-field="username"]')?.value || "";
   const password = document.querySelector('[data-security-field="password"]')?.value || "";
@@ -13414,10 +13430,17 @@ async function submitSecurityForm(event) {
     setLocalSetupComplete();
     showToast("Signed in.");
   } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Security request failed.");
     if (securityMessage) {
-      securityMessage.textContent = error?.message || "Security request failed.";
+      securityMessage.textContent = message;
     }
-    showToast(error?.message || "Security request failed.");
+    showToast(message);
+  } finally {
+    securityRequestInFlight = false;
+    if (securitySubmitButton) {
+      securitySubmitButton.disabled = false;
+      securitySubmitButton.textContent = "Continue";
+    }
   }
 }
 

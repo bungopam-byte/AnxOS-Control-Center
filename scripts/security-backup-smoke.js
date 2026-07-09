@@ -95,6 +95,33 @@ async function main() {
   assert(nodes.nodes.some((node) => node.id === savedNode.node.id), "Registered node should be listed.");
   assert.strictEqual(nodeService.selectNode(savedNode.node.id).selectedNodeId, savedNode.node.id, "Node selection should persist.");
   assert.strictEqual(nodeService.deleteNode(savedNode.node.id).deleted, true, "Node delete should work.");
+  security.logout();
+  await assert.rejects(
+    () => security.login({ username: "owner", password: "wrong password 1" }),
+    /Invalid username or password/,
+    "A failed login should be rejected without logging in.",
+  );
+  await assert.rejects(
+    () => security.login({ username: "owner", password: "wrong password 2" }),
+    /Invalid username or password/,
+    "A second failed login should be rejected.",
+  );
+  await security.login({ username: "owner", password: "new correct horse battery staple" });
+  security.logout();
+  await security.login({ username: "owner", password: "new correct horse battery staple" });
+  security.logout();
+  for (let index = 0; index < 6; index += 1) {
+    await assert.rejects(
+      () => security.login({ username: "owner", password: `wrong password ${index + 3}` }),
+      /Invalid username or password/,
+      "Failed login attempts before the limit should return credential errors.",
+    );
+  }
+  await assert.rejects(
+    () => security.login({ username: "owner", password: "new correct horse battery staple" }),
+    /Too many requests|RATE_LIMITED/,
+    "Rate limiting should only block after genuine repeated failed attempts.",
+  );
   security.checkRateLimit("smoke-limit", 1, 60000);
   assert.throws(() => security.checkRateLimit("smoke-limit", 1, 60000), /Too many requests|RATE_LIMITED/);
 

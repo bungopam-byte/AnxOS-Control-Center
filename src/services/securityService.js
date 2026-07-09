@@ -335,6 +335,49 @@ function checkRateLimit(key, limit, windowMs) {
   }
 }
 
+function getRateLimitState(key, windowMs) {
+  const now = Date.now();
+  const active = (rateBuckets.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+  rateBuckets.set(key, active);
+  return {
+    key,
+    count: active.length,
+    windowMs,
+  };
+}
+
+function recordRateLimitAttempt(key, limit, windowMs, details = {}) {
+  const now = Date.now();
+  const active = (rateBuckets.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+  active.push(now);
+  rateBuckets.set(key, active);
+  console.warn("[Security] Rate-limit attempt recorded.", {
+    key,
+    count: active.length,
+    limit,
+    windowMs,
+    reason: details.reason || null,
+  });
+  if (active.length > limit) {
+    const error = new Error("Too many requests. Try again shortly.");
+    error.code = "RATE_LIMITED";
+    console.warn("[Security] Rate limit triggered.", {
+      key,
+      count: active.length,
+      limit,
+      windowMs,
+      reason: details.reason || null,
+    });
+    throw error;
+  }
+}
+
+function resetRateLimit(key, reason = "reset") {
+  if (rateBuckets.delete(key)) {
+    console.info("[Security] Rate-limit bucket reset.", { key, reason });
+  }
+}
+
 function normalizeUsername(value) {
   const username = String(value || "").trim();
   if (!/^[a-zA-Z0-9_.-]{3,40}$/.test(username)) {
@@ -418,17 +461,39 @@ async function setupAdmin(payload = {}) {
 
 async function login(payload = {}) {
   const username = normalizeUsername(payload.username);
-  checkRateLimit(`login:${username.toLowerCase()}`, 6, 5 * 60 * 1000);
+  const rateLimitKey = `login:${username.toLowerCase()}`;
+  const rateLimitWindowMs = 5 * 60 * 1000;
+  const rateLimitLimit = 6;
+  const rateLimitState = getRateLimitState(rateLimitKey, rateLimitWindowMs);
+  console.info("[Security] Login attempt started.", {
+    username,
+    failedAttemptCount: rateLimitState.count,
+    limit: rateLimitLimit,
+    staySignedIn: payload.staySignedIn === true,
+  });
+  if (rateLimitState.count >= rateLimitLimit) {
+    console.warn("[Security] Login blocked by rate limit before credential check.", {
+      username,
+      failedAttemptCount: rateLimitState.count,
+      limit: rateLimitLimit,
+    });
+    const error = new Error("Too many requests. Try again shortly.");
+    error.code = "RATE_LIMITED";
+    throw error;
+  }
   const state = readSecurityState();
   const user = state.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
   const ok = user ? await bcrypt.compare(String(payload.password || ""), user.passwordHash) : false;
 
   if (!ok) {
     audit({ action: "security.login", outcome: "failed", target: username, reason: "INVALID_CREDENTIALS" });
+    recordRateLimitAttempt(rateLimitKey, rateLimitLimit, rateLimitWindowMs, { reason: "INVALID_CREDENTIALS" });
     const error = new Error("Invalid username or password.");
     error.code = "INVALID_CREDENTIALS";
     throw error;
   }
+
+  resetRateLimit(rateLimitKey, "successful-login");
 
   user.lastLoginAt = new Date().toISOString();
   user.updatedAt = new Date().toISOString();

@@ -379,6 +379,7 @@ function assertSingleDeviceModeExperience() {
   const indexSource = fs.readFileSync(indexPath, "utf8");
   const nodeSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "nodeService.js"), "utf8");
   const securitySource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "securityService.js"), "utf8");
+  const securityIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "securityIpc.js"), "utf8");
   const routerSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "serviceRouter.js"), "utf8");
   const fileSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "fileService.js"), "utf8");
   const agentSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
@@ -390,6 +391,10 @@ function assertSingleDeviceModeExperience() {
   assert(appSource.includes("showRemoteControlSetup"), "Renderer should expose optional Remote Control setup.");
   assert(nodeSource.includes('displayName: "This Device"') && nodeSource.includes("local:"), "Default node should be a visible local This Device node.");
   assert(securitySource.includes("localMode") && securitySource.includes('username: "This Device"'), "Security should report local mode and allow local no-account actions.");
+  assert(appSource.includes("securityRequestInFlight") && appSource.includes("securitySubmitButton.disabled = true"), "Renderer should prevent duplicate login submits while a request is pending.");
+  assert(appSource.includes("normalizeIpcErrorMessage") && appSource.includes("Error invoking remote method"), "Renderer should strip Electron IPC wrappers from Sign In errors.");
+  assert(securitySource.includes("recordRateLimitAttempt(rateLimitKey") && securitySource.includes('resetRateLimit(rateLimitKey, "successful-login")'), "Login rate limiting should count failed attempts and reset after successful auth.");
+  assert(securityIpcSource.includes("[Security][IPC] Operation started.") && securityIpcSource.includes("security:login"), "Security IPC should log login request boundaries for duplicate-call diagnosis.");
   assert(routerSource.includes("shouldUseLocalInstances") && routerSource.includes("localInstanceService"), "Service router should use local instances for the built-in node.");
   assert(agentSource.includes("shouldUseLocalInstanceService") && agentSource.includes("getLocalInstanceService"), "Agent client should fallback to local instances for legacy/default local call sites.");
   assert(fileSource.includes("shouldUseLocalFiles") && fileSource.includes("Browsing files on this device."), "File service should support local filesystem browsing.");

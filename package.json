@@ -1,7 +1,7 @@
 {
   "name": "anxos-control-center",
   "productName": "AnxOS Control Center",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "Private local desktop control center for a Debian server.",
   "author": "Anx",
   "license": "UNLICENSED",

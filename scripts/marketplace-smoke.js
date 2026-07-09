@@ -369,6 +369,8 @@ function assertNativeUpdateExperience() {
   assert(indexSource.includes("data-update-release-notes"), "Update modal should include release notes.");
   assert(appSource.includes("renderMarkdownLite"), "Renderer should render markdown release notes in the update modal.");
   assert(appSource.includes("skipUpdateVersion"), "Renderer should support skipping a specific update version.");
+  assert(appSource.includes('state?.status === "available" && state?.latest?.hasUpdate'), "Renderer should open the update modal when startup state already has an available update.");
+  assert(appSource.includes('renderUpdateModal("up-to-date")'), "Manual update checks should open a clear up-to-date modal instead of doing nothing.");
   assert(compareUpdateVersions("1.0.21", "1.0.20") > 0, "Update version comparison should detect newer releases.");
 }
 

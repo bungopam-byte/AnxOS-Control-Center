@@ -14119,6 +14119,8 @@ function getUpdateModeFromState(state = updateUiState) {
   if (state?.status === "downloaded") return "downloaded";
   if (state?.status === "downloading" || state?.downloadInFlight) return "downloading";
   if (state?.status === "error") return "error";
+  if (state?.status === "up-to-date") return "up-to-date";
+  if (state?.status === "unavailable") return "unavailable";
   return "available";
 }
 
@@ -14159,7 +14161,17 @@ function renderUpdateModal(mode = getUpdateModeFromState()) {
   const currentVersion = update.currentVersion || "current build";
 
   if (updateTitle) {
-    updateTitle.textContent = mode === "downloaded" ? "Ready to Install" : mode === "downloading" ? "Downloading Update" : "New Version Available";
+    updateTitle.textContent = mode === "downloaded"
+      ? "Ready to Install"
+      : mode === "downloading"
+        ? "Downloading Update"
+        : mode === "up-to-date"
+          ? "You're Up to Date"
+          : mode === "unavailable"
+            ? "Update Check Unavailable"
+            : mode === "error"
+              ? "Update Check Failed"
+              : "New Version Available";
   }
 
   if (updateMessage) {
@@ -14167,6 +14179,10 @@ function renderUpdateModal(mode = getUpdateModeFromState()) {
       updateMessage.textContent = "Downloading the update. You can keep using AnxOS while this finishes.";
     } else if (mode === "downloaded") {
       updateMessage.textContent = "The update is ready. Restart now to finish installing.";
+    } else if (mode === "up-to-date") {
+      updateMessage.textContent = "This AnxOS Control Center build is the latest available version.";
+    } else if (mode === "unavailable") {
+      updateMessage.textContent = update.message || "AnxOS could not find a published update release.";
     } else if (mode === "error") {
       updateMessage.textContent = updateUiState?.error || "The update could not be downloaded.";
     } else {
@@ -14197,8 +14213,20 @@ function renderUpdateModal(mode = getUpdateModeFromState()) {
 
   if (updatePrimaryButton) {
     updatePrimaryButton.disabled = mode === "downloading";
-    updatePrimaryButton.textContent = mode === "downloaded" ? "Restart Now" : mode === "downloading" ? "Downloading..." : mode === "error" ? "Retry" : "Download & Install";
+    updatePrimaryButton.textContent = mode === "downloaded"
+      ? "Restart Now"
+      : mode === "downloading"
+        ? "Downloading..."
+        : mode === "error"
+          ? "Retry"
+          : mode === "up-to-date" || mode === "unavailable"
+            ? "Close"
+            : "Download & Install";
   }
+
+  document.querySelectorAll('[data-update-action="skip"]').forEach((button) => {
+    button.hidden = mode === "up-to-date" || mode === "unavailable" || mode === "error";
+  });
 
   if (mode !== "downloading") {
     renderUpdateProgress(null);
@@ -14252,6 +14280,9 @@ function handleUpdateStatus(payload = {}) {
   }
   if (["checking", "not-available", "unavailable", "error", "skipped"].includes(payload.type)) {
     renderUpdateSurfaces(updateUiState);
+    if (payload.type === "error" && payload.notify) {
+      renderUpdateModal("error");
+    }
   }
 }
 
@@ -14283,17 +14314,32 @@ async function checkForUpdates(options = {}) {
         showToast(result.message || "No update release is published yet.", "warning");
       }
     } else if (result?.error) {
+      updateUiState = {
+        ...(updateUiState || {}),
+        status: "error",
+        error: result.error,
+        latest: latestUpdateInfo,
+      };
       setUpdateStatusMessage("Update check failed.");
 
       if (!options.silent) {
-        showToast("Update check failed.");
+        renderUpdateSurfaces(updateUiState);
+        renderUpdateModal("error");
       }
     } else if (result?.hasUpdate) {
       setUpdateStatusMessage(`Update ${result.latestVersion || ""} is available.`);
       if (!result.skipped) renderUpdateModal("available");
     } else if (!options.silent) {
+      latestUpdateInfo = result || latestUpdateInfo;
+      updateUiState = {
+        ...(updateUiState || {}),
+        status: "up-to-date",
+        latest: result || latestUpdateInfo,
+        lastCheckedAt: new Date().toISOString(),
+      };
       setUpdateStatusMessage("You are running the latest available version.");
-      showToast("No update available.");
+      renderUpdateSurfaces(updateUiState);
+      renderUpdateModal("up-to-date");
     } else {
       setUpdateStatusMessage("Updates check automatically on startup.");
     }
@@ -14394,6 +14440,11 @@ function setupUpdates() {
     updateUiState = state;
     latestUpdateInfo = state?.latest || latestUpdateInfo;
     renderUpdateSurfaces(state);
+    if (state?.status === "available" && state?.latest?.hasUpdate && !state?.latest?.skipped) {
+      renderUpdateModal("available");
+    } else if (state?.status === "downloaded") {
+      renderUpdateModal("downloaded");
+    }
   }).catch(() => {});
 }
 
@@ -15090,8 +15141,13 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
     if (action === "check") {
       await checkForUpdates({ silent: false });
     } else if (action === "primary") {
-      if (getUpdateModeFromState() === "downloaded") {
+      const mode = getUpdateModeFromState();
+      if (mode === "downloaded") {
         await installUpdate();
+      } else if (mode === "up-to-date" || mode === "unavailable") {
+        setUpdateModalVisible(false);
+      } else if (mode === "error" && !latestUpdateInfo?.hasUpdate) {
+        await checkForUpdates({ silent: false });
       } else {
         await downloadUpdate();
       }

@@ -4,6 +4,7 @@ const fsSync = require("fs");
 const net = require("net");
 const os = require("os");
 const path = require("path");
+const zlib = require("zlib");
 
 const { getConfig } = require("../../config");
 
@@ -618,6 +619,18 @@ function pickString(...values) {
   return null;
 }
 
+function booleanProperty(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(text)) return true;
+  if (["false", "0", "no", "off"].includes(text)) return false;
+  return null;
+}
+
+function integerProperty(value) {
+  const number = Number.parseInt(value, 10);
+  return Number.isInteger(number) && number > 0 && number <= 65535 ? number : null;
+}
+
 function pickTunnelAddress(config = {}) {
   const playit = config.playit && typeof config.playit === "object" ? config.playit : {};
   const network = config.network && typeof config.network === "object" ? config.network : {};
@@ -638,6 +651,26 @@ function pickTunnelAddress(config = {}) {
     primaryTunnel.address,
     primaryTunnel.url
   );
+}
+
+function parseRandomSeedFromLevelDat(buffer) {
+  const candidates = [buffer];
+  try {
+    candidates.push(zlib.gunzipSync(buffer));
+  } catch {}
+
+  for (const candidate of candidates) {
+    const name = Buffer.from("RandomSeed", "utf8");
+    const offset = candidate.indexOf(name);
+    if (offset < 3) continue;
+    const tagOffset = offset - 3;
+    const nameLength = candidate.readUInt16BE(offset - 2);
+    const valueOffset = offset + nameLength;
+    if (candidate[tagOffset] !== 4 || nameLength !== name.length || valueOffset + 8 > candidate.length) continue;
+    return String(candidate.readBigInt64BE(valueOffset));
+  }
+
+  return null;
 }
 
 function parseTpsFromMessages(messages = []) {
@@ -667,9 +700,109 @@ async function queryMinecraftRuntimeStatus(config) {
   for (const port of getMinecraftStatusPorts(config)) {
     const status = await queryMinecraftStatus(port).catch(() => null);
     if (status?.version || status?.players) {
-      return status;
+      return { status, port };
     }
   }
+  return null;
+}
+
+function buildRconPacket(id, type, payload = "") {
+  const body = Buffer.concat([
+    Buffer.alloc(4),
+    Buffer.alloc(4),
+    Buffer.from(String(payload), "utf8"),
+    Buffer.from([0, 0]),
+  ]);
+  body.writeInt32LE(id, 0);
+  body.writeInt32LE(type, 4);
+  const packet = Buffer.alloc(body.length + 4);
+  packet.writeInt32LE(body.length, 0);
+  body.copy(packet, 4);
+  return packet;
+}
+
+function parseRconPacket(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 14) return null;
+  const length = buffer.readInt32LE(0);
+  if (length + 4 > buffer.length) return null;
+  return {
+    id: buffer.readInt32LE(4),
+    type: buffer.readInt32LE(8),
+    payload: buffer.subarray(12, 4 + length - 2).toString("utf8"),
+  };
+}
+
+async function runRconCommand(port, password, command) {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const chunks = [];
+    let stage = "login";
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(PORT_CONNECT_TIMEOUT_MS);
+    socket.on("connect", () => {
+      socket.write(buildRconPacket(1, 3, password));
+    });
+    socket.on("data", (chunk) => {
+      chunks.push(chunk);
+      const packet = parseRconPacket(Buffer.concat(chunks));
+      if (!packet) return;
+      chunks.length = 0;
+      if (stage === "login") {
+        if (packet.id !== 1) {
+          finish(null);
+          return;
+        }
+        stage = "command";
+        socket.write(buildRconPacket(2, 2, command));
+        return;
+      }
+      finish(packet.payload || null);
+    });
+    socket.on("timeout", () => finish(null));
+    socket.on("error", () => finish(null));
+    socket.on("close", () => finish(null));
+  });
+}
+
+async function queryMinecraftRcon(config, properties = {}) {
+  const enabled = booleanProperty(properties["enable-rcon"]);
+  const port = integerProperty(properties["rcon.port"]) || integerProperty(config.rconPort);
+  const password = pickString(properties["rcon.password"], config.rconPassword);
+  if (enabled !== true || !port || !password) {
+    return null;
+  }
+  const [tpsOutput, seedOutput] = await Promise.all([
+    runRconCommand(port, password, "tps"),
+    runRconCommand(port, password, "seed"),
+  ]);
+  const seedMatch = String(seedOutput || "").match(/-?\d{4,}/);
+  return {
+    tps: parseTpsFromMessages([tpsOutput]),
+    seed: seedMatch ? seedMatch[0] : null,
+  };
+}
+
+async function readLevelDatSeed(instanceId, worldName = "world") {
+  const safeWorld = String(worldName || "world").replace(/[\\/]/g, "").trim() || "world";
+  const candidates = [
+    path.join(instancePath(instanceId), "data", safeWorld, "level.dat"),
+    path.join(instancePath(instanceId), "data", "world", "level.dat"),
+  ];
+
+  for (const filePath of candidates) {
+    try {
+      const buffer = await fs.readFile(filePath);
+      const seed = parseRandomSeedFromLevelDat(buffer);
+      if (seed) return seed;
+    } catch {}
+  }
+
   return null;
 }
 
@@ -679,12 +812,22 @@ async function buildMinecraftSummary(config) {
   }
 
   const properties = (await readMinecraftProperties(config.id).catch(() => ({ properties: {} }))).properties || {};
-  const status = config.state === INSTANCE_STATES.RUNNING ? await queryMinecraftRuntimeStatus(config) : null;
+  const queryEnabled = booleanProperty(properties["enable-query"]);
+  const queryPort = integerProperty(properties["query.port"]) || integerProperty(config.queryPort) || integerProperty(config.primaryPort);
+  const rconEnabled = booleanProperty(properties["enable-rcon"]);
+  const rconPort = integerProperty(properties["rcon.port"]) || integerProperty(config.rconPort);
+  const queryResult = config.state === INSTANCE_STATES.RUNNING ? await queryMinecraftRuntimeStatus({ ...config, queryPort }) : null;
+  const rconResult = config.state === INSTANCE_STATES.RUNNING ? await queryMinecraftRcon(config, properties) : null;
+  const status = queryResult?.status || null;
   const logMessages = await readRecentLogMessages(config.id).catch(() => []);
   const players = status?.players && typeof status.players === "object" ? status.players : {};
   const maxPlayers = numericOrNull(players.max) ?? numericOrNull(properties["max-players"]) ?? numericOrNull(config.maxPlayers);
   const onlinePlayers = numericOrNull(players.online) ?? numericOrNull(config.onlinePlayers);
   const version = parseMinecraftVersion(status?.version?.name) || config.minecraftVersion || config.gameVersion || config.versionInfo?.gameVersion || null;
+  const worldName = pickString(config.worldName, config.world, properties["level-name"], "world");
+  const seed = pickString(config.seed, config.worldSeed, properties["level-seed"]) || await readLevelDatSeed(config.id, worldName) || pickString(rconResult?.seed);
+  const hasLivePlayers = numericOrNull(players.online) !== null || numericOrNull(players.max) !== null;
+  const tps = numericOrNull(config.tps) ?? numericOrNull(config.stats?.tps) ?? numericOrNull(config.runtime?.tps) ?? parseTpsFromMessages(logMessages) ?? numericOrNull(rconResult?.tps);
 
   return {
     version,
@@ -693,10 +836,18 @@ async function buildMinecraftSummary(config) {
     players: {
       online: onlinePlayers,
       max: maxPlayers,
+      status: hasLivePlayers ? "reported" : config.state !== INSTANCE_STATES.RUNNING ? "waiting" : queryEnabled === false ? "query-disabled" : "not-reported",
+      queryEnabled,
+      queryPort,
+      statusPort: queryResult?.port || null,
     },
-    tps: numericOrNull(config.tps) ?? numericOrNull(config.stats?.tps) ?? numericOrNull(config.runtime?.tps) ?? parseTpsFromMessages(logMessages),
-    worldName: pickString(config.worldName, config.world, properties["level-name"], "world"),
-    seed: pickString(config.seed, config.worldSeed, properties["level-seed"]),
+    tps,
+    tpsStatus: tps !== null ? "reported" : rconEnabled === false ? "rcon-disabled" : "not-reported",
+    worldName,
+    seed,
+    seedStatus: seed ? "reported" : rconEnabled === false ? "rcon-disabled" : "not-reported",
+    query: { enabled: queryEnabled, port: queryPort, status: hasLivePlayers ? "reported" : queryEnabled === false ? "disabled" : "not-reported" },
+    rcon: { enabled: rconEnabled, port: rconPort, status: rconEnabled === false ? "disabled" : "not-reported" },
     playitTunnel: pickTunnelAddress(config),
   };
 }
@@ -1465,6 +1616,7 @@ async function detectFromJars(config) {
 
 function getMinecraftStatusPorts(config) {
   const values = [
+    config.queryPort,
     config.primaryPort,
     ...(Array.isArray(config.ports) ? config.ports : []),
     25565,
@@ -2626,24 +2778,26 @@ function serializeProperties(properties) {
 }
 
 async function readMinecraftProperties(instanceId) {
-  try {
-    const file = await readInstanceFile(instanceId, "server.properties");
-    return {
-      id: file.id,
-      path: file.path,
-      properties: parseProperties(file.content),
-    };
-  } catch (error) {
-    if (error?.code === "PATH_NOT_FOUND") {
+  const id = validateInstanceId(instanceId);
+  for (const requestedPath of ["server.properties", "server/server.properties"]) {
+    try {
+      const file = await readInstanceFile(id, requestedPath);
       return {
-        id: validateInstanceId(instanceId),
-        path: "server.properties",
-        properties: {},
+        id: file.id,
+        path: file.path,
+        properties: parseProperties(file.content),
       };
+    } catch (error) {
+      if (error?.code !== "PATH_NOT_FOUND") {
+        throw error;
+      }
     }
-
-    throw error;
   }
+  return {
+    id,
+    path: "server.properties",
+    properties: {},
+  };
 }
 
 async function writeMinecraftProperties(instanceId, properties) {
@@ -2777,6 +2931,10 @@ async function getMetrics(instanceId) {
 }
 
 module.exports = {
+  _test: {
+    parseRandomSeedFromLevelDat,
+    parseTpsFromMessages,
+  },
   INSTANCE_STATES,
   INSTANCE_TYPES: [...INSTANCE_TYPES],
   createInstance,

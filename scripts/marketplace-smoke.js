@@ -10,6 +10,8 @@ const modrinthProvider = require("../src/services/providers/modrinthProvider");
 const curseforgeProvider = require("../src/services/providers/curseforgeProvider");
 const { getMarketplaceConfigPath } = require("../src/services/providerConfigService");
 const { normalizeMarketplaceError, stripIpcErrorWrapper } = require("../src/shared/marketplaceError");
+const agentInstanceService = require("../agent/src/services/instances/instanceService");
+const { compareVersions: compareUpdateVersions } = require("../src/services/updateManager");
 
 const catalogPath = path.join(__dirname, "..", "config", "marketplace-templates.json");
 const appPath = path.join(__dirname, "..", "app.js");
@@ -331,6 +333,43 @@ function assertNonMinecraftServerTypeIsCleared() {
   assert(!indexSource.includes("<option selected>Paper</option>"), "Marketplace wizard must not preselect Paper in static markup.");
   assert(source.includes("configureMarketplaceRuntimeField(template"), "Renderer should configure server runtime from template metadata.");
   assert(!source.includes('template.displayName || template.id || "Paper"'), "Renderer must not use template display names to force Paper defaults.");
+}
+
+function assertMinecraftLiveMetadataRendering() {
+  const source = fs.readFileSync(appPath, "utf8");
+  assert(source.includes("function formatMinecraftOverviewPlayers("), "Renderer should use Overview-specific Minecraft player formatting.");
+  assert(source.includes("function formatMinecraftOverviewTps("), "Renderer should use Overview-specific Minecraft TPS formatting.");
+  assert(source.includes('return "Query disabled";'), "Renderer should show Query disabled when live player status is unavailable because query is disabled.");
+  assert(source.includes('return "RCON disabled";'), "Renderer should show RCON disabled when TPS or seed cannot be reported through RCON.");
+  assert(!source.includes("function formatMinecraftPlayers("), "Renderer must not shadow Overview player formatting with dashboard helpers.");
+  assert(!source.includes("function formatMinecraftTps("), "Renderer must not shadow Overview TPS formatting with dashboard helpers.");
+
+  const seedName = Buffer.from("RandomSeed", "utf8");
+  const levelDat = Buffer.concat([
+    Buffer.from([4]),
+    Buffer.from([0, seedName.length]),
+    seedName,
+    Buffer.alloc(8),
+  ]);
+  levelDat.writeBigInt64BE(1234567890123n, 1 + 2 + seedName.length);
+  assert.strictEqual(agentInstanceService._test.parseRandomSeedFromLevelDat(levelDat), "1234567890123", "Agent should parse world seed from level.dat RandomSeed.");
+  assert.strictEqual(agentInstanceService._test.parseTpsFromMessages(["[Server thread/INFO]: TPS from last 1m, 5m, 15m: 19.8, 19.7, 19.6"]), 19.8, "Agent should parse TPS from recent console logs.");
+}
+
+function assertNativeUpdateExperience() {
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preloadSource = fs.readFileSync(preloadPath, "utf8");
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const indexSource = fs.readFileSync(indexPath, "utf8");
+  assert(mainSource.includes("new UpdateManager()"), "Main process should use the dedicated UpdateManager service.");
+  assert(preloadSource.includes("getState: () => ipcRenderer.invoke(\"updates:getState\")"), "Preload should expose update state.");
+  assert(preloadSource.includes("skip: (version) => ipcRenderer.invoke(\"updates:skip\""), "Preload should expose skip-version action.");
+  assert(indexSource.includes("data-update-sidebar-badge"), "Sidebar should include a persistent update badge.");
+  assert(indexSource.includes("data-update-ready-banner"), "App shell should include a persistent update-ready banner.");
+  assert(indexSource.includes("data-update-release-notes"), "Update modal should include release notes.");
+  assert(appSource.includes("renderMarkdownLite"), "Renderer should render markdown release notes in the update modal.");
+  assert(appSource.includes("skipUpdateVersion"), "Renderer should support skipping a specific update version.");
+  assert(compareUpdateVersions("1.0.21", "1.0.20") > 0, "Update version comparison should detect newer releases.");
 }
 
 function assertMarketplaceVersionMetadata() {
@@ -1712,6 +1751,8 @@ async function main() {
   assertGameTemplateCreatePayloadsAreAgentSafe();
   assertTemplateFilePathsAreDataRelative();
   assertNonMinecraftServerTypeIsCleared();
+  assertMinecraftLiveMetadataRendering();
+  assertNativeUpdateExperience();
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMPlaceholderStartIsBlocked();

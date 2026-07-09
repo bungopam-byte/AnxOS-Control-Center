@@ -1,0 +1,405 @@
+const { EventEmitter } = require("events");
+const { app, autoUpdater, BrowserWindow, shell } = require("electron");
+const fs = require("fs");
+const http = require("http");
+const https = require("https");
+const path = require("path");
+
+const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
+const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
+const UPDATE_MANIFEST_URLS = [
+  process.env.ANXHUB_UPDATE_MANIFEST_URL,
+  "http://192.168.1.134:8766/update-manifest.json",
+].filter(Boolean);
+const UPDATE_STATUS_CHANNEL = "updates:status";
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+function normalizeVersion(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^v/i, "")
+    .split(/[+-]/)[0];
+}
+
+function compareVersions(left, right) {
+  const leftParts = normalizeVersion(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeVersion(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    if ((leftParts[index] || 0) > (rightParts[index] || 0)) return 1;
+    if ((leftParts[index] || 0) < (rightParts[index] || 0)) return -1;
+  }
+  return 0;
+}
+
+function sanitizeFileName(value) {
+  return String(value || "AnxOS-Control-Center-update.exe").replace(/[<>:"/\\|?*\x00-\x1f]/g, "_");
+}
+
+function getRequestModule(url) {
+  return String(url || "").startsWith("http://") ? http : https;
+}
+
+function normalizeManifestAsset(asset) {
+  const downloadUrl = asset?.browser_download_url || asset?.downloadUrl || asset?.url;
+  if (!downloadUrl) return null;
+  return {
+    name: asset.name || path.basename(new URL(downloadUrl).pathname) || "AnxOS-Control-Center-update",
+    size: Number(asset.size || 0),
+    browser_download_url: downloadUrl,
+  };
+}
+
+function normalizeManifestRelease(manifest, sourceUrl) {
+  const rawAssets = Array.isArray(manifest?.assets) ? manifest.assets : [];
+  const latestVersion = normalizeVersion(manifest?.version || manifest?.tag_name || manifest?.name);
+  return {
+    tag_name: latestVersion ? `v${latestVersion}` : null,
+    name: manifest?.name || (latestVersion ? `v${latestVersion}` : "AnxOS update"),
+    body: manifest?.body || manifest?.notes || manifest?.releaseNotes || "",
+    html_url: manifest?.html_url || manifest?.releaseUrl || sourceUrl,
+    published_at: manifest?.published_at || manifest?.publishedAt || null,
+    assets: rawAssets.map(normalizeManifestAsset).filter(Boolean),
+  };
+}
+
+function pickUpdateAsset(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const viableAssets = assets.filter((asset) => {
+    const name = String(asset?.name || "").toLowerCase();
+    const downloadUrl = String(asset?.browser_download_url || "");
+    const size = Number(asset?.size || 0);
+    return downloadUrl && size > 5 * 1024 * 1024 && (name.endsWith(".exe") || name.endsWith(".zip") || name.endsWith(".appimage") || name.endsWith(".deb"));
+  });
+  const platformMatchers = process.platform === "win32"
+    ? [/setup.*\.exe$/i, /installer.*\.exe$/i, /control-center-setup.*\.exe$/i, /portable.*\.exe$/i, /win.*\.exe$/i, /\.exe$/i]
+    : process.platform === "linux"
+      ? [/\.deb$/i, /\.appimage$/i]
+      : [/\.dmg$/i, /\.zip$/i];
+  for (const matcher of platformMatchers) {
+    const match = viableAssets.find((asset) => matcher.test(asset.name || ""));
+    if (match) return match;
+  }
+  return viableAssets[0] || null;
+}
+
+class UpdateManager extends EventEmitter {
+  constructor() {
+    super();
+    this.state = {
+      status: "idle",
+      latest: null,
+      downloadedPath: null,
+      downloadInFlight: false,
+      checkInFlight: false,
+      lastCheckedAt: null,
+      error: null,
+      progress: null,
+    };
+    this.logs = [];
+    this.skippedVersions = new Set();
+    this.notifiedVersions = new Set();
+    this.interval = null;
+    this.storePath = "";
+  }
+
+  initialize() {
+    this.storePath = path.join(app.getPath("userData"), "config", "updates.json");
+    this.loadStore();
+    this.bindAutoUpdaterEvents();
+    this.log("UpdateManager initialized.", { autoUpdaterAvailable: Boolean(autoUpdater) });
+  }
+
+  bindAutoUpdaterEvents() {
+    if (!autoUpdater) return;
+    autoUpdater.on("checking-for-update", () => this.log("autoUpdater checking-for-update."));
+    autoUpdater.on("update-available", (info) => this.log("autoUpdater update-available.", info));
+    autoUpdater.on("update-not-available", (info) => this.log("autoUpdater update-not-available.", info));
+    autoUpdater.on("update-downloaded", (event, releaseNotes, releaseName) => this.log("autoUpdater update-downloaded.", { releaseName, releaseNotes: Boolean(releaseNotes) }));
+    autoUpdater.on("error", (error) => this.log("autoUpdater error.", { message: error?.message || String(error) }, "error"));
+  }
+
+  start() {
+    this.check({ silent: true, source: "startup" }).catch(() => {});
+    this.interval = setInterval(() => {
+      this.check({ silent: true, source: "periodic" }).catch(() => {});
+    }, UPDATE_CHECK_INTERVAL_MS);
+    this.interval.unref?.();
+  }
+
+  stop() {
+    if (this.interval) clearInterval(this.interval);
+    this.interval = null;
+  }
+
+  loadStore() {
+    try {
+      const store = JSON.parse(fs.readFileSync(this.storePath, "utf8"));
+      this.skippedVersions = new Set(Array.isArray(store.skippedVersions) ? store.skippedVersions.map(normalizeVersion).filter(Boolean) : []);
+    } catch {
+      this.skippedVersions = new Set();
+    }
+  }
+
+  saveStore() {
+    fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
+    fs.writeFileSync(this.storePath, `${JSON.stringify({ skippedVersions: [...this.skippedVersions] }, null, 2)}\n`);
+  }
+
+  log(message, details = {}, level = "info") {
+    const entry = { at: new Date().toISOString(), level, message, details };
+    this.logs.push(entry);
+    this.logs = this.logs.slice(-250);
+    const logger = level === "error" ? console.error : level === "warn" ? console.warn : console.info;
+    logger("[Updates]", message, details);
+  }
+
+  emitStatus(type, payload = {}) {
+    const message = { type, state: this.getState(), ...payload };
+    BrowserWindow.getAllWindows().forEach((window) => {
+      if (!window.isDestroyed()) window.webContents.send(UPDATE_STATUS_CHANNEL, message);
+    });
+    this.emit("status", message);
+  }
+
+  getState() {
+    return {
+      ...this.state,
+      skippedVersions: [...this.skippedVersions],
+      logs: this.logs,
+    };
+  }
+
+  requestJson(url) {
+    return new Promise((resolve, reject) => {
+      const request = getRequestModule(url).get(url, {
+        headers: {
+          "Accept": "application/vnd.github+json",
+          "User-Agent": `AnxOS-Control-Center/${app.getVersion()}`,
+        },
+      }, (response) => {
+        if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+          response.resume();
+          this.requestJson(response.headers.location).then(resolve, reject);
+          return;
+        }
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if (response.statusCode < 200 || response.statusCode >= 300) {
+            const error = new Error(`Update metadata request failed with HTTP ${response.statusCode}: ${body.slice(0, 240)}`);
+            error.statusCode = response.statusCode;
+            reject(error);
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(new Error(`Update metadata response was not valid JSON: ${error.message}`));
+          }
+        });
+      });
+      request.setTimeout(15000, () => request.destroy(new Error("Update metadata request timed out.")));
+      request.on("error", reject);
+    });
+  }
+
+  resolveUpdateResult(release, sourceUrl) {
+    const latestVersion = normalizeVersion(release?.tag_name || release?.name);
+    const currentVersion = normalizeVersion(app.getVersion());
+    const asset = pickUpdateAsset(release);
+    const skipped = latestVersion ? this.skippedVersions.has(latestVersion) : false;
+    const hasUpdate = Boolean(latestVersion && compareVersions(latestVersion, currentVersion) > 0 && asset);
+    return {
+      hasUpdate,
+      skipped,
+      currentVersion,
+      latestVersion: latestVersion || null,
+      releaseName: release?.name || release?.tag_name || null,
+      releaseDate: release?.published_at || null,
+      releaseNotes: release?.body || "",
+      releaseUrl: release?.html_url || sourceUrl || `https://github.com/${UPDATE_REPOSITORY}/releases`,
+      publishedAt: release?.published_at || null,
+      sourceUrl,
+      asset: asset ? { name: asset.name, size: asset.size, downloadUrl: asset.browser_download_url } : null,
+    };
+  }
+
+  async check(options = {}) {
+    if (this.state.checkInFlight) {
+      this.log("Update check already running.", { source: options.source || "manual" }, "warn");
+      return this.getState();
+    }
+    this.state.checkInFlight = true;
+    this.state.status = "checking";
+    this.state.error = null;
+    this.log("Checking for updates.", { source: options.source || "manual", silent: Boolean(options.silent) });
+    this.emitStatus("checking");
+    const checkedSources = [];
+    try {
+      let release = null;
+      let sourceUrl = "";
+      try {
+        checkedSources.push(UPDATE_RELEASES_URL);
+        release = await this.requestJson(UPDATE_RELEASES_URL);
+        sourceUrl = UPDATE_RELEASES_URL;
+      } catch (error) {
+        this.log("GitHub release check failed.", { message: error?.message || String(error), url: UPDATE_RELEASES_URL }, error?.statusCode === 404 ? "warn" : "error");
+      }
+      if (!release) {
+        for (const manifestUrl of UPDATE_MANIFEST_URLS) {
+          try {
+            checkedSources.push(manifestUrl);
+            release = normalizeManifestRelease(await this.requestJson(manifestUrl), manifestUrl);
+            sourceUrl = manifestUrl;
+            break;
+          } catch (error) {
+            this.log("Update manifest check failed.", { message: error?.message || String(error), url: manifestUrl }, "warn");
+          }
+        }
+      }
+      if (!release) {
+        this.state.status = "unavailable";
+        this.state.latest = { hasUpdate: false, releaseUnavailable: true, message: "No update release is published yet.", checkedSources };
+        this.state.lastCheckedAt = new Date().toISOString();
+        this.log("No update release is published yet.", { checkedSources }, "warn");
+        this.emitStatus("unavailable", { update: this.state.latest });
+        return this.state.latest;
+      }
+      const result = this.resolveUpdateResult(release, sourceUrl);
+      this.state.latest = result;
+      this.state.lastCheckedAt = new Date().toISOString();
+      if (result.hasUpdate) {
+        this.state.status = result.skipped ? "skipped" : "available";
+        this.log("Update available.", { latestVersion: result.latestVersion, skipped: result.skipped, asset: result.asset?.name || null });
+        const shouldNotify = !result.skipped && (!this.notifiedVersions.has(result.latestVersion) || options.forceNotify);
+        if (shouldNotify) this.notifiedVersions.add(result.latestVersion);
+        this.emitStatus("available", { update: result, notify: shouldNotify });
+      } else {
+        this.state.status = "up-to-date";
+        this.log("No updates available.", { currentVersion: result.currentVersion, latestVersion: result.latestVersion });
+        this.emitStatus("not-available", { update: result });
+      }
+      return result;
+    } catch (error) {
+      this.state.status = "error";
+      this.state.error = error?.message || "Update check failed.";
+      this.log("Update check failed.", { message: this.state.error, stack: error?.stack || null }, "error");
+      this.emitStatus("error", { message: this.state.error });
+      return { hasUpdate: false, error: this.state.error };
+    } finally {
+      this.state.checkInFlight = false;
+    }
+  }
+
+  downloadFile(url, destinationPath, onProgress, redirectCount = 0) {
+    return new Promise((resolve, reject) => {
+      if (redirectCount > 5) {
+        reject(new Error("Too many redirects while downloading update."));
+        return;
+      }
+      const request = getRequestModule(url).get(url, { headers: { "User-Agent": `AnxOS-Control-Center/${app.getVersion()}` } }, (response) => {
+        if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
+          response.resume();
+          this.downloadFile(response.headers.location, destinationPath, onProgress, redirectCount + 1).then(resolve, reject);
+          return;
+        }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          response.resume();
+          reject(new Error(`Update download failed with HTTP ${response.statusCode}.`));
+          return;
+        }
+        const totalBytes = Number.parseInt(response.headers["content-length"], 10) || 0;
+        let receivedBytes = 0;
+        const fileStream = fs.createWriteStream(destinationPath, { mode: 0o600 });
+        response.on("data", (chunk) => {
+          receivedBytes += chunk.length;
+          onProgress?.({ receivedBytes, totalBytes, percent: totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : null });
+        });
+        response.pipe(fileStream);
+        fileStream.on("finish", () => fileStream.close(() => resolve(destinationPath)));
+        fileStream.on("error", (error) => fs.rm(destinationPath, { force: true }, () => reject(error)));
+      });
+      request.setTimeout(120000, () => request.destroy(new Error("Update download timed out.")));
+      request.on("error", reject);
+    });
+  }
+
+  async download() {
+    if (this.state.downloadInFlight) {
+      this.log("Download request ignored; update is already downloading.", {}, "warn");
+      return { downloading: true, state: this.getState() };
+    }
+    const update = this.state.latest?.hasUpdate ? this.state.latest : await this.check({ silent: false, source: "download" });
+    if (!update?.hasUpdate || !update.asset?.downloadUrl) {
+      return { downloaded: false, message: "No update is available.", state: this.getState() };
+    }
+    this.state.downloadInFlight = true;
+    this.state.downloadedPath = null;
+    this.state.status = "downloading";
+    this.state.progress = { receivedBytes: 0, totalBytes: update.asset.size || 0, percent: 0 };
+    const destinationPath = path.join(app.getPath("downloads"), sanitizeFileName(update.asset.name));
+    this.log("Download started.", { asset: update.asset.name, destinationPath });
+    this.emitStatus("download-started", { update, path: destinationPath });
+    try {
+      const downloadedPath = await this.downloadFile(update.asset.downloadUrl, destinationPath, (progress) => {
+        this.state.progress = progress;
+        this.log("Download progress.", progress);
+        this.emitStatus("download-progress", { progress });
+      });
+      this.state.downloadedPath = downloadedPath;
+      this.state.status = "downloaded";
+      this.state.progress = { ...this.state.progress, percent: 100 };
+      this.log("Download completed.", { path: downloadedPath });
+      this.emitStatus("downloaded", { update, path: downloadedPath });
+      return { downloaded: true, path: downloadedPath, update, state: this.getState() };
+    } catch (error) {
+      this.state.status = "error";
+      this.state.error = error?.message || "Update download failed.";
+      this.log("Download failed.", { message: this.state.error, stack: error?.stack || null }, "error");
+      this.emitStatus("download-error", { message: this.state.error });
+      return { downloaded: false, error: this.state.error, state: this.getState() };
+    } finally {
+      this.state.downloadInFlight = false;
+    }
+  }
+
+  async install() {
+    if (!this.state.downloadedPath) return { installed: false, message: "No downloaded update is ready." };
+    this.log("Install requested.", { path: this.state.downloadedPath });
+    await shell.openPath(this.state.downloadedPath);
+    this.log("Install handoff completed.", { path: this.state.downloadedPath });
+    return { installed: true };
+  }
+
+  async openRelease() {
+    const releaseUrl = this.state.latest?.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
+    await shell.openExternal(releaseUrl);
+    return { opened: true };
+  }
+
+  skip(version) {
+    const target = normalizeVersion(version || this.state.latest?.latestVersion);
+    if (target) {
+      this.skippedVersions.add(target);
+      this.saveStore();
+      this.state.status = "skipped";
+      if (this.state.latest && normalizeVersion(this.state.latest.latestVersion) === target) {
+        this.state.latest = { ...this.state.latest, skipped: true };
+      }
+      this.log("Skipped update version.", { version: target });
+      this.emitStatus("skipped", { version: target });
+    }
+    return this.getState();
+  }
+}
+
+module.exports = {
+  UPDATE_STATUS_CHANNEL,
+  UpdateManager,
+  compareVersions,
+  normalizeVersion,
+};

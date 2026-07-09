@@ -291,6 +291,7 @@
               </svg>
             </span>
             <span class="nav-item__label" data-nav-label>Settings</span>
+            <span class="nav-item__badge" data-update-sidebar-badge hidden>Update</span>
           </button>
         </nav>
 
@@ -2527,6 +2528,18 @@
                   <dd data-about-field="version">Unavailable</dd>
                 </div>
                 <div>
+                  <dt>Latest Version</dt>
+                  <dd data-update-latest-about>Checking...</dd>
+                </div>
+                <div>
+                  <dt>Last Update Check</dt>
+                  <dd data-update-last-check>Not checked yet</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd data-update-about-status>Updates check automatically on startup.</dd>
+                </div>
+                <div>
                   <dt>Git Commit</dt>
                   <dd data-about-field="gitCommit">Unavailable</dd>
                 </div>
@@ -2545,6 +2558,8 @@
               </dl>
               <div class="settings-actions">
                 <button class="inline-action" type="button" data-update-action="check">Check for Updates</button>
+                <button class="inline-action" type="button" data-update-action="release">View Release Notes</button>
+                <button class="primary-button" type="button" data-update-action="install" hidden>Install Update</button>
                 <span class="settings-inline-status" data-update-status>Updates check automatically on startup.</span>
               </div>
             </section>
@@ -2554,11 +2569,20 @@
       </div>
     </div>
 
+    <div class="update-ready-banner" data-update-ready-banner hidden>
+      <div>
+        <strong>Update ready</strong>
+        <span>Restart now to finish installing.</span>
+      </div>
+      <button class="primary-button" type="button" data-update-action="install">Restart Now</button>
+      <button class="inline-action" type="button" data-update-action="banner-later">Later</button>
+    </div>
+
     <div class="app-modal-backdrop" data-update-modal hidden>
-      <section class="app-modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
+      <section class="app-modal app-modal--update" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
         <header class="app-modal__header">
           <div>
-            <p class="app-modal__eyebrow">Update Available</p>
+            <p class="app-modal__eyebrow">Rocket update</p>
             <h2 id="update-modal-title" data-update-title>AnxOS Control Center update</h2>
           </div>
           <button class="icon-action" type="button" aria-label="Close update prompt" data-update-action="dismiss">&times;</button>
@@ -2574,6 +2598,10 @@
               <dt>Latest</dt>
               <dd data-update-latest-version>Unavailable</dd>
             </div>
+            <div>
+              <dt>Release Date</dt>
+              <dd data-update-release-date>Unavailable</dd>
+            </div>
           </dl>
           <div class="app-modal__progress" data-update-progress hidden>
             <div class="app-modal__progress-track">
@@ -2581,11 +2609,12 @@
             </div>
             <span data-update-progress-text>Preparing download...</span>
           </div>
+          <section class="update-release-notes" data-update-release-notes hidden aria-label="Release notes"></section>
         </div>
         <footer class="app-modal__actions">
-          <button class="inline-action" type="button" data-update-action="release">Release Notes</button>
+          <button class="inline-action" type="button" data-update-action="skip">Skip This Version</button>
           <button class="inline-action" type="button" data-update-action="dismiss">Later</button>
-          <button class="primary-button" type="button" data-update-action="primary">Download Update</button>
+          <button class="primary-button" type="button" data-update-action="primary">Download & Install</button>
         </footer>
       </section>
     </div>

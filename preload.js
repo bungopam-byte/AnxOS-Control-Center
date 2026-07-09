@@ -18,8 +18,11 @@ const desktopApi = {
     getRuntimeInfo: () => ipcRenderer.invoke("app:getRuntimeInfo"),
   },
   updates: {
+    getState: () => ipcRenderer.invoke("updates:getState"),
     check: (options = {}) => ipcRenderer.invoke("updates:check", options),
     download: () => ipcRenderer.invoke("updates:download"),
+    install: () => ipcRenderer.invoke("updates:install"),
+    skip: (version) => ipcRenderer.invoke("updates:skip", { version }),
     openDownloaded: () => ipcRenderer.invoke("updates:open-downloaded"),
     openRelease: () => ipcRenderer.invoke("updates:open-release"),
     onStatus: (callback) => {

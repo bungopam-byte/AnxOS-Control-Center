@@ -315,6 +315,14 @@ const updateProgressFill = document.querySelector("[data-update-progress-fill]")
 const updateProgressText = document.querySelector("[data-update-progress-text]");
 const updateStatusMessage = document.querySelector("[data-update-status]");
 const updatePrimaryButton = document.querySelector('[data-update-action="primary"]');
+const updateInstallButtons = document.querySelectorAll('[data-update-action="install"]');
+const updateSidebarBadge = document.querySelector("[data-update-sidebar-badge]");
+const updateReadyBanner = document.querySelector("[data-update-ready-banner]");
+const updateLatestAbout = document.querySelector("[data-update-latest-about]");
+const updateLastCheck = document.querySelector("[data-update-last-check]");
+const updateAboutStatus = document.querySelector("[data-update-about-status]");
+const updateReleaseDate = document.querySelector("[data-update-release-date]");
+const updateReleaseNotes = document.querySelector("[data-update-release-notes]");
 const securityGate = document.querySelector("[data-security-gate]");
 const securityForm = document.querySelector("[data-security-form]");
 const securityMode = document.querySelector("[data-security-mode]");
@@ -360,6 +368,7 @@ let updateCheckInFlight = false;
 let updateDownloadInFlight = false;
 let latestUpdateInfo = null;
 let downloadedUpdatePath = null;
+let updateUiState = null;
 let securityState = { setupRequired: false, authenticated: false, user: null };
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
@@ -744,8 +753,11 @@ function getDesktopApiState() {
       typeof api?.settings?.getMarketplaceConfig === "function" &&
       typeof api?.settings?.saveMarketplaceConfig === "function",
     hasUpdates:
+      typeof api?.updates?.getState === "function" &&
       typeof api?.updates?.check === "function" &&
       typeof api?.updates?.download === "function" &&
+      typeof api?.updates?.install === "function" &&
+      typeof api?.updates?.skip === "function" &&
       typeof api?.updates?.openDownloaded === "function" &&
       typeof api?.updates?.openRelease === "function" &&
       typeof api?.updates?.onStatus === "function",
@@ -3942,23 +3954,43 @@ function formatOptionalMinecraftValue(value) {
   return present === null ? "—" : String(present);
 }
 
-function formatMinecraftPlayers(online, max) {
+function formatMinecraftStatusReason(status, fallback = "Not reported") {
+  if (status === "query-disabled") return "Query disabled";
+  if (status === "rcon-disabled") return "RCON disabled";
+  if (status === "waiting") return "Waiting for server";
+  if (status === "not-reported") return fallback;
+  return fallback;
+}
+
+function formatMinecraftOverviewPlayers(players = {}) {
+  const online = players && typeof players === "object" ? players.online : null;
+  const max = players && typeof players === "object" ? players.max : null;
   const onlineNumber = firstFiniteValue(online);
   const maxNumber = firstFiniteValue(max);
 
+  if (onlineNumber === null && players?.status && players.status !== "reported") {
+    const reason = formatMinecraftStatusReason(players.status, "Not reported");
+    return maxNumber === null ? reason : `${reason} · Max ${maxNumber}`;
+  }
+
   if (onlineNumber === null && maxNumber === null) {
-    return "—";
+    return formatMinecraftStatusReason(players?.status, "Not reported");
   }
 
   return `${onlineNumber === null ? "—" : onlineNumber} / ${maxNumber === null ? "—" : maxNumber}`;
 }
 
-function formatMinecraftTps(value) {
+function formatMinecraftOverviewTps(value, status) {
   const tps = firstFiniteValue(value);
   if (tps === null) {
-    return "—";
+    return formatMinecraftStatusReason(status, "Not reported");
   }
   return tps.toFixed(tps % 1 === 0 ? 0 : 1);
+}
+
+function formatMinecraftOverviewSeed(value, status) {
+  const present = firstPresentValue(value);
+  return present === null ? formatMinecraftStatusReason(status, "Not reported") : String(present);
 }
 
 function getMinecraftPlayitValue(instance) {
@@ -3997,13 +4029,15 @@ function getMinecraftSummaryData(instance) {
     version: firstPresentValue(minecraft.version, minecraft.minecraftVersion, version.gameVersion, instance?.minecraftVersion, instance?.gameVersion),
     serverType: firstPresentValue(minecraft.serverType, minecraft.serverSoftware, version.software, instance?.serverSoftware, inferMinecraftServerType(instance)),
     java: firstPresentValue(minecraft.javaVersion, minecraft.java, instance?.javaVersion, instance?.executable, "java"),
-    players: formatMinecraftPlayers(
-      firstFiniteValue(players.online, minecraft.onlinePlayers, instance?.onlinePlayers, instance?.status?.onlinePlayers),
-      firstFiniteValue(players.max, minecraft.maxPlayers, instance?.maxPlayers, config.maxPlayers, latestMinecraftProperties["max-players"])
-    ),
-    tps: formatMinecraftTps(firstFiniteValue(minecraft.tps, stats.tps, runtime.tps, instance?.tps)),
+    players: formatMinecraftOverviewPlayers({
+      online: firstFiniteValue(players.online, minecraft.onlinePlayers, instance?.onlinePlayers, instance?.status?.onlinePlayers),
+      max: firstFiniteValue(players.max, minecraft.maxPlayers, instance?.maxPlayers, config.maxPlayers, latestMinecraftProperties["max-players"]),
+      status: players.status || minecraft.playersStatus || minecraft.status,
+    }),
+    tps: formatMinecraftOverviewTps(firstFiniteValue(minecraft.tps, stats.tps, runtime.tps, instance?.tps), minecraft.tpsStatus),
     world: firstPresentValue(minecraft.worldName, minecraft.world, instance?.worldName, config.worldName, latestMinecraftProperties["level-name"]),
     seed: firstPresentValue(minecraft.seed, instance?.seed, config.seed, latestMinecraftProperties["level-seed"]),
+    seedStatus: minecraft.seedStatus,
     playit: getMinecraftPlayitValue(instance),
   };
 }
@@ -4025,7 +4059,7 @@ function renderMinecraftWorkspaceSummary(instance, metrics) {
   setMinecraftSummaryField("maxPlayers", firstFiniteValue(instance?.minecraft?.players?.max, latestMinecraftProperties["max-players"]) ?? "—");
   setMinecraftSummaryField("tps", summary.tps);
   setMinecraftSummaryField("world", formatOptionalMinecraftValue(summary.world));
-  setMinecraftSummaryField("seed", formatOptionalMinecraftValue(summary.seed));
+  setMinecraftSummaryField("seed", formatMinecraftOverviewSeed(summary.seed, summary.seedStatus));
   setMinecraftSummaryField("playit", formatOptionalMinecraftValue(summary.playit));
   setMinecraftSummaryField("ram", formatInstanceMemory(metrics));
   setMinecraftSummaryField("cpu", formatInstanceCpu(metrics));
@@ -9743,13 +9777,13 @@ function formatMinecraftInstanceName(snapshot) {
   return moduleType ? `${selectedName} · ${moduleType}` : selectedName;
 }
 
-function formatMinecraftPlayers(summary) {
+function formatAmpMinecraftPlayers(summary) {
   const players = Number.isFinite(summary?.playerCount) ? summary.playerCount : "Unavailable";
   const maxPlayers = Number.isFinite(summary?.maxPlayers) ? summary.maxPlayers : "Unavailable";
   return `${players} / ${maxPlayers}`;
 }
 
-function formatMinecraftTps(summary) {
+function formatAmpMinecraftTps(summary) {
   return Number.isFinite(summary?.tps) ? summary.tps.toFixed(1) : "Unavailable";
 }
 
@@ -9865,8 +9899,8 @@ function renderAmpSnapshot(snapshot) {
     status: formatMinecraftState(snapshot.summary, statusText),
     selection: selectionText,
     instance: formatMinecraftInstanceName(snapshot),
-    players: formatMinecraftPlayers(snapshot.summary),
-    tps: formatMinecraftTps(snapshot.summary),
+    players: formatAmpMinecraftPlayers(snapshot.summary),
+    tps: formatAmpMinecraftTps(snapshot.summary),
     ram: formatMinecraftRam(snapshot.summary),
     cpu: formatMinecraftCpu(snapshot.summary),
     version: versionText,
@@ -13469,6 +13503,9 @@ function setUpdateStatusMessage(message) {
   if (updateStatusMessage) {
     updateStatusMessage.textContent = message;
   }
+  if (updateAboutStatus) {
+    updateAboutStatus.textContent = message;
+  }
 }
 
 function setUpdateModalVisible(isVisible) {
@@ -13499,24 +13536,121 @@ function renderUpdateProgress(progress = null) {
   updateProgressText.textContent = percent === null ? `${received} downloaded of ${total}.` : `${percent}% downloaded (${received} of ${total}).`;
 }
 
-function renderUpdateModal(mode = "available") {
+function sanitizeMarkdownText(value) {
+  return String(value || "").replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[char]));
+}
+
+function renderMarkdownLite(markdown = "") {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const output = [];
+  let inList = false;
+  let inCode = false;
+  const closeList = () => {
+    if (inList) {
+      output.push("</ul>");
+      inList = false;
+    }
+  };
+  lines.forEach((line) => {
+    const text = line.trim();
+    if (text.startsWith("```")) {
+      closeList();
+      output.push(inCode ? "</code></pre>" : "<pre><code>");
+      inCode = !inCode;
+      return;
+    }
+    if (inCode) {
+      output.push(`${sanitizeMarkdownText(line)}\n`);
+      return;
+    }
+    if (!text) {
+      closeList();
+      return;
+    }
+    if (/^#{1,3}\s+/.test(text)) {
+      closeList();
+      const level = Math.min(text.match(/^#+/)?.[0].length || 3, 3);
+      output.push(`<h${level + 2}>${sanitizeMarkdownText(text.replace(/^#{1,3}\s+/, ""))}</h${level + 2}>`);
+      return;
+    }
+    if (/^[-*]\s+/.test(text)) {
+      if (!inList) {
+        output.push("<ul>");
+        inList = true;
+      }
+      output.push(`<li>${sanitizeMarkdownText(text.replace(/^[-*]\s+/, ""))}</li>`);
+      return;
+    }
+    closeList();
+    output.push(`<p>${sanitizeMarkdownText(text).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')}</p>`);
+  });
+  closeList();
+  if (inCode) output.push("</code></pre>");
+  return output.join("");
+}
+
+function formatUpdateDate(value) {
+  if (!value) return "Unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function getUpdateModeFromState(state = updateUiState) {
+  if (state?.status === "downloaded") return "downloaded";
+  if (state?.status === "downloading" || state?.downloadInFlight) return "downloading";
+  if (state?.status === "error") return "error";
+  return "available";
+}
+
+function renderUpdateSurfaces(state = updateUiState) {
+  const update = state?.latest || latestUpdateInfo || {};
+  const hasUpdate = Boolean(update?.hasUpdate && !update?.skipped);
+  const isReady = state?.status === "downloaded" && Boolean(state?.downloadedPath || downloadedUpdatePath);
+  const latestVersion = update.latestVersion || "Unavailable";
+  latestUpdateInfo = update?.hasUpdate ? update : latestUpdateInfo;
+  downloadedUpdatePath = state?.downloadedPath || downloadedUpdatePath;
+  updateDownloadInFlight = Boolean(state?.downloadInFlight || state?.status === "downloading");
+  updateCheckInFlight = Boolean(state?.checkInFlight);
+
+  if (updateLatestAbout) updateLatestAbout.textContent = latestVersion;
+  if (updateLastCheck) updateLastCheck.textContent = state?.lastCheckedAt ? formatDateTime(state.lastCheckedAt) : "Not checked yet";
+  if (updateSidebarBadge) {
+    updateSidebarBadge.hidden = !hasUpdate;
+    updateSidebarBadge.textContent = isReady ? "Ready" : "Update";
+  }
+  if (updateReadyBanner) {
+    updateReadyBanner.hidden = !isReady;
+  }
+  updateInstallButtons.forEach((button) => {
+    button.hidden = !isReady;
+    button.disabled = !isReady;
+  });
+
+  if (state?.status === "up-to-date") setUpdateStatusMessage("You're up to date.");
+  else if (state?.status === "available") setUpdateStatusMessage(`Update ${latestVersion} is available.`);
+  else if (state?.status === "downloading") setUpdateStatusMessage("Downloading update...");
+  else if (state?.status === "downloaded") setUpdateStatusMessage("Update ready to install.");
+  else if (state?.status === "error") setUpdateStatusMessage("Update failed.");
+}
+
+function renderUpdateModal(mode = getUpdateModeFromState()) {
   const update = latestUpdateInfo || {};
   const latestVersion = update.latestVersion || "newer build";
   const currentVersion = update.currentVersion || "current build";
 
   if (updateTitle) {
-    updateTitle.textContent = mode === "downloaded" ? "Update downloaded" : `AnxOS Control Center ${latestVersion}`;
+    updateTitle.textContent = mode === "downloaded" ? "Ready to Install" : mode === "downloading" ? "Downloading Update" : "New Version Available";
   }
 
   if (updateMessage) {
     if (mode === "downloading") {
-      updateMessage.textContent = "Downloading the installer to your Downloads folder. Keep AnxOS Control Center open until it finishes.";
+      updateMessage.textContent = "Downloading the update. You can keep using AnxOS while this finishes.";
     } else if (mode === "downloaded") {
-      updateMessage.textContent = "The installer is ready. Open it, close this app, then follow the setup prompt to install the latest version.";
+      updateMessage.textContent = "The update is ready. Restart now to finish installing.";
     } else if (mode === "error") {
-      updateMessage.textContent = "The update could not be downloaded. You can open the release page and download it manually.";
+      updateMessage.textContent = updateUiState?.error || "The update could not be downloaded.";
     } else {
-      updateMessage.textContent = "A newer version is available. Download the installer here instead of using git pull or launcher commands on Windows.";
+      updateMessage.textContent = "A newer AnxOS Control Center build is available.";
     }
   }
 
@@ -13527,10 +13661,23 @@ function renderUpdateModal(mode = "available") {
   if (updateLatestVersion) {
     updateLatestVersion.textContent = latestVersion;
   }
+  if (updateReleaseDate) {
+    updateReleaseDate.textContent = formatUpdateDate(update.releaseDate || update.publishedAt);
+  }
+  if (updateReleaseNotes) {
+    updateReleaseNotes.hidden = !update.releaseNotes;
+    updateReleaseNotes.innerHTML = update.releaseNotes ? renderMarkdownLite(update.releaseNotes) : "";
+    updateReleaseNotes.querySelectorAll("a[href]").forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        window.open(link.href, "_blank", "noopener,noreferrer");
+      });
+    });
+  }
 
   if (updatePrimaryButton) {
     updatePrimaryButton.disabled = mode === "downloading";
-    updatePrimaryButton.textContent = mode === "downloaded" ? "Open Installer" : mode === "downloading" ? "Downloading..." : "Download Installer";
+    updatePrimaryButton.textContent = mode === "downloaded" ? "Restart Now" : mode === "downloading" ? "Downloading..." : mode === "error" ? "Retry" : "Download & Install";
   }
 
   if (mode !== "downloading") {
@@ -13541,11 +13688,12 @@ function renderUpdateModal(mode = "available") {
 }
 
 function handleUpdateStatus(payload = {}) {
+  updateUiState = payload.state || updateUiState;
   if (payload.type === "available") {
     latestUpdateInfo = payload.update || latestUpdateInfo;
     downloadedUpdatePath = null;
-    setUpdateStatusMessage(`Update ${latestUpdateInfo?.latestVersion || ""} is available.`);
-    renderUpdateModal("available");
+    renderUpdateSurfaces(updateUiState);
+    if (payload.notify) renderUpdateModal("available");
     return;
   }
 
@@ -13553,12 +13701,15 @@ function handleUpdateStatus(payload = {}) {
     updateDownloadInFlight = true;
     latestUpdateInfo = payload.update || latestUpdateInfo;
     setUpdateStatusMessage("Downloading update...");
+    renderUpdateSurfaces(updateUiState);
     renderUpdateModal("downloading");
     renderUpdateProgress({ receivedBytes: 0, totalBytes: latestUpdateInfo?.asset?.size || 0, percent: 0 });
     return;
   }
 
   if (payload.type === "download-progress") {
+    if (updateUiState) updateUiState.progress = payload.progress || updateUiState.progress;
+    renderUpdateSurfaces(updateUiState);
     renderUpdateProgress(payload.progress || null);
     return;
   }
@@ -13567,6 +13718,7 @@ function handleUpdateStatus(payload = {}) {
     updateDownloadInFlight = false;
     downloadedUpdatePath = payload.path || null;
     setUpdateStatusMessage("Update downloaded. Open it when you are ready.");
+    renderUpdateSurfaces(updateUiState);
     renderUpdateModal("downloaded");
     return;
   }
@@ -13574,7 +13726,12 @@ function handleUpdateStatus(payload = {}) {
   if (payload.type === "download-error") {
     updateDownloadInFlight = false;
     setUpdateStatusMessage("Update download failed.");
+    renderUpdateSurfaces(updateUiState);
     renderUpdateModal("error");
+    return;
+  }
+  if (["checking", "not-available", "unavailable", "error", "skipped"].includes(payload.type)) {
+    renderUpdateSurfaces(updateUiState);
   }
 }
 
@@ -13594,6 +13751,10 @@ async function checkForUpdates(options = {}) {
   try {
     const result = await desktopApiState.api.updates.check({ silent: Boolean(options.silent) });
     latestUpdateInfo = result?.hasUpdate ? result : latestUpdateInfo;
+    if (result?.state) {
+      updateUiState = result.state;
+      renderUpdateSurfaces(updateUiState);
+    }
 
     if (result?.releaseUnavailable) {
       setUpdateStatusMessage(result.message || "No update release is published yet.");
@@ -13609,7 +13770,7 @@ async function checkForUpdates(options = {}) {
       }
     } else if (result?.hasUpdate) {
       setUpdateStatusMessage(`Update ${result.latestVersion || ""} is available.`);
-      renderUpdateModal("available");
+      if (!result.skipped) renderUpdateModal("available");
     } else if (!options.silent) {
       setUpdateStatusMessage("You are running the latest available version.");
       showToast("No update available.");
@@ -13640,7 +13801,7 @@ async function downloadUpdate() {
   }
 
   if (downloadedUpdatePath) {
-    await desktopApiState.api.updates.openDownloaded();
+    await desktopApiState.api.updates.install?.();
     return;
   }
 
@@ -13652,6 +13813,8 @@ async function downloadUpdate() {
 
     if (result?.downloaded) {
       downloadedUpdatePath = result.path || null;
+      updateUiState = result.state || updateUiState;
+      renderUpdateSurfaces(updateUiState);
       renderUpdateModal("downloaded");
     } else if (!result?.downloading) {
       renderUpdateModal("error");
@@ -13663,6 +13826,25 @@ async function downloadUpdate() {
   } finally {
     updateDownloadInFlight = false;
   }
+}
+
+async function installUpdate() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasUpdates) return;
+  try {
+    await (desktopApiState.api.updates.install ? desktopApiState.api.updates.install() : desktopApiState.api.updates.openDownloaded());
+  } catch {
+    showToast("Update installer could not be opened.");
+  }
+}
+
+async function skipUpdateVersion() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasUpdates || !latestUpdateInfo?.latestVersion) return;
+  updateUiState = await desktopApiState.api.updates.skip?.(latestUpdateInfo.latestVersion);
+  setUpdateModalVisible(false);
+  renderUpdateSurfaces(updateUiState);
+  showToast(`Skipped ${latestUpdateInfo.latestVersion}.`);
 }
 
 async function openUpdateRelease() {
@@ -13688,7 +13870,11 @@ function setupUpdates() {
   }
 
   desktopApiState.api.updates.onStatus(handleUpdateStatus);
-  window.setTimeout(() => checkForUpdates({ silent: true }), 2500);
+  desktopApiState.api.updates.getState?.().then((state) => {
+    updateUiState = state;
+    latestUpdateInfo = state?.latest || latestUpdateInfo;
+    renderUpdateSurfaces(state);
+  }).catch(() => {});
 }
 
 async function copyText(value) {
@@ -14357,11 +14543,22 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
     if (action === "check") {
       await checkForUpdates({ silent: false });
     } else if (action === "primary") {
-      await downloadUpdate();
+      if (getUpdateModeFromState() === "downloaded") {
+        await installUpdate();
+      } else {
+        await downloadUpdate();
+      }
+    } else if (action === "install") {
+      await installUpdate();
+    } else if (action === "skip") {
+      await skipUpdateVersion();
     } else if (action === "release") {
       await openUpdateRelease();
-    } else if (action === "dismiss") {
+    } else if (action === "dismiss" || action === "banner-later") {
       setUpdateModalVisible(false);
+      if (updateReadyBanner && action === "banner-later") {
+        updateReadyBanner.hidden = true;
+      }
     }
   });
 });

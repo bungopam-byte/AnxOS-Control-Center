@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS | Desktop Control Center</title>
+    <meta name="description" content="Download AnxOS-Control-Center, a desktop control center for Minecraft servers, modpacks, remote nodes, and automation.">
+    <link rel="icon" type="image/png" href="assets/anxos-icon.png">
+    <link rel="stylesheet" href="styles.css">
+    <script src="config.js" defer></script>
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <svg class="svg-defs" aria-hidden="true">
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></symbol>
+      <symbol id="icon-github" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-5-2.5M15 22v-3.5c0-1 .2-1.4-.5-2 2.6-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.3c.1-.3.5-1.7-.1-3.2 0 0-1.1-.3-3.5 1.3a12.2 12.2 0 0 0-6.2 0C6.5 3.7 5.4 4 5.4 4c-.6 1.5-.2 2.9-.1 3.2A4.7 4.7 0 0 0 4 10.5c0 4.7 2.9 5.7 5.5 6-.7.6-.7 1.2-.6 2V22"/></symbol>
+      <symbol id="icon-server" viewBox="0 0 24 24"><path d="M4 5h16v5H4zM4 14h16v5H4zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></symbol>
+      <symbol id="icon-package" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3zM4.5 8 12 12.5 19.5 8M12 12.5V21"/></symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24"><path d="m5 7 5 5-5 5M12 17h7"/></symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 2.8 8.5 7 10 4.2-1.5 7-5.6 7-10V6zM9 12l2 2 4-4"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6.7 6.7L4 9m16 6-2.7 2.3A7 7 0 0 1 5.5 15"/></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M8 13h8M8 17h5"/></symbol>
+      <symbol id="icon-node" viewBox="0 0 24 24"><path d="M12 4v6M12 14v6M6 10h12M6 14h12M5 8h2v8H5zM17 8h2v8h-2z"/></symbol>
+    </svg>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="AnxOS home">
+        <span class="brand-mark"><img src="assets/anxos-icon.png" alt=""></span>
+        <span class="brand-copy">
+          <strong data-config="brandName">AnxOS</strong>
+          <span data-config="appName">AnxOS-Control-Center</span>
+        </span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="#release">Release</a>
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero section-shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Desktop operations panel</p>
+          <h1 id="hero-title" data-config="brandName">AnxOS</h1>
+          <p class="lede" data-config="subtitle">A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" data-download="windows" href="#">
+              <svg><use href="#icon-download"></use></svg>
+              <span>Download for Windows</span>
+            </a>
+            <a class="button button-secondary" data-download="linuxDeb" href="#">
+              <svg><use href="#icon-download"></use></svg>
+              <span>Download for Linux</span>
+            </a>
+            <a class="button button-ghost" data-config-href="repositoryUrl" href="#">
+              <svg><use href="#icon-github"></use></svg>
+              <span>View GitHub</span>
+            </a>
+          </div>
+        </div>
+        <div class="hero-panel" aria-label="AnxOS dashboard preview">
+          <div class="panel-titlebar">
+            <span></span><span></span><span></span>
+            <strong>AnxOS Control Center</strong>
+          </div>
+          <div class="preview-grid">
+            <article class="preview-card preview-card-wide">
+              <span class="status-dot"></span>
+              <p>Minecraft Node</p>
+              <strong>Online</strong>
+              <small>TPS stable · 8 players · 3 services</small>
+            </article>
+            <article class="preview-card">
+              <p>Modpacks</p>
+              <strong>Marketplace</strong>
+              <small>CurseForge + Modrinth</small>
+            </article>
+            <article class="preview-card">
+              <p>Remote Agent</p>
+              <strong>Debian</strong>
+              <small>Files, logs, commands</small>
+            </article>
+          </div>
+          <div class="console-preview">
+            <span>[11:57:42] marketplace install paused</span>
+            <span>[11:57:43] waiting for manual download</span>
+            <span>[11:57:44] provider metadata resolved</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="release" class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Latest Release</p>
+          <h2>Ready for your control center</h2>
+        </div>
+        <div class="release-card">
+          <div>
+            <span class="badge" data-config="releaseTag">Latest release</span>
+            <h3 data-release-title>Version</h3>
+            <p>Includes the latest Marketplace manual-download recovery, provider metadata links, auto-update support, and console UI polish.</p>
+          </div>
+          <dl class="release-meta">
+            <div><dt>Released</dt><dd data-config="releaseDate">Release date</dd></div>
+            <div><dt>Windows</dt><dd data-file="windows">Setup EXE</dd></div>
+            <div><dt>Linux</dt><dd data-file="linuxDeb">DEB + AppImage</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section id="features" class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Features</p>
+          <h2>Built for server work</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card"><svg><use href="#icon-server"></use></svg><h3>Minecraft server management</h3><p>Create, monitor, start, stop, and inspect Minecraft instances from one desktop workspace.</p></article>
+          <article class="feature-card"><svg><use href="#icon-package"></use></svg><h3>Modpack marketplace installs</h3><p>Browse provider packs and install CurseForge or Modrinth servers with guided manual-download recovery.</p></article>
+          <article class="feature-card"><svg><use href="#icon-node"></use></svg><h3>Remote Debian agent support</h3><p>Connect the app to a Debian node for controlled file, command, and service operations.</p></article>
+          <article class="feature-card"><svg><use href="#icon-terminal"></use></svg><h3>Logs, files, commands, and stats</h3><p>Work inside logs, file tools, command panels, server stats, and runtime views without changing apps.</p></article>
+          <article class="feature-card"><svg><use href="#icon-refresh"></use></svg><h3>Auto-update support</h3><p>Use Check for update to pull the newest GitHub release when a new build is published.</p></article>
+        </div>
+      </section>
+
+      <section id="downloads" class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Manual Downloads</p>
+          <h2>Choose a package</h2>
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <div><h3>Windows installer</h3><p data-file="windows">Setup executable</p></div>
+            <a class="button button-primary" data-download="windows" href="#"><svg><use href="#icon-download"></use></svg><span>Download for Windows</span></a>
+          </article>
+          <article class="download-card">
+            <div><h3>Linux Debian package</h3><p data-file="linuxDeb">Debian package</p></div>
+            <a class="button button-secondary" data-download="linuxDeb" href="#"><svg><use href="#icon-download"></use></svg><span>Download .deb</span></a>
+          </article>
+          <article class="download-card">
+            <div><h3>Linux AppImage</h3><p data-file="linuxAppImage">Portable AppImage</p></div>
+            <a class="button button-secondary" data-download="linuxAppImage" href="#"><svg><use href="#icon-download"></use></svg><span>Download AppImage</span></a>
+          </article>
+        </div>
+      </section>
+
+      <section id="install" class="section-shell install-layout">
+        <div>
+          <p class="eyebrow">Install Guide</p>
+          <h2>Install in a few steps</h2>
+        </div>
+        <div class="steps">
+          <article><span>1</span><p>Download the installer for your platform.</p></article>
+          <article><span>2</span><p>Run the Windows setup, install the `.deb`, or mark the AppImage executable.</p></article>
+          <article><span>3</span><p>Open AnxOS, connect your remote node, then use Marketplace, Instances, Files, Console, and Stats.</p></article>
+        </div>
+      </section>
+
+      <section class="section-shell safety-card">
+        <div>
+          <p class="eyebrow">Safety / SmartScreen</p>
+          <h2>About first-run warnings</h2>
+          <p>Windows SmartScreen may warn on new releases because AnxOS is distributed directly through GitHub. Download only from the official repository release page and verify the file name matches the release shown here.</p>
+        </div>
+        <a class="button button-ghost" data-config-href="releaseUrl" href="#"><svg><use href="#icon-shield"></use></svg><span>Open release page</span></a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>AnxOS</span>
+      <span data-config="appName">AnxOS-Control-Center</span>
+      <a data-config-href="repositoryUrl" href="#">GitHub</a>
+    </footer>
+  </body>
+</html>

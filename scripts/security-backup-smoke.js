@@ -12,13 +12,48 @@ process.env.AGENT_BACKUP_ROOT = path.join(root, "backups");
 const securityPath = require.resolve("../src/services/securityService");
 let security = require(securityPath);
 const nodeService = require("../src/services/nodeService");
+const serviceRouter = require("../src/services/serviceRouter");
+const storageConnections = require("../src/services/storageConnectionService");
+const { FileService } = require("../src/services/fileService");
 const backupService = require("../agent/src/services/backupService");
 
 async function main() {
-  assert.strictEqual(security.getStatus().setupRequired, true, "Security setup should be required in a fresh config.");
+  const firstRunStatus = security.getStatus();
+  assert.strictEqual(firstRunStatus.setupRequired, true, "Fresh config should not have Remote Control enabled yet.");
+  assert.strictEqual(firstRunStatus.localMode, true, "Fresh config should default to Single-Device Mode.");
+  assert.strictEqual(firstRunStatus.authenticated, false, "Single-Device Mode should not require sign-in.");
+  assert.strictEqual(security.requirePermission("instance:lifecycle", "local-smoke").localMode, true, "Local mode should allow local actions without an owner account.");
+  const defaultNodes = nodeService.listNodes();
+  assert.strictEqual(defaultNodes.selectedNodeId, "default", "The selected node should default to the built-in local node.");
+  assert(defaultNodes.nodes.some((node) => node.id === "default" && node.displayName === "This Device" && node.local), "The built-in local node should be visible as This Device.");
+  const localInstances = await serviceRouter.listInstances({ nodeId: "default" });
+  assert(Array.isArray(localInstances.instances), "Dashboard/instances should work against the local node without account/session/token.");
+  const localNodeTest = await nodeService.testNode("default");
+  assert.strictEqual(localNodeTest.connected, true, "The local node health check should pass without contacting an agent.");
+  const fileService = new FileService();
+  const localFiles = await fileService.list({ storageId: "local", path: root });
+  assert.strictEqual(localFiles.provider, "local", "Local provider should list local files through the storage API.");
+  const savedStorage = storageConnections.saveConnection({
+    provider: "sftp",
+    name: "Kinetic Smoke",
+    host: "sftp.example.test",
+    port: 22,
+    username: "abc123",
+    authType: "password",
+    password: "super-secret-storage-password",
+    rootDirectory: "/home/container",
+  });
+  assert(savedStorage.connection.id, "SFTP storage connection should be saved.");
+  const storageFile = fs.readFileSync(path.join(process.env.ANXHUB_CONFIG_DIR, "storage-connections.json"), "utf8");
+  assert(!storageFile.includes("super-secret-storage-password"), "Storage credentials must not be stored in plain text.");
+  const listedStorage = storageConnections.listConnections();
+  assert(listedStorage.connections.some((connection) => connection.provider === "sftp" && connection.hasPassword), "Saved SFTP connection should expose metadata without secrets.");
+  assert.strictEqual(storageConnections.deleteConnection(savedStorage.connection.id).deleted, true, "SFTP storage connection delete should work.");
+
   await security.setupAdmin({ username: "owner", password: "correct horse battery staple", staySignedIn: true });
   const status = security.getStatus();
   assert.strictEqual(status.setupRequired, false, "Owner setup should complete.");
+  assert.strictEqual(status.remoteControlEnabled, true, "Owner setup should enable Remote Control.");
   assert.strictEqual(status.user.role, "Owner", "First user should be Owner.");
   assert.strictEqual(status.persistentSession, true, "Stay signed in should create a persistent session.");
   assert.strictEqual(status.persistentSessionCount, 1, "Persistent session should be tracked.");

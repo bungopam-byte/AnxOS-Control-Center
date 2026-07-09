@@ -11,6 +11,7 @@ const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 let environmentLoaded = false;
 let lastLoggedAgentSelection = null;
 let lastLoggedAgentConfigMeta = null;
+let localInstanceService = null;
 
 class AgentClientError extends Error {
   constructor(message, details = {}) {
@@ -106,6 +107,29 @@ function getAgentConfigDirectory() {
 
 function getAgentConfigPath() {
   return path.join(getAgentConfigDirectory(), "agent.json");
+}
+
+function ensureLocalInstanceRoot() {
+  if (process.env.AGENT_INSTANCE_ROOT) {
+    return;
+  }
+  try {
+    process.env.AGENT_INSTANCE_ROOT = path.join(app.getPath("userData"), "instances");
+  } catch {
+    process.env.AGENT_INSTANCE_ROOT = path.join(process.cwd(), "anxos-instances");
+  }
+}
+
+function getLocalInstanceService() {
+  if (!localInstanceService) {
+    ensureLocalInstanceRoot();
+    localInstanceService = require("../../agent/src/services/instances/instanceService");
+  }
+  return localInstanceService;
+}
+
+function shouldUseLocalInstanceService(configOverride = null) {
+  return !configOverride && getBackendMode() === "local";
 }
 
 function logAgentConfigMetadata(reason, configPath, settings = null) {
@@ -1672,10 +1696,16 @@ function encodeInstanceId(instanceId) {
 }
 
 async function listInstances(configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().listInstances();
+  }
   return requestJson("/api/v1/instances", { config: configOverride });
 }
 
 async function createInstance(payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().createInstance(payload);
+  }
   return requestJson("/api/v1/instances", {
     config: configOverride,
     method: "POST",
@@ -1684,6 +1714,9 @@ async function createInstance(payload = {}, configOverride = null) {
 }
 
 async function updateInstance(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().updateInstance(instanceId, payload);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}`, {
     config: configOverride,
     method: "PATCH",
@@ -1692,14 +1725,23 @@ async function updateInstance(instanceId, payload = {}, configOverride = null) {
 }
 
 async function getInstanceStatus(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().getStatus(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/status`, { config: configOverride });
 }
 
 async function getInstanceMetrics(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().getMetrics(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/metrics`, { config: configOverride });
 }
 
 async function getInstanceLogs(instanceId, options = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().readLogs(instanceId, options);
+  }
   const query = new URLSearchParams({
     stream: options.stream || "all",
     limit: String(options.limit || 200),
@@ -1709,6 +1751,9 @@ async function getInstanceLogs(instanceId, options = {}, configOverride = null) 
 }
 
 async function clearInstanceLogs(instanceId, options = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().clearLogs(instanceId, options);
+  }
   const query = new URLSearchParams({
     stream: options.stream || "all",
   });
@@ -1720,6 +1765,9 @@ async function clearInstanceLogs(instanceId, options = {}, configOverride = null
 }
 
 async function sendInstanceCommand(instanceId, command, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().writeInstanceInput(instanceId, command);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/command`, {
     config: configOverride,
     method: "POST",
@@ -1728,6 +1776,9 @@ async function sendInstanceCommand(instanceId, command, configOverride = null) {
 }
 
 async function forceKillInstance(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().forceKillInstance(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/force-kill`, {
     config: configOverride,
     method: "POST",
@@ -1735,23 +1786,36 @@ async function forceKillInstance(instanceId, configOverride = null) {
 }
 
 async function listInstanceFiles(instanceId, currentPath = ".", configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().listInstanceFiles(instanceId, currentPath);
+  }
   const query = new URLSearchParams({ path: currentPath || "." });
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/files?${query.toString()}`, { config: configOverride });
 }
 
 async function readInstanceFile(instanceId, filePath, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().readInstanceFile(instanceId, filePath);
+  }
   const query = new URLSearchParams({ path: filePath || "." });
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`, { config: configOverride });
 }
 
 async function instanceFileExists(instanceId, filePath, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().instanceFileExists(instanceId, filePath);
+  }
   const query = new URLSearchParams({ path: filePath || "." });
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/exists?${query.toString()}`, { config: configOverride });
 }
 
 async function writeInstanceFile(instanceId, filePath, content, options = {}, configOverride = null) {
+  const effectiveConfig = configOverride || options.config || null;
+  if (shouldUseLocalInstanceService(effectiveConfig)) {
+    return getLocalInstanceService().writeInstanceFile(instanceId, filePath, content, options);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
-    config: configOverride || options.config || null,
+    config: effectiveConfig,
     method: "PUT",
     body: {
       path: filePath,
@@ -1762,6 +1826,9 @@ async function writeInstanceFile(instanceId, filePath, content, options = {}, co
 }
 
 async function deleteInstanceFile(instanceId, filePath, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().deleteInstanceFile(instanceId, filePath);
+  }
   const query = new URLSearchParams({ path: filePath || "." });
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`, {
     config: configOverride,
@@ -1770,6 +1837,9 @@ async function deleteInstanceFile(instanceId, filePath, configOverride = null) {
 }
 
 async function createInstanceFolder(instanceId, folderPath, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().createInstanceFolder(instanceId, folderPath);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/mkdir`, {
     config: configOverride,
     method: "POST",
@@ -1778,6 +1848,9 @@ async function createInstanceFolder(instanceId, folderPath, configOverride = nul
 }
 
 async function renameInstanceFile(instanceId, oldPath, newPath, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().renameInstanceFile(instanceId, oldPath, newPath);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/rename`, {
     config: configOverride,
     method: "POST",
@@ -1789,10 +1862,16 @@ async function renameInstanceFile(instanceId, oldPath, newPath, configOverride =
 }
 
 async function getMinecraftProperties(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().readMinecraftProperties(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`, { config: configOverride });
 }
 
 async function saveMinecraftProperties(instanceId, properties = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().writeMinecraftProperties(instanceId, properties);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/minecraft/properties`, {
     config: configOverride,
     method: "PUT",
@@ -1801,6 +1880,9 @@ async function saveMinecraftProperties(instanceId, properties = {}, configOverri
 }
 
 async function startInstance(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().startInstance(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/start`, {
     config: configOverride,
     method: "POST",
@@ -1808,6 +1890,9 @@ async function startInstance(instanceId, configOverride = null) {
 }
 
 async function stopInstance(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().stopInstance(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/stop`, {
     config: configOverride,
     method: "POST",
@@ -1815,6 +1900,9 @@ async function stopInstance(instanceId, configOverride = null) {
 }
 
 async function restartInstance(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().restartInstance(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/restart`, {
     config: configOverride,
     method: "POST",
@@ -1822,6 +1910,9 @@ async function restartInstance(instanceId, configOverride = null) {
 }
 
 async function deleteInstance(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().deleteInstance(instanceId);
+  }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}`, {
     config: configOverride,
     method: "DELETE",

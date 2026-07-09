@@ -226,6 +226,18 @@ const fileEditorWrapButton = document.querySelector('[data-file-editor-action="w
 const fileEditorMinimapButton = document.querySelector('[data-file-editor-action="minimap"]');
 const fileEditorFullscreenButton = document.querySelector('[data-file-editor-action="fullscreen"]');
 const filesConnectBar = filesPage?.querySelector(".files-connect-bar");
+const storageModal = document.querySelector("[data-storage-modal]");
+const storageForm = document.querySelector("[data-storage-form]");
+const storageProviderButtons = document.querySelectorAll("[data-storage-provider]");
+const storageFields = document.querySelectorAll("[data-storage-field]");
+const storageSecretGroups = document.querySelectorAll("[data-storage-secret]");
+const storageList = document.querySelector("[data-storage-list]");
+const storageMessage = document.querySelector("[data-storage-message]");
+const storageActiveBadge = document.querySelector("[data-storage-active-badge]");
+const storageActiveName = document.querySelector("[data-storage-active-name]");
+const storageActivePath = document.querySelector("[data-storage-active-path]");
+const transferList = document.querySelector("[data-transfer-list]");
+const transferStatus = document.querySelector("[data-transfer-status]");
 const fileToolbar = filesPage?.querySelector(".file-toolbar");
 const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const startupScreen = document.querySelector("[data-startup-screen]");
@@ -324,6 +336,7 @@ const updateAboutStatus = document.querySelector("[data-update-about-status]");
 const updateReleaseDate = document.querySelector("[data-update-release-date]");
 const updateReleaseNotes = document.querySelector("[data-update-release-notes]");
 const securityGate = document.querySelector("[data-security-gate]");
+const localSetupGate = document.querySelector("[data-local-setup-gate]");
 const securityForm = document.querySelector("[data-security-form]");
 const securityMode = document.querySelector("[data-security-mode]");
 const securityTitle = document.querySelector("[data-security-title]");
@@ -336,6 +349,7 @@ const securityCurrentRole = document.querySelector("[data-security-current-role]
 const securitySettingsMessage = document.querySelector("[data-security-settings-message]");
 const securityStaySignedIn = document.querySelector('[data-security-field="staySignedIn"]');
 const securityStaySignedInRow = document.querySelector("[data-security-stay-row]");
+const localSetupButtons = document.querySelectorAll("[data-local-setup-action]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -506,9 +520,18 @@ const sshProfilesState = {
   defaultServerId: null,
   defaultProfileId: null,
 };
+let storageConnectionsState = {
+  connections: [],
+  defaultConnectionId: "local",
+};
+let selectedStorageId = "local";
+let storageFormMode = "sftp";
+let editingStorageId = null;
+const fileTransfers = new Map();
 const filesConnectionState = {
   connected: false,
   profileId: null,
+  storageId: null,
   currentPath: null,
   homePath: null,
   status: "disconnected",
@@ -529,6 +552,7 @@ const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
 const STALE_INSTANCE_STORAGE_KEY = "anxos.instances.staleIds.v1";
+const LOCAL_SETUP_STORAGE_KEY = "anxos.localSetup.complete.v1";
 const staleInstanceIds = new Set();
 const instanceRemovalAllowedIds = new Set();
 const PRIMARY_NAVIGATION_ORDER = [
@@ -727,12 +751,20 @@ function getDesktopApiState() {
       typeof api?.instances?.saveMinecraftProperties === "function",
     hasActions: typeof api?.actions?.executeAction === "function",
     hasFiles:
+      typeof api?.files?.listConnections === "function" &&
+      typeof api?.files?.saveConnection === "function" &&
+      typeof api?.files?.deleteConnection === "function" &&
+      typeof api?.files?.setDefaultConnection === "function" &&
+      typeof api?.files?.testConnection === "function" &&
       typeof api?.files?.list === "function" &&
       typeof api?.files?.disconnect === "function" &&
+      typeof api?.files?.cancelTransfer === "function" &&
       typeof api?.files?.readText === "function" &&
       typeof api?.files?.writeText === "function" &&
       typeof api?.files?.mkdir === "function" &&
       typeof api?.files?.rename === "function" &&
+      typeof api?.files?.copy === "function" &&
+      typeof api?.files?.newFile === "function" &&
       typeof api?.files?.delete === "function" &&
       typeof api?.files?.upload === "function" &&
       typeof api?.files?.download === "function",
@@ -8352,6 +8384,7 @@ function setFileDetails(entry = null) {
     setFileDetail("type", "Unavailable");
     setFileDetail("size", "Unavailable");
     setFileDetail("modified", "Unavailable");
+    setFileDetail("permissions", "Not reported");
     setFileDetail("path", "Unavailable");
     return;
   }
@@ -8364,6 +8397,7 @@ function setFileDetails(entry = null) {
   setFileDetail("type", formatFileType(entry));
   setFileDetail("size", entry.isDirectory ? "Folder" : formatBytes(entry.size));
   setFileDetail("modified", formatDateTime(entry.modifiedAt));
+  setFileDetail("permissions", entry.permissions ? `${entry.permissions}` : "Not reported");
   setFileDetail("path", formatFileValue(entry.path));
 }
 
@@ -8634,9 +8668,10 @@ function updateFileActionButtons() {
   const canMutate = connected && !busy;
   const canDownload = connected && selectedEntry && !selectedEntry.isDirectory && !busy;
   const hasOpenDocument = hasOpenFileEditorDocument();
+  const localFiles = isSingleDeviceMode() && !filesSelectedProfileId;
 
   if (filesConnectButton) {
-    filesConnectButton.disabled = !filesSelectedProfileId || busy || (connected && filesConnectionState.profileId === filesSelectedProfileId);
+    filesConnectButton.disabled = (!filesSelectedProfileId && !localFiles) || busy || (connected && filesConnectionState.profileId === filesSelectedProfileId);
   }
 
   if (filesDisconnectButton) {
@@ -8648,7 +8683,7 @@ function updateFileActionButtons() {
   }
 
   if (filesProfileSelect) {
-    filesProfileSelect.disabled = getFilesFilteredProfiles().length === 0 || busy;
+    filesProfileSelect.disabled = (!isSingleDeviceMode() && getFilesFilteredProfiles().length === 0) || busy;
   }
 
   if (filesPathInput) {
@@ -8686,7 +8721,7 @@ function updateFileActionButtons() {
       return;
     }
 
-    if (action === "upload" || action === "new-folder") {
+    if (action === "upload" || action === "new-folder" || action === "new-file") {
       button.disabled = !canMutate;
       return;
     }
@@ -9045,6 +9080,298 @@ function renderFolderRoots(listing) {
   filesFolderPanel.appendChild(list);
 }
 
+function getStorageConnectionById(storageId = selectedStorageId) {
+  return (storageConnectionsState.connections || []).find((connection) => connection.id === storageId) || null;
+}
+
+function getSelectedStorageConnection() {
+  return getStorageConnectionById(selectedStorageId) || getStorageConnectionById(storageConnectionsState.defaultConnectionId) || storageConnectionsState.connections?.[0] || null;
+}
+
+function storageConnectionLabel(connection) {
+  return connection?.name || connection?.displayName || connection?.id || "Storage";
+}
+
+function renderStorageConnections() {
+  const selected = getSelectedStorageConnection();
+  if (storageActiveBadge) storageActiveBadge.textContent = selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
+  if (storageActiveName) storageActiveName.textContent = storageConnectionLabel(selected);
+  if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || "Not connected";
+  if (!storageList) return;
+  storageList.replaceChildren();
+  (storageConnectionsState.connections || []).forEach((connection) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "storage-connection-item";
+    item.classList.toggle("is-active", connection.id === selectedStorageId);
+    item.innerHTML = `
+      <span>${connection.badge || (connection.provider === "sftp" ? "SFTP" : "Local")}</span>
+      <strong></strong>
+      <small></small>
+    `;
+    item.querySelector("strong").textContent = `${storageConnectionLabel(connection)}${connection.default ? " · Default" : ""}`;
+    item.querySelector("small").textContent = connection.provider === "sftp" || connection.type === "sftp"
+      ? `${connection.username || "user"}@${connection.host || "host"}:${connection.port || 22} ${connection.rootDirectory || "/"}`
+      : "Local filesystem on this computer";
+    item.addEventListener("click", () => {
+      selectedStorageId = connection.id;
+      filesSelectedProfileId = null;
+      setFilesPasswordPromptState(false);
+      renderStorageConnections();
+      renderFilesView();
+    });
+    storageList.append(item);
+  });
+}
+
+function renderTransfers() {
+  if (!transferList) return;
+  const transfers = [...fileTransfers.values()].slice(-6).reverse();
+  transferList.replaceChildren();
+  const activeCount = transfers.filter((transfer) => transfer.status === "running").length;
+  if (transferStatus) transferStatus.textContent = activeCount > 0 ? `${activeCount} active` : "Idle";
+  if (transfers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "settings-note";
+    empty.textContent = "No transfers running.";
+    transferList.append(empty);
+    return;
+  }
+  transfers.forEach((transfer) => {
+    const item = document.createElement("article");
+    item.className = "transfer-item";
+    item.classList.toggle("is-complete", transfer.status === "complete");
+    item.classList.toggle("is-failed", transfer.status === "failed");
+    const percent = transfer.status === "complete" ? 100 : transfer.status === "failed" ? 100 : transfer.progress || 40;
+    item.innerHTML = `
+      <strong></strong>
+      <small></small>
+      <div class="transfer-progress"><span></span></div>
+      <button class="inline-action" type="button">Cancel</button>
+    `;
+    item.querySelector("strong").textContent = transfer.title;
+    item.querySelector("small").textContent = transfer.message;
+    item.querySelector(".transfer-progress").style.setProperty("--transfer-progress", `${percent}%`);
+    const cancelButton = item.querySelector("button");
+    cancelButton.hidden = transfer.status !== "running";
+    cancelButton.addEventListener("click", () => cancelFileTransfer(transfer.id));
+    transferList.append(item);
+  });
+}
+
+function startFileTransfer(actionName, target) {
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  fileTransfers.set(id, {
+    id,
+    actionName,
+    status: "running",
+    progress: 35,
+    title: `${actionName[0].toUpperCase()}${actionName.slice(1)}`,
+    message: target || "Working...",
+  });
+  renderTransfers();
+  return id;
+}
+
+function finishFileTransfer(id, ok, message) {
+  const transfer = fileTransfers.get(id);
+  if (!transfer) return;
+  transfer.status = ok ? "complete" : "failed";
+  transfer.progress = 100;
+  transfer.message = message || (ok ? "Complete" : "Failed");
+  renderTransfers();
+}
+
+async function cancelFileTransfer(id) {
+  const transfer = fileTransfers.get(id);
+  if (!transfer || transfer.status !== "running") {
+    return;
+  }
+  transfer.message = "Canceling...";
+  renderTransfers();
+  try {
+    await getDesktopApiState().api.files.cancelTransfer(id);
+  } catch (error) {
+    transfer.status = "failed";
+    transfer.message = error?.message || "Cancel failed";
+    renderTransfers();
+  }
+}
+
+function updateFileTransferProgress(event = {}) {
+  if (!event?.id || !fileTransfers.has(event.id)) {
+    return;
+  }
+  const transfer = fileTransfers.get(event.id);
+  const percent = Number(event.percent);
+  if (Number.isFinite(percent)) {
+    transfer.progress = Math.max(0, Math.min(100, percent));
+  }
+  if (event.status) {
+    transfer.status = event.status;
+  }
+  if (Number.isFinite(event.receivedBytes) && Number.isFinite(event.totalBytes) && event.totalBytes > 0) {
+    transfer.message = `${formatBytes(event.receivedBytes)} of ${formatBytes(event.totalBytes)}`;
+  } else if (event.path) {
+    transfer.message = event.path;
+  }
+  if (event.status === "complete") {
+    transfer.progress = 100;
+    transfer.message = transfer.message || "Complete";
+  }
+  renderTransfers();
+}
+
+function setupFileTransferEvents() {
+  const desktopApiState = getDesktopApiState();
+  if (typeof desktopApiState.api?.files?.onTransfer !== "function") {
+    return;
+  }
+  desktopApiState.api.files.onTransfer(updateFileTransferProgress);
+}
+
+async function loadStorageConnections() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasFiles || typeof desktopApiState.api.files.listConnections !== "function") {
+    storageConnectionsState = { defaultConnectionId: "local", connections: [{ id: "local", provider: "local", badge: "Local", name: "This Device", default: true }] };
+    selectedStorageId = "local";
+    renderStorageConnections();
+    return;
+  }
+  try {
+    storageConnectionsState = await desktopApiState.api.files.listConnections();
+    selectedStorageId = getStorageConnectionById(selectedStorageId)?.id || storageConnectionsState.defaultConnectionId || "local";
+  } catch {
+    storageConnectionsState = { defaultConnectionId: "local", connections: [{ id: "local", provider: "local", badge: "Local", name: "This Device", default: true }] };
+    selectedStorageId = "local";
+  }
+  renderStorageConnections();
+}
+
+function setStorageModalVisible(visible) {
+  if (storageModal) storageModal.hidden = !visible;
+}
+
+function setStorageFormProvider(provider) {
+  storageFormMode = provider === "local" ? "local" : "sftp";
+  storageProviderButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.storageProvider === storageFormMode));
+  storageFields.forEach((field) => {
+    const key = field.dataset.storageField;
+    const wrapper = field.closest(".settings-field");
+    if (wrapper && key !== "name") {
+      wrapper.hidden = storageFormMode === "local";
+    }
+  });
+  syncStorageAuthFields();
+}
+
+function syncStorageAuthFields() {
+  const authType = document.querySelector('[data-storage-field="authType"]')?.value || "password";
+  storageSecretGroups.forEach((group) => {
+    const kind = group.dataset.storageSecret;
+    group.hidden = storageFormMode === "local" || (authType === "password" ? kind !== "password" : kind === "password");
+  });
+}
+
+function clearStorageForm() {
+  editingStorageId = null;
+  storageFields.forEach((field) => {
+    if (field.dataset.storageField === "port") field.value = "22";
+    else if (field.dataset.storageField === "authType") field.value = "password";
+    else if (field.dataset.storageField === "rootDirectory") field.value = "/home/container";
+    else field.value = "";
+  });
+  if (storageMessage) storageMessage.textContent = "Credentials are encrypted before being written to disk.";
+  setStorageFormProvider("sftp");
+}
+
+function getStorageFormPayload() {
+  const payload = { id: editingStorageId, provider: storageFormMode, type: storageFormMode };
+  storageFields.forEach((field) => {
+    payload[field.dataset.storageField] = field.value;
+  });
+  if (storageFormMode === "local") {
+    payload.name = payload.name || "This Device";
+  }
+  return payload;
+}
+
+function openStorageModal(connection = null) {
+  clearStorageForm();
+  if (connection && connection.id !== "local") {
+    editingStorageId = connection.id;
+    setStorageFormProvider(connection.provider || connection.type || "sftp");
+    storageFields.forEach((field) => {
+      const key = field.dataset.storageField;
+      if (connection[key] !== undefined && connection[key] !== null) field.value = connection[key];
+    });
+    if (storageMessage) storageMessage.textContent = "Leave password/key blank to keep the saved secret.";
+    syncStorageAuthFields();
+  }
+  setStorageModalVisible(true);
+}
+
+async function saveStorageConnection(event) {
+  event?.preventDefault();
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasFiles) return;
+  try {
+    const result = await desktopApiState.api.files.saveConnection(getStorageFormPayload());
+    storageConnectionsState = result;
+    selectedStorageId = result.connection?.id || selectedStorageId;
+    setStorageModalVisible(false);
+    renderStorageConnections();
+    renderFilesView();
+    showToast("Storage connection saved.");
+  } catch (error) {
+    if (storageMessage) storageMessage.textContent = error?.message || "Storage connection could not be saved.";
+    showToast(error?.message || "Storage connection could not be saved.");
+  }
+}
+
+async function testStorageConnectionFromForm() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasFiles) return;
+  if (storageMessage) storageMessage.textContent = "Testing connection...";
+  try {
+    const result = await desktopApiState.api.files.testConnection(getStorageFormPayload());
+    if (storageMessage) storageMessage.textContent = result?.message || "Connection verified.";
+    showToast("Storage connection verified.");
+  } catch (error) {
+    if (storageMessage) storageMessage.textContent = error?.message || "Connection test failed.";
+    showToast(error?.message || "Connection test failed.");
+  }
+}
+
+async function deleteSelectedStorageConnection() {
+  const selected = getSelectedStorageConnection();
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasFiles || !selected || selected.id === "local") return;
+  if (!window.confirm(`Delete storage connection ${storageConnectionLabel(selected)}?`)) return;
+  try {
+    storageConnectionsState = await desktopApiState.api.files.deleteConnection(selected.id);
+    selectedStorageId = storageConnectionsState.defaultConnectionId || "local";
+    renderStorageConnections();
+    renderFilesView();
+    showToast("Storage connection deleted.");
+  } catch (error) {
+    showToast(error?.message || "Storage connection could not be deleted.");
+  }
+}
+
+async function setSelectedStorageDefault() {
+  const selected = getSelectedStorageConnection();
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasFiles || !selected) return;
+  try {
+    storageConnectionsState = await desktopApiState.api.files.setDefaultConnection(selected.id);
+    renderStorageConnections();
+    showToast("Default storage updated.");
+  } catch (error) {
+    showToast(error?.message || "Default storage could not be updated.");
+  }
+}
+
 function getFilesFilteredProfiles() {
   return sshProfilesState.profiles.filter((profile) => {
     if (!filesSelectedServerId) {
@@ -9053,6 +9380,10 @@ function getFilesFilteredProfiles() {
 
     return profile.serverId === filesSelectedServerId;
   });
+}
+
+function isSingleDeviceMode() {
+  return (latestAgentSettingsPayload?.effective?.backendMode || latestAgentSettingsPayload?.stored?.backendMode || "local") === "local";
 }
 
 function syncFilesSelectionState() {
@@ -9095,6 +9426,14 @@ function renderFilesProfileSelectors() {
 
     const filteredProfiles = getFilesFilteredProfiles();
 
+    if (isSingleDeviceMode()) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "This Device";
+      option.selected = !filesSelectedProfileId;
+      filesProfileSelect.appendChild(option);
+    }
+
     filteredProfiles.forEach((profile) => {
       const option = document.createElement("option");
       option.value = profile.id;
@@ -9103,7 +9442,7 @@ function renderFilesProfileSelectors() {
       filesProfileSelect.appendChild(option);
     });
 
-    if (filteredProfiles.length === 0) {
+    if (filteredProfiles.length === 0 && !isSingleDeviceMode()) {
       const option = document.createElement("option");
       option.textContent = "No profiles configured";
       filesProfileSelect.appendChild(option);
@@ -9153,6 +9492,7 @@ function focusFilesPasswordPrompt() {
 function updateFilesConnectionState(nextState = {}) {
   filesConnectionState.connected = Boolean(nextState.connected);
   filesConnectionState.profileId = nextState.profileId || null;
+  filesConnectionState.storageId = nextState.storageId || null;
   filesConnectionState.currentPath = nextState.currentPath || null;
   filesConnectionState.homePath = nextState.homePath || null;
   filesConnectionState.status = nextState.status || (filesConnectionState.connected ? "connected" : "disconnected");
@@ -9211,12 +9551,17 @@ function renderFileListing(listing) {
   updateFilesConnectionState({
     connected: normalized.connected,
     profileId: normalized.profileId || filesSelectedProfileId,
+    storageId: normalized.storageId || null,
     currentPath: normalized.currentPath || filesConnectionState.currentPath,
     homePath: normalized.homePath || filesConnectionState.homePath,
     status: normalized.status || "connected",
     message: normalized.message || "Remote filesystem connected.",
   });
   latestFilesListing = normalized;
+  if (normalized.storageId) {
+    selectedStorageId = normalized.storageId;
+  }
+  renderStorageConnections();
   renderFileBreadcrumbs(normalized);
   renderFolderRoots(normalized);
   renderFileRows(entries);
@@ -9265,6 +9610,7 @@ function renderFileListingUnavailable(message = "File listing unavailable.") {
   resetFileEditor(message);
   setFilesLoading(false);
   setFilesEmpty(true, "File service unavailable", message);
+  renderStorageConnections();
   updateFileActionButtons();
 }
 
@@ -10320,7 +10666,40 @@ async function handleDockerAction(actionName) {
 }
 
 function getFilesRequestProfileId() {
+  if (selectedStorageId) {
+    return null;
+  }
+  if (isSingleDeviceMode() && !filesSelectedProfileId) {
+    return null;
+  }
   return filesConnectionState.profileId || filesSelectedProfileId || null;
+}
+
+function getFilesRequestStorageId() {
+  return selectedStorageId || null;
+}
+
+function normalizeFilesPathValue(value, fallback = "/") {
+  if (latestFilesListing?.local || (isSingleDeviceMode() && !filesSelectedProfileId)) {
+    return String(value || fallback || "").trim() || fallback;
+  }
+  return normalizeRemotePathValue(value, fallback);
+}
+
+function joinFilesPath(basePath, childName) {
+  if (latestFilesListing?.local || (isSingleDeviceMode() && !filesSelectedProfileId)) {
+    return `${String(basePath || "").replace(/[\\/]+$/, "")}/${String(childName || "").trim()}`;
+  }
+  return joinRemotePath(basePath, childName);
+}
+
+function getFilesParentPath(filePath) {
+  if (latestFilesListing?.local || (isSingleDeviceMode() && !filesSelectedProfileId)) {
+    const normalized = String(filePath || "");
+    const index = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+    return index > 0 ? normalized.slice(0, index) : normalized;
+  }
+  return getRemoteParentPath(filePath);
 }
 
 function hasDirtyFileEditor() {
@@ -10347,9 +10726,10 @@ async function refreshFileListing(options = {}) {
     return null;
   }
 
-  const profileId = options.profileId || getFilesRequestProfileId();
+  const profileId = options.profileId !== undefined ? options.profileId : getFilesRequestProfileId();
+  const storageId = options.storageId !== undefined ? options.storageId : getFilesRequestStorageId();
 
-  if (!profileId) {
+  if (!storageId && !profileId && !isSingleDeviceMode()) {
     renderFileListingUnavailable("No SSH profile is selected for remote file access.");
     return null;
   }
@@ -10360,6 +10740,7 @@ async function refreshFileListing(options = {}) {
 
   try {
     const listing = await desktopApiState.api.files.list({
+      storageId,
       profileId,
       path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined,
       password: options.password,
@@ -10380,6 +10761,7 @@ async function refreshFileListing(options = {}) {
       updateFilesConnectionState({
         connected: filesConnectionState.connected,
         profileId,
+        storageId,
         currentPath: filesConnectionState.currentPath,
         homePath: filesConnectionState.homePath,
         status: "connected",
@@ -10398,10 +10780,26 @@ async function refreshFileListing(options = {}) {
 
 async function connectFilesSession(options = {}) {
   const desktopApiState = getDesktopApiState();
+  const selectedStorage = getSelectedStorageConnection();
   const profile = getActiveFilesProfile();
   const switchingProfiles = Boolean(filesConnectionState.connected && filesConnectionState.profileId && filesConnectionState.profileId !== profile?.id);
 
-  if (!desktopApiState.hasFiles || !profile || filesRequestInFlight) {
+  if (selectedStorage) {
+    const listing = await refreshFileListing({
+      storageId: selectedStorage.id,
+      profileId: null,
+      path: filesConnectionState.connected && filesConnectionState.storageId === selectedStorage.id
+        ? filesConnectionState.currentPath || filesConnectionState.homePath
+        : undefined,
+      loadingMessage: `Connecting to ${storageConnectionLabel(selectedStorage)}...`,
+    });
+    if (listing?.connected) {
+      showToast(`Connected to ${storageConnectionLabel(selectedStorage)}.`);
+    }
+    return;
+  }
+
+  if (!desktopApiState.hasFiles || (!profile && !isSingleDeviceMode()) || filesRequestInFlight) {
     if (!desktopApiState.hasFiles) {
       renderFileListingUnavailable(desktopApiState.hasBridge ? "Files IPC bridge unavailable." : "Desktop preload bridge unavailable.");
     }
@@ -10409,6 +10807,18 @@ async function connectFilesSession(options = {}) {
   }
 
   if (switchingProfiles && !confirmDiscardFileEditor(`switch to ${profile.displayName || profile.host}`)) {
+    return;
+  }
+
+  if (!profile && isSingleDeviceMode()) {
+    const listing = await refreshFileListing({
+      profileId: null,
+      path: filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath : undefined,
+      loadingMessage: "Opening files on this device...",
+    });
+    if (listing?.connected) {
+      showToast("Connected to this device.");
+    }
     return;
   }
 
@@ -10448,8 +10858,9 @@ async function connectFilesSession(options = {}) {
 async function disconnectFilesSession() {
   const desktopApiState = getDesktopApiState();
   const profileId = getFilesRequestProfileId();
+  const storageId = getFilesRequestStorageId();
 
-  if (!desktopApiState.hasFiles || !profileId) {
+  if (!desktopApiState.hasFiles || (!storageId && !profileId && !isSingleDeviceMode())) {
     return;
   }
 
@@ -10461,13 +10872,15 @@ async function disconnectFilesSession() {
   updateFileActionButtons();
 
   try {
-    await desktopApiState.api.files.disconnect(profileId);
+    if (profileId || storageId) {
+      await desktopApiState.api.files.disconnect(profileId, storageId);
+    }
   } catch {}
   finally {
-    renderFileListingUnavailable("Remote filesystem disconnected.");
+    renderFileListingUnavailable(storageId === "local" || isSingleDeviceMode() ? "Local filesystem disconnected." : "Remote filesystem disconnected.");
     setFilesPasswordPromptState(false);
     renderFilesView();
-    showToast("Remote filesystem disconnected.");
+    showToast(storageId === "local" || isSingleDeviceMode() ? "Local filesystem disconnected." : "Remote filesystem disconnected.");
     filesActionRequestInFlight = false;
     updateFileActionButtons();
   }
@@ -10478,16 +10891,17 @@ async function navigateRemoteDirectory(remotePath) {
     return;
   }
 
-  const nextPath = normalizeRemotePathValue(remotePath, filesConnectionState.currentPath || filesConnectionState.homePath || "/");
+  const nextPath = normalizeFilesPathValue(remotePath, filesConnectionState.currentPath || filesConnectionState.homePath || "/");
 
   if (nextPath !== (filesConnectionState.currentPath || filesConnectionState.homePath || "/") && !confirmDiscardFileEditor(`open ${nextPath}`)) {
     return;
   }
 
   await refreshFileListing({
+    storageId: getFilesRequestStorageId(),
     profileId: getFilesRequestProfileId(),
     path: nextPath,
-    loadingMessage: "Loading remote directory...",
+    loadingMessage: latestFilesListing?.local ? "Loading local directory..." : "Loading remote directory...",
   });
 }
 
@@ -10524,6 +10938,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
 
   try {
     const payload = await desktopApiState.api.files.readText({
+      storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: entry.path,
     });
@@ -10593,6 +11008,7 @@ async function saveRemoteTextFile() {
 
   try {
     await desktopApiState.api.files.writeText({
+      storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: latestFileDocument.path,
       content: nextContent,
@@ -10604,13 +11020,14 @@ async function saveRemoteTextFile() {
     latestFileDocument.message = `Saved ${latestFileDocument.path}`;
     applyFileEditorDocument(latestFileDocument);
     await refreshFileListing({
+      storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
       loadingMessage: "Refreshing remote directory...",
     });
-    showToast("Remote file saved.");
+    showToast(latestFilesListing?.local ? "Local file saved." : "Remote file saved.");
   } catch (error) {
-    showToast(error?.message || "Remote file could not be saved.");
+    showToast(error?.message || (latestFilesListing?.local ? "Local file could not be saved." : "Remote file could not be saved."));
   } finally {
     filesActionRequestInFlight = false;
     updateFileActionButtons();
@@ -10652,16 +11069,20 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath)
 
   filesActionRequestInFlight = true;
   updateFileActionButtons();
+  const transferId = startFileTransfer(actionName, payload.path || payload.sourcePath || payload.directoryPath || refreshPath || "Storage operation");
+  payload.transferId = transferId;
 
   try {
     const result = await desktopApiState.api.files[actionName](payload);
 
     if (result?.canceled) {
+      finishFileTransfer(transferId, false, "Canceled");
       return result;
     }
 
     if (refreshPath) {
       await refreshFileListing({
+        storageId: payload.storageId,
         profileId: payload.profileId,
         path: refreshPath,
         loadingMessage: "Refreshing remote directory...",
@@ -10671,9 +11092,11 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath)
     if (successMessage) {
       showToast(successMessage);
     }
+    finishFileTransfer(transferId, true, successMessage || "Complete");
 
     return result;
   } catch (error) {
+    finishFileTransfer(transferId, false, error?.message || "Failed");
     showToast(error?.message || "Remote file action failed.");
     return null;
   } finally {
@@ -10693,15 +11116,38 @@ async function createRemoteFolder() {
     return;
   }
 
-  selectedFileEntryPath = joinRemotePath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", folderName);
+  selectedFileEntryPath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", folderName);
 
   await runFileMutation(
     "mkdir",
     {
       profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
       path: selectedFileEntryPath,
     },
-    "Remote folder created.",
+    latestFilesListing?.local ? "Local folder created." : "Remote folder created.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  );
+}
+
+async function createRemoteFile() {
+  if (!filesConnectionState.connected) {
+    return;
+  }
+  const fileName = window.prompt("New file name");
+  if (!fileName) {
+    return;
+  }
+  const filePath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", fileName);
+  selectedFileEntryPath = filePath;
+  await runFileMutation(
+    "newFile",
+    {
+      profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
+      path: filePath,
+    },
+    latestFilesListing?.local ? "Local file created." : "Remote file created.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",
   );
 }
@@ -10719,17 +11165,18 @@ async function renameRemoteEntry() {
     return;
   }
 
-  const nextPath = joinRemotePath(getRemoteParentPath(entry.path), nextName);
+  const nextPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
   selectedFileEntryPath = nextPath;
 
   await runFileMutation(
     "rename",
     {
       profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
       oldPath: entry.path,
       newPath: nextPath,
     },
-    "Remote item renamed.",
+    latestFilesListing?.local ? "Local item renamed." : "Remote item renamed.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",
   );
 
@@ -10738,6 +11185,29 @@ async function renameRemoteEntry() {
     latestFileDocument.message = `Editing ${nextPath}`;
     applyFileEditorDocument(latestFileDocument);
   }
+}
+
+async function copyRemoteEntry() {
+  const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
+  if (!entry) {
+    return;
+  }
+  const nextName = window.prompt(`Copy ${entry.name} to`, `${entry.name}.copy`);
+  if (!nextName) {
+    return;
+  }
+  const destinationPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
+  await runFileMutation(
+    "copy",
+    {
+      profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
+      sourcePath: entry.path,
+      destinationPath,
+    },
+    latestFilesListing?.local ? "Local item copied." : "Remote item copied.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  );
 }
 
 async function deleteRemoteEntry() {
@@ -10772,10 +11242,11 @@ async function deleteRemoteEntry() {
     "delete",
     {
       profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
       path: entry.path,
       confirmDangerous,
     },
-    "Remote item deleted.",
+    latestFilesListing?.local ? "Local item deleted." : "Remote item deleted.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",
   );
 
@@ -10793,9 +11264,10 @@ async function uploadRemoteFile() {
     "upload",
     {
       profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
       directoryPath: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
     },
-    "Remote upload complete.",
+    latestFilesListing?.local ? "File imported." : "Remote upload complete.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",
   );
 
@@ -10815,9 +11287,10 @@ async function downloadRemoteFile() {
     "download",
     {
       profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
       path: entry.path,
     },
-    "Remote download complete.",
+    latestFilesListing?.local ? "Local file copy saved." : "Remote download complete.",
     null,
   );
 
@@ -12823,21 +13296,53 @@ function writeStoredSettings(settings) {
   window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
 }
 
+function isLocalSetupComplete() {
+  return window.localStorage.getItem(LOCAL_SETUP_STORAGE_KEY) === "true";
+}
+
+function setLocalSetupComplete() {
+  window.localStorage.setItem(LOCAL_SETUP_STORAGE_KEY, "true");
+}
+
+function setSecurityGateVisible(visible) {
+  if (securityGate) {
+    securityGate.hidden = !visible;
+  }
+}
+
+function renderLocalSetupState() {
+  if (!localSetupGate) {
+    return;
+  }
+  const shouldShow = Boolean(securityState.setupRequired && !isLocalSetupComplete());
+  localSetupGate.hidden = !shouldShow;
+}
+
+function showRemoteControlSetup() {
+  if (localSetupGate) {
+    localSetupGate.hidden = true;
+  }
+  setSecurityGateVisible(true);
+  showPage("security");
+}
+
 function renderSecurityState() {
   const setup = Boolean(securityState.setupRequired);
   const authenticated = Boolean(securityState.authenticated);
-  if (securityGate) {
-    securityGate.hidden = authenticated || !getDesktopApiState().hasSecurity;
+  if (authenticated || !setup) {
+    setLocalSetupComplete();
   }
+  renderLocalSetupState();
+  setSecurityGateVisible(!authenticated && !setup && getDesktopApiState().hasSecurity);
   if (securityMode) {
-    securityMode.textContent = setup ? "First Run Setup" : "Security";
+    securityMode.textContent = setup ? "Remote Control Setup" : "Security";
   }
   if (securityTitle) {
-    securityTitle.textContent = setup ? "Create Owner Account" : "Sign in to AnxOS";
+    securityTitle.textContent = setup ? "Enable Remote Control" : "Sign in to AnxOS";
   }
   if (securityDescription) {
     securityDescription.textContent = setup
-      ? "No owner exists yet. Create the first local admin account."
+      ? "Create an owner account only if you want to manage another computer or server."
       : "Use your local AnxOS account to continue.";
   }
   if (securitySubmit) {
@@ -12847,19 +13352,25 @@ function renderSecurityState() {
     securityStaySignedInRow.hidden = false;
   }
   if (securityStatus) {
-    securityStatus.textContent = authenticated ? "Signed in" : setup ? "Setup required" : "Locked";
+    securityStatus.textContent = authenticated ? "Signed in" : setup ? "Local mode" : "Locked";
   }
   if (securityCurrentUser) {
-    securityCurrentUser.value = securityState.user?.username || "";
+    securityCurrentUser.value = securityState.user?.username || (setup ? "This Device" : "");
   }
   if (securityCurrentRole) {
-    securityCurrentRole.value = securityState.user?.role || "";
+    securityCurrentRole.value = securityState.user?.role || (setup ? "Local" : "");
   }
   if (securitySettingsMessage) {
-    securitySettingsMessage.textContent = authenticated
-      ? `Audit log: ${securityState.auditPath || "configured"} · remembered sessions: ${securityState.persistentSessionCount || 0}`
-      : "Sign in to manage security settings.";
+    securitySettingsMessage.textContent = setup
+      ? "Remote Control is only needed if you want to manage another computer or server."
+      : authenticated
+        ? `Audit log: ${securityState.auditPath || "configured"} · remembered sessions: ${securityState.persistentSessionCount || 0}`
+        : "Sign in to manage security settings.";
   }
+  document.querySelector('[data-security-action="enable-remote-control"]')?.toggleAttribute("hidden", !setup);
+  document.querySelector('[data-security-action="rotate-agent-token"]')?.toggleAttribute("hidden", setup);
+  document.querySelector('[data-security-action="logout"]')?.toggleAttribute("hidden", setup || !authenticated);
+  document.querySelector('[data-security-action="logout-all-sessions"]')?.toggleAttribute("hidden", setup || !authenticated);
 }
 
 async function refreshSecurityState() {
@@ -12900,6 +13411,7 @@ async function submitSecurityForm(event) {
       securityMessage.textContent = "";
     }
     await refreshSecurityState();
+    setLocalSetupComplete();
     showToast("Signed in.");
   } catch (error) {
     if (securityMessage) {
@@ -12969,6 +13481,9 @@ function createAgentRobotIcon(state = "offline") {
 }
 
 function getNodeVisualState(node) {
+  if (node?.local || node?.backendMode === "local") {
+    return "online";
+  }
   if (node?.installing) {
     return "installing";
   }
@@ -13001,7 +13516,10 @@ function renderNodes() {
   }
 
   if (nodeMessage) {
-    nodeMessage.textContent = `${(nodesState.nodes || []).length} node(s) registered. Tokens are stored in the local node registry.`;
+    const remoteCount = (nodesState.nodes || []).filter((node) => !(node.local || node.backendMode === "local" || node.id === "default")).length;
+    nodeMessage.textContent = remoteCount > 0
+      ? `${remoteCount} remote node(s) registered. This Device remains available.`
+      : "You're managing this device. Add a remote node only if you want to control another PC or server.";
   }
 
   if (nodeList) {
@@ -13017,7 +13535,9 @@ function renderNodes() {
       const title = document.createElement("strong");
       title.textContent = node.displayName || node.id;
       const detail = document.createElement("small");
-      detail.textContent = `${node.agentUrl} · token ${node.hasToken ? "configured" : "not set"} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
+      detail.textContent = node.local || node.backendMode === "local"
+        ? "Built-in local node · no account or agent token required"
+        : `${node.agentUrl} · token ${node.hasToken ? "configured" : "not set"} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
       copy.append(title, detail);
       item.append(copy);
       item.addEventListener("click", () => selectNode(node.id));
@@ -13029,14 +13549,14 @@ function renderNodes() {
 async function refreshNodes() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasNodes) {
-    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "Default Agent", default: true }] };
+    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "This Device", default: true, local: true, backendMode: "local" }] };
     renderNodes();
     return;
   }
   try {
     nodesState = await desktopApiState.api.nodes.list();
   } catch {
-    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "Default Agent", default: true }] };
+    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "This Device", default: true, local: true, backendMode: "local" }] };
   }
   renderNodes();
 }
@@ -14090,6 +14610,8 @@ updateSshActions();
 resetSshProfileForm();
 ensureSshEventSubscription();
 loadSshProfiles();
+loadStorageConnections();
+setupFileTransferEvents();
 window.addEventListener("resize", () => {
   resizeActiveSshSession();
   updateFilesStickyOffsets();
@@ -14122,9 +14644,31 @@ filesServerSelect?.addEventListener("change", () => {
 });
 filesProfileSelect?.addEventListener("change", () => {
   filesSelectedProfileId = filesProfileSelect.value || null;
+  if (filesSelectedProfileId) {
+    selectedStorageId = "";
+  } else if (!selectedStorageId) {
+    selectedStorageId = "local";
+  }
   setFilesPasswordPromptState(false);
+  renderStorageConnections();
   renderFilesView();
 });
+storageProviderButtons.forEach((button) => {
+  button.addEventListener("click", () => setStorageFormProvider(button.dataset.storageProvider || "sftp"));
+});
+storageForm?.addEventListener("submit", saveStorageConnection);
+document.querySelectorAll("[data-storage-action]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.storageAction;
+    if (action === "open") openStorageModal();
+    else if (action === "close") setStorageModalVisible(false);
+    else if (action === "test") await testStorageConnectionFromForm();
+    else if (action === "delete") await deleteSelectedStorageConnection();
+    else if (action === "set-default") await setSelectedStorageDefault();
+    else if (action === "edit") openStorageModal(getSelectedStorageConnection());
+  });
+});
+document.querySelector('[data-storage-field="authType"]')?.addEventListener("change", syncStorageAuthFields);
 filesConnectButton?.addEventListener("click", () => connectFilesSession());
 filesDisconnectButton?.addEventListener("click", disconnectFilesSession);
 filesPasswordSubmitButton?.addEventListener("click", () => connectFilesSession({ password: filesPasswordInput?.value || "" }));
@@ -14159,14 +14703,17 @@ filesSearchInput?.addEventListener("input", debounce(filterFileRows, 120));
 filesRefreshButton?.addEventListener("click", () => {
   refreshFileListing({
     profileId: getFilesRequestProfileId(),
+    storageId: getFilesRequestStorageId(),
     path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
   });
 });
 document.querySelector('[data-file-action="upload"]')?.addEventListener("click", uploadRemoteFile);
 document.querySelector('[data-file-action="download"]')?.addEventListener("click", downloadRemoteFile);
 document.querySelector('[data-file-action="rename"]')?.addEventListener("click", renameRemoteEntry);
+document.querySelector('[data-file-action="copy"]')?.addEventListener("click", copyRemoteEntry);
 document.querySelector('[data-file-action="delete"]')?.addEventListener("click", deleteRemoteEntry);
 document.querySelector('[data-file-action="new-folder"]')?.addEventListener("click", createRemoteFolder);
+document.querySelector('[data-file-action="new-file"]')?.addEventListener("click", createRemoteFile);
 fileEditorOpenButton?.addEventListener("click", () => openRemoteTextFile());
 fileEditorSaveButton?.addEventListener("click", saveRemoteTextFile);
 fileEditorRevertButton?.addEventListener("click", revertRemoteTextFile);
@@ -14566,6 +15113,20 @@ securityForm?.addEventListener("submit", submitSecurityForm);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
 document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);
+document.querySelector('[data-security-action="enable-remote-control"]')?.addEventListener("click", showRemoteControlSetup);
+localSetupButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.localSetupAction;
+    if (action === "remote-control") {
+      showRemoteControlSetup();
+      return;
+    }
+    setLocalSetupComplete();
+    renderLocalSetupState();
+    showPage("dashboard");
+    showToast("Managing this device.");
+  });
+});
 nodeTargetSelects.forEach((select) => {
   select.addEventListener("change", () => selectNode(select.value || "default"));
 });

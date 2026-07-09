@@ -128,15 +128,28 @@ const desktopApi = {
     test: (nodeId) => ipcRenderer.invoke("nodes:test", { nodeId }),
   },
   files: {
+    listConnections: () => ipcRenderer.invoke("files:listConnections"),
+    saveConnection: (payload = {}) => ipcRenderer.invoke("files:saveConnection", payload),
+    deleteConnection: (storageId) => ipcRenderer.invoke("files:deleteConnection", { storageId }),
+    setDefaultConnection: (storageId) => ipcRenderer.invoke("files:setDefaultConnection", { storageId }),
+    testConnection: (payload = {}) => ipcRenderer.invoke("files:testConnection", payload),
     list: (payload) => ipcRenderer.invoke("files:list", payload),
-    disconnect: (profileId) => ipcRenderer.invoke("files:disconnect", { profileId }),
+    disconnect: (profileId, storageId = null) => ipcRenderer.invoke("files:disconnect", { profileId, storageId }),
+    cancelTransfer: (transferId) => ipcRenderer.invoke("files:cancelTransfer", { transferId }),
     readText: (payload) => ipcRenderer.invoke("files:readText", payload),
     writeText: (payload) => ipcRenderer.invoke("files:writeText", payload),
     mkdir: (payload) => ipcRenderer.invoke("files:mkdir", payload),
     rename: (payload) => ipcRenderer.invoke("files:rename", payload),
+    copy: (payload) => ipcRenderer.invoke("files:copy", payload),
+    newFile: (payload) => ipcRenderer.invoke("files:newFile", payload),
     delete: (payload) => ipcRenderer.invoke("files:delete", payload),
     upload: (payload) => ipcRenderer.invoke("files:upload", payload),
     download: (payload) => ipcRenderer.invoke("files:download", payload),
+    onTransfer: (callback) => {
+      const handler = (_, payload) => callback(payload);
+      ipcRenderer.on("files:transfer", handler);
+      return () => ipcRenderer.removeListener("files:transfer", handler);
+    },
   },
   ssh: {
     listProfiles: () => ipcRenderer.invoke("ssh:listProfiles"),

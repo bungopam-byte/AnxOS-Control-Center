@@ -3,6 +3,22 @@ const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const agentClient = require("./agentClient");
 const { getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
+const path = require("path");
+const { app } = require("electron");
+
+function ensureLocalInstanceRoot() {
+  if (process.env.AGENT_INSTANCE_ROOT) {
+    return;
+  }
+  try {
+    process.env.AGENT_INSTANCE_ROOT = path.join(app.getPath("userData"), "instances");
+  } catch {
+    process.env.AGENT_INSTANCE_ROOT = path.join(process.cwd(), "anxos-instances");
+  }
+}
+
+ensureLocalInstanceRoot();
+const localInstanceService = require("../../agent/src/services/instances/instanceService");
 
 class AgentUnavailableError extends Error {
   constructor() {
@@ -176,6 +192,11 @@ function shouldUseLocalDocker(options = {}) {
   return getBackendMode() === "local" && (!selectedNodeId || selectedNodeId === "default");
 }
 
+function shouldUseLocalInstances(options = {}) {
+  const selectedNodeId = options?.nodeId || getSelectedNodeId();
+  return getBackendMode() === "local" && (!selectedNodeId || selectedNodeId === "default");
+}
+
 async function listDockerContainers(options = {}) {
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
@@ -316,6 +337,9 @@ function getOptionalNodeConfig(options = {}) {
 }
 
 async function listInstances(options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.listInstances();
+  }
   try {
     return await agentClient.listInstances(getOptionalNodeConfig(options));
   } catch {
@@ -324,82 +348,142 @@ async function listInstances(options = {}) {
 }
 
 async function createInstance(payload) {
+  if (shouldUseLocalInstances(payload)) {
+    return localInstanceService.createInstance(payload);
+  }
   return agentClient.createInstance(payload, getOptionalNodeConfig(payload));
 }
 
 async function updateInstance(instanceId, payload, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.updateInstance(instanceId, payload);
+  }
   return agentClient.updateInstance(instanceId, payload, getOptionalNodeConfig(options));
 }
 
 async function getInstanceStatus(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.getStatus(instanceId);
+  }
   return agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options));
 }
 
 async function getInstanceMetrics(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.getMetrics(instanceId);
+  }
   return agentClient.getInstanceMetrics(instanceId, getOptionalNodeConfig(options));
 }
 
 async function getInstanceLogs(instanceId, options) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.readLogs(instanceId, options);
+  }
   return agentClient.getInstanceLogs(instanceId, options, getOptionalNodeConfig(options));
 }
 
 async function clearInstanceLogs(instanceId, options) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.clearLogs(instanceId, options);
+  }
   return agentClient.clearInstanceLogs(instanceId, options, getOptionalNodeConfig(options));
 }
 
 async function sendInstanceCommand(instanceId, command, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.writeInstanceInput(instanceId, command);
+  }
   return agentClient.sendInstanceCommand(instanceId, command, getOptionalNodeConfig(options));
 }
 
 async function forceKillInstance(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.forceKillInstance(instanceId);
+  }
   return agentClient.forceKillInstance(instanceId, getOptionalNodeConfig(options));
 }
 
 async function listInstanceFiles(instanceId, currentPath, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.listInstanceFiles(instanceId, currentPath);
+  }
   return agentClient.listInstanceFiles(instanceId, currentPath, getOptionalNodeConfig(options));
 }
 
 async function readInstanceFile(instanceId, filePath, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.readInstanceFile(instanceId, filePath);
+  }
   return agentClient.readInstanceFile(instanceId, filePath, getOptionalNodeConfig(options));
 }
 
 async function writeInstanceFile(instanceId, filePath, content, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.writeInstanceFile(instanceId, filePath, content, options);
+  }
   return agentClient.writeInstanceFile(instanceId, filePath, content, options, getOptionalNodeConfig(options));
 }
 
 async function deleteInstanceFile(instanceId, filePath, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.deleteInstanceFile(instanceId, filePath);
+  }
   return agentClient.deleteInstanceFile(instanceId, filePath, getOptionalNodeConfig(options));
 }
 
 async function createInstanceFolder(instanceId, folderPath, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.createInstanceFolder(instanceId, folderPath);
+  }
   return agentClient.createInstanceFolder(instanceId, folderPath, getOptionalNodeConfig(options));
 }
 
 async function renameInstanceFile(instanceId, oldPath, newPath, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.renameInstanceFile(instanceId, oldPath, newPath);
+  }
   return agentClient.renameInstanceFile(instanceId, oldPath, newPath, getOptionalNodeConfig(options));
 }
 
 async function getMinecraftProperties(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.readMinecraftProperties(instanceId);
+  }
   return agentClient.getMinecraftProperties(instanceId, getOptionalNodeConfig(options));
 }
 
 async function saveMinecraftProperties(instanceId, properties, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.writeMinecraftProperties(instanceId, properties);
+  }
   return agentClient.saveMinecraftProperties(instanceId, properties, getOptionalNodeConfig(options));
 }
 
 async function startInstance(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.startInstance(instanceId);
+  }
   return agentClient.startInstance(instanceId, getOptionalNodeConfig(options));
 }
 
 async function stopInstance(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.stopInstance(instanceId);
+  }
   return agentClient.stopInstance(instanceId, getOptionalNodeConfig(options));
 }
 
 async function restartInstance(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.restartInstance(instanceId);
+  }
   return agentClient.restartInstance(instanceId, getOptionalNodeConfig(options));
 }
 
 async function deleteInstance(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.deleteInstance(instanceId);
+  }
   return agentClient.deleteInstance(instanceId, getOptionalNodeConfig(options));
 }
 

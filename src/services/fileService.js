@@ -1,10 +1,14 @@
 const fs = require("fs");
 const fsPromises = require("fs/promises");
+const os = require("os");
 const path = require("path");
+const { EventEmitter } = require("events");
+const { pipeline } = require("stream/promises");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
 const { AgentClientError, downloadFile, getAgentConfig, getBackendMode } = require("./agentClient");
 const { SshService, SshServiceError } = require("./sshService");
+const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
 
 const posixPath = path.posix;
 const PROTECTED_REMOTE_PATHS = ["/", "/etc", "/usr", "/bin"];
@@ -134,6 +138,7 @@ function createEntry(remoteDirectoryPath, entry) {
   const modifiedAt = Number.isFinite(entry?.attrs?.mtime)
     ? new Date(entry.attrs.mtime * 1000).toISOString()
     : null;
+  const mode = Number(entry?.attrs?.mode);
 
   return {
     name,
@@ -143,6 +148,7 @@ function createEntry(remoteDirectoryPath, entry) {
     extension,
     size: Number.isFinite(entry?.attrs?.size) ? entry.attrs.size : null,
     modifiedAt,
+    permissions: Number.isFinite(mode) ? (mode & 0o777).toString(8).padStart(3, "0") : null,
   };
 }
 
@@ -293,10 +299,138 @@ function sortEntries(entries) {
   });
 }
 
-class FileService {
+function shouldUseLocalFiles(options = {}) {
+  return options.storageId === LOCAL_STORAGE_ID || (!trimValue(options.storageId) && getBackendMode() === "local" && !trimValue(options.profileId));
+}
+
+function getLocalHomePath() {
+  return os.homedir() || process.env.USERPROFILE || process.cwd();
+}
+
+function normalizeLocalPath(inputPath, fallbackPath = getLocalHomePath()) {
+  const fallback = path.resolve(trimValue(fallbackPath) || getLocalHomePath());
+  const rawValue = trimValue(inputPath);
+  if (!rawValue) {
+    return fallback;
+  }
+  return path.resolve(rawValue.startsWith(path.sep) || /^[a-zA-Z]:[\\/]/.test(rawValue) ? rawValue : path.join(fallback, rawValue));
+}
+
+function buildLocalBreadcrumbs(currentPath) {
+  const parsed = path.parse(currentPath);
+  const root = parsed.root || path.sep;
+  const relative = path.relative(root, currentPath);
+  if (!relative) {
+    return [];
+  }
+  const parts = relative.split(path.sep).filter(Boolean);
+  let runningPath = root;
+  return parts.map((name) => {
+    runningPath = path.join(runningPath, name);
+    return { name, path: runningPath };
+  });
+}
+
+function createLocalEntry(directoryPath, entry, stats) {
+  return {
+    name: entry.name,
+    path: path.join(directoryPath, entry.name),
+    type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
+    isDirectory: entry.isDirectory(),
+    extension: entry.isFile() && entry.name.includes(".") ? entry.name.split(".").pop() : "",
+    size: entry.isFile() ? stats.size : null,
+    modifiedAt: stats.mtime ? stats.mtime.toISOString() : null,
+    permissions: Number.isFinite(stats.mode) ? (stats.mode & 0o777).toString(8).padStart(3, "0") : null,
+  };
+}
+
+class FileService extends EventEmitter {
   constructor() {
+    super();
     this.profileLookup = createProfileLookup();
     this.sessions = new Map();
+    this.transferControllers = new Map();
+  }
+
+  emitTransfer(event) {
+    this.emit("transfer", {
+      at: new Date().toISOString(),
+      ...event,
+    });
+  }
+
+  createTransferController(transferId) {
+    const id = trimValue(transferId);
+    if (!id) {
+      return null;
+    }
+    const controller = {
+      id,
+      canceled: false,
+      streams: new Set(),
+    };
+    this.transferControllers.set(id, controller);
+    return controller;
+  }
+
+  attachTransferStream(controller, stream) {
+    if (!controller || !stream) {
+      return;
+    }
+    controller.streams.add(stream);
+    stream.once("close", () => controller.streams.delete(stream));
+  }
+
+  cancelTransfer(transferId) {
+    const id = trimValue(transferId);
+    const controller = id ? this.transferControllers.get(id) : null;
+    if (!controller) {
+      return { id, canceled: false };
+    }
+    controller.canceled = true;
+    for (const stream of controller.streams) {
+      stream.destroy(new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 }));
+    }
+    this.emitTransfer({ id, status: "failed", message: "Canceled" });
+    this.transferControllers.delete(id);
+    return { id, canceled: true };
+  }
+
+  finishTransferController(controller) {
+    if (controller?.id) {
+      this.transferControllers.delete(controller.id);
+    }
+  }
+
+  getStorageConnection(storageId) {
+    return getConnection(storageId || LOCAL_STORAGE_ID, { includeSecrets: true });
+  }
+
+  getProviderProfile(options = {}) {
+    if (trimValue(options.storageId)) {
+      const connection = this.getStorageConnection(options.storageId);
+      if (connection.provider === "local" || connection.type === "local") {
+        return { provider: "local", connection };
+      }
+      return {
+        provider: "sftp",
+        connection,
+        profile: {
+          id: connection.id,
+          serverId: connection.id,
+          displayName: connection.name || connection.displayName,
+          host: connection.host,
+          port: connection.port || 22,
+          username: connection.username,
+          authType: connection.authType || "password",
+          rootDirectory: connection.rootDirectory || "/",
+          password: connection.password || "",
+          privateKey: connection.privateKey || "",
+          passphrase: connection.passphrase || "",
+        },
+      };
+    }
+    return { provider: "sftp", profile: this.getProfile(options.profileId), connection: null };
   }
 
   getProfile(profileId) {
@@ -310,19 +444,55 @@ class FileService {
     return this.profileLookup.getProfile(profileId);
   }
 
+  buildSftpConnectConfig(profile, options = {}) {
+    const connectConfig = {
+      host: profile.host,
+      port: Number(profile.port) || 22,
+      username: profile.username,
+      readyTimeout: 12000,
+      keepaliveInterval: 15000,
+      keepaliveCountMax: 2,
+      tryKeyboard: false,
+    };
+    if (profile.authType === "privateKey") {
+      if (profile.privateKey) {
+        connectConfig.privateKey = profile.privateKey;
+      } else {
+        connectConfig.privateKey = fs.readFileSync(profile.privateKeyPath, "utf8");
+      }
+      if (profile.passphrase || options.passphrase) {
+        connectConfig.passphrase = profile.passphrase || options.passphrase;
+      }
+    } else {
+      const password = profile.password || (typeof options.password === "string" ? options.password : "");
+      if (!password) {
+        throw new SshServiceError("Password required for this SFTP connection.", {
+          code: "SSH_PASSWORD_REQUIRED",
+        });
+      }
+      connectConfig.password = password;
+    }
+    return connectConfig;
+  }
+
   async ensureSession(options = {}) {
-    const profile = this.getProfile(options.profileId);
-    const existingSession = this.sessions.get(profile.id);
+    const providerProfile = this.getProviderProfile(options);
+    if (providerProfile.provider === "local") {
+      throw new FileServiceError("Local provider does not use SFTP sessions.", { code: "FILES_LOCAL_SESSION_UNAVAILABLE" });
+    }
+    const profile = providerProfile.profile;
+    const sessionKey = options.storageId ? `storage:${profile.id}` : `profile:${profile.id}`;
+    const existingSession = this.sessions.get(sessionKey);
 
     if (existingSession?.connected && existingSession.sftp) {
       return existingSession;
     }
 
     if (existingSession) {
-      this.destroySession(profile.id);
+      this.destroySession(sessionKey);
     }
 
-    const connectConfig = this.profileLookup.buildConnectConfig(profile, options);
+    const connectConfig = options.storageId ? this.buildSftpConnectConfig(profile, options) : this.profileLookup.buildConnectConfig(profile, options);
     const session = await new Promise((resolve, reject) => {
       const client = new Client();
       let settled = false;
@@ -359,12 +529,15 @@ class FileService {
 
           settled = true;
           resolve({
+            id: sessionKey,
             profile,
             client,
             sftp,
             connected: true,
-            homePath: getDefaultRemotePath(profile),
-            currentPath: getDefaultRemotePath(profile),
+            storageId: options.storageId || null,
+            provider: options.storageId ? "sftp" : "ssh-profile",
+            homePath: profile.rootDirectory || getDefaultRemotePath(profile),
+            currentPath: profile.rootDirectory || getDefaultRemotePath(profile),
             connectedAt: new Date().toISOString(),
           });
         });
@@ -372,17 +545,17 @@ class FileService {
 
       client.on("error", rejectOnce);
       client.on("close", () => {
-        const activeSession = this.sessions.get(profile.id);
+        const activeSession = this.sessions.get(sessionKey);
 
         if (activeSession?.client === client) {
-          this.destroySession(profile.id);
+          this.destroySession(sessionKey);
         }
       });
 
       client.connect(connectConfig);
     });
 
-    this.sessions.set(profile.id, session);
+    this.sessions.set(sessionKey, session);
     return session;
   }
 
@@ -403,10 +576,12 @@ class FileService {
     this.sessions.delete(profileId);
   }
 
-  disconnect(profileId) {
-    this.destroySession(profileId);
+  disconnect(profileId, storageId = null) {
+    const key = storageId ? `storage:${storageId}` : profileId?.startsWith?.("storage:") || profileId?.startsWith?.("profile:") ? profileId : `profile:${profileId}`;
+    this.destroySession(key);
     return {
       profileId,
+      storageId,
       connected: false,
     };
   }
@@ -495,6 +670,9 @@ class FileService {
   }
 
   async list(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      return this.listLocal(options);
+    }
     const session = await this.ensureSession(options);
     const targetPath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
 
@@ -517,6 +695,10 @@ class FileService {
         status: "connected",
         message: `Connected to ${profileLabel(session.profile)}.`,
         profileId: session.profile.id,
+        storageId: session.storageId || null,
+        provider: session.provider === "sftp" ? "sftp" : "ssh-profile",
+        providerBadge: "SFTP",
+        connectionName: session.profile.displayName || session.profile.host,
         currentPath: targetPath,
         homePath: session.homePath,
         roots: [
@@ -535,7 +717,57 @@ class FileService {
     }
   }
 
+  async listLocal(options = {}) {
+    const targetPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
+    try {
+      const stats = await fsPromises.stat(targetPath);
+      if (!stats.isDirectory()) {
+        throw new FileServiceError("Local path is not a directory.", {
+          code: "FILES_PATH_NOT_DIRECTORY",
+          status: 400,
+        });
+      }
+      const entries = await Promise.all((await fsPromises.readdir(targetPath, { withFileTypes: true })).map(async (entry) => {
+        const entryPath = path.join(targetPath, entry.name);
+        let entryStats = null;
+        try {
+          entryStats = await fsPromises.stat(entryPath);
+        } catch {
+          entryStats = { size: null, mtime: null };
+        }
+        return createLocalEntry(targetPath, entry, entryStats);
+      }));
+      return {
+        configured: true,
+        connected: true,
+        status: "connected",
+        message: "Browsing files on this device.",
+        profileId: null,
+        storageId: LOCAL_STORAGE_ID,
+        provider: "local",
+        providerBadge: "Local",
+        connectionName: "This Device",
+        currentPath: targetPath,
+        homePath: getLocalHomePath(),
+        roots: [
+          { name: "Home", path: getLocalHomePath() },
+          { name: "Computer", path: path.parse(targetPath).root || path.sep },
+        ],
+        breadcrumbs: buildLocalBreadcrumbs(targetPath),
+        entries: sortEntries(entries),
+        summary: createSummary(entries),
+        lastCheckedAt: new Date().toISOString(),
+        local: true,
+      };
+    } catch (error) {
+      throw mapFileOperationError(error, "Local directory listing failed.");
+    }
+  }
+
   async readText(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      return this.readLocalText(options);
+    }
     const session = await this.ensureSession(options);
     const remotePath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
 
@@ -588,7 +820,58 @@ class FileService {
     }
   }
 
+  async readLocalText(options = {}) {
+    const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
+    try {
+      const stats = await fsPromises.stat(localPath);
+      if (!stats.isFile()) {
+        throw new FileServiceError("Local path is not a file.", {
+          code: "FILES_PATH_NOT_FILE",
+          status: 400,
+        });
+      }
+      if (stats.size > DEFAULT_TEXT_READ_LIMIT_BYTES) {
+        return {
+          path: localPath,
+          name: path.basename(localPath),
+          size: stats.size,
+          modifiedAt: stats.mtime ? stats.mtime.toISOString() : null,
+          supported: false,
+          reason: "file_too_large",
+          content: null,
+        };
+      }
+      const buffer = await fsPromises.readFile(localPath);
+      if (!detectTextSupport(buffer)) {
+        return {
+          path: localPath,
+          name: path.basename(localPath),
+          size: stats.size,
+          modifiedAt: stats.mtime ? stats.mtime.toISOString() : null,
+          supported: false,
+          reason: "binary_unsupported",
+          content: null,
+        };
+      }
+      return {
+        path: localPath,
+        name: path.basename(localPath),
+        size: stats.size,
+        modifiedAt: stats.mtime ? stats.mtime.toISOString() : null,
+        supported: true,
+        content: buffer.toString("utf8"),
+      };
+    } catch (error) {
+      throw mapFileOperationError(error, "Local file read failed.");
+    }
+  }
+
   async writeText(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
+      await fsPromises.writeFile(localPath, typeof options.content === "string" ? options.content : "", "utf8");
+      return { path: localPath, saved: true };
+    }
     const session = await this.ensureSession(options);
     const remotePath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
     const content = typeof options.content === "string" ? options.content : "";
@@ -605,6 +888,11 @@ class FileService {
   }
 
   async mkdir(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
+      await fsPromises.mkdir(localPath, { recursive: false });
+      return { path: localPath, created: true };
+    }
     const session = await this.ensureSession(options);
     const remotePath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
 
@@ -620,6 +908,12 @@ class FileService {
   }
 
   async rename(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const oldPath = normalizeLocalPath(options.oldPath, options.currentPath || getLocalHomePath());
+      const newPath = normalizeLocalPath(options.newPath, path.dirname(oldPath));
+      await fsPromises.rename(oldPath, newPath);
+      return { oldPath, newPath, renamed: true };
+    }
     const session = await this.ensureSession(options);
     const oldPath = normalizeRemotePath(options.oldPath, session.currentPath || session.homePath);
     const newPath = normalizeRemotePath(options.newPath, posixPath.dirname(oldPath));
@@ -655,7 +949,47 @@ class FileService {
     await this.sftpCall(session, "unlink", remotePath);
   }
 
+  async copy(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const sourcePath = normalizeLocalPath(options.sourcePath || options.path, options.currentPath || getLocalHomePath());
+      const destinationPath = normalizeLocalPath(options.destinationPath || options.newPath, path.dirname(sourcePath));
+      await fsPromises.cp(sourcePath, destinationPath, { recursive: true, errorOnExist: false });
+      return { sourcePath, destinationPath, copied: true };
+    }
+    const session = await this.ensureSession(options);
+    const sourcePath = normalizeRemotePath(options.sourcePath || options.path, session.currentPath || session.homePath);
+    const destinationPath = normalizeRemotePath(options.destinationPath || options.newPath, posixPath.dirname(sourcePath));
+    try {
+      const attrs = await this.statRemotePath(session, sourcePath);
+      if (getEntryTypeFromAttrs(attrs) !== "file") {
+        throw new FileServiceError("Only files can be copied over SFTP in this view.", {
+          code: "FILES_COPY_FILE_ONLY",
+          status: 400,
+        });
+      }
+      const buffer = await this.readRemoteBuffer(session, sourcePath, attrs.size || 0);
+      await this.writeRemoteBuffer(session, destinationPath, buffer);
+      return { sourcePath, destinationPath, copied: true };
+    } catch (error) {
+      throw mapFileOperationError(error, "Remote copy failed.");
+    }
+  }
+
+  async newFile(options = {}) {
+    const targetPath = options.path || options.filePath;
+    return this.writeText({
+      ...options,
+      path: targetPath,
+      content: options.content || "",
+    });
+  }
+
   async delete(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
+      await fsPromises.rm(localPath, { recursive: true, force: false });
+      return { path: localPath, deleted: true };
+    }
     const session = await this.ensureSession(options);
     const remotePath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
     assertDangerousActionAllowed(remotePath, Boolean(options.confirmDangerous));
@@ -672,6 +1006,28 @@ class FileService {
   }
 
   async upload(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const targetDirectory = normalizeLocalPath(options.directoryPath, options.currentPath || getLocalHomePath());
+      const selection = await showOpenDialog({
+        title: "Import file to this device",
+        properties: ["openFile"],
+      });
+      if (selection.canceled || !selection.filePaths[0]) {
+        return { canceled: true };
+      }
+      const localPath = selection.filePaths[0];
+      const destinationPath = path.join(targetDirectory, path.basename(localPath));
+      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: destinationPath, percent: 20 });
+      await fsPromises.copyFile(localPath, destinationPath);
+      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: destinationPath, percent: 100 });
+      return {
+        canceled: false,
+        localPath,
+        remotePath: destinationPath,
+        uploaded: true,
+        local: true,
+      };
+    }
     const session = await this.ensureSession(options);
     const targetDirectory = normalizeRemotePath(options.directoryPath, session.currentPath || session.homePath);
 
@@ -689,17 +1045,36 @@ class FileService {
 
       const localPath = selection.filePaths[0];
       const remotePath = normalizeRemotePath(posixPath.join(targetDirectory, path.basename(localPath)));
+      const localSize = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
+      const controller = this.createTransferController(options.transferId);
+      let transferredBytes = 0;
+      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: localSize, percent: localSize > 0 ? 0 : null });
 
-      await new Promise((resolve, reject) => {
-        session.sftp.fastPut(localPath, remotePath, (error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
+      try {
+        const source = fs.createReadStream(localPath);
+        const destination = session.sftp.createWriteStream(remotePath);
+        this.attachTransferStream(controller, source);
+        this.attachTransferStream(controller, destination);
+        source.on("data", (chunk) => {
+          transferredBytes += chunk.length;
+          this.emitTransfer({
+            id: options.transferId || null,
+            type: "upload",
+            status: "running",
+            path: remotePath,
+            receivedBytes: transferredBytes,
+            totalBytes: localSize,
+            percent: localSize ? Math.round((transferredBytes / localSize) * 100) : null,
+          });
         });
-      });
+        await pipeline(source, destination);
+      } finally {
+        this.finishTransferController(controller);
+      }
+      if (controller?.canceled) {
+        throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
+      }
+      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: localSize, totalBytes: localSize, percent: 100 });
 
       return {
         canceled: false,
@@ -771,6 +1146,25 @@ class FileService {
   }
 
   async download(options = {}) {
+    if (shouldUseLocalFiles(options)) {
+      const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
+      const selection = await showSaveDialog({
+        title: "Save local file copy",
+        defaultPath: path.join(process.env.USERPROFILE || process.cwd(), path.basename(localPath)),
+      });
+      if (selection.canceled || !selection.filePath) {
+        return { canceled: true };
+      }
+      await fsPromises.copyFile(localPath, selection.filePath);
+      this.emitTransfer({ id: options.transferId || null, type: "download", status: "complete", path: localPath, percent: 100 });
+      return {
+        canceled: false,
+        remotePath: localPath,
+        localPath: selection.filePath,
+        downloaded: true,
+        local: true,
+      };
+    }
     if (this.shouldUseAgentDownload(options)) {
       const remotePath = normalizeRemotePath(options.path);
       console.info(`[Files] Download transport selected: agent (${remotePath})`);
@@ -802,16 +1196,33 @@ class FileService {
       }
 
       console.info(`[Files] Download transport selected: sftp (${remotePath})`);
-      await new Promise((resolve, reject) => {
-        session.sftp.fastGet(remotePath, selection.filePath, (error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
+      const controller = this.createTransferController(options.transferId);
+      let transferredBytes = 0;
+      try {
+        const source = session.sftp.createReadStream(remotePath);
+        const destination = fs.createWriteStream(selection.filePath);
+        this.attachTransferStream(controller, source);
+        this.attachTransferStream(controller, destination);
+        source.on("data", (chunk) => {
+          transferredBytes += chunk.length;
+          this.emitTransfer({
+            id: options.transferId || null,
+            type: "download",
+            status: "running",
+            path: remotePath,
+            receivedBytes: transferredBytes,
+            totalBytes: attrs.size || 0,
+            percent: attrs.size ? Math.round((transferredBytes / attrs.size) * 100) : null,
+          });
         });
-      });
+        await pipeline(source, destination);
+      } finally {
+        this.finishTransferController(controller);
+      }
+      if (controller?.canceled) {
+        throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
+      }
+      this.emitTransfer({ id: options.transferId || null, type: "download", status: "complete", path: remotePath, receivedBytes: attrs.size || 0, totalBytes: attrs.size || 0, percent: 100 });
 
       return {
         canceled: false,
@@ -825,6 +1236,9 @@ class FileService {
   }
 
   dispose() {
+    for (const transferId of this.transferControllers.keys()) {
+      this.cancelTransfer(transferId);
+    }
     for (const profileId of this.sessions.keys()) {
       this.destroySession(profileId);
     }

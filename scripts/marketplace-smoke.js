@@ -372,6 +372,44 @@ function assertNativeUpdateExperience() {
   assert(compareUpdateVersions("1.0.21", "1.0.20") > 0, "Update version comparison should detect newer releases.");
 }
 
+function assertSingleDeviceModeExperience() {
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const indexSource = fs.readFileSync(indexPath, "utf8");
+  const nodeSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "nodeService.js"), "utf8");
+  const securitySource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "securityService.js"), "utf8");
+  const routerSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "serviceRouter.js"), "utf8");
+  const fileSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "fileService.js"), "utf8");
+  const agentSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
+
+  assert(indexSource.includes("data-local-setup-gate"), "First launch should include a Single-Device Mode setup surface.");
+  assert(indexSource.includes("Use this device"), "First launch should offer Use this device.");
+  assert(indexSource.includes("Remote Control is only needed if you want to manage another computer or server."), "Security copy should make Remote Control optional.");
+  assert(appSource.includes("LOCAL_SETUP_STORAGE_KEY"), "Renderer should remember that local setup was completed.");
+  assert(appSource.includes("showRemoteControlSetup"), "Renderer should expose optional Remote Control setup.");
+  assert(nodeSource.includes('displayName: "This Device"') && nodeSource.includes("local:"), "Default node should be a visible local This Device node.");
+  assert(securitySource.includes("localMode") && securitySource.includes('username: "This Device"'), "Security should report local mode and allow local no-account actions.");
+  assert(routerSource.includes("shouldUseLocalInstances") && routerSource.includes("localInstanceService"), "Service router should use local instances for the built-in node.");
+  assert(agentSource.includes("shouldUseLocalInstanceService") && agentSource.includes("getLocalInstanceService"), "Agent client should fallback to local instances for legacy/default local call sites.");
+  assert(fileSource.includes("shouldUseLocalFiles") && fileSource.includes("Browsing files on this device."), "File service should support local filesystem browsing.");
+}
+
+function assertStorageManagerArchitecture() {
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const indexSource = fs.readFileSync(indexPath, "utf8");
+  const preloadSource = fs.readFileSync(preloadPath, "utf8");
+  const fileSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "fileService.js"), "utf8");
+  const storageSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "storageConnectionService.js"), "utf8");
+  const ipcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "filesIpc.js"), "utf8");
+
+  assert(indexSource.includes("data-storage-list") && indexSource.includes("SFTP Server"), "Files page should include Storage Manager UI and SFTP add flow.");
+  assert(indexSource.includes("data-transfer-list") && indexSource.includes('data-file-action="copy"') && indexSource.includes('data-file-action="new-file"'), "Files page should expose transfer manager, copy, and new file actions.");
+  assert(preloadSource.includes("listConnections") && preloadSource.includes("saveConnection") && preloadSource.includes("testConnection") && preloadSource.includes("cancelTransfer"), "Preload should expose storage connection and transfer APIs.");
+  assert(ipcSource.includes("files:listConnections") && ipcSource.includes("files:testConnection") && ipcSource.includes("files:copy") && ipcSource.includes("files:newFile") && ipcSource.includes("files:cancelTransfer"), "Files IPC should expose provider connection, transfer, and file operation APIs.");
+  assert(storageSource.includes("safeStorage") && storageSource.includes("encryptSecret") && !storageSource.includes("console.log"), "Storage connections should encrypt secrets and avoid logging credentials.");
+  assert(fileSource.includes("getProviderProfile") && fileSource.includes("storageId") && fileSource.includes("providerBadge") && fileSource.includes("async copy(") && fileSource.includes("createTransferController"), "FileService should route operations through provider-style storage IDs with cancellable transfers.");
+  assert(appSource.includes("renderStorageConnections") && appSource.includes("startFileTransfer") && appSource.includes("cancelFileTransfer") && appSource.includes("storageId: getFilesRequestStorageId()"), "Renderer should manage provider connections and transfer entries.");
+}
+
 function assertMarketplaceVersionMetadata() {
   const paper = marketplaceService._test.buildResolvedVersionMetadata(findTemplate("minecraft-paper"), {
     version: "1.21.8",
@@ -1753,6 +1791,8 @@ async function main() {
   assertNonMinecraftServerTypeIsCleared();
   assertMinecraftLiveMetadataRendering();
   assertNativeUpdateExperience();
+  assertSingleDeviceModeExperience();
+  assertStorageManagerArchitecture();
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMPlaceholderStartIsBlocked();

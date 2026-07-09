@@ -79,11 +79,13 @@ function getDefaultNode() {
   const effective = getEffectiveAgentSettings();
   return {
     id: "default",
-    displayName: "Default Agent",
+    displayName: "This Device",
+    description: "Built-in local node for the current computer.",
     backendMode: effective.backendMode || getDefaultAgentSettings().backendMode,
     agentUrl: effective.agentUrl || getDefaultAgentSettings().agentUrl,
     agentToken: effective.agentToken || "",
     default: true,
+    local: (effective.backendMode || getDefaultAgentSettings().backendMode) === "local",
     docker: {
       enabled: true,
       runtime: "docker",
@@ -96,6 +98,7 @@ function publicNode(node) {
     ...node,
     hasToken: Boolean(node.agentToken),
     agentToken: node.agentToken ? "[configured]" : "",
+    modeLabel: node.local || node.backendMode === "local" ? "Local" : "Remote",
   };
 }
 
@@ -165,6 +168,14 @@ function selectNode(nodeId) {
 
 async function testNode(nodeId) {
   const node = getNode(nodeId);
+  if (node.id === "default" && (node.local || node.backendMode === "local")) {
+    return {
+      connected: true,
+      status: "local",
+      message: "This device is available.",
+      node: publicNode(node),
+    };
+  }
   return testConnection({
     backendMode: "agent",
     agentUrl: node.agentUrl,

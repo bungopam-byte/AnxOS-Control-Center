@@ -56,6 +56,60 @@
       </form>
     </section>
 
+    <section class="local-setup-gate" data-local-setup-gate hidden aria-label="AnxOS local setup">
+      <div class="local-setup-card">
+        <span class="startup-logo"><img src="src/assets/anxos-logo.jpg" alt="" aria-hidden="true"></span>
+        <p class="eyebrow">Single-Device Mode</p>
+        <h1>Use this device</h1>
+        <p class="lede">Manage this computer now. Accounts, agent tokens, and remote nodes are only needed if you want to control another PC or server.</p>
+        <div class="settings-actions">
+          <button class="inline-action inline-action--primary" type="button" data-local-setup-action="use-device">Use this device</button>
+          <button class="inline-action" type="button" data-local-setup-action="remote-control">Enable Remote Control</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="app-modal" data-storage-modal hidden aria-label="Add storage connection">
+      <div class="app-modal__backdrop" data-storage-action="close"></div>
+      <div class="app-modal__panel app-modal--update">
+        <div class="app-modal__header">
+          <div>
+            <p class="eyebrow">Storage Manager</p>
+            <h2>Add Storage</h2>
+          </div>
+          <button class="icon-button" type="button" data-storage-action="close" aria-label="Close">×</button>
+        </div>
+        <div class="storage-provider-picker">
+          <button class="storage-provider-option is-active" type="button" data-storage-provider="local">
+            <strong>Local Device</strong>
+            <span>Browse files on this computer.</span>
+          </button>
+          <button class="storage-provider-option" type="button" data-storage-provider="sftp">
+            <strong>SFTP Server</strong>
+            <span>Kinetic, PebbleHost, VPS, Raspberry Pi, dedicated servers.</span>
+          </button>
+        </div>
+        <form class="storage-form" data-storage-form>
+          <div class="settings-grid">
+            <label class="settings-field"><span>Connection Name</span><input type="text" data-storage-field="name" placeholder="Kinetic Survival"></label>
+            <label class="settings-field"><span>Host</span><input type="text" data-storage-field="host" placeholder="sftp.kinetichosting.net"></label>
+            <label class="settings-field"><span>Port</span><input type="number" min="1" max="65535" data-storage-field="port" value="22"></label>
+            <label class="settings-field"><span>Username</span><input type="text" data-storage-field="username" placeholder="abc123"></label>
+            <label class="settings-field"><span>Authentication</span><select data-storage-field="authType"><option value="password">Password</option><option value="privateKey">Private Key</option></select></label>
+            <label class="settings-field"><span>Root Directory</span><input type="text" data-storage-field="rootDirectory" placeholder="/home/container"></label>
+            <label class="settings-field" data-storage-secret="password"><span>Password</span><input type="password" data-storage-field="password" autocomplete="new-password" placeholder="Stored securely"></label>
+            <label class="settings-field" data-storage-secret="privateKey" hidden><span>Private Key</span><textarea data-storage-field="privateKey" placeholder="Paste private key"></textarea></label>
+            <label class="settings-field" data-storage-secret="passphrase" hidden><span>Passphrase</span><input type="password" data-storage-field="passphrase" autocomplete="new-password" placeholder="Optional"></label>
+          </div>
+          <div class="settings-actions">
+            <button class="inline-action" type="button" data-storage-action="test">Test Connection</button>
+            <button class="inline-action inline-action--primary" type="submit">Save Storage</button>
+            <span class="settings-inline-status" data-storage-message>Credentials are encrypted before being written to disk.</span>
+          </div>
+        </form>
+      </div>
+    </section>
+
     <div class="app-shell" data-app-shell hidden>
       <header class="app-titlebar" data-titlebar>
         <div class="app-titlebar__drag" data-titlebar-drag>
@@ -310,7 +364,7 @@
             <div>
               <p class="eyebrow">Overview</p>
               <h1>Dashboard</h1>
-              <p class="lede">Live system metrics from the selected remote node.</p>
+              <p class="lede">Live system metrics from the selected device.</p>
             </div>
           </header>
 
@@ -1737,11 +1791,37 @@
             <div>
               <p class="eyebrow">Storage</p>
               <h1>Files</h1>
-              <p class="lede">Remote SFTP workspace for configured SSH connection profiles.</p>
+              <p class="lede">Unified Storage Manager for this device and SFTP servers.</p>
             </div>
           </header>
 
           <section class="file-manager-shell" aria-label="File manager">
+            <aside class="storage-manager-panel" aria-label="Storage connections">
+              <div class="panel-heading">
+                <h3>Storage</h3>
+                <button class="inline-action" type="button" data-storage-action="open">+ Add Storage</button>
+              </div>
+              <div class="storage-active-card">
+                <span data-storage-active-badge>Local</span>
+                <strong data-storage-active-name>This Device</strong>
+                <small data-storage-active-path>Not connected</small>
+              </div>
+              <div class="storage-connection-list" data-storage-list></div>
+              <div class="storage-actions">
+                <button class="inline-action" type="button" data-storage-action="set-default">Mark Default</button>
+                <button class="inline-action" type="button" data-storage-action="edit">Edit</button>
+                <button class="inline-action" type="button" data-storage-action="delete">Delete</button>
+              </div>
+              <div class="transfer-manager">
+                <div class="panel-heading">
+                  <h3>Transfers</h3>
+                  <span class="status-pill status-pill--planned" data-transfer-status>Idle</span>
+                </div>
+                <div class="transfer-list" data-transfer-list>
+                  <p class="settings-note">No transfers running.</p>
+                </div>
+              </div>
+            </aside>
             <div class="files-connect-bar">
               <label class="ssh-field">
                 <span>Server</span>
@@ -1775,7 +1855,7 @@
 
             <div class="file-toolbar">
               <label class="file-location">
-                <span>Remote Path</span>
+                <span>Path</span>
                 <div class="file-location-row">
                   <input type="text" placeholder="/home/anx" data-files-path disabled>
                   <button class="inline-action" type="button" data-file-action="go" disabled>Go</button>
@@ -1798,8 +1878,10 @@
                   <button class="inline-action" type="button" data-file-action="upload" disabled>Upload</button>
                   <button class="inline-action" type="button" data-file-action="download" disabled>Download</button>
                   <button class="inline-action" type="button" data-file-action="rename" disabled>Rename</button>
+                  <button class="inline-action" type="button" data-file-action="copy" disabled>Copy</button>
                   <button class="inline-action" type="button" data-file-action="delete" disabled>Delete</button>
                   <button class="inline-action" type="button" data-file-action="new-folder" disabled>New Folder</button>
+                  <button class="inline-action" type="button" data-file-action="new-file" disabled>New File</button>
                   <button class="inline-action" type="button" data-file-action="refresh" disabled>Refresh</button>
                 </div>
               </div>
@@ -1877,6 +1959,10 @@
                     <div>
                       <dt>Modified</dt>
                       <dd data-file-detail="modified">Unavailable</dd>
+                    </div>
+                    <div>
+                      <dt>Permissions</dt>
+                      <dd data-file-detail="permissions">Not reported</dd>
                     </div>
                     <div>
                       <dt>Path</dt>
@@ -2221,7 +2307,7 @@
             <div>
               <p class="eyebrow">Access Control</p>
               <h1>Security</h1>
-              <p class="lede">Manage your local session, account role, and Agent token for <span data-app-name>AnxOS Control Center</span>.</p>
+              <p class="lede">Remote Control is only needed if you want to manage another computer or server.</p>
             </div>
           </header>
 
@@ -2230,7 +2316,7 @@
               <div class="settings-section__header">
                 <div>
                   <h2>Security</h2>
-                  <p>Manage the local session and Agent token.</p>
+                  <p>You're managing this device. Add account protection and agent tokens only for Advanced/Remote Mode.</p>
                 </div>
                 <span class="status-pill status-pill--planned" data-security-status>Locked</span>
               </div>
@@ -2245,6 +2331,7 @@
                 </label>
               </div>
               <div class="settings-actions">
+                <button class="inline-action inline-action--primary" type="button" data-security-action="enable-remote-control">Enable Remote Control</button>
                 <button class="inline-action" type="button" data-security-action="rotate-agent-token">Rotate Agent Token</button>
                 <button class="inline-action" type="button" data-security-action="logout">Logout</button>
                 <button class="inline-action" type="button" data-security-action="logout-all-sessions">Log out of all sessions</button>
@@ -2259,7 +2346,7 @@
             <div>
               <p class="eyebrow">Infrastructure</p>
               <h1>Nodes</h1>
-              <p class="lede">Register AnxOS agents and choose which node handles remote services, Docker, and instance actions.</p>
+              <p class="lede">You're managing this device. Add a remote node only if you want to control another PC or server.</p>
             </div>
           </header>
 
@@ -2268,7 +2355,7 @@
               <div class="settings-section__header">
                 <div>
                   <h2>Nodes</h2>
-                  <p>Register AnxOS agents and choose the default target node.</p>
+                  <p>This Device is always available. Remote agent nodes are optional.</p>
                 </div>
                 <span class="status-pill status-pill--planned" data-node-status>Default</span>
               </div>

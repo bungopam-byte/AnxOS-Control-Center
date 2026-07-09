@@ -103,7 +103,8 @@ a:focus-visible,
   text-align: center;
 }
 
-.security-gate {
+.security-gate,
+.local-setup-gate {
   position: fixed;
   inset: 0;
   z-index: 25;
@@ -113,7 +114,8 @@ a:focus-visible,
   background: rgba(7, 2, 15, 0.94);
 }
 
-.security-gate-card {
+.security-gate-card,
+.local-setup-card {
   display: grid;
   gap: 14px;
   width: min(440px, 100%);
@@ -125,8 +127,19 @@ a:focus-visible,
 }
 
 .security-gate-card h1,
-.security-gate-card p {
+.security-gate-card p,
+.local-setup-card h1,
+.local-setup-card p {
   margin: 0;
+}
+
+.local-setup-card {
+  justify-items: start;
+  width: min(520px, 100%);
+}
+
+.local-setup-card .startup-logo {
+  justify-self: start;
 }
 
 .security-option {
@@ -1709,12 +1722,159 @@ h3 {
 
 .file-manager-shell {
   display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
   grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   height: 100%;
   overflow: hidden;
   --files-explorer-width: 320px;
+}
+
+.storage-manager-panel {
+  display: grid;
+  grid-row: 1 / -1;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+  box-shadow: var(--shadow-soft);
+}
+
+.storage-active-card,
+.storage-connection-item {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.storage-active-card span,
+.storage-connection-item span {
+  width: max-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(182, 108, 255, 0.18);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.storage-active-card small,
+.storage-connection-item small {
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storage-connection-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.storage-connection-item {
+  width: 100%;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.storage-connection-item.is-active,
+.storage-connection-item:hover {
+  border-color: rgba(182, 108, 255, 0.42);
+  background: rgba(182, 108, 255, 0.12);
+}
+
+.storage-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.transfer-manager,
+.transfer-list,
+.transfer-item {
+  display: grid;
+  gap: 8px;
+}
+
+.transfer-item {
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.transfer-item strong,
+.transfer-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.transfer-progress span {
+  display: block;
+  height: 100%;
+  width: var(--transfer-progress, 0%);
+  background: linear-gradient(90deg, var(--accent), #62e0ff);
+}
+
+.transfer-item .inline-action {
+  justify-self: start;
+  min-height: 28px;
+  padding: 5px 10px;
+  font-size: 0.74rem;
+}
+
+.transfer-item.is-complete .transfer-progress span {
+  background: linear-gradient(90deg, #38d996, #62e0ff);
+}
+
+.transfer-item.is-failed .transfer-progress span {
+  background: linear-gradient(90deg, #ff5c7a, #ff9b6a);
+}
+
+.storage-provider-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.storage-provider-option {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+
+.storage-provider-option.is-active {
+  border-color: rgba(182, 108, 255, 0.5);
+  background: rgba(182, 108, 255, 0.12);
+}
+
+.storage-form textarea {
+  min-height: 120px;
+  resize: vertical;
 }
 
 .page[data-page="files"].is-active {
@@ -1727,6 +1887,7 @@ h3 {
 
 .files-connect-bar {
   display: grid;
+  grid-column: 2;
   grid-row: 1;
   grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
   gap: 12px;
@@ -1741,6 +1902,7 @@ h3 {
 
 .file-password-prompt {
   display: grid;
+  grid-column: 2;
   grid-row: 2;
   grid-template-columns: minmax(220px, 1fr) auto;
   gap: 12px;
@@ -1753,6 +1915,7 @@ h3 {
 
 .file-toolbar {
   display: grid;
+  grid-column: 2;
   grid-row: 3;
   grid-template-columns: minmax(240px, 1.2fr) minmax(220px, 1fr) auto;
   gap: 12px;
@@ -1849,6 +2012,7 @@ h3 {
 
 .file-workspace {
   display: grid;
+  grid-column: 2;
   grid-row: 4;
   grid-template-columns: minmax(0, 1.15fr) minmax(420px, 0.85fr);
   gap: 10px;
@@ -8657,6 +8821,23 @@ button:disabled {
   .file-editor-fileline {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .files-connect-bar,
+  .file-password-prompt,
+  .storage-manager-panel,
+  .file-toolbar,
+  .file-workspace {
+    grid-column: 1;
+  }
+
+  .file-manager-shell {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .storage-manager-panel {
+    grid-row: auto;
   }
 
   .files-connect-bar,

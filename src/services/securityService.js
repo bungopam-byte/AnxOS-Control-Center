@@ -372,12 +372,15 @@ function getStatus() {
     writeSecurityState(state);
   }
   const hasAdminUser = state.users.some((entry) => entry.role === "Owner" || entry.role === "Admin");
+  const localMode = !hasAdminUser;
   return {
     setupRequired: !hasAdminUser,
+    localMode,
+    remoteControlEnabled: hasAdminUser,
     authenticated: Boolean(user),
     user,
     roles: Object.keys(ROLE_PERMISSIONS),
-    permissions: user ? ROLE_PERMISSIONS[user.role] || [] : [],
+    permissions: user ? ROLE_PERMISSIONS[user.role] || [] : localMode ? ["local:*"] : [],
     agentTokenConfigured: Boolean(readAgentSettings().agentToken),
     persistentSession: Boolean(currentSession?.persistent),
     persistentSessionCount: state.persistentSessions.length,
@@ -492,9 +495,13 @@ function userHasPermission(user, permission) {
 function requirePermission(permission, target = null) {
   const status = getStatus();
   if (status.setupRequired) {
-    const error = new Error("Create the first admin user before using AnxOS.");
-    error.code = "SECURITY_SETUP_REQUIRED";
-    throw error;
+    return {
+      id: "local-device",
+      username: "This Device",
+      role: "Local",
+      localMode: true,
+      permissions: ["local:*"],
+    };
   }
 
   if (!status.user) {

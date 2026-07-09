@@ -1012,9 +1012,15 @@ async function assertProviderInstallSupport() {
   assert(preloadSource.includes("marketplace:getProviderPackVersions"), "Preload should expose provider version IPC.");
   assert(preloadSource.includes("marketplace:getProviderPackDetails"), "Preload should expose provider detail IPC.");
   assert(preloadSource.includes("marketplace:install-progress"), "Preload should expose install progress events.");
+  assert(preloadSource.includes("marketplace:openManualDownloadPage"), "Preload should expose manual download page recovery IPC.");
+  assert(preloadSource.includes("marketplace:importManualDownloadFile"), "Preload should expose manual file import recovery IPC.");
+  assert(preloadSource.includes("marketplace:resumeManualInstall"), "Preload should expose manual install resume IPC.");
   assert(ipcSource.includes("marketplace:installPack"), "Marketplace IPC should register provider install.");
   assert(ipcSource.includes("marketplace:getProviderPackDetails"), "Marketplace IPC should register provider details.");
   assert(ipcSource.includes("marketplace:install-progress"), "Marketplace IPC should forward install progress.");
+  assert(ipcSource.includes("marketplace:openManualDownloadPage"), "Marketplace IPC should register official provider page recovery.");
+  assert(ipcSource.includes("marketplace:importManualDownloadFile"), "Marketplace IPC should register manual file import recovery.");
+  assert(ipcSource.includes("marketplace:resumeManualInstall"), "Marketplace IPC should register manual install resume recovery.");
   assert(indexSource.includes("data-marketplace-provider-browser"), "Marketplace should include the dynamic provider browser.");
   assert(indexSource.includes("data-marketplace-provider=\"curseforge\""), "Marketplace should expose CurseForge provider browsing.");
   assert(indexSource.includes("data-marketplace-provider=\"modrinth\""), "Marketplace should expose Modrinth provider browsing.");
@@ -1316,19 +1322,46 @@ async function assertProviderInstallSupport() {
     );
   assert.strictEqual(
     restrictedFileError.code,
-    "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
-    "Restricted required CurseForge files should keep a renderer-detectable error code."
+    "PROVIDER_REQUIRED_FILE_RESTRICTED",
+    "Restricted required files should normalize to the shared renderer-detectable recovery code."
   );
+  assert.strictEqual(restrictedFileError.details.originalCode, "CURSEFORGE_REQUIRED_FILE_RESTRICTED", "Restricted CurseForge errors should preserve provider-specific original code.");
+  assert.strictEqual(restrictedFileError.details.recoveryState, "waiting-manual-download", "Restricted required files should enter manual download recovery.");
   assert.strictEqual(restrictedFileError.details.fileName, "required-server-mod.jar", "Restricted file errors should include file metadata.");
   assert.strictEqual(restrictedFileError.details.projectId, 10, "Restricted file errors should include projectId.");
   assert.strictEqual(restrictedFileError.details.fileId, 20, "Restricted file errors should include fileId.");
   assert.match(
     restrictedFileError.message,
-    /required-server-mod\.jar.*project 10, file 20.*manually/i,
-    "Restricted required CurseForge server files should produce an actionable error."
+    /required modpack file needs manual download: required-server-mod\.jar/i,
+    "Restricted required files should produce a generic actionable manual-download error."
   );
+  const modrinthManualError = marketplaceInstallService._test.createManualDownloadRequiredError(
+    {
+      code: "MODRINTH_REQUEST_FAILED",
+      message: "Modrinth file requires manual download.",
+      details: { status: 403 },
+    },
+    {
+      provider: "modrinth",
+      providerName: "Modrinth",
+      originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
+      fileName: "required-modrinth-server-mod.jar",
+      projectSlug: "required-pack",
+      versionId: "required-version",
+      expectedDestinationPath: "mods/required-modrinth-server-mod.jar",
+      hash: "abc123",
+      size: 1234,
+      projectUrl: "https://modrinth.com/modpack/required-pack",
+    }
+  );
+  assert.strictEqual(modrinthManualError.code, "PROVIDER_MANUAL_DOWNLOAD_REQUIRED", "Modrinth manual downloads should normalize to the shared recovery code.");
+  assert.strictEqual(modrinthManualError.details.originalCode, "MODRINTH_REQUIRED_FILE_RESTRICTED", "Modrinth manual errors should preserve the original provider code.");
+  assert.strictEqual(modrinthManualError.details.providerName, "Modrinth", "Modrinth manual errors should preserve provider metadata.");
+  assert.strictEqual(modrinthManualError.details.fileName, "required-modrinth-server-mod.jar", "Modrinth manual errors should preserve missing filename metadata.");
+  assert.strictEqual(modrinthManualError.details.recoveryState, "waiting-manual-download", "Modrinth manual errors should enter waiting recovery.");
+  assert.strictEqual(marketplaceInstallService._test.isManualDownloadRequiredError(modrinthManualError), true, "Shared manual-download classifier should accept Modrinth manual errors.");
   assert(
-    fs.readFileSync(marketplaceIpcPath, "utf8").includes("CurseForge blocked one required server file") &&
+    fs.readFileSync(marketplaceIpcPath, "utf8").includes("A required modpack file needs manual download.") &&
       fs.readFileSync(marketplaceIpcPath, "utf8").includes("friendlyMessage"),
     "Marketplace IPC should expose a friendly restricted CurseForge error to the renderer."
   );
@@ -1352,16 +1385,25 @@ async function assertProviderInstallSupport() {
         fileId: 6999999,
       },
     }).title,
-    "CurseForge blocked one required server file",
-    "Renderer normalization should return the clean restricted-file title."
+    "A required modpack file needs manual download.",
+    "Renderer normalization should return the shared manual-download title."
   );
   assert(
     appSource.includes("normalizeMarketplaceError(error") &&
       appSource.includes("Install failed. See Download Manager.") &&
+      appSource.includes("rememberWaitingMarketplaceDownload") &&
+      appSource.includes("openMarketplaceManualDownloadPage") &&
+      appSource.includes("importMarketplaceManualDownloadFile") &&
+      appSource.includes("resumeMarketplaceManualInstall") &&
       appSource.includes("marketplaceLocalDownloadEntries") &&
-      marketplaceErrorSource.includes("CURSEFORGE_REQUIRED_FILE_RESTRICTED") &&
-      marketplaceErrorSource.includes("CurseForge blocked one required server file"),
-    "Renderer should show the specific restricted-file error and keep a failed Download Manager entry."
+      marketplaceErrorSource.includes("PROVIDER_MANUAL_DOWNLOAD_REQUIRED") &&
+      marketplaceErrorSource.includes("A required modpack file needs manual download"),
+    "Renderer should show the specific manual-download error and keep a waiting Download Manager entry with recovery actions."
+  );
+  assert(
+    fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes('.download-item[data-status="waiting"]') &&
+      fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes('.marketplace-progress-step[data-status="waiting"]'),
+    "Renderer should style manual-download recovery as a waiting/paused state."
   );
   assert(
     indexSource.includes("src/shared/marketplaceError.js"),
@@ -1381,8 +1423,9 @@ async function assertProviderInstallSupport() {
   assert(
     installSource.includes("logSkippedCurseForgeRestrictedFile(error") &&
       installSource.includes("fileContext.dependencyType === \"required\"") &&
-      installSource.includes("createRestrictedCurseForgeFileError(error, fileContext)"),
-    "Required restricted CurseForge files should fail while optional restricted dependency files are skipped with warning logs."
+      installSource.includes("createRestrictedCurseForgeFileError(error, {") &&
+      installSource.includes("status: \"waiting-manual-download\""),
+    "Required restricted files should enter waiting recovery while optional restricted dependency files are skipped with warning logs."
   );
   assert.throws(
     () => marketplaceInstallService._test.ensureModrinthServerCapable({

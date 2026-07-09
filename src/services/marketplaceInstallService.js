@@ -1,4 +1,6 @@
 const { EventEmitter } = require("events");
+const crypto = require("crypto");
+const fs = require("fs");
 const path = require("path");
 const unzipper = require("unzipper");
 const agentClient = require("./agentClient");
@@ -12,6 +14,7 @@ const FORGE_PROMOTIONS_URL = "https://files.minecraftforge.net/net/minecraftforg
 const FORGE_MAVEN_METADATA_URL = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml";
 const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
 const marketplaceInstallEvents = new EventEmitter();
+const pendingManualInstalls = new Map();
 
 class MarketplaceInstallError extends Error {
   constructor(message, code = "MARKETPLACE_INSTALL_FAILED", details = {}) {
@@ -20,6 +23,13 @@ class MarketplaceInstallError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+function titleCaseProvider(provider) {
+  const normalized = String(provider || "provider").trim().toLowerCase();
+  if (normalized === "curseforge") return "CurseForge";
+  if (normalized === "modrinth") return "Modrinth";
+  return normalized ? normalized[0].toUpperCase() + normalized.slice(1) : "Provider";
 }
 
 function serializeError(error, context = {}) {
@@ -404,22 +414,170 @@ function createRestrictedCurseForgeFileError(error, context = {}) {
   const projectId = context.projectId || error?.details?.projectId || "unknown project";
   const fileId = context.fileId || error?.details?.fileId || "unknown file id";
   return new MarketplaceInstallError(
-    `CurseForge required server file is restricted: ${fileName} (project ${projectId}, file ${fileId}). Download/import it manually or choose a pack version with accessible server files.`,
-    "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+    `A required modpack file needs manual download: ${fileName}.`,
+    "PROVIDER_REQUIRED_FILE_RESTRICTED",
     {
       provider: "curseforge",
+      providerName: "CurseForge",
+      originalCode: "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+      friendlyMessage: "This provider does not allow AnxHub to download one required file automatically.",
+      recoveryState: "waiting-manual-download",
       fileName,
+      file: fileName,
       projectId,
       fileId,
+      expectedDestinationPath: context.expectedDestinationPath || `mods/${safeArchivePath(fileName)}`,
       dependencyType: context.dependencyType || "required",
       status: error?.details?.status || error?.status || null,
       body: error?.details?.body || error?.details?.responseBody || null,
       url: error?.details?.url || null,
       reason: error?.message || "CurseForge denied file download access.",
-      suggestion: "Manually download/import the restricted file, or select another modpack/server-pack version.",
+      suggestion: "Download/import the missing file manually, or choose another pack/server version.",
       cause: serializeError(error),
     }
   );
+}
+
+function getManualRequirementId(context = {}) {
+  return [
+    context.provider || "provider",
+    context.projectId || context.projectSlug || "project",
+    context.versionId || "version",
+    context.fileId || context.hash || context.fileName || context.expectedDestinationPath || "file",
+  ].map((part) => String(part || "").replace(/[^a-z0-9_.-]+/gi, "-")).join(":");
+}
+
+function getOfficialProviderUrl(context = {}) {
+  if (context.downloadPageUrl) return context.downloadPageUrl;
+  if (context.projectUrl) return context.projectUrl;
+  const provider = String(context.provider || "").toLowerCase();
+  if (provider === "modrinth") {
+    if (context.versionId) return `https://modrinth.com/project/${encodeURIComponent(context.projectSlug || context.projectId || "")}/version/${encodeURIComponent(context.versionId)}`;
+    if (context.projectSlug || context.projectId) return `https://modrinth.com/project/${encodeURIComponent(context.projectSlug || context.projectId)}`;
+  }
+  if (provider === "curseforge") {
+    if (context.projectSlug) return `https://www.curseforge.com/minecraft/modpacks/${encodeURIComponent(context.projectSlug)}`;
+    if (context.projectId) return `https://www.curseforge.com/minecraft/search?search=${encodeURIComponent(context.projectId)}`;
+  }
+  return "";
+}
+
+function createManualDownloadRequiredError(error, context = {}) {
+  const provider = String(context.provider || error?.details?.provider || "provider").toLowerCase();
+  const providerName = context.providerName || titleCaseProvider(provider);
+  const fileName = context.fileName || context.file || error?.details?.fileName || error?.details?.file || "required-file";
+  const expectedDestinationPath = context.expectedDestinationPath || `mods/${safeArchivePath(path.basename(fileName))}`;
+  const details = {
+    ...(error?.details || {}),
+    ...context,
+    provider,
+    providerName,
+    originalCode: context.originalCode || error?.code || error?.details?.originalCode || `${provider.toUpperCase()}_REQUIRED_FILE_RESTRICTED`,
+    friendlyMessage: "This provider does not allow AnxHub to download one required file automatically.",
+    recoveryState: "waiting-manual-download",
+    fileName,
+    file: fileName,
+    expectedDestinationPath,
+    requirementId: getManualRequirementId({ ...context, provider, fileName, expectedDestinationPath }),
+    downloadPageUrl: getOfficialProviderUrl({ ...context, provider, fileName, expectedDestinationPath }),
+    suggestion: context.suggestion || "Download the required file from the official provider page, then import it to continue the installation.",
+    reason: context.reason || error?.message || "Provider requires manual download.",
+    cause: serializeError(error),
+  };
+  return new MarketplaceInstallError(
+    `A required modpack file needs manual download: ${fileName}.`,
+    "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
+    details
+  );
+}
+
+function isManualDownloadRequiredError(error) {
+  return [
+    "PROVIDER_REQUIRED_FILE_RESTRICTED",
+    "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
+    "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+    "MODRINTH_REQUIRED_FILE_RESTRICTED",
+  ].includes(error?.code) || error?.details?.recoveryState === "waiting-manual-download";
+}
+
+function getImportedManualFile(manualFiles = {}, requirementId) {
+  return manualFiles?.[requirementId] || null;
+}
+
+function createPendingManualInstall(context = {}) {
+  const manual = context.manual || {};
+  const sessionId = `manual-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  const session = {
+    id: sessionId,
+    status: "waiting-manual-download",
+    createdAt: new Date().toISOString(),
+    importedFiles: {},
+    ...context,
+    manual: {
+      ...manual,
+      sessionId,
+      requirementId: manual.requirementId || getManualRequirementId(manual),
+      providerName: manual.providerName || titleCaseProvider(manual.provider),
+      downloadPageUrl: getOfficialProviderUrl(manual),
+    },
+  };
+  pendingManualInstalls.set(sessionId, session);
+  return session;
+}
+
+function getPublicManualInstall(session) {
+  const manual = session?.manual || {};
+  return {
+    sessionId: session?.id || manual.sessionId || "",
+    status: session?.status || "waiting-manual-download",
+    provider: manual.provider || "",
+    providerName: manual.providerName || titleCaseProvider(manual.provider),
+    projectName: manual.projectName || null,
+    projectId: manual.projectId || null,
+    projectSlug: manual.projectSlug || null,
+    versionId: manual.versionId || null,
+    fileId: manual.fileId || null,
+    fileName: manual.fileName || manual.file || null,
+    expectedDestinationPath: manual.expectedDestinationPath || null,
+    hash: manual.hash || null,
+    size: manual.size || null,
+    downloadPageUrl: manual.downloadPageUrl || "",
+    projectUrl: manual.projectUrl || "",
+    reason: manual.reason || null,
+    suggestion: manual.suggestion || "Download/import the missing file manually, or choose another pack/server version.",
+    canImport: true,
+    canResume: Object.prototype.hasOwnProperty.call(session?.importedFiles || {}, manual.requirementId),
+  };
+}
+
+function verifyImportedFile(filePath, manual = {}) {
+  const stat = fs.statSync(filePath);
+  const expectedName = manual.fileName || manual.file;
+  const actualName = path.basename(filePath);
+  if (expectedName && actualName !== path.basename(expectedName)) {
+    throw new MarketplaceInstallError(`Selected file must be named ${path.basename(expectedName)}.`, "PROVIDER_IMPORT_FILE_NAME_MISMATCH", {
+      expectedFileName: path.basename(expectedName),
+      actualFileName: actualName,
+    });
+  }
+  if (manual.size && Number(manual.size) !== stat.size) {
+    throw new MarketplaceInstallError(`Selected file size does not match ${manual.size} bytes.`, "PROVIDER_IMPORT_FILE_SIZE_MISMATCH", {
+      expectedSize: Number(manual.size),
+      actualSize: stat.size,
+    });
+  }
+  const buffer = fs.readFileSync(filePath);
+  const sha1 = crypto.createHash("sha1").update(buffer).digest("hex");
+  const sha512 = crypto.createHash("sha512").update(buffer).digest("hex");
+  const expectedHash = manual.hash || manual.sha1 || manual.sha512;
+  if (expectedHash && ![sha1, sha512].includes(String(expectedHash).toLowerCase())) {
+    throw new MarketplaceInstallError("Selected file hash does not match the expected provider metadata.", "PROVIDER_IMPORT_FILE_HASH_MISMATCH", {
+      expectedHash,
+      sha1,
+      sha512,
+    });
+  }
+  return { buffer, size: stat.size, sha1, sha512, fileName: actualName };
 }
 
 function extractXmlTag(xml, tagName) {
@@ -811,6 +969,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
   const mods = [];
   const downloads = [];
   const dedupe = createDeduper();
+  const manualFiles = progressState.manualFiles || {};
 
   if (primary?.filename?.endsWith(".mrpack")) {
     emitProgress({ ...progressState, stage: "downloading", message: "Downloading Modrinth pack..." });
@@ -830,7 +989,26 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
           }
           const fileUrl = Array.isArray(file.downloads) ? file.downloads[0] : "";
           const filePath = safeArchivePath(file.path || "");
+          const requirement = {
+            provider: "modrinth",
+            providerName: "Modrinth",
+            projectId,
+            projectSlug: project.slug || projectId,
+            projectName: project.name || null,
+            versionId: version.id,
+            fileName: path.posix.basename(filePath),
+            expectedDestinationPath: filePath,
+            hash: file.hashes?.sha1 || file.hashes?.sha512 || null,
+            size: file.fileSize || file.size || null,
+            projectUrl: `https://modrinth.com/project/${encodeURIComponent(project.slug || projectId)}`,
+          };
+          requirement.requirementId = getManualRequirementId(requirement);
           if (!fileUrl || !dedupe.add(file.hashes?.sha1 || fileUrl || filePath)) {
+            continue;
+          }
+          if (getImportedManualFile(manualFiles, requirement.requirementId)) {
+            mods.push({ file: filePath, sha1: file.hashes?.sha1 || null, provider: "modrinth", manualImport: true });
+            downloads.push({ file: filePath, provider: "modrinth-manual-import" });
             continue;
           }
           emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
@@ -840,6 +1018,13 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
             mods.push({ file: filePath, sha1: file.hashes?.sha1 || null, provider: "modrinth" });
             downloads.push({ file: filePath, provider: "modrinth" });
           } catch (error) {
+            if (isRecoverableProviderFileError(error)) {
+              throw createManualDownloadRequiredError(error, {
+                ...requirement,
+                originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
+                downloadPageUrl: getOfficialProviderUrl(requirement),
+              });
+            }
             if (!isRecoverableProviderFileError(error)) {
               throw error;
             }
@@ -866,24 +1051,55 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
     const dependencies = await modrinthProvider.resolveDependencies(version, payload.minecraftVersion || payload.version, payload.loader, {
       allowClientFiles: payload.allowClientFiles,
     });
-    const files = [version, ...dependencies.map((entry) => entry.version)];
-    ensureServerFiles(files, "Modrinth");
+    const fileEntries = [
+      { version, dependencyType: "primary", project },
+      ...dependencies.map((entry) => ({ version: entry.version, dependencyType: entry.dependencyType || "required", project: entry.project })),
+    ];
+    ensureServerFiles(fileEntries.map((entry) => entry.version), "Modrinth");
     let current = 0;
-    for (const resolvedVersion of files) {
+    for (const entry of fileEntries) {
+      const resolvedVersion = entry.version;
       current += 1;
       const file = resolvedVersion.primaryFile || resolvedVersion.files?.[0];
       if (!file?.url || !dedupe.add(file.hashes?.sha1 || file.url)) {
         continue;
       }
       const fileName = file.filename || getUrlPathBasename(file.url, "modrinth-file.jar");
-      emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
+      const target = `mods/${safeArchivePath(fileName)}`;
+      const entryProject = entry.project || {};
+      const requirement = {
+        provider: "modrinth",
+        providerName: "Modrinth",
+        projectId: resolvedVersion.projectId || entryProject.providerProjectId || projectId,
+        projectSlug: entryProject.slug || resolvedVersion.projectId || project.slug || projectId,
+        projectName: entryProject.name || project.name || null,
+        versionId: resolvedVersion.id,
+        fileName,
+        expectedDestinationPath: target,
+        hash: file.hashes?.sha1 || file.hashes?.sha512 || null,
+        size: file.size || null,
+        projectUrl: `https://modrinth.com/project/${encodeURIComponent(entryProject.slug || resolvedVersion.projectId || project.slug || projectId)}`,
+      };
+      requirement.requirementId = getManualRequirementId(requirement);
+      if (getImportedManualFile(manualFiles, requirement.requirementId)) {
+        mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id, manualImport: true });
+        downloads.push({ file: target, provider: "modrinth-manual-import" });
+        continue;
+      }
+      emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
       try {
         const buffer = await fetchBuffer(file.url, fileName);
-        const target = `mods/${safeArchivePath(fileName)}`;
         await writeIfMissing(instanceId, target, buffer, agentConfig);
         mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id });
         downloads.push({ file: target, provider: "modrinth" });
       } catch (error) {
+        if (isRecoverableProviderFileError(error) && (current === 1 || entry.dependencyType !== "optional")) {
+          throw createManualDownloadRequiredError(error, {
+            ...requirement,
+            originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
+            downloadPageUrl: getOfficialProviderUrl(requirement),
+          });
+        }
         if (current === 1 || !isRecoverableProviderFileError(error)) {
           throw error;
         }
@@ -941,6 +1157,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
   const mods = [];
   const downloads = [];
   const dedupe = createDeduper();
+  const manualFiles = progressState.manualFiles || {};
   const isDedicatedServerPack = Boolean(file.serverPackFileId && serverFile.id !== file.id);
 
   if (/\.zip$/i.test(downloaded.fileName)) {
@@ -1011,9 +1228,25 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       if (!dedupe.add(`${manifestProjectId}:${manifestFileId}`)) {
         continue;
       }
+      const requirement = {
+        provider: "curseforge",
+        providerName: "CurseForge",
+        projectId: manifestProjectId,
+        fileId: manifestFileId,
+        fileName: manifestFile.fileName || null,
+        expectedDestinationPath: manifestFile.fileName ? `mods/${safeArchivePath(manifestFile.fileName)}` : null,
+      };
       emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${manifestFiles.length} mods...`, current, total: manifestFiles.length });
       try {
         const modFile = await curseforgeProvider.getFile(manifestProjectId, manifestFileId);
+        requirement.fileName = requirement.fileName || modFile.fileName || modFile.name || null;
+        requirement.expectedDestinationPath = requirement.expectedDestinationPath || `mods/${safeArchivePath(requirement.fileName || `${manifestFileId}.jar`)}`;
+        requirement.requirementId = getManualRequirementId(requirement);
+        if (getImportedManualFile(manualFiles, requirement.requirementId)) {
+          mods.push({ file: requirement.expectedDestinationPath, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId, manualImport: true });
+          downloads.push({ file: requirement.expectedDestinationPath, provider: "curseforge-manual-import" });
+          continue;
+        }
         const modDownload = await curseforgeProvider.downloadFile(modFile);
         const target = `mods/${safeArchivePath(modDownload.fileName)}`;
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
@@ -1026,7 +1259,10 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           fileId: manifestFileId,
         });
         if (isCurseForgeAccessDeniedFileError(error) && fileContext.dependencyType === "required") {
-          throw createRestrictedCurseForgeFileError(error, fileContext);
+          throw createRestrictedCurseForgeFileError(error, {
+            ...fileContext,
+            expectedDestinationPath: requirement.expectedDestinationPath || (fileContext.fileName ? `mods/${safeArchivePath(fileContext.fileName)}` : null),
+          });
         }
         if (!isRecoverableProviderFileError(error)) {
           throw error;
@@ -1062,8 +1298,25 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         continue;
       }
       try {
+        const fileName = item.fileName || item.name || `${item.id}.jar`;
+        const target = `mods/${safeArchivePath(fileName)}`;
+        const requirement = {
+          provider: "curseforge",
+          providerName: "CurseForge",
+          projectId: item.projectId,
+          fileId: item.id,
+          fileName,
+          expectedDestinationPath: target,
+          dependencyType: entry.dependencyType || "required",
+        };
+        requirement.requirementId = getManualRequirementId(requirement);
+        if (getImportedManualFile(manualFiles, requirement.requirementId)) {
+          emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
+          mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id, manualImport: true });
+          downloads.push({ file: target, provider: "curseforge-manual-import" });
+          continue;
+        }
         const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item);
-        const target = `mods/${safeArchivePath(modDownload.fileName)}`;
         emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
         mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id });
@@ -1079,7 +1332,10 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           throw error;
         }
         if (isCurseForgeAccessDeniedFileError(error) && fileContext.dependencyType === "required") {
-          throw createRestrictedCurseForgeFileError(error, fileContext);
+          throw createRestrictedCurseForgeFileError(error, {
+            ...fileContext,
+            expectedDestinationPath: fileContext.fileName ? `mods/${safeArchivePath(fileContext.fileName)}` : null,
+          });
         }
         if (!isRecoverableProviderFileError(error)) {
           throw error;
@@ -1114,6 +1370,62 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
   };
 }
 
+async function continueProviderPackInstall(context = {}) {
+  const {
+    provider,
+    instanceId,
+    options,
+    agentConfig,
+    serverInfo,
+    instancePayload,
+    createResult,
+    manualFiles = {},
+  } = context;
+
+  let installRecords = { mods: [], downloads: [], source: {} };
+  if (provider === "modrinth") {
+    installRecords = await installModrinthPack(instanceId, options, agentConfig, { instanceId, manualFiles });
+  } else if (provider === "curseforge") {
+    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { instanceId, manualFiles });
+  }
+
+  emitProgress({ instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
+  await writeText(instanceId, "eula.txt", `eula=${options.acceptEula === false ? "false" : "true"}\n`, agentConfig);
+  await agentClient.saveMinecraftProperties(instanceId, {
+    "server-port": String(instancePayload.primaryPort || 25565),
+    "max-players": String(options.maxPlayers || 20),
+    motd: options.motd || `${instancePayload.displayName} on AnxOS`,
+    "online-mode": options.onlineMode === false ? "false" : "true",
+    "level-seed": options.seed || "",
+  }, agentConfig);
+  const metadata = buildInstallMetadata(options, serverInfo, installRecords);
+  await writeText(instanceId, "metadata.json", `${JSON.stringify(metadata, null, 2)}\n`, agentConfig);
+  await writeText(instanceId, "config.json", `${JSON.stringify({ ...instancePayload, status: "stopped", port: instancePayload.primaryPort }, null, 2)}\n`, agentConfig);
+  await validateInstalledServerJar(instanceId, serverInfo, agentConfig);
+  await agentClient.updateInstance(instanceId, {
+    ...metadata,
+    jar: serverInfo.serverJar,
+    serverJar: serverInfo.serverJar,
+    serverJarPath: serverInfo.serverJar,
+    startJar: serverInfo.serverJar,
+  }, agentConfig);
+  if (options.start) {
+    emitProgress({ instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
+    await withRetry(
+      () => agentClient.startInstance(instanceId, agentConfig),
+      { label: "agent start instance", attempts: 2 }
+    );
+  }
+
+  emitProgress({ instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
+  return {
+    status: "completed",
+    instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
+    metadata,
+    progress: [{ label: "Done", status: "complete", detail: "Marketplace pack installed." }],
+  };
+}
+
 async function installPack(payload = {}) {
   const provider = String(payload.provider || payload.template?.provider || "anxhub").toLowerCase();
   const options = {
@@ -1134,10 +1446,11 @@ async function installPack(payload = {}) {
   const instancePayload = buildInstancePayload(options, serverInfo);
   const instanceId = instancePayload.id;
   let created = false;
+  let createResult = null;
 
   try {
     emitProgress({ instanceId, stage: "resolving", message: "Creating instance folder...", current: 0, total: 1 });
-    const createResult = await withRetry(
+    createResult = await withRetry(
       () => agentClient.createInstance(instancePayload, agentConfig),
       { label: "agent create instance", attempts: 3 }
     );
@@ -1153,47 +1466,16 @@ async function installPack(payload = {}) {
     await writeBuffer(instanceId, serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName), agentConfig);
     await runServerInstaller(instanceId, serverInfo, agentConfig);
 
-    let installRecords = { mods: [], downloads: [], source: {} };
-    if (provider === "modrinth") {
-      installRecords = await installModrinthPack(instanceId, options, agentConfig, { instanceId });
-    } else if (provider === "curseforge") {
-      installRecords = await installCurseForgePack(instanceId, options, agentConfig, { instanceId });
-    }
-
-    emitProgress({ instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
-    await writeText(instanceId, "eula.txt", `eula=${options.acceptEula === false ? "false" : "true"}\n`, agentConfig);
-    await agentClient.saveMinecraftProperties(instanceId, {
-      "server-port": String(instancePayload.primaryPort || 25565),
-      "max-players": String(options.maxPlayers || 20),
-      motd: options.motd || `${instancePayload.displayName} on AnxOS`,
-      "online-mode": options.onlineMode === false ? "false" : "true",
-      "level-seed": options.seed || "",
-    }, agentConfig);
-    const metadata = buildInstallMetadata(options, serverInfo, installRecords);
-    await writeText(instanceId, "metadata.json", `${JSON.stringify(metadata, null, 2)}\n`, agentConfig);
-    await writeText(instanceId, "config.json", `${JSON.stringify({ ...instancePayload, status: "stopped", port: instancePayload.primaryPort }, null, 2)}\n`, agentConfig);
-    await validateInstalledServerJar(instanceId, serverInfo, agentConfig);
-    await agentClient.updateInstance(instanceId, {
-      ...metadata,
-      jar: serverInfo.serverJar,
-      serverJar: serverInfo.serverJar,
-      serverJarPath: serverInfo.serverJar,
-      startJar: serverInfo.serverJar,
-    }, agentConfig);
-    if (options.start) {
-      emitProgress({ instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
-      await withRetry(
-        () => agentClient.startInstance(instanceId, agentConfig),
-        { label: "agent start instance", attempts: 2 }
-      );
-    }
-
-    emitProgress({ instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
-    return {
-      instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
-      metadata,
-      progress: [{ label: "Done", status: "complete", detail: "Marketplace pack installed." }],
-    };
+    return await continueProviderPackInstall({
+      provider,
+      instanceId,
+      options,
+      agentConfig,
+      serverInfo,
+      instancePayload,
+      createResult,
+      manualFiles: {},
+    });
   } catch (error) {
     logMarketplaceInstallFailure(error, {
       provider,
@@ -1204,6 +1486,31 @@ async function installPack(payload = {}) {
       loader: options.loader || options.serverType || null,
     });
     const detailedMessage = buildDetailedErrorMessage(error, friendlyError(error));
+    if (isManualDownloadRequiredError(error) && created) {
+      const manual = {
+        ...(error.details || {}),
+        provider,
+        providerName: error.details?.providerName || titleCaseProvider(provider),
+      };
+      const session = createPendingManualInstall({
+        provider,
+        instanceId,
+        options,
+        agentConfig,
+        serverInfo,
+        instancePayload,
+        createResult,
+        manual,
+        rawError: serializeError(error),
+      });
+      emitProgress({ instanceId, stage: "waiting", message: "Waiting for manual download.", current: 0, total: 0, percent: 0 });
+      return {
+        status: "waiting-manual-download",
+        instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
+        manualDownload: getPublicManualInstall(session),
+        progress: [{ label: "Waiting for Manual Download", status: "waiting", detail: "A required modpack file needs manual download." }],
+      };
+    }
     emitProgress({ instanceId, stage: "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
     if (created) {
       try {
@@ -1218,6 +1525,83 @@ async function installPack(payload = {}) {
       originalMessage: error?.message || null,
       originalStack: error?.stack || null,
     });
+  }
+}
+
+function getPendingManualInstall(sessionId) {
+  const session = pendingManualInstalls.get(String(sessionId || ""));
+  if (!session) {
+    throw new MarketplaceInstallError("Manual download session was not found.", "PROVIDER_MANUAL_SESSION_NOT_FOUND", { sessionId });
+  }
+  return session;
+}
+
+function getManualInstallRecovery(sessionId) {
+  return getPublicManualInstall(getPendingManualInstall(sessionId));
+}
+
+function getManualInstallProviderPage(sessionId) {
+  const session = getPendingManualInstall(sessionId);
+  const url = session.manual.downloadPageUrl || session.manual.projectUrl || getOfficialProviderUrl(session.manual);
+  if (!url) {
+    throw new MarketplaceInstallError("Provider page is unavailable for this manual download.", "PROVIDER_PAGE_UNAVAILABLE", {
+      sessionId,
+      provider: session.manual.provider || null,
+    });
+  }
+  return { url, manualDownload: getPublicManualInstall(session) };
+}
+
+async function importManualInstallFile(sessionId, filePath) {
+  const session = getPendingManualInstall(sessionId);
+  const manual = session.manual || {};
+  const verified = verifyImportedFile(filePath, manual);
+  const target = manual.expectedDestinationPath || `mods/${safeArchivePath(verified.fileName)}`;
+  await writeBuffer(session.instanceId, target, verified.buffer, session.agentConfig);
+  session.importedFiles[manual.requirementId] = {
+    file: target,
+    fileName: verified.fileName,
+    size: verified.size,
+    sha1: verified.sha1,
+    sha512: verified.sha512,
+    importedAt: new Date().toISOString(),
+  };
+  session.status = "file-imported";
+  emitProgress({ instanceId: session.instanceId, stage: "imported", message: "Manual file imported.", current: 1, total: 1, percent: 100 });
+  return {
+    imported: true,
+    manualDownload: getPublicManualInstall(session),
+    importedFile: session.importedFiles[manual.requirementId],
+  };
+}
+
+async function resumeManualInstall(sessionId) {
+  const session = getPendingManualInstall(sessionId);
+  const manual = session.manual || {};
+  if (!session.importedFiles[manual.requirementId]) {
+    throw new MarketplaceInstallError("Import the missing file before resuming.", "PROVIDER_MANUAL_FILE_NOT_IMPORTED", {
+      sessionId,
+      requirementId: manual.requirementId,
+    });
+  }
+  session.status = "resuming";
+  emitProgress({ instanceId: session.instanceId, stage: "resuming", message: "Resuming Marketplace install...", current: 0, total: 0, percent: 0 });
+  try {
+    const result = await continueProviderPackInstall({
+      provider: session.provider,
+      instanceId: session.instanceId,
+      options: session.options,
+      agentConfig: session.agentConfig,
+      serverInfo: session.serverInfo,
+      instancePayload: session.instancePayload,
+      createResult: session.createResult,
+      manualFiles: session.importedFiles,
+    });
+    pendingManualInstalls.delete(session.id);
+    return result;
+  } catch (error) {
+    session.status = "waiting-manual-download";
+    throw error;
   }
 }
 
@@ -1282,11 +1666,14 @@ module.exports = {
   _test: {
     buildInstallMetadata,
     buildInstancePayload,
+    createManualDownloadRequiredError,
     createRestrictedCurseForgeFileError,
     createDeduper,
     ensureModrinthServerCapable,
     friendlyHttpMessage,
     getCurseForgeFileContext,
+    getManualRequirementId,
+    isManualDownloadRequiredError,
     isCurseForgeAccessDeniedFileError,
     isRecoverableProviderFileError,
     isTransientError,
@@ -1295,8 +1682,12 @@ module.exports = {
     stripArchiveRoot,
     withRetry,
   },
+  getManualInstallProviderPage,
+  getManualInstallRecovery,
   installPack,
+  importManualInstallFile,
   marketplaceInstallEvents,
+  resumeManualInstall,
   searchProviderPacks,
   getProviderPackVersions,
   getProviderPackDetails,

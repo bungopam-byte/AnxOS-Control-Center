@@ -6627,6 +6627,11 @@ dd {
   border-color: rgba(134, 239, 172, 0.32);
 }
 
+.marketplace-progress-step[data-status="waiting"] {
+  border-color: rgba(251, 191, 36, 0.48);
+  background: rgba(78, 52, 18, 0.58);
+}
+
 .marketplace-progress-step[data-status="failed"] {
   border-color: rgba(248, 113, 113, 0.42);
   background: rgba(65, 18, 28, 0.62);
@@ -6668,6 +6673,11 @@ dd {
   background: rgba(65, 18, 28, 0.55);
 }
 
+.download-item[data-status="waiting"] {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(78, 52, 18, 0.56);
+}
+
 .download-item__header,
 .download-item__actions {
   display: flex;
@@ -6694,6 +6704,11 @@ dd {
 .download-item[data-status="failed"] .download-progress span {
   min-width: 100%;
   background: linear-gradient(90deg, #ef4444, #fb7185);
+}
+
+.download-item[data-status="waiting"] .download-progress span {
+  min-width: 100%;
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
 }
 
 .download-item small {

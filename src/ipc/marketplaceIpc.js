@@ -1,4 +1,4 @@
-const { BrowserWindow, ipcMain } = require("electron");
+const { BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const {
   cancelDownload,
   getDownloads,
@@ -12,8 +12,11 @@ const {
 const {
   getProviderPackVersions,
   getProviderPackDetails,
+  getManualInstallProviderPage,
   installPack,
+  importManualInstallFile,
   marketplaceInstallEvents,
+  resumeManualInstall,
   searchProviderPacks,
 } = require("../services/marketplaceInstallService");
 const { audit, requirePermission } = require("../services/securityService");
@@ -71,14 +74,22 @@ function getMarketplaceUiError(error) {
   const code = error?.payload?.error?.code || error?.code;
   const details = error?.details || error?.payload?.error?.details || {};
   const message = error?.payload?.error?.message || error?.message || "";
-  if (code === "CURSEFORGE_REQUIRED_FILE_RESTRICTED") {
+  if ([
+    "PROVIDER_REQUIRED_FILE_RESTRICTED",
+    "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
+    "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+    "MODRINTH_REQUIRED_FILE_RESTRICTED",
+  ].includes(code) || details.recoveryState === "waiting-manual-download") {
+    const provider = details.provider || "provider";
+    const providerName = details.providerName || provider;
     return {
-      code,
-      message: "CurseForge blocked one required server file",
+      code: "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
+      message: "A required modpack file needs manual download.",
       details: {
         ...details,
-        provider: "curseforge",
-        friendlyMessage: "Fabulously Optimized needs a server file that CurseForge does not allow AnxHub to download automatically.",
+        provider,
+        providerName,
+        friendlyMessage: details.friendlyMessage || "This provider does not allow AnxHub to download one required file automatically.",
         file: details.file || details.fileName || null,
         fileName: details.fileName || details.file || null,
         projectId: details.projectId || null,
@@ -184,6 +195,30 @@ function registerMarketplaceIpc() {
     audit({ action: "marketplace.providerPack.install", target });
     return installPack(payload);
   }));
+  ipcMain.handle("marketplace:openManualDownloadPage", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
+    const result = getManualInstallProviderPage(payload.sessionId);
+    await shell.openExternal(result.url);
+    return { opened: true, ...result };
+  }));
+  ipcMain.handle("marketplace:importManualDownloadFile", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
+    const dialogOptions = {
+      title: "Import required modpack file",
+      properties: ["openFile"],
+      filters: [
+        { name: "Modpack files", extensions: ["jar", "zip", "mrpack"] },
+        { name: "All files", extensions: ["*"] },
+      ],
+    };
+    const window = BrowserWindow.getFocusedWindow();
+    const selection = window
+      ? await dialog.showOpenDialog(window, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+    if (selection.canceled || !selection.filePaths?.[0]) {
+      return { canceled: true };
+    }
+    return importManualInstallFile(payload.sessionId, selection.filePaths[0]);
+  }));
+  ipcMain.handle("marketplace:resumeManualInstall", async (_, payload = {}) => invokeMarketplaceOperation(() => resumeManualInstall(payload.sessionId)));
   ipcMain.handle("marketplace:getDownloads", async () => invokeMarketplaceOperation(() => getDownloads()));
   ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => cancelDownload(payload.downloadId)));
   ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => retryDownload(payload.downloadId)));

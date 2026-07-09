@@ -37,22 +37,36 @@
     const cleanMessage = stripIpcErrorWrapper(rawMessage);
     const friendlyMessage = details.friendlyMessage || payloadError.friendlyMessage || error?.friendlyMessage || "";
     const file = details.file || details.fileName || details.name || null;
+    const provider = details.provider || payloadError.provider || error?.provider || "";
+    const providerName = details.providerName || (provider ? String(provider).replace(/^./, (letter) => letter.toUpperCase()) : "Provider");
     const projectId = details.projectId || details.projectID || null;
     const fileId = details.fileId || details.fileID || null;
     const suggestion = details.suggestion || "Download/import the missing file manually, or choose another pack/server version.";
-    const restricted = code === "CURSEFORGE_REQUIRED_FILE_RESTRICTED" ||
+    const manualRequired = [
+      "PROVIDER_REQUIRED_FILE_RESTRICTED",
+      "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
+      "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+      "MODRINTH_REQUIRED_FILE_RESTRICTED",
+    ].includes(code) ||
+      details.recoveryState === "waiting-manual-download" ||
       /CurseForge blocked one required server file/i.test(cleanMessage) ||
-      /CurseForge required server file is restricted/i.test(cleanMessage);
+      /required modpack file needs manual download/i.test(cleanMessage) ||
+      /required server file is restricted/i.test(cleanMessage);
 
-    if (restricted) {
+    if (manualRequired) {
       return {
-        code: "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
-        title: "CurseForge blocked one required server file",
-        body: friendlyMessage || "Fabulously Optimized needs a server file that CurseForge does not allow AnxHub to download automatically.",
+        code: "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
+        originalCode: code || details.originalCode || null,
+        title: "A required modpack file needs manual download.",
+        body: friendlyMessage || "This provider does not allow AnxHub to download one required file automatically.",
         action: suggestion,
+        provider,
+        providerName,
         file,
         projectId,
         fileId,
+        sessionId: details.sessionId || null,
+        manualDownload: details.manualDownload || null,
         rawMessage,
         cleanMessage,
         debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
@@ -65,6 +79,8 @@
       title,
       body: title,
       action: suggestion,
+      provider,
+      providerName,
       file,
       projectId,
       fileId,

@@ -2597,6 +2597,43 @@ function getPlayitState(snapshot, configuredAddress = null) {
   };
 }
 
+function findFinitePlayitValue(source, keys = []) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  for (const key of keys) {
+    const number = Number(source[key]);
+    if (Number.isFinite(number)) {
+      return number;
+    }
+  }
+
+  return null;
+}
+
+function formatPlayitLatency(snapshot) {
+  const latency = findFinitePlayitValue(snapshot, ["latencyMs", "latency", "pingMs", "ping"]);
+  return latency === null ? "Not measured" : `${Math.round(latency)} ms`;
+}
+
+function formatPlayitTraffic(snapshot) {
+  const traffic = snapshot?.traffic && typeof snapshot.traffic === "object" ? snapshot.traffic : {};
+  const inbound = findFinitePlayitValue(traffic, ["in", "inbound", "rx", "rxBytes", "received", "receivedBytes"])
+    ?? findFinitePlayitValue(snapshot, ["trafficIn", "trafficInBytes", "rxBytes", "receivedBytes"]);
+  const outbound = findFinitePlayitValue(traffic, ["out", "outbound", "tx", "txBytes", "sent", "sentBytes"])
+    ?? findFinitePlayitValue(snapshot, ["trafficOut", "trafficOutBytes", "txBytes", "sentBytes"]);
+
+  if (inbound === null && outbound === null) {
+    return "Not reported";
+  }
+
+  return [
+    inbound === null ? null : `In: ${formatBytes(inbound)}`,
+    outbound === null ? null : `Out: ${formatBytes(outbound)}`,
+  ].filter(Boolean).join(" · ");
+}
+
 function renderPlayitSnapshot(snapshot) {
   latestPlayitSnapshot = snapshot;
   const configuredAddress = getConfiguredPlayitAddress();
@@ -2605,7 +2642,7 @@ function renderPlayitSnapshot(snapshot) {
   const localIp = snapshot?.localIp || "Unavailable";
   const localPort = snapshot?.localPort || "Unavailable";
   const protocol = snapshot?.protocol || "Unavailable";
-  const tunnelId = snapshot?.tunnelId || "Unavailable";
+  const tunnelId = snapshot?.tunnelId || "Not reported";
   const installed = playitState.installed;
   const running = playitState.running;
 
@@ -2619,8 +2656,8 @@ function renderPlayitSnapshot(snapshot) {
   setField("playitProtocol", protocol);
   setField("playitTunnelId", tunnelId);
   setField("playitLastSuccessfulRefresh", formatDateTime(snapshot?.lastSuccessfulRefreshAt));
-  setField("playitLatency", "Unavailable");
-  setField("playitTraffic", "Unavailable");
+  setField("playitLatency", formatPlayitLatency(snapshot));
+  setField("playitTraffic", formatPlayitTraffic(snapshot));
   setField("playitSummary", playitState.summary);
   renderInstanceNetwork(findInstance());
   updateTitlebar();
@@ -2636,10 +2673,10 @@ function renderPlayitUnavailable(message = "Playit status unavailable.") {
   setField("playitLocalIp", "Unavailable");
   setField("playitLocalPort", "Unavailable");
   setField("playitProtocol", "Unavailable");
-  setField("playitTunnelId", "Unavailable");
+  setField("playitTunnelId", "Not reported");
   setField("playitLastSuccessfulRefresh", "Unavailable");
-  setField("playitLatency", "Unavailable");
-  setField("playitTraffic", "Unavailable");
+  setField("playitLatency", "Not measured");
+  setField("playitTraffic", "Not reported");
   setField("playitSummary", message);
   renderInstanceNetwork(findInstance());
   updateTitlebar();
@@ -9177,6 +9214,10 @@ function formatAmpRuntime(summary) {
   return `${ports} · ${uptime}`;
 }
 
+function formatMinecraftDashboardRuntime(summary) {
+  return Number.isFinite(summary?.uptime) ? formatDuration(summary.uptime) : "Not reported";
+}
+
 function formatAmpVersion(summary) {
   return summary?.version || "Unavailable";
 }
@@ -9706,7 +9747,7 @@ function renderAmpSnapshot(snapshot) {
     setField("ampDashboardUsage", "Unavailable");
     setField("minecraftDashboardSelection", "Unavailable");
     setField("minecraftDashboardPlayers", "Unavailable");
-    setField("minecraftDashboardRuntime", "Unavailable");
+    setField("minecraftDashboardRuntime", "Not reported");
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unconfigured", "AMP is not configured. Set AMP_URL, AMP_USERNAME, and AMP_PASSWORD in .env.");
     updateTitlebar();
@@ -9718,6 +9759,7 @@ function renderAmpSnapshot(snapshot) {
   const instancesText = formatAmpInstances(snapshot, selectionText);
   const usageText = formatAmpUsage(snapshot.summary);
   const runtimeText = formatAmpRuntime(snapshot.summary);
+  const minecraftRuntimeText = formatMinecraftDashboardRuntime(snapshot.summary);
   const versionText = formatAmpVersion(snapshot.summary);
   const playersText = formatPlayerSummary(snapshot.summary);
   const statusText = formatAmpStatusLabel(snapshot);
@@ -9740,7 +9782,7 @@ function renderAmpSnapshot(snapshot) {
   setField("ampDashboardUsage", usageText);
   setField("minecraftDashboardSelection", selectionText);
   setField("minecraftDashboardPlayers", playersText);
-  setField("minecraftDashboardRuntime", runtimeText);
+  setField("minecraftDashboardRuntime", minecraftRuntimeText);
   setField("minecraftDashboardVersion", versionText);
   setMinecraftPageFields({
     status: formatMinecraftState(snapshot.summary, statusText),
@@ -9783,7 +9825,7 @@ async function refreshAmpDashboard() {
     setField("ampDashboardUsage", "Unavailable");
     setField("minecraftDashboardSelection", "Unavailable");
     setField("minecraftDashboardPlayers", "Unavailable");
-    setField("minecraftDashboardRuntime", "Unavailable");
+    setField("minecraftDashboardRuntime", "Not reported");
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unavailable", message);
     markStartupReady("amp");
@@ -9821,7 +9863,7 @@ async function refreshAmpDashboard() {
     setField("ampDashboardUsage", "Unavailable");
     setField("minecraftDashboardSelection", "Unavailable");
     setField("minecraftDashboardPlayers", "Unavailable");
-    setField("minecraftDashboardRuntime", "Unavailable");
+    setField("minecraftDashboardRuntime", "Not reported");
     setField("minecraftDashboardVersion", "Unavailable");
     setMinecraftPageUnavailable("Unavailable", message);
     updateTitlebar();

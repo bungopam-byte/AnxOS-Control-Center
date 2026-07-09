@@ -121,6 +121,28 @@ function assertRuntimeTemperatureRendering() {
   );
 }
 
+function assertDashboardRuntimeFallbacks() {
+  const appSource = fs.readFileSync(appPath, "utf8");
+
+  assert(
+    appSource.includes("function formatMinecraftDashboardRuntime(summary)") &&
+      appSource.includes('setField("minecraftDashboardRuntime", minecraftRuntimeText)') &&
+      appSource.includes('setField("minecraftDashboardRuntime", "Not reported")') &&
+      !appSource.includes('setField("minecraftDashboardRuntime", runtimeText)'),
+    "Minecraft dashboard Runtime should render uptime only and use Not reported when uptime is missing."
+  );
+  assert(
+    appSource.includes("function formatPlayitLatency(snapshot)") &&
+      appSource.includes('return latency === null ? "Not measured"') &&
+      appSource.includes("function formatPlayitTraffic(snapshot)") &&
+      appSource.includes('return "Not reported"') &&
+      appSource.includes('const tunnelId = snapshot?.tunnelId || "Not reported"') &&
+      appSource.includes('setField("playitLatency", formatPlayitLatency(snapshot))') &&
+      appSource.includes('setField("playitTraffic", formatPlayitTraffic(snapshot))'),
+    "Playit latency, traffic, and tunnel ID should use intentional fallback text instead of raw Unavailable."
+  );
+}
+
 async function assertDisabledTemplatesAreBlocked() {
   const hytale = findTemplate("hytale");
   assert.strictEqual(hytale.disabled, true, "Hytale must be disabled.");
@@ -1661,6 +1683,7 @@ async function main() {
   assertCatalogLoads();
   assertRemoteSystemMetricsNormalize();
   assertRuntimeTemperatureRendering();
+  assertDashboardRuntimeFallbacks();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertDockerTemplates();

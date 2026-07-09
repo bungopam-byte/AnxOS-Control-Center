@@ -79,6 +79,19 @@ function getMarketplaceUiError(error) {
     "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
     "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
     "MODRINTH_REQUIRED_FILE_RESTRICTED",
+    "CURSEFORGE_DOWNLOAD_URL_MISSING",
+    "CURSEFORGE_INVALID_DOWNLOAD_URL",
+    "CURSEFORGE_UNSAFE_URL",
+    "CURSEFORGE_DOWNLOAD_FAILED",
+    "CURSEFORGE_REQUEST_FAILED",
+    "MODRINTH_DOWNLOAD_URL_MISSING",
+    "MODRINTH_INVALID_DOWNLOAD_URL",
+    "MODRINTH_UNSAFE_URL",
+    "MODRINTH_DOWNLOAD_FAILED",
+    "MODRINTH_REQUEST_FAILED",
+    "PROVIDER_DOWNLOAD_URL_MISSING",
+    "PROVIDER_DOWNLOAD_FAILED",
+    "PROVIDER_REQUEST_FAILED",
   ].includes(code) || details.recoveryState === "waiting-manual-download") {
     const provider = details.provider || "provider";
     const providerName = details.providerName || provider;
@@ -95,6 +108,24 @@ function getMarketplaceUiError(error) {
         projectId: details.projectId || null,
         fileId: details.fileId || null,
         suggestion: details.suggestion || "Download/import the missing file manually, or choose another pack/server version.",
+        debugMessage: getMarketplaceErrorMessage(error),
+        originalMessage: message,
+      },
+    };
+  }
+  if ([
+    "PROVIDER_IMPORT_FILE_NAME_MISMATCH",
+    "PROVIDER_IMPORT_FILE_SIZE_MISMATCH",
+    "PROVIDER_IMPORT_FILE_HASH_MISMATCH",
+    "PROVIDER_MANUAL_FILE_NOT_IMPORTED",
+    "PROVIDER_MANUAL_SESSION_NOT_FOUND",
+    "PROVIDER_PAGE_UNAVAILABLE",
+  ].includes(code)) {
+    return {
+      code,
+      message: message || "Marketplace request failed.",
+      details: {
+        ...details,
         debugMessage: getMarketplaceErrorMessage(error),
         originalMessage: message,
       },
@@ -205,7 +236,7 @@ function registerMarketplaceIpc() {
       title: "Import required modpack file",
       properties: ["openFile"],
       filters: [
-        { name: "Modpack files", extensions: ["jar", "zip", "mrpack"] },
+        { name: "Modpack files", extensions: ["jar", "zip"] },
         { name: "All files", extensions: ["*"] },
       ],
     };

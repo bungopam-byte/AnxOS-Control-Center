@@ -146,6 +146,21 @@ const marketplaceEmpty = document.querySelector("[data-marketplace-empty]");
 const marketplaceSelectedName = document.querySelector("[data-marketplace-selected-name]");
 const marketplaceSelectedMeta = document.querySelector("[data-marketplace-selected-meta]");
 const marketplaceInstallState = document.querySelector("[data-marketplace-install-state]");
+const marketplaceManualRecovery = document.querySelector("[data-marketplace-manual-recovery]");
+const marketplaceManualRecoveryTitle = document.querySelector("[data-marketplace-manual-title]");
+const marketplaceManualRecoverySubtitle = document.querySelector("[data-marketplace-manual-subtitle]");
+const marketplaceManualRecoveryBadge = document.querySelector("[data-marketplace-manual-badge]");
+const marketplaceManualRecoveryBody = document.querySelector("[data-marketplace-manual-body]");
+const marketplaceManualRecoveryReason = document.querySelector("[data-marketplace-manual-reason]");
+const marketplaceManualRecoveryFile = document.querySelector("[data-marketplace-manual-file]");
+const marketplaceManualRecoveryMod = document.querySelector("[data-marketplace-manual-mod]");
+const marketplaceManualRecoveryVersion = document.querySelector("[data-marketplace-manual-version]");
+const marketplaceManualRecoveryProvider = document.querySelector("[data-marketplace-manual-provider]");
+const marketplaceManualRecoveryDetail = document.querySelector("[data-marketplace-manual-detail]");
+const marketplaceManualRecoveryLogs = document.querySelector("[data-marketplace-manual-logs]");
+const marketplaceManualRecoveryOpen = document.querySelector("[data-marketplace-manual-open]");
+const marketplaceManualRecoveryImport = document.querySelector("[data-marketplace-manual-import]");
+const marketplaceManualRecoveryResume = document.querySelector("[data-marketplace-manual-resume]");
 const marketplaceWizard = document.querySelector("[data-marketplace-wizard]");
 const marketplaceWizardSteps = document.querySelector("[data-marketplace-wizard-steps]");
 const marketplaceFields = document.querySelectorAll("[data-marketplace-field]");
@@ -378,6 +393,7 @@ let marketplaceProgressRenderTimer = null;
 let marketplacePendingProgressSteps = null;
 let unsubscribeMarketplaceInstallProgress = null;
 let marketplaceLocalDownloadEntries = [];
+let marketplaceManualRecoveryState = null;
 let marketplaceProviderActive = "modrinth";
 let marketplaceProviderMode = "featured";
 let marketplaceProviderResults = [];
@@ -6325,6 +6341,11 @@ function syncMarketplaceWizardFields(template) {
 }
 
 function openMarketplaceWizard(templateId) {
+  if (marketplaceManualRecoveryState) {
+    setMarketplaceMessage("Finish the manual download recovery before starting another Marketplace install.", "warning");
+    showToast("Finish the manual download recovery first.");
+    return;
+  }
   const template = findMarketplaceTemplate(templateId);
   if (!template) {
     showToast("Template not found.");
@@ -6494,12 +6515,21 @@ function marketplaceProgressEventToStep(event = {}) {
     downloading: "Downloading files",
     extracting: "Extracting overrides",
     writing: "Writing instance metadata",
+    waiting: "Waiting for Manual Download",
+    imported: "File Imported",
+    resuming: "Resuming Installation",
     done: "Done",
     error: "Failed",
   };
   const status = event.stage === "done"
     ? "complete"
-    : event.stage === "error" ? "failed" : "running";
+    : event.stage === "error"
+      ? "failed"
+      : event.stage === "waiting"
+        ? "waiting"
+        : event.stage === "imported"
+          ? "complete"
+          : "running";
   const count = event.total ? ` (${event.current || 0}/${event.total})` : "";
   const percent = event.percent ? ` · ${event.percent}%` : "";
   return {
@@ -6601,6 +6631,124 @@ function formatMarketplaceErrorMetadata(normalizedError) {
   ].filter(Boolean).join(" · ");
 }
 
+function formatMarketplaceManualRecoveryMetadata(manualDownload = {}) {
+  return [
+    manualDownload.fileName ? `Missing file: ${manualDownload.fileName}` : "",
+    manualDownload.projectName ? `Mod: ${manualDownload.projectName}` : "",
+    manualDownload.versionId ? `Version: ${manualDownload.versionId}` : "",
+    manualDownload.providerName ? `Provider: ${manualDownload.providerName}` : "",
+    manualDownload.projectId ? `projectId: ${manualDownload.projectId}` : "",
+    manualDownload.fileId ? `fileId: ${manualDownload.fileId}` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+function buildMarketplaceManualRecoveryState(template, manualDownload = {}, options = {}) {
+  const providerName = manualDownload.providerName || "Provider";
+  return {
+    templateName: template?.displayName || template?.name || template?.id || "Marketplace install",
+    title: "Manual Download Required",
+    subtitle: `Waiting for a required file from ${providerName}.`,
+    body: "A required modpack file needs manual download.",
+    reason: manualDownload.reason || manualDownload.suggestion || "This provider does not allow AnxHub to download one required file automatically.",
+    fileText: manualDownload.fileName || "Unknown file",
+    modText: manualDownload.projectName || "Unknown mod",
+    versionText: manualDownload.versionId || "Unknown version",
+    providerText: providerName,
+    detailText: formatMarketplaceManualRecoveryMetadata(manualDownload),
+    openLabel: manualDownload.providerName ? `Download from ${manualDownload.providerName}` : "Open Provider Page",
+    importLabel: "Import Downloaded File",
+    resumeLabel: manualDownload.canResume ? "Resume Installation" : "Resume Installation",
+    badgeText: "Waiting",
+    canOpenProviderPage: Boolean(manualDownload.downloadPageUrl || manualDownload.projectUrl || manualDownload.sessionId),
+    canImportFile: Boolean(manualDownload.sessionId),
+    canResumeManualInstall: Boolean(manualDownload.canResume),
+    sessionId: manualDownload.sessionId || "",
+    logs: [
+      {
+        at: new Date().toISOString(),
+        level: "warning",
+        step: options.code || "MANUAL_DOWNLOAD_REQUIRED",
+        message: "Waiting for manual download.",
+        body: JSON.stringify(manualDownload, null, 2),
+      },
+    ],
+  };
+}
+
+function setMarketplaceManualRecoveryState(state = null) {
+  marketplaceManualRecoveryState = state;
+  if (marketplaceWizard) {
+    marketplaceWizard.hidden = Boolean(state);
+  }
+  if (!marketplaceManualRecovery) {
+    return;
+  }
+  marketplaceManualRecovery.hidden = !state;
+  if (!state) {
+    return;
+  }
+
+  if (marketplaceManualRecoveryTitle) {
+    marketplaceManualRecoveryTitle.textContent = state.title || "Manual Download Required";
+  }
+  if (marketplaceManualRecoverySubtitle) {
+    marketplaceManualRecoverySubtitle.textContent = state.subtitle || "";
+  }
+  if (marketplaceManualRecoveryBadge) {
+    marketplaceManualRecoveryBadge.textContent = state.badgeText || "Waiting";
+  }
+  if (marketplaceManualRecoveryBody) {
+    marketplaceManualRecoveryBody.textContent = state.body || "";
+  }
+  if (marketplaceManualRecoveryReason) {
+    marketplaceManualRecoveryReason.textContent = state.reason ? `Reason: ${state.reason}` : "";
+  }
+  if (marketplaceManualRecoveryFile) {
+    marketplaceManualRecoveryFile.textContent = state.fileText || "";
+  }
+  if (marketplaceManualRecoveryMod) {
+    marketplaceManualRecoveryMod.textContent = state.modText || "";
+  }
+  if (marketplaceManualRecoveryVersion) {
+    marketplaceManualRecoveryVersion.textContent = state.versionText || "";
+  }
+  if (marketplaceManualRecoveryProvider) {
+    marketplaceManualRecoveryProvider.textContent = state.providerText || "";
+  }
+  if (marketplaceManualRecoveryDetail) {
+    marketplaceManualRecoveryDetail.textContent = state.detailText || "";
+  }
+  if (marketplaceManualRecoveryLogs) {
+    marketplaceManualRecoveryLogs.replaceChildren();
+    (Array.isArray(state.logs) ? state.logs : []).forEach((entry) => {
+      const line = document.createElement("pre");
+      line.textContent = [
+        entry.at,
+        entry.level || "warning",
+        entry.step,
+        entry.message,
+        entry.body ? `body=${entry.body}` : "",
+      ].filter(Boolean).join(" | ");
+      marketplaceManualRecoveryLogs.append(line);
+    });
+  }
+  if (marketplaceManualRecoveryOpen) {
+    marketplaceManualRecoveryOpen.hidden = !state.canOpenProviderPage;
+    marketplaceManualRecoveryOpen.textContent = state.openLabel || "Open Provider Page";
+    marketplaceManualRecoveryOpen.disabled = !state.canOpenProviderPage;
+  }
+  if (marketplaceManualRecoveryImport) {
+    marketplaceManualRecoveryImport.hidden = !state.canImportFile;
+    marketplaceManualRecoveryImport.textContent = state.importLabel || "Import Downloaded File";
+    marketplaceManualRecoveryImport.disabled = !state.canImportFile;
+  }
+  if (marketplaceManualRecoveryResume) {
+    marketplaceManualRecoveryResume.hidden = !state.canResumeManualInstall;
+    marketplaceManualRecoveryResume.textContent = state.resumeLabel || "Resume Installation";
+    marketplaceManualRecoveryResume.disabled = !state.canResumeManualInstall;
+  }
+}
+
 function rememberFailedMarketplaceDownload(template, normalizedError) {
   marketplaceLocalDownloadEntries = [{
     id: `failed-${Date.now()}`,
@@ -6626,37 +6774,63 @@ function rememberFailedMarketplaceDownload(template, normalizedError) {
 }
 
 function rememberWaitingMarketplaceDownload(template, manualDownload = {}, options = {}) {
-  const providerName = manualDownload.providerName || "Provider";
+  const state = buildMarketplaceManualRecoveryState(template, manualDownload, options);
+  setMarketplaceManualRecoveryState(state);
   marketplaceLocalDownloadEntries = [{
     id: manualDownload.sessionId || `waiting-${Date.now()}`,
-    name: template?.displayName || template?.name || template?.id || "Marketplace install",
+    name: state.templateName,
     status: "waiting",
     progress: 100,
     speedBytesPerSecond: 0,
     canCancel: false,
     canRetry: false,
     sessionId: manualDownload.sessionId || "",
-    providerName,
-    body: "This provider does not allow AnxHub to download one required file automatically.",
-    metadataText: [
-      manualDownload.fileName ? `Missing file: ${manualDownload.fileName}` : "",
-      `Provider: ${providerName}`,
-      manualDownload.projectId ? `projectId: ${manualDownload.projectId}` : "",
-      manualDownload.fileId ? `fileId: ${manualDownload.fileId}` : "",
-    ].filter(Boolean).join(" · "),
+    providerName: state.providerText,
+    body: state.body,
+    metadataText: state.detailText,
     actionText: "Download the required file from the official provider page, then import it to continue the installation.",
-    canOpenProviderPage: Boolean(manualDownload.downloadPageUrl || manualDownload.projectUrl || manualDownload.sessionId),
-    canImportFile: Boolean(manualDownload.sessionId),
-    canResumeManualInstall: Boolean(manualDownload.canResume),
-    logs: [
-      {
-        at: new Date().toISOString(),
-        level: "warning",
-        step: options.code || "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
-        message: "Waiting for manual download.",
-        body: JSON.stringify(manualDownload, null, 2),
-      },
-    ],
+    canOpenProviderPage: state.canOpenProviderPage,
+    canImportFile: state.canImportFile,
+    canResumeManualInstall: state.canResumeManualInstall,
+    logs: state.logs,
+  }];
+}
+
+function rememberImportedMarketplaceDownload(template, manualDownload = {}, options = {}) {
+  const state = buildMarketplaceManualRecoveryState(template, manualDownload, options);
+  state.title = "File Imported";
+  state.subtitle = "The required file is in place. Resume the installation to continue.";
+  state.body = "File imported. Resume the installation to continue.";
+  state.reason = manualDownload.suggestion || "The required file has been copied into the install directory.";
+  state.badgeText = "Imported";
+  state.canResumeManualInstall = true;
+  state.logs = [
+    {
+      at: new Date().toISOString(),
+      level: "info",
+      step: "MANUAL_FILE_IMPORTED",
+      message: "Manual file imported.",
+      body: JSON.stringify(manualDownload, null, 2),
+    },
+  ];
+  setMarketplaceManualRecoveryState(state);
+  marketplaceLocalDownloadEntries = [{
+    id: manualDownload.sessionId || `imported-${Date.now()}`,
+    name: state.templateName,
+    status: "waiting",
+    progress: 100,
+    speedBytesPerSecond: 0,
+    canCancel: false,
+    canRetry: false,
+    sessionId: manualDownload.sessionId || "",
+    providerName: state.providerText,
+    body: state.body,
+    metadataText: state.detailText,
+    actionText: "Resume the installation to continue.",
+    canOpenProviderPage: state.canOpenProviderPage,
+    canImportFile: false,
+    canResumeManualInstall: true,
+    logs: state.logs,
   }];
 }
 
@@ -6829,7 +7003,7 @@ async function importMarketplaceManualDownloadFile(sessionId) {
     if (result?.canceled) {
       return;
     }
-    rememberWaitingMarketplaceDownload(findMarketplaceTemplate(), result.manualDownload || {}, { code: "PROVIDER_MANUAL_FILE_IMPORTED" });
+    rememberImportedMarketplaceDownload(findMarketplaceTemplate(), result.manualDownload || {}, { code: "MANUAL_FILE_IMPORTED" });
     renderMarketplaceDownloads([]);
     setMarketplaceInstallState("Paused", "waiting");
     setMarketplaceMessage("File imported. Resume the installation from Download Manager.", "warning");
@@ -6853,6 +7027,7 @@ async function resumeMarketplaceManualInstall(sessionId) {
     renderMarketplaceDownloads(result?.downloads || []);
     selectedInstanceId = result?.instance?.id || selectedInstanceId;
     forgetStaleInstanceId(selectedInstanceId);
+    setMarketplaceManualRecoveryState(null);
     setMarketplaceInstallState("Complete", "complete");
     setMarketplaceMessage("Install complete. Opening the new instance.");
     showToast("Template installed.");
@@ -7319,6 +7494,7 @@ async function installMarketplaceTemplate(event) {
 
   marketplaceInstallInFlight = true;
   marketplaceLocalDownloadEntries = [];
+  setMarketplaceManualRecoveryState(null);
   if (marketplaceInstallButton) {
     marketplaceInstallButton.disabled = true;
   }
@@ -7362,6 +7538,7 @@ async function installMarketplaceTemplate(event) {
       showToast("A required modpack file needs manual download.");
       return;
     }
+    setMarketplaceManualRecoveryState(null);
     renderMarketplaceProgress(result?.progress || []);
     renderMarketplaceDownloads(result?.downloads || []);
     if (providerInstall) {
@@ -7377,6 +7554,7 @@ async function installMarketplaceTemplate(event) {
   } catch (error) {
     const normalizedError = normalizeMarketplaceError(error, "Template install failed.");
     setMarketplaceInstallState("Failed", "failed");
+    setMarketplaceManualRecoveryState(null);
     rememberFailedMarketplaceDownload(template, normalizedError);
     renderMarketplaceProgress([
       {

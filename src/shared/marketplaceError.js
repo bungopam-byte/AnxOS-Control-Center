@@ -42,15 +42,31 @@
     const projectId = details.projectId || details.projectID || null;
     const fileId = details.fileId || details.fileID || null;
     const suggestion = details.suggestion || "Download/import the missing file manually, or choose another pack/server version.";
+    const expectedFileName = details.expectedFileName || payloadError.expectedFileName || null;
+    const actualFileName = details.actualFileName || payloadError.actualFileName || null;
     const manualRequired = [
       "PROVIDER_REQUIRED_FILE_RESTRICTED",
       "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
       "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
       "MODRINTH_REQUIRED_FILE_RESTRICTED",
+      "CURSEFORGE_DOWNLOAD_URL_MISSING",
+      "CURSEFORGE_INVALID_DOWNLOAD_URL",
+      "CURSEFORGE_UNSAFE_URL",
+      "CURSEFORGE_DOWNLOAD_FAILED",
+      "CURSEFORGE_REQUEST_FAILED",
+      "MODRINTH_DOWNLOAD_URL_MISSING",
+      "MODRINTH_INVALID_DOWNLOAD_URL",
+      "MODRINTH_UNSAFE_URL",
+      "MODRINTH_DOWNLOAD_FAILED",
+      "MODRINTH_REQUEST_FAILED",
+      "PROVIDER_DOWNLOAD_URL_MISSING",
+      "PROVIDER_DOWNLOAD_FAILED",
+      "PROVIDER_REQUEST_FAILED",
     ].includes(code) ||
       details.recoveryState === "waiting-manual-download" ||
       /CurseForge blocked one required server file/i.test(cleanMessage) ||
       /required modpack file needs manual download/i.test(cleanMessage) ||
+      /download url/i.test(cleanMessage) ||
       /required server file is restricted/i.test(cleanMessage);
 
     if (manualRequired) {
@@ -59,6 +75,51 @@
         originalCode: code || details.originalCode || null,
         title: "A required modpack file needs manual download.",
         body: friendlyMessage || "This provider does not allow AnxHub to download one required file automatically.",
+        action: suggestion,
+        provider,
+        providerName,
+        file,
+        projectId,
+        fileId,
+        sessionId: details.sessionId || null,
+        manualDownload: details.manualDownload || null,
+        rawMessage,
+        cleanMessage,
+        debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+      };
+    }
+
+    if ([
+      "PROVIDER_IMPORT_FILE_NAME_MISMATCH",
+      "PROVIDER_IMPORT_FILE_SIZE_MISMATCH",
+      "PROVIDER_IMPORT_FILE_HASH_MISMATCH",
+      "PROVIDER_MANUAL_FILE_NOT_IMPORTED",
+      "PROVIDER_MANUAL_SESSION_NOT_FOUND",
+      "PROVIDER_PAGE_UNAVAILABLE",
+    ].includes(code)) {
+      const titleMap = {
+        PROVIDER_IMPORT_FILE_NAME_MISMATCH: "Selected file name does not match.",
+        PROVIDER_IMPORT_FILE_SIZE_MISMATCH: "Selected file size does not match.",
+        PROVIDER_IMPORT_FILE_HASH_MISMATCH: "Selected file hash does not match.",
+        PROVIDER_MANUAL_FILE_NOT_IMPORTED: "Import the required file first.",
+        PROVIDER_MANUAL_SESSION_NOT_FOUND: "Manual download session not found.",
+        PROVIDER_PAGE_UNAVAILABLE: "Official provider page is unavailable.",
+      };
+      const bodyMap = {
+        PROVIDER_IMPORT_FILE_NAME_MISMATCH: expectedFileName && actualFileName
+          ? `Expected ${expectedFileName}, but you selected ${actualFileName}.`
+          : "Select the matching file and try again.",
+        PROVIDER_IMPORT_FILE_SIZE_MISMATCH: "The selected file size does not match the provider metadata.",
+        PROVIDER_IMPORT_FILE_HASH_MISMATCH: "The selected file hash does not match the provider metadata.",
+        PROVIDER_MANUAL_FILE_NOT_IMPORTED: "Import the missing file before resuming the installation.",
+        PROVIDER_MANUAL_SESSION_NOT_FOUND: "The manual download session is no longer available.",
+        PROVIDER_PAGE_UNAVAILABLE: "Open the provider page from the project listing and retry.",
+      };
+      return {
+        code,
+        originalCode: details.originalCode || null,
+        title: titleMap[code] || friendlyMessage || cleanMessage || "Marketplace install failed.",
+        body: bodyMap[code] || friendlyMessage || cleanMessage || "Marketplace install failed.",
         action: suggestion,
         provider,
         providerName,

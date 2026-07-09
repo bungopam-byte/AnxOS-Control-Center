@@ -366,25 +366,64 @@ function ensureModrinthServerCapable(project = {}) {
 }
 
 function isRecoverableProviderFileError(error) {
+  if (isManualDownloadRequiredError(error)) {
+    return true;
+  }
+
   if ([
     "CURSEFORGE_DOWNLOAD_URL_MISSING",
     "CURSEFORGE_INVALID_DOWNLOAD_URL",
     "CURSEFORGE_UNSAFE_URL",
     "CURSEFORGE_DOWNLOAD_FAILED",
+    "MODRINTH_DOWNLOAD_URL_MISSING",
     "MODRINTH_INVALID_DOWNLOAD_URL",
     "MODRINTH_UNSAFE_URL",
     "MODRINTH_DOWNLOAD_FAILED",
+    "PROVIDER_DOWNLOAD_URL_MISSING",
+    "PROVIDER_DOWNLOAD_FAILED",
   ].includes(error?.code)) {
     return true;
   }
 
   const status = Number(error?.details?.status || error?.status || error?.statusCode);
-  return error?.code === "CURSEFORGE_REQUEST_FAILED" && [403, 404].includes(status);
+  return [
+    "CURSEFORGE_REQUEST_FAILED",
+    "MODRINTH_REQUEST_FAILED",
+    "PROVIDER_REQUEST_FAILED",
+  ].includes(error?.code) && [403, 404].includes(status);
 }
 
 function isCurseForgeAccessDeniedFileError(error) {
   const status = Number(error?.details?.status || error?.status || error?.statusCode);
-  return error?.code === "CURSEFORGE_REQUEST_FAILED" && [403, 404].includes(status);
+  return ["CURSEFORGE_REQUEST_FAILED", "CURSEFORGE_DOWNLOAD_FAILED"].includes(error?.code) && [403, 404].includes(status);
+}
+
+function isProviderManualDownloadRequiredError(error) {
+  if (!error) {
+    return false;
+  }
+
+  if (isManualDownloadRequiredError(error)) {
+    return true;
+  }
+
+  const status = Number(error?.details?.status || error?.status || error?.statusCode);
+  const code = error?.code || error?.details?.code || "";
+  const message = String(error?.message || error?.details?.reason || error?.details?.message || "").toLowerCase();
+  return [
+    "CURSEFORGE_DOWNLOAD_URL_MISSING",
+    "CURSEFORGE_INVALID_DOWNLOAD_URL",
+    "CURSEFORGE_UNSAFE_URL",
+    "CURSEFORGE_DOWNLOAD_FAILED",
+    "CURSEFORGE_REQUEST_FAILED",
+    "MODRINTH_DOWNLOAD_URL_MISSING",
+    "MODRINTH_INVALID_DOWNLOAD_URL",
+    "MODRINTH_UNSAFE_URL",
+    "MODRINTH_DOWNLOAD_FAILED",
+    "MODRINTH_REQUEST_FAILED",
+    "PROVIDER_DOWNLOAD_URL_MISSING",
+    "PROVIDER_DOWNLOAD_FAILED",
+  ].includes(code) && [403, 404].includes(status) || /manual download|required file|restricted|forbidden|download url/i.test(message);
 }
 
 function getCurseForgeFileContext(file = {}, fallback = {}) {
@@ -492,12 +531,26 @@ function createManualDownloadRequiredError(error, context = {}) {
 }
 
 function isManualDownloadRequiredError(error) {
+  const code = error?.code || error?.details?.code || "";
+  const message = String(error?.message || error?.details?.reason || error?.details?.message || "").toLowerCase();
   return [
     "PROVIDER_REQUIRED_FILE_RESTRICTED",
     "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
     "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
     "MODRINTH_REQUIRED_FILE_RESTRICTED",
-  ].includes(error?.code) || error?.details?.recoveryState === "waiting-manual-download";
+    "CURSEFORGE_DOWNLOAD_URL_MISSING",
+    "CURSEFORGE_INVALID_DOWNLOAD_URL",
+    "CURSEFORGE_UNSAFE_URL",
+    "CURSEFORGE_DOWNLOAD_FAILED",
+    "CURSEFORGE_REQUEST_FAILED",
+    "MODRINTH_DOWNLOAD_URL_MISSING",
+    "MODRINTH_INVALID_DOWNLOAD_URL",
+    "MODRINTH_UNSAFE_URL",
+    "MODRINTH_DOWNLOAD_FAILED",
+    "MODRINTH_REQUEST_FAILED",
+    "PROVIDER_DOWNLOAD_URL_MISSING",
+    "PROVIDER_DOWNLOAD_FAILED",
+  ].includes(code) || error?.details?.recoveryState === "waiting-manual-download" || /manual download|required file|restricted|download url/i.test(message);
 }
 
 function getImportedManualFile(manualFiles = {}, requirementId) {
@@ -550,15 +603,52 @@ function getPublicManualInstall(session) {
   };
 }
 
+function normalizeFileNameForMatch(value) {
+  return path.basename(String(value || ""))
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeFileStemForMatch(value) {
+  const fileName = normalizeFileNameForMatch(value);
+  const ext = path.extname(fileName);
+  return fileName.slice(0, fileName.length - ext.length).replace(/[^a-z0-9]+/g, "");
+}
+
+function hasCloseFileNameMatch(actualName, expectedName) {
+  const normalizedActual = normalizeFileNameForMatch(actualName);
+  const normalizedExpected = normalizeFileNameForMatch(expectedName);
+  if (!normalizedActual || !normalizedExpected) {
+    return false;
+  }
+  if (normalizedActual === normalizedExpected) {
+    return true;
+  }
+  const actualExt = path.extname(normalizedActual);
+  const expectedExt = path.extname(normalizedExpected);
+  if (actualExt !== expectedExt) {
+    return false;
+  }
+  const actualStem = normalizeFileStemForMatch(normalizedActual);
+  const expectedStem = normalizeFileStemForMatch(normalizedExpected);
+  return actualStem === expectedStem ||
+    actualStem.includes(expectedStem) ||
+    expectedStem.includes(actualStem);
+}
+
 function verifyImportedFile(filePath, manual = {}) {
   const stat = fs.statSync(filePath);
   const expectedName = manual.fileName || manual.file;
   const actualName = path.basename(filePath);
-  if (expectedName && actualName !== path.basename(expectedName)) {
-    throw new MarketplaceInstallError(`Selected file must be named ${path.basename(expectedName)}.`, "PROVIDER_IMPORT_FILE_NAME_MISMATCH", {
-      expectedFileName: path.basename(expectedName),
-      actualFileName: actualName,
-    });
+  if (expectedName && !hasCloseFileNameMatch(actualName, expectedName)) {
+    throw new MarketplaceInstallError(
+      `Selected file does not match the expected file name (${path.basename(expectedName)}).`,
+      "PROVIDER_IMPORT_FILE_NAME_MISMATCH",
+      {
+        expectedFileName: path.basename(expectedName),
+        actualFileName: actualName,
+      }
+    );
   }
   if (manual.size && Number(manual.size) !== stat.size) {
     throw new MarketplaceInstallError(`Selected file size does not match ${manual.size} bytes.`, "PROVIDER_IMPORT_FILE_SIZE_MISMATCH", {
@@ -1003,7 +1093,23 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
             projectUrl: `https://modrinth.com/project/${encodeURIComponent(project.slug || projectId)}`,
           };
           requirement.requirementId = getManualRequirementId(requirement);
-          if (!fileUrl || !dedupe.add(file.hashes?.sha1 || fileUrl || filePath)) {
+          if (!fileUrl) {
+            if (env.server === "unsupported") {
+              continue;
+            }
+            throw createManualDownloadRequiredError({
+              code: "MODRINTH_DOWNLOAD_URL_MISSING",
+              message: `${requirement.fileName || "Modrinth file"} has no download URL.`,
+              details: {
+                status: 404,
+              },
+            }, {
+              ...requirement,
+              originalCode: "MODRINTH_DOWNLOAD_URL_MISSING",
+              reason: "The provider did not provide a direct download URL for this required file.",
+            });
+          }
+          if (!dedupe.add(file.hashes?.sha1 || fileUrl || filePath)) {
             continue;
           }
           if (getImportedManualFile(manualFiles, requirement.requirementId)) {
@@ -1018,23 +1124,24 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
             mods.push({ file: filePath, sha1: file.hashes?.sha1 || null, provider: "modrinth" });
             downloads.push({ file: filePath, provider: "modrinth" });
           } catch (error) {
-            if (isRecoverableProviderFileError(error)) {
+            if (isProviderManualDownloadRequiredError(error)) {
               throw createManualDownloadRequiredError(error, {
                 ...requirement,
                 originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
                 downloadPageUrl: getOfficialProviderUrl(requirement),
               });
             }
-            if (!isRecoverableProviderFileError(error)) {
-              throw error;
+            if (isRecoverableProviderFileError(error)) {
+              logMarketplaceInstallFailure(error, {
+                provider: "modrinth",
+                instanceId,
+                fileName: path.posix.basename(filePath),
+                url: fileUrl,
+                recovery: "skipped-file",
+              });
+              continue;
             }
-            logMarketplaceInstallFailure(error, {
-              provider: "modrinth",
-              instanceId,
-              fileName: path.posix.basename(filePath),
-              url: fileUrl,
-              recovery: "skipped-file",
-            });
+            throw error;
           }
         }
         return;
@@ -1061,11 +1168,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
       const resolvedVersion = entry.version;
       current += 1;
       const file = resolvedVersion.primaryFile || resolvedVersion.files?.[0];
-      if (!file?.url || !dedupe.add(file.hashes?.sha1 || file.url)) {
-        continue;
-      }
-      const fileName = file.filename || getUrlPathBasename(file.url, "modrinth-file.jar");
-      const target = `mods/${safeArchivePath(fileName)}`;
+      const fileName = file?.filename || getUrlPathBasename(file?.url, "modrinth-file.jar");
       const entryProject = entry.project || {};
       const requirement = {
         provider: "modrinth",
@@ -1075,12 +1178,38 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
         projectName: entryProject.name || project.name || null,
         versionId: resolvedVersion.id,
         fileName,
-        expectedDestinationPath: target,
-        hash: file.hashes?.sha1 || file.hashes?.sha512 || null,
-        size: file.size || null,
+        expectedDestinationPath: `mods/${safeArchivePath(fileName)}`,
+        hash: file?.hashes?.sha1 || file?.hashes?.sha512 || null,
+        size: file?.size || null,
         projectUrl: `https://modrinth.com/project/${encodeURIComponent(entryProject.slug || resolvedVersion.projectId || project.slug || projectId)}`,
       };
       requirement.requirementId = getManualRequirementId(requirement);
+      if (!file?.url) {
+        if (entry.dependencyType === "optional") {
+          logMarketplaceInstallStep("Skipping optional Modrinth dependency without download URL.", {
+            instanceId,
+            provider: "modrinth",
+            projectId: requirement.projectId,
+            versionId: requirement.versionId,
+            fileName: requirement.fileName,
+            recovery: "skipped-missing-download-url",
+          });
+          continue;
+        }
+        throw createManualDownloadRequiredError({
+          code: "MODRINTH_DOWNLOAD_URL_MISSING",
+          message: `${requirement.fileName} has no download URL.`,
+          details: { status: 404 },
+        }, {
+          ...requirement,
+          originalCode: "MODRINTH_DOWNLOAD_URL_MISSING",
+          reason: "The provider did not provide a direct download URL for this required file.",
+        });
+      }
+      if (!dedupe.add(file.hashes?.sha1 || file.url)) {
+        continue;
+      }
+      const target = requirement.expectedDestinationPath;
       if (getImportedManualFile(manualFiles, requirement.requirementId)) {
         mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id, manualImport: true });
         downloads.push({ file: target, provider: "modrinth-manual-import" });
@@ -1093,23 +1222,31 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
         mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id });
         downloads.push({ file: target, provider: "modrinth" });
       } catch (error) {
-        if (isRecoverableProviderFileError(error) && (current === 1 || entry.dependencyType !== "optional")) {
+        if (isProviderManualDownloadRequiredError(error) && (current === 1 || entry.dependencyType !== "optional")) {
           throw createManualDownloadRequiredError(error, {
             ...requirement,
             originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
             downloadPageUrl: getOfficialProviderUrl(requirement),
           });
         }
-        if (current === 1 || !isRecoverableProviderFileError(error)) {
-          throw error;
+        if (isRecoverableProviderFileError(error)) {
+          if (current === 1 || entry.dependencyType !== "optional") {
+            throw createManualDownloadRequiredError(error, {
+              ...requirement,
+              originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
+              downloadPageUrl: getOfficialProviderUrl(requirement),
+            });
+          }
+          logMarketplaceInstallFailure(error, {
+            provider: "modrinth",
+            instanceId,
+            fileName: requirement.fileName,
+            url: file.url,
+            recovery: "skipped-file",
+          });
+          continue;
         }
-        logMarketplaceInstallFailure(error, {
-          provider: "modrinth",
-          instanceId,
-          fileName,
-          url: file.url,
-          recovery: "skipped-file",
-        });
+        throw error;
       }
     }
   }
@@ -1258,27 +1395,28 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           projectId: manifestProjectId,
           fileId: manifestFileId,
         });
-        if (isCurseForgeAccessDeniedFileError(error) && fileContext.dependencyType === "required") {
+        if (isProviderManualDownloadRequiredError(error) && fileContext.dependencyType === "required") {
           throw createRestrictedCurseForgeFileError(error, {
             ...fileContext,
             expectedDestinationPath: requirement.expectedDestinationPath || (fileContext.fileName ? `mods/${safeArchivePath(fileContext.fileName)}` : null),
           });
         }
-        if (!isRecoverableProviderFileError(error)) {
-          throw error;
-        }
-        if (isCurseForgeAccessDeniedFileError(error)) {
-          logSkippedCurseForgeRestrictedFile(error, {
-            instanceId,
-            ...fileContext,
-          });
+        if (isRecoverableProviderFileError(error)) {
+          if (isCurseForgeAccessDeniedFileError(error)) {
+            logSkippedCurseForgeRestrictedFile(error, {
+              instanceId,
+              ...fileContext,
+            });
+          } else {
+            logMarketplaceInstallFailure(error, {
+              instanceId,
+              ...fileContext,
+              recovery: "skipped-file",
+            });
+          }
           continue;
         }
-        logMarketplaceInstallFailure(error, {
-          instanceId,
-          ...fileContext,
-          recovery: "skipped-file",
-        });
+        throw error;
       }
     }
   } else {
@@ -1328,31 +1466,29 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           fileId: item.id,
           dependencyType: entry.dependencyType || "required",
         });
-        if (current === 1) {
-          throw error;
-        }
-        if (isCurseForgeAccessDeniedFileError(error) && fileContext.dependencyType === "required") {
+        if (isProviderManualDownloadRequiredError(error) && fileContext.dependencyType === "required") {
           throw createRestrictedCurseForgeFileError(error, {
             ...fileContext,
             expectedDestinationPath: fileContext.fileName ? `mods/${safeArchivePath(fileContext.fileName)}` : null,
           });
         }
-        if (!isRecoverableProviderFileError(error)) {
-          throw error;
-        }
-        if (isCurseForgeAccessDeniedFileError(error)) {
-          logSkippedCurseForgeRestrictedFile(error, {
-            instanceId,
-            ...fileContext,
-          });
+        if (isRecoverableProviderFileError(error)) {
+          if (isCurseForgeAccessDeniedFileError(error)) {
+            logSkippedCurseForgeRestrictedFile(error, {
+              instanceId,
+              ...fileContext,
+            });
+          } else {
+            logMarketplaceInstallFailure(error, {
+              provider: "curseforge",
+              instanceId,
+              ...fileContext,
+              recovery: "skipped-file",
+            });
+          }
           continue;
         }
-        logMarketplaceInstallFailure(error, {
-          provider: "curseforge",
-          instanceId,
-          ...fileContext,
-          recovery: "skipped-file",
-        });
+        throw error;
       }
     }
   }
@@ -1417,6 +1553,13 @@ async function continueProviderPackInstall(context = {}) {
     );
   }
 
+  logMarketplaceInstallStep("Marketplace install completed.", {
+    step: "INSTALL_COMPLETED",
+    provider,
+    instanceId,
+    projectId: options.providerProjectId || options.projectId || null,
+    versionId: options.providerVersionId || options.versionId || null,
+  });
   emitProgress({ instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
   return {
     status: "completed",
@@ -1503,6 +1646,14 @@ async function installPack(payload = {}) {
         manual,
         rawError: serializeError(error),
       });
+      logMarketplaceInstallStep("Manual download required.", {
+        step: "MANUAL_DOWNLOAD_REQUIRED",
+        provider,
+        instanceId,
+        projectId: options.providerProjectId || options.projectId || null,
+        versionId: options.providerVersionId || options.versionId || null,
+        fileName: manual.fileName || null,
+      });
       emitProgress({ instanceId, stage: "waiting", message: "Waiting for manual download.", current: 0, total: 0, percent: 0 });
       return {
         status: "waiting-manual-download",
@@ -1567,6 +1718,17 @@ async function importManualInstallFile(sessionId, filePath) {
     importedAt: new Date().toISOString(),
   };
   session.status = "file-imported";
+  logMarketplaceInstallStep("Manual file imported.", {
+    step: "MANUAL_FILE_IMPORTED",
+    provider: session.provider || manual.provider || null,
+    instanceId: session.instanceId,
+    sessionId: session.id,
+    fileName: verified.fileName,
+    target,
+    projectId: manual.projectId || null,
+    versionId: manual.versionId || null,
+    fileId: manual.fileId || null,
+  });
   emitProgress({ instanceId: session.instanceId, stage: "imported", message: "Manual file imported.", current: 1, total: 1, percent: 100 });
   return {
     imported: true,
@@ -1585,6 +1747,15 @@ async function resumeManualInstall(sessionId) {
     });
   }
   session.status = "resuming";
+  logMarketplaceInstallStep("Resuming Marketplace install.", {
+    step: "INSTALL_RESUMED",
+    provider: session.provider || manual.provider || null,
+    instanceId: session.instanceId,
+    sessionId: session.id,
+    projectId: manual.projectId || null,
+    versionId: manual.versionId || null,
+    fileName: manual.fileName || null,
+  });
   emitProgress({ instanceId: session.instanceId, stage: "resuming", message: "Resuming Marketplace install...", current: 0, total: 0, percent: 0 });
   try {
     const result = await continueProviderPackInstall({

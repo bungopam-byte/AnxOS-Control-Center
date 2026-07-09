@@ -1031,6 +1031,34 @@
                   <span class="status-pill status-pill--planned" data-marketplace-install-state>Ready</span>
                 </div>
 
+                <section class="marketplace-manual-recovery" data-marketplace-manual-recovery hidden aria-label="Manual download required">
+                  <div class="panel-heading">
+                    <div>
+                      <h3 data-marketplace-manual-title>Manual Download Required</h3>
+                      <span data-marketplace-manual-subtitle>Waiting for a required file.</span>
+                    </div>
+                    <span class="status-pill status-pill--planned" data-marketplace-manual-badge>Waiting</span>
+                  </div>
+                  <p class="ssh-password-note" data-marketplace-manual-body>A required modpack file needs manual download.</p>
+                  <p class="settings-note" data-marketplace-manual-reason></p>
+                  <div class="marketplace-manual-meta">
+                    <div><span>File</span><strong data-marketplace-manual-file>Unknown file</strong></div>
+                    <div><span>Mod</span><strong data-marketplace-manual-mod>Unknown mod</strong></div>
+                    <div><span>Version</span><strong data-marketplace-manual-version>Unknown version</strong></div>
+                    <div><span>Provider</span><strong data-marketplace-manual-provider>Provider</strong></div>
+                    <div class="marketplace-manual-meta__wide"><span>Details</span><strong data-marketplace-manual-detail></strong></div>
+                  </div>
+                  <div class="ssh-connection-actions marketplace-manual-actions">
+                    <button class="inline-action" type="button" data-marketplace-manual-open>Open Provider Page</button>
+                    <button class="inline-action" type="button" data-marketplace-manual-import>Import Downloaded File</button>
+                    <button class="inline-action" type="button" data-marketplace-manual-resume>Resume Installation</button>
+                  </div>
+                  <details class="marketplace-progress-debug">
+                    <summary>Logs</summary>
+                    <div data-marketplace-manual-logs></div>
+                  </details>
+                </section>
+
                 <form class="marketplace-wizard" data-marketplace-wizard hidden>
                   <div class="marketplace-wizard-steps" data-marketplace-wizard-steps></div>
                   <label class="ssh-field"><span>Name</span><input type="text" data-marketplace-field="name" placeholder="My Server"></label>

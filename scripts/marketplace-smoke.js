@@ -1021,6 +1021,12 @@ async function assertProviderInstallSupport() {
   assert(ipcSource.includes("marketplace:openManualDownloadPage"), "Marketplace IPC should register official provider page recovery.");
   assert(ipcSource.includes("marketplace:importManualDownloadFile"), "Marketplace IPC should register manual file import recovery.");
   assert(ipcSource.includes("marketplace:resumeManualInstall"), "Marketplace IPC should register manual install resume recovery.");
+  assert(indexSource.includes("data-marketplace-manual-recovery"), "Marketplace should include a dedicated manual recovery screen.");
+  assert(indexSource.includes("data-marketplace-manual-open"), "Marketplace manual recovery screen should expose an official provider page action.");
+  assert(indexSource.includes("data-marketplace-manual-import"), "Marketplace manual recovery screen should expose an import action.");
+  assert(indexSource.includes("data-marketplace-manual-resume"), "Marketplace manual recovery screen should expose a resume action.");
+  assert(marketplaceErrorSource.includes("PROVIDER_IMPORT_FILE_NAME_MISMATCH"), "Shared Marketplace error normalization should cover import filename mismatches.");
+  assert(marketplaceErrorSource.includes("PROVIDER_MANUAL_FILE_NOT_IMPORTED"), "Shared Marketplace error normalization should cover resume preconditions.");
   assert(indexSource.includes("data-marketplace-provider-browser"), "Marketplace should include the dynamic provider browser.");
   assert(indexSource.includes("data-marketplace-provider=\"curseforge\""), "Marketplace should expose CurseForge provider browsing.");
   assert(indexSource.includes("data-marketplace-provider=\"modrinth\""), "Marketplace should expose Modrinth provider browsing.");
@@ -1360,6 +1366,25 @@ async function assertProviderInstallSupport() {
   assert.strictEqual(modrinthManualError.details.fileName, "required-modrinth-server-mod.jar", "Modrinth manual errors should preserve missing filename metadata.");
   assert.strictEqual(modrinthManualError.details.recoveryState, "waiting-manual-download", "Modrinth manual errors should enter waiting recovery.");
   assert.strictEqual(marketplaceInstallService._test.isManualDownloadRequiredError(modrinthManualError), true, "Shared manual-download classifier should accept Modrinth manual errors.");
+  assert.strictEqual(
+    normalizeMarketplaceError({
+      code: "CURSEFORGE_DOWNLOAD_URL_MISSING",
+      message: "CurseForge file has no download URL.",
+      details: {
+        file: "missing-download-url.jar",
+        projectId: 123,
+        fileId: 456,
+      },
+    }).title,
+    "A required modpack file needs manual download.",
+    "Missing provider download URLs should normalize into the manual-download recovery title."
+  );
+  assert.strictEqual(
+    fs.readFileSync(marketplaceIpcPath, "utf8").includes("PROVIDER_IMPORT_FILE_NAME_MISMATCH") &&
+      fs.readFileSync(marketplaceIpcPath, "utf8").includes("PROVIDER_MANUAL_FILE_NOT_IMPORTED"),
+    true,
+    "Marketplace IPC should preserve manual recovery and import mismatch errors for renderer normalization."
+  );
   assert(
     fs.readFileSync(marketplaceIpcPath, "utf8").includes("A required modpack file needs manual download.") &&
       fs.readFileSync(marketplaceIpcPath, "utf8").includes("friendlyMessage"),
@@ -1390,8 +1415,10 @@ async function assertProviderInstallSupport() {
   );
   assert(
     appSource.includes("normalizeMarketplaceError(error") &&
-      appSource.includes("Install failed. See Download Manager.") &&
+      appSource.includes("Manual Download Required") &&
       appSource.includes("rememberWaitingMarketplaceDownload") &&
+      appSource.includes("rememberImportedMarketplaceDownload") &&
+      appSource.includes("setMarketplaceManualRecoveryState(null)") &&
       appSource.includes("openMarketplaceManualDownloadPage") &&
       appSource.includes("importMarketplaceManualDownloadFile") &&
       appSource.includes("resumeMarketplaceManualInstall") &&
@@ -1401,9 +1428,14 @@ async function assertProviderInstallSupport() {
     "Renderer should show the specific manual-download error and keep a waiting Download Manager entry with recovery actions."
   );
   assert(
-    fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes('.download-item[data-status="waiting"]') &&
+    fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes(".marketplace-manual-recovery") &&
+      fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes('.download-item[data-status="waiting"]') &&
       fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes('.marketplace-progress-step[data-status="waiting"]'),
     "Renderer should style manual-download recovery as a waiting/paused state."
+  );
+  assert(
+    fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "marketplaceIpc.js"), "utf8").includes('extensions: ["jar", "zip"]'),
+    "Import picker should be restricted to jar/zip files."
   );
   assert(
     indexSource.includes("src/shared/marketplaceError.js"),

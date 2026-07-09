@@ -212,11 +212,78 @@ async function getNetworkUsage() {
   };
 }
 
+function normalizeThermalLabel(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getThermalZoneScore(label, zoneName) {
+  const text = `${normalizeThermalLabel(label)} ${normalizeThermalLabel(zoneName)}`;
+
+  if (/\b(package|pkg|cpu|core|k10temp|x86_pkg_temp|tctl|tdie)\b/.test(text)) {
+    return 100;
+  }
+
+  if (/\bthermal|temp\b/.test(text)) {
+    return 25;
+  }
+
+  return 0;
+}
+
+async function readThermalZone(zoneName) {
+  const zonePath = path.join("/sys/class/thermal", zoneName);
+
+  try {
+    const [rawTemp, rawLabel] = await Promise.all([
+      fs.readFile(path.join(zonePath, "temp"), "utf8"),
+      fs.readFile(path.join(zonePath, "type"), "utf8").catch(() => ""),
+    ]);
+    const value = Number(String(rawTemp).trim());
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    const celsius = value > 1000 ? value / 1000 : value;
+
+    return {
+      zone: zoneName,
+      label: String(rawLabel || "").trim() || zoneName,
+      celsius: round(celsius),
+      score: getThermalZoneScore(rawLabel, zoneName),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function getCpuTemperature() {
+  if (process.platform !== "linux") {
+    return null;
+  }
+
+  try {
+    const zones = (await fs.readdir("/sys/class/thermal"))
+      .filter((name) => /^thermal_zone\d+$/.test(name));
+    const readings = (await Promise.all(zones.map((zone) => readThermalZone(zone))))
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score || b.celsius - a.celsius);
+
+    return readings[0]?.celsius ?? null;
+  } catch (error) {
+    console.warn("[AnxOS Agent][Stats] CPU temperature unavailable.", {
+      message: error?.message || String(error),
+    });
+    return null;
+  }
+}
+
 async function getSystemSummary() {
-  const [osVersion, disk, network] = await Promise.all([
+  const [osVersion, disk, network, cpuTemperature] = await Promise.all([
     readOsVersion(),
     getDiskUsage(),
     getNetworkUsage(),
+    getCpuTemperature(),
   ]);
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
@@ -233,8 +300,9 @@ async function getSystemSummary() {
       cores: cpus.length,
       usagePercent: getCpuUsagePercent(),
       loadAverage: os.loadavg(),
-      temperatureCelsius: null,
+      temperatureCelsius: cpuTemperature,
     },
+    cpuTempC: cpuTemperature,
     memory: {
       total: totalMemory,
       used: usedMemory,

@@ -141,9 +141,15 @@ function normalizeNetworkMetric(snapshot = {}) {
   };
 }
 
+function normalizeCpuTemperature(snapshot = {}) {
+  return safeNumber(findValue(snapshot, ["cpuTempC", "temperatureCelsius", "cpuTemperatureCelsius"]))
+    ?? safeNumber(findValue(snapshot.cpu, ["temperatureCelsius", "cpuTempC", "tempC", "temperature"]));
+}
+
 function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
   const disk = normalizeDiskMetric(snapshot);
   const network = normalizeNetworkMetric(snapshot);
+  const cpuTempC = normalizeCpuTemperature(snapshot);
   const agentConfig = configOverride || agentClient.getAgentConfig();
   const agentUrl = agentConfig.agentUrl || agentConfig.url || null;
 
@@ -165,6 +171,11 @@ function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
 
   return {
     ...snapshot,
+    cpu: {
+      ...(snapshot?.cpu && typeof snapshot.cpu === "object" ? snapshot.cpu : {}),
+      temperatureCelsius: cpuTempC,
+    },
+    cpuTempC,
     disk,
     network,
     source: snapshot?.source || "agent",
@@ -405,6 +416,7 @@ async function getLocalSystemSnapshot() {
       usagePercent: getCpuUsage(),
       temperatureCelsius: cpuTemperature,
     },
+    cpuTempC: cpuTemperature,
     memory: {
       total: totalMemory,
       used: usedMemory,
@@ -467,6 +479,7 @@ module.exports = {
     normalizeAgentSystemSnapshot,
     normalizeDiskMetric,
     normalizeNetworkMetric,
+    normalizeCpuTemperature,
   },
   getSystemSnapshot,
 };

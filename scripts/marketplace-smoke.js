@@ -58,6 +58,7 @@ function assertRemoteSystemMetricsNormalize() {
       totalDownload: 4096,
       totalUpload: 2048,
     },
+    cpuTempC: 58.4,
   }, { url: "http://agent.local" });
 
   assert.strictEqual(snapshot.source, "agent", "Dashboard system snapshot should preserve agent source.");
@@ -71,6 +72,8 @@ function assertRemoteSystemMetricsNormalize() {
     { downloadPerSecond: 1024, uploadPerSecond: 512, totalDownload: 4096, totalUpload: 2048 },
     "Remote network metrics should normalize to renderer network card shape."
   );
+  assert.strictEqual(snapshot.cpuTempC, 58.4, "Remote CPU temperature should normalize from top-level cpuTempC.");
+  assert.strictEqual(snapshot.cpu.temperatureCelsius, 58.4, "Remote CPU temperature should remain available on the nested CPU shape.");
 
   const variantSnapshot = systemService._test.normalizeAgentSystemSnapshot({
     storage: {
@@ -84,6 +87,9 @@ function assertRemoteSystemMetricsNormalize() {
       totalDownloaded: 3000,
       totalUploaded: 1200,
     },
+    cpu: {
+      tempC: 61.2,
+    },
   }, { url: "http://agent.local" });
 
   assert.strictEqual(variantSnapshot.disk.used, 1500, "Disk used bytes should be derived from total-free when needed.");
@@ -92,6 +98,27 @@ function assertRemoteSystemMetricsNormalize() {
   assert.strictEqual(variantSnapshot.network.uploadPerSecond, 12, "Network TX rate aliases should normalize.");
   assert.strictEqual(variantSnapshot.network.totalDownload, 3000, "Network total RX aliases should normalize.");
   assert.strictEqual(variantSnapshot.network.totalUpload, 1200, "Network total TX aliases should normalize.");
+  assert.strictEqual(variantSnapshot.cpuTempC, 61.2, "Nested CPU temperature aliases should normalize.");
+}
+
+function assertRuntimeTemperatureRendering() {
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const styleSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+
+  assert(
+    appSource.includes("renderCpuTemperature(snapshot)") &&
+      appSource.includes("Not reported") &&
+      appSource.includes("temperatureState") &&
+      !appSource.includes('Number.isFinite(snapshot.cpu?.temperatureCelsius) ? `${snapshot.cpu.temperatureCelsius.toFixed(1)}°C` : "Unavailable"'),
+    "Renderer should show a deliberate CPU temperature status instead of raw Unavailable."
+  );
+  assert(
+    styleSource.includes('[data-field="temperature"][data-temperature-state="cool"]') &&
+      styleSource.includes('[data-field="temperature"][data-temperature-state="warm"]') &&
+      styleSource.includes('[data-field="temperature"][data-temperature-state="hot"]') &&
+      styleSource.includes('[data-field="temperature"][data-temperature-state="critical"]'),
+    "Runtime temperature should have dashboard styling for cool/warm/hot/critical states."
+  );
 }
 
 async function assertDisabledTemplatesAreBlocked() {
@@ -1633,6 +1660,7 @@ async function assertProviderInstallSupport() {
 async function main() {
   assertCatalogLoads();
   assertRemoteSystemMetricsNormalize();
+  assertRuntimeTemperatureRendering();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertDockerTemplates();

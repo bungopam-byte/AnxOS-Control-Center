@@ -5846,6 +5846,43 @@ dd {
   border-color: rgba(168, 161, 181, 0.18);
 }
 
+[data-field="temperature"] {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(168, 161, 181, 0.16);
+  background: rgba(168, 161, 181, 0.1);
+  color: var(--neutral);
+  font-weight: 700;
+}
+
+[data-field="temperature"][data-temperature-state="cool"] {
+  border-color: rgba(69, 224, 143, 0.22);
+  background: rgba(69, 224, 143, 0.12);
+  color: var(--success);
+}
+
+[data-field="temperature"][data-temperature-state="warm"] {
+  border-color: rgba(245, 196, 81, 0.22);
+  background: rgba(245, 196, 81, 0.12);
+  color: var(--caution);
+}
+
+[data-field="temperature"][data-temperature-state="hot"] {
+  border-color: rgba(255, 151, 94, 0.24);
+  background: rgba(255, 151, 94, 0.13);
+  color: #ffb06f;
+}
+
+[data-field="temperature"][data-temperature-state="critical"] {
+  border-color: rgba(255, 107, 138, 0.26);
+  background: rgba(255, 107, 138, 0.14);
+  color: var(--danger);
+}
+
 .playit-shell {
   display: grid;
   gap: 14px;

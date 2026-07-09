@@ -788,6 +788,12 @@ function setField(name, value) {
   });
 }
 
+function updateFieldAttributes(name, updater) {
+  (fieldMap.get(name) || []).forEach((field) => {
+    updater(field);
+  });
+}
+
 function configurePrimaryNavigation() {
   const navMenu = document.querySelector(".nav-menu");
 
@@ -2384,6 +2390,56 @@ function formatDateTime(value) {
   });
 }
 
+function getSnapshotCpuTempC(snapshot) {
+  const values = [
+    snapshot?.cpuTempC,
+    snapshot?.cpu?.temperatureCelsius,
+    snapshot?.cpu?.tempC,
+    snapshot?.temperatureCelsius,
+  ];
+
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) {
+      return number;
+    }
+  }
+
+  return null;
+}
+
+function getCpuTemperatureStatus(value) {
+  if (!Number.isFinite(value)) {
+    return { key: "not-reported", label: "Not reported" };
+  }
+
+  if (value >= 85) {
+    return { key: "critical", label: "Critical" };
+  }
+
+  if (value >= 75) {
+    return { key: "hot", label: "Hot" };
+  }
+
+  if (value >= 60) {
+    return { key: "warm", label: "Warm" };
+  }
+
+  return { key: "cool", label: "Cool" };
+}
+
+function renderCpuTemperature(snapshot) {
+  const tempC = getSnapshotCpuTempC(snapshot);
+  const status = getCpuTemperatureStatus(tempC);
+  const text = Number.isFinite(tempC) ? `${Math.round(tempC)}°C · ${status.label}` : status.label;
+
+  setField("temperature", text);
+  updateFieldAttributes("temperature", (field) => {
+    field.dataset.temperatureState = status.key;
+    field.title = Number.isFinite(tempC) ? `CPU temperature: ${tempC.toFixed(1)}°C (${status.label})` : "CPU temperature is not reported by this node.";
+  });
+}
+
 function updateLocalTime() {
   const now = new Date();
   timeTarget.textContent = now.toLocaleString([], {
@@ -2451,10 +2507,7 @@ function renderSnapshot(snapshot) {
   }
 
   setField("uptime", formatDuration(snapshot.uptimeSeconds));
-  setField(
-    "temperature",
-    Number.isFinite(snapshot.cpu?.temperatureCelsius) ? `${snapshot.cpu.temperatureCelsius.toFixed(1)}°C` : "Unavailable",
-  );
+  renderCpuTemperature(snapshot);
 }
 
 function getConfiguredPlayitAddress() {

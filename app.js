@@ -377,6 +377,7 @@ let marketplaceInstallProgressEvents = [];
 let marketplaceProgressRenderTimer = null;
 let marketplacePendingProgressSteps = null;
 let unsubscribeMarketplaceInstallProgress = null;
+let marketplaceLocalDownloadEntries = [];
 let marketplaceProviderActive = "modrinth";
 let marketplaceProviderMode = "featured";
 let marketplaceProviderResults = [];
@@ -6469,6 +6470,16 @@ function renderMarketplaceProgress(steps = []) {
     const detail = document.createElement("span");
     detail.textContent = step.detail || step.status || "";
     row.append(label, detail);
+    if (step.debug) {
+      const debug = document.createElement("details");
+      debug.className = "marketplace-progress-debug";
+      const summary = document.createElement("summary");
+      summary.textContent = "Technical details";
+      const pre = document.createElement("pre");
+      pre.textContent = step.debug;
+      debug.append(summary, pre);
+      row.append(debug);
+    }
     marketplaceProgress.append(row);
   });
 }
@@ -6488,10 +6499,26 @@ function marketplaceProgressEventToStep(event = {}) {
   const count = event.total ? ` (${event.current || 0}/${event.total})` : "";
   const percent = event.percent ? ` · ${event.percent}%` : "";
   return {
+    key: `${event.stage || "installing"}:${stageLabels[event.stage] || "Installing"}`,
     label: stageLabels[event.stage] || "Installing",
     status,
     detail: `${event.message || event.stage || "Working"}${count}${percent}`,
   };
+}
+
+function collapseMarketplaceProgressSteps(steps = []) {
+  const collapsed = [];
+  const indexes = new Map();
+  steps.forEach((step) => {
+    const key = step.key || `${step.status || ""}:${step.label || ""}`;
+    if (indexes.has(key)) {
+      collapsed[indexes.get(key)] = { ...collapsed[indexes.get(key)], ...step };
+      return;
+    }
+    indexes.set(key, collapsed.length);
+    collapsed.push(step);
+  });
+  return collapsed;
 }
 
 function startMarketplaceInstallProgressListener() {
@@ -6515,7 +6542,7 @@ function stopMarketplaceInstallProgressListener() {
 }
 
 function scheduleMarketplaceProgressRender() {
-  marketplacePendingProgressSteps = marketplaceInstallProgressEvents.map(marketplaceProgressEventToStep);
+  marketplacePendingProgressSteps = collapseMarketplaceProgressSteps(marketplaceInstallProgressEvents.map(marketplaceProgressEventToStep));
   if (marketplaceProgressRenderTimer) {
     return;
   }
@@ -6541,13 +6568,68 @@ function formatDownloadSpeed(bytesPerSecond) {
   return Number.isFinite(bytesPerSecond) && bytesPerSecond > 0 ? `${formatBytes(bytesPerSecond)}/s` : "Idle";
 }
 
+function getMarketplaceFriendlyError(error, fallback = "Template install failed.") {
+  const code = error?.payload?.error?.code || error?.code;
+  const details = error?.details || error?.payload?.error?.details || {};
+  const message = error?.payload?.error?.message || error?.message || "";
+
+  if (code === "CURSEFORGE_REQUIRED_FILE_RESTRICTED") {
+    const fileName = details.fileName || "unknown file";
+    const projectId = details.projectId || "unknown project";
+    const fileId = details.fileId || "unknown file";
+    const suggestion = details.suggestion || "Manually download/import the restricted file, or select another modpack/server-pack version.";
+    const debug = details.debugMessage || details.originalMessage || message || getAgentErrorMessage(error, fallback);
+    return {
+      code,
+      title: "CurseForge blocked one required server file.",
+      detail: `File: ${fileName} · projectId: ${projectId} · fileId: ${fileId}. ${suggestion}`,
+      toast: "CurseForge blocked one required server file.",
+      debug,
+      actionText: "Retry after importing the file manually, or choose another pack version.",
+    };
+  }
+
+  const friendly = getAgentErrorMessage(error, fallback);
+  return {
+    code: code || "MARKETPLACE_INSTALL_FAILED",
+    title: friendly,
+    detail: friendly,
+    toast: friendly,
+    debug: message && message !== friendly ? message : "",
+    actionText: "Retry the install or import the required server files manually.",
+  };
+}
+
+function rememberFailedMarketplaceDownload(template, error, friendlyError) {
+  marketplaceLocalDownloadEntries = [{
+    id: `failed-${Date.now()}`,
+    name: template?.displayName || template?.name || template?.id || "Marketplace install",
+    status: "failed",
+    progress: 0,
+    speedBytesPerSecond: 0,
+    canCancel: false,
+    canRetry: false,
+    actionText: friendlyError.actionText || "Retry the install or import the required server files manually.",
+    logs: [
+      {
+        at: new Date().toISOString(),
+        level: "error",
+        step: friendlyError.code || "MARKETPLACE_INSTALL_FAILED",
+        message: `${friendlyError.title}${friendlyError.detail && friendlyError.detail !== friendlyError.title ? ` ${friendlyError.detail}` : ""}`,
+        body: friendlyError.debug || error?.message || "",
+      },
+    ],
+  }];
+}
+
 function renderMarketplaceDownloads(downloads = []) {
   if (!downloadList) {
     return;
   }
 
+  const visibleDownloads = [...marketplaceLocalDownloadEntries, ...downloads];
   downloadList.replaceChildren();
-  if (!downloads.length) {
+  if (!visibleDownloads.length) {
     const empty = document.createElement("div");
     empty.className = "docker-empty-state";
     const title = document.createElement("strong");
@@ -6559,7 +6641,7 @@ function renderMarketplaceDownloads(downloads = []) {
     return;
   }
 
-  downloads.forEach((download) => {
+  visibleDownloads.forEach((download) => {
     const item = document.createElement("article");
     item.className = "download-item";
     const header = document.createElement("div");
@@ -6580,7 +6662,7 @@ function renderMarketplaceDownloads(downloads = []) {
     const meta = document.createElement("small");
     const eta = Number.isFinite(download.etaSeconds) ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
     const url = download.url ? ` · ${download.url}` : "";
-    meta.textContent = `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
+    meta.textContent = download.actionText || `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
 
     const logs = document.createElement("details");
     logs.className = "download-item__logs";
@@ -7107,6 +7189,7 @@ async function installMarketplaceTemplate(event) {
   }
 
   marketplaceInstallInFlight = true;
+  marketplaceLocalDownloadEntries = [];
   if (marketplaceInstallButton) {
     marketplaceInstallButton.disabled = true;
   }
@@ -7150,12 +7233,22 @@ async function installMarketplaceTemplate(event) {
     showPage("instances");
     await refreshInstances();
   } catch (error) {
+    const friendlyError = getMarketplaceFriendlyError(error, "Template install failed.");
     setMarketplaceInstallState("Failed", "failed");
+    rememberFailedMarketplaceDownload(template, error, friendlyError);
     renderMarketplaceProgress([
-      { label: "Failed", status: "failed", detail: getAgentErrorMessage(error, "Template install failed.") },
+      {
+        label: friendlyError.title,
+        status: "failed",
+        detail: friendlyError.detail,
+        debug: friendlyError.debug,
+      },
     ]);
-    setMarketplaceMessage(getAgentErrorMessage(error, "Template install failed."), "error");
-    showToast(getAgentErrorMessage(error, "Template install failed."));
+    marketplaceInstallProgressEvents = [];
+    marketplacePendingProgressSteps = null;
+    renderMarketplaceDownloads([]);
+    setMarketplaceMessage(`${friendlyError.title} ${friendlyError.detail}`, "error");
+    showToast(friendlyError.toast || friendlyError.title);
   } finally {
     if (downloadPoll) {
       window.clearInterval(downloadPoll);

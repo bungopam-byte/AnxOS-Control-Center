@@ -1,7 +1,7 @@
 {
   "name": "anxos-control-center",
   "productName": "AnxOS Control Center",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Private local desktop control center for a Debian server.",
   "author": "Anx",
   "license": "UNLICENSED",
@@ -16,6 +16,7 @@
     "dist:win:portable": "electron-builder --win portable --x64",
     "dist:linux": "electron-builder --linux deb AppImage --x64",
     "updates:manifest": "node scripts/write-update-manifest.js",
+    "release:update": "node scripts/release-update.js",
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",

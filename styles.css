@@ -6604,6 +6604,21 @@ dd {
   font-size: 0.82rem;
 }
 
+.marketplace-progress-debug {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.marketplace-progress-debug summary {
+  cursor: pointer;
+}
+
+.marketplace-progress-debug pre {
+  overflow: auto;
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
 .marketplace-progress-step[data-status="running"] {
   border-color: rgba(147, 197, 253, 0.4);
 }

@@ -69,6 +69,24 @@ function getMarketplaceErrorMessage(error) {
 
 function getMarketplaceUiError(error) {
   const code = error?.payload?.error?.code || error?.code;
+  const details = error?.details || error?.payload?.error?.details || {};
+  const message = error?.payload?.error?.message || error?.message || "";
+  if (code === "CURSEFORGE_REQUIRED_FILE_RESTRICTED") {
+    return {
+      code,
+      message: "CurseForge blocked one required server file.",
+      details: {
+        ...details,
+        provider: "curseforge",
+        fileName: details.fileName || null,
+        projectId: details.projectId || null,
+        fileId: details.fileId || null,
+        suggestion: details.suggestion || "Manually download/import the restricted file, or select another modpack/server-pack version.",
+        debugMessage: getMarketplaceErrorMessage(error),
+        originalMessage: message,
+      },
+    };
+  }
   if (code === "CURSEFORGE_API_KEY_REQUIRED") {
     return {
       code,
@@ -170,5 +188,9 @@ function registerMarketplaceIpc() {
 }
 
 module.exports = {
+  _test: {
+    getMarketplaceErrorMessage,
+    getMarketplaceUiError,
+  },
   registerMarketplaceIpc,
 };

@@ -147,6 +147,14 @@ The Debian package installs a desktop entry so `AnxOS Control Center` appears in
 
 ## Release Artifacts
 
+For a local updater-ready release, run:
+
+```bash
+npm run release:update -- --message "fix: describe the change"
+```
+
+That command bumps the patch version, runs the Marketplace smoke checks, builds the Windows installer plus Linux packages, refreshes `dist/update-manifest.json`, commits, tags, and pushes. Add `--github-release` when GitHub CLI is authenticated and you want the built artifacts uploaded to the latest GitHub Release source used by Check for update.
+
 Recommended GitHub Releases layout:
 
 ```text

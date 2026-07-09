@@ -1300,8 +1300,7 @@ async function assertProviderInstallSupport() {
     { fileName: "client-shader.zip", projectId: 10, fileId: 20, dependencyType: "optional" },
     "Optional CurseForge manifest files should keep project/file context."
   );
-  assert.match(
-    marketplaceInstallService._test.createRestrictedCurseForgeFileError(
+  const restrictedFileError = marketplaceInstallService._test.createRestrictedCurseForgeFileError(
       {
         code: "CURSEFORGE_REQUEST_FAILED",
         message: "CurseForge download URL: 403 Forbidden.",
@@ -1312,9 +1311,47 @@ async function assertProviderInstallSupport() {
         },
       },
       { fileName: "required-server-mod.jar", projectId: 10, fileId: 20, dependencyType: "required" }
-    ).message,
+    );
+  assert.strictEqual(
+    restrictedFileError.code,
+    "CURSEFORGE_REQUIRED_FILE_RESTRICTED",
+    "Restricted required CurseForge files should keep a renderer-detectable error code."
+  );
+  assert.strictEqual(restrictedFileError.details.fileName, "required-server-mod.jar", "Restricted file errors should include file metadata.");
+  assert.strictEqual(restrictedFileError.details.projectId, 10, "Restricted file errors should include projectId.");
+  assert.strictEqual(restrictedFileError.details.fileId, 20, "Restricted file errors should include fileId.");
+  assert.match(
+    restrictedFileError.message,
     /required-server-mod\.jar.*project 10, file 20.*manually/i,
     "Restricted required CurseForge server files should produce an actionable error."
+  );
+  assert(
+    fs.readFileSync(marketplaceIpcPath, "utf8").includes("CurseForge blocked one required server file."),
+    "Marketplace IPC should expose a friendly restricted CurseForge error to the renderer."
+  );
+  assert(
+    appSource.includes("getMarketplaceFriendlyError") &&
+      appSource.includes("CURSEFORGE_REQUIRED_FILE_RESTRICTED") &&
+      appSource.includes("CurseForge blocked one required server file.") &&
+      appSource.includes("marketplaceLocalDownloadEntries"),
+    "Renderer should show the specific restricted-file error and keep a failed Download Manager entry."
+  );
+  assert(
+    appSource.includes("collapseMarketplaceProgressSteps") &&
+      appSource.includes("marketplacePendingProgressSteps = collapseMarketplaceProgressSteps"),
+    "Renderer should collapse repeated install progress events before rendering."
+  );
+  assert(
+    appSource.includes("marketplace-progress-debug") &&
+      fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes(".marketplace-progress-debug"),
+    "Renderer should keep technical install failure details in an expandable debug section."
+  );
+  const installSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceInstallService.js"), "utf8");
+  assert(
+    installSource.includes("logSkippedCurseForgeRestrictedFile(error") &&
+      installSource.includes("fileContext.dependencyType === \"required\"") &&
+      installSource.includes("createRestrictedCurseForgeFileError(error, fileContext)"),
+    "Required restricted CurseForge files should fail while optional restricted dependency files are skipped with warning logs."
   );
   assert.throws(
     () => marketplaceInstallService._test.ensureModrinthServerCapable({

@@ -7604,7 +7604,7 @@ button:disabled {
 .page[data-page="settings"],
 .page[data-page="security"],
 .page[data-page="nodes"] {
-  max-width: 1440px;
+  max-width: 1760px;
 }
 
 .page[data-page="settings"] .page-header,
@@ -7615,86 +7615,32 @@ button:disabled {
 
 .settings-shell {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-areas:
-    "general general appearance startup"
-    "marketplace marketplace minecraft playit"
-    "agent agent amp amp"
-    "developer developer about about";
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  grid-auto-flow: row dense;
+  gap: 24px;
+  align-items: stretch;
 }
 
 .settings-shell--single {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "main";
   max-width: 920px;
 }
 
 .settings-shell > .settings-section {
   grid-column: auto;
   grid-row: auto;
+  grid-area: auto;
 }
 
 .settings-section {
   display: grid;
   gap: 14px;
+  align-content: start;
   min-width: 0;
   min-height: auto;
+  height: 100%;
   padding: 16px;
   border-radius: 8px;
-}
-
-.settings-section--security {
-  grid-area: security;
-}
-
-.settings-section--general {
-  grid-area: general;
-}
-
-.settings-section--nodes {
-  grid-area: nodes;
-}
-
-.settings-section--appearance {
-  grid-area: appearance;
-}
-
-.settings-section--marketplace {
-  grid-area: marketplace;
-}
-
-.settings-section--startup {
-  grid-area: startup;
-}
-
-.settings-section--minecraft {
-  grid-area: minecraft;
-}
-
-.settings-section--amp {
-  grid-area: amp;
-}
-
-.settings-section--agent {
-  grid-area: agent;
-}
-
-.settings-section--playit {
-  grid-area: playit;
-}
-
-.settings-section--developer {
-  grid-area: developer;
-}
-
-.settings-section--about {
-  grid-area: about;
-}
-
-.settings-shell--single > .settings-section {
-  grid-area: main;
 }
 
 .settings-section__header {
@@ -7742,6 +7688,15 @@ button:disabled {
 .settings-section--minecraft .settings-grid,
 .settings-section--playit .settings-grid {
   grid-template-columns: 1fr;
+}
+
+@media (min-width: 980px) {
+  .settings-shell > .settings-section--marketplace,
+  .settings-shell > .settings-section--agent,
+  .settings-shell > .settings-section--amp,
+  .settings-shell > .settings-section--about {
+    grid-column: span 2;
+  }
 }
 
 .settings-field,
@@ -8083,18 +8038,11 @@ button:disabled {
 
 @media (max-width: 1320px) {
   .settings-shell {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "general appearance"
-      "marketplace startup"
-      "minecraft amp"
-      "agent playit"
-      "developer about";
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   }
 
   .settings-shell--single {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "main";
   }
 
   .settings-section--startup .settings-grid {
@@ -8319,7 +8267,6 @@ button:disabled {
   .instances-shell,
   .marketplace-layout,
   .backup-workspace,
-  .settings-shell,
   .coolpals-workspace {
     grid-template-columns: 1fr;
   }
@@ -8342,20 +8289,6 @@ button:disabled {
     grid-row: auto;
     position: static;
     min-height: auto;
-  }
-
-  .settings-section,
-  .settings-section:first-child,
-  .settings-section:nth-child(2),
-  .settings-section:nth-child(3),
-  .settings-section:nth-child(4),
-  .settings-section:nth-child(5),
-  .settings-section:nth-child(6),
-  .settings-section:nth-child(7),
-  .settings-section:nth-child(8),
-  .settings-section:nth-child(9) {
-    grid-column: 1;
-    grid-row: auto;
   }
 
   .docker-details-panel {
@@ -8747,26 +8680,12 @@ button:disabled {
 @media (max-width: 980px) {
   .settings-shell {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "general"
-      "appearance"
-      "marketplace"
-      "startup"
-      "minecraft"
-      "amp"
-      "agent"
-      "playit"
-      "developer"
-      "about";
   }
 
-  .settings-shell--single {
-    grid-template-areas: "main";
-  }
-
-  .settings-section {
+  .settings-shell > .settings-section {
     grid-column: auto;
     grid-row: auto;
+    height: auto;
   }
 }
 

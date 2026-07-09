@@ -4742,39 +4742,57 @@ body.is-resizing-files * {
   z-index: 4;
   display: flex;
   flex: 0 0 auto;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 10px;
+  align-items: center;
+  padding: 8px 10px;
   border-bottom: 1px solid rgba(185, 171, 200, 0.12);
   background:
     linear-gradient(180deg, rgba(18, 8, 34, 0.98), rgba(13, 7, 22, 0.96)),
     rgba(13, 7, 22, 0.96);
 }
 
-.page[data-page="instances"] .instance-console-toolbar__row {
+.page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar__row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   min-width: 0;
 }
 
-.page[data-page="instances"] .instance-console-toolbar__row:first-child {
+.page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar__row:first-child {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   justify-content: flex-start;
 }
 
-.page[data-page="instances"] .instance-console-toolbar__row:last-child {
-  display: grid;
-  grid-template-columns: minmax(84px, 0.45fr) minmax(120px, 1fr) auto auto auto;
+.page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar__row:last-child {
+  flex: 1 1 320px;
+  flex-wrap: nowrap;
 }
 
 .page[data-page="instances"] [data-instance-panel="console"] .console-toggle {
   width: auto;
-  min-height: 28px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  font-size: 0.72rem;
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 9px;
+  border-color: rgba(185, 171, 200, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.page[data-page="instances"] [data-instance-panel="console"] .console-toggle input {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+.page[data-page="instances"] [data-instance-panel="console"] .console-toggle span {
+  line-height: 1;
 }
 
 .page[data-page="instances"] [data-instance-panel="console"] .inline-action {
@@ -4788,6 +4806,19 @@ body.is-resizing-files * {
   min-width: 0;
   width: 100%;
   min-height: 30px;
+  height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-radius: 8px;
+  font-size: 0.76rem;
+}
+
+.page[data-page="instances"] [data-instance-panel="console"] select {
+  flex: 0 0 132px;
+}
+
+.page[data-page="instances"] [data-instance-panel="console"] input[type="search"] {
+  flex: 1 1 180px;
 }
 
 .page[data-page="instances"] [data-instance-panel="console"] .instance-console-viewer {
@@ -8460,6 +8491,26 @@ button:disabled {
   .console-actions .inline-action,
   .console-toggle {
     justify-content: center;
+  }
+
+  .page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar {
+    align-items: stretch;
+  }
+
+  .page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar__row:first-child {
+    flex-wrap: nowrap;
+    width: auto;
+    overflow-x: auto;
+  }
+
+  .page[data-page="instances"] [data-instance-panel="console"] .instance-console-toolbar__row:last-child {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .page[data-page="instances"] [data-instance-panel="console"] .console-toggle {
+    width: auto;
+    justify-content: flex-start;
   }
 
   .console-window {

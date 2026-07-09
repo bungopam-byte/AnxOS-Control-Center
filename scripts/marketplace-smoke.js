@@ -1209,15 +1209,23 @@ async function assertProviderInstallSupport() {
     /429 Rate limited.*rate limit exceeded/,
     "CurseForge 429 errors should include provider response details."
   );
+  const normalizedCurseForgeMod = curseforgeProvider._test.normalizeMod({
+    id: 925200,
+    name: "CF Smoke",
+    slug: "cf-smoke",
+    links: { websiteUrl: "https://www.curseforge.com/minecraft/mc-mods/cf-smoke" },
+    latestFilesIndexes: [{ gameVersion: "1.21.1", modLoader: 6 }],
+    authors: [{ name: "Smoke" }],
+  });
   assert.strictEqual(
-    curseforgeProvider._test.normalizeMod({
-      id: 925200,
-      name: "CF Smoke",
-      latestFilesIndexes: [{ gameVersion: "1.21.1", modLoader: 6 }],
-      authors: [{ name: "Smoke" }],
-    }).providerProjectId,
+    normalizedCurseForgeMod.providerProjectId,
     925200,
     "CurseForge current search schema should normalize id/latestFilesIndexes."
+  );
+  assert.strictEqual(
+    normalizedCurseForgeMod.websiteUrl,
+    "https://www.curseforge.com/minecraft/mc-mods/cf-smoke",
+    "CurseForge project metadata should preserve the official website URL."
   );
   assert(
     curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(".env")),
@@ -1226,6 +1234,18 @@ async function assertProviderInstallSupport() {
   assert(
     curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(path.join("agent", ".env"))),
     "CurseForge provider should check the agent .env fallback used by Debian deployments."
+  );
+  const normalizedModrinthProject = modrinthProvider._test.normalizeProject({
+    project_id: "required-pack-id",
+    slug: "required-pack",
+    title: "Required Pack",
+    project_type: "modpack",
+  });
+  assert.strictEqual(normalizedModrinthProject.projectType, "modpack", "Modrinth project metadata should preserve project type.");
+  assert.strictEqual(
+    normalizedModrinthProject.projectUrl,
+    "https://modrinth.com/modpack/required-pack",
+    "Modrinth project metadata should expose the official project page."
   );
   const cfSecretRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-cf-key-"));
   try {
@@ -1341,6 +1361,38 @@ async function assertProviderInstallSupport() {
     /required modpack file needs manual download: required-server-mod\.jar/i,
     "Restricted required files should produce a generic actionable manual-download error."
   );
+  const enrichedRestrictedFileError = marketplaceInstallService._test.createRestrictedCurseForgeFileError(
+    {
+      code: "CURSEFORGE_REQUEST_FAILED",
+      message: "CurseForge download URL: 403 Forbidden.",
+      details: { status: 403 },
+    },
+    {
+      fileName: "entityculling-fabric-1.10.2-mc1.21.11.jar",
+      projectId: 448233,
+      fileId: 8053775,
+      projectName: "EntityCulling",
+      projectSlug: "entityculling",
+      websiteUrl: "https://www.curseforge.com/minecraft/mc-mods/entityculling",
+    }
+  );
+  assert.strictEqual(enrichedRestrictedFileError.details.projectName, "EntityCulling", "Manual CurseForge errors should preserve resolved mod names.");
+  assert.strictEqual(enrichedRestrictedFileError.details.projectSlug, "entityculling", "Manual CurseForge errors should preserve resolved slugs.");
+  assert.strictEqual(
+    enrichedRestrictedFileError.details.downloadPageUrl,
+    "https://www.curseforge.com/minecraft/mc-mods/entityculling",
+    "Manual CurseForge cards should open the official resolved project page."
+  );
+  assert.strictEqual(
+    marketplaceInstallService._test.getOfficialProviderUrl({
+      provider: "curseforge",
+      projectName: "EntityCulling",
+      projectSlug: "entityculling",
+      projectId: 448233,
+    }),
+    "https://www.curseforge.com/minecraft/search?search=EntityCulling",
+    "CurseForge missing websiteUrl fallback should use a safe search URL with the mod name."
+  );
   const modrinthManualError = marketplaceInstallService._test.createManualDownloadRequiredError(
     {
       code: "MODRINTH_REQUEST_FAILED",
@@ -1350,21 +1402,38 @@ async function assertProviderInstallSupport() {
     {
       provider: "modrinth",
       providerName: "Modrinth",
-      originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
-      fileName: "required-modrinth-server-mod.jar",
-      projectSlug: "required-pack",
-      versionId: "required-version",
-      expectedDestinationPath: "mods/required-modrinth-server-mod.jar",
-      hash: "abc123",
-      size: 1234,
-      projectUrl: "https://modrinth.com/modpack/required-pack",
-    }
-  );
+	      originalCode: "MODRINTH_REQUIRED_FILE_RESTRICTED",
+	      fileName: "required-modrinth-server-mod.jar",
+	      projectSlug: "required-pack",
+	      versionId: "required-version",
+	      projectType: "modpack",
+	      websiteUrl: "https://modrinth.com/modpack/required-pack",
+	      expectedDestinationPath: "mods/required-modrinth-server-mod.jar",
+	      hash: "abc123",
+	      size: 1234,
+	      projectUrl: "https://modrinth.com/modpack/required-pack",
+	    }
+	  );
   assert.strictEqual(modrinthManualError.code, "PROVIDER_MANUAL_DOWNLOAD_REQUIRED", "Modrinth manual downloads should normalize to the shared recovery code.");
   assert.strictEqual(modrinthManualError.details.originalCode, "MODRINTH_REQUIRED_FILE_RESTRICTED", "Modrinth manual errors should preserve the original provider code.");
   assert.strictEqual(modrinthManualError.details.providerName, "Modrinth", "Modrinth manual errors should preserve provider metadata.");
   assert.strictEqual(modrinthManualError.details.fileName, "required-modrinth-server-mod.jar", "Modrinth manual errors should preserve missing filename metadata.");
-  assert.strictEqual(modrinthManualError.details.recoveryState, "waiting-manual-download", "Modrinth manual errors should enter waiting recovery.");
+  assert.strictEqual(modrinthManualError.details.projectName, undefined, "Modrinth manual errors should not invent missing project names.");
+  assert.strictEqual(modrinthManualError.details.projectType, "modpack", "Modrinth manual errors should preserve resolved project type.");
+  assert.strictEqual(
+    modrinthManualError.details.downloadPageUrl,
+    "https://modrinth.com/modpack/required-pack/version/required-version",
+    "Modrinth manual cards should open the official project/version page when metadata exists."
+  );
+  assert.strictEqual(
+    marketplaceInstallService._test.getOfficialProviderUrl({
+      provider: "modrinth",
+      projectName: "Required Pack",
+    }),
+    "https://modrinth.com/search?query=Required%20Pack",
+    "Modrinth missing slug fallback should use a safe search URL with the project name."
+  );
+	  assert.strictEqual(modrinthManualError.details.recoveryState, "waiting-manual-download", "Modrinth manual errors should enter waiting recovery.");
   assert.strictEqual(marketplaceInstallService._test.isManualDownloadRequiredError(modrinthManualError), true, "Shared manual-download classifier should accept Modrinth manual errors.");
   assert.strictEqual(
     normalizeMarketplaceError({

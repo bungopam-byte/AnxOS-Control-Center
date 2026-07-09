@@ -3,6 +3,7 @@ const path = require("path");
 
 const MODRINTH_API = "https://api.modrinth.com/v2";
 const USER_AGENT = "AnxOS-Control-Center/1.0 (+https://anxos.local)";
+const projectMetadataCache = new Map();
 
 class ModrinthProviderError extends Error {
   constructor(message, code = "MODRINTH_ERROR", details = {}) {
@@ -244,10 +245,16 @@ async function requestBuffer(url, label) {
 }
 
 function normalizeProject(project = {}) {
+  const projectType = project.project_type || project.projectType || "project";
+  const slug = project.slug || project.project_id || project.id || "";
+  const projectUrl = slug ? `https://modrinth.com/${encodeURIComponent(projectType)}/${encodeURIComponent(slug)}` : null;
   return {
     id: project.project_id || project.id,
     slug: project.slug,
     name: project.title || project.name || project.slug || project.id,
+    projectType,
+    websiteUrl: projectUrl,
+    projectUrl,
     description: project.description || "",
     iconUrl: project.icon_url || null,
     author: project.author || project.team || "Modrinth",
@@ -370,8 +377,16 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
 
 async function getProject(projectIdOrSlug) {
   assertProviderMetadata(projectIdOrSlug, "Modrinth project");
+  const cacheKey = String(projectIdOrSlug);
+  if (projectMetadataCache.has(cacheKey)) {
+    return projectMetadataCache.get(cacheKey);
+  }
   const project = await requestJson(createUrl(`/project/${encodeURIComponent(projectIdOrSlug)}`), "Modrinth project");
-  return normalizeProject(project);
+  const normalized = normalizeProject(project);
+  projectMetadataCache.set(cacheKey, normalized);
+  if (normalized.id) projectMetadataCache.set(String(normalized.id), normalized);
+  if (normalized.slug) projectMetadataCache.set(String(normalized.slug), normalized);
+  return normalized;
 }
 
 async function getVersions(projectIdOrSlug, minecraftVersion = "", loader = "") {

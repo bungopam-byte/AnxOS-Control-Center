@@ -8,6 +8,7 @@ const MINECRAFT_GAME_ID = 432;
 const MODPACK_CLASS_ID = 4471;
 const REQUIRED_DEPENDENCY = 3;
 const OPTIONAL_DEPENDENCY = 2;
+const modMetadataCache = new Map();
 const USER_AGENT = "AnxOS-Control-Center/1.0 (+https://anxos.local)";
 
 const API_KEY_FIELDS = ["apiKey", "curseForgeApiKey", "curseforgeApiKey", "cfApiKey"];
@@ -669,10 +670,13 @@ function assertProviderMetadata(projectId, context = "CurseForge project") {
 }
 
 function normalizeMod(mod = {}) {
+  const websiteUrl = mod.links?.websiteUrl || mod.websiteUrl || null;
   return {
     id: mod.id,
     slug: mod.slug,
     name: mod.name || mod.slug || String(mod.id || ""),
+    websiteUrl,
+    projectUrl: websiteUrl,
     description: mod.summary || "",
     iconUrl: mod.logo?.url || null,
     author: Array.isArray(mod.authors) ? mod.authors.map((entry) => entry.name).filter(Boolean).join(", ") : "CurseForge",
@@ -797,8 +801,14 @@ async function getMod(projectId, config = {}) {
   if (!projectId) {
     assertProviderMetadata(projectId, "CurseForge mod");
   }
+  const cacheKey = String(projectId);
+  if (modMetadataCache.has(cacheKey)) {
+    return modMetadataCache.get(cacheKey);
+  }
   const payload = await requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}`), "CurseForge mod", config);
-  return normalizeMod(payload.data || {});
+  const mod = normalizeMod(payload.data || {});
+  modMetadataCache.set(cacheKey, mod);
+  return mod;
 }
 
 async function getFiles(projectId, minecraftVersion = "", loader = "", config = {}) {

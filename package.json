@@ -21,7 +21,8 @@
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",
-    "marketplace:smoke": "node scripts/marketplace-smoke.js"
+    "marketplace:smoke": "node scripts/marketplace-smoke.js",
+    "security:reset-password": "node scripts/reset-local-password.js"
   },
   "build": {
     "appId": "com.anxos.controlcenter",

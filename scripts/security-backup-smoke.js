@@ -16,6 +16,7 @@ const serviceRouter = require("../src/services/serviceRouter");
 const storageConnections = require("../src/services/storageConnectionService");
 const { FileService } = require("../src/services/fileService");
 const backupService = require("../agent/src/services/backupService");
+const { resetLocalPassword } = require("./reset-local-password");
 
 function countAuditActions(action) {
   const auditPath = path.join(process.env.ANXHUB_CONFIG_DIR, "audit.log");
@@ -143,6 +144,21 @@ async function main() {
     /Too many requests|RATE_LIMITED/,
     "Rate limiting should only block after genuine repeated failed attempts.",
   );
+
+  const securityFile = path.join(process.env.ANXHUB_CONFIG_DIR, "security.json");
+  fs.writeFileSync(path.join(process.env.ANXHUB_CONFIG_DIR, "session.dat"), "stale-session");
+  const resetResult = resetLocalPassword({
+    securityPath: securityFile,
+    username: "owner",
+    password: "reset correct horse battery",
+  });
+  assert(fs.existsSync(resetResult.backupPath), "Password reset should create a security.json backup.");
+  assert(!fs.existsSync(path.join(process.env.ANXHUB_CONFIG_DIR, "session.dat")), "Password reset should clear remembered session data.");
+  delete require.cache[securityPath];
+  security = require(securityPath);
+  await security.login({ username: "owner", password: "reset correct horse battery" });
+  security.logout();
+
   security.checkRateLimit("smoke-limit", 1, 60000);
   assert.throws(() => security.checkRateLimit("smoke-limit", 1, 60000), /Too many requests|RATE_LIMITED/);
 

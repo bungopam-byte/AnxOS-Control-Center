@@ -1005,6 +1005,34 @@ async function resolveFabricServerJar(minecraftVersion, loaderVersion = "") {
   };
 }
 
+async function resolveQuiltServerJar(minecraftVersion, loaderVersion = "") {
+  const loaders = await fetchJson("https://meta.quiltmc.org/v3/versions/loader", "Quilt loader metadata");
+  const installers = await fetchJson("https://meta.quiltmc.org/v3/versions/installer", "Quilt installer metadata");
+  const loader = loaderVersion && loaderVersion !== "latest"
+    ? loaderVersion
+    : loaders[0]?.version;
+  const installer = installers[0];
+  if (!minecraftVersion || minecraftVersion === "latest") {
+    throw new MarketplaceInstallError("Select a Minecraft version for Quilt installs.", "QUILT_VERSION_REQUIRED");
+  }
+  if (!installer?.url || !loader) {
+    throw new MarketplaceInstallError("No Quilt installer metadata was found.", "QUILT_VERSION_NOT_FOUND");
+  }
+  return {
+    url: installer.url,
+    fileName: "quilt-installer.jar",
+    downloadDestination: "quilt-installer.jar",
+    serverJar: "quilt-server-launch.jar",
+    minecraftVersion,
+    loaderVersion: loader,
+    installer: {
+      jar: "quilt-installer.jar",
+      args: ["install", "server", minecraftVersion, loader, "--download-server"],
+      startup: { executable: "java", args: ["-jar", "quilt-server-launch.jar", "nogui"] },
+    },
+  };
+}
+
 async function resolveForgeInstaller(minecraftVersion) {
   const requestedVersion = minecraftVersion || "latest";
   let forgeVersion = "";
@@ -1066,6 +1094,7 @@ async function resolveServerJar(options = {}) {
   if (loader === "paper") return resolvePaperServerJar(minecraftVersion, "paper");
   if (loader === "purpur") return resolvePurpurServerJar(minecraftVersion);
   if (loader === "fabric") return resolveFabricServerJar(minecraftVersion, options.loaderVersion);
+  if (loader === "quilt") return resolveQuiltServerJar(minecraftVersion, options.loaderVersion);
   if (loader === "forge") return resolveForgeInstaller(minecraftVersion);
   if (loader === "neoforge") return resolveNeoForgeInstaller(minecraftVersion);
   return resolveVanillaServerJar(minecraftVersion);
@@ -1739,7 +1768,7 @@ async function installPack(payload = {}) {
     }
 
     emitProgress({ instanceId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
-    await writeBuffer(instanceId, serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName), agentConfig);
+    await writeBuffer(instanceId, serverInfo.downloadDestination || serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName), agentConfig);
     await runServerInstaller(instanceId, serverInfo, agentConfig);
 
     return await continueProviderPackInstall({
@@ -1945,7 +1974,7 @@ async function getProviderPackVersions(payload = {}) {
   const projectId = payload.providerProjectId || payload.projectId;
   if (provider === "curseforge") {
     const files = await curseforgeProvider.getFiles(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "");
-    return { provider, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions })) };
+    return { provider, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions, loaders: file.loaders || [] })) };
   }
   if (provider === "modrinth") {
     const versions = await modrinthProvider.getVersions(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "");

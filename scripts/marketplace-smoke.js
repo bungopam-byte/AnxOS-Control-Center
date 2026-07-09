@@ -323,8 +323,13 @@ function assertTemplateFilePathsAreDataRelative() {
 
 function assertNonMinecraftServerTypeIsCleared() {
   const source = fs.readFileSync(appPath, "utf8");
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(source.includes("delete options.serverType;"), "Renderer must not send hidden Minecraft serverType for non-Minecraft templates.");
   assert(source.includes("serverType: isMinecraft ?"), "Renderer option collection should gate serverType by template category.");
+  assert(indexSource.includes("Server Runtime"), "Marketplace wizard should label the Minecraft runtime selector as Server Runtime.");
+  assert(!indexSource.includes("<option selected>Paper</option>"), "Marketplace wizard must not preselect Paper in static markup.");
+  assert(source.includes("configureMarketplaceRuntimeField(template"), "Renderer should configure server runtime from template metadata.");
+  assert(!source.includes('template.displayName || template.id || "Paper"'), "Renderer must not use template display names to force Paper defaults.");
 }
 
 function assertMarketplaceVersionMetadata() {
@@ -886,6 +891,12 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       if (href.includes("meta.fabricmc.net/v2/versions/installer")) {
         return jsonResponse([{ version: "1.0.1", stable: true }]);
       }
+      if (href === "https://meta.quiltmc.org/v3/versions/loader") {
+        return jsonResponse([{ version: "0.29.1" }]);
+      }
+      if (href === "https://meta.quiltmc.org/v3/versions/installer") {
+        return jsonResponse([{ version: "0.15.0", url: "https://mock.local/quilt-installer.jar" }]);
+      }
       if (href === "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json") {
         return jsonResponse({ promos: { "1.21.1-latest": "52.1.0" } });
       }
@@ -918,6 +929,10 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     };
     agentClient.startInstance = async (instanceId) => {
       installerStarts.add(instanceId);
+      const instance = instances.get(instanceId) || {};
+      if (Array.isArray(instance.args) && instance.args.includes("quilt-installer.jar")) {
+        files.set(`${instanceId}:quilt-server-launch.jar`, Buffer.from("quilt-launcher"));
+      }
       instances.set(instanceId, { ...(instances.get(instanceId) || {}), state: "Running" });
       return { instance: instances.get(instanceId) };
     };
@@ -953,6 +968,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       ["paper", { provider: "anxhub", loader: "paper" }, "server.jar"],
       ["purpur", { provider: "anxhub", loader: "purpur" }, "server.jar"],
       ["fabric", { provider: "anxhub", loader: "fabric" }, "fabric-server.jar"],
+      ["quilt", { provider: "anxhub", loader: "quilt" }, "quilt-server-launch.jar"],
       ["forge", { provider: "anxhub", loader: "forge" }, "forge-installer.jar"],
       ["neoforge", { provider: "anxhub", loader: "neoforge" }, "neoforge-installer.jar"],
       ["curseforge", { provider: "curseforge", loader: "vanilla", providerProjectId: "100" }, "mods/curseforge-smoke.jar"],
@@ -988,6 +1004,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     assert(!fetchUrls.some((href) => href.includes("https://api.papermc.io/v2")), "Paper installer must not use deprecated PaperMC v2 endpoints.");
     assert(installerStarts.has("marketplace-forge-smoke"), "Forge smoke should run the loader installer.");
     assert(installerStarts.has("marketplace-neoforge-smoke"), "NeoForge smoke should run the loader installer.");
+    assert(installerStarts.has("marketplace-quilt-smoke"), "Quilt smoke should run the loader installer.");
   } finally {
     global.fetch = originalFetch;
     patchedAgentMethods.forEach((name) => {

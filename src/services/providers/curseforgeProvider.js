@@ -549,6 +549,27 @@ function normalizeLoader(loader) {
   return loaderMap[value] || "";
 }
 
+function normalizeModLoaderName(loader) {
+  const value = String(loader || "").trim().toLowerCase();
+  const loaderMap = {
+    "1": "Forge",
+    forge: "Forge",
+    "4": "Fabric",
+    fabric: "Fabric",
+    "5": "Quilt",
+    quilt: "Quilt",
+    "6": "NeoForge",
+    neoforge: "NeoForge",
+    "neo forge": "NeoForge",
+    "neo-forge": "NeoForge",
+  };
+  return loaderMap[value] || "";
+}
+
+function extractLoaders(values = []) {
+  return [...new Set((values || []).map(normalizeModLoaderName).filter(Boolean))];
+}
+
 function createUrl(pathname, params = {}) {
   const url = new URL(`${CURSEFORGE_API}${pathname}`);
   Object.entries(params).forEach(([key, value]) => {
@@ -684,7 +705,7 @@ function normalizeMod(mod = {}) {
     provider: "curseforge",
     providerProjectId: mod.id,
     minecraftVersions: [...new Set(mod.latestFilesIndexes?.map((entry) => entry.gameVersion).filter(Boolean) || [])],
-    loaders: [...new Set(mod.latestFilesIndexes?.map((entry) => entry.modLoader).filter(Boolean) || [])],
+    loaders: extractLoaders(mod.latestFilesIndexes?.map((entry) => entry.modLoader) || []),
     updatedAt: mod.dateModified || mod.dateReleased || null,
     raw: mod,
   };
@@ -698,6 +719,7 @@ function normalizeFile(file = {}) {
     fileName: file.fileName || file.displayName || `${file.id}.jar`,
     downloadUrl: file.downloadUrl || null,
     minecraftVersions: file.gameVersions || [],
+    loaders: extractLoaders(file.gameVersions || []),
     releaseType: file.releaseType || null,
     dependencies: Array.isArray(file.dependencies) ? file.dependencies : [],
     modules: Array.isArray(file.modules) ? file.modules : [],

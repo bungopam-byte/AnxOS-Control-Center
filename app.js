@@ -6050,15 +6050,94 @@ function formatMarketplaceLoaderLabel(template) {
   return String(template?.loader || template?.serverType || template?.instanceType || "").replace(/^minecraft-/i, "") || "";
 }
 
-function getMarketplaceServerTypeOptionValue(value, fallback = "Paper") {
-  const target = String(value || "").toLowerCase();
+const MARKETPLACE_SERVER_RUNTIME_OPTIONS = [
+  { value: "Vanilla", aliases: ["vanilla", "minecraft", "mojang"] },
+  { value: "Paper", aliases: ["paper", "papermc", "minecraft-paper"] },
+  { value: "Purpur", aliases: ["purpur", "minecraft-purpur"] },
+  { value: "Fabric", aliases: ["fabric", "fabric-loader", "minecraft-fabric", "4"] },
+  { value: "Quilt", aliases: ["quilt", "quilt-loader", "minecraft-quilt", "5"] },
+  { value: "Forge", aliases: ["forge", "minecraft-forge", "1"] },
+  { value: "NeoForge", aliases: ["neoforge", "neo forge", "neo-forge", "minecraft-neoforge", "6"] },
+];
+
+function normalizeMarketplaceServerRuntime(value) {
+  const target = String(value || "").trim().toLowerCase();
+  if (!target) return "";
+  return MARKETPLACE_SERVER_RUNTIME_OPTIONS.find((runtime) => (
+    runtime.value.toLowerCase() === target ||
+    runtime.aliases.includes(target)
+  ))?.value || "";
+}
+
+function getMarketplaceServerTypeOptionValue(value, fallback = "Vanilla") {
+  const normalized = normalizeMarketplaceServerRuntime(value);
   const options = [...getMarketplaceField("serverType")?.options || []];
-  return options.find((option) => option.value.toLowerCase() === target || option.textContent.toLowerCase() === target)?.value || fallback;
+  return options.find((option) => option.value === normalized)?.value || fallback;
+}
+
+function collectMarketplaceRuntimeCandidates(source = {}) {
+  const candidates = [];
+  const push = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(push);
+      return;
+    }
+    if (value !== undefined && value !== null && value !== "") {
+      candidates.push(value);
+    }
+  };
+  push(source.serverRuntime);
+  push(source.serverRuntimes);
+  push(source.runtime);
+  push(source.runtimes);
+  push(source.loader);
+  push(source.loaders);
+  push(source.modLoader);
+  push(source.modLoaders);
+  push(source.serverType);
+  push(source.categories);
+  push(source.gameVersions);
+  if (source.id && String(source.id).startsWith("minecraft-")) {
+    push(String(source.id).replace(/^minecraft-/, ""));
+  }
+  return candidates;
+}
+
+function getMarketplaceRuntimeOptions(source = {}) {
+  const seen = new Set();
+  const runtimes = collectMarketplaceRuntimeCandidates(source)
+    .map(normalizeMarketplaceServerRuntime)
+    .filter(Boolean)
+    .filter((runtime) => {
+      if (seen.has(runtime)) return false;
+      seen.add(runtime);
+      return true;
+    });
+  if (runtimes.length) {
+    return { detected: true, runtimes };
+  }
+  return { detected: false, runtimes: MARKETPLACE_SERVER_RUNTIME_OPTIONS.map((runtime) => runtime.value) };
+}
+
+function configureMarketplaceRuntimeField(template, source = template) {
+  const serverTypeField = getMarketplaceField("serverType");
+  if (!serverTypeField) return { detected: false, runtimes: ["Vanilla"] };
+  const { detected, runtimes } = getMarketplaceRuntimeOptions(source);
+  serverTypeField.replaceChildren(...runtimes.map((runtime) => {
+    const option = document.createElement("option");
+    option.value = runtime;
+    option.textContent = runtime;
+    return option;
+  }));
+  serverTypeField.value = runtimes[0] || "Vanilla";
+  serverTypeField.disabled = !isMinecraftMarketplaceTemplate(template) || (detected && runtimes.length <= 1);
+  serverTypeField.dataset.runtimeDetected = detected ? "true" : "false";
+  return { detected, runtimes };
 }
 
 function normalizeProviderLoader(project = {}) {
   const loaders = Array.isArray(project.loaders) ? project.loaders : [];
-  return loaders.find((loader) => ["fabric", "forge", "neoforge", "quilt"].includes(String(loader).toLowerCase())) || "";
+  return loaders.map(normalizeMarketplaceServerRuntime).find((loader) => ["Fabric", "Forge", "NeoForge", "Quilt"].includes(loader))?.toLowerCase() || "";
 }
 
 function normalizeProviderMinecraftVersion(project = {}) {
@@ -6306,10 +6385,8 @@ function renderMarketplaceVersionList() {
         versionField.dispatchEvent(new Event("input", { bubbles: true }));
         versionField.focus();
       }
-      const serverTypeField = getMarketplaceField("serverType");
-      const loader = entry.loaders?.find((value) => [...serverTypeField?.options || []].some((option) => option.value.toLowerCase() === String(value).toLowerCase()));
-      if (serverTypeField && loader) {
-        serverTypeField.value = [...serverTypeField.options].find((option) => option.value.toLowerCase() === String(loader).toLowerCase())?.value || serverTypeField.value;
+      if (isMinecraftMarketplaceTemplate(template) && Array.isArray(entry.loaders) && entry.loaders.length > 0) {
+        configureMarketplaceRuntimeField(template, { ...template, loaders: entry.loaders });
       }
       renderMarketplaceVersionList();
       setMarketplaceVersionPanelOpen(false);
@@ -6386,6 +6463,9 @@ async function loadMarketplaceVersions(template) {
         filters: ["recommended", "releases", "all"],
       }
       : catalog;
+    if (isProviderMarketplaceTemplate(template) && Array.isArray(marketplaceVersionCatalog?.versions) && marketplaceVersionCatalog.versions[0]?.loaders?.length) {
+      configureMarketplaceRuntimeField(template, { ...template, loaders: marketplaceVersionCatalog.versions[0].loaders });
+    }
     const count = Array.isArray(marketplaceVersionCatalog?.versions) ? marketplaceVersionCatalog.versions.length : 0;
     const latestText = marketplaceVersionCatalog?.latest?.id ? ` Latest Stable — ${marketplaceVersionCatalog.latest.id}.` : "";
     setMarketplaceVersionStatus(`${count} versions loaded.${latestText}`, "success");
@@ -6409,7 +6489,7 @@ function renderMarketplaceWizardSteps(template) {
 
   const isMinecraft = isMinecraftMarketplaceTemplate(template);
   const steps = isMinecraft
-    ? ["Server Name", "Version", "Server Type", "Memory", "Port", "Playit", "Accept EULA"]
+    ? ["Server Name", "Version", "Server Runtime", "Memory", "Port", "Playit", "Accept EULA"]
     : ["Name", "Storage Location", "Port", "Memory"];
   marketplaceWizardSteps.replaceChildren();
   steps.forEach((step, index) => {
@@ -6478,12 +6558,12 @@ function openMarketplaceWizard(templateId) {
   }
   if (serverTypeField) {
     if (isMinecraftMarketplaceTemplate(template)) {
-      const serverType = template.loader || (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
-      serverTypeField.value = getMarketplaceServerTypeOptionValue(serverType, "Paper");
-      serverTypeField.disabled = !isProviderMarketplaceTemplate(template);
+      configureMarketplaceRuntimeField(template);
     } else {
+      serverTypeField.replaceChildren();
       serverTypeField.value = "";
       serverTypeField.disabled = false;
+      serverTypeField.dataset.runtimeDetected = "false";
     }
   }
   if (storageField) {
@@ -6515,7 +6595,11 @@ function openMarketplaceWizard(templateId) {
   if (!marketplaceInstallInFlight) {
     renderMarketplaceProgress([]);
     setMarketplaceInstallState("Ready", "ready");
-    setMarketplaceMessage("Review the generated settings, then install.");
+    if (isMinecraftMarketplaceTemplate(template) && serverTypeField?.dataset?.runtimeDetected !== "true") {
+      setMarketplaceMessage("Server runtime could not be determined. Vanilla is selected; choose the correct runtime if this is a modpack.", "warning");
+    } else {
+      setMarketplaceMessage("Review the generated settings, then install.");
+    }
   } else {
     setMarketplaceInstallState("Installing", "running");
     setMarketplaceMessage("Install already running. You can keep browsing, but wait for it to finish before starting another install.", "warning");
@@ -7555,15 +7639,8 @@ async function installMarketplaceTemplate(event) {
 
   let options;
   try {
-    const serverTypeField = getMarketplaceField("serverType");
-    if (serverTypeField && template.category === "Minecraft") {
-      const serverType = (template.displayName || template.id || "Paper").replace(/^Minecraft\s+/i, "");
-      serverTypeField.value = [...serverTypeField.options].some((option) => option.value === serverType) ? serverType : "Paper";
-    }
     options = collectMarketplaceInstallOptions();
-    if (template.category === "Minecraft") {
-      options.serverType = (template.displayName || template.id || "").replace(/^Minecraft\s+/i, "");
-    } else if (!isMinecraftMarketplaceTemplate(template)) {
+    if (!isMinecraftMarketplaceTemplate(template)) {
       delete options.serverType;
     }
   } catch (error) {

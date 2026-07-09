@@ -30,6 +30,153 @@ function round(value, decimals = 1) {
   return Math.round(value * factor) / factor;
 }
 
+function safeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function findValue(source, keys = []) {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) {
+      return source[key];
+    }
+  }
+
+  return undefined;
+}
+
+function normalizePercent(value) {
+  const number = safeNumber(value);
+  if (number === null) {
+    return null;
+  }
+  if (number >= 0 && number <= 1) {
+    return round(number * 100);
+  }
+  return round(number);
+}
+
+function normalizeDiskMetric(snapshot = {}) {
+  const source = snapshot.disk || snapshot.storage || snapshot.filesystem || snapshot.fs || snapshot.rootDisk || null;
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const total = safeNumber(findValue(source, ["total", "totalBytes", "totalSpace", "totalSpaceBytes", "size", "sizeBytes", "blocksTotalBytes"]));
+  const free = safeNumber(findValue(source, ["free", "freeBytes", "freeSpace", "freeSpaceBytes", "available", "availableBytes", "avail", "availBytes"]));
+  const usedRaw = safeNumber(findValue(source, ["used", "usedBytes", "usedSpace", "usedSpaceBytes"]));
+  const used = usedRaw ?? (total !== null && free !== null ? Math.max(total - free, 0) : null);
+  const percent = normalizePercent(findValue(source, ["percent", "usagePercent", "usedPercent", "pct"]));
+  const mount = findValue(source, ["mount", "mountPoint", "path", "target", "filesystem"]) || null;
+
+  if (total === null || total <= 0 || free === null || used === null) {
+    return null;
+  }
+
+  return {
+    mount,
+    total,
+    used,
+    free,
+    percent: percent ?? round((used / total) * 100),
+  };
+}
+
+function normalizeNetworkMetric(snapshot = {}) {
+  const source = snapshot.network || snapshot.net || snapshot.networkIo || snapshot.networkIO || null;
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const totalDownload = safeNumber(findValue(source, [
+    "totalDownload",
+    "download",
+    "rx",
+    "rxBytes",
+    "received",
+    "receivedBytes",
+    "totalReceived",
+    "totalDownloaded",
+    "totalRx",
+  ]));
+  const totalUpload = safeNumber(findValue(source, [
+    "totalUpload",
+    "upload",
+    "tx",
+    "txBytes",
+    "sent",
+    "sentBytes",
+    "totalSent",
+    "totalUploaded",
+    "totalTx",
+  ]));
+  const downloadPerSecond = safeNumber(findValue(source, [
+    "downloadPerSecond",
+    "rxPerSecond",
+    "rxBytesPerSecond",
+    "receivedPerSecond",
+    "downloadRate",
+  ]));
+  const uploadPerSecond = safeNumber(findValue(source, [
+    "uploadPerSecond",
+    "txPerSecond",
+    "txBytesPerSecond",
+    "sentPerSecond",
+    "uploadRate",
+  ]));
+
+  if (totalDownload === null && totalUpload === null && downloadPerSecond === null && uploadPerSecond === null) {
+    return null;
+  }
+
+  return {
+    downloadPerSecond: downloadPerSecond ?? 0,
+    uploadPerSecond: uploadPerSecond ?? 0,
+    totalDownload,
+    totalUpload,
+  };
+}
+
+function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
+  const disk = normalizeDiskMetric(snapshot);
+  const network = normalizeNetworkMetric(snapshot);
+  const agentConfig = configOverride || agentClient.getAgentConfig();
+  const agentUrl = agentConfig.agentUrl || agentConfig.url || null;
+
+  if (!disk) {
+    console.warn("[AnxHub][System] Agent disk metrics unavailable or incomplete.", {
+      nodeUrl: agentUrl,
+      hasDiskPayload: Boolean(snapshot?.disk || snapshot?.storage || snapshot?.filesystem || snapshot?.fs || snapshot?.rootDisk),
+      diskKeys: snapshot?.disk && typeof snapshot.disk === "object" ? Object.keys(snapshot.disk) : [],
+    });
+  }
+
+  if (!network) {
+    console.warn("[AnxHub][System] Agent network metrics unavailable or incomplete.", {
+      nodeUrl: agentUrl,
+      hasNetworkPayload: Boolean(snapshot?.network || snapshot?.net || snapshot?.networkIo || snapshot?.networkIO),
+      networkKeys: snapshot?.network && typeof snapshot.network === "object" ? Object.keys(snapshot.network) : [],
+    });
+  }
+
+  return {
+    ...snapshot,
+    disk,
+    network,
+    source: snapshot?.source || "agent",
+    diagnostics: {
+      ...(snapshot?.diagnostics && typeof snapshot.diagnostics === "object" ? snapshot.diagnostics : {}),
+      agent: {
+        url: agentUrl,
+      },
+    },
+  };
+}
+
 function readCpuSample() {
   const cpus = os.cpus();
   const totals = cpus.reduce(
@@ -278,16 +425,7 @@ function getOptionalSelectedNodeConfig() {
 
 async function getAgentSystemSnapshot(configOverride = null) {
   const snapshot = await agentClient.getSystemStats(configOverride);
-  return {
-    ...snapshot,
-    source: snapshot?.source || "agent",
-    diagnostics: {
-      ...(snapshot?.diagnostics && typeof snapshot.diagnostics === "object" ? snapshot.diagnostics : {}),
-      agent: {
-        url: (configOverride || agentClient.getAgentConfig()).agentUrl || (configOverride || agentClient.getAgentConfig()).url || null,
-      },
-    },
-  };
+  return normalizeAgentSystemSnapshot(snapshot, configOverride);
 }
 
 async function getSystemSnapshot() {
@@ -325,5 +463,10 @@ async function getSystemSnapshot() {
 }
 
 module.exports = {
+  _test: {
+    normalizeAgentSystemSnapshot,
+    normalizeDiskMetric,
+    normalizeNetworkMetric,
+  },
   getSystemSnapshot,
 };

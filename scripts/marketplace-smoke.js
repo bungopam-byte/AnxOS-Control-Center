@@ -5,6 +5,7 @@ const path = require("path");
 
 const marketplaceService = require("../src/services/marketplaceService");
 const marketplaceInstallService = require("../src/services/marketplaceInstallService");
+const systemService = require("../src/services/systemService");
 const modrinthProvider = require("../src/services/providers/modrinthProvider");
 const curseforgeProvider = require("../src/services/providers/curseforgeProvider");
 const { getMarketplaceConfigPath } = require("../src/services/providerConfigService");
@@ -40,6 +41,57 @@ function assertCatalogLoads() {
   assert(catalog.categories.includes("Game Servers"), "Catalog must include Game Servers.");
   assert(Array.isArray(catalog.templates), "Catalog templates must be an array.");
   assert(catalog.templates.length >= templates.length, "Service catalog should expose templates.");
+}
+
+function assertRemoteSystemMetricsNormalize() {
+  const snapshot = systemService._test.normalizeAgentSystemSnapshot({
+    hostname: "debian-node",
+    disk: {
+      mount: "/",
+      total: 1000,
+      free: 250,
+      percent: 75,
+    },
+    network: {
+      downloadPerSecond: 1024,
+      uploadPerSecond: 512,
+      totalDownload: 4096,
+      totalUpload: 2048,
+    },
+  }, { url: "http://agent.local" });
+
+  assert.strictEqual(snapshot.source, "agent", "Dashboard system snapshot should preserve agent source.");
+  assert.deepStrictEqual(
+    snapshot.disk,
+    { mount: "/", total: 1000, used: 750, free: 250, percent: 75 },
+    "Remote disk metrics should normalize to renderer disk card shape."
+  );
+  assert.deepStrictEqual(
+    snapshot.network,
+    { downloadPerSecond: 1024, uploadPerSecond: 512, totalDownload: 4096, totalUpload: 2048 },
+    "Remote network metrics should normalize to renderer network card shape."
+  );
+
+  const variantSnapshot = systemService._test.normalizeAgentSystemSnapshot({
+    storage: {
+      mountPoint: "/",
+      totalSpace: 2000,
+      freeSpace: 500,
+    },
+    net: {
+      rxBytesPerSecond: 30,
+      txBytesPerSecond: 12,
+      totalDownloaded: 3000,
+      totalUploaded: 1200,
+    },
+  }, { url: "http://agent.local" });
+
+  assert.strictEqual(variantSnapshot.disk.used, 1500, "Disk used bytes should be derived from total-free when needed.");
+  assert.strictEqual(variantSnapshot.disk.percent, 75, "Disk usage percent should be derived when missing.");
+  assert.strictEqual(variantSnapshot.network.downloadPerSecond, 30, "Network RX rate aliases should normalize.");
+  assert.strictEqual(variantSnapshot.network.uploadPerSecond, 12, "Network TX rate aliases should normalize.");
+  assert.strictEqual(variantSnapshot.network.totalDownload, 3000, "Network total RX aliases should normalize.");
+  assert.strictEqual(variantSnapshot.network.totalUpload, 1200, "Network total TX aliases should normalize.");
 }
 
 async function assertDisabledTemplatesAreBlocked() {
@@ -1580,6 +1632,7 @@ async function assertProviderInstallSupport() {
 
 async function main() {
   assertCatalogLoads();
+  assertRemoteSystemMetricsNormalize();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertDockerTemplates();

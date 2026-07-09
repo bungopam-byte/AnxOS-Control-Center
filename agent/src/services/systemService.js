@@ -91,6 +91,20 @@ function buildDiskUsage(total, free, mount) {
   };
 }
 
+async function getDiskMountPoint(targetPath) {
+  const result = await execFile("df", ["-kP", targetPath]);
+  if (!result.ok) {
+    console.warn("[AnxOS Agent][Stats] df mount lookup failed.", {
+      path: targetPath,
+      stderr: result.stderr.trim(),
+    });
+    return null;
+  }
+
+  const parts = result.stdout.split(/\r?\n/)[1]?.trim().split(/\s+/);
+  return parts && parts.length >= 6 ? parts[5] : null;
+}
+
 async function getDiskUsage(targetPath = getConfig().instanceRoot) {
   let resolvedPath = path.resolve(targetPath || getConfig().instanceRoot || process.cwd());
 
@@ -108,7 +122,7 @@ async function getDiskUsage(targetPath = getConfig().instanceRoot) {
       const blockSize = Number(stats.bsize || stats.frsize || 0);
       const total = Number(stats.blocks) * blockSize;
       const free = Number(stats.bavail ?? stats.bfree) * blockSize;
-      return buildDiskUsage(total, free, resolvedPath);
+      return buildDiskUsage(total, free, await getDiskMountPoint(resolvedPath) || resolvedPath);
     } catch (error) {
       console.warn("[AnxOS Agent][Stats] statfs disk read failed.", {
         path: resolvedPath,

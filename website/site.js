@@ -7,6 +7,11 @@ function setText(selector, value) {
 }
 
 function applyConfigText() {
+  document.querySelectorAll("[data-logo]").forEach((node) => {
+    if (config.logoPath) {
+      node.src = config.logoPath;
+    }
+  });
   document.querySelectorAll("[data-config]").forEach((node) => {
     const key = node.dataset.config;
     if (Object.prototype.hasOwnProperty.call(config, key)) {

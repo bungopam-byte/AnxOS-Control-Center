@@ -41,7 +41,7 @@ Required files:
 - `styles.css`
 - `site.js`
 - `config.js`
-- `assets/anxos-icon.png`
+- `assets/anxos-logo.jpg`
 
 For GitHub Pages, publish the `website/` directory as the site root or copy its contents into the configured Pages branch/folder.
 

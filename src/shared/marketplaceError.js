@@ -74,7 +74,7 @@
         code: "PROVIDER_MANUAL_DOWNLOAD_REQUIRED",
         originalCode: code || details.originalCode || null,
         title: "A required modpack file needs manual download.",
-        body: friendlyMessage || "This provider does not allow AnxHub to download one required file automatically.",
+        body: friendlyMessage || "This provider does not allow AnxOS to download one required file automatically.",
         action: suggestion,
         provider,
         providerName,

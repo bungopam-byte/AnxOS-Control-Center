@@ -21,7 +21,7 @@ function getDeniedReasonCode(error) {
 
 function logActionRequest(actionId, endpoint, status, ok, errorCode = null) {
   console.info(
-    `[AnxHub][Action] ${actionId} -> ${endpoint} (status=${status ?? "n/a"}, ok=${ok ? "true" : "false"}, errorCode=${errorCode || "none"})`,
+    `[AnxOS][Action] ${actionId} -> ${endpoint} (status=${status ?? "n/a"}, ok=${ok ? "true" : "false"}, errorCode=${errorCode || "none"})`,
   );
 }
 

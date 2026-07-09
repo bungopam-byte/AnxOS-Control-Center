@@ -1,6 +1,6 @@
 # Windows Code Signing
 
-AnxHub supports proper Windows Authenticode signing through electron-builder. The publisher/company name is `Anx`.
+AnxOS supports proper Windows Authenticode signing through electron-builder. The publisher/company name is `Anx`.
 
 Signing is not faked. If Anx does not have a trusted code-signing certificate configured yet, Windows will still show `Unknown Publisher`.
 

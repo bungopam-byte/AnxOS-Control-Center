@@ -84,7 +84,7 @@ else
   git status --short
   echo
 
-  DEFAULT_MESSAGE="chore: update AnxHub"
+  DEFAULT_MESSAGE="chore: update AnxOS"
   echo "🤖 Suggested Commit"
   echo "$LINE"
   echo "$DEFAULT_MESSAGE"

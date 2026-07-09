@@ -420,7 +420,7 @@
           "server.port {port}",
           "server.queryport 28016",
           "server.maxplayers 50",
-          "server.description \"Managed by AnxHub\""
+          "server.description \"Managed by AnxOS\""
         ]
       }
     ],
@@ -531,7 +531,7 @@
           "endpoint_add_udp \"0.0.0.0:{port}\"",
           "sv_hostname \"{name}\"",
           "sets sv_projectName \"{name}\"",
-          "sets sv_projectDesc \"Managed by AnxHub\"",
+          "sets sv_projectDesc \"Managed by AnxOS\"",
           "sv_maxclients 32",
           "sv_licenseKey \"CHANGE_ME_FIVEM_LICENSE_KEY\""
         ]
@@ -605,7 +605,7 @@
     "downloadSource": { "type": "manual", "required": false },
     "disabled": true,
     "comingSoon": true,
-    "comingSoonMessage": "Official Hytale dedicated server binaries are not publicly available yet. AnxHub will enable this template only after an official dedicated server install method is released.",
+    "comingSoonMessage": "Official Hytale dedicated server binaries are not publicly available yet. AnxOS will enable this template only after an official dedicated server install method is released.",
     "installMetadata": {
       "method": "manual-pending",
       "notes": "No automated install is available yet because official dedicated server binaries are not publicly available."

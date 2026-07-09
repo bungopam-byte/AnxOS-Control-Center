@@ -169,7 +169,7 @@ function normalizeManifestRelease(manifest, sourceUrl) {
 
   return {
     tag_name: latestVersion ? `v${latestVersion}` : null,
-    name: manifest?.name || (latestVersion ? `v${latestVersion}` : "AnxHub update"),
+    name: manifest?.name || (latestVersion ? `v${latestVersion}` : "AnxOS update"),
     html_url: manifest?.html_url || manifest?.releaseUrl || sourceUrl,
     published_at: manifest?.published_at || manifest?.publishedAt || null,
     assets,

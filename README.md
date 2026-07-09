@@ -7,7 +7,7 @@ This project intentionally does not include secrets, tokens, API keys, credentia
 ## Files
 
 ```text
-AnxHub/
+AnxOS-Control-Center/
 ├── README.md
 ├── app.js
 ├── anxhub.desktop
@@ -60,7 +60,7 @@ AnxOS Control Center can connect to a local AMP API using `@cubecoders/ampapi`. 
 Create your local environment file:
 
 ```bash
-cd /home/anx/Projects/AnxHub
+cd /home/anx/Projects/AnxOS-Control-Center
 cp .env.example .env
 ```
 
@@ -91,7 +91,7 @@ The renderer still uses plain HTML/CSS/JavaScript. Node integration remains disa
 Install dependencies once:
 
 ```bash
-cd /home/anx/Projects/AnxHub
+cd /home/anx/Projects/AnxOS-Control-Center
 npm install
 ```
 
@@ -118,7 +118,7 @@ On Debian/Linux, the build produces Linux release artifacts:
 - `AnxOS-Control-Center-<version>.deb`
 - `AnxOS-Control-Center-<version>.AppImage`
 
-The `.deb` package is the recommended Linux installer for Debian-based AnxHub systems. The AppImage remains available as a fallback for systems where installing a package is not desired.
+The `.deb` package is the recommended Linux installer for Debian-based AnxOS systems. The AppImage remains available as a fallback for systems where installing a package is not desired.
 
 Windows release builds support Authenticode code signing when Anx signing secrets are configured. See [Windows Code Signing](docs/windows-code-signing.md). Unsigned local Windows builds are dev-only and may show `Unknown Publisher`.
 
@@ -287,8 +287,8 @@ After `npm install`, copy or symlink the desktop entry into your local applicati
 
 ```bash
 mkdir -p ~/.local/share/applications
-cp /home/anx/Projects/AnxHub/anxhub.desktop ~/.local/share/applications/
-chmod +x /home/anx/Projects/AnxHub/start-anxhub.sh
+cp /home/anx/Projects/AnxOS-Control-Center/anxhub.desktop ~/.local/share/applications/
+chmod +x /home/anx/Projects/AnxOS-Control-Center/start-anxhub.sh
 ```
 
 Then look for `AnxOS Control Center` in your desktop app launcher. You can also double-click `anxhub.desktop` from a file manager if your desktop environment allows trusted launchers.
@@ -298,7 +298,7 @@ Then look for `AnxOS Control Center` in your desktop app launcher. You can also 
 From the project directory:
 
 ```bash
-cd /home/anx/Projects/AnxHub
+cd /home/anx/Projects/AnxOS-Control-Center
 python3 -m http.server 8088
 ```
 

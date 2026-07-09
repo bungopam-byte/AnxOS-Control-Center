@@ -124,7 +124,7 @@ function logAgentConfigMetadata(reason, configPath, settings = null) {
 
   lastLoggedAgentConfigMeta = serialized;
   console.info(
-    `[AnxHub][Agent] Config path: ${payload.configPath} (source=${reason}, keys=${payload.keys.join(",") || "<none>"})`,
+    `[AnxOS][Agent] Config path: ${payload.configPath} (source=${reason}, keys=${payload.keys.join(",") || "<none>"})`,
   );
 }
 
@@ -143,7 +143,7 @@ function logAgentSelection(reason, source) {
 
   lastLoggedAgentSelection = serialized;
   console.info(
-    `[AnxHub][Agent] Selected agent URL: ${payload.agentUrl} (mode=${payload.backendMode}, source=${reason}, token=${payload.hasToken ? "set" : "unset"})`,
+    `[AnxOS][Agent] Selected agent URL: ${payload.agentUrl} (mode=${payload.backendMode}, source=${reason}, token=${payload.hasToken ? "set" : "unset"})`,
   );
 }
 
@@ -259,7 +259,7 @@ function buildAgentUrl(pathname, configOverride = null) {
 }
 
 function logAgentRequestFailure(pathname, status, errorCode = null, details = {}) {
-  console.error("[AnxHub][Agent] Request failed.", {
+  console.error("[AnxOS][Agent] Request failed.", {
     pathname,
     url: details.url || null,
     method: details.method || "GET",
@@ -620,7 +620,7 @@ async function getSystemStats(configOverride = null) {
       config: configOverride,
     });
   } catch (error) {
-    console.warn("[AnxHub][Agent] Stats endpoint unavailable; falling back to system summary.", {
+    console.warn("[AnxOS][Agent] Stats endpoint unavailable; falling back to system summary.", {
       message: error?.message || String(error),
       code: error?.code || null,
     });

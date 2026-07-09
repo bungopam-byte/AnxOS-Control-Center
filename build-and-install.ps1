@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 $OutputEncoding = [System.Text.Encoding]::UTF8
 chcp 65001 > $null
 
-$Project = "C:\Users\anjor\Desktop\AnxHub"
+$Project = "C:\Users\anjor\Desktop\AnxOS-Control-Center"
 
 $Rocket  = [char]::ConvertFromUtf32(0x1F680)
 $Folder  = [char]::ConvertFromUtf32(0x1F4C2)
@@ -124,17 +124,17 @@ Step "Current Branch"
 Write-Host "$Branch $(git branch --show-current)"
 
 Run-WithSpinner "Pulling latest changes" {
-    Set-Location "C:\Users\anjor\Desktop\AnxHub"
+    Set-Location "C:\Users\anjor\Desktop\AnxOS-Control-Center"
     git pull origin dev
 }
 
 Run-WithSpinner "Installing dependencies" {
-    Set-Location "C:\Users\anjor\Desktop\AnxHub"
+    Set-Location "C:\Users\anjor\Desktop\AnxOS-Control-Center"
     npm install --loglevel=error
 }
 
 Run-WithSpinner "Building installer" {
-    Set-Location "C:\Users\anjor\Desktop\AnxHub"
+    Set-Location "C:\Users\anjor\Desktop\AnxOS-Control-Center"
     npm run dist -- --publish never
 } @(
     "> anxos-control-center@1.0.0 dist",

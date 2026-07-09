@@ -492,7 +492,7 @@ function userHasPermission(user, permission) {
 function requirePermission(permission, target = null) {
   const status = getStatus();
   if (status.setupRequired) {
-    const error = new Error("Create the first admin user before using AnxHub.");
+    const error = new Error("Create the first admin user before using AnxOS.");
     error.code = "SECURITY_SETUP_REQUIRED";
     throw error;
   }

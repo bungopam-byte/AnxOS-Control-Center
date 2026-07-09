@@ -67,7 +67,7 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
     DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
     INSTALLER_NOT_SUPPORTED: "This server template cannot be fully automated yet.",
-    MANUAL_SETUP_REQUIRED: "This server requires manual setup before AnxHub can start it.",
+    MANUAL_SETUP_REQUIRED: "This server requires manual setup before AnxOS can start it.",
     FABRIC_RESOLVE_FAILED: "Unable to resolve Fabric download.",
     FORGE_RESOLVE_FAILED: "Unable to download Forge installer.",
     NEOFORGE_RESOLVE_FAILED: "Unable to download NeoForge installer.",

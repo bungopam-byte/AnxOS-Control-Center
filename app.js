@@ -6043,7 +6043,7 @@ function formatMarketplaceProviderLabel(template) {
   const provider = getMarketplaceProvider(template);
   if (provider === "modrinth") return "Modrinth";
   if (provider === "curseforge") return "CurseForge";
-  return "AnxHub";
+  return "AnxOS";
 }
 
 function formatMarketplaceLoaderLabel(template) {
@@ -6739,7 +6739,7 @@ function buildMarketplaceManualRecoveryState(template, manualDownload = {}, opti
     title: "Manual Download Required",
     subtitle: `Waiting for a required file from ${providerName}.`,
     body: "A required modpack file needs manual download.",
-    reason: manualDownload.reason || manualDownload.suggestion || "This provider does not allow AnxHub to download one required file automatically.",
+    reason: manualDownload.reason || manualDownload.suggestion || "This provider does not allow AnxOS to download one required file automatically.",
     fileText: manualDownload.fileName || "Unknown file",
     modText: manualDownload.projectName || "Unknown mod",
     versionText: manualDownload.versionId || "Unknown version",
@@ -9626,7 +9626,7 @@ function updateAmpPanelLink(snapshot) {
 
   if (logPayload !== lastLoggedAmpUrlSource) {
     lastLoggedAmpUrlSource = logPayload;
-    console.info(`[AnxHub][AMP] URL source=${ampUrlSource} connected=${snapshot?.connected === true ? "true" : "false"} hasUrl=${panelUrl ? "true" : "false"}`);
+    console.info(`[AnxOS][AMP] URL source=${ampUrlSource} connected=${snapshot?.connected === true ? "true" : "false"} hasUrl=${panelUrl ? "true" : "false"}`);
   }
 
   setField("ampPanelUrl", panelUrl || "Unavailable");
@@ -12722,12 +12722,12 @@ function renderSecurityState() {
     securityMode.textContent = setup ? "First Run Setup" : "Security";
   }
   if (securityTitle) {
-    securityTitle.textContent = setup ? "Create Owner Account" : "Sign in to AnxHub";
+    securityTitle.textContent = setup ? "Create Owner Account" : "Sign in to AnxOS";
   }
   if (securityDescription) {
     securityDescription.textContent = setup
       ? "No owner exists yet. Create the first local admin account."
-      : "Use your local AnxHub account to continue.";
+      : "Use your local AnxOS account to continue.";
   }
   if (securitySubmit) {
     securitySubmit.textContent = setup ? "Create Owner" : "Sign In";

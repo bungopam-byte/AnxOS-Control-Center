@@ -154,7 +154,7 @@ function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
   const agentUrl = agentConfig.agentUrl || agentConfig.url || null;
 
   if (!disk) {
-    console.warn("[AnxHub][System] Agent disk metrics unavailable or incomplete.", {
+    console.warn("[AnxOS][System] Agent disk metrics unavailable or incomplete.", {
       nodeUrl: agentUrl,
       hasDiskPayload: Boolean(snapshot?.disk || snapshot?.storage || snapshot?.filesystem || snapshot?.fs || snapshot?.rootDisk),
       diskKeys: snapshot?.disk && typeof snapshot.disk === "object" ? Object.keys(snapshot.disk) : [],
@@ -162,7 +162,7 @@ function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
   }
 
   if (!network) {
-    console.warn("[AnxHub][System] Agent network metrics unavailable or incomplete.", {
+    console.warn("[AnxOS][System] Agent network metrics unavailable or incomplete.", {
       nodeUrl: agentUrl,
       hasNetworkPayload: Boolean(snapshot?.network || snapshot?.net || snapshot?.networkIo || snapshot?.networkIO),
       networkKeys: snapshot?.network && typeof snapshot.network === "object" ? Object.keys(snapshot.network) : [],
@@ -448,7 +448,7 @@ async function getSystemSnapshot() {
     try {
       return await getAgentSystemSnapshot(nodeConfig);
     } catch (error) {
-      console.error("[AnxHub][System] Selected node stats fetch failed.", {
+      console.error("[AnxOS][System] Selected node stats fetch failed.", {
         nodeUrl: nodeConfig.agentUrl || nodeConfig.url || null,
         message: error?.message || String(error),
         stack: error?.stack || null,
@@ -465,7 +465,7 @@ async function getSystemSnapshot() {
     try {
       return await getAgentSystemSnapshot();
     } catch (error) {
-      console.warn("[AnxHub][System] Agent stats unavailable; using local system metrics.", {
+      console.warn("[AnxOS][System] Agent stats unavailable; using local system metrics.", {
         message: error?.message || String(error),
       });
     }

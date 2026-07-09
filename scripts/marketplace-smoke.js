@@ -326,6 +326,7 @@ function assertNonMinecraftServerTypeIsCleared() {
   const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(source.includes("delete options.serverType;"), "Renderer must not send hidden Minecraft serverType for non-Minecraft templates.");
   assert(source.includes("serverType: isMinecraft ?"), "Renderer option collection should gate serverType by template category.");
+  assert(source.includes("function isMarketplaceProviderSectionVisible() {\n  return isMarketplaceProviderBrowserActive();\n}"), "Marketplace provider filters should only show when the Modpacks category is active.");
   assert(indexSource.includes("Server Runtime"), "Marketplace wizard should label the Minecraft runtime selector as Server Runtime.");
   assert(!indexSource.includes("<option selected>Paper</option>"), "Marketplace wizard must not preselect Paper in static markup.");
   assert(source.includes("configureMarketplaceRuntimeField(template"), "Renderer should configure server runtime from template metadata.");

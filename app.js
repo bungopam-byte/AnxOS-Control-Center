@@ -5819,7 +5819,7 @@ function isMarketplaceProviderBrowserActive() {
 }
 
 function isMarketplaceProviderSectionVisible() {
-  return marketplaceActiveCategory === "All" || marketplaceActiveCategory === "Modpacks";
+  return isMarketplaceProviderBrowserActive();
 }
 
 function renderMarketplaceTemplates() {

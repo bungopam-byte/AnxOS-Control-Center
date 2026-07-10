@@ -344,14 +344,22 @@
           </button>
         </nav>
 
-        <div class="sidebar-footer" data-sidebar-footer data-tooltip="Local network only">
+        <button class="sidebar-footer" type="button" data-sidebar-footer data-node-picker-trigger data-tooltip="Local network only" aria-haspopup="listbox" aria-expanded="false">
           <span class="pulse" aria-hidden="true"></span>
           <div class="sidebar-footer__copy">
-            <strong data-field="hostname">Local network only</strong>
-            <span id="local-time">Loading local time...</span>
+            <strong data-node-picker-label>This Device</strong>
+            <span data-node-picker-detail>Local device</span>
           </div>
-        </div>
+        </button>
         </aside>
+
+        <div class="node-picker-popover" data-node-picker hidden role="dialog" aria-label="Select AnxOS node">
+          <div class="node-picker-popover__header">
+            <strong>Switch Node</strong>
+            <span data-node-picker-status>Choose a device to manage.</span>
+          </div>
+          <div class="node-picker-popover__list" data-node-picker-list role="listbox" aria-label="Available nodes"></div>
+        </div>
 
         <main class="main-content">
         <section class="page is-active" data-page="dashboard">

@@ -398,6 +398,10 @@ const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
 const nodeMessage = document.querySelector("[data-node-message]");
 const nodeStatus = document.querySelector("[data-node-status]");
+const nodePickerTrigger = document.querySelector("[data-node-picker-trigger]");
+const nodePicker = document.querySelector("[data-node-picker]");
+const nodePickerList = document.querySelector("[data-node-picker-list]");
+const nodePickerStatus = document.querySelector("[data-node-picker-status]");
 const backupActionButtons = document.querySelectorAll("[data-backup-action]");
 const backupTableBody = document.querySelector(".backup-table tbody");
 const backupEmptyState = document.querySelector(".backup-empty-state");
@@ -437,6 +441,8 @@ let ownerLogEntries = [];
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let selectedNodeContextVersion = 0;
 let nodeSwitchInProgress = false;
+let nodePickerOpen = false;
+let nodePickerActiveIndex = 0;
 let backupRequestInFlight = false;
 let backupsState = {
   backups: [],
@@ -1254,9 +1260,9 @@ function updateSidebarFooterTooltip() {
     return;
   }
 
-  const hostname = document.querySelector(".sidebar-footer [data-field='hostname']")?.textContent?.trim() || "Local network only";
-  const localTime = timeTarget?.textContent?.trim() || "Loading local time...";
-  const tooltip = `${hostname} | ${localTime}`;
+  const nodeName = sidebarFooter.querySelector("[data-node-picker-label]")?.textContent?.trim() || "This Device";
+  const nodeDetail = sidebarFooter.querySelector("[data-node-picker-detail]")?.textContent?.trim() || "Click to switch nodes";
+  const tooltip = `${nodeName} | ${nodeDetail}`;
 
   sidebarFooter.dataset.tooltip = tooltip;
   if (sidebarCollapsed && !sidebarHoverExpanded && isDesktopSidebarCollapsible()) {
@@ -15148,6 +15154,151 @@ function getNodeVisualState(node) {
   return node?.hasToken ? "offline" : "error";
 }
 
+function getNodePickerNodes() {
+  return Array.isArray(nodesState.nodes) ? nodesState.nodes : [];
+}
+
+function positionNodePicker() {
+  if (!nodePicker || !nodePickerTrigger || nodePicker.hidden) {
+    return;
+  }
+  const triggerRect = nodePickerTrigger.getBoundingClientRect();
+  const width = Math.min(340, Math.max(260, Math.round(triggerRect.width + 48)));
+  const viewportGap = 14;
+  const pickerHeight = Math.min(420, Math.max(220, nodePicker.offsetHeight || 280));
+  const left = Math.min(
+    Math.max(viewportGap, triggerRect.left),
+    Math.max(viewportGap, window.innerWidth - width - viewportGap),
+  );
+  const top = Math.max(viewportGap, Math.min(triggerRect.top - pickerHeight - 10, window.innerHeight - pickerHeight - viewportGap));
+  nodePicker.style.width = `${width}px`;
+  nodePicker.style.left = `${left}px`;
+  nodePicker.style.top = `${top}px`;
+}
+
+function updateNodePickerActiveDescendant() {
+  if (!nodePickerList) {
+    return;
+  }
+  const options = Array.from(nodePickerList.querySelectorAll("[data-node-picker-option]"));
+  options.forEach((option, index) => {
+    option.classList.toggle("is-active", index === nodePickerActiveIndex);
+    option.tabIndex = index === nodePickerActiveIndex ? 0 : -1;
+  });
+  const active = options[nodePickerActiveIndex];
+  if (active) {
+    nodePickerList.setAttribute("aria-activedescendant", active.id);
+  } else {
+    nodePickerList.removeAttribute("aria-activedescendant");
+  }
+}
+
+function renderNodePicker() {
+  if (!nodePickerList) {
+    return;
+  }
+  const nodes = getNodePickerNodes();
+  nodePickerList.replaceChildren();
+  if (nodePickerStatus) {
+    nodePickerStatus.textContent = nodes.length
+      ? "Choose a device to manage."
+      : getDesktopApiState().hasNodes
+        ? "No selectable nodes are available."
+        : "Node service is loading.";
+  }
+  if (!nodes.length) {
+    const empty = document.createElement("div");
+    empty.className = "node-picker-empty";
+    empty.textContent = getDesktopApiState().hasNodes
+      ? "No selectable nodes are available. This Device will appear after node setup finishes."
+      : "Node service is unavailable. Local device mode will remain available when startup completes.";
+    nodePickerList.append(empty);
+    return;
+  }
+
+  const selectedIndex = Math.max(0, nodes.findIndex((node) => node.id === getSelectedNodeId()));
+  nodePickerActiveIndex = Math.min(Math.max(nodePickerActiveIndex, 0), nodes.length - 1);
+  if (!nodePickerOpen) {
+    nodePickerActiveIndex = selectedIndex;
+  }
+
+  nodes.forEach((node, index) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.id = `node-picker-option-${String(node.id || index).replace(/[^a-z0-9_-]/gi, "-")}`;
+    option.className = "node-picker-option";
+    option.dataset.nodePickerOption = node.id;
+    option.dataset.agentState = getNodeVisualState(node);
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", node.id === getSelectedNodeId() ? "true" : "false");
+    option.append(createAgentRobotIcon(getNodeVisualState(node)));
+    const copy = document.createElement("span");
+    copy.className = "node-picker-option__copy";
+    const title = document.createElement("strong");
+    title.textContent = node.displayName || node.id || "Unnamed node";
+    const detail = document.createElement("small");
+    detail.textContent = node.local || node.backendMode === "local"
+      ? "This device · local mode"
+      : `${node.agentUrl || "Remote agent"} · ${node.hasToken ? "token configured" : "token missing"}`;
+    copy.append(title, detail);
+    const badge = document.createElement("span");
+    badge.className = "node-picker-option__badge";
+    badge.textContent = node.id === getSelectedNodeId() ? "Current" : getNodeVisualState(node);
+    option.append(copy, badge);
+    option.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await selectNode(node.id || "default");
+      closeNodePicker();
+    });
+    nodePickerList.append(option);
+  });
+  updateNodePickerActiveDescendant();
+  positionNodePicker();
+}
+
+function setNodePickerOpen(open) {
+  if (!nodePicker || !nodePickerTrigger) {
+    return;
+  }
+  const nextOpen = Boolean(open);
+  nodePickerOpen = nextOpen;
+  nodePicker.hidden = !nextOpen;
+  nodePickerTrigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+  nodePickerTrigger.classList.toggle("is-node-picker-open", nextOpen);
+  if (nextOpen) {
+    const nodes = getNodePickerNodes();
+    nodePickerActiveIndex = Math.max(0, nodes.findIndex((node) => node.id === getSelectedNodeId()));
+    renderNodePicker();
+    requestAnimationFrame(positionNodePicker);
+  }
+}
+
+function openNodePicker() {
+  setNodePickerOpen(true);
+}
+
+function closeNodePicker() {
+  setNodePickerOpen(false);
+}
+
+function toggleNodePicker() {
+  if (nodePickerOpen) {
+    closeNodePicker();
+    return;
+  }
+  openNodePicker();
+}
+
+async function activateNodePickerOption(index) {
+  const nodes = getNodePickerNodes();
+  const node = nodes[index];
+  if (!node) {
+    return;
+  }
+  await selectNode(node.id || "default");
+  closeNodePicker();
+}
+
 function renderNodes() {
   nodeTargetSelects.forEach((select) => {
     select.replaceChildren();
@@ -15164,6 +15315,26 @@ function renderNodes() {
     const selected = (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId());
     nodeStatus.textContent = selected?.displayName || "Default";
     nodeStatus.dataset.agentState = getNodeVisualState(selected);
+  }
+
+  if (sidebarFooter) {
+    const selected = getSelectedNode();
+    const nodeName = selected?.displayName || "This Device";
+    const nodeState = getNodeVisualState(selected);
+    const nameTarget = sidebarFooter.querySelector("[data-node-picker-label]");
+    const detailTarget = sidebarFooter.querySelector("[data-node-picker-detail]");
+    if (nameTarget) {
+      nameTarget.textContent = nodeName;
+    }
+    if (detailTarget) {
+      detailTarget.textContent = nodeSwitchInProgress
+        ? "Switching node..."
+        : selected?.local || selected?.backendMode === "local"
+          ? "Local device"
+          : selected?.agentUrl || "Remote agent";
+    }
+    sidebarFooter.dataset.agentState = nodeState;
+    sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? "Switching node" : "Click to switch nodes"}`;
   }
 
   if (nodeMessage) {
@@ -15195,6 +15366,7 @@ function renderNodes() {
       nodeList.append(item);
     });
   }
+  renderNodePicker();
 }
 
 async function refreshNodes() {
@@ -17149,6 +17321,59 @@ localSetupButtons.forEach((button) => {
 nodeTargetSelects.forEach((select) => {
   select.addEventListener("change", () => selectNode(select.value || "default"));
 });
+nodePickerTrigger?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleNodePicker();
+});
+nodePickerTrigger?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    toggleNodePicker();
+  } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    event.preventDefault();
+    openNodePicker();
+    const nodes = getNodePickerNodes();
+    if (nodes.length) {
+      nodePickerActiveIndex = event.key === "ArrowUp" ? Math.max(0, nodes.length - 1) : 0;
+      updateNodePickerActiveDescendant();
+      nodePickerList?.querySelectorAll("[data-node-picker-option]")?.[nodePickerActiveIndex]?.focus?.();
+    }
+  }
+});
+nodePicker?.addEventListener("click", (event) => {
+  event.stopPropagation();
+});
+nodePicker?.addEventListener("keydown", async (event) => {
+  if (!nodePickerOpen) {
+    return;
+  }
+  const nodes = getNodePickerNodes();
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeNodePicker();
+    nodePickerTrigger?.focus?.();
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    nodePickerActiveIndex = Math.min(nodes.length - 1, nodePickerActiveIndex + 1);
+    updateNodePickerActiveDescendant();
+    nodePickerList?.querySelectorAll("[data-node-picker-option]")?.[nodePickerActiveIndex]?.focus?.();
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    nodePickerActiveIndex = Math.max(0, nodePickerActiveIndex - 1);
+    updateNodePickerActiveDescendant();
+    nodePickerList?.querySelectorAll("[data-node-picker-option]")?.[nodePickerActiveIndex]?.focus?.();
+  } else if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    await activateNodePickerOption(nodePickerActiveIndex);
+  }
+});
+document.addEventListener("click", () => {
+  if (nodePickerOpen) {
+    closeNodePicker();
+  }
+});
+window.addEventListener("resize", positionNodePicker);
+window.addEventListener("scroll", positionNodePicker, true);
 document.querySelector('[data-node-action="save"]')?.addEventListener("click", saveNodeFromSettings);
 document.querySelector('[data-node-action="test"]')?.addEventListener("click", testSelectedNode);
 document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);

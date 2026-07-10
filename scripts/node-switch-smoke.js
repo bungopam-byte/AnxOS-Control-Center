@@ -23,6 +23,7 @@ function compact(source) {
 
 includesAll(appSource, [
   "let selectedNodeContextVersion = 0;",
+  "let nodePickerOpen = false;",
   "function getNodeRequestContext",
   "function isNodeRequestCurrent",
   "function getNodeScopedPayload",
@@ -32,9 +33,22 @@ includesAll(appSource, [
   "function isNodeActionStillCurrent",
   "function resetNodeScopedRendererState",
   "async function reloadActiveNodeData",
+  "function openNodePicker",
+  "function closeNodePicker",
+  "function renderNodePicker",
+  "function positionNodePicker",
   "selectedNodeContextVersion += 1;",
   "resetNodeScopedRendererState(`Switching to",
 ], "Renderer");
+
+includesAll(appSource, [
+  "nodePickerTrigger?.addEventListener(\"click\"",
+  "event.stopPropagation();",
+  "document.addEventListener(\"click\"",
+  "nodePicker?.addEventListener(\"keydown\"",
+  "await activateNodePickerOption(nodePickerActiveIndex);",
+  "sidebarFooter.dataset.agentState = nodeState;",
+], "Node picker interaction");
 
 includesAll(appSource, [
   "desktopApiState.api.system.getSnapshot(getNodeScopedPayload(requestContext))",

@@ -289,7 +289,23 @@ function getBackendMode() {
 }
 
 function getAgentConfig(configOverride = null) {
-  const source = configOverride ? normalizeAgentSettings(configOverride) : getEffectiveAgentSettings();
+  const source = (() => {
+    if (!configOverride) {
+      return getEffectiveAgentSettings();
+    }
+    const fallback = getEffectiveAgentSettings();
+    const overrideHasToken = hasOwn(configOverride, "agentToken") || hasOwn(configOverride, "token");
+    const normalizedOverride = normalizeAgentSettings({
+      ...configOverride,
+      agentToken: overrideHasToken
+        ? firstDefined(configOverride, ["agentToken", "token"])
+        : fallback.agentToken,
+    });
+    return {
+      ...normalizedOverride,
+      agentToken: normalizedOverride.agentToken || fallback.agentToken || "",
+    };
+  })();
 
   return {
     url: source.agentUrl || DEFAULT_AGENT_URL,

@@ -75,6 +75,18 @@ function main() {
   const expired = createAgentPairingPayload({ ttlMs: -1000 });
   assert.throws(() => parseAgentPairingPayload(expired.code), /expired/i, "Expired pairing codes should be rejected.");
 
+  const agentClient = require("../src/services/agentClient");
+  agentClient.saveAgentSettings({
+    backendMode: "agent",
+    agentUrl: "http://10.0.0.5:47131",
+    agentToken: imported.agentToken,
+  });
+  const formOverrideConfig = agentClient.getAgentConfig({
+    backendMode: "agent",
+    agentUrl: "http://10.0.0.5:47131",
+  });
+  assert.strictEqual(formOverrideConfig.token, imported.agentToken, "Blank Settings form token should preserve the saved paired token.");
+
   console.log("Agent token smoke checks passed.");
 }
 

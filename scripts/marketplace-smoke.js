@@ -376,7 +376,9 @@ function assertNativeUpdateExperience() {
   assert(appSource.includes("result?.error || result?.message || \"Update download failed.\""), "Renderer should preserve update download errors in modal state.");
   assert(appSource.includes('state?.status === "available" && state?.latest?.hasUpdate'), "Renderer should open the update modal when startup state already has an available update.");
   assert(appSource.includes('renderUpdateModal("up-to-date")'), "Manual update checks should open a clear up-to-date modal instead of doing nothing.");
+  assert(appSource.includes("if (updateUiState) updateUiState.checkInFlight = false;"), "Terminal update events should release the renderer's manual-check guard.");
   const updateManagerSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "updateManager.js"), "utf8");
+  assert(updateManagerSource.includes('this.state.checkInFlight = false;\n        this.emitStatus("available"'), "Available updates should be emitted with a completed check state.");
   assert(updateManagerSource.includes("function resolveRedirectUrl("), "Update manager should resolve redirect locations against the current URL.");
   assert(updateManagerSource.includes("fs.mkdirSync(path.dirname(destinationPath), { recursive: true })"), "Update manager should create the download destination directory.");
   assert(updateManagerSource.includes("isBlockedDownloadStatus(response.statusCode) && isGitHubDownloadUrl(url)"), "Update manager should explain blocked private GitHub release downloads.");

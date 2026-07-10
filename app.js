@@ -16338,6 +16338,8 @@ function renderUpdateModal(mode = getUpdateModeFromState()) {
 function handleUpdateStatus(payload = {}) {
   updateUiState = payload.state || updateUiState;
   if (payload.type === "available") {
+    updateCheckInFlight = false;
+    if (updateUiState) updateUiState.checkInFlight = false;
     latestUpdateInfo = payload.update || latestUpdateInfo;
     downloadedUpdatePath = null;
     renderUpdateSurfaces(updateUiState);
@@ -16379,6 +16381,10 @@ function handleUpdateStatus(payload = {}) {
     return;
   }
   if (["checking", "not-available", "unavailable", "error", "skipped"].includes(payload.type)) {
+    if (payload.type !== "checking") {
+      updateCheckInFlight = false;
+      if (updateUiState) updateUiState.checkInFlight = false;
+    }
     renderUpdateSurfaces(updateUiState);
     if (payload.type === "error" && payload.notify) {
       renderUpdateModal("error");

@@ -339,6 +339,7 @@ class UpdateManager extends EventEmitter {
         this.state.status = "unavailable";
         this.state.latest = { hasUpdate: false, releaseUnavailable: true, message: "No update release is published yet.", checkedSources };
         this.state.lastCheckedAt = new Date().toISOString();
+        this.state.checkInFlight = false;
         this.log("No update release is published yet.", { checkedSources }, "warn");
         this.emitStatus("unavailable", { update: this.state.latest });
         return this.state.latest;
@@ -351,15 +352,18 @@ class UpdateManager extends EventEmitter {
         this.log("Update available.", { latestVersion: result.latestVersion, skipped: result.skipped, asset: result.asset?.name || null });
         const shouldNotify = !result.skipped && (!this.notifiedVersions.has(result.latestVersion) || options.forceNotify);
         if (shouldNotify) this.notifiedVersions.add(result.latestVersion);
+        this.state.checkInFlight = false;
         this.emitStatus("available", { update: result, notify: shouldNotify });
       } else {
         this.state.status = "up-to-date";
+        this.state.checkInFlight = false;
         this.log("No updates available.", { currentVersion: result.currentVersion, latestVersion: result.latestVersion });
         this.emitStatus("not-available", { update: result });
       }
       return result;
     } catch (error) {
       this.state.status = "error";
+      this.state.checkInFlight = false;
       this.state.error = error?.message || "Update check failed.";
       this.log("Update check failed.", { message: this.state.error, stack: error?.stack || null }, "error");
       this.emitStatus("error", { message: this.state.error });

@@ -2910,44 +2910,49 @@ function renderCpuTemperature(snapshot) {
 
 function updateLocalTime() {
   const now = new Date();
-  timeTarget.textContent = now.toLocaleString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  if (timeTarget) {
+    timeTarget.textContent = now.toLocaleString([], {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
   updateSidebarFooterTooltip();
 }
 
 function renderSnapshot(snapshot) {
-  const timestamp = new Date(snapshot.currentTime);
+  const safeSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
+  const timestamp = safeSnapshot.currentTime ? new Date(safeSnapshot.currentTime) : new Date();
 
-  timeTarget.textContent = timestamp.toLocaleString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  if (timeTarget) {
+    timeTarget.textContent = timestamp.toLocaleString([], {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  }
 
-  setField("hostname", snapshot.hostname || "Unavailable");
+  setField("hostname", safeSnapshot.hostname || "Unavailable");
   updateSidebarFooterTooltip();
-  setField("osVersion", snapshot.osVersion || "Unavailable");
-  setField("platform", snapshot.platform || "Unavailable");
-  setField("cpuUsage", formatPercent(snapshot.cpu?.usagePercent));
-  setField("cpuModel", snapshot.cpu?.model || "Unavailable");
-  setField("cpuCores", Number.isFinite(snapshot.cpu?.cores) ? `${snapshot.cpu.cores}` : "Unavailable");
-  setField("memoryUsage", `${formatPercent(snapshot.memory?.percent)} (${formatBytes(snapshot.memory?.used)} / ${formatBytes(snapshot.memory?.total)})`);
-  setField("memoryAvailable", formatBytes(snapshot.memory?.free));
-  setField("memoryTotal", formatBytes(snapshot.memory?.total));
+  setField("osVersion", safeSnapshot.osVersion || "Unavailable");
+  setField("platform", safeSnapshot.platform || "Unavailable");
+  setField("cpuUsage", formatPercent(safeSnapshot.cpu?.usagePercent));
+  setField("cpuModel", safeSnapshot.cpu?.model || "Unavailable");
+  setField("cpuCores", Number.isFinite(safeSnapshot.cpu?.cores) ? `${safeSnapshot.cpu.cores}` : "Unavailable");
+  setField("memoryUsage", `${formatPercent(safeSnapshot.memory?.percent)} (${formatBytes(safeSnapshot.memory?.used)} / ${formatBytes(safeSnapshot.memory?.total)})`);
+  setField("memoryAvailable", formatBytes(safeSnapshot.memory?.free));
+  setField("memoryTotal", formatBytes(safeSnapshot.memory?.total));
 
-  if (snapshot.disk) {
-    setField("diskUsage", `${formatPercent(snapshot.disk.percent)} (${formatBytes(snapshot.disk.used)} / ${formatBytes(snapshot.disk.total)})`);
-    setField("diskFree", formatBytes(snapshot.disk.free));
-    setField("diskMount", snapshot.disk.mount || "Unavailable");
-    setField("diskTotal", formatBytes(snapshot.disk.total));
+  if (safeSnapshot.disk) {
+    setField("diskUsage", `${formatPercent(safeSnapshot.disk.percent)} (${formatBytes(safeSnapshot.disk.used)} / ${formatBytes(safeSnapshot.disk.total)})`);
+    setField("diskFree", formatBytes(safeSnapshot.disk.free));
+    setField("diskMount", safeSnapshot.disk.mount || "Unavailable");
+    setField("diskTotal", formatBytes(safeSnapshot.disk.total));
   } else {
     setField("diskUsage", "Unavailable");
     setField("diskFree", "Unavailable");
@@ -2955,16 +2960,16 @@ function renderSnapshot(snapshot) {
     setField("diskTotal", "Unavailable");
   }
 
-  if (snapshot.network) {
+  if (safeSnapshot.network) {
     setField(
       "networkUsage",
-      `Down ${formatBytes(snapshot.network.downloadPerSecond)}/s · Up ${formatBytes(snapshot.network.uploadPerSecond)}/s`,
+      `Down ${formatBytes(safeSnapshot.network.downloadPerSecond)}/s · Up ${formatBytes(safeSnapshot.network.uploadPerSecond)}/s`,
     );
-    setField("networkDownload", `${formatBytes(snapshot.network.downloadPerSecond)}/s`);
-    setField("networkUpload", `${formatBytes(snapshot.network.uploadPerSecond)}/s`);
-    setField("networkThroughput", `${formatBytes(snapshot.network.downloadPerSecond)}/s down · ${formatBytes(snapshot.network.uploadPerSecond)}/s up`);
-    setField("networkTotalDownload", formatBytes(snapshot.network.totalDownload));
-    setField("networkTotalUpload", formatBytes(snapshot.network.totalUpload));
+    setField("networkDownload", `${formatBytes(safeSnapshot.network.downloadPerSecond)}/s`);
+    setField("networkUpload", `${formatBytes(safeSnapshot.network.uploadPerSecond)}/s`);
+    setField("networkThroughput", `${formatBytes(safeSnapshot.network.downloadPerSecond)}/s down · ${formatBytes(safeSnapshot.network.uploadPerSecond)}/s up`);
+    setField("networkTotalDownload", formatBytes(safeSnapshot.network.totalDownload));
+    setField("networkTotalUpload", formatBytes(safeSnapshot.network.totalUpload));
   } else {
     setField("networkUsage", "Unavailable");
     setField("networkDownload", "Unavailable");
@@ -2974,8 +2979,8 @@ function renderSnapshot(snapshot) {
     setField("networkTotalUpload", "Unavailable");
   }
 
-  setField("uptime", formatDuration(snapshot.uptimeSeconds));
-  renderCpuTemperature(snapshot);
+  setField("uptime", formatDuration(safeSnapshot.uptimeSeconds));
+  renderCpuTemperature(safeSnapshot);
 }
 
 function getConfiguredPlayitAddress() {

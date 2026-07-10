@@ -458,7 +458,15 @@ async function getSystemSnapshot() {
   }
 
   if (backendMode === "agent") {
-    return getAgentSystemSnapshot();
+    try {
+      return await getAgentSystemSnapshot();
+    } catch (error) {
+      console.warn("[AnxOS][System] Default agent stats fetch failed; using local system metrics.", {
+        message: error?.message || String(error),
+        code: error?.code || null,
+      });
+      return getLocalSystemSnapshot();
+    }
   }
 
   if (backendMode === "auto") {

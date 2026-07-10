@@ -8,12 +8,30 @@ process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 process.env.NODE_ENV = "development";
 process.env.ANXOS_TRUSTED_DEVELOPMENT_MODE = "1";
 
+const repoRoot = path.join(__dirname, "..");
+
+function readRepoFile(relativePath) {
+  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+}
+
 function reload(modulePath) {
   delete require.cache[require.resolve(modulePath)];
   return require(modulePath);
 }
 
 async function main() {
+  const indexHtml = readRepoFile("index.html");
+  const appJs = readRepoFile("app.js");
+  const preloadJs = readRepoFile("preload.js");
+  const mainJs = readRepoFile("main.js");
+
+  assert(indexHtml.includes("data-owner-workspace-nav"), "Owner Workspace sidebar section should be present.");
+  assert(indexHtml.includes('data-page-target="owner-workspace"'), "Owner Workspace sidebar route should be registered.");
+  assert(indexHtml.includes('data-page="owner-workspace"'), "Owner Workspace page route should be present.");
+  assert(preloadJs.includes("ownerWorkspace:getWorkspace"), "Owner Workspace preload bridge should expose workspace IPC.");
+  assert(mainJs.includes("registerOwnerWorkspaceIpc()"), "Owner Workspace IPC should be registered by the main process.");
+  assert(appJs.includes("ownerWorkspaceAvailable"), "Renderer should use the trusted owner workspace availability state.");
+
   const securityPath = "../src/services/securityService";
   const workspacePath = "../src/services/ownerWorkspaceService";
 

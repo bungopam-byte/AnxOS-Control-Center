@@ -2297,8 +2297,15 @@ function startStartupFallback() {
   }, Math.max(STARTUP_FALLBACK_MS, getStartupMinimumMs() + 2200));
 }
 
-function isOwnerWorkspaceAuthorized() {
+function hasOwnerWorkspaceAccess() {
+  if (securityState?.ownerWorkspaceAvailable === true) {
+    return true;
+  }
   return Boolean(securityState?.user?.role === "Owner" && securityState?.user?.account !== true);
+}
+
+function isOwnerWorkspaceAuthorized() {
+  return hasOwnerWorkspaceAccess();
 }
 
 function setOwnerWorkspaceNavVisible(visible) {

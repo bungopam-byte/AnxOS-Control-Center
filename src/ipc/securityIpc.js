@@ -45,7 +45,7 @@ async function invokeSecurityOperation(operation, operationName = "security") {
 
 function registerSecurityIpc() {
   ipcMain.handle("security:getStatus", async () => invokeSecurityOperation(() => getStatus(), "security:getStatus"));
-  ipcMain.handle("security:getDashboard", async () => invokeSecurityOperation(() => getSecurityDashboard(), "security:getDashboard"));
+  ipcMain.handle("security:getDashboard", async (_, payload = {}) => invokeSecurityOperation(() => getSecurityDashboard(payload), "security:getDashboard"));
   ipcMain.handle("security:setupAdmin", async (_, payload = {}) => invokeSecurityOperation(() => setupAdmin(payload), "security:setupAdmin"));
   ipcMain.handle("security:login", async (_, payload = {}) => invokeSecurityOperation(() => login(payload), "security:login"));
   ipcMain.handle("security:logout", async () => invokeSecurityOperation(() => logout(), "security:logout"));

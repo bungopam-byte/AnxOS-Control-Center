@@ -988,12 +988,16 @@ function normalizePlayitSnapshot(payload) {
   };
 }
 
-async function getPlayitStatus() {
-  return requestJson("/api/v1/playit/status");
+async function getPlayitStatus(configOverride = null) {
+  return requestJson("/api/v1/playit/status", {
+    config: configOverride,
+  });
 }
 
-async function getPlayitSnapshot() {
-  return normalizePlayitSnapshot(await requestJson("/api/v1/playit/snapshot"));
+async function getPlayitSnapshot(configOverride = null) {
+  return normalizePlayitSnapshot(await requestJson("/api/v1/playit/snapshot", {
+    config: configOverride,
+  }));
 }
 
 function safeNumber(value) {
@@ -1496,16 +1500,22 @@ function normalizeAmpSnapshot(statusPayload, instancesPayload) {
   };
 }
 
-async function getAmpStatus() {
-  return requestJson("/api/v1/amp/status");
+async function getAmpStatus(configOverride = null) {
+  return requestJson("/api/v1/amp/status", {
+    config: configOverride,
+  });
 }
 
-async function getAmpInstances() {
-  return requestJson("/api/v1/amp/instances");
+async function getAmpInstances(configOverride = null) {
+  return requestJson("/api/v1/amp/instances", {
+    config: configOverride,
+  });
 }
 
-async function getAmpSnapshot() {
-  const payload = await requestJson("/api/v1/amp/snapshot");
+async function getAmpSnapshot(configOverride = null) {
+  const payload = await requestJson("/api/v1/amp/snapshot", {
+    config: configOverride,
+  });
   return normalizeAmpSnapshot(payload, payload);
 }
 
@@ -2004,58 +2014,70 @@ async function deleteInstance(instanceId, configOverride = null) {
   });
 }
 
-async function listBackups(options = {}) {
+async function listBackups(options = {}, configOverride = null) {
   const query = new URLSearchParams();
   if (options.instanceId) {
     query.set("instanceId", options.instanceId);
   }
-  return requestJson(`/api/v1/backups/list${query.toString() ? `?${query.toString()}` : ""}`);
+  return requestJson(`/api/v1/backups/list${query.toString() ? `?${query.toString()}` : ""}`, {
+    config: configOverride,
+  });
 }
 
-async function createBackup(payload = {}) {
+async function createBackup(payload = {}, configOverride = null) {
   return requestJson("/api/v1/backups", {
+    config: configOverride,
     method: "POST",
     body: payload,
   });
 }
 
-async function restoreBackup(payload = {}) {
+async function restoreBackup(payload = {}, configOverride = null) {
   return requestJson("/api/v1/backups/restore", {
+    config: configOverride,
     method: "POST",
     body: payload,
   });
 }
 
-async function importBackup(payload = {}) {
+async function importBackup(payload = {}, configOverride = null) {
   return requestJson("/api/v1/backups/import", {
+    config: configOverride,
     method: "POST",
     body: payload,
   });
 }
 
-async function deleteBackup(backupId) {
+async function deleteBackup(backupId, configOverride = null) {
   return requestJson(`/api/v1/backups/${encodeURIComponent(String(backupId || ""))}`, {
+    config: configOverride,
     method: "DELETE",
   });
 }
 
-async function downloadBackup(backupId) {
-  return requestBuffer(`/api/v1/backups/${encodeURIComponent(String(backupId || ""))}/download`);
+async function downloadBackup(backupId, configOverride = null) {
+  return requestBuffer(`/api/v1/backups/${encodeURIComponent(String(backupId || ""))}/download`, {
+    config: configOverride,
+  });
 }
 
-async function listBackupSchedules() {
-  return requestJson("/api/v1/backups/schedules");
-}
-
-async function saveBackupSchedule(payload = {}) {
+async function listBackupSchedules(configOverride = null) {
   return requestJson("/api/v1/backups/schedules", {
+    config: configOverride,
+  });
+}
+
+async function saveBackupSchedule(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/backups/schedules", {
+    config: configOverride,
     method: "PUT",
     body: payload,
   });
 }
 
-async function deleteBackupSchedule(instanceId) {
+async function deleteBackupSchedule(instanceId, configOverride = null) {
   return requestJson(`/api/v1/backups/${encodeURIComponent(String(instanceId || ""))}/schedule`, {
+    config: configOverride,
     method: "DELETE",
   });
 }

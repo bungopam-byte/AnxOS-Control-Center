@@ -15,6 +15,10 @@ const {
   getConfiguredOwnerAccounts,
   isOwnerAccount,
 } = require("./ownerAccountConfig");
+const {
+  getNode,
+  getNodeAgentConfig,
+} = require("./nodeService");
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -550,8 +554,15 @@ function getSessionRows(state, status) {
   return rows;
 }
 
-function getAgentTokenSummary(state) {
-  const settings = readAgentSettings();
+function getNodeScopedAgentSettings(options = {}) {
+  if (options?.nodeId && options.nodeId !== "default") {
+    return getNodeAgentConfig(options.nodeId);
+  }
+  return readAgentSettings();
+}
+
+function getAgentTokenSummary(state, options = {}) {
+  const settings = getNodeScopedAgentSettings(options);
   let stat = null;
   try {
     stat = fs.statSync(getAgentConfigPath());
@@ -564,15 +575,17 @@ function getAgentTokenSummary(state) {
     createdAt: safeIso(tokenRecord.createdAt) || (stat ? stat.birthtime.toISOString() : null),
     lastRotatedAt: safeIso(tokenRecord.lastRotatedAt) || (stat ? stat.mtime.toISOString() : null),
     lastUsedAt: safeIso(tokenRecord.lastUsedAt),
-    scope: settings.backendMode === "agent" ? "Remote agent" : "Local device",
+    scope: options?.nodeId && options.nodeId !== "default" ? "Selected remote node" : settings.backendMode === "agent" ? "Remote agent" : "Local device",
     expirationState: "No expiration",
-    associatedDevice: settings.agentUrl || "This Device",
+    associatedDevice: options?.nodeId && options.nodeId !== "default"
+      ? getNode(options.nodeId)?.displayName || settings.agentUrl
+      : settings.agentUrl || "This Device",
     configPath: getAgentConfigPath(),
   };
 }
 
-function getRemoteAccessSummary(state) {
-  const settings = readAgentSettings();
+function getRemoteAccessSummary(state, options = {}) {
+  const settings = getNodeScopedAgentSettings(options);
   const enabled = settings.backendMode === "agent" || settings.backendMode === "auto";
   let parsed = null;
   try {
@@ -670,7 +683,7 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
   return recommendations;
 }
 
-function getSecurityDashboard() {
+function getSecurityDashboard(options = {}) {
   const actor = requirePermission("settings:write", "security-dashboard");
   const status = getStatus();
   const state = readSecurityState();
@@ -689,8 +702,8 @@ function getSecurityDashboard() {
     current: device.id === getCurrentDeviceId(),
     trusted: device.trusted !== false,
   }));
-  const token = getAgentTokenSummary(state);
-  const remoteAccess = getRemoteAccessSummary(state);
+  const token = getAgentTokenSummary(state, options);
+  const remoteAccess = getRemoteAccessSummary(state, options);
   const recommendations = buildRecommendations({ status, sessions, trustedDevices, remoteAccess, token, events, state });
   const unresolvedWarnings = recommendations.filter((item) => item.severity !== "info" && item.severity !== "low").length;
   const overall = unresolvedWarnings >= 2 || recommendations.some((item) => item.severity === "critical")

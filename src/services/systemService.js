@@ -430,8 +430,8 @@ async function getLocalSystemSnapshot() {
   };
 }
 
-function getOptionalSelectedNodeConfig() {
-  const selectedNodeId = getSelectedNodeId();
+function getOptionalSelectedNodeConfig(options = {}) {
+  const selectedNodeId = options?.nodeId || getSelectedNodeId();
   return selectedNodeId && selectedNodeId !== "default" ? getNodeAgentConfig(selectedNodeId) : null;
 }
 
@@ -440,9 +440,9 @@ async function getAgentSystemSnapshot(configOverride = null) {
   return normalizeAgentSystemSnapshot(snapshot, configOverride);
 }
 
-async function getSystemSnapshot() {
+async function getSystemSnapshot(options = {}) {
   const backendMode = agentClient.getBackendMode();
-  const nodeConfig = getOptionalSelectedNodeConfig();
+  const nodeConfig = getOptionalSelectedNodeConfig(options);
 
   if (nodeConfig) {
     try {

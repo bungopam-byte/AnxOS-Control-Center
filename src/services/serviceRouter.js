@@ -230,15 +230,20 @@ async function listDockerVolumes(options = {}) {
   return agentClient.listDockerVolumes(getOptionalNodeConfig(options));
 }
 
-async function getAgentPlayitSnapshot() {
+async function getAgentPlayitSnapshot(options = {}) {
   try {
-    return await agentClient.getPlayitSnapshot();
+    return await agentClient.getPlayitSnapshot(getOptionalNodeConfig(options));
   } catch {
     throw new AgentUnavailableError();
   }
 }
 
-async function getPlayitSnapshot() {
+async function getPlayitSnapshot(options = {}) {
+  const selectedNodeId = options?.nodeId || "";
+  if (selectedNodeId && selectedNodeId !== "default") {
+    return getAgentPlayitSnapshot(options);
+  }
+
   const backendMode = getBackendMode();
 
   if (backendMode === "local") {
@@ -246,25 +251,30 @@ async function getPlayitSnapshot() {
   }
 
   if (backendMode === "agent") {
-    return getAgentPlayitSnapshot();
+    return getAgentPlayitSnapshot(options);
   }
 
   try {
-    return await agentClient.getPlayitSnapshot();
+    return await agentClient.getPlayitSnapshot(getOptionalNodeConfig(options));
   } catch {
     return localPlayitService.getPlayitSnapshot();
   }
 }
 
-async function getAgentAmpSnapshot() {
+async function getAgentAmpSnapshot(options = {}) {
   try {
-    return await agentClient.getAmpSnapshot();
+    return await agentClient.getAmpSnapshot(getOptionalNodeConfig(options));
   } catch {
     throw new AgentUnavailableError();
   }
 }
 
-async function getAmpSnapshot() {
+async function getAmpSnapshot(options = {}) {
+  const selectedNodeId = options?.nodeId || "";
+  if (selectedNodeId && selectedNodeId !== "default") {
+    return getAgentAmpSnapshot(options);
+  }
+
   const backendMode = getBackendMode();
 
   if (backendMode === "local") {
@@ -272,11 +282,11 @@ async function getAmpSnapshot() {
   }
 
   if (backendMode === "agent") {
-    return getAgentAmpSnapshot();
+    return getAgentAmpSnapshot(options);
   }
 
   try {
-    return await agentClient.getAmpSnapshot();
+    return await agentClient.getAmpSnapshot(getOptionalNodeConfig(options));
   } catch {
     return localAmpService.getAmpSnapshot();
   }
@@ -473,39 +483,39 @@ async function deleteInstance(instanceId, options = {}) {
 }
 
 async function listBackups(options = {}) {
-  return agentClient.listBackups(options);
+  return agentClient.listBackups(options, getOptionalNodeConfig(options));
 }
 
 async function createBackup(payload = {}) {
-  return agentClient.createBackup(payload);
+  return agentClient.createBackup(payload, getOptionalNodeConfig(payload));
 }
 
 async function restoreBackup(payload = {}) {
-  return agentClient.restoreBackup(payload);
+  return agentClient.restoreBackup(payload, getOptionalNodeConfig(payload));
 }
 
-async function deleteBackup(backupId) {
-  return agentClient.deleteBackup(backupId);
+async function deleteBackup(backupId, options = {}) {
+  return agentClient.deleteBackup(backupId, getOptionalNodeConfig(options));
 }
 
-async function downloadBackup(backupId) {
-  return agentClient.downloadBackup(backupId);
+async function downloadBackup(backupId, options = {}) {
+  return agentClient.downloadBackup(backupId, getOptionalNodeConfig(options));
 }
 
 async function importBackup(payload = {}) {
-  return agentClient.importBackup(payload);
+  return agentClient.importBackup(payload, getOptionalNodeConfig(payload));
 }
 
-async function listBackupSchedules() {
-  return agentClient.listBackupSchedules();
+async function listBackupSchedules(options = {}) {
+  return agentClient.listBackupSchedules(getOptionalNodeConfig(options));
 }
 
 async function saveBackupSchedule(payload = {}) {
-  return agentClient.saveBackupSchedule(payload);
+  return agentClient.saveBackupSchedule(payload, getOptionalNodeConfig(payload));
 }
 
-async function deleteBackupSchedule(instanceId) {
-  return agentClient.deleteBackupSchedule(instanceId);
+async function deleteBackupSchedule(instanceId, options = {}) {
+  return agentClient.deleteBackupSchedule(instanceId, getOptionalNodeConfig(options));
 }
 
 module.exports = {

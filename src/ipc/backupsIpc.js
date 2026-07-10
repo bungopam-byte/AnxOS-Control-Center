@@ -28,8 +28,8 @@ async function invokeBackupOperation(operation) {
   }
 }
 
-async function saveBackupDownload(backupId) {
-  const payload = await downloadBackup(backupId);
+async function saveBackupDownload(backupId, options = {}) {
+  const payload = await downloadBackup(backupId, options);
   const suggested = backupId.endsWith(".tar.gz") ? backupId : `${backupId}.tar.gz`;
   const selection = await dialog.showSaveDialog({
     title: "Download backup",
@@ -89,11 +89,11 @@ function registerBackupsIpc() {
   ipcMain.handle("backups:delete", async (_, payload = {}) => invokeBackupOperation(() => {
     requirePermission("backups:write", payload.backupId);
     audit({ action: "backup.delete", target: payload.backupId });
-    return deleteBackup(payload.backupId);
+    return deleteBackup(payload.backupId, payload);
   }));
-  ipcMain.handle("backups:download", async (_, payload = {}) => invokeBackupOperation(() => saveBackupDownload(payload.backupId)));
+  ipcMain.handle("backups:download", async (_, payload = {}) => invokeBackupOperation(() => saveBackupDownload(payload.backupId, payload)));
   ipcMain.handle("backups:import", async (_, payload = {}) => invokeBackupOperation(() => importBackupFromFile(payload)));
-  ipcMain.handle("backups:listSchedules", async () => invokeBackupOperation(() => listBackupSchedules()));
+  ipcMain.handle("backups:listSchedules", async (_, payload = {}) => invokeBackupOperation(() => listBackupSchedules(payload)));
   ipcMain.handle("backups:saveSchedule", async (_, payload = {}) => invokeBackupOperation(() => {
     requirePermission("backups:write", payload.instanceId);
     audit({ action: "backup.schedule.save", target: payload.instanceId });
@@ -102,7 +102,7 @@ function registerBackupsIpc() {
   ipcMain.handle("backups:deleteSchedule", async (_, payload = {}) => invokeBackupOperation(() => {
     requirePermission("backups:write", payload.instanceId);
     audit({ action: "backup.schedule.delete", target: payload.instanceId });
-    return deleteBackupSchedule(payload.instanceId);
+    return deleteBackupSchedule(payload.instanceId, payload);
   }));
 }
 

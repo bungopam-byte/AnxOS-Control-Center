@@ -434,6 +434,8 @@ let ownerAutosaveTimer = null;
 let ownerAnalyticsTimer = null;
 let ownerLogEntries = [];
 let nodesState = { selectedNodeId: "default", nodes: [] };
+let selectedNodeContextVersion = 0;
+let nodeSwitchInProgress = false;
 let backupRequestInFlight = false;
 let backupsState = {
   backups: [],
@@ -5141,7 +5143,7 @@ async function updateInstancePorts(ports) {
   }
 
   try {
-    await getDesktopApiState().api.instances.update(selectedInstance.id, { ports: uniquePorts });
+    await getDesktopApiState().api.instances.update(selectedInstance.id, { ports: uniquePorts }, { nodeId: getSelectedNodeId() });
     showToast("Ports updated.");
     await refreshInstances();
   } catch (error) {
@@ -5167,10 +5169,10 @@ async function saveInstanceConfiguration(event) {
   syncInstanceConfigDirtyState();
 
   try {
-    await desktopApiState.api.instances.update(selectedInstance.id, collectInstanceConfigPayload());
+    await desktopApiState.api.instances.update(selectedInstance.id, collectInstanceConfigPayload(), { nodeId: getSelectedNodeId() });
 
     if (isMinecraftInstance(selectedInstance)) {
-      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstance.id, collectMinecraftProperties());
+      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstance.id, collectMinecraftProperties(), { nodeId: getSelectedNodeId() });
     }
 
     showToast("Instance configuration saved.");
@@ -5199,7 +5201,11 @@ async function loadMinecraftProperties() {
   }
 
   try {
-    const payload = await desktopApiState.api.instances.getMinecraftProperties(selectedInstance.id);
+    const requestContext = getNodeRequestContext("minecraft-properties");
+    const payload = await desktopApiState.api.instances.getMinecraftProperties(selectedInstance.id, getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext) || selectedInstance.id !== selectedInstanceId) {
+      return;
+    }
     populateMinecraftProperties(payload?.properties || {});
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -5329,7 +5335,7 @@ async function sendInstanceConsoleCommand(event) {
   }
 
   try {
-    await getDesktopApiState().api.instances.sendCommand(selectedInstance.id, command);
+    await getDesktopApiState().api.instances.sendCommand(selectedInstance.id, command, { nodeId: getSelectedNodeId() });
     instanceConsoleCommandInput.value = "";
     await refreshInstanceLogs();
   } catch (error) {
@@ -5485,7 +5491,11 @@ async function refreshInstanceFiles(pathValue = instanceCurrentFilePath) {
   }
 
   try {
-    const listing = await desktopApiState.api.instances.listFiles(selectedInstance.id, pathValue || ".");
+    const requestContext = getNodeRequestContext("instance-files");
+    const listing = await desktopApiState.api.instances.listFiles(selectedInstance.id, pathValue || ".", getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext) || selectedInstance.id !== selectedInstanceId) {
+      return;
+    }
     instanceCurrentFilePath = listing.currentPath || ".";
     if (instanceFilePathLabel) {
       instanceFilePathLabel.textContent = `data/${instanceCurrentFilePath === "." ? "" : instanceCurrentFilePath}`;
@@ -5571,7 +5581,11 @@ async function openInstanceTextFile(filePath) {
   }
 
   try {
-    const file = await getDesktopApiState().api.instances.readFile(selectedInstance.id, filePath);
+    const requestContext = getNodeRequestContext("instance-read-file");
+    const file = await getDesktopApiState().api.instances.readFile(selectedInstance.id, filePath, getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext) || selectedInstance.id !== selectedInstanceId) {
+      return;
+    }
     openedInstanceFilePath = file.path || filePath;
     openedInstanceFileSavedContent = file.supported ? file.content || "" : "";
     if (instanceFileEditor) {
@@ -5623,7 +5637,7 @@ async function saveInstanceTextFile() {
   }
 
   try {
-    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, openedInstanceFilePath, instanceFileEditor.value);
+    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, openedInstanceFilePath, instanceFileEditor.value, { nodeId: getSelectedNodeId() });
     openedInstanceFileSavedContent = instanceFileEditor.value;
     syncInstanceFileDirtyState();
     showToast("File saved.");
@@ -5686,7 +5700,7 @@ async function findExistingServerJar(instance, preferredJar = "") {
   ].map((candidate) => String(candidate || "").trim()).filter(Boolean);
   for (const candidate of [...new Set(candidates)]) {
     try {
-      await getDesktopApiState().api.instances.readFile(instance.id, candidate);
+      await getDesktopApiState().api.instances.readFile(instance.id, candidate, { nodeId: getSelectedNodeId() });
       return candidate;
     } catch (error) {
       if (getAgentErrorCode(error) !== "PATH_NOT_FOUND") {
@@ -5704,7 +5718,7 @@ async function repairInstanceServerJar(instance, jarPath) {
     startJar: jarPath,
     jar: jarPath,
     args: buildArgsWithJar(instance, jarPath),
-  });
+  }, { nodeId: getSelectedNodeId() });
   const index = instances.findIndex((entry) => entry.id === instance.id);
   if (index >= 0) {
     instances[index] = {
@@ -5759,7 +5773,7 @@ async function verifyJavaJarBeforeLaunch(instance) {
   }
 
   try {
-    await getDesktopApiState().api.instances.readFile(instance.id, jarPath);
+    await getDesktopApiState().api.instances.readFile(instance.id, jarPath, { nodeId: getSelectedNodeId() });
     return true;
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -8220,17 +8234,21 @@ async function refreshBackups() {
   }
 
   backupRequestInFlight = true;
+  const requestContext = getNodeRequestContext("backups");
   renderBackups();
   try {
-    const result = await desktopApiState.api.backups.list();
+    const result = await desktopApiState.api.backups.list(getNodeScopedPayload(requestContext));
     let scheduleResult = { schedules: [] };
     let scheduleSupported = desktopApiState.hasBackupSchedules;
     if (desktopApiState.hasBackupSchedules) {
       try {
-        scheduleResult = await desktopApiState.api.backups.listSchedules();
+        scheduleResult = await desktopApiState.api.backups.listSchedules(getNodeScopedPayload(requestContext));
       } catch {
         scheduleSupported = false;
       }
+    }
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
     }
     backupsState.backups = Array.isArray(result?.backups) ? result.backups : [];
     backupsState.root = result?.root || result?.diagnostics?.roots?.[0]?.path || null;
@@ -8244,6 +8262,9 @@ async function refreshBackups() {
       backupsState.selectedBackupId = backupsState.backups[0]?.id || null;
     }
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     showToast(error?.message || "Backups could not be loaded.");
     backupsState = {
       ...backupsState,
@@ -8279,6 +8300,7 @@ async function createBackupForInstance(instanceId = null) {
   renderBackups();
   try {
     await desktopApiState.api.backups.create({
+      nodeId: getSelectedNodeId(),
       instanceId: targetInstanceId,
       name: `${targetInstanceId} ${type} backup`,
       type,
@@ -8304,7 +8326,7 @@ async function restoreSelectedBackup() {
     return;
   }
   try {
-    await desktopApiState.api.backups.restore({ backupId: selected.id, restart: window.confirm("Restart after restore?") });
+    await desktopApiState.api.backups.restore({ nodeId: getSelectedNodeId(), backupId: selected.id, restart: window.confirm("Restart after restore?") });
     showToast("Backup restored.");
     await refreshInstances();
     await refreshBackups();
@@ -8320,7 +8342,7 @@ async function deleteSelectedBackup() {
     return;
   }
   try {
-    await desktopApiState.api.backups.delete(selected.id);
+    await desktopApiState.api.backups.delete(selected.id, { nodeId: getSelectedNodeId() });
     showToast("Backup deleted.");
     backupsState.selectedBackupId = null;
     await refreshBackups();
@@ -8336,7 +8358,7 @@ async function downloadSelectedBackup() {
     return;
   }
   try {
-    const result = await desktopApiState.api.backups.download(selected.id);
+    const result = await desktopApiState.api.backups.download(selected.id, { nodeId: getSelectedNodeId() });
     showToast(result?.canceled ? "Download canceled." : "Backup downloaded.");
   } catch (error) {
     showToast(error?.message || "Backup download failed.");
@@ -8353,7 +8375,7 @@ async function importBackupForInstance() {
     return;
   }
   try {
-    const result = await desktopApiState.api.backups.import({ instanceId, createdBy: securityState.user?.username || "local-user" });
+    const result = await desktopApiState.api.backups.import({ nodeId: getSelectedNodeId(), instanceId, createdBy: securityState.user?.username || "local-user" });
     showToast(result?.canceled ? "Import canceled." : "Backup imported.");
     await refreshBackups();
   } catch (error) {
@@ -8376,6 +8398,7 @@ async function configureBackupSchedule(instanceId) {
   const type = window.confirm("Schedule world-only backups? Choose Cancel for full instance backups.") ? "world" : "full";
   try {
     await desktopApiState.api.backups.saveSchedule({
+      nodeId: getSelectedNodeId(),
       instanceId,
       intervalHours: Number.parseInt(interval, 10),
       keepLast: Number.parseInt(keepLast, 10),
@@ -8728,15 +8751,23 @@ async function refreshInstances(options = {}) {
   }
 
   instancesRequestInFlight = true;
+  const requestContext = getNodeRequestContext("instances");
   setInstancesLoading(true);
   updateInstanceActionButtons();
 
   try {
-    renderInstancesSnapshot(await desktopApiState.api.instances.list({ nodeId: getSelectedNodeId() }));
+    const snapshot = await desktopApiState.api.instances.list(getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext)) {
+      return getInstances();
+    }
+    renderInstancesSnapshot(snapshot);
     if (options.refreshMetrics !== false) {
       await refreshSelectedInstanceMetrics();
     }
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return getInstances();
+    }
     console.warn("[Instances] List refresh failed; keeping previous renderer state.", error);
     if (latestInstancesSnapshot) {
       setInstancesLoading(false);
@@ -8759,6 +8790,7 @@ async function refreshSelectedInstanceMetrics() {
   }
 
   const requestInstanceId = selectedInstanceId;
+  const requestContext = getNodeRequestContext("instance-metrics");
 
   if (!findInstance(requestInstanceId)) {
     await handleMissingSelectedInstance(null, requestInstanceId);
@@ -8772,12 +8804,19 @@ async function refreshSelectedInstanceMetrics() {
   }
 
   try {
-    latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(requestInstanceId));
+    const metrics = await desktopApiState.api.instances.getMetrics(requestInstanceId, getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext) || requestInstanceId !== selectedInstanceId) {
+      return;
+    }
+    latestInstanceMetrics = normalizeMetricsResponse(metrics);
     const instances = getInstances();
     renderInstanceSummary(instances);
     renderInstanceRows(instances);
     selectInstance(requestInstanceId, { refreshMetrics: false });
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     latestInstanceMetrics = null;
     if (isInstanceNotFoundError(error)) {
       await handleMissingSelectedInstance(error, requestInstanceId);
@@ -8808,16 +8847,25 @@ async function refreshInstanceLogs(options = {}) {
   }
 
   instanceLogsRequestInFlight = true;
+  const requestContext = getNodeRequestContext("instance-logs");
   updateInstanceActionButtons();
 
   try {
     const stream = instancesLogStreamSelect?.value || "all";
     const limit = Number.parseInt(instancesLogLimitSelect?.value || "200", 10);
-    renderInstanceLogs(await desktopApiState.api.instances.getLogs(requestInstanceId, {
+    const logs = await desktopApiState.api.instances.getLogs(requestInstanceId, {
+      nodeId: requestContext.nodeId,
       stream,
       limit: Number.isFinite(limit) ? limit : 200,
-    }));
+    });
+    if (!isNodeRequestCurrent(requestContext) || requestInstanceId !== selectedInstanceId) {
+      return;
+    }
+    renderInstanceLogs(logs);
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     if (isInstanceNotFoundError(error)) {
       await handleMissingSelectedInstance(error, requestInstanceId);
     } else if (!options.silent) {
@@ -8928,7 +8976,7 @@ async function createInstanceFromForm(event) {
     if (payload.type === "minecraft-paper") {
       const acceptEula = document.querySelector('[data-instance-form="acceptEula"]')?.checked === true;
       if (acceptEula) {
-        await desktopApiState.api.instances.writeFile(createdInstanceId, "eula.txt", "eula=true\n");
+        await desktopApiState.api.instances.writeFile(createdInstanceId, "eula.txt", "eula=true\n", { nodeId: getSelectedNodeId() });
       }
       await desktopApiState.api.instances.saveMinecraftProperties(createdInstanceId, {
         "server-port": payload.ports?.[0] ? String(payload.ports[0]) : "25565",
@@ -8945,7 +8993,7 @@ async function createInstanceFromForm(event) {
         "white-list": "false",
         "generate-structures": "true",
         "level-seed": "",
-      });
+      }, { nodeId: getSelectedNodeId() });
     }
 
     setInstanceCreateFormVisible(false);
@@ -10948,7 +10996,7 @@ function renderAmpSnapshot(snapshot) {
   updateTitlebar();
 }
 
-async function refreshAmpDashboard() {
+async function refreshAmpDashboard(options = {}) {
   if (ampRequestInFlight) {
     return;
   }
@@ -10981,19 +11029,26 @@ async function refreshAmpDashboard() {
   }
 
   const activePage = getActivePageName();
-  if (lastAmpRefreshAt > 0 && activePage !== "dashboard" && activePage !== "amp" && activePage !== "minecraft") {
+  if (!options.force && lastAmpRefreshAt > 0 && activePage !== "dashboard" && activePage !== "amp" && activePage !== "minecraft") {
     return;
   }
 
   ampRequestInFlight = true;
+  const requestContext = getNodeRequestContext("amp");
 
   try {
-    const snapshot = normalizeAmpSnapshotForRenderer(await desktopApiState.api.amp.getSnapshot());
+    const snapshot = normalizeAmpSnapshotForRenderer(await desktopApiState.api.amp.getSnapshot(getNodeScopedPayload(requestContext)));
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     latestAmpSnapshot = snapshot;
     ampRendererReceiveCount += 1;
     renderAmpSnapshot(latestAmpSnapshot);
     lastAmpRefreshAt = Date.now();
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     const message = `AMP IPC request failed: ${error?.message || "Unknown error"}`;
     latestAmpSnapshot = null;
     updateAmpPanelLink(null);
@@ -11015,7 +11070,9 @@ async function refreshAmpDashboard() {
     setMinecraftPageUnavailable("Unavailable", message);
     updateTitlebar();
   } finally {
-    markStartupReady("amp");
+    if (isNodeRequestCurrent(requestContext)) {
+      markStartupReady("amp");
+    }
     ampRequestInFlight = false;
   }
 }
@@ -11029,10 +11086,18 @@ async function refreshDashboard() {
   }
 
   systemRequestInFlight = true;
+  const requestContext = getNodeRequestContext("system");
 
   try {
-    renderSnapshot(await desktopApiState.api.system.getSnapshot());
+    const snapshot = await desktopApiState.api.system.getSnapshot(getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
+    renderSnapshot(snapshot);
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     console.warn("[System] Metrics request failed.", {
       message: error?.message || String(error),
       stack: error?.stack || null,
@@ -11043,7 +11108,9 @@ async function refreshDashboard() {
     setField("networkThroughput", "Unavailable");
     showToast("System metrics are unavailable.");
   } finally {
-    markStartupReady("system");
+    if (isNodeRequestCurrent(requestContext)) {
+      markStartupReady("system");
+    }
     systemRequestInFlight = false;
   }
 }
@@ -11061,10 +11128,18 @@ async function refreshPlayitStatus() {
   }
 
   playitRequestInFlight = true;
+  const requestContext = getNodeRequestContext("playit");
 
   try {
-    renderPlayitSnapshot(await desktopApiState.api.playit.getSnapshot());
+    const snapshot = await desktopApiState.api.playit.getSnapshot(getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
+    renderPlayitSnapshot(snapshot);
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     renderPlayitUnavailable(`Playit status request failed: ${error?.message || "Unknown error"}`);
   } finally {
     playitRequestInFlight = false;
@@ -11134,13 +11209,20 @@ async function refreshDockerStatus() {
   }
 
   dockerRequestInFlight = true;
+  const requestContext = getNodeRequestContext("docker");
   setDockerLoading(!latestDockerSnapshot);
 
   try {
-    const snapshot = await desktopApiState.api.docker.getSnapshot({ nodeId: getSelectedNodeId() });
+    const snapshot = await desktopApiState.api.docker.getSnapshot(getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     dockerRequestInFlight = false;
     renderDockerSnapshot(snapshot);
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     dockerRequestInFlight = false;
     renderDockerUnavailable(`Docker status request failed: ${error?.message || "Unknown error"}`);
   } finally {
@@ -11158,13 +11240,20 @@ async function refreshDockerLogs() {
   }
 
   dockerLogsRequestInFlight = true;
+  const requestContext = getNodeRequestContext("docker-logs");
   try {
     const logs = await desktopApiState.api.docker.getLogs(getDockerContainerTarget(selectedContainer), {
-      nodeId: getSelectedNodeId(),
+      nodeId: requestContext.nodeId,
       tail: 500,
     });
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     setDockerLogsText(logs?.logs || "");
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     setDockerLogsText(error?.message || "Docker logs unavailable.");
   } finally {
     dockerLogsRequestInFlight = false;
@@ -11180,14 +11269,18 @@ async function refreshDockerSelectedStats() {
   }
 
   dockerStatsRequestInFlight = true;
+  const requestContext = getNodeRequestContext("docker-stats");
   if (!selectedContainer.stats) {
     setDockerStat("cpu", "Loading...");
     setDockerStat("memory", "Loading...");
   }
   try {
     const payload = await desktopApiState.api.docker.getStats(getDockerContainerTarget(selectedContainer), {
-      nodeId: getSelectedNodeId(),
+      nodeId: requestContext.nodeId,
     });
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     const stats = payload?.stats || {};
     const cpuText = formatDockerCpu({ stats });
     const memoryText = formatDockerMemory({ stats });
@@ -11198,6 +11291,9 @@ async function refreshDockerSelectedStats() {
     setDockerStat("status", formatDockerValue(payload?.status || selectedContainer.status || selectedContainer.state));
     setDockerStat("uptime", formatDockerValue(selectedContainer.runningFor || payload?.uptime || selectedContainer.createdAt));
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     setDockerStat("status", error?.message || "Docker stats unavailable.");
   } finally {
     dockerStatsRequestInFlight = false;
@@ -11213,17 +11309,24 @@ async function refreshDockerInspect() {
   }
 
   dockerInspectRequestInFlight = true;
+  const requestContext = getNodeRequestContext("docker-inspect");
   if (dockerInspectViewer) {
     dockerInspectViewer.textContent = "Loading inspect data...";
   }
   try {
     const payload = await desktopApiState.api.docker.inspectContainer(getDockerContainerTarget(selectedContainer), {
-      nodeId: getSelectedNodeId(),
+      nodeId: requestContext.nodeId,
     });
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     if (dockerInspectViewer) {
       dockerInspectViewer.textContent = JSON.stringify(payload?.inspect || payload, null, 2);
     }
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     if (dockerInspectViewer) {
       dockerInspectViewer.textContent = error?.message || "Docker inspect unavailable.";
     }
@@ -12698,9 +12801,18 @@ async function refreshConsoleMetrics() {
     return;
   }
 
+  const requestContext = getNodeRequestContext("console-metrics");
+  const requestInstanceId = instance.id;
   try {
-    latestInstanceMetrics = normalizeMetricsResponse(await desktopApiState.api.instances.getMetrics(instance.id));
+    const metrics = await desktopApiState.api.instances.getMetrics(requestInstanceId, getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext) || getActiveConsoleInstance()?.id !== requestInstanceId) {
+      return;
+    }
+    latestInstanceMetrics = normalizeMetricsResponse(metrics);
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     if (isInstanceNotFoundError(error)) {
       console.warn("[Console] Selected instance no longer exists.", error);
       await refreshInstances({ refreshMetrics: false });
@@ -12728,17 +12840,26 @@ async function refreshConsoleLogs(options = {}) {
   }
 
   consoleLogsRequestInFlight = true;
+  const requestContext = getNodeRequestContext("console-logs");
+  const requestInstanceId = instance.id;
   updateConsoleActionButtons();
   updateConsoleEmptyState();
 
   try {
-    const payload = await desktopApiState.api.instances.getLogs(instance.id, {
+    const payload = await desktopApiState.api.instances.getLogs(requestInstanceId, {
+      nodeId: requestContext.nodeId,
       stream: "all",
       limit: 500,
     });
+    if (!isNodeRequestCurrent(requestContext) || getActiveConsoleInstance()?.id !== requestInstanceId) {
+      return;
+    }
     consoleBufferedEntries = Array.isArray(payload?.entries) ? payload.entries : [];
     renderConsoleLogs(consoleBufferedEntries);
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     if (isInstanceNotFoundError(error)) {
       console.warn("[Console] Logs requested for missing instance.", error);
       await refreshInstances({ refreshMetrics: false });
@@ -12800,7 +12921,7 @@ async function sendConsoleCommand(event) {
   }
 
   try {
-    await getDesktopApiState().api.instances.sendCommand(instance.id, command);
+    await getDesktopApiState().api.instances.sendCommand(instance.id, command, { nodeId: getSelectedNodeId() });
     consoleCommandInput.value = "";
     showToast("Command sent.");
     await refreshConsoleLogs({ silent: true });
@@ -12832,7 +12953,7 @@ async function verifyConsoleJavaJarBeforeLaunch(instance) {
   }
 
   try {
-    await getDesktopApiState().api.instances.readFile(instance.id, jarPath);
+    await getDesktopApiState().api.instances.readFile(instance.id, jarPath, { nodeId: getSelectedNodeId() });
     return true;
   } catch (error) {
     if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
@@ -12872,7 +12993,7 @@ async function runConsoleInstanceAction(actionName) {
   updateConsoleActionButtons();
 
   try {
-    await desktopApiState.api.instances[actionName](instance.id);
+    await desktopApiState.api.instances[actionName](instance.id, { nodeId: getSelectedNodeId() });
     showToast(`Instance ${actionName} request completed.`);
     await refreshInstances({ refreshMetrics: false });
     await refreshConsoleMetrics();
@@ -14514,6 +14635,7 @@ function renderSecurityEvents() {
 
 async function refreshSecurityState() {
   const desktopApiState = getDesktopApiState();
+  const requestContext = getNodeRequestContext("security");
   if (!desktopApiState.hasSecurity) {
     securityState = { setupRequired: false, authenticated: true, user: null };
     renderSecurityState();
@@ -14527,11 +14649,18 @@ async function refreshSecurityState() {
   }
   try {
     if (desktopApiState.api.security.getDashboard && (securityState.authenticated || securityState.accountAuthenticated)) {
-      securityDashboardState = await desktopApiState.api.security.getDashboard();
+      const dashboard = await desktopApiState.api.security.getDashboard(getNodeScopedPayload(requestContext));
+      if (!isNodeRequestCurrent(requestContext)) {
+        return;
+      }
+      securityDashboardState = dashboard;
     } else {
       securityDashboardState = null;
     }
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
     securityDashboardState = null;
     console.warn("[Security] Dashboard unavailable.", normalizeIpcErrorMessage(error, "Security dashboard unavailable."));
   }
@@ -14758,6 +14887,126 @@ function getSelectedNodeId() {
   return nodesState.selectedNodeId || "default";
 }
 
+function getSelectedNode() {
+  return (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId()) || null;
+}
+
+function getNodeRequestContext(label = "node-request") {
+  return {
+    label,
+    nodeId: getSelectedNodeId(),
+    version: selectedNodeContextVersion,
+  };
+}
+
+function isNodeRequestCurrent(context) {
+  return Boolean(context) &&
+    context.nodeId === getSelectedNodeId() &&
+    context.version === selectedNodeContextVersion;
+}
+
+function getNodeScopedPayload(context, payload = {}) {
+  return {
+    ...payload,
+    nodeId: context?.nodeId || getSelectedNodeId(),
+  };
+}
+
+function clearDashboardForNodeSwitch(message = "Loading selected node...") {
+  [
+    "cpuUsage",
+    "memoryUsage",
+    "diskUsage",
+    "networkThroughput",
+    "networkSummary",
+    "osVersion",
+    "runtimeUptime",
+    "runtimeCpuTemp",
+  ].forEach((field) => setField(field, message));
+}
+
+function resetNodeScopedRendererState(message = "Loading selected node...") {
+  systemRequestInFlight = false;
+  ampRequestInFlight = false;
+  playitRequestInFlight = false;
+  dockerRequestInFlight = false;
+  dockerLogsRequestInFlight = false;
+  dockerStatsRequestInFlight = false;
+  dockerInspectRequestInFlight = false;
+  instancesRequestInFlight = false;
+  instanceLogsRequestInFlight = false;
+  backupRequestInFlight = false;
+
+  latestAmpSnapshot = null;
+  latestPlayitSnapshot = null;
+  latestDockerSnapshot = null;
+  latestInstancesSnapshot = null;
+  latestInstanceMetrics = null;
+  selectedDockerContainerId = null;
+  selectedInstanceId = null;
+  activeConsoleInstanceId = null;
+  consoleOpenInstanceIds = [];
+  consoleBufferedEntries = [];
+  lastAmpRefreshAt = 0;
+
+  backupsState = {
+    ...backupsState,
+    backups: [],
+    selectedBackupId: null,
+    root: null,
+    roots: [],
+    summary: null,
+    schedules: [],
+    connected: false,
+    error: message,
+  };
+
+  clearDashboardForNodeSwitch(message);
+  updateAmpPanelLink(null);
+  setMinecraftPageUnavailable("Loading", message);
+  renderPlayitUnavailable(message);
+  renderDockerUnavailable(message);
+  renderInstancesUnavailable(message);
+  renderBackups();
+  renderConsoleWorkspace();
+
+  if (getActivePageName() === "files") {
+    renderFileListingUnavailable("Storage context changed. Refresh or reconnect to continue.");
+  }
+
+  securityDashboardState = null;
+  renderSecurityDashboard();
+}
+
+async function reloadActiveNodeData(context = getNodeRequestContext("reload-node")) {
+  const reloads = [
+    refreshDashboard(),
+    refreshAmpDashboard({ force: true }),
+    refreshPlayitStatus(),
+  ];
+
+  if (getActivePageName() === "docker" || latestDockerSnapshot) {
+    reloads.push(refreshDockerStatus());
+  }
+  if (["instances", "dashboard", "console"].includes(getActivePageName())) {
+    reloads.push(refreshInstances({ refreshMetrics: getActivePageName() !== "console" }));
+  }
+  if (getActivePageName() === "backups") {
+    reloads.push(refreshBackups());
+  }
+  if (getActivePageName() === "console") {
+    reloads.push(refreshConsoleMetrics(), refreshConsoleLogs({ silent: true }));
+  }
+  if (getActivePageName() === "security") {
+    reloads.push(refreshSecurityState());
+  }
+
+  await Promise.allSettled(reloads);
+  if (isNodeRequestCurrent(context)) {
+    nodeSwitchInProgress = false;
+  }
+}
+
 function createAgentRobotIcon(state = "offline") {
   const icon = document.createElement("span");
   icon.className = `agent-robot-icon agent-robot-icon--${state}`;
@@ -14793,7 +15042,6 @@ function getNodeVisualState(node) {
 
 function renderNodes() {
   nodeTargetSelects.forEach((select) => {
-    const previous = select.value || getSelectedNodeId();
     select.replaceChildren();
     (nodesState.nodes || []).forEach((node) => {
       const option = document.createElement("option");
@@ -14801,7 +15049,7 @@ function renderNodes() {
       option.textContent = node.default ? `${node.displayName} (default)` : node.displayName;
       select.append(option);
     });
-    select.value = (nodesState.nodes || []).some((node) => node.id === previous) ? previous : getSelectedNodeId();
+    select.value = (nodesState.nodes || []).some((node) => node.id === getSelectedNodeId()) ? getSelectedNodeId() : "default";
   });
 
   if (nodeStatus) {
@@ -14858,18 +15106,27 @@ async function refreshNodes() {
 
 async function selectNode(nodeId) {
   const desktopApiState = getDesktopApiState();
-  nodesState.selectedNodeId = nodeId || "default";
+  const nextNodeId = nodeId || "default";
+  const previousNodeId = getSelectedNodeId();
+  if (nextNodeId === previousNodeId && !nodeSwitchInProgress) {
+    renderNodes();
+    return;
+  }
+
+  nodesState.selectedNodeId = nextNodeId;
+  selectedNodeContextVersion += 1;
+  nodeSwitchInProgress = true;
+  const context = getNodeRequestContext("select-node");
   nodeTargetSelects.forEach((select) => {
     select.value = nodesState.selectedNodeId;
   });
+  resetNodeScopedRendererState(`Switching to ${getSelectedNode()?.displayName || nodesState.selectedNodeId}...`);
   if (desktopApiState.hasNodes) {
     await desktopApiState.api.nodes.select(nodesState.selectedNodeId).catch(() => {});
   }
   renderNodes();
-  if (getActivePageName() === "instances") {
-    refreshInstances();
-  } else if (getActivePageName() === "docker") {
-    refreshDockerStatus();
+  if (isNodeRequestCurrent(context)) {
+    await reloadActiveNodeData(context);
   }
 }
 
@@ -16453,7 +16710,7 @@ document.querySelector('[data-instance-file-action="new-folder"]')?.addEventList
     return;
   }
   try {
-    await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name));
+    await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name), { nodeId: getSelectedNodeId() });
     refreshInstanceFiles();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -16473,7 +16730,12 @@ document.querySelector('[data-instance-file-action="rename"]')?.addEventListener
     return;
   }
   try {
-    await getDesktopApiState().api.instances.renameFile(selectedInstance.id, selectedInstanceFilePath, joinInstancePath(getInstanceParentPath(selectedInstanceFilePath), nextName));
+    await getDesktopApiState().api.instances.renameFile(
+      selectedInstance.id,
+      selectedInstanceFilePath,
+      joinInstancePath(getInstanceParentPath(selectedInstanceFilePath), nextName),
+      { nodeId: getSelectedNodeId() },
+    );
     refreshInstanceFiles();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -16489,7 +16751,7 @@ document.querySelector('[data-instance-file-action="delete"]')?.addEventListener
     return;
   }
   try {
-    await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath);
+    await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath, { nodeId: getSelectedNodeId() });
     refreshInstanceFiles();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -16519,7 +16781,12 @@ instanceFileDropzone?.addEventListener("drop", async (event) => {
   try {
     for (const file of files) {
       const content = await file.text();
-      await getDesktopApiState().api.instances.writeFile(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, file.name), content);
+      await getDesktopApiState().api.instances.writeFile(
+        selectedInstance.id,
+        joinInstancePath(instanceCurrentFilePath, file.name),
+        content,
+        { nodeId: getSelectedNodeId() },
+      );
     }
     refreshInstanceFiles();
   } catch (error) {

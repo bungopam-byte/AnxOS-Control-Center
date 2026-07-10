@@ -71,6 +71,7 @@ function main() {
     "owner-account:smoke",
     "account:smoke",
     "agent:token:smoke",
+    "node:switch:smoke",
     "security:page:smoke",
     "marketplace:smoke",
   ];

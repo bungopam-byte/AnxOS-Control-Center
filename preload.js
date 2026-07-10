@@ -24,6 +24,7 @@ const desktopApi = {
     install: () => ipcRenderer.invoke("updates:install"),
     skip: (version) => ipcRenderer.invoke("updates:skip", { version }),
     openDownloaded: () => ipcRenderer.invoke("updates:open-downloaded"),
+    openDownload: () => ipcRenderer.invoke("updates:open-download"),
     openRelease: () => ipcRenderer.invoke("updates:open-release"),
     onStatus: (callback) => {
       const handler = (_, payload) => callback(payload);

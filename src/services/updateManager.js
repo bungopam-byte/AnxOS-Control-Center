@@ -46,6 +46,27 @@ function getRequestModule(url) {
   return String(url || "").startsWith("http://") ? http : https;
 }
 
+function resolveRedirectUrl(location, currentUrl) {
+  try {
+    return new URL(location, currentUrl).toString();
+  } catch {
+    return location;
+  }
+}
+
+function isGitHubDownloadUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "github.com" || parsed.hostname.endsWith(".githubusercontent.com");
+  } catch {
+    return false;
+  }
+}
+
+function isBlockedDownloadStatus(statusCode) {
+  return statusCode === 401 || statusCode === 403 || statusCode === 404;
+}
+
 function normalizeManifestAsset(asset) {
   const downloadUrl = asset?.browser_download_url || asset?.downloadUrl || asset?.url;
   if (!downloadUrl) return null;
@@ -214,7 +235,7 @@ class UpdateManager extends EventEmitter {
       }, (response) => {
         if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
           response.resume();
-          this.requestText(response.headers.location, headers).then(resolve, reject);
+          this.requestText(resolveRedirectUrl(response.headers.location, url), headers).then(resolve, reject);
           return;
         }
         let body = "";
@@ -354,15 +375,31 @@ class UpdateManager extends EventEmitter {
         reject(new Error("Too many redirects while downloading update."));
         return;
       }
-      const request = getRequestModule(url).get(url, { headers: { "User-Agent": `AnxOS-Control-Center/${app.getVersion()}` } }, (response) => {
+      fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
+      const cleanupPartial = (callback) => fs.rm(destinationPath, { force: true }, () => callback?.());
+      const request = getRequestModule(url).get(url, {
+        headers: {
+          "Accept": "application/octet-stream",
+          "User-Agent": `AnxOS-Control-Center/${app.getVersion()}`,
+        },
+      }, (response) => {
         if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
           response.resume();
-          this.downloadFile(response.headers.location, destinationPath, onProgress, redirectCount + 1).then(resolve, reject);
+          this.downloadFile(resolveRedirectUrl(response.headers.location, url), destinationPath, onProgress, redirectCount + 1).then(resolve, reject);
           return;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
-          response.resume();
-          reject(new Error(`Update download failed with HTTP ${response.statusCode}.`));
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", (chunk) => {
+            if (body.length < 512) body += chunk;
+          });
+          response.on("end", () => {
+            const suffix = isBlockedDownloadStatus(response.statusCode) && isGitHubDownloadUrl(url)
+              ? " The release asset is not publicly downloadable by the desktop app. Open the release in your browser, or publish/mirror the release assets to public storage."
+              : "";
+            cleanupPartial(() => reject(new Error(`Update download failed with HTTP ${response.statusCode}.${suffix}${body ? ` ${body.slice(0, 160)}` : ""}`)));
+          });
           return;
         }
         const totalBytes = Number.parseInt(response.headers["content-length"], 10) || 0;
@@ -372,12 +409,21 @@ class UpdateManager extends EventEmitter {
           receivedBytes += chunk.length;
           onProgress?.({ receivedBytes, totalBytes, percent: totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : null });
         });
+        response.on("error", (error) => cleanupPartial(() => reject(error)));
         response.pipe(fileStream);
-        fileStream.on("finish", () => fileStream.close(() => resolve(destinationPath)));
-        fileStream.on("error", (error) => fs.rm(destinationPath, { force: true }, () => reject(error)));
+        fileStream.on("finish", () => {
+          fileStream.close(() => {
+            if (totalBytes > 0 && receivedBytes !== totalBytes) {
+              cleanupPartial(() => reject(new Error(`Update download was incomplete (${receivedBytes} of ${totalBytes} bytes).`)));
+              return;
+            }
+            resolve(destinationPath);
+          });
+        });
+        fileStream.on("error", (error) => cleanupPartial(() => reject(error)));
       });
       request.setTimeout(120000, () => request.destroy(new Error("Update download timed out.")));
-      request.on("error", reject);
+      request.on("error", (error) => cleanupPartial(() => reject(error)));
     });
   }
 
@@ -434,6 +480,12 @@ class UpdateManager extends EventEmitter {
     return { opened: true };
   }
 
+  async openDownload() {
+    const downloadUrl = this.state.latest?.asset?.downloadUrl || this.state.latest?.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
+    await shell.openExternal(downloadUrl);
+    return { opened: true };
+  }
+
   skip(version) {
     const target = normalizeVersion(version || this.state.latest?.latestVersion);
     if (target) {
@@ -456,4 +508,5 @@ module.exports = {
   compareVersions,
   normalizeVersion,
   parseWebsiteConfigRelease,
+  resolveRedirectUrl,
 };

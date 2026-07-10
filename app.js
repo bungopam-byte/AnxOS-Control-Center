@@ -353,6 +353,7 @@ const updateProgressText = document.querySelector("[data-update-progress-text]")
 const updateStatusMessage = document.querySelector("[data-update-status]");
 const updatePrimaryButton = document.querySelector('[data-update-action="primary"]');
 const updateInstallButtons = document.querySelectorAll('[data-update-action="install"]');
+const updateOpenDownloadButton = document.querySelector('[data-update-action="open-download"]');
 const updateSidebarBadge = document.querySelector("[data-update-sidebar-badge]");
 const updateReadyBanner = document.querySelector("[data-update-ready-banner]");
 const updateLatestAbout = document.querySelector("[data-update-latest-about]");
@@ -15760,6 +15761,10 @@ function getUpdateModeFromState(state = updateUiState) {
   return "available";
 }
 
+function isUpdateDownloadBlocked(state = updateUiState) {
+  return /not publicly downloadable|HTTP (401|403|404)|release asset/i.test(String(state?.error || ""));
+}
+
 function renderUpdateSurfaces(state = updateUiState) {
   const update = state?.latest || latestUpdateInfo || {};
   const hasUpdate = Boolean(update?.hasUpdate && !update?.skipped);
@@ -15820,7 +15825,9 @@ function renderUpdateModal(mode = getUpdateModeFromState()) {
     } else if (mode === "unavailable") {
       updateMessage.textContent = update.message || "AnxOS could not find a published update release.";
     } else if (mode === "error") {
-      updateMessage.textContent = updateUiState?.error || "The update could not be downloaded.";
+      updateMessage.textContent = isUpdateDownloadBlocked()
+        ? "AnxOS found the update, but the update file is not publicly downloadable by the app. Open the download in your browser to install it manually."
+        : updateUiState?.error || "The update could not be downloaded.";
     } else {
       updateMessage.textContent = "A newer AnxOS Control Center build is available.";
     }
@@ -15854,10 +15861,16 @@ function renderUpdateModal(mode = getUpdateModeFromState()) {
       : mode === "downloading"
         ? "Downloading..."
         : mode === "error"
-          ? "Retry"
+          ? isUpdateDownloadBlocked()
+            ? "Retry Download"
+            : "Retry"
           : mode === "up-to-date" || mode === "unavailable"
             ? "Close"
             : "Download & Install";
+  }
+
+  if (updateOpenDownloadButton) {
+    updateOpenDownloadButton.hidden = !(mode === "error" && isUpdateDownloadBlocked() && update?.asset?.downloadUrl);
   }
 
   document.querySelectorAll('[data-update-action="skip"]').forEach((button) => {
@@ -16019,11 +16032,26 @@ async function downloadUpdate() {
       renderUpdateSurfaces(updateUiState);
       renderUpdateModal("downloaded");
     } else if (!result?.downloading) {
+      updateUiState = {
+        ...(result?.state || updateUiState || {}),
+        status: "error",
+        error: result?.error || result?.message || "Update download failed.",
+        latest: result?.state?.latest || latestUpdateInfo,
+      };
+      setUpdateStatusMessage(updateUiState.error);
+      renderUpdateSurfaces(updateUiState);
       renderUpdateModal("error");
     }
   } catch (error) {
     console.error("[Updates] Renderer download failed.", error);
-    setUpdateStatusMessage("Update download failed.");
+    updateUiState = {
+      ...(updateUiState || {}),
+      status: "error",
+      error: error?.message || "Update download failed.",
+      latest: latestUpdateInfo,
+    };
+    setUpdateStatusMessage(updateUiState.error);
+    renderUpdateSurfaces(updateUiState);
     renderUpdateModal("error");
   } finally {
     updateDownloadInFlight = false;
@@ -16060,6 +16088,21 @@ async function openUpdateRelease() {
     await desktopApiState.api.updates.openRelease();
   } catch {
     showToast("Release page could not be opened.");
+  }
+}
+
+async function openUpdateDownload() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasUpdates) return;
+
+  try {
+    if (typeof desktopApiState.api.updates.openDownload === "function") {
+      await desktopApiState.api.updates.openDownload();
+    } else {
+      await desktopApiState.api.updates.openRelease();
+    }
+  } catch {
+    showToast("Update download page could not be opened.");
   }
 }
 
@@ -16845,6 +16888,8 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
       await skipUpdateVersion();
     } else if (action === "release") {
       await openUpdateRelease();
+    } else if (action === "open-download") {
+      await openUpdateDownload();
     } else if (action === "dismiss" || action === "banner-later") {
       setUpdateModalVisible(false);
       if (updateReadyBanner && action === "banner-later") {

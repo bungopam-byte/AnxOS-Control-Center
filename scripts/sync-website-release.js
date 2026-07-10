@@ -7,6 +7,8 @@ const packageJson = require(path.join(rootDir, "package.json"));
 const websiteConfigPath = path.join(rootDir, "website", "config.js");
 const releaseNotesPath = path.join(rootDir, "website", "release-notes.json");
 const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
+const defaultDownloadBaseUrl = `${repositoryUrl}/releases/download/v${packageJson.version}`;
+const downloadBaseUrl = (process.env.ANXOS_DOWNLOAD_BASE_URL || process.env.ANXOS_UPDATE_BASE_URL || process.env.ANXHUB_UPDATE_BASE_URL || defaultDownloadBaseUrl).replace(/\/+$/, "");
 
 function formatBytes(size) {
   if (!Number.isFinite(size) || size <= 0) {
@@ -30,7 +32,7 @@ function getAsset(name) {
   return {
     fileName: name,
     size: fs.existsSync(filePath) ? formatBytes(fs.statSync(filePath).size) : "",
-    url: `${repositoryUrl}/releases/download/v${packageJson.version}/${encodeURIComponent(name)}`,
+    url: `${downloadBaseUrl}/${encodeURIComponent(name)}`,
   };
 }
 

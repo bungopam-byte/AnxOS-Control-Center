@@ -364,13 +364,22 @@ function assertNativeUpdateExperience() {
   assert(mainSource.includes("new UpdateManager()"), "Main process should use the dedicated UpdateManager service.");
   assert(preloadSource.includes("getState: () => ipcRenderer.invoke(\"updates:getState\")"), "Preload should expose update state.");
   assert(preloadSource.includes("skip: (version) => ipcRenderer.invoke(\"updates:skip\""), "Preload should expose skip-version action.");
+  assert(preloadSource.includes("openDownload: () => ipcRenderer.invoke(\"updates:open-download\")"), "Preload should expose direct update download fallback.");
   assert(indexSource.includes("data-update-sidebar-badge"), "Sidebar should include a persistent update badge.");
   assert(indexSource.includes("data-update-ready-banner"), "App shell should include a persistent update-ready banner.");
   assert(indexSource.includes("data-update-release-notes"), "Update modal should include release notes.");
+  assert(indexSource.includes('data-update-action="open-download"'), "Update modal should include a browser download fallback.");
   assert(appSource.includes("renderMarkdownLite"), "Renderer should render markdown release notes in the update modal.");
   assert(appSource.includes("skipUpdateVersion"), "Renderer should support skipping a specific update version.");
+  assert(appSource.includes("isUpdateDownloadBlocked"), "Renderer should detect blocked/private update downloads.");
+  assert(appSource.includes("openUpdateDownload"), "Renderer should open the update download URL when direct download is blocked.");
+  assert(appSource.includes("result?.error || result?.message || \"Update download failed.\""), "Renderer should preserve update download errors in modal state.");
   assert(appSource.includes('state?.status === "available" && state?.latest?.hasUpdate'), "Renderer should open the update modal when startup state already has an available update.");
   assert(appSource.includes('renderUpdateModal("up-to-date")'), "Manual update checks should open a clear up-to-date modal instead of doing nothing.");
+  const updateManagerSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "updateManager.js"), "utf8");
+  assert(updateManagerSource.includes("function resolveRedirectUrl("), "Update manager should resolve redirect locations against the current URL.");
+  assert(updateManagerSource.includes("fs.mkdirSync(path.dirname(destinationPath), { recursive: true })"), "Update manager should create the download destination directory.");
+  assert(updateManagerSource.includes("isBlockedDownloadStatus(response.statusCode) && isGitHubDownloadUrl(url)"), "Update manager should explain blocked private GitHub release downloads.");
   assert(compareUpdateVersions("1.0.21", "1.0.20") > 0, "Update version comparison should detect newer releases.");
 }
 

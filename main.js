@@ -71,6 +71,7 @@ function registerUpdatesIpc() {
   ipcMain.handle("updates:download", () => updateManager.download());
   ipcMain.handle("updates:open-downloaded", () => updateManager.install());
   ipcMain.handle("updates:install", () => updateManager.install());
+  ipcMain.handle("updates:open-download", () => updateManager.openDownload());
   ipcMain.handle("updates:open-release", () => updateManager.openRelease());
   ipcMain.handle("updates:skip", (_, payload = {}) => updateManager.skip(payload.version));
 }

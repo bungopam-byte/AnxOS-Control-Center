@@ -17,6 +17,10 @@ function getAccountErrorMessage(error) {
   return redactSecret(error?.message || error?.code || "AnxOS account request failed.");
 }
 
+function getAccountErrorCode(error) {
+  return String(error?.code || error?.name || "ACCOUNT_REQUEST_FAILED");
+}
+
 async function invokeAccountOperation(operation, operationName = "account") {
   console.info("[Account][IPC] Operation started.", { operation: operationName });
   try {
@@ -29,7 +33,13 @@ async function invokeAccountOperation(operation, operationName = "account") {
       code: error?.code || null,
       message: getAccountErrorMessage(error),
     });
-    throw new Error(getAccountErrorMessage(error));
+    return {
+      ok: false,
+      error: {
+        code: getAccountErrorCode(error),
+        message: getAccountErrorMessage(error),
+      },
+    };
   }
 }
 

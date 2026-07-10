@@ -1,5 +1,19 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+async function invokeAccount(channel, payload) {
+  const result = payload === undefined
+    ? await ipcRenderer.invoke(channel)
+    : await ipcRenderer.invoke(channel, payload);
+
+  if (result && result.ok === false && result.error) {
+    const error = new Error(result.error.message || "AnxOS account request failed.");
+    error.code = result.error.code || "ACCOUNT_REQUEST_FAILED";
+    throw error;
+  }
+
+  return result;
+}
+
 const windowApi = {
   minimize: () => ipcRenderer.send("window:minimize"),
   maximize: () => ipcRenderer.send("window:maximize"),
@@ -33,16 +47,16 @@ const desktopApi = {
     },
   },
   account: {
-    getStatus: () => ipcRenderer.invoke("account:getStatus"),
-    startDeviceLogin: () => ipcRenderer.invoke("account:startDeviceLogin"),
-    loginWithPassword: (payload = {}) => ipcRenderer.invoke("account:loginWithPassword", payload),
-    checkDeviceLogin: () => ipcRenderer.invoke("account:checkDeviceLogin"),
-    cancelDeviceLogin: () => ipcRenderer.invoke("account:cancelDeviceLogin"),
-    refresh: () => ipcRenderer.invoke("account:refresh"),
-    openPage: () => ipcRenderer.invoke("account:openPage"),
-    listDevices: () => ipcRenderer.invoke("account:listDevices"),
-    revokeCurrentDevice: () => ipcRenderer.invoke("account:revokeCurrentDevice"),
-    logout: () => ipcRenderer.invoke("account:logout"),
+    getStatus: () => invokeAccount("account:getStatus"),
+    startDeviceLogin: () => invokeAccount("account:startDeviceLogin"),
+    loginWithPassword: (payload = {}) => invokeAccount("account:loginWithPassword", payload),
+    checkDeviceLogin: () => invokeAccount("account:checkDeviceLogin"),
+    cancelDeviceLogin: () => invokeAccount("account:cancelDeviceLogin"),
+    refresh: () => invokeAccount("account:refresh"),
+    openPage: () => invokeAccount("account:openPage"),
+    listDevices: () => invokeAccount("account:listDevices"),
+    revokeCurrentDevice: () => invokeAccount("account:revokeCurrentDevice"),
+    logout: () => invokeAccount("account:logout"),
   },
   window: windowApi,
   system: {

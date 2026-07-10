@@ -6,7 +6,8 @@ const { EventEmitter } = require("events");
 const { pipeline } = require("stream/promises");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
-const { AgentClientError, downloadFile, getAgentConfig, getBackendMode } = require("./agentClient");
+const { AgentClientError, downloadFile, getAgentConfig, getBackendMode, getFileListing, readFileText } = require("./agentClient");
+const { getNodeAgentConfig } = require("./nodeService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
 
@@ -300,7 +301,25 @@ function sortEntries(entries) {
 }
 
 function shouldUseLocalFiles(options = {}) {
+  if (trimValue(options.nodeId) && options.nodeId !== "default") {
+    return false;
+  }
   return options.storageId === LOCAL_STORAGE_ID || (!trimValue(options.storageId) && getBackendMode() === "local" && !trimValue(options.profileId));
+}
+
+function getFileNodeConfig(options = {}) {
+  const nodeId = trimValue(options.nodeId);
+  if (!nodeId) {
+    return null;
+  }
+  if (nodeId === "default") {
+    return getBackendMode() === "agent" ? getAgentConfig() : null;
+  }
+  return getNodeAgentConfig(nodeId);
+}
+
+function shouldUseNodeAgent(options = {}) {
+  return Boolean(getFileNodeConfig(options)) && !trimValue(options.storageId) && !trimValue(options.profileId);
 }
 
 function getLocalHomePath() {
@@ -670,6 +689,14 @@ class FileService extends EventEmitter {
   }
 
   async list(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      try {
+        const listing = await getFileListing(options.path || ".", getFileNodeConfig(options));
+        return { ...listing, nodeId: options.nodeId, provider: "agent", providerBadge: "Node" };
+      } catch (error) {
+        throw mapAgentFileOperationError(error, "Node file listing failed.");
+      }
+    }
     if (shouldUseLocalFiles(options)) {
       return this.listLocal(options);
     }
@@ -765,6 +792,13 @@ class FileService extends EventEmitter {
   }
 
   async readText(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      try {
+        return await readFileText(options.path, getFileNodeConfig(options));
+      } catch (error) {
+        throw mapAgentFileOperationError(error, "Node file read failed.");
+      }
+    }
     if (shouldUseLocalFiles(options)) {
       return this.readLocalText(options);
     }
@@ -1116,7 +1150,7 @@ class FileService extends EventEmitter {
     }
   }
 
-  async downloadFromAgent(remotePath) {
+  async downloadFromAgent(remotePath, configOverride = null) {
     try {
       const selection = await showSaveDialog({
         title: "Download remote file",
@@ -1129,7 +1163,7 @@ class FileService extends EventEmitter {
         };
       }
 
-      const response = await downloadFile(remotePath);
+      const response = await downloadFile(remotePath, configOverride);
       await fsPromises.writeFile(selection.filePath, response.buffer);
       console.info(`[Files] Download completed via agent (${remotePath} -> ${selection.filePath})`);
 
@@ -1146,6 +1180,9 @@ class FileService extends EventEmitter {
   }
 
   async download(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      return this.downloadFromAgent(options.path, getFileNodeConfig(options));
+    }
     if (shouldUseLocalFiles(options)) {
       const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
       const selection = await showSaveDialog({

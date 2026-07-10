@@ -1738,16 +1738,21 @@ function normalizeFileListing(payload) {
   };
 }
 
-async function getFileList(currentPath = ".") {
+async function getFileList(currentPath = ".", configOverride = null) {
   const query = new URLSearchParams({
     path: currentPath || ".",
   });
 
-  return requestJson(`/api/v1/files/list?${query.toString()}`);
+  return requestJson(`/api/v1/files/list?${query.toString()}`, { config: configOverride });
 }
 
-async function getFileListing(currentPath = ".") {
-  return normalizeFileListing(await getFileList(currentPath));
+async function getFileListing(currentPath = ".", configOverride = null) {
+  return normalizeFileListing(await getFileList(currentPath, configOverride));
+}
+
+async function readFileText(currentPath, configOverride = null) {
+  const query = new URLSearchParams({ path: currentPath || "." });
+  return requestJson(`/api/v1/files/read?${query.toString()}`, { config: configOverride });
 }
 
 function parseContentDispositionFilename(contentDisposition = "") {
@@ -1765,11 +1770,11 @@ function parseContentDispositionFilename(contentDisposition = "") {
   return fallbackMatch?.[1] || null;
 }
 
-async function downloadFile(currentPath) {
+async function downloadFile(currentPath, configOverride = null) {
   const query = new URLSearchParams({
     path: currentPath || ".",
   });
-  const response = await requestBuffer(`/api/v1/files/download?${query.toString()}`);
+  const response = await requestBuffer(`/api/v1/files/download?${query.toString()}`, { config: configOverride });
   const headers = response.headers || {};
 
   return {
@@ -2135,6 +2140,7 @@ module.exports = {
   loadEnvironment,
   normalizeAgentSettings,
   readAgentSettings,
+  readFileText,
   pairAgentFromCode,
   getSharedAgentTokenStatus,
   requestBuffer,

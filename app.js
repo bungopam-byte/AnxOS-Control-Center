@@ -1721,6 +1721,7 @@ function updateMonacoEditorOptions() {
   }
 
   monacoEditorInstance.updateOptions({
+    readOnly: Boolean(getSelectedRemoteFilesNode()),
     wordWrap: fileEditorWordWrapEnabled ? "on" : "off",
     minimap: {
       enabled: fileEditorMinimapEnabled,
@@ -2510,8 +2511,11 @@ function showPage(pageName) {
   if (safePageName === "files") {
     renderFilesView();
 
-    if (filesConnectionState.connected) {
+    if (getSelectedRemoteFilesNode()) {
+      connectFilesSession();
+    } else if (filesConnectionState.connected) {
       refreshFileListing({
+        storageId: getFilesRequestStorageId(),
         profileId: getFilesRequestProfileId(),
         path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
       });
@@ -9411,7 +9415,7 @@ function applyFileEditorDocument(documentState) {
   latestFileDocument = documentState;
 
   if (fileEditor) {
-    fileEditor.disabled = !documentState?.supported;
+    fileEditor.disabled = !documentState?.supported || Boolean(getSelectedRemoteFilesNode());
     fileEditor.value = documentState?.supported ? documentState.content || "" : "";
     fileEditor.scrollTop = 0;
   }
@@ -9466,7 +9470,7 @@ function syncFileEditorButtons() {
   }
 
   if (fileEditorSaveButton) {
-    fileEditorSaveButton.disabled = !hasEditableDocument || !isDirty || isBusy;
+    fileEditorSaveButton.disabled = !hasEditableDocument || !isDirty || isBusy || Boolean(getSelectedRemoteFilesNode());
   }
 
   if (fileEditorRevertButton) {
@@ -9497,7 +9501,7 @@ function updateFileActionButtons() {
   const connected = filesConnectionState.connected;
   const busy = isNodeSwitching() || filesRequestInFlight || filesActionRequestInFlight;
   const canBrowse = connected && !busy;
-  const canMutate = connected && !busy;
+  const canMutate = connected && !busy && !getSelectedRemoteFilesNode();
   const canDownload = connected && selectedEntry && !selectedEntry.isDirectory && !busy;
   const hasOpenDocument = hasOpenFileEditorDocument();
   const localFiles = isSingleDeviceMode() && !filesSelectedProfileId;
@@ -9962,9 +9966,10 @@ function storageConnectionLabel(connection) {
 
 function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
+  const selectedRemoteNode = getSelectedRemoteFilesNode();
   const localSelected = !selected || selected.id === "local";
-  if (storageActiveBadge) storageActiveBadge.textContent = selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
-  if (storageActiveName) storageActiveName.textContent = storageConnectionLabel(selected);
+  if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Node" : selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
+  if (storageActiveName) storageActiveName.textContent = selectedRemoteNode?.displayName || storageConnectionLabel(selected);
   if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || "Not connected";
   document.querySelector('[data-storage-action="edit"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="delete"]')?.toggleAttribute("disabled", localSelected);
@@ -10180,11 +10185,22 @@ function getFilesFilteredProfiles() {
   });
 }
 
+function getSelectedRemoteFilesNode() {
+  const node = getSelectedNode();
+  return node && !(node.local || node.backendMode === "local") ? node : null;
+}
+
 function isSingleDeviceMode() {
   return (latestAgentSettingsPayload?.effective?.backendMode || latestAgentSettingsPayload?.stored?.backendMode || "local") === "local";
 }
 
 function syncFilesSelectionState() {
+  if (getSelectedRemoteFilesNode()) {
+    filesSelectedServerId = null;
+    filesSelectedProfileId = null;
+    selectedStorageId = "";
+    return;
+  }
   const availableServerIds = new Set(sshProfilesState.servers.map((server) => server.id));
 
   if (!availableServerIds.has(filesSelectedServerId)) {
@@ -10204,7 +10220,14 @@ function renderFilesProfileSelectors() {
   if (filesServerSelect) {
     filesServerSelect.replaceChildren();
 
-    sshProfilesState.servers.forEach((server) => {
+    const selectedRemoteNode = getSelectedRemoteFilesNode();
+    if (selectedRemoteNode) {
+      const option = document.createElement("option");
+      option.value = selectedRemoteNode.id;
+      option.textContent = selectedRemoteNode.displayName || "Remote node";
+      option.selected = true;
+      filesServerSelect.appendChild(option);
+    } else sshProfilesState.servers.forEach((server) => {
       const option = document.createElement("option");
       option.value = server.id;
       option.textContent = server.displayName;
@@ -10212,7 +10235,7 @@ function renderFilesProfileSelectors() {
       filesServerSelect.appendChild(option);
     });
 
-    if (sshProfilesState.servers.length === 0) {
+    if (!selectedRemoteNode && sshProfilesState.servers.length === 0) {
       const option = document.createElement("option");
       option.textContent = "No servers configured";
       filesServerSelect.appendChild(option);
@@ -10224,7 +10247,14 @@ function renderFilesProfileSelectors() {
 
     const filteredProfiles = getFilesFilteredProfiles();
 
-    if (isSingleDeviceMode()) {
+    const selectedRemoteNode = getSelectedRemoteFilesNode();
+    if (selectedRemoteNode) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = `${selectedRemoteNode.displayName || "Remote node"} (Node)`;
+      option.selected = true;
+      filesProfileSelect.appendChild(option);
+    } else if (isSingleDeviceMode()) {
       const option = document.createElement("option");
       option.value = "";
       option.textContent = "This Device";
@@ -11533,6 +11563,9 @@ async function handleDockerAction(actionName) {
 }
 
 function getFilesRequestProfileId() {
+  if (getSelectedRemoteFilesNode()) {
+    return null;
+  }
   if (selectedStorageId) {
     return null;
   }
@@ -11543,6 +11576,9 @@ function getFilesRequestProfileId() {
 }
 
 function getFilesRequestStorageId() {
+  if (getSelectedRemoteFilesNode()) {
+    return null;
+  }
   return selectedStorageId || null;
 }
 
@@ -11608,6 +11644,7 @@ async function refreshFileListing(options = {}) {
 
   try {
     const listing = await desktopApiState.api.files.list({
+      nodeId: getSelectedNodeId(),
       storageId,
       profileId,
       path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined,
@@ -11814,6 +11851,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
 
   try {
     const payload = await desktopApiState.api.files.readText({
+      nodeId: getSelectedNodeId(),
       storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: entry.path,
@@ -11884,6 +11922,7 @@ async function saveRemoteTextFile() {
 
   try {
     await desktopApiState.api.files.writeText({
+      nodeId: getSelectedNodeId(),
       storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: latestFileDocument.path,
@@ -11944,6 +11983,7 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath)
   }
 
   filesActionRequestInFlight = true;
+  payload.nodeId = getSelectedNodeId();
   updateFileActionButtons();
   const transferId = startFileTransfer(actionName, payload.path || payload.sourcePath || payload.directoryPath || refreshPath || "Storage operation");
   payload.transferId = transferId;
@@ -15215,6 +15255,9 @@ async function reloadActiveNodeData(context = getNodeRequestContext("reload-node
   }
   if (getActivePageName() === "security") {
     reloads.push(refreshSecurityState());
+  }
+  if (getActivePageName() === "files" && getSelectedRemoteFilesNode()) {
+    reloads.push(connectFilesSession());
   }
 
   await Promise.allSettled(reloads);

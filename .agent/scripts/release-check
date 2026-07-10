@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+"use strict";
+
+const { spawnSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+
+const repoRoot = path.resolve(__dirname, "..", "..");
+
+function run(command, args, options = {}) {
+  console.log(`\n> ${[command, ...args].join(" ")}`);
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    shell: false,
+    ...options,
+  });
+  if (result.status !== 0) {
+    process.exit(result.status || 1);
+  }
+}
+
+function capture(command, args) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+    shell: false,
+  });
+  if (result.status !== 0) {
+    process.exit(result.status || 1);
+  }
+  return result.stdout.trim();
+}
+
+function assertFile(filePath) {
+  if (!fs.existsSync(path.join(repoRoot, filePath))) {
+    console.error(`Missing required file: ${filePath}`);
+    process.exit(1);
+  }
+}
+
+function main() {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  const lockJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package-lock.json"), "utf8"));
+  const branch = capture("git", ["branch", "--show-current"]);
+  const status = capture("git", ["status", "--porcelain"]);
+  const tagName = `v${packageJson.version}`;
+
+  if (branch !== "dev") {
+    console.error(`Release branch must be dev, got ${branch || "(detached)"}`);
+    process.exit(1);
+  }
+
+  if (status) {
+    console.error("Working tree must be clean before release publishing.");
+    console.error(status);
+    process.exit(1);
+  }
+
+  if (lockJson.version !== packageJson.version || lockJson.packages?.[""]?.version !== packageJson.version) {
+    console.error("package.json and package-lock.json versions do not match.");
+    process.exit(1);
+  }
+
+  assertFile("package.json");
+  assertFile("package-lock.json");
+  assertFile("scripts/write-update-manifest.js");
+  assertFile("scripts/sync-website-release.js");
+  assertFile("website/config.js");
+
+  run(".agent/scripts/validate-skills", []);
+  run(".agent/scripts/validate-project", []);
+
+  const existingTag = spawnSync("git", ["rev-parse", "--verify", "--quiet", tagName], {
+    cwd: repoRoot,
+    stdio: "ignore",
+  });
+
+  if (existingTag.status === 0) {
+    console.error(`Tag ${tagName} already exists. Bump the version before releasing.`);
+    process.exit(1);
+  }
+
+  console.log(`\nRelease readiness checks passed for ${tagName}.`);
+  console.log("This helper does not publish releases or create tags.");
+}
+
+main();

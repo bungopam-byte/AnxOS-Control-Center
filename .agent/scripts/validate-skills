@@ -1,0 +1,87 @@
+#!/usr/bin/env node
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+
+const rootDir = path.resolve(__dirname, "..");
+const skillsDir = path.join(rootDir, "skills");
+const expectedSkills = [
+  "anxos-ui-review",
+  "anxos-validation",
+  "anxos-release",
+  "electron-debug",
+  "agent-debug",
+];
+
+function fail(errors) {
+  for (const error of errors) {
+    console.error(`ERROR: ${error}`);
+  }
+  process.exit(1);
+}
+
+function parseFrontMatter(content, filePath) {
+  if (!content.startsWith("---\n")) {
+    return { error: `${filePath} is missing YAML front matter` };
+  }
+
+  const endIndex = content.indexOf("\n---", 4);
+  if (endIndex === -1) {
+    return { error: `${filePath} has unterminated YAML front matter` };
+  }
+
+  const block = content.slice(4, endIndex).trim();
+  const values = {};
+  for (const rawLine of block.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!match) {
+      return { error: `${filePath} has invalid front matter line: ${rawLine}` };
+    }
+    const value = match[2].trim().replace(/^["']|["']$/g, "");
+    values[match[1]] = value;
+  }
+  return { values };
+}
+
+function main() {
+  const errors = [];
+  const names = new Map();
+
+  if (!fs.existsSync(skillsDir)) {
+    fail([`.agent/skills does not exist`]);
+  }
+
+  for (const skill of expectedSkills) {
+    const filePath = path.join(skillsDir, skill, "SKILL.md");
+    if (!fs.existsSync(filePath)) {
+      errors.push(`Missing ${path.relative(process.cwd(), filePath)}`);
+      continue;
+    }
+
+    const content = fs.readFileSync(filePath, "utf8");
+    const parsed = parseFrontMatter(content, filePath);
+    if (parsed.error) {
+      errors.push(parsed.error);
+      continue;
+    }
+
+    const { name, description } = parsed.values;
+    if (!name) errors.push(`${filePath} front matter field "name" is required`);
+    if (!description) errors.push(`${filePath} front matter field "description" is required`);
+    if (name && names.has(name)) {
+      errors.push(`Duplicate skill name "${name}" in ${filePath} and ${names.get(name)}`);
+    }
+    if (name) names.set(name, filePath);
+  }
+
+  if (errors.length) {
+    fail(errors);
+  }
+
+  console.log(`Validated ${expectedSkills.length} AnxOS agent skill(s).`);
+}
+
+main();

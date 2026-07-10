@@ -85,6 +85,14 @@ async function resolveAllowedPath(requestedPath) {
   };
 }
 
+async function resolveAllowedTargetPath(requestedPath) {
+  if (!requestedPath || requestedPath.includes("\0")) throw createFileError("INVALID_PATH");
+  const targetPath = path.resolve(requestedPath);
+  const parent = await resolveAllowedPath(path.dirname(targetPath));
+  if (!isInsideRoot(targetPath, parent.root)) throw createFileError("PATH_NOT_ALLOWED", 403);
+  return { path: targetPath, root: parent.root };
+}
+
 function getFileType(stats) {
   if (stats.isDirectory()) {
     return "directory";
@@ -247,9 +255,44 @@ async function createFileDownload(requestedPath) {
   };
 }
 
+async function mutateFile(action, payload = {}) {
+  if (action === "write" || action === "newFile") {
+    const target = await resolveAllowedTargetPath(payload.path);
+    await fsPromises.writeFile(target.path, String(payload.content || ""), "utf8");
+    return { path: target.path, saved: true };
+  }
+  if (action === "mkdir") {
+    const target = await resolveAllowedTargetPath(payload.path);
+    await fsPromises.mkdir(target.path, { recursive: false });
+    return { path: target.path, created: true };
+  }
+  if (action === "rename" || action === "copy") {
+    const source = await resolveAllowedPath(payload.sourcePath || payload.oldPath);
+    const destination = await resolveAllowedTargetPath(payload.destinationPath || payload.newPath);
+    if (action === "rename") await fsPromises.rename(source.path, destination.path);
+    else await fsPromises.cp(source.path, destination.path, { recursive: true, errorOnExist: false });
+    return action === "rename"
+      ? { oldPath: source.path, newPath: destination.path, renamed: true }
+      : { sourcePath: source.path, destinationPath: destination.path, copied: true };
+  }
+  if (action === "delete") {
+    const target = await resolveAllowedPath(payload.path);
+    if (target.path === target.root) throw createFileError("ROOT_DELETE_FORBIDDEN", 403);
+    await fsPromises.rm(target.path, { recursive: true, force: false });
+    return { path: target.path, deleted: true };
+  }
+  if (action === "upload") {
+    const target = await resolveAllowedTargetPath(payload.path);
+    await fsPromises.writeFile(target.path, Buffer.from(String(payload.content || ""), "base64"));
+    return { path: target.path, uploaded: true };
+  }
+  throw createFileError("UNSUPPORTED_FILE_ACTION", 400);
+}
+
 module.exports = {
   createFileDownload,
   listFiles,
+  mutateFile,
   readTextFile,
   statPath,
 };

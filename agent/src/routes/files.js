@@ -1,4 +1,4 @@
-const { createFileDownload, listFiles, readTextFile, statPath } = require("../services/fileService");
+const { createFileDownload, listFiles, mutateFile, readTextFile, statPath } = require("../services/fileService");
 
 function buildContentDisposition(filename) {
   const fallbackName = String(filename || "download")
@@ -51,9 +51,20 @@ async function handleFilesDownload(url) {
   };
 }
 
+async function handleFilesMutate(request) {
+  let payload;
+  try {
+    payload = JSON.parse(request.body || "{}");
+  } catch {
+    throw Object.assign(new Error("INVALID_JSON"), { code: "INVALID_JSON", statusCode: 400 });
+  }
+  return { statusCode: 200, body: await mutateFile(payload.action, payload) };
+}
+
 module.exports = {
   handleFilesDownload,
   handleFilesList,
+  handleFilesMutate,
   handleFilesRead,
   handleFilesStat,
 };

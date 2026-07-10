@@ -6,7 +6,7 @@ const { EventEmitter } = require("events");
 const { pipeline } = require("stream/promises");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
-const { AgentClientError, downloadFile, getAgentConfig, getBackendMode, getFileListing, readFileText } = require("./agentClient");
+const { AgentClientError, downloadFile, getAgentConfig, getBackendMode, getFileListing, mutateFile, readFileText } = require("./agentClient");
 const { getNodeAgentConfig } = require("./nodeService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
@@ -901,6 +901,9 @@ class FileService extends EventEmitter {
   }
 
   async writeText(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      return mutateFile({ action: "write", path: options.path, content: options.content || "" }, getFileNodeConfig(options));
+    }
     if (shouldUseLocalFiles(options)) {
       const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
       await fsPromises.writeFile(localPath, typeof options.content === "string" ? options.content : "", "utf8");
@@ -922,6 +925,9 @@ class FileService extends EventEmitter {
   }
 
   async mkdir(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      return mutateFile({ action: "mkdir", path: options.path }, getFileNodeConfig(options));
+    }
     if (shouldUseLocalFiles(options)) {
       const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
       await fsPromises.mkdir(localPath, { recursive: false });
@@ -942,6 +948,9 @@ class FileService extends EventEmitter {
   }
 
   async rename(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      return mutateFile({ action: "rename", oldPath: options.oldPath, newPath: options.newPath }, getFileNodeConfig(options));
+    }
     if (shouldUseLocalFiles(options)) {
       const oldPath = normalizeLocalPath(options.oldPath, options.currentPath || getLocalHomePath());
       const newPath = normalizeLocalPath(options.newPath, path.dirname(oldPath));
@@ -984,6 +993,9 @@ class FileService extends EventEmitter {
   }
 
   async copy(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      return mutateFile({ action: "copy", sourcePath: options.sourcePath || options.path, destinationPath: options.destinationPath || options.newPath }, getFileNodeConfig(options));
+    }
     if (shouldUseLocalFiles(options)) {
       const sourcePath = normalizeLocalPath(options.sourcePath || options.path, options.currentPath || getLocalHomePath());
       const destinationPath = normalizeLocalPath(options.destinationPath || options.newPath, path.dirname(sourcePath));
@@ -1019,6 +1031,9 @@ class FileService extends EventEmitter {
   }
 
   async delete(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      return mutateFile({ action: "delete", path: options.path }, getFileNodeConfig(options));
+    }
     if (shouldUseLocalFiles(options)) {
       const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
       await fsPromises.rm(localPath, { recursive: true, force: false });
@@ -1040,6 +1055,17 @@ class FileService extends EventEmitter {
   }
 
   async upload(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      const selection = await showOpenDialog({ title: "Upload file to node", properties: ["openFile"] });
+      if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
+      const localPath = selection.filePaths[0];
+      const remotePath = posixPath.join(options.directoryPath || "/", path.basename(localPath));
+      const buffer = await fsPromises.readFile(localPath);
+      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: buffer.length, percent: 0 });
+      const result = await mutateFile({ action: "upload", path: remotePath, content: buffer.toString("base64") }, getFileNodeConfig(options));
+      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: buffer.length, totalBytes: buffer.length, percent: 100 });
+      return { ...result, canceled: false, localPath, remotePath };
+    }
     if (shouldUseLocalFiles(options)) {
       const targetDirectory = normalizeLocalPath(options.directoryPath, options.currentPath || getLocalHomePath());
       const selection = await showOpenDialog({

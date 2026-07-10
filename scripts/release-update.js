@@ -148,6 +148,7 @@ function main() {
 
   if (options.build) {
     run("npm", ["run", "dist:win:installer"]);
+    run("npm", ["run", "dist:win:portable"]);
     run("npm", ["run", "dist:linux"]);
   }
 

@@ -587,6 +587,8 @@ let storageConnectionsState = {
   defaultConnectionId: "local",
 };
 let selectedStorageId = "local";
+let filesAutoSelectedNodeId = null;
+let filesConnectPromise = null;
 const fileTransfers = new Map();
 let securityRequestInFlight = false;
 const filesConnectionState = {
@@ -596,6 +598,8 @@ const filesConnectionState = {
   currentPath: null,
   homePath: null,
   status: "disconnected",
+  nodeId: null,
+  targetKey: null,
   message: "No remote filesystem connected.",
 };
 const sshSessions = new Map();
@@ -1721,7 +1725,7 @@ function updateMonacoEditorOptions() {
   }
 
   monacoEditorInstance.updateOptions({
-    readOnly: Boolean(getSelectedRemoteFilesNode()),
+    readOnly: false,
     wordWrap: fileEditorWordWrapEnabled ? "on" : "off",
     minimap: {
       enabled: fileEditorMinimapEnabled,
@@ -9415,7 +9419,7 @@ function applyFileEditorDocument(documentState) {
   latestFileDocument = documentState;
 
   if (fileEditor) {
-    fileEditor.disabled = !documentState?.supported || Boolean(getSelectedRemoteFilesNode());
+    fileEditor.disabled = !documentState?.supported;
     fileEditor.value = documentState?.supported ? documentState.content || "" : "";
     fileEditor.scrollTop = 0;
   }
@@ -9470,7 +9474,7 @@ function syncFileEditorButtons() {
   }
 
   if (fileEditorSaveButton) {
-    fileEditorSaveButton.disabled = !hasEditableDocument || !isDirty || isBusy || Boolean(getSelectedRemoteFilesNode());
+    fileEditorSaveButton.disabled = !hasEditableDocument || !isDirty || isBusy;
   }
 
   if (fileEditorRevertButton) {
@@ -9501,13 +9505,13 @@ function updateFileActionButtons() {
   const connected = filesConnectionState.connected;
   const busy = isNodeSwitching() || filesRequestInFlight || filesActionRequestInFlight;
   const canBrowse = connected && !busy;
-  const canMutate = connected && !busy && !getSelectedRemoteFilesNode();
+  const canMutate = connected && !busy;
   const canDownload = connected && selectedEntry && !selectedEntry.isDirectory && !busy;
   const hasOpenDocument = hasOpenFileEditorDocument();
-  const localFiles = isSingleDeviceMode() && !filesSelectedProfileId;
+  const target = getFilesConnectionTarget();
 
   if (filesConnectButton) {
-    filesConnectButton.disabled = (!filesSelectedProfileId && !localFiles) || busy || (connected && filesConnectionState.profileId === filesSelectedProfileId);
+    filesConnectButton.disabled = !target || busy || (connected && filesConnectionState.targetKey === target.key);
   }
 
   if (filesDisconnectButton) {
@@ -9966,7 +9970,7 @@ function storageConnectionLabel(connection) {
 
 function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
-  const selectedRemoteNode = getSelectedRemoteFilesNode();
+  const selectedRemoteNode = selected ? null : getSelectedRemoteFilesNode();
   const localSelected = !selected || selected.id === "local";
   if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Node" : selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
   if (storageActiveName) storageActiveName.textContent = selectedRemoteNode?.displayName || storageConnectionLabel(selected);
@@ -10195,11 +10199,17 @@ function isSingleDeviceMode() {
 }
 
 function syncFilesSelectionState() {
-  if (getSelectedRemoteFilesNode()) {
+  const selectedRemoteNode = getSelectedRemoteFilesNode();
+  if (selectedRemoteNode && filesAutoSelectedNodeId !== selectedRemoteNode.id) {
     filesSelectedServerId = null;
     filesSelectedProfileId = null;
     selectedStorageId = "";
+    filesAutoSelectedNodeId = selectedRemoteNode.id;
+  }
+  if (selectedRemoteNode) {
     return;
+  } else {
+    filesAutoSelectedNodeId = null;
   }
   const availableServerIds = new Set(sshProfilesState.servers.map((server) => server.id));
 
@@ -10324,6 +10334,8 @@ function updateFilesConnectionState(nextState = {}) {
   filesConnectionState.currentPath = nextState.currentPath || null;
   filesConnectionState.homePath = nextState.homePath || null;
   filesConnectionState.status = nextState.status || (filesConnectionState.connected ? "connected" : "disconnected");
+  filesConnectionState.nodeId = nextState.nodeId || null;
+  filesConnectionState.targetKey = nextState.targetKey || null;
   filesConnectionState.message = nextState.message || (filesConnectionState.connected ? "Remote filesystem connected." : "No remote filesystem connected.");
 
   if (filesPathInput) {
@@ -10383,6 +10395,8 @@ function renderFileListing(listing) {
     currentPath: normalized.currentPath || filesConnectionState.currentPath,
     homePath: normalized.homePath || filesConnectionState.homePath,
     status: normalized.status || "connected",
+    nodeId: normalized.nodeId || null,
+    targetKey: normalized.targetKey || getFilesConnectionTarget()?.key || null,
     message: normalized.message || "Remote filesystem connected.",
   });
   latestFilesListing = normalized;
@@ -11576,10 +11590,36 @@ function getFilesRequestProfileId() {
 }
 
 function getFilesRequestStorageId() {
-  if (getSelectedRemoteFilesNode()) {
-    return null;
-  }
   return selectedStorageId || null;
+}
+
+function getFilesConnectionTarget() {
+  const storage = getSelectedStorageConnection();
+  if (storage) {
+    return { key: `storage:${storage.id}`, type: "storage", label: storageConnectionLabel(storage), storage };
+  }
+  const profile = getActiveFilesProfile();
+  if (profile) {
+    return { key: `profile:${profile.id}`, type: "profile", label: profile.displayName || profile.host, profile };
+  }
+  const node = getSelectedRemoteFilesNode();
+  if (node) {
+    return { key: `node:${node.id}`, type: "node", label: node.displayName || "Remote node", node };
+  }
+  if (isSingleDeviceMode()) {
+    return { key: "storage:local", type: "local", label: "This Device" };
+  }
+  return null;
+}
+
+function getSafeFilesConnectionError(error, targetLabel = "filesystem") {
+  const raw = String(error?.message || "Connection failed.")
+    .replace(/(bearer|token|password|passphrase|private[_ -]?key)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1[redacted]@");
+  if (/unauthorized|forbidden|HTTP (401|403)/i.test(raw)) return `Could not connect to ${targetLabel}: authentication was rejected. Check the Agent token or storage credentials.`;
+  if (/timed? ?out|ECONNREFUSED|ENOTFOUND|unreachable/i.test(raw)) return `Could not connect to ${targetLabel}: the host is unreachable. Check the address, port, and network.`;
+  if (/permission denied|EACCES|EPERM/i.test(raw)) return `Could not open ${targetLabel}: permission was denied for its configured root.`;
+  return `Could not connect to ${targetLabel}: ${raw}`;
 }
 
 function normalizeFilesPathValue(value, fallback = "/") {
@@ -11662,7 +11702,7 @@ async function refreshFileListing(options = {}) {
     if (!isNodeRequestCurrent(requestContext)) {
       return null;
     }
-    const message = error?.message || "Unknown error";
+    const message = getSafeFilesConnectionError(error, getFilesConnectionTarget()?.label || "filesystem");
 
     if (!latestFilesListing || !filesConnectionState.connected) {
       renderFileListingUnavailable(`File listing request failed: ${message}`);
@@ -11691,8 +11731,9 @@ async function refreshFileListing(options = {}) {
   }
 }
 
-async function connectFilesSession(options = {}) {
+async function performConnectFilesSession(options = {}) {
   const desktopApiState = getDesktopApiState();
+  const target = getFilesConnectionTarget();
   const selectedStorage = getSelectedStorageConnection();
   const profile = getActiveFilesProfile();
   const switchingProfiles = Boolean(filesConnectionState.connected && filesConnectionState.profileId && filesConnectionState.profileId !== profile?.id);
@@ -11710,6 +11751,19 @@ async function connectFilesSession(options = {}) {
       showToast(`Connected to ${storageConnectionLabel(selectedStorage)}.`);
     }
     return;
+  }
+
+  if (target?.type === "node") {
+    const listing = await refreshFileListing({
+      storageId: null,
+      profileId: null,
+      path: filesConnectionState.connected && filesConnectionState.targetKey === target.key
+        ? filesConnectionState.currentPath || filesConnectionState.homePath
+        : undefined,
+      loadingMessage: `Connecting to ${target.label}...`,
+    });
+    if (listing?.connected) showToast(`Connected to ${target.label}.`);
+    return listing;
   }
 
   if (!desktopApiState.hasFiles || (!profile && !isSingleDeviceMode()) || filesRequestInFlight) {
@@ -11766,14 +11820,27 @@ async function connectFilesSession(options = {}) {
     }
     showToast(`Connected to ${profile.displayName || profile.host}.`);
   }
+  return listing;
+}
+
+function connectFilesSession(options = {}) {
+  if (filesConnectPromise) {
+    return filesConnectPromise;
+  }
+  filesConnectPromise = performConnectFilesSession(options).finally(() => {
+    filesConnectPromise = null;
+    updateFileActionButtons();
+  });
+  return filesConnectPromise;
 }
 
 async function disconnectFilesSession() {
   const desktopApiState = getDesktopApiState();
   const profileId = getFilesRequestProfileId();
   const storageId = getFilesRequestStorageId();
+  const target = getFilesConnectionTarget();
 
-  if (!desktopApiState.hasFiles || (!storageId && !profileId && !isSingleDeviceMode())) {
+  if (!desktopApiState.hasFiles || !target) {
     return;
   }
 
@@ -11788,7 +11855,9 @@ async function disconnectFilesSession() {
     if (profileId || storageId) {
       await desktopApiState.api.files.disconnect(profileId, storageId);
     }
-  } catch {}
+  } catch (error) {
+    showToast(getSafeFilesConnectionError(error, target.label));
+  }
   finally {
     renderFileListingUnavailable(storageId === "local" || isSingleDeviceMode() ? "Local filesystem disconnected." : "Remote filesystem disconnected.");
     setFilesPasswordPromptState(false);

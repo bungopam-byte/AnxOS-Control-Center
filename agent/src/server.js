@@ -10,7 +10,7 @@ const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console")
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDocker, handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
-const { handleFilesDownload, handleFilesList, handleFilesRead, handleFilesStat } = require("./routes/files");
+const { handleFilesDownload, handleFilesList, handleFilesMutate, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
@@ -190,6 +190,10 @@ async function routeRequest(request, url) {
     return handleDocker(request, url);
   }
 
+  if (pathname === "/api/v1/files/mutate" && request.method === "POST") {
+    return handleFilesMutate(request);
+  }
+
   if (request.method !== "GET") {
     return {
       statusCode: 405,
@@ -296,7 +300,7 @@ async function handleRequest(request, response) {
   try {
     const address = request.socket?.remoteAddress || "local";
     checkRateLimit(`api:${address}`, config.apiRateLimitPerMinute, 60 * 1000);
-    if (/\/file$/.test(request.url || "") && request.method === "PUT") {
+    if ((/\/file$/.test(request.url || "") && request.method === "PUT") || (/\/files\/mutate$/.test(request.url || "") && request.method === "POST")) {
       checkRateLimit(`file-write:${address}`, config.fileWriteRateLimitPerMinute, 60 * 1000);
     }
     if (/\/command$/.test(request.url || "") && request.method === "POST") {

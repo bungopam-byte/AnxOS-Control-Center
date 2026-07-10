@@ -1755,6 +1755,10 @@ async function readFileText(currentPath, configOverride = null) {
   return requestJson(`/api/v1/files/read?${query.toString()}`, { config: configOverride });
 }
 
+async function mutateFile(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/files/mutate", { config: configOverride, method: "POST", body: payload });
+}
+
 function parseContentDispositionFilename(contentDisposition = "") {
   const utfMatch = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
 
@@ -2139,6 +2143,7 @@ module.exports = {
   listInstances,
   loadEnvironment,
   normalizeAgentSettings,
+  mutateFile,
   readAgentSettings,
   readFileText,
   pairAgentFromCode,

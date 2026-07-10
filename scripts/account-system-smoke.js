@@ -34,6 +34,8 @@ function assertWebsiteAccountUi() {
   assert(site.includes("auth.signUp"), "Website should implement sign-up.");
   assert(site.includes("resetPasswordForEmail"), "Website should implement forgot-password.");
   assert(site.includes("updateUser({ password"), "Website should implement password reset.");
+  assert(site.includes("loadProfile().catch") && site.includes("currentProfile = null"), "Website profile loading should not block signed-in account state.");
+  assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");
   assert(site.includes("/api/auth/device/lookup"), "Website should look up device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("approve")'), "Website should approve device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("deny")'), "Website should deny device authorization requests.");

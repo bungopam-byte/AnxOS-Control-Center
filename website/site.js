@@ -259,7 +259,10 @@ async function renderAuthState() {
     renderSignedOut();
     return;
   }
-  await loadProfile();
+  await loadProfile().catch((error) => {
+    currentProfile = null;
+    setMessage("profile", friendlyAuthError(error), "warn");
+  });
   renderSignedIn();
   await Promise.allSettled([loadDevices(), loadSessions(), loadSecurityEvents()]);
 }
@@ -375,11 +378,12 @@ async function handleProfile(form) {
   setMessage("profile", "Saving...");
   try {
     const patch = {
+      id: currentSession.user.id,
       username: form.elements.username.value.trim(),
       display_name: form.elements.displayName.value.trim(),
       avatar_url: form.elements.avatarUrl.value.trim() || null,
     };
-    const { error } = await getSupabase().from("profiles").update(patch).eq("id", currentSession.user.id);
+    const { error } = await getSupabase().from("profiles").upsert(patch, { onConflict: "id" });
     if (error) throw error;
     await loadProfile();
     renderSignedIn();

@@ -352,6 +352,12 @@ const securityStaySignedInRow = document.querySelector("[data-security-stay-row]
 const localSetupButtons = document.querySelectorAll("[data-local-setup-action]");
 const securitySubmitButton = document.querySelector("[data-security-submit]");
 let securityLastSubmitAt = 0;
+const accountButtons = document.querySelectorAll("[data-account-action]");
+const accountMessages = document.querySelectorAll("[data-account-message]");
+const accountSettingsMessage = document.querySelector("[data-account-settings-message]");
+const accountStatus = document.querySelector("[data-account-status]");
+const accountCurrentUser = document.querySelector("[data-account-current-user]");
+const accountDeviceCode = document.querySelector("[data-account-device-code]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -386,6 +392,8 @@ let latestUpdateInfo = null;
 let downloadedUpdatePath = null;
 let updateUiState = null;
 let securityState = { setupRequired: false, authenticated: false, user: null };
+let accountState = { authenticated: false, account: null, pending: null, configured: false };
+let accountPollTimer = null;
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
 let backupsState = {
@@ -796,6 +804,11 @@ function getDesktopApiState() {
       typeof api?.updates?.openDownloaded === "function" &&
       typeof api?.updates?.openRelease === "function" &&
       typeof api?.updates?.onStatus === "function",
+    hasAccount:
+      typeof api?.account?.getStatus === "function" &&
+      typeof api?.account?.startDeviceLogin === "function" &&
+      typeof api?.account?.checkDeviceLogin === "function" &&
+      typeof api?.account?.logout === "function",
     hasSecurity:
       typeof api?.security?.getStatus === "function" &&
       typeof api?.security?.setupAdmin === "function" &&
@@ -13338,6 +13351,130 @@ function showRemoteControlSetup() {
   showPage("security");
 }
 
+function setAccountMessage(message = "") {
+  accountMessages.forEach((node) => {
+    node.textContent = message;
+  });
+  if (accountSettingsMessage) {
+    accountSettingsMessage.textContent = message || "Website sign-in is optional.";
+  }
+}
+
+function renderAccountState() {
+  const signedIn = Boolean(accountState.authenticated);
+  const pending = accountState.pending || null;
+  if (accountStatus) {
+    accountStatus.textContent = signedIn ? "Signed in" : pending ? "Waiting" : "Not signed in";
+  }
+  if (accountCurrentUser) {
+    accountCurrentUser.value = signedIn
+      ? (accountState.account?.displayName || accountState.account?.username || accountState.account?.email || "AnxOS Account")
+      : "";
+  }
+  if (accountDeviceCode) {
+    accountDeviceCode.value = pending?.userCode || "";
+  }
+  document.querySelectorAll('[data-account-action="logout"]').forEach((button) => {
+    button.toggleAttribute("hidden", !signedIn);
+  });
+  document.querySelectorAll('[data-account-action="start"]').forEach((button) => {
+    button.textContent = pending ? "Waiting for Browser..." : signedIn ? "Switch AnxOS Account" : "Sign in with AnxOS";
+    button.disabled = pending && !signedIn;
+  });
+  if (pending?.userCode) {
+    setAccountMessage(`Browser sign-in code: ${pending.userCode}`);
+  } else if (signedIn) {
+    setAccountMessage(`Signed in as ${accountState.account?.displayName || accountState.account?.username || "AnxOS Account"}.`);
+  } else if (accountState.configured === false) {
+    setAccountMessage("AnxOS account backend is not configured yet. Local mode still works.");
+  } else {
+    setAccountMessage("Sign in on the AnxOS website to connect this device.");
+  }
+}
+
+async function refreshAccountState() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasAccount) {
+    accountState = { authenticated: false, account: null, pending: null, configured: false };
+    renderAccountState();
+    return;
+  }
+  try {
+    accountState = await desktopApiState.api.account.getStatus();
+  } catch {
+    accountState = { authenticated: false, account: null, pending: null, configured: false };
+  }
+  renderAccountState();
+}
+
+function stopAccountPolling() {
+  if (accountPollTimer) {
+    clearInterval(accountPollTimer);
+    accountPollTimer = null;
+  }
+}
+
+function startAccountPolling(intervalMs = 3000) {
+  stopAccountPolling();
+  accountPollTimer = setInterval(async () => {
+    const desktopApiState = getDesktopApiState();
+    if (!desktopApiState.hasAccount) return;
+    try {
+      accountState = await desktopApiState.api.account.checkDeviceLogin();
+      renderAccountState();
+      if (accountState.authenticated || ["expired", "idle"].includes(accountState.state)) {
+        stopAccountPolling();
+        await refreshSecurityState();
+        if (accountState.authenticated) {
+          setLocalSetupComplete();
+          setSecurityGateVisible(false);
+          renderLocalSetupState();
+          showToast("Signed in with AnxOS.");
+        }
+      }
+    } catch (error) {
+      stopAccountPolling();
+      const message = normalizeIpcErrorMessage(error, "AnxOS account sign-in failed.");
+      setAccountMessage(message);
+      showToast(message);
+    }
+  }, Math.max(1500, Number.parseInt(intervalMs, 10) || 3000));
+}
+
+async function startAnxOsAccountLogin() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasAccount) {
+    showToast("AnxOS account sign-in is not available in this build.");
+    return;
+  }
+  try {
+    accountState = await desktopApiState.api.account.startDeviceLogin();
+    renderAccountState();
+    startAccountPolling(accountState.pending?.intervalMs);
+    showToast("Opened AnxOS sign-in in your browser.");
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Could not start AnxOS account sign-in.");
+    setAccountMessage(message);
+    showToast(message);
+  }
+}
+
+async function openAnxOsAccountPage() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasAccount) return;
+  await desktopApiState.api.account.openPage().catch((error) => showToast(error?.message || "Could not open account page."));
+}
+
+async function logoutAnxOsAccount() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasAccount) return;
+  stopAccountPolling();
+  accountState = await desktopApiState.api.account.logout().catch(() => ({ authenticated: false, account: null, pending: null }));
+  renderAccountState();
+  await refreshSecurityState();
+  showToast("Signed out of AnxOS account.");
+}
+
 function renderSecurityState() {
   const setup = Boolean(securityState.setupRequired);
   const authenticated = Boolean(securityState.authenticated);
@@ -15196,6 +15333,18 @@ document.querySelector('[data-security-action="logout"]')?.addEventListener("cli
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
 document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);
 document.querySelector('[data-security-action="enable-remote-control"]')?.addEventListener("click", showRemoteControlSetup);
+accountButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.accountAction;
+    if (action === "start") {
+      await startAnxOsAccountLogin();
+    } else if (action === "open") {
+      await openAnxOsAccountPage();
+    } else if (action === "logout") {
+      await logoutAnxOsAccount();
+    }
+  });
+});
 localSetupButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const action = button.dataset.localSetupAction;
@@ -15239,6 +15388,7 @@ windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaxi
 syncTitlebarWindowState();
 configurePrimaryNavigation();
 loadSettings();
+refreshAccountState();
 refreshSecurityState();
 refreshNodes();
 loadAgentSettings();

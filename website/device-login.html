@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS Device Login</title>
+    <meta name="description" content="Approve an AnxOS Control Center device sign-in.">
+    <link rel="icon" type="image/jpeg" href="assets/anxos-logo.jpg">
+    <link rel="stylesheet" href="styles.css">
+    <script src="config.js" defer></script>
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="AnxOS home">
+        <span class="brand-mark"><img data-logo src="assets/anxos-logo.jpg" alt=""></span>
+        <span class="brand-copy">
+          <strong>AnxOS</strong>
+          <span>Device Login</span>
+        </span>
+      </a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="account.html">Account</a>
+        <a href="index.html#release">Download</a>
+        <a href="release-notes.html">Release Notes</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero section-shell account-hero" aria-labelledby="device-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Connect AnxOS Control Center</p>
+          <h1 id="device-title">Enter your device code</h1>
+          <p class="lede">Type the code shown in the desktop app, then approve the sign-in. This keeps the app from asking for a website password directly.</p>
+        </div>
+        <div class="hero-panel account-panel">
+          <div class="panel-titlebar">
+            <span></span><span></span><span></span>
+            <img class="panel-titlebar__logo" data-logo src="assets/anxos-logo.jpg" alt="" aria-hidden="true">
+            <strong>Approve Device</strong>
+          </div>
+          <form class="account-form" data-device-login-form>
+            <label>
+              <span>Device code</span>
+              <input type="text" autocomplete="one-time-code" data-device-code-input placeholder="ABCD1234">
+            </label>
+            <button class="button button-primary" type="button">Continue to AnxOS</button>
+            <p data-device-login-message>Device approval will complete automatically after the AnxOS account API is deployed.</p>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>AnxOS</span>
+      <a href="account.html">Account</a>
+      <a href="index.html">Download</a>
+      <a data-config-href="repositoryUrl" href="#">GitHub</a>
+    </footer>
+  </body>
+</html>

@@ -113,6 +113,21 @@ function applyReleaseNotes() {
   });
 }
 
+function applyDeviceLoginPage() {
+  const input = document.querySelector("[data-device-code-input]");
+  if (!input) return;
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  if (code) {
+    input.value = code.toUpperCase();
+    const message = document.querySelector("[data-device-login-message]");
+    if (message) {
+      message.textContent = "Code detected from the desktop app. Sign in support will activate when the AnxOS account API is deployed.";
+    }
+  }
+}
+
 applyConfigText();
 applyDownloads();
 applyReleaseNotes();
+applyDeviceLoginPage();

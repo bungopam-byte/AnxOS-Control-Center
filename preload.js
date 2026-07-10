@@ -31,6 +31,13 @@ const desktopApi = {
       return () => ipcRenderer.removeListener("updates:status", handler);
     },
   },
+  account: {
+    getStatus: () => ipcRenderer.invoke("account:getStatus"),
+    startDeviceLogin: () => ipcRenderer.invoke("account:startDeviceLogin"),
+    checkDeviceLogin: () => ipcRenderer.invoke("account:checkDeviceLogin"),
+    openPage: () => ipcRenderer.invoke("account:openPage"),
+    logout: () => ipcRenderer.invoke("account:logout"),
+  },
   window: windowApi,
   system: {
     getSnapshot: () => ipcRenderer.invoke("system:getSnapshot"),

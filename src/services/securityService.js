@@ -9,6 +9,7 @@ const {
   readAgentSettings,
   saveAgentSettings,
 } = require("./agentClient");
+const { getCurrentSession: getCurrentAccountSession } = require("./accountService");
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -410,6 +411,13 @@ function validatePassword(value) {
 
 function getStatus() {
   const user = getCurrentUser();
+  const accountSession = getCurrentAccountSession();
+  const accountUser = accountSession ? {
+    id: accountSession.account?.id || accountSession.user?.id || "anxos-account",
+    username: accountSession.account?.username || accountSession.user?.username || accountSession.account?.email || accountSession.user?.email || "AnxOS Account",
+    role: "Account",
+    account: true,
+  } : null;
   const state = readSecurityState();
   if (pruneExpiredPersistentSessions(state)) {
     writeSecurityState(state);
@@ -420,8 +428,9 @@ function getStatus() {
     setupRequired: !hasAdminUser,
     localMode,
     remoteControlEnabled: hasAdminUser,
-    authenticated: Boolean(user),
-    user,
+    authenticated: Boolean(user || accountUser),
+    user: user || accountUser,
+    accountAuthenticated: Boolean(accountUser),
     roles: Object.keys(ROLE_PERMISSIONS),
     permissions: user ? ROLE_PERMISSIONS[user.role] || [] : localMode ? ["local:*"] : [],
     agentTokenConfigured: Boolean(readAgentSettings().agentToken),
@@ -573,6 +582,13 @@ function userHasPermission(user, permission) {
 
 function requirePermission(permission, target = null) {
   const status = getStatus();
+  if (status.accountAuthenticated && status.user) {
+    return {
+      ...status.user,
+      permissions: ["*"],
+    };
+  }
+
   if (status.setupRequired) {
     return {
       id: "local-device",

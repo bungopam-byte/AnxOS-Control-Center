@@ -51,8 +51,10 @@
         </label>
         <div class="settings-actions">
           <button class="inline-action" type="submit" data-security-submit>Continue</button>
+          <button class="inline-action inline-action--primary" type="button" data-account-action="start">Sign in with AnxOS</button>
         </div>
         <p class="settings-note" data-security-message></p>
+        <p class="settings-note" data-account-message></p>
       </form>
     </section>
 
@@ -64,8 +66,10 @@
         <p class="lede">Manage this computer now. Accounts, agent tokens, and remote nodes are only needed if you want to control another PC or server.</p>
         <div class="settings-actions">
           <button class="inline-action inline-action--primary" type="button" data-local-setup-action="use-device">Use this device</button>
+          <button class="inline-action" type="button" data-account-action="start">Sign in with AnxOS</button>
           <button class="inline-action" type="button" data-local-setup-action="remote-control">Enable Remote Control</button>
         </div>
+        <p class="settings-note" data-account-message></p>
       </div>
     </section>
 
@@ -2312,6 +2316,32 @@
           </header>
 
           <div class="settings-shell settings-shell--single">
+            <section class="settings-section settings-section--account">
+              <div class="settings-section__header">
+                <div>
+                  <h2>AnxOS Account</h2>
+                  <p>Sign in on the website to sync devices later. Local control still works without an account.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-account-status>Not signed in</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Account</span>
+                  <input type="text" data-account-current-user readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Device login code</span>
+                  <input type="text" data-account-device-code readonly>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action inline-action--primary" type="button" data-account-action="start">Sign in with AnxOS</button>
+                <button class="inline-action" type="button" data-account-action="open">Open Account Page</button>
+                <button class="inline-action" type="button" data-account-action="logout">Sign Out</button>
+                <span class="settings-inline-status" data-account-settings-message>Website sign-in is optional.</span>
+              </div>
+            </section>
+
             <section class="settings-section settings-section--security">
               <div class="settings-section__header">
                 <div>

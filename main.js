@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { registerAccountIpc } = require("./src/ipc/accountIpc");
 const { registerActionIpc } = require("./src/ipc/actionIpc");
 const { registerAmpIpc } = require("./src/ipc/ampIpc");
 const { registerBackupsIpc } = require("./src/ipc/backupsIpc");
@@ -256,6 +257,7 @@ app.whenReady().then(() => {
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
   registerUpdatesIpc();
+  registerAccountIpc();
   registerActionIpc();
   registerSystemIpc();
   registerAmpIpc();

@@ -29,6 +29,7 @@ function assertWebsiteAccountUi() {
   assert(site.includes("supabase.createClient"), "Website should initialize Supabase Auth.");
   assert(site.includes("signInWithPassword"), "Website should implement email/password sign-in.");
   assert(site.includes("getSignInUrlForActivation") && site.includes('return: "activate"'), "Website should preserve device activation codes through sign-in.");
+  assert(site.includes("redirectToCanonicalSiteOrigin") && site.includes("pagesPreviewHost"), "Website should redirect Pages branch aliases to the configured account origin.");
   assert(site.includes("isAccountApiConfigured") && site.includes("ACCOUNT_API_NOT_CONFIGURED"), "Website should allow Supabase sign-in to load separately from account API availability.");
   assert(site.includes("auth.signUp"), "Website should implement sign-up.");
   assert(site.includes("resetPasswordForEmail"), "Website should implement forgot-password.");

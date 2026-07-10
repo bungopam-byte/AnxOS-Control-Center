@@ -7,6 +7,24 @@ let currentProfile = null;
 let currentDeviceCode = "";
 let currentDeviceRequest = null;
 
+function redirectToCanonicalSiteOrigin() {
+  const configuredOrigin = String(accountConfig.siteUrl || "").replace(/\/+$/, "");
+  if (!configuredOrigin) return;
+  let target;
+  try {
+    target = new URL(configuredOrigin);
+  } catch {
+    return;
+  }
+  if (window.location.origin === target.origin) return;
+  const pagesPreviewHost = `.${target.hostname}`;
+  if (!window.location.hostname.endsWith(pagesPreviewHost)) return;
+  const next = new URL(window.location.href);
+  next.protocol = target.protocol;
+  next.host = target.host;
+  window.location.replace(next.toString());
+}
+
 function setText(selector, value) {
   document.querySelectorAll(selector).forEach((node) => {
     node.textContent = value || "";
@@ -662,6 +680,7 @@ function applyHashRoute() {
   if (target && route !== "top") target.scrollIntoView({ block: "start" });
 }
 
+redirectToCanonicalSiteOrigin();
 applyConfigText();
 applyDownloads();
 applyReleaseNotes();

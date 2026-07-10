@@ -39,7 +39,7 @@ jobs:
           }
 
       - name: Build Windows installer
-        run: npm run dist:win
+        run: npm run dist:win -- --publish never
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -72,7 +72,7 @@ jobs:
         run: npm ci
 
       - name: Build Linux packages
-        run: npm run dist:linux
+        run: npm run dist:linux -- --publish never
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4

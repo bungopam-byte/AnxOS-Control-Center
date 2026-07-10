@@ -1,0 +1,83 @@
+html,
+body {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #07020f;
+}
+
+.add-storage-window {
+  color: var(--text);
+}
+
+.add-storage-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  height: 100vh;
+  padding: 18px;
+  overflow: auto;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(182, 108, 255, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(17, 21, 31, 0.98), rgba(7, 2, 15, 0.98));
+}
+
+.add-storage-header {
+  padding: 4px 2px 0;
+}
+
+.add-storage-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.add-storage-header p:not(.eyebrow) {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.add-storage-card {
+  display: grid;
+  gap: 16px;
+  min-height: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.82);
+  box-shadow: var(--shadow-soft);
+}
+
+.add-storage-card .settings-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.add-storage-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.add-storage-card .settings-inline-status {
+  display: block;
+  margin: 10px 0 0;
+}
+
+@media (max-width: 520px) {
+  .add-storage-shell {
+    padding: 14px;
+  }
+
+  .add-storage-card .settings-grid,
+  .storage-provider-picker {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .add-storage-actions .inline-action {
+    flex: 1 1 130px;
+    justify-content: center;
+  }
+}

@@ -83,47 +83,6 @@
       </div>
     </section>
 
-    <section class="app-modal" data-storage-modal hidden aria-label="Add storage connection">
-      <div class="app-modal__backdrop" data-storage-action="close"></div>
-      <div class="app-modal__panel app-modal--update">
-        <div class="app-modal__header">
-          <div>
-            <p class="eyebrow">Storage Manager</p>
-            <h2>Add Storage</h2>
-          </div>
-          <button class="icon-button" type="button" data-storage-action="close" aria-label="Close">×</button>
-        </div>
-        <div class="storage-provider-picker">
-          <button class="storage-provider-option is-active" type="button" data-storage-provider="local">
-            <strong>Local Device</strong>
-            <span>Browse files on this computer.</span>
-          </button>
-          <button class="storage-provider-option" type="button" data-storage-provider="sftp">
-            <strong>SFTP Server</strong>
-            <span>Kinetic, PebbleHost, VPS, Raspberry Pi, dedicated servers.</span>
-          </button>
-        </div>
-        <form class="storage-form" data-storage-form>
-          <div class="settings-grid">
-            <label class="settings-field"><span>Connection Name</span><input type="text" data-storage-field="name" placeholder="Kinetic Survival"></label>
-            <label class="settings-field"><span>Host</span><input type="text" data-storage-field="host" placeholder="sftp.kinetichosting.net"></label>
-            <label class="settings-field"><span>Port</span><input type="number" min="1" max="65535" data-storage-field="port" value="22"></label>
-            <label class="settings-field"><span>Username</span><input type="text" data-storage-field="username" placeholder="abc123"></label>
-            <label class="settings-field"><span>Authentication</span><select data-storage-field="authType"><option value="password">Password</option><option value="privateKey">Private Key</option></select></label>
-            <label class="settings-field"><span>Root Directory</span><input type="text" data-storage-field="rootDirectory" placeholder="/home/container"></label>
-            <label class="settings-field" data-storage-secret="password"><span>Password</span><input type="password" data-storage-field="password" autocomplete="new-password" placeholder="Stored securely"></label>
-            <label class="settings-field" data-storage-secret="privateKey" hidden><span>Private Key</span><textarea data-storage-field="privateKey" placeholder="Paste private key"></textarea></label>
-            <label class="settings-field" data-storage-secret="passphrase" hidden><span>Passphrase</span><input type="password" data-storage-field="passphrase" autocomplete="new-password" placeholder="Optional"></label>
-          </div>
-          <div class="settings-actions">
-            <button class="inline-action" type="button" data-storage-action="test">Test Connection</button>
-            <button class="inline-action inline-action--primary" type="submit">Save Storage</button>
-            <span class="settings-inline-status" data-storage-message>Credentials are encrypted before being written to disk.</span>
-          </div>
-        </form>
-      </div>
-    </section>
-
     <div class="app-shell" data-app-shell hidden>
       <header class="app-titlebar" data-titlebar>
         <div class="app-titlebar__drag" data-titlebar-drag>
@@ -1858,6 +1817,7 @@
                 </div>
               </div>
             </aside>
+            <div class="storage-manager-divider" data-files-resizer="storage" role="separator" aria-orientation="vertical" aria-label="Resize storage sidebar"></div>
             <div class="files-connect-bar">
               <label class="ssh-field">
                 <span>Server</span>
@@ -1971,6 +1931,7 @@
                   </div>
                 </section>
 
+                <div class="file-panel-divider" data-files-resizer="details" role="separator" aria-orientation="vertical" aria-label="Resize details panel"></div>
                 <aside class="file-details-panel" aria-label="File details">
                   <div class="panel-heading">
                     <h3>Details</h3>

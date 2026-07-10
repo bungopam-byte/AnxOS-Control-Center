@@ -163,6 +163,21 @@ const desktopApi = {
       return () => ipcRenderer.removeListener("files:transfer", handler);
     },
   },
+  storageWindow: {
+    open: (payload = {}) => ipcRenderer.invoke("storageWindow:open", payload),
+    close: () => ipcRenderer.invoke("storageWindow:close"),
+    saved: (payload = {}) => ipcRenderer.invoke("storageWindow:saved", payload),
+    onInit: (callback) => {
+      const handler = (_, payload) => callback(payload || {});
+      ipcRenderer.on("storageWindow:init", handler);
+      return () => ipcRenderer.removeListener("storageWindow:init", handler);
+    },
+    onSaved: (callback) => {
+      const handler = (_, payload) => callback(payload || {});
+      ipcRenderer.on("files:storageConnectionSaved", handler);
+      return () => ipcRenderer.removeListener("files:storageConnectionSaved", handler);
+    },
+  },
   ssh: {
     listProfiles: () => ipcRenderer.invoke("ssh:listProfiles"),
     saveProfile: (payload) => ipcRenderer.invoke("ssh:saveProfile", payload),

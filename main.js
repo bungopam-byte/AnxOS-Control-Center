@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, screen, shell } = require("electron");
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -22,11 +22,15 @@ const { UpdateManager } = require("./src/services/updateManager");
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
+const ADD_STORAGE_SAVED_CHANNEL = "files:storageConnectionSaved";
 const DEFAULT_WINDOW_BOUNDS = {
   width: 1180,
   height: 820,
 };
 const updateManager = new UpdateManager();
+let mainWindow = null;
+let addStorageWindow = null;
+let pendingAddStoragePayload = null;
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -167,6 +171,103 @@ function registerWindowIpc() {
   });
 }
 
+function getCenteredChildBounds(parent, width = 520, height = 650) {
+  const parentBounds = parent && !parent.isDestroyed() ? parent.getBounds() : screen.getPrimaryDisplay().workArea;
+  const display = screen.getDisplayMatching(parentBounds);
+  const workArea = display.workArea;
+  const x = Math.round(parentBounds.x + (parentBounds.width - width) / 2);
+  const y = Math.round(parentBounds.y + (parentBounds.height - height) / 2);
+  return {
+    width,
+    height,
+    x: Math.min(Math.max(x, workArea.x), workArea.x + workArea.width - width),
+    y: Math.min(Math.max(y, workArea.y), workArea.y + workArea.height - height),
+  };
+}
+
+function openAddStorageWindow(payload = {}) {
+  if (addStorageWindow && !addStorageWindow.isDestroyed()) {
+    pendingAddStoragePayload = payload;
+    if (addStorageWindow.isMinimized()) {
+      addStorageWindow.restore();
+    }
+    addStorageWindow.focus();
+    addStorageWindow.webContents.send("storageWindow:init", pendingAddStoragePayload);
+    return { opened: true, focused: true };
+  }
+
+  pendingAddStoragePayload = payload;
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getFocusedWindow();
+  const bounds = getCenteredChildBounds(parent);
+  addStorageWindow = new BrowserWindow({
+    ...bounds,
+    minWidth: 460,
+    minHeight: 560,
+    title: "Add Storage — AnxOS Control Center",
+    parent: parent || undefined,
+    modal: false,
+    skipTaskbar: true,
+    icon: APP_ICON_PATH,
+    backgroundColor: "#07020f",
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  addStorageWindow.once("ready-to-show", () => {
+    if (!addStorageWindow || addStorageWindow.isDestroyed()) return;
+    addStorageWindow.show();
+    addStorageWindow.webContents.send("storageWindow:init", pendingAddStoragePayload);
+  });
+
+  addStorageWindow.on("closed", () => {
+    addStorageWindow = null;
+    pendingAddStoragePayload = null;
+  });
+
+  addStorageWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  addStorageWindow.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith("file://")) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  addStorageWindow.loadFile(path.join(__dirname, "windows", "add-storage.html"));
+  return { opened: true, focused: false };
+}
+
+function closeAddStorageWindow() {
+  if (addStorageWindow && !addStorageWindow.isDestroyed()) {
+    addStorageWindow.close();
+    return { closed: true };
+  }
+  return { closed: false };
+}
+
+function registerStorageWindowIpc() {
+  ipcMain.handle("storageWindow:open", (_, payload = {}) => openAddStorageWindow(payload));
+  ipcMain.handle("storageWindow:close", () => closeAddStorageWindow());
+  ipcMain.handle("storageWindow:saved", (_, payload = {}) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(ADD_STORAGE_SAVED_CHANNEL, {
+        connectionId: payload.connectionId || payload.id || null,
+      });
+    }
+    closeAddStorageWindow();
+    return { ok: true };
+  });
+}
+
 function createWindow() {
   const windowState = readWindowState();
   let saveWindowStateTimer = null;
@@ -199,6 +300,7 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = window;
 
   window.once("ready-to-show", () => {
     if (windowState.maximized) {
@@ -219,7 +321,13 @@ function createWindow() {
   window.on("move", scheduleWindowStateSave);
   window.on("close", () => {
     clearTimeout(saveWindowStateTimer);
+    closeAddStorageWindow();
     saveWindowState(window);
+  });
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
   });
 
   window.loadFile(path.join(__dirname, "index.html"));
@@ -267,6 +375,7 @@ app.whenReady().then(() => {
   logCurseForgeStartupStatus();
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
+  registerStorageWindowIpc();
   registerUpdatesIpc();
   registerAccountAuthIpc();
   registerActionIpc();

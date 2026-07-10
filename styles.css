@@ -1773,18 +1773,20 @@ h3 {
 
 .file-manager-shell {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: var(--files-storage-width, 260px) 10px minmax(0, 1fr);
   grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   height: 100%;
   overflow: hidden;
   --files-explorer-width: 320px;
+  --files-details-width: 260px;
 }
 
 .storage-manager-panel {
   display: grid;
   grid-row: 1 / -1;
+  grid-column: 1;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
   min-height: 0;
@@ -1793,6 +1795,40 @@ h3 {
   border-radius: var(--radius);
   background: rgba(17, 21, 31, 0.82);
   box-shadow: var(--shadow-soft);
+}
+
+.storage-manager-divider,
+.file-panel-divider {
+  position: relative;
+  cursor: col-resize;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(182, 108, 255, 0.05), rgba(182, 108, 255, 0.11));
+  user-select: none;
+  touch-action: none;
+}
+
+.storage-manager-divider {
+  grid-row: 1 / -1;
+  grid-column: 2;
+}
+
+.storage-manager-divider::before,
+.file-panel-divider::before {
+  position: absolute;
+  inset: 18px 3px;
+  border-radius: 999px;
+  background: rgba(182, 108, 255, 0.55);
+  content: "";
+  opacity: 0.58;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.storage-manager-divider:hover::before,
+.storage-manager-divider.is-dragging::before,
+.file-panel-divider:hover::before,
+.file-panel-divider.is-dragging::before {
+  opacity: 1;
+  transform: scaleX(1.08);
 }
 
 .storage-active-card,
@@ -1938,12 +1974,12 @@ h3 {
 
 .files-connect-bar {
   display: grid;
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
-  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(160px, 280px) minmax(160px, 280px) auto;
+  gap: 10px;
   align-items: end;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(17, 21, 31, 0.74);
@@ -1953,7 +1989,7 @@ h3 {
 
 .file-password-prompt {
   display: grid;
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 2;
   grid-template-columns: minmax(220px, 1fr) auto;
   gap: 12px;
@@ -1966,12 +2002,12 @@ h3 {
 
 .file-toolbar {
   display: grid;
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 3;
-  grid-template-columns: minmax(240px, 1.2fr) minmax(220px, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(240px, 520px) minmax(180px, 320px) minmax(260px, 1fr);
+  gap: 10px;
   align-items: end;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(17, 21, 31, 0.74);
@@ -2061,11 +2097,16 @@ h3 {
   justify-content: flex-end;
 }
 
+.file-actions .inline-action[data-file-action="delete"] {
+  border-color: rgba(255, 92, 122, 0.34);
+  color: #ff9aad;
+}
+
 .file-workspace {
   display: grid;
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 4;
-  grid-template-columns: minmax(0, 1.15fr) minmax(420px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.62fr);
   gap: 10px;
   min-height: 0;
   overflow: hidden;
@@ -2112,12 +2153,16 @@ body.is-resizing-files * {
 
 .file-browser {
   display: grid;
-  grid-template-columns: minmax(180px, 0.72fr) minmax(360px, 1.7fr) minmax(220px, 0.82fr);
+  grid-template-columns: minmax(170px, 0.64fr) minmax(320px, 1.8fr) 10px minmax(220px, var(--files-details-width));
   gap: 10px;
   align-items: stretch;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.file-panel-divider {
+  min-width: 10px;
 }
 
 .folder-tree-panel,
@@ -2265,12 +2310,14 @@ body.is-resizing-files * {
 .file-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 560px;
+  min-width: 520px;
+  table-layout: fixed;
 }
 
 .file-table th,
 .file-table td {
-  padding: 12px 14px;
+  height: 44px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: middle;
@@ -2282,7 +2329,8 @@ body.is-resizing-files * {
 }
 
 .file-table tbody tr.is-selected {
-  background: var(--accent-soft);
+  background: rgba(182, 108, 255, 0.18);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .file-table tbody tr:hover {
@@ -2290,9 +2338,33 @@ body.is-resizing-files * {
 }
 
 .file-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(17, 21, 31, 0.98);
   color: var(--muted);
   font-size: 0.76rem;
   text-transform: uppercase;
+}
+
+.file-table th:nth-child(1),
+.file-table td:nth-child(1) {
+  width: 48%;
+}
+
+.file-table th:nth-child(2),
+.file-table td:nth-child(2) {
+  width: 16%;
+}
+
+.file-table th:nth-child(3),
+.file-table td:nth-child(3) {
+  width: 14%;
+}
+
+.file-table th:nth-child(4),
+.file-table td:nth-child(4) {
+  width: 22%;
 }
 
 .file-entry-name {
@@ -2367,15 +2439,15 @@ body.is-resizing-files * {
 .file-preview-icon {
   display: grid;
   place-items: center;
-  min-height: 120px;
-  margin-bottom: 16px;
+  min-height: 96px;
+  margin-bottom: 12px;
   border: 1px dashed var(--line);
   border-radius: var(--radius);
   background: rgba(8, 10, 15, 0.42);
 }
 
 .file-details-list {
-  gap: 14px;
+  gap: 10px;
 }
 
 .file-editor-panel {
@@ -7519,12 +7591,12 @@ dd {
 }
 
 .file-manager-shell:not(.is-edit-mode) .file-workspace {
-  grid-template-columns: minmax(0, 1.15fr) minmax(420px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.62fr);
   gap: 10px;
 }
 
 .file-manager-shell:not(.is-edit-mode) .file-browser {
-  grid-template-columns: minmax(220px, 0.42fr) minmax(420px, 0.88fr) minmax(240px, 0.42fr);
+  grid-template-columns: minmax(180px, 0.42fr) minmax(360px, 0.9fr) 10px minmax(220px, var(--files-details-width));
   gap: 10px;
 }
 
@@ -8719,6 +8791,10 @@ button:disabled {
     display: none;
   }
 
+  .file-panel-divider {
+    display: none;
+  }
+
   .file-details-panel {
     grid-column: 1 / -1;
     min-height: auto;
@@ -9033,6 +9109,7 @@ button:disabled {
   .files-connect-bar,
   .file-password-prompt,
   .storage-manager-panel,
+  .storage-manager-divider,
   .file-toolbar,
   .file-workspace {
     grid-column: 1;
@@ -9045,6 +9122,10 @@ button:disabled {
 
   .storage-manager-panel {
     grid-row: auto;
+  }
+
+  .storage-manager-divider {
+    display: none;
   }
 
   .files-connect-bar,

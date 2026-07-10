@@ -41,6 +41,7 @@
       "app.js",
       "index.html",
       "styles.css",
+      "windows/**/*",
       "assets/**/*",
       "config/**/*",
       "src/**/*",

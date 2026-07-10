@@ -252,13 +252,7 @@ const fileEditorWrapButton = document.querySelector('[data-file-editor-action="w
 const fileEditorMinimapButton = document.querySelector('[data-file-editor-action="minimap"]');
 const fileEditorFullscreenButton = document.querySelector('[data-file-editor-action="fullscreen"]');
 const filesConnectBar = filesPage?.querySelector(".files-connect-bar");
-const storageModal = document.querySelector("[data-storage-modal]");
-const storageForm = document.querySelector("[data-storage-form]");
-const storageProviderButtons = document.querySelectorAll("[data-storage-provider]");
-const storageFields = document.querySelectorAll("[data-storage-field]");
-const storageSecretGroups = document.querySelectorAll("[data-storage-secret]");
 const storageList = document.querySelector("[data-storage-list]");
-const storageMessage = document.querySelector("[data-storage-message]");
 const storageActiveBadge = document.querySelector("[data-storage-active-badge]");
 const storageActiveName = document.querySelector("[data-storage-active-name]");
 const storageActivePath = document.querySelector("[data-storage-active-path]");
@@ -266,6 +260,8 @@ const transferList = document.querySelector("[data-transfer-list]");
 const transferStatus = document.querySelector("[data-transfer-status]");
 const fileToolbar = filesPage?.querySelector(".file-toolbar");
 const filesDivider = filesPage?.querySelector("[data-files-divider]");
+const filesStorageDivider = filesPage?.querySelector('[data-files-resizer="storage"]');
+const filesDetailsDivider = filesPage?.querySelector('[data-files-resizer="details"]');
 const startupScreen = document.querySelector("[data-startup-screen]");
 const startupAudioElement = document.querySelector("[data-startup-audio]");
 const appShell = document.querySelector("[data-app-shell]");
@@ -533,6 +529,8 @@ let filesPendingPasswordProfileId = null;
 let filesViewMode = "browse";
 let fileEditorHeight = 560;
 let filesExplorerWidth = 320;
+let filesStorageWidth = 260;
+let filesDetailsWidth = 260;
 let agentConnectionState = "disconnected";
 let latestAgentSettingsPayload = null;
 let titlebarWindowIsMaximized = false;
@@ -548,6 +546,7 @@ let monacoEditorContainer = null;
 let monacoEditorSubscription = null;
 let monacoEditorStateSyncPaused = false;
 let filesDividerDragState = null;
+let filesPanelDragState = null;
 let fileEditorWordWrapEnabled = true;
 let fileEditorMinimapEnabled = false;
 let activeConsoleInstanceId = null;
@@ -575,8 +574,6 @@ let storageConnectionsState = {
   defaultConnectionId: "local",
 };
 let selectedStorageId = "local";
-let storageFormMode = "sftp";
-let editingStorageId = null;
 const fileTransfers = new Map();
 let securityRequestInFlight = false;
 const filesConnectionState = {
@@ -598,6 +595,8 @@ const SSH_OUTPUT_LINE_LIMIT = 1500;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
 const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
+const FILES_STORAGE_WIDTH_STORAGE_KEY = "anxos.files.storageWidth.v1";
+const FILES_DETAILS_WIDTH_STORAGE_KEY = "anxos.files.detailsWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
@@ -685,6 +684,12 @@ const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const DEFAULT_FILES_EXPLORER_WIDTH = 320;
 const MIN_FILES_EXPLORER_WIDTH = 220;
 const MAX_FILES_EXPLORER_WIDTH = 520;
+const DEFAULT_FILES_STORAGE_WIDTH = 260;
+const MIN_FILES_STORAGE_WIDTH = 220;
+const MAX_FILES_STORAGE_WIDTH = 420;
+const DEFAULT_FILES_DETAILS_WIDTH = 260;
+const MIN_FILES_DETAILS_WIDTH = 220;
+const MAX_FILES_DETAILS_WIDTH = 420;
 const SIDEBAR_EXPANDED_WIDTH = 248;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
 const DEFAULT_SETTINGS = {
@@ -1408,6 +1413,18 @@ function readFilesExplorerWidth() {
   }
 }
 
+function readFilesPanelWidth(storageKey, fallback, min, max) {
+  try {
+    const storedValue = Number(window.localStorage.getItem(storageKey));
+    if (!Number.isFinite(storedValue)) {
+      return fallback;
+    }
+    return Math.min(Math.max(storedValue, min), max);
+  } catch {
+    return fallback;
+  }
+}
+
 function readFileEditorPreferences() {
   try {
     const stored = JSON.parse(window.localStorage.getItem(FILES_EDITOR_PREFS_STORAGE_KEY) || "{}");
@@ -1480,6 +1497,63 @@ function setFilesExplorerWidth(value, options = {}) {
   window.requestAnimationFrame(() => {
     monacoEditorInstance?.layout?.();
   });
+}
+
+function setFilesStorageWidth(value, options = {}) {
+  const nextWidth = Math.min(Math.max(Number(value) || DEFAULT_FILES_STORAGE_WIDTH, MIN_FILES_STORAGE_WIDTH), MAX_FILES_STORAGE_WIDTH);
+  filesStorageWidth = nextWidth;
+  fileManagerShell?.style.setProperty("--files-storage-width", `${nextWidth}px`);
+  if (options.persist !== false) {
+    try {
+      window.localStorage.setItem(FILES_STORAGE_WIDTH_STORAGE_KEY, String(nextWidth));
+    } catch {}
+  }
+}
+
+function setFilesDetailsWidth(value, options = {}) {
+  const nextWidth = Math.min(Math.max(Number(value) || DEFAULT_FILES_DETAILS_WIDTH, MIN_FILES_DETAILS_WIDTH), MAX_FILES_DETAILS_WIDTH);
+  filesDetailsWidth = nextWidth;
+  fileManagerShell?.style.setProperty("--files-details-width", `${nextWidth}px`);
+  if (options.persist !== false) {
+    try {
+      window.localStorage.setItem(FILES_DETAILS_WIDTH_STORAGE_KEY, String(nextWidth));
+    } catch {}
+  }
+}
+
+function startFilesPanelResize(kind, clientX) {
+  if (!fileManagerShell) return;
+  filesPanelDragState = {
+    kind,
+    startX: clientX,
+    startWidth: kind === "details" ? filesDetailsWidth : filesStorageWidth,
+  };
+  (kind === "details" ? filesDetailsDivider : filesStorageDivider)?.classList.add("is-dragging");
+  document.body.classList.add("is-resizing-files");
+}
+
+function updateFilesPanelResize(clientX) {
+  if (!filesPanelDragState) return;
+  const delta = clientX - filesPanelDragState.startX;
+  if (filesPanelDragState.kind === "details") {
+    setFilesDetailsWidth(filesPanelDragState.startWidth - delta, { persist: false });
+  } else {
+    setFilesStorageWidth(filesPanelDragState.startWidth + delta, { persist: false });
+  }
+}
+
+function stopFilesPanelResize() {
+  if (!filesPanelDragState) return;
+  const kind = filesPanelDragState.kind;
+  filesPanelDragState = null;
+  filesStorageDivider?.classList.remove("is-dragging");
+  filesDetailsDivider?.classList.remove("is-dragging");
+  document.body.classList.remove("is-resizing-files");
+  if (kind === "details") {
+    setFilesDetailsWidth(filesDetailsWidth);
+  } else {
+    setFilesStorageWidth(filesStorageWidth);
+  }
 }
 
 function startFilesDividerDrag(clientX) {
@@ -9624,6 +9698,39 @@ function renderFileRows(entries) {
   filterFileRows();
 }
 
+function getVisibleFileEntries() {
+  const entries = latestFilesListing?.entries || [];
+  const query = (filesSearchInput?.value || "").trim().toLowerCase();
+  if (!query) return entries;
+  return entries.filter((entry) => {
+    const text = [entry.name, entry.path, formatFileType(entry), entry.isDirectory ? "Folder" : formatBytes(entry.size)].join(" ").toLowerCase();
+    return text.includes(query);
+  });
+}
+
+function focusSelectedFileRow() {
+  if (!filesList || !selectedFileEntryPath) return;
+  const row = filesList.querySelector(`tr[data-file-path="${CSS.escape(selectedFileEntryPath)}"]`);
+  row?.focus?.();
+}
+
+function moveFileSelection(delta) {
+  const entries = getVisibleFileEntries();
+  if (entries.length === 0) return;
+  const currentIndex = Math.max(0, entries.findIndex((entry) => entry.path === selectedFileEntryPath));
+  const nextIndex = Math.min(Math.max(currentIndex + delta, 0), entries.length - 1);
+  selectFileEntry(entries[nextIndex]);
+  focusSelectedFileRow();
+}
+
+function navigateFilesParentDirectory() {
+  const current = filesConnectionState.currentPath || filesConnectionState.homePath || "/";
+  const normalized = normalizeRemotePathValue(current);
+  if (normalized === "/") return;
+  const parent = normalized.split("/").filter(Boolean).slice(0, -1).join("/");
+  navigateRemoteDirectory(parent ? `/${parent}` : "/");
+}
+
 function renderFileBreadcrumbs(listing) {
   if (!filesBreadcrumbBar) {
     return;
@@ -9744,9 +9851,13 @@ function storageConnectionLabel(connection) {
 
 function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
+  const localSelected = !selected || selected.id === "local";
   if (storageActiveBadge) storageActiveBadge.textContent = selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
   if (storageActiveName) storageActiveName.textContent = storageConnectionLabel(selected);
   if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || "Not connected";
+  document.querySelector('[data-storage-action="edit"]')?.toggleAttribute("disabled", localSelected);
+  document.querySelector('[data-storage-action="delete"]')?.toggleAttribute("disabled", localSelected);
+  document.querySelector('[data-storage-action="set-default"]')?.toggleAttribute("disabled", !selected || selected.default === true);
   if (!storageList) return;
   storageList.replaceChildren();
   (storageConnectionsState.connections || []).forEach((connection) => {
@@ -9898,99 +10009,15 @@ async function loadStorageConnections() {
   renderStorageConnections();
 }
 
-function setStorageModalVisible(visible) {
-  if (storageModal) storageModal.hidden = !visible;
-}
-
-function setStorageFormProvider(provider) {
-  storageFormMode = provider === "local" ? "local" : "sftp";
-  storageProviderButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.storageProvider === storageFormMode));
-  storageFields.forEach((field) => {
-    const key = field.dataset.storageField;
-    const wrapper = field.closest(".settings-field");
-    if (wrapper && key !== "name") {
-      wrapper.hidden = storageFormMode === "local";
-    }
-  });
-  syncStorageAuthFields();
-}
-
-function syncStorageAuthFields() {
-  const authType = document.querySelector('[data-storage-field="authType"]')?.value || "password";
-  storageSecretGroups.forEach((group) => {
-    const kind = group.dataset.storageSecret;
-    group.hidden = storageFormMode === "local" || (authType === "password" ? kind !== "password" : kind === "password");
-  });
-}
-
-function clearStorageForm() {
-  editingStorageId = null;
-  storageFields.forEach((field) => {
-    if (field.dataset.storageField === "port") field.value = "22";
-    else if (field.dataset.storageField === "authType") field.value = "password";
-    else if (field.dataset.storageField === "rootDirectory") field.value = "/home/container";
-    else field.value = "";
-  });
-  if (storageMessage) storageMessage.textContent = "Credentials are encrypted before being written to disk.";
-  setStorageFormProvider("sftp");
-}
-
-function getStorageFormPayload() {
-  const payload = { id: editingStorageId, provider: storageFormMode, type: storageFormMode };
-  storageFields.forEach((field) => {
-    payload[field.dataset.storageField] = field.value;
-  });
-  if (storageFormMode === "local") {
-    payload.name = payload.name || "This Device";
-  }
-  return payload;
-}
-
 function openStorageModal(connection = null) {
-  clearStorageForm();
-  if (connection && connection.id !== "local") {
-    editingStorageId = connection.id;
-    setStorageFormProvider(connection.provider || connection.type || "sftp");
-    storageFields.forEach((field) => {
-      const key = field.dataset.storageField;
-      if (connection[key] !== undefined && connection[key] !== null) field.value = connection[key];
+  const desktopApiState = getDesktopApiState();
+  if (desktopApiState.api?.storageWindow?.open) {
+    desktopApiState.api.storageWindow.open(connection && connection.id !== "local" ? { connection } : {}).catch((error) => {
+      showToast(error?.message || "Add Storage window could not be opened.");
     });
-    if (storageMessage) storageMessage.textContent = "Leave password/key blank to keep the saved secret.";
-    syncStorageAuthFields();
+    return;
   }
-  setStorageModalVisible(true);
-}
-
-async function saveStorageConnection(event) {
-  event?.preventDefault();
-  const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasFiles) return;
-  try {
-    const result = await desktopApiState.api.files.saveConnection(getStorageFormPayload());
-    storageConnectionsState = result;
-    selectedStorageId = result.connection?.id || selectedStorageId;
-    setStorageModalVisible(false);
-    renderStorageConnections();
-    renderFilesView();
-    showToast("Storage connection saved.");
-  } catch (error) {
-    if (storageMessage) storageMessage.textContent = error?.message || "Storage connection could not be saved.";
-    showToast(error?.message || "Storage connection could not be saved.");
-  }
-}
-
-async function testStorageConnectionFromForm() {
-  const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasFiles) return;
-  if (storageMessage) storageMessage.textContent = "Testing connection...";
-  try {
-    const result = await desktopApiState.api.files.testConnection(getStorageFormPayload());
-    if (storageMessage) storageMessage.textContent = result?.message || "Connection verified.";
-    showToast("Storage connection verified.");
-  } catch (error) {
-    if (storageMessage) storageMessage.textContent = error?.message || "Connection test failed.";
-    showToast(error?.message || "Connection test failed.");
-  }
+  showToast("Add Storage window is unavailable.");
 }
 
 async function deleteSelectedStorageConnection() {
@@ -10020,6 +10047,16 @@ async function setSelectedStorageDefault() {
   } catch (error) {
     showToast(error?.message || "Default storage could not be updated.");
   }
+}
+
+async function handleStorageConnectionSaved(payload = {}) {
+  await loadStorageConnections();
+  if (payload.connectionId && getStorageConnectionById(payload.connectionId)) {
+    selectedStorageId = payload.connectionId;
+  }
+  renderStorageConnections();
+  renderFilesView();
+  showToast("Storage connection saved.");
 }
 
 function getFilesFilteredProfiles() {
@@ -15681,6 +15718,8 @@ ensureSshEventSubscription();
 loadSshProfiles();
 loadStorageConnections();
 setupFileTransferEvents();
+setFilesStorageWidth(readFilesPanelWidth(FILES_STORAGE_WIDTH_STORAGE_KEY, DEFAULT_FILES_STORAGE_WIDTH, MIN_FILES_STORAGE_WIDTH, MAX_FILES_STORAGE_WIDTH), { persist: false });
+setFilesDetailsWidth(readFilesPanelWidth(FILES_DETAILS_WIDTH_STORAGE_KEY, DEFAULT_FILES_DETAILS_WIDTH, MIN_FILES_DETAILS_WIDTH, MAX_FILES_DETAILS_WIDTH), { persist: false });
 window.addEventListener("resize", () => {
   resizeActiveSshSession();
   updateFilesStickyOffsets();
@@ -15688,9 +15727,11 @@ window.addEventListener("resize", () => {
 });
 window.addEventListener("mousemove", (event) => {
   updateFilesDividerDrag(event.clientX);
+  updateFilesPanelResize(event.clientX);
 });
 window.addEventListener("mouseup", () => {
   stopFilesDividerDrag();
+  stopFilesPanelResize();
 });
 window.addEventListener("beforeunload", () => {
   refreshTaskIds.forEach((intervalId) => window.clearInterval(intervalId));
@@ -15702,6 +15743,7 @@ window.addEventListener("beforeunload", () => {
   stopMonitoringConsolePolling();
   windowMaximizedUnsubscribe?.();
   stopFilesDividerDrag();
+  stopFilesPanelResize();
   disposeMonacoEditorResources();
   disconnectAllSshListeners();
 });
@@ -15722,22 +15764,15 @@ filesProfileSelect?.addEventListener("change", () => {
   renderStorageConnections();
   renderFilesView();
 });
-storageProviderButtons.forEach((button) => {
-  button.addEventListener("click", () => setStorageFormProvider(button.dataset.storageProvider || "sftp"));
-});
-storageForm?.addEventListener("submit", saveStorageConnection);
 document.querySelectorAll("[data-storage-action]").forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.storageAction;
     if (action === "open") openStorageModal();
-    else if (action === "close") setStorageModalVisible(false);
-    else if (action === "test") await testStorageConnectionFromForm();
     else if (action === "delete") await deleteSelectedStorageConnection();
     else if (action === "set-default") await setSelectedStorageDefault();
     else if (action === "edit") openStorageModal(getSelectedStorageConnection());
   });
 });
-document.querySelector('[data-storage-field="authType"]')?.addEventListener("change", syncStorageAuthFields);
 filesConnectButton?.addEventListener("click", () => connectFilesSession());
 filesDisconnectButton?.addEventListener("click", disconnectFilesSession);
 filesPasswordSubmitButton?.addEventListener("click", () => connectFilesSession({ password: filesPasswordInput?.value || "" }));
@@ -15768,12 +15803,37 @@ filesGoButton?.addEventListener("click", () => {
 filesHomeButton?.addEventListener("click", () => {
   navigateRemoteDirectory(filesConnectionState.homePath || "/");
 });
+filesStorageDivider?.addEventListener("mousedown", (event) => {
+  event.preventDefault();
+  startFilesPanelResize("storage", event.clientX);
+});
+filesDetailsDivider?.addEventListener("mousedown", (event) => {
+  event.preventDefault();
+  startFilesPanelResize("details", event.clientX);
+});
 filesSearchInput?.addEventListener("input", debounce(filterFileRows, 120));
+filesList?.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveFileSelection(1);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveFileSelection(-1);
+  } else if (event.key === "Backspace") {
+    event.preventDefault();
+    navigateFilesParentDirectory();
+  }
+});
 filesRefreshButton?.addEventListener("click", () => {
   refreshFileListing({
     profileId: getFilesRequestProfileId(),
     storageId: getFilesRequestStorageId(),
     path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  });
+});
+getDesktopApiState().api?.storageWindow?.onSaved?.((payload) => {
+  handleStorageConnectionSaved(payload).catch((error) => {
+    showToast(error?.message || "Storage list could not be refreshed.");
   });
 });
 document.querySelector('[data-file-action="upload"]')?.addEventListener("click", uploadRemoteFile);

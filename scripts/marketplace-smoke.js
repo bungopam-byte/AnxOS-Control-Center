@@ -447,18 +447,23 @@ function assertSingleDeviceModeExperience() {
 function assertStorageManagerArchitecture() {
   const appSource = fs.readFileSync(appPath, "utf8");
   const indexSource = fs.readFileSync(indexPath, "utf8");
+  const addStorageSource = fs.readFileSync(path.join(__dirname, "..", "windows", "add-storage.html"), "utf8");
+  const addStorageWindowSource = fs.readFileSync(path.join(__dirname, "..", "windows", "add-storage.js"), "utf8");
   const preloadSource = fs.readFileSync(preloadPath, "utf8");
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const fileSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "fileService.js"), "utf8");
   const storageSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "storageConnectionService.js"), "utf8");
   const ipcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "filesIpc.js"), "utf8");
 
-  assert(indexSource.includes("data-storage-list") && indexSource.includes("SFTP Server"), "Files page should include Storage Manager UI and SFTP add flow.");
+  assert(indexSource.includes("data-storage-list") && addStorageSource.includes("SFTP Server"), "Files page should include Storage Manager UI and a dedicated SFTP add flow window.");
   assert(indexSource.includes("data-transfer-list") && indexSource.includes('data-file-action="copy"') && indexSource.includes('data-file-action="new-file"'), "Files page should expose transfer manager, copy, and new file actions.");
-  assert(preloadSource.includes("listConnections") && preloadSource.includes("saveConnection") && preloadSource.includes("testConnection") && preloadSource.includes("cancelTransfer"), "Preload should expose storage connection and transfer APIs.");
+  assert(preloadSource.includes("listConnections") && preloadSource.includes("saveConnection") && preloadSource.includes("testConnection") && preloadSource.includes("cancelTransfer") && preloadSource.includes("storageWindow:open"), "Preload should expose storage connection, add-window, and transfer APIs.");
+  assert(mainSource.includes("openAddStorageWindow") && mainSource.includes("skipTaskbar") && mainSource.includes("storageWindow:saved"), "Main process should manage a single child Add Storage BrowserWindow.");
   assert(ipcSource.includes("files:listConnections") && ipcSource.includes("files:testConnection") && ipcSource.includes("files:copy") && ipcSource.includes("files:newFile") && ipcSource.includes("files:cancelTransfer"), "Files IPC should expose provider connection, transfer, and file operation APIs.");
   assert(storageSource.includes("safeStorage") && storageSource.includes("encryptSecret") && !storageSource.includes("console.log"), "Storage connections should encrypt secrets and avoid logging credentials.");
   assert(fileSource.includes("getProviderProfile") && fileSource.includes("storageId") && fileSource.includes("providerBadge") && fileSource.includes("async copy(") && fileSource.includes("createTransferController"), "FileService should route operations through provider-style storage IDs with cancellable transfers.");
-  assert(appSource.includes("renderStorageConnections") && appSource.includes("startFileTransfer") && appSource.includes("cancelFileTransfer") && appSource.includes("storageId: getFilesRequestStorageId()"), "Renderer should manage provider connections and transfer entries.");
+  assert(appSource.includes("renderStorageConnections") && appSource.includes("handleStorageConnectionSaved") && appSource.includes("startFileTransfer") && appSource.includes("cancelFileTransfer") && appSource.includes("storageId: getFilesRequestStorageId()"), "Renderer should manage provider connections and transfer entries.");
+  assert(addStorageWindowSource.includes("api.files.saveConnection") && addStorageWindowSource.includes("api.files.testConnection") && addStorageWindowSource.includes("storageWindow?.saved"), "Add Storage window should reuse secure files IPC and notify the Files page after save.");
 }
 
 function assertPackagedStartupSafe() {

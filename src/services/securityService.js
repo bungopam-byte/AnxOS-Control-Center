@@ -7,9 +7,13 @@ const { app, safeStorage } = require("electron");
 const {
   getAgentConfigPath,
   readAgentSettings,
-  saveAgentSettings,
+  rotateAgentSettingsToken,
 } = require("./agentClient");
 const { getCurrentSession: getCurrentAccountSession } = require("./accountService");
+const {
+  getConfiguredOwnerAccounts,
+  isOwnerAccount,
+} = require("./ownerAccountConfig");
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -222,9 +226,36 @@ function publicUser(user) {
     id: user.id,
     username: user.username,
     role: user.role,
+    account: Boolean(user.account),
+    email: user.email || null,
+    provider: user.provider || null,
+    ownerAuthorized: Boolean(user.ownerAuthorized),
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     lastLoginAt: user.lastLoginAt || null,
+  };
+}
+
+function accountSessionToSecurityUser(accountSession) {
+  if (!accountSession) {
+    return null;
+  }
+  const account = accountSession.account || accountSession.user || {};
+  const ownerAuthorized = isOwnerAccount({
+    id: account.id,
+    email: account.email,
+  });
+  return {
+    id: account.id || "anxos-account",
+    username: account.displayName || account.username || account.email || "AnxOS Account",
+    email: account.email || null,
+    provider: accountSession.provider || account.provider || "AnxOS",
+    role: ownerAuthorized ? "Owner" : "Account",
+    account: true,
+    ownerAuthorized,
+    createdAt: accountSession.createdAt || null,
+    updatedAt: null,
+    lastLoginAt: null,
   };
 }
 
@@ -467,12 +498,7 @@ function validateProductionOwnerPassword(password) {
 function getStatus() {
   const user = getCurrentUser();
   const accountSession = getCurrentAccountSession();
-  const accountUser = accountSession ? {
-    id: accountSession.account?.id || accountSession.user?.id || "anxos-account",
-    username: accountSession.account?.username || accountSession.user?.username || accountSession.account?.email || accountSession.user?.email || "AnxOS Account",
-    role: "Account",
-    account: true,
-  } : null;
+  const accountUser = accountSessionToSecurityUser(accountSession);
   const state = readSecurityState();
   if (pruneExpiredPersistentSessions(state)) {
     writeSecurityState(state);
@@ -487,8 +513,9 @@ function getStatus() {
     user: user || accountUser,
     accountAuthenticated: Boolean(accountUser),
     roles: Object.keys(ROLE_PERMISSIONS),
-    permissions: user ? ROLE_PERMISSIONS[user.role] || [] : localMode ? ["local:*"] : [],
-    ownerWorkspaceAvailable: Boolean(user?.role === "Owner"),
+    permissions: (user || accountUser) ? ROLE_PERMISSIONS[(user || accountUser).role] || [] : localMode ? ["local:*"] : [],
+    ownerWorkspaceAvailable: Boolean((user || accountUser)?.role === "Owner" && (user || accountUser)?.ownerAuthorized !== false),
+    ownerAccountConfigured: Boolean(getConfiguredOwnerAccounts().userIds.length || getConfiguredOwnerAccounts().emails.length),
     trustedDevelopmentMode: isTrustedDevelopmentMode(),
     agentTokenConfigured: Boolean(readAgentSettings().agentToken),
     persistentSession: Boolean(currentSession?.persistent),
@@ -712,7 +739,7 @@ function requirePermission(permission, target = null) {
 
 function requireOwner(target = "owner-workspace") {
   const status = getStatus();
-  if (!status.user || status.user.role !== "Owner" || status.user.account === true) {
+  if (!status.user || status.user.role !== "Owner" || (status.user.account === true && status.user.ownerAuthorized !== true)) {
     audit({ action: "security.ownerWorkspace", outcome: "denied", target, reason: "OWNER_REQUIRED" });
     const error = new Error("Owner access is required.");
     error.code = "OWNER_REQUIRED";
@@ -729,14 +756,14 @@ function allowReadCompatibility() {
 function rotateAgentToken() {
   const actor = requirePermission("settings:write", "agent-token");
   checkRateLimit("agent-token-rotate", 10, 10 * 60 * 1000);
-  const token = `anx_${crypto.randomBytes(32).toString("base64url")}`;
   const current = readAgentSettings();
-  saveAgentSettings({ ...current, agentToken: token });
+  const rotated = rotateAgentSettingsToken(current);
   audit({ action: "agent.token.rotate", outcome: "ok", actor, target: getAgentConfigPath() });
   return {
-    token,
-    copied: false,
-    message: "Copy this token now. It will not be displayed again.",
+    configured: true,
+    fingerprint: rotated.fingerprint,
+    restartRequired: true,
+    message: "Agent token rotated. Restart the AnxOS agent and desktop app so both reload the shared token.",
   };
 }
 

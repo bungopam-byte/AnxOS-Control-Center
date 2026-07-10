@@ -85,6 +85,8 @@ function assertDesktopIntegration() {
   const preload = read("preload.js");
 
   assert(service.includes("ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL"), "Desktop should support Supabase function URL env alias.");
+  assert(service.includes("loginWithPassword") && service.includes("grant_type=password"), "Desktop should support Supabase email/password sign-in.");
+  assert(service.includes("ANXOS_SUPABASE_ANON_KEY") && service.includes("SUPABASE_ANON_KEY"), "Desktop should use public Supabase anon key configuration.");
   assert(service.includes("/api/auth/device/start") && service.includes("/api/auth/device/poll"), "Desktop should use device authorization endpoints.");
   assert(service.includes("/api/auth/refresh") && service.includes("/api/auth/logout"), "Desktop should refresh and revoke account sessions.");
   assert(service.includes("/api/account/devices/revoke"), "Desktop should support current-device revocation.");
@@ -104,7 +106,7 @@ function assertDocsAndEnv() {
   assert(env.includes("SUPABASE_SERVICE_ROLE_KEY"), ".env.example should document server-only service role key.");
   assert(docs.includes("Supabase Auth") && docs.includes("Edge Function"), "Production docs should cover Supabase Auth and Edge Functions.");
   assert(docs.includes("Never put") && docs.includes("SUPABASE_SERVICE_ROLE_KEY"), "Production docs should warn about server-only secrets.");
-  assert(docs.includes("Online AnxOS roles do not unlock the local Owner Workspace"), "Docs should preserve local owner separation.");
+  assert(docs.includes("trusted local owner allowlist"), "Docs should explain trusted owner account allowlist.");
   assert(readme.includes("account-config.js") && readme.includes("public browser-safe values"), "Website README should document public account config.");
 }
 

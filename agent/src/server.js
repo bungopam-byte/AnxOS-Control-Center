@@ -117,10 +117,10 @@ function sendError(response, statusCode, code, message = "Request failed.", deta
 
 function getAuthErrorMessage(code) {
   if (code === "AGENT_TOKEN_MISSING") {
-    return "Agent token is missing on the server. Set AGENT_TOKEN in the agent environment or agent/.env, then restart the agent.";
+    return "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.";
   }
   if (code === "UNAUTHORIZED") {
-    return "Agent token rejected. The desktop app token does not match the server AGENT_TOKEN.";
+    return "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.";
   }
   return "Request failed.";
 }

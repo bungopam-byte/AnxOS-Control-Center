@@ -3,6 +3,7 @@ const {
   getDefaultAgentSettings,
   getAgentConfigPath,
   getEffectiveAgentSettings,
+  getSharedAgentTokenStatus,
   readAgentSettings,
   saveAgentSettings,
   testConnection,
@@ -28,6 +29,24 @@ function getAgentSettingsPayload() {
     overrides: effective.overrides,
     defaults: getDefaultAgentSettings(),
     configPath: getAgentConfigPath(),
+    tokenStatus: getSafeAgentTokenStatus(),
+  };
+}
+
+function getSafeAgentTokenStatus() {
+  const status = getSharedAgentTokenStatus();
+  return {
+    configured: status.configured,
+    source: status.source,
+    fingerprint: status.fingerprint,
+    configPath: status.configPath,
+    environmentTokenPresent: status.environmentTokenPresent,
+    environmentTokenMatches: status.environmentTokenMatches,
+    environmentTokenConflict: status.environmentTokenConflict,
+    environmentTokenIgnored: status.environmentTokenIgnored,
+    weakStoredTokenReplaced: status.weakStoredTokenReplaced,
+    weakEnvironmentTokenIgnored: status.weakEnvironmentTokenIgnored,
+    restartRequiredAfterRotation: true,
   };
 }
 

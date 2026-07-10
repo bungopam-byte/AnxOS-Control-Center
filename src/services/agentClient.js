@@ -2,6 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
 const { app } = require("electron");
+const {
+  isWeakAgentToken,
+  resolveSharedAgentToken,
+  rotateSharedAgentToken,
+} = require("../shared/agentTokenStore");
 
 const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
@@ -68,10 +73,11 @@ function normalizeBackendMode(value) {
 }
 
 function getDefaultAgentSettings() {
+  const tokenStatus = getSharedAgentTokenStatus();
   return {
     backendMode: DEFAULT_BACKEND_MODE,
     agentUrl: DEFAULT_AGENT_URL,
-    agentToken: "",
+    agentToken: tokenStatus.token || "",
   };
 }
 
@@ -79,11 +85,12 @@ function normalizeAgentSettings(settings = {}) {
   const modeValue = firstDefined(settings, ["backendMode", "mode"]);
   const urlValue = firstDefined(settings, ["agentUrl", "url"]);
   const tokenValue = firstDefined(settings, ["agentToken", "token"]);
+  const normalizedToken = trimValue(tokenValue);
 
   return {
     backendMode: modeValue === undefined ? DEFAULT_BACKEND_MODE : normalizeBackendMode(modeValue),
     agentUrl: trimValue(urlValue) || DEFAULT_AGENT_URL,
-    agentToken: trimValue(tokenValue),
+    agentToken: isWeakAgentToken(normalizedToken) ? "" : normalizedToken,
   };
 }
 
@@ -107,6 +114,13 @@ function getAgentConfigDirectory() {
 
 function getAgentConfigPath() {
   return path.join(getAgentConfigDirectory(), "agent.json");
+}
+
+function getSharedAgentTokenStatus() {
+  return resolveSharedAgentToken({
+    configPath: getAgentConfigPath(),
+    environmentToken: process.env.AGENT_TOKEN,
+  });
 }
 
 function getLocalInstanceService() {
@@ -171,6 +185,8 @@ function ensureAgentConfigFile() {
     const defaults = getDefaultAgentSettings();
     fs.writeFileSync(agentConfigPath, `${JSON.stringify(defaults, null, 2)}\n`, "utf8");
     logAgentConfigMetadata("created-default-config", agentConfigPath, defaults);
+  } else {
+    getSharedAgentTokenStatus();
   }
 }
 
@@ -212,23 +228,42 @@ function getEffectiveAgentSettings() {
   loadEnvironment();
 
   const stored = readAgentSettings();
+  const tokenStatus = getSharedAgentTokenStatus();
   const environmentMode = trimValue(process.env.BACKEND_MODE || process.env.backendMode || process.env.ANXHUB_BACKEND_MODE);
   const environmentUrl = trimValue(process.env.AGENT_URL);
-  const environmentToken = trimValue(process.env.AGENT_TOKEN);
 
   const effective = {
     backendMode: environmentMode ? normalizeBackendMode(environmentMode) : stored.backendMode,
     agentUrl: environmentUrl || stored.agentUrl || DEFAULT_AGENT_URL,
-    agentToken: environmentToken || stored.agentToken || "",
+    agentToken: tokenStatus.token || stored.agentToken || "",
+    tokenStatus,
     overrides: {
       backendMode: Boolean(environmentMode),
       agentUrl: Boolean(environmentUrl),
-      agentToken: Boolean(environmentToken),
+      agentToken: Boolean(tokenStatus.environmentTokenPresent && tokenStatus.environmentTokenMatches),
     },
   };
 
   logAgentSelection("effective-config", effective);
   return effective;
+}
+
+function rotateAgentSettingsToken(updates = {}) {
+  const current = readAgentSettings();
+  const rotated = rotateSharedAgentToken({
+    configPath: getAgentConfigPath(),
+    updates: {
+      backendMode: updates.backendMode || current.backendMode,
+      agentUrl: updates.agentUrl || current.agentUrl,
+    },
+  });
+  const settings = readAgentSettings();
+  logAgentConfigMetadata("rotated-token", getAgentConfigPath(), settings);
+  logAgentSelection("rotated-token", settings);
+  return {
+    ...rotated,
+    settings,
+  };
 }
 
 function getBackendMode() {
@@ -293,10 +328,10 @@ function getAgentHttpErrorMessage(status, code, payload) {
     return payloadMessage;
   }
   if (code === "AGENT_TOKEN_MISSING") {
-    return "Agent token is missing on the server. Set AGENT_TOKEN in the agent environment or agent/.env, then restart the agent.";
+    return "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.";
   }
   if (code === "UNAUTHORIZED") {
-    return "Agent token rejected. The desktop app token does not match the server AGENT_TOKEN.";
+    return "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.";
   }
   return `Agent request failed with HTTP ${status}.`;
 }
@@ -2016,8 +2051,10 @@ module.exports = {
   loadEnvironment,
   normalizeAgentSettings,
   readAgentSettings,
+  getSharedAgentTokenStatus,
   requestBuffer,
   requestJson,
+  rotateAgentSettingsToken,
   saveAgentSettings,
   saveBackupSchedule,
   saveMinecraftProperties,

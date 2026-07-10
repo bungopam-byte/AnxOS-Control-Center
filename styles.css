@@ -5859,6 +5859,13 @@ body.is-resizing-files * {
   margin-bottom: 16px;
 }
 
+.settings-section__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .settings-section__header h3 {
   margin-bottom: 0;
 }
@@ -5868,6 +5875,10 @@ body.is-resizing-files * {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.settings-grid--compact {
+  margin-bottom: 16px;
 }
 
 .settings-note {
@@ -5887,6 +5898,15 @@ body.is-resizing-files * {
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.settings-field--actions {
+  align-content: end;
+}
+
+.settings-field--actions .inline-action {
+  min-height: 40px;
+  justify-content: center;
 }
 
 .settings-field input,
@@ -6029,6 +6049,12 @@ dd {
 .status-pill--planned {
   background: rgba(216, 180, 254, 0.14);
   color: var(--planned);
+}
+
+.status-pill--ok {
+  background: rgba(69, 224, 143, 0.14);
+  color: var(--success);
+  border-color: rgba(69, 224, 143, 0.22);
 }
 
 .status-pill.is-connected {

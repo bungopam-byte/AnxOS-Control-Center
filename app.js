@@ -380,6 +380,10 @@ const accountStatus = document.querySelector("[data-account-status]");
 const accountCurrentUser = document.querySelector("[data-account-current-user]");
 const accountDeviceCode = document.querySelector("[data-account-device-code]");
 const accountFields = document.querySelectorAll("[data-account-field]");
+const accountPasswordForm = document.querySelector("[data-account-password-form]");
+const accountPasswordEmail = document.querySelector('[data-account-password-field="email"]');
+const accountPasswordPassword = document.querySelector('[data-account-password-field="password"]');
+const accountOwnerBadge = document.querySelector("[data-account-owner-badge]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -2301,7 +2305,7 @@ function hasOwnerWorkspaceAccess() {
   if (securityState?.ownerWorkspaceAvailable === true) {
     return true;
   }
-  return Boolean(securityState?.user?.role === "Owner" && securityState?.user?.account !== true);
+  return Boolean(securityState?.user?.role === "Owner" && (securityState?.user?.account !== true || securityState?.user?.ownerAuthorized === true));
 }
 
 function isOwnerWorkspaceAuthorized() {
@@ -6068,8 +6072,8 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
     INSTANCE_NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
-    AGENT_TOKEN_MISSING: "Agent token is missing on the server. Set AGENT_TOKEN in the agent environment or agent/.env, then restart the agent.",
-    UNAUTHORIZED: "Agent token rejected. The desktop app token does not match the server AGENT_TOKEN.",
+    AGENT_TOKEN_MISSING: "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.",
+    UNAUTHORIZED: "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.",
     NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_RUNNING: "Stop the instance before deleting it.",
     INSTANCE_ALREADY_RUNNING: "This instance is already running.",
@@ -13760,12 +13764,16 @@ function renderAccountState() {
   const pending = accountState.pending || null;
   const expired = accountState.sessionStatus === "expired";
   const account = accountState.account || {};
+  const ownerAccount = Boolean(securityState?.user?.account === true && securityState?.user?.role === "Owner" && securityState?.user?.ownerAuthorized === true);
   const device = accountState.currentDevice || pending?.device || {};
   const expiresAt = pending?.expiresAt ? Date.parse(pending.expiresAt) : null;
   const remainingMs = Number.isFinite(expiresAt) ? Math.max(0, expiresAt - Date.now()) : 0;
   const remainingText = pending ? `${Math.ceil(remainingMs / 1000)}s remaining` : "";
   if (accountStatus) {
-    accountStatus.textContent = signedIn ? "Signed in" : pending ? "Waiting" : expired ? "Session expired" : "Using local device mode";
+    accountStatus.textContent = ownerAccount ? "Owner" : signedIn ? "Signed in" : pending ? "Waiting" : expired ? "Session expired" : "Using local device mode";
+  }
+  if (accountOwnerBadge) {
+    accountOwnerBadge.hidden = !ownerAccount;
   }
   if (accountCurrentUser) {
     accountCurrentUser.value = signedIn
@@ -13802,7 +13810,9 @@ function renderAccountState() {
     const urlText = pending.verificationUrl ? ` Visit ${pending.verificationUrl}.` : "";
     setAccountMessage(`Opening your browser... Code ${pending.userCode}.${urlText} ${remainingText}`);
   } else if (signedIn) {
-    setAccountMessage(`Signed in as ${account.displayName || account.username || "AnxOS Account"}.`);
+    setAccountMessage(ownerAccount
+      ? `Signed in as ${account.displayName || account.username || "AnxOS Account"} with Owner access.`
+      : `Signed in as ${account.displayName || account.username || "AnxOS Account"}.`);
   } else if (expired) {
     setAccountMessage(accountState.message || "Your AnxOS account session expired. Sign in again to use cloud and remote features.");
   } else if (accountState.configured === false) {
@@ -13899,6 +13909,42 @@ async function startAnxOsAccountLogin() {
     const message = normalizeIpcErrorMessage(error, "Could not start AnxOS account sign-in.");
     setAccountMessage(message);
     showToast(message);
+  }
+}
+
+async function loginAnxOsAccountWithPassword(event) {
+  event?.preventDefault();
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasAccount || typeof desktopApiState.api.account.loginWithPassword !== "function") {
+    showToast("Supabase account sign-in is not available in this build.");
+    return;
+  }
+  const email = accountPasswordEmail?.value || "";
+  const password = accountPasswordPassword?.value || "";
+  const submit = accountPasswordForm?.querySelector('button[type="submit"]');
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = "Signing in...";
+  }
+  try {
+    accountState = await desktopApiState.api.account.loginWithPassword({ email, password });
+    if (accountPasswordPassword) accountPasswordPassword.value = "";
+    await refreshSecurityState();
+    renderAccountState();
+    if (hasOwnerWorkspaceAccess()) {
+      showToast("Signed in with Owner access.");
+    } else {
+      showToast("Signed in with AnxOS account.");
+    }
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "AnxOS account sign-in failed.");
+    setAccountMessage(message);
+    showToast(message);
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = "Sign In";
+    }
   }
 }
 
@@ -14091,11 +14137,10 @@ async function rotateAgentTokenFromSettings() {
   }
   try {
     const result = await desktopApiState.api.security.rotateAgentToken();
-    await navigator.clipboard?.writeText?.(result.token).catch(() => {});
     if (securitySettingsMessage) {
-      securitySettingsMessage.textContent = `New token: ${result.token}`;
+      securitySettingsMessage.textContent = `Agent token rotated. Fingerprint: ${result.fingerprint || "configured"}. Restart the agent and desktop app.`;
     }
-    showToast("Agent token rotated. Copy it now; it will not be shown again.");
+    showToast(result.message || "Agent token rotated. Restart the agent and desktop app.");
     await loadAgentSettings();
   } catch (error) {
     showToast(error?.message || "Agent token rotation failed.");
@@ -14320,7 +14365,13 @@ function getAgentSettingsFormValues() {
   const settings = { ...DEFAULT_AGENT_SETTINGS };
 
   agentSettingsInputs.forEach((input) => {
-    settings[input.dataset.agentSetting] = getAgentSettingInputValue(input);
+    const key = input.dataset.agentSetting;
+    const value = getAgentSettingInputValue(input);
+    if (key === "agentToken" && !value) {
+      delete settings.agentToken;
+      return;
+    }
+    settings[key] = value;
   });
 
   return settings;
@@ -14365,6 +14416,7 @@ function setAgentConnectionDisplay(status, message, options = {}) {
 function getAgentConfigSourceText(settingsPayload) {
   const configPath = settingsPayload?.configPath || "config/agent.json";
   const overrides = settingsPayload?.overrides || {};
+  const tokenStatus = settingsPayload?.tokenStatus || {};
   const activeOverrides = [];
 
   if (overrides.backendMode) {
@@ -14379,11 +14431,15 @@ function getAgentConfigSourceText(settingsPayload) {
     activeOverrides.push("Agent Token");
   }
 
+  const tokenText = tokenStatus.configured
+    ? `Token configured${tokenStatus.environmentTokenPresent ? `; shell env token ${tokenStatus.environmentTokenMatches ? "matches" : "ignored"}` : ""}.`
+    : "Token not configured.";
+
   if (activeOverrides.length === 0) {
-    return `Saved in ${configPath}.`;
+    return `Saved in ${configPath}. ${tokenText}`;
   }
 
-  return `Saved in ${configPath}. Environment overrides active for ${activeOverrides.join(", ")}.`;
+  return `Saved in ${configPath}. Environment overrides active for ${activeOverrides.join(", ")}. ${tokenText}`;
 }
 
 function renderAgentSettings(settingsPayload) {
@@ -14394,6 +14450,13 @@ function renderAgentSettings(settingsPayload) {
   };
 
   agentSettingsInputs.forEach((input) => {
+    if (input.dataset.agentSetting === "agentToken") {
+      setAgentSettingInputValue(input, "");
+      input.placeholder = settingsPayload?.tokenStatus?.configured
+        ? "Shared token configured - leave blank to keep"
+        : "Shared token will be generated automatically";
+      return;
+    }
     setAgentSettingInputValue(input, storedSettings[input.dataset.agentSetting]);
   });
 
@@ -15826,6 +15889,7 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
   });
 });
 securityForm?.addEventListener("submit", submitSecurityForm);
+accountPasswordForm?.addEventListener("submit", loginAnxOsAccountWithPassword);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
 document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);

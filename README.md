@@ -103,6 +103,34 @@ npm start
 
 This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
 
+## AnxOS Agent Token
+
+The desktop app and the AnxOS agent share one secure token from `config/agent.json`. Do not put `AGENT_TOKEN` in multiple `.env` files. If no token exists, AnxOS generates a strong random token automatically and stores it in the shared config.
+
+Safe status check:
+
+```bash
+npm run agent:token:status
+```
+
+This prints only whether the token is configured, whether a shell `AGENT_TOKEN` matches or is ignored, and a short fingerprint. It never prints the full token.
+
+Rotate the token:
+
+```bash
+npm run agent:token:rotate
+```
+
+After rotation, restart both the AnxOS agent and the desktop app so they reload the shared token.
+
+Recommended agent startup on Linux:
+
+```bash
+./AnxAgent.sh
+```
+
+`AnxAgent.sh` points the agent at `config/agent.json`, unsets stale shell `AGENT_TOKEN` values, installs agent dependencies if needed, and starts the agent with `npm --prefix agent start`.
+
 ### One-Click Development Launcher
 
 For local source development, use the AnxDev launcher instead of typing npm commands.

@@ -143,7 +143,7 @@ set role = 'owner'
 where id = '<verified-user-id>';
 ```
 
-Online AnxOS roles do not unlock the local Owner Workspace by themselves. Local Owner Login remains separate.
+Online AnxOS roles do not unlock the local Owner Workspace by themselves. The desktop main process grants Owner Workspace access only when the signed-in Supabase account matches the trusted local owner allowlist in `ANXOS_OWNER_ACCOUNT_IDS`, `ANXOS_OWNER_EMAILS`, or `owner-accounts.json`. Local Owner Login remains separate.
 
 ## Secret Rotation
 

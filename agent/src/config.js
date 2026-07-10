@@ -1,5 +1,8 @@
 const fs = require("fs");
 const path = require("path");
+const {
+  resolveSharedAgentToken,
+} = require("../../src/shared/agentTokenStore");
 
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_PORT = 47131;
@@ -67,10 +70,15 @@ function loadEnvironment() {
 
 function getConfig() {
   loadEnvironment();
+  const tokenStatus = resolveSharedAgentToken({
+    cwd: process.cwd(),
+    environmentToken: process.env.AGENT_TOKEN,
+  });
   return {
     host: process.env.AGENT_HOST || DEFAULT_HOST,
     port: readInteger(process.env.AGENT_PORT, DEFAULT_PORT),
-    token: process.env.AGENT_TOKEN || "",
+    token: tokenStatus.token || "",
+    tokenStatus,
     requestTimeoutMs: readInteger(process.env.AGENT_REQUEST_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),
     maxRequestBytes: readInteger(process.env.AGENT_MAX_REQUEST_BYTES, DEFAULT_MAX_REQUEST_BYTES),
     maxResponseBytes: readInteger(process.env.AGENT_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES),
@@ -83,4 +91,5 @@ function getConfig() {
 
 module.exports = {
   getConfig,
+  loadEnvironment,
 };

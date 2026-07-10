@@ -34,6 +34,7 @@ const desktopApi = {
   account: {
     getStatus: () => ipcRenderer.invoke("account:getStatus"),
     startDeviceLogin: () => ipcRenderer.invoke("account:startDeviceLogin"),
+    loginWithPassword: (payload = {}) => ipcRenderer.invoke("account:loginWithPassword", payload),
     checkDeviceLogin: () => ipcRenderer.invoke("account:checkDeviceLogin"),
     cancelDeviceLogin: () => ipcRenderer.invoke("account:cancelDeviceLogin"),
     refresh: () => ipcRenderer.invoke("account:refresh"),

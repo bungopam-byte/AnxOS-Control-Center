@@ -9,6 +9,8 @@ Set these only when an auth backend is deployed:
 ```bash
 ANXOS_WEBSITE_BASE_URL=https://anxos-control-center.pages.dev
 ANXOS_ACCOUNT_API_URL=https://your-anxos-auth-api.example
+ANXOS_SUPABASE_URL=https://your-project-ref.supabase.co
+ANXOS_SUPABASE_ANON_KEY=your-public-anon-key
 ```
 
 Local development may use `http://localhost` or `http://127.0.0.1`. Non-local URLs must use HTTPS.
@@ -36,6 +38,27 @@ The website approval flow should provide:
 POST /api/auth/device/approve
 POST /api/auth/device/deny
 ```
+
+## Desktop Supabase Owner Login
+
+The desktop app can also sign in directly with Supabase email/password from Settings -> Security -> AnxOS Account. This uses Supabase Auth with the public anon key and stores only the returned session through the existing secure session store. The desktop app never stores or logs the account password.
+
+Owner access is not granted by the renderer or by Supabase signup metadata. The main process resolves owner access from a trusted local allowlist:
+
+```bash
+ANXOS_OWNER_ACCOUNT_IDS=comma-separated-supabase-user-uuids
+ANXOS_OWNER_EMAILS=comma-separated-owner-emails
+```
+
+For a local bootstrap without editing `.env`, run:
+
+```bash
+node scripts/bootstrap-owner-account.js --email owner@example.com
+# or, preferably:
+node scripts/bootstrap-owner-account.js --id <supabase-user-uuid>
+```
+
+The bootstrap file is stored in the app config directory as `owner-accounts.json`. It stores only owner UUIDs/emails, not passwords, tokens, service-role keys, or agent tokens. Restart AnxOS after changing the owner allowlist.
 
 ## Device Start Response
 

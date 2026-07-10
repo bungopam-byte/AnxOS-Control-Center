@@ -146,13 +146,14 @@ function writeState(state) {
 
 function publicStatus() {
   const security = getStatus();
+  const authorized = Boolean(security.ownerWorkspaceAvailable);
   return {
     identity: "Anx",
-    authorized: Boolean(security.user?.role === "Owner" && security.user?.account !== true),
-    authentication: security.user?.role === "Owner" && security.user?.account !== true ? "verified" : security.authenticated ? "not-owner" : "locked",
+    authorized,
+    authentication: authorized ? "verified" : security.authenticated ? "not-owner" : "locked",
     workspace: fs.existsSync(getWorkspacePath()) ? "loaded" : "ready",
     agents: security.agentTokenConfigured ? "configured" : "disconnected",
-    ready: security.user?.role === "Owner" && security.user?.account !== true ? "ready" : "locked",
+    ready: authorized ? "ready" : "locked",
     storagePath: getWorkspacePath(),
   };
 }

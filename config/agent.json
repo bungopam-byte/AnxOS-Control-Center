@@ -1,5 +1,0 @@
-{
-  "backendMode": "agent",
-  "agentUrl": "http://192.168.1.134:47131",
-  "agentToken": "test-token"
-}

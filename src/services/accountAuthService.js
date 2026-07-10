@@ -15,6 +15,7 @@ const APPROVED_AUTH_HOSTS = new Set([
   "127.0.0.1",
 ]);
 const APPROVED_SUPABASE_FUNCTION_HOST = /^[a-z0-9-]+\.functions\.supabase\.co$/i;
+const APPROVED_SUPABASE_AUTH_HOST = /^[a-z0-9-]+\.supabase\.co$/i;
 
 let currentSession = null;
 let pendingDeviceLogin = null;
@@ -70,6 +71,14 @@ function getAccountApiUrl() {
   );
 }
 
+function getSupabaseUrl() {
+  return normalizeBaseUrl(process.env.ANXOS_SUPABASE_URL || process.env.SUPABASE_URL, "");
+}
+
+function getSupabaseAnonKey() {
+  return String(process.env.ANXOS_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "").trim();
+}
+
 function assertApprovedExternalUrl(rawUrl, purpose = "account") {
   let parsed;
   try {
@@ -87,7 +96,8 @@ function assertApprovedExternalUrl(rawUrl, purpose = "account") {
     throw error;
   }
   const isApprovedSupabaseFunction = APPROVED_SUPABASE_FUNCTION_HOST.test(parsed.hostname);
-  if (!APPROVED_AUTH_HOSTS.has(parsed.hostname) && !isApprovedSupabaseFunction && !process.env.ANXOS_ACCOUNT_ALLOW_UNTRUSTED_HOSTS) {
+  const isApprovedSupabaseAuth = APPROVED_SUPABASE_AUTH_HOST.test(parsed.hostname);
+  if (!APPROVED_AUTH_HOSTS.has(parsed.hostname) && !isApprovedSupabaseFunction && !isApprovedSupabaseAuth && !process.env.ANXOS_ACCOUNT_ALLOW_UNTRUSTED_HOSTS) {
     const error = new Error(`Refusing to open unapproved ${purpose} URL.`);
     error.code = "ACCOUNT_URL_NOT_APPROVED";
     throw error;
@@ -111,6 +121,7 @@ function publicAccount(session) {
     email: session.account?.email || session.user?.email || null,
     displayName: session.account?.displayName || session.user?.displayName || session.account?.username || session.user?.username || "AnxOS Account",
     provider: session.provider || session.account?.provider || "AnxOS",
+    ownerAuthorized: Boolean(session.ownerAuthorized),
     connectedAt: session.createdAt || null,
     device: session.device ? {
       id: session.device.id || session.device.deviceId || null,
@@ -118,6 +129,18 @@ function publicAccount(session) {
       platform: session.device.platform || null,
       appVersion: session.device.app_version || session.device.appVersion || null,
     } : null,
+  };
+}
+
+function normalizeSupabaseUser(user = {}) {
+  const metadata = user.user_metadata || {};
+  return {
+    id: user.id || null,
+    email: user.email || null,
+    username: metadata.username || metadata.name || user.email || "AnxOS Account",
+    displayName: metadata.display_name || metadata.full_name || metadata.name || metadata.username || user.email || "AnxOS Account",
+    provider: "Supabase",
+    emailConfirmedAt: user.email_confirmed_at || user.confirmed_at || null,
   };
 }
 
@@ -327,7 +350,8 @@ function getStatus() {
   const storedSession = session || getCurrentSession({ allowExpired: true });
   const expired = Boolean(storedSession && !session);
   return {
-    configured: Boolean(getAccountApiUrl()),
+    configured: Boolean(getAccountApiUrl() || (getSupabaseUrl() && getSupabaseAnonKey())),
+    passwordConfigured: Boolean(getSupabaseUrl() && getSupabaseAnonKey()),
     authenticated: Boolean(session),
     account: publicAccount(storedSession),
     expiresAt: storedSession ? new Date(storedSession.expiresAt).toISOString() : null,
@@ -337,6 +361,82 @@ function getStatus() {
     currentDevice: getDeviceInfo(),
     pending: publicPending(),
   };
+}
+
+async function postSupabaseAuth(pathname, payload, options = {}) {
+  const supabaseUrl = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+  if (!supabaseUrl || !anonKey) {
+    const error = new Error("Supabase account sign-in is not configured on this device.");
+    error.code = "SUPABASE_AUTH_NOT_CONFIGURED";
+    throw error;
+  }
+  const url = `${supabaseUrl}/auth/v1/${String(pathname || "").replace(/^\/+/, "")}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 15000);
+  try {
+    const response = await fetch(assertApprovedExternalUrl(url, "Supabase Auth"), {
+      method: "POST",
+      headers: {
+        apikey: anonKey,
+        authorization: `Bearer ${options.accessToken || anonKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload || {}),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const reason = data.error_code || data.error || data.msg || data.message || `HTTP_${response.status}`;
+      const error = new Error(redactSecret(
+        response.status === 400 || response.status === 401
+          ? "Invalid email or password."
+          : data.msg || data.message || `Supabase Auth request failed with HTTP ${response.status}.`
+      ));
+      error.code = reason;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      const timeoutError = new Error("Supabase sign-in timed out. Try again.");
+      timeoutError.code = "ACCOUNT_TIMEOUT";
+      throw timeoutError;
+    }
+    if (/fetch failed|network|ENOTFOUND|ECONNREFUSED/i.test(error?.message || "")) {
+      const networkError = new Error("Supabase account service is unavailable. Check your internet connection.");
+      networkError.code = "ACCOUNT_NETWORK_UNAVAILABLE";
+      throw networkError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function loginWithPassword(payload = {}) {
+  const email = String(payload.email || "").trim();
+  const password = String(payload.password || "");
+  if (!email || !password) {
+    const error = new Error("Enter your AnxOS account email and password.");
+    error.code = "ACCOUNT_CREDENTIALS_REQUIRED";
+    throw error;
+  }
+  const response = await postSupabaseAuth("token?grant_type=password", {
+    email,
+    password,
+  });
+  const session = normalizeSession({
+    accessToken: response.access_token,
+    refreshToken: response.refresh_token,
+    expiresIn: response.expires_in,
+    account: normalizeSupabaseUser(response.user || {}),
+    provider: "Supabase",
+    device: getDeviceInfo(),
+  });
+  writeSession(session);
+  audit({ action: "account.login", outcome: "ok", target: "supabase-password" });
+  return { ...getStatus(), state: "authenticated", message: "Signed in with AnxOS account." };
 }
 
 async function startDeviceLogin() {
@@ -428,15 +528,18 @@ async function refreshSession() {
     clearSession();
     return { ...getStatus(), state: "signed-out", message: "No refresh token is available." };
   }
-  if (!getAccountApiUrl()) {
+  if (!getAccountApiUrl() && !getSupabaseUrl()) {
     return { ...getStatus(), state: "refresh-unavailable", message: "Account service is not configured." };
   }
-  const response = await postJson(`${getAccountApiUrl()}/api/auth/refresh`, { refreshToken: session.refreshToken });
+  const response = getAccountApiUrl()
+    ? await postJson(`${getAccountApiUrl()}/api/auth/refresh`, { refreshToken: session.refreshToken })
+    : await postSupabaseAuth("token?grant_type=refresh_token", { refresh_token: session.refreshToken });
   const nextSession = normalizeSession(response);
   writeSession({
     ...nextSession,
-    account: nextSession.account || session.account,
+    account: response.user ? normalizeSupabaseUser(response.user) : nextSession.account || session.account,
     device: nextSession.device || session.device,
+    provider: response.user ? "Supabase" : nextSession.provider || session.provider,
     createdAt: session.createdAt || nextSession.createdAt,
   });
   audit({ action: "account.refresh", outcome: "ok" });
@@ -499,6 +602,7 @@ module.exports = {
   openAccountPage,
   refreshSession,
   revokeCurrentDevice,
+  loginWithPassword,
   redactSecret,
   startDeviceLogin,
 };

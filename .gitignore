@@ -25,6 +25,8 @@ logs/
 bot-config/
 .env
 config/marketplace.json
+config/agent.json
+config/owner-accounts.json
 agent/*.log
 
 # Owner Workspace local development/private data

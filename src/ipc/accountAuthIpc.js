@@ -4,6 +4,7 @@ const {
   checkDeviceLogin,
   getStatus,
   listAccountDevices,
+  loginWithPassword,
   logout,
   openAccountPage,
   refreshSession,
@@ -35,6 +36,7 @@ async function invokeAccountOperation(operation, operationName = "account") {
 function registerAccountAuthIpc() {
   ipcMain.handle("account:getStatus", async () => invokeAccountOperation(() => getStatus(), "account:getStatus"));
   ipcMain.handle("account:startDeviceLogin", async () => invokeAccountOperation(() => startDeviceLogin(), "account:startDeviceLogin"));
+  ipcMain.handle("account:loginWithPassword", async (_, payload = {}) => invokeAccountOperation(() => loginWithPassword(payload), "account:loginWithPassword"));
   ipcMain.handle("account:checkDeviceLogin", async () => invokeAccountOperation(() => checkDeviceLogin(), "account:checkDeviceLogin"));
   ipcMain.handle("account:cancelDeviceLogin", async () => invokeAccountOperation(() => cancelDeviceLogin(), "account:cancelDeviceLogin"));
   ipcMain.handle("account:refresh", async () => invokeAccountOperation(() => refreshSession(), "account:refresh"));

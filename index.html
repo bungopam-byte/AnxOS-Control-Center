@@ -2350,8 +2350,25 @@
                   <h2>AnxOS Account</h2>
                   <p>Sign in on the website to sync devices later. Local control still works without an account.</p>
                 </div>
-                <span class="status-pill status-pill--planned" data-account-status>Not signed in</span>
+                <div class="settings-section__badges">
+                  <span class="status-pill status-pill--ok" data-account-owner-badge hidden>Owner</span>
+                  <span class="status-pill status-pill--planned" data-account-status>Not signed in</span>
+                </div>
               </div>
+              <form class="settings-grid settings-grid--compact" data-account-password-form>
+                <label class="settings-field">
+                  <span>Email</span>
+                  <input type="email" autocomplete="email" data-account-password-field="email" placeholder="you@example.com">
+                </label>
+                <label class="settings-field">
+                  <span>Password</span>
+                  <input type="password" autocomplete="current-password" data-account-password-field="password" placeholder="Supabase account password">
+                </label>
+                <div class="settings-field settings-field--actions">
+                  <span>Owner Login</span>
+                  <button class="inline-action inline-action--primary" type="submit">Sign In</button>
+                </div>
+              </form>
               <div class="settings-grid">
                 <label class="settings-field">
                   <span>Account</span>

@@ -98,7 +98,9 @@ async function main() {
   assert.strictEqual(invalidatedStatus.authenticated, false, "Log out of all sessions should invalidate persistent restore.");
   await security.login({ username: "owner", password: "new correct horse battery staple" });
   const rotated = security.rotateAgentToken();
-  assert(/^anx_/.test(rotated.token), "Agent token should be generated and displayed once.");
+  assert.strictEqual(rotated.configured, true, "Agent token should be rotated through the shared token store.");
+  assert(rotated.fingerprint && !rotated.token, "Agent token rotation should return only safe status metadata.");
+  assert.strictEqual(rotated.restartRequired, true, "Agent token rotation should require app and agent restart.");
   const savedNode = nodeService.saveNode({
     displayName: "Smoke Node",
     agentUrl: "http://127.0.0.1:47131",

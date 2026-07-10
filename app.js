@@ -15155,6 +15155,7 @@ async function reloadActiveNodeData(context = getNodeRequestContext("reload-node
   await Promise.allSettled(reloads);
   if (isNodeRequestCurrent(context)) {
     nodeSwitchInProgress = false;
+    renderNodes();
     updateDockerActionButtons();
     updateInstanceActionButtons();
     updateFileActionButtons();
@@ -15289,8 +15290,8 @@ function renderNodePicker() {
     option.append(copy, badge);
     option.addEventListener("click", async (event) => {
       event.stopPropagation();
-      await selectNode(node.id || "default");
       closeNodePicker();
+      await selectNode(node.id || "default");
     });
     nodePickerList.append(option);
   });
@@ -15337,8 +15338,8 @@ async function activateNodePickerOption(index) {
   if (!node) {
     return;
   }
-  await selectNode(node.id || "default");
   closeNodePicker();
+  await selectNode(node.id || "default");
 }
 
 function renderNodes() {
@@ -15430,7 +15431,16 @@ async function selectNode(nodeId) {
   const desktopApiState = getDesktopApiState();
   const nextNodeId = nodeId || "default";
   const previousNodeId = getSelectedNodeId();
+  const previousNodesState = {
+    selectedNodeId: nodesState.selectedNodeId || "default",
+    nodes: Array.isArray(nodesState.nodes) ? [...nodesState.nodes] : [],
+  };
   if (nextNodeId === previousNodeId && !nodeSwitchInProgress) {
+    renderNodes();
+    return;
+  }
+  if (!((nodesState.nodes || []).some((node) => node.id === nextNodeId))) {
+    showToast("That node is no longer available.", "warning");
     renderNodes();
     return;
   }
@@ -15444,7 +15454,19 @@ async function selectNode(nodeId) {
   });
   resetNodeScopedRendererState(`Switching to ${getSelectedNode()?.displayName || nodesState.selectedNodeId}...`);
   if (desktopApiState.hasNodes) {
-    await desktopApiState.api.nodes.select(nodesState.selectedNodeId).catch(() => {});
+    try {
+      const persistedState = await desktopApiState.api.nodes.select(nodesState.selectedNodeId);
+      if (persistedState?.selectedNodeId && Array.isArray(persistedState.nodes)) {
+        nodesState = persistedState;
+      }
+    } catch (error) {
+      nodesState = previousNodesState;
+      nodeSwitchInProgress = false;
+      selectedNodeContextVersion += 1;
+      renderNodes();
+      showToast(normalizeIpcErrorMessage(error, "Node could not be selected."), "warning");
+      return;
+    }
   }
   renderNodes();
   if (isNodeRequestCurrent(context)) {

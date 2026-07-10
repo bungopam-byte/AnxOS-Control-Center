@@ -47,6 +47,7 @@ includesAll(appSource, [
   "document.addEventListener(\"click\"",
   "nodePicker?.addEventListener(\"keydown\"",
   "await activateNodePickerOption(nodePickerActiveIndex);",
+  "closeNodePicker();\n      await selectNode(node.id || \"default\");",
   "sidebarFooter.dataset.agentState = nodeState;",
 ], "Node picker interaction");
 
@@ -79,6 +80,14 @@ includesAll(appSource, [
   "if (!shouldSkipNodeScopedPolling()) refreshPlayitStatus();",
   "if (shouldSkipNodeScopedPolling()) return;",
 ], "Node-scoped polling");
+
+includesAll(appSource, [
+  "const previousNodesState = {",
+  "const persistedState = await desktopApiState.api.nodes.select(nodesState.selectedNodeId);",
+  "nodesState = previousNodesState;",
+  "showToast(normalizeIpcErrorMessage(error, \"Node could not be selected.\"), \"warning\");",
+  "nodeSwitchInProgress = false;\n    renderNodes();",
+], "Node switch persistence and completion");
 
 includesAll(appSource, [
   "const requestContext = createNodeActionContext(\"backup-create\");",

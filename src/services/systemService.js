@@ -7,6 +7,7 @@ const { getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
+const loggedAgentMetricWarnings = new Set();
 
 function exec(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -153,7 +154,8 @@ function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
   const agentConfig = configOverride || agentClient.getAgentConfig();
   const agentUrl = agentConfig.agentUrl || agentConfig.url || null;
 
-  if (!disk) {
+  if (!disk && !loggedAgentMetricWarnings.has(`${agentUrl || "default"}:disk`)) {
+    loggedAgentMetricWarnings.add(`${agentUrl || "default"}:disk`);
     console.warn("[AnxOS][System] Agent disk metrics unavailable or incomplete.", {
       nodeUrl: agentUrl,
       hasDiskPayload: Boolean(snapshot?.disk || snapshot?.storage || snapshot?.filesystem || snapshot?.fs || snapshot?.rootDisk),
@@ -161,7 +163,8 @@ function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
     });
   }
 
-  if (!network) {
+  if (!network && !loggedAgentMetricWarnings.has(`${agentUrl || "default"}:network`)) {
+    loggedAgentMetricWarnings.add(`${agentUrl || "default"}:network`);
     console.warn("[AnxOS][System] Agent network metrics unavailable or incomplete.", {
       nodeUrl: agentUrl,
       hasNetworkPayload: Boolean(snapshot?.network || snapshot?.net || snapshot?.networkIo || snapshot?.networkIO),

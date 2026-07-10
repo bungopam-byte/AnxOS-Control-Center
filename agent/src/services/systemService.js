@@ -177,7 +177,14 @@ async function getLinuxNetworkTotals() {
 
 async function getNetworkUsage() {
   if (process.platform !== "linux") {
-    return null;
+    return {
+      uploadPerSecond: 0,
+      downloadPerSecond: 0,
+      totalUpload: null,
+      totalDownload: null,
+      supported: false,
+      reason: "unsupported_platform",
+    };
   }
 
   const totals = await getLinuxNetworkTotals();

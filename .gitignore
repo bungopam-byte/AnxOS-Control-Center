@@ -33,6 +33,9 @@ agent/*.log
 owner-workspace/
 config/owner-workspace/
 
+# Supabase CLI local project metadata.
+supabase/.temp/
+
 # Code-signing certificates and private keys must never be committed.
 *.pfx
 *.p12

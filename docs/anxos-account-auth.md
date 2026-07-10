@@ -60,7 +60,7 @@ Response:
 {
   "deviceCode": "secret-long-random-value",
   "userCode": "ABCD1234",
-  "verificationUrl": "https://anxos-control-center.pages.dev/#activate?code=ABCD1234",
+  "verificationUrl": "https://anxos-control-center.pages.dev/activate/?code=ABCD1234",
   "expiresIn": 600,
   "pollInterval": 3
 }

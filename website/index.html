@@ -97,43 +97,62 @@
       </section>
 
       <section id="signin" class="section-shell account-route" data-account-route="signin">
-        <div class="account-route__copy">
-          <p class="eyebrow">Online AnxOS Account</p>
-          <h2>Sign in to AnxOS</h2>
-          <p>Use an online AnxOS account for cloud, sync, licensing, and remote account features. This is separate from Local Owner Login inside the desktop app.</p>
-          <div class="route-actions">
-            <a class="button button-primary" href="#activate">Activate a Device</a>
-            <a class="button button-secondary" href="#signup">Create Account</a>
+        <div class="auth-shell">
+          <div class="auth-card" data-auth-view="signed-out">
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Welcome back</h2>
+              <p>Sign in to sync cloud and remote account features. Local Owner Login stays private to the desktop app.</p>
+            </div>
+            <nav class="auth-tabs" aria-label="Account actions">
+              <a class="auth-tab is-active" href="#signin">Sign In</a>
+              <a class="auth-tab" href="#signup">Create Account</a>
+            </nav>
+            <form class="account-form auth-form" data-auth-form="signin">
+              <label>Email<input type="email" name="email" autocomplete="email" required></label>
+              <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+              <button class="button button-primary auth-primary" type="submit">Sign In</button>
+              <div class="auth-form__footer">
+                <a href="#forgot-password">Forgot password?</a>
+                <a href="activate.html">Activate desktop app</a>
+              </div>
+              <p class="form-message" role="status" data-auth-message="signin"></p>
+            </form>
           </div>
-        </div>
-        <div class="account-panel" data-auth-view="signed-out">
-          <h3>Sign in</h3>
-          <form class="account-form" data-auth-form="signin">
-            <label>Email<input type="email" name="email" autocomplete="email" required></label>
-            <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
-            <button class="button button-primary" type="submit">Sign In</button>
-            <a href="#forgot-password">Forgot password?</a>
-            <p class="form-message" role="status" data-auth-message="signin"></p>
-          </form>
+          <ul class="auth-feature-list" aria-label="AnxOS account features">
+            <li>Device approvals without sharing passwords with the desktop app.</li>
+            <li>Cloud-ready profile, devices, sessions, and security history.</li>
+            <li>Separate from Local Owner Login and Single-Device Mode.</li>
+          </ul>
         </div>
       </section>
 
       <section id="signup" class="section-shell account-route" data-account-route="signup">
-        <div class="account-route__copy">
-          <p class="eyebrow">Create Account</p>
-          <h2>Sign up for AnxOS</h2>
-          <p>Create an online account for cloud and remote services. Your Local Owner Login remains private to the desktop app.</p>
-        </div>
-        <div class="account-panel" data-auth-view="signed-out">
-          <h3>Create account</h3>
-          <form class="account-form" data-auth-form="signup">
-            <label>Email<input type="email" name="email" autocomplete="email" required></label>
-            <label>Username<input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>
-            <label>Display name<input type="text" name="displayName" autocomplete="name" maxlength="80" required></label>
-            <label>Password<input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
-            <button class="button button-primary" type="submit">Create Account</button>
-            <p class="form-message" role="status" data-auth-message="signup"></p>
-          </form>
+        <div class="auth-shell">
+          <div class="auth-card" data-auth-view="signed-out">
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Create your account</h2>
+              <p>Set up online access for cloud, synchronization, licensing, and remote account features.</p>
+            </div>
+            <nav class="auth-tabs" aria-label="Account actions">
+              <a class="auth-tab" href="#signin">Sign In</a>
+              <a class="auth-tab is-active" href="#signup">Create Account</a>
+            </nav>
+            <form class="account-form auth-form" data-auth-form="signup">
+              <label>Email<input type="email" name="email" autocomplete="email" required></label>
+              <label>Username<input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>
+              <label>Display name<input type="text" name="displayName" autocomplete="name" maxlength="80" required></label>
+              <label>Password<input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+              <button class="button button-primary auth-primary" type="submit">Create Account</button>
+              <p class="form-message" role="status" data-auth-message="signup"></p>
+            </form>
+          </div>
+          <ul class="auth-feature-list" aria-label="AnxOS account features">
+            <li>Email verification protects your account before device approvals.</li>
+            <li>Normal users cannot assign themselves owner or admin roles.</li>
+            <li>Your local owner password is never uploaded or synchronized.</li>
+          </ul>
         </div>
       </section>
 
@@ -186,77 +205,53 @@
         </div>
       </section>
 
-      <section id="activate" class="section-shell account-route account-route--active" data-account-route="activate">
-        <div class="account-route__copy">
-          <p class="eyebrow">Device Activation</p>
-          <h2>Activate this desktop app</h2>
-          <p>Review the device code from AnxOS Control Center, sign in, then approve or deny the desktop app.</p>
-          <div class="device-code-card">
-            <span>Device code</span>
-            <strong data-activation-code>Enter the code shown in AnxOS</strong>
-          </div>
-        </div>
-        <div class="account-panel">
-          <h3>Approve desktop sign-in</h3>
-          <form class="account-form" data-device-login-form>
-            <label>Device code<input type="text" autocomplete="one-time-code" name="userCode" data-device-code-input placeholder="ABCD1234" required></label>
-            <button class="button button-secondary" type="button" data-device-action="lookup">Review Device</button>
-          </form>
-          <div class="account-device-summary" data-device-summary>
-            <span>Requesting device</span>
-            <strong data-device-name>Waiting for code</strong>
-            <small data-device-details>Enter the code from AnxOS to load the device request.</small>
-          </div>
-          <p data-device-login-message role="status">Sign in first if prompted, then review the requesting device before approving access.</p>
-          <div class="route-actions">
-            <button class="button button-primary" type="button" data-device-action="approve" disabled>Approve Device</button>
-            <button class="button button-ghost" type="button" data-device-action="deny" disabled>Deny</button>
-          </div>
-        </div>
-      </section>
-
       <section id="forgot-password" class="section-shell account-route" data-account-route="forgot-password">
-        <div class="account-route__copy">
-          <p class="eyebrow">Account Recovery</p>
-          <h2>Reset your password</h2>
-          <p>Send a secure reset link to your AnxOS account email address.</p>
-        </div>
-        <div class="account-panel">
-          <form class="account-form" data-auth-form="forgot">
+        <div class="auth-shell auth-shell--single">
+          <div class="auth-card">
+            <div class="auth-card__header">
+              <p class="eyebrow">Account Recovery</p>
+              <h2>Reset your password</h2>
+              <p>Send a secure reset link to your AnxOS account email address.</p>
+            </div>
+            <form class="account-form auth-form" data-auth-form="forgot">
             <label>Email<input type="email" name="email" autocomplete="email" required></label>
-            <button class="button button-primary" type="submit">Send Reset Link</button>
+            <button class="button button-primary auth-primary" type="submit">Send Reset Link</button>
             <p class="form-message" role="status" data-auth-message="forgot"></p>
           </form>
+            <div class="auth-form__footer"><a href="#signin">Back to sign in</a></div>
+          </div>
         </div>
       </section>
 
       <section id="reset-password" class="section-shell account-route" data-account-route="reset-password">
-        <div class="account-route__copy">
-          <p class="eyebrow">New Password</p>
-          <h2>Choose a new password</h2>
-          <p>This changes only your online AnxOS account password. It does not affect Local Owner Login inside the desktop app.</p>
-        </div>
-        <div class="account-panel">
-          <form class="account-form" data-auth-form="reset">
+        <div class="auth-shell auth-shell--single">
+          <div class="auth-card">
+            <div class="auth-card__header">
+              <p class="eyebrow">New Password</p>
+              <h2>Choose a new password</h2>
+              <p>This changes only your online AnxOS account password. It does not affect Local Owner Login.</p>
+            </div>
+            <form class="account-form auth-form" data-auth-form="reset">
             <label>New password<input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
-            <button class="button button-primary" type="submit">Update Password</button>
+            <button class="button button-primary auth-primary" type="submit">Update Password</button>
             <p class="form-message" role="status" data-auth-message="reset"></p>
           </form>
+          </div>
         </div>
       </section>
 
       <section id="verify-email" class="section-shell account-route" data-account-route="verify-email">
-        <div class="account-route__copy">
-          <p class="eyebrow">Verify Email</p>
-          <h2>Check your inbox</h2>
-          <p>Open the verification link sent by Supabase Auth, then return here to continue.</p>
-        </div>
-        <div class="account-panel">
-          <h3>Email verification</h3>
-          <p data-auth-message="verify">Waiting for verification status.</p>
-          <div class="route-actions">
-            <a class="button button-secondary" href="#signin">Sign In</a>
+        <div class="auth-shell auth-shell--single">
+          <div class="auth-card">
+            <div class="auth-card__header">
+              <p class="eyebrow">Verify Email</p>
+              <h2>Check your inbox</h2>
+              <p data-auth-message="verify">Open the verification link sent by Supabase Auth, then return here to continue.</p>
+            </div>
+            <div class="route-actions">
+              <a class="button button-primary" href="#signin">Sign In</a>
             <a class="button button-ghost" href="#account">Account</a>
+          </div>
           </div>
         </div>
       </section>

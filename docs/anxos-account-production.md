@@ -92,7 +92,7 @@ ANXOS_WEBSITE_BASE_URL=https://anxos-control-center.pages.dev
 ANXOS_ACCOUNT_API_URL=https://<project-ref>.functions.supabase.co/anxos-account
 ```
 
-The desktop never receives website passwords. It starts a device authorization request, opens `#activate?code=...`, polls the Edge Function, then stores the issued desktop access and refresh tokens through `SecureSessionStore`.
+The desktop never receives website passwords. It starts a device authorization request, opens `/activate/?code=...`, polls the Edge Function, then stores the issued desktop access and refresh tokens through `SecureSessionStore`.
 
 ## Device Authorization Flow
 

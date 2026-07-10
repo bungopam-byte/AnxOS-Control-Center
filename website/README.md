@@ -10,7 +10,7 @@ The page also contains the optional AnxOS account entry points:
 - `#reset-password`
 - `#verify-email`
 - `#account`
-- `#activate`
+- `activate.html`
 
 Account features require Supabase configuration in `account-config.js`. Without that public config, the page disables account forms and shows a setup error instead of pretending authentication works.
 

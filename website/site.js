@@ -605,7 +605,14 @@ function bindAccountForms() {
 
 function applyHashRoute() {
   const hash = window.location.hash || "";
-  const route = hash.replace(/^#/, "").split("?")[0] || "top";
+  const standaloneRoute = document.body?.dataset?.standaloneRoute || "";
+  const route = hash.replace(/^#/, "").split("?")[0] || standaloneRoute || "top";
+  if (!standaloneRoute && route === "activate") {
+    const hashQuery = hash.includes("?") ? `?${hash.split("?").slice(1).join("?")}` : "";
+    const query = window.location.search || hashQuery;
+    window.location.replace(`activate.html${query}`);
+    return;
+  }
   const supportedRoutes = new Set([
     "signin",
     "signup",
@@ -622,6 +629,9 @@ function applyHashRoute() {
   ]);
   if (!supportedRoutes.has(route)) return;
   applyDeviceLoginPage();
+  document.querySelectorAll("[data-account-route]").forEach((section) => {
+    section.classList.toggle("account-route--active", section.dataset.accountRoute === route);
+  });
   const target = document.getElementById(route);
   if (target && route !== "top") target.scrollIntoView({ block: "start" });
 }

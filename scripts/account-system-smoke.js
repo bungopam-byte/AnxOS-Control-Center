@@ -10,6 +10,7 @@ function read(relativePath) {
 
 function assertWebsiteAccountUi() {
   const index = read("website/index.html");
+  const activate = read("website/activate.html");
   const site = read("website/site.js");
   const accountConfig = read("website/account-config.js");
 
@@ -17,7 +18,8 @@ function assertWebsiteAccountUi() {
   assert(index.includes('data-auth-form="signup"'), "Website should include a real sign-up form.");
   assert(index.includes('data-auth-form="forgot"'), "Website should include forgot-password form.");
   assert(index.includes('data-auth-form="reset"'), "Website should include reset-password form.");
-  assert(index.includes('data-device-action="approve"'), "Website should include device approval action.");
+  assert(activate.includes('data-device-action="approve"'), "Dedicated activation page should include device approval action.");
+  assert(activate.includes('data-device-login-form'), "Dedicated activation page should include device lookup form.");
   assert(index.includes('data-account-devices'), "Website should include account devices list.");
   assert(index.includes('data-account-sessions'), "Website should include account sessions list.");
   assert(index.includes('data-account-events'), "Website should include security history list.");

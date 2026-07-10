@@ -110,7 +110,7 @@ function createDeviceAuthorizationHandlers(options = {}) {
     return {
       deviceCode,
       userCode,
-      verificationUrl: `${verificationBaseUrl}/#activate?code=${encodeURIComponent(userCode)}`,
+      verificationUrl: `${verificationBaseUrl}/activate/?code=${encodeURIComponent(userCode)}`,
       expiresIn: Math.floor(ttlMs / 1000),
       pollInterval,
     };

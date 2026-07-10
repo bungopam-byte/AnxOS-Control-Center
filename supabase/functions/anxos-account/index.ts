@@ -98,7 +98,7 @@ async function startDevice(request: Request) {
   return {
     deviceCode,
     userCode,
-    verificationUrl: `${websiteBaseUrl}/#activate?code=${encodeURIComponent(userCode)}`,
+    verificationUrl: `${websiteBaseUrl}/activate/?code=${encodeURIComponent(userCode)}`,
     expiresIn: 600,
     pollInterval: 5,
   };

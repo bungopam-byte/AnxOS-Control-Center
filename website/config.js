@@ -3,43 +3,47 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   appName: "AnxOS-Control-Center",
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
   logoPath: "assets/anxos-logo.jpg",
-  latestVersion: "1.0.45",
+  latestVersion: "1.0.46",
   releaseDate: "July 10, 2026",
-  releaseTag: "v1.0.45",
+  releaseTag: "v1.0.46",
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.45",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.46",
   downloads: {
     windows: {
       label: "Download for Windows",
-      fileName: "AnxOS-Control-Center-Setup-1.0.45.exe",
-      size: "111 MB",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.45/AnxOS-Control-Center-Setup-1.0.45.exe",
+      fileName: "AnxOS-Control-Center-Setup-1.0.46.exe",
+      size: "",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.46/AnxOS-Control-Center-Setup-1.0.46.exe",
     },
     linuxDeb: {
       label: "Linux .deb",
-      fileName: "AnxOS-Control-Center-1.0.45.deb",
-      size: "108 MB",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.45/AnxOS-Control-Center-1.0.45.deb",
+      fileName: "AnxOS-Control-Center-1.0.46.deb",
+      size: "",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.46/AnxOS-Control-Center-1.0.46.deb",
     },
     linuxAppImage: {
       label: "Linux AppImage",
-      fileName: "AnxOS-Control-Center-1.0.45.AppImage",
-      size: "138 MB",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.45/AnxOS-Control-Center-1.0.45.AppImage",
+      fileName: "AnxOS-Control-Center-1.0.46.AppImage",
+      size: "",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.46/AnxOS-Control-Center-1.0.46.AppImage",
     },
   },
   releaseNotes: [
       {
-          "version": "1.0.45",
-          "tag": "v1.0.45",
+          "version": "1.0.46",
+          "tag": "v1.0.46",
           "date": "July 10, 2026",
           "datetime": "2026-07-10",
-          "title": "AnxOS v1.0.45",
-          "summary": "Latest AnxOS-Control-Center release.",
+          "title": "Explicit device identity and workspace routing",
+          "summary": "This release separates the desktop host, Agent nodes, and filesystem providers so Windows can reliably control local and remote machines.",
           "changes": [
-              "Updated application build, website metadata, and downloadable release assets."
+              "Added stable Agent identities with duplicate-node detection and safe legacy configuration migration.",
+              "Made the application host a distinct local node instead of deriving This Device from the configured Agent URL.",
+              "Routed Dashboard, Monitoring, Docker, Instances, Files, SSH, Backups, Marketplace, and Security through the selected node.",
+              "Separated local, Agent-native, and SFTP filesystem providers so only explicit SFTP connections create SFTP sessions.",
+              "Added development routing diagnostics and regression coverage for node switching, persistence, migration, and filesystem routing."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.45"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.46"
       },
       {
           "version": "1.0.19",

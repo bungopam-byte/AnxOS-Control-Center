@@ -1,5 +1,20 @@
 [
   {
+    "version": "1.0.46",
+    "tag": "v1.0.46",
+    "date": "July 10, 2026",
+    "datetime": "2026-07-10",
+    "title": "Explicit device identity and workspace routing",
+    "summary": "This release separates the desktop host, Agent nodes, and filesystem providers so Windows can reliably control local and remote machines.",
+    "changes": [
+      "Added stable Agent identities with duplicate-node detection and safe legacy configuration migration.",
+      "Made the application host a distinct local node instead of deriving This Device from the configured Agent URL.",
+      "Routed Dashboard, Monitoring, Docker, Instances, Files, SSH, Backups, Marketplace, and Security through the selected node.",
+      "Separated local, Agent-native, and SFTP filesystem providers so only explicit SFTP connections create SFTP sessions.",
+      "Added development routing diagnostics and regression coverage for node switching, persistence, migration, and filesystem routing."
+    ]
+  },
+  {
     "version": "1.0.19",
     "tag": "v1.0.19",
     "date": "July 9, 2026",

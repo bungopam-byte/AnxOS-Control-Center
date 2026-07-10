@@ -472,6 +472,8 @@ function assertStorageManagerArchitecture() {
   assert(storageSource.includes("safeStorage") && storageSource.includes("encryptSecret") && !storageSource.includes("console.log"), "Storage connections should encrypt secrets and avoid logging credentials.");
   assert(fileSource.includes("getProviderProfile") && fileSource.includes("storageId") && fileSource.includes("providerBadge") && fileSource.includes("async copy(") && fileSource.includes("createTransferController"), "FileService should route operations through provider-style storage IDs with cancellable transfers.");
   assert(appSource.includes("renderStorageConnections") && appSource.includes("handleStorageConnectionSaved") && appSource.includes("startFileTransfer") && appSource.includes("cancelFileTransfer") && appSource.includes("storageId: getFilesRequestStorageId()"), "Renderer should manage provider connections and transfer entries.");
+  assert(appSource.includes("if (!selectedStorageId) {\n    return null;\n  }"), "Renderer should not fall back to local storage when an SSH file profile is selected.");
+  assert(appSource.includes("if (filesSelectedProfileId) {\n    selectedStorageId = \"\";\n  }\n  renderStorageConnections();"), "Server/profile selection should clear local storage routing before connecting files.");
   assert(addStorageWindowSource.includes("api.files.saveConnection") && addStorageWindowSource.includes("api.files.testConnection") && addStorageWindowSource.includes("storageWindow?.saved"), "Add Storage window should reuse secure files IPC and notify the Files page after save.");
 }
 

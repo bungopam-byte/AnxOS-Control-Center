@@ -9950,6 +9950,9 @@ function getStorageConnectionById(storageId = selectedStorageId) {
 }
 
 function getSelectedStorageConnection() {
+  if (!selectedStorageId) {
+    return null;
+  }
   return getStorageConnectionById(selectedStorageId) || getStorageConnectionById(storageConnectionsState.defaultConnectionId) || storageConnectionsState.connections?.[0] || null;
 }
 
@@ -16797,6 +16800,10 @@ filesServerSelect?.addEventListener("change", () => {
   filesSelectedServerId = filesServerSelect.value || null;
   setFilesPasswordPromptState(false);
   syncFilesSelectionState();
+  if (filesSelectedProfileId) {
+    selectedStorageId = "";
+  }
+  renderStorageConnections();
   renderFilesView();
 });
 filesProfileSelect?.addEventListener("change", () => {

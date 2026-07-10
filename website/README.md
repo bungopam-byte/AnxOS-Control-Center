@@ -6,8 +6,8 @@ The page also contains the optional AnxOS account entry points:
 
 - `#signin`
 - `#signup`
-- `#forgot-password`
-- `#reset-password`
+- `forgot-password.html`
+- `reset-password.html`
 - `#verify-email`
 - `#account`
 - `activate.html`

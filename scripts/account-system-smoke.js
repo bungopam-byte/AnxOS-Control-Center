@@ -11,6 +11,8 @@ function read(relativePath) {
 function assertWebsiteAccountUi() {
   const index = read("website/index.html");
   const activate = read("website/activate.html");
+  const forgotPassword = read("website/forgot-password.html");
+  const resetPassword = read("website/reset-password.html");
   const site = read("website/site.js");
   const accountConfig = read("website/account-config.js");
 
@@ -18,6 +20,9 @@ function assertWebsiteAccountUi() {
   assert(index.includes('data-auth-form="signup"'), "Website should include a real sign-up form.");
   assert(index.includes('data-auth-form="forgot"'), "Website should include forgot-password form.");
   assert(index.includes('data-auth-form="reset"'), "Website should include reset-password form.");
+  assert(forgotPassword.includes('data-auth-form="forgot"'), "Website should provide a standalone forgot-password page.");
+  assert(resetPassword.includes('data-auth-form="reset"'), "Website should provide a standalone reset-password page.");
+  assert(resetPassword.includes('name="passwordConfirm"'), "Password reset should require password confirmation.");
   assert(activate.includes('data-device-action="approve"'), "Dedicated activation page should include device approval action.");
   assert(activate.includes('data-device-login-form'), "Dedicated activation page should include device lookup form.");
   assert(index.includes('data-account-devices'), "Website should include account devices list.");
@@ -33,6 +38,7 @@ function assertWebsiteAccountUi() {
   assert(site.includes("isAccountApiConfigured") && site.includes("ACCOUNT_API_NOT_CONFIGURED"), "Website should allow Supabase sign-in to load separately from account API availability.");
   assert(site.includes("auth.signUp"), "Website should implement sign-up.");
   assert(site.includes("resetPasswordForEmail"), "Website should implement forgot-password.");
+  assert(site.includes("/reset-password.html"), "Recovery emails should redirect to the standalone reset page.");
   assert(site.includes("updateUser({ password"), "Website should implement password reset.");
   assert(site.includes("loadProfile().catch") && site.includes("currentProfile = null"), "Website profile loading should not block signed-in account state.");
   assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");

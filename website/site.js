@@ -347,7 +347,7 @@ async function handleForgot(form) {
   setMessage("forgot", "Sending reset link...");
   try {
     const { error } = await getSupabase().auth.resetPasswordForEmail(form.elements.email.value.trim(), {
-      redirectTo: `${accountConfig.siteUrl || window.location.origin}/#reset-password`,
+      redirectTo: `${accountConfig.siteUrl || window.location.origin}/reset-password.html`,
     });
     if (error) throw error;
     setMessage("forgot", "If an account exists, a reset email has been sent.", "ok");
@@ -359,13 +359,17 @@ async function handleForgot(form) {
 }
 
 async function handleReset(form) {
+  if (form.elements.passwordConfirm && form.elements.password.value !== form.elements.passwordConfirm.value) {
+    setMessage("reset", "Passwords do not match.", "error");
+    return;
+  }
   setFormDisabled(form, true);
   setMessage("reset", "Updating password...");
   try {
     const { error } = await getSupabase().auth.updateUser({ password: form.elements.password.value });
     if (error) throw error;
     setMessage("reset", "Password updated.", "ok");
-    window.location.hash = "account";
+    window.location.assign("account.html");
   } catch (error) {
     setMessage("reset", friendlyAuthError(error), "error");
   } finally {

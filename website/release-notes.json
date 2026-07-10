@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.0.47",
+    "tag": "v1.0.47",
+    "date": "July 10, 2026",
+    "datetime": "2026-07-10",
+    "title": "Local Owner authentication recovery",
+    "summary": "This release restores existing local Owner credentials and adds visible website password recovery actions.",
+    "changes": [
+      "Restored packaged-app authentication for persisted Owner accounts created with historical local credentials.",
+      "Added safe discovery and migration of Owner accounts from legacy AnxOS configuration directories.",
+      "Kept local Owner verification independent from Supabase cloud account authentication.",
+      "Added development-only authentication diagnostics that never log passwords, hashes, or tokens.",
+      "Added standalone website password recovery pages and visible Reset Password and Change Password actions.",
+      "Added regression coverage for credential verification, legacy migration, and session logout account preservation."
+    ]
+  },
+  {
     "version": "1.0.46",
     "tag": "v1.0.46",
     "date": "July 10, 2026",

@@ -378,6 +378,9 @@ const securityConfirmRow = document.querySelector("[data-security-confirm-row]")
 const localSetupButtons = document.querySelectorAll("[data-local-setup-action]");
 const securitySubmitButton = document.querySelector("[data-security-submit]");
 let securityLastSubmitAt = 0;
+let securityDashboardState = null;
+let securityEventFilter = "all";
+let securityEventsCleared = false;
 const accountButtons = document.querySelectorAll("[data-account-action]");
 const accountMessages = document.querySelectorAll("[data-account-message]");
 const accountSettingsMessage = document.querySelector("[data-account-settings-message]");
@@ -14296,6 +14299,217 @@ function renderSecurityState() {
   document.querySelector('[data-security-action="rotate-agent-token"]')?.toggleAttribute("hidden", setup);
   document.querySelector('[data-security-action="logout"]')?.toggleAttribute("hidden", setup || !authenticated);
   document.querySelector('[data-security-action="logout-all-sessions"]')?.toggleAttribute("hidden", setup || !authenticated);
+  renderSecurityDashboard();
+}
+
+function securityPillClass(value = "") {
+  const normalized = String(value).toLowerCase();
+  if (/critical|missing|untrusted|exposed|failed|locked/.test(normalized)) return "status-pill status-pill--critical";
+  if (/attention|warning|remote|medium|high/.test(normalized)) return "status-pill status-pill--warning";
+  if (/good|trusted|configured|active|disabled|ok/.test(normalized)) return "status-pill status-pill--ok";
+  return "status-pill status-pill--planned";
+}
+
+function formatSecurityValue(value, fallback = "Unavailable") {
+  if (value === 0) return "0";
+  if (value === false) return "No";
+  if (value === true) return "Yes";
+  return value ? String(value) : fallback;
+}
+
+function formatSecurityTime(value) {
+  return value ? formatDateTime(value) : "Not reported";
+}
+
+function createSecurityBadge(text, tone = text) {
+  return `<span class="${securityPillClass(tone)}">${escapeHtml(formatSecurityValue(text))}</span>`;
+}
+
+function renderSecurityDashboard() {
+  const dashboard = securityDashboardState;
+  const overviewStatus = document.querySelector("[data-security-overview-status]");
+  const overview = document.querySelector("[data-security-overview]");
+  const lastEvent = document.querySelector("[data-security-last-event]");
+  if (overviewStatus) {
+    overviewStatus.className = securityPillClass(dashboard?.overview?.status || "Loading");
+    overviewStatus.textContent = dashboard?.overview?.status || "Loading";
+  }
+  if (overview) {
+    const fields = [
+      ["Account", dashboard?.overview?.signedInAccount],
+      ["Device trust", dashboard?.overview?.deviceTrustState],
+      ["Sessions", dashboard?.overview?.activeSessionCount],
+      ["Remote access", dashboard?.overview?.remoteAccessStatus],
+      ["Agent token", dashboard?.overview?.agentTokenStatus],
+      ["Warnings", dashboard?.overview?.unresolvedWarnings],
+    ];
+    overview.innerHTML = fields.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatSecurityValue(value, "Loading"))}</strong></div>`).join("");
+  }
+  if (lastEvent) {
+    const event = dashboard?.overview?.lastSecurityEvent;
+    lastEvent.textContent = event ? `Last event: ${event.type} · ${formatSecurityTime(event.timestamp)}` : "Last event: Not reported";
+  }
+  renderSecurityRecommendations(dashboard?.recommendations || []);
+  renderSecuritySessions(dashboard?.sessions || []);
+  renderSecurityTrustedDevices(dashboard?.trustedDevices || []);
+  renderSecurityRemoteAccess(dashboard?.remoteAccess || null);
+  renderSecurityToken(dashboard?.agentToken || null);
+  renderSecurityAuthentication(dashboard?.authentication || null);
+  renderSecurityEvents();
+}
+
+function renderSecurityRecommendations(items) {
+  const container = document.querySelector("[data-security-recommendations]");
+  if (!container) return;
+  if (!items.length) {
+    container.innerHTML = '<div class="security-empty-state">No supported security recommendations right now.</div>';
+    return;
+  }
+  container.innerHTML = items.map((item) => `
+    <article class="security-list-item">
+      <div class="security-card-row">
+        <div>
+          <strong>${escapeHtml(item.title || "Recommendation")}</strong>
+          <p>${escapeHtml(item.explanation || "Review this security item.")}</p>
+        </div>
+        ${createSecurityBadge(item.severity || "info", item.severity || "info")}
+      </div>
+      <div class="settings-actions">
+        <button class="inline-action" type="button" data-security-recommendation="${escapeHtml(item.id || "")}">${escapeHtml(item.action || "Review")}</button>
+        ${item.dismissible ? `<button class="inline-action" type="button" data-security-dismiss-recommendation="${escapeHtml(item.id || "")}">Dismiss</button>` : ""}
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderSecuritySessions(sessions) {
+  const tbody = document.querySelector("[data-security-sessions]");
+  if (!tbody) return;
+  if (!sessions.length) {
+    tbody.innerHTML = '<tr><td colspan="5">No active sessions reported.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sessions.map((session) => `
+    <tr>
+      <td><strong>${escapeHtml(session.deviceName || "Unknown device")}</strong><br><span class="security-event-meta">${escapeHtml(session.operatingSystem || "Unavailable")} · ${escapeHtml(session.ipAddress || "Unavailable")}</span></td>
+      <td>${escapeHtml(formatSecurityTime(session.lastActiveAt))}</td>
+      <td>${escapeHtml(formatSecurityTime(session.createdAt))}</td>
+      <td>${createSecurityBadge(session.current ? "Current" : session.trusted ? "Trusted" : "Untrusted", session.current || session.trusted ? "trusted" : "untrusted")}</td>
+      <td>${session.current || session.runtimeOnly ? '<span class="security-event-meta">Current session</span>' : `<button class="inline-action" type="button" data-security-revoke-session="${escapeHtml(session.id)}">Revoke</button>`}</td>
+    </tr>
+  `).join("");
+}
+
+function renderSecurityTrustedDevices(devices) {
+  const container = document.querySelector("[data-security-trusted-devices]");
+  if (!container) return;
+  if (!devices.length) {
+    container.innerHTML = '<div class="security-empty-state">No trusted devices reported.</div>';
+    return;
+  }
+  container.innerHTML = devices.map((device) => `
+    <article class="security-list-item">
+      <div class="security-card-row">
+        <div>
+          <strong>${escapeHtml(device.name || "Unnamed device")}</strong>
+          <p>${escapeHtml(device.platform || "Unavailable")} · First seen ${escapeHtml(formatSecurityTime(device.firstSeen))} · Last seen ${escapeHtml(formatSecurityTime(device.lastSeen))}</p>
+          <p>Trust expiration: ${escapeHtml(formatSecurityTime(device.trustExpiresAt))}</p>
+        </div>
+        ${createSecurityBadge(device.current ? "Current" : device.trusted ? "Trusted" : "Untrusted", device.current || device.trusted ? "trusted" : "untrusted")}
+      </div>
+      <div class="settings-actions">
+        <button class="inline-action" type="button" data-security-rename-device="${escapeHtml(device.id)}">Rename</button>
+        <button class="inline-action" type="button" data-security-remove-device="${escapeHtml(device.id)}">Remove Trust</button>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderSecurityRemoteAccess(remote) {
+  const status = document.querySelector("[data-security-remote-status]");
+  const address = document.querySelector('[data-security-remote-field="address"]');
+  const scope = document.querySelector('[data-security-remote-field="scope"]');
+  const accountToggle = document.querySelector('[data-security-remote-toggle="account"]');
+  const trustedToggle = document.querySelector('[data-security-remote-toggle="trusted"]');
+  const warning = document.querySelector("[data-security-remote-warning]");
+  if (status) {
+    status.className = securityPillClass(remote?.enabled ? remote.scope : "Disabled");
+    status.textContent = remote?.enabled ? "Enabled" : "Disabled";
+  }
+  if (address) address.value = remote?.address || "Not reported";
+  if (scope) scope.value = remote?.scope || "Unavailable";
+  if (accountToggle) accountToggle.checked = Boolean(remote?.requireAuthenticatedAccount);
+  if (trustedToggle) trustedToggle.checked = Boolean(remote?.requireTrustedDevice);
+  if (warning) {
+    warning.textContent = remote?.exposedBeyondLocalNetwork
+      ? "Warning: remote access appears exposed beyond localhost or the local network."
+      : remote?.enabled
+        ? "Remote access is limited to the reported scope."
+        : "Remote access is disabled.";
+  }
+}
+
+function renderSecurityToken(token) {
+  const status = document.querySelector("[data-security-token-status]");
+  const details = document.querySelector("[data-security-token-details]");
+  if (status) {
+    status.className = securityPillClass(token?.configured ? "Configured" : "Missing");
+    status.textContent = token?.configured ? "Configured" : "Missing";
+  }
+  if (details) {
+    const fields = [
+      ["Fingerprint", token?.fingerprint],
+      ["Created", formatSecurityTime(token?.createdAt)],
+      ["Last rotated", formatSecurityTime(token?.lastRotatedAt)],
+      ["Last used", formatSecurityTime(token?.lastUsedAt)],
+      ["Scope", token?.scope],
+      ["Associated agent", token?.associatedDevice],
+    ];
+    details.innerHTML = fields.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatSecurityValue(value))}</strong></div>`).join("");
+  }
+}
+
+function renderSecurityAuthentication(auth) {
+  const set = (name, value) => {
+    const field = document.querySelector(`[data-security-auth-field="${name}"]`);
+    if (field) field.value = formatSecurityValue(value);
+  };
+  set("email", auth?.emailVerification);
+  set("twoFactor", auth?.twoFactor);
+  set("passwordChanged", formatSecurityTime(auth?.passwordLastChangedAt));
+  set("failed", auth?.recentFailedSignIns ?? "Unavailable");
+  const timeout = document.querySelector("[data-security-session-timeout]");
+  const ownerLock = document.querySelector('[data-security-session-toggle="ownerLock"]');
+  const reauth = document.querySelector('[data-security-session-toggle="reauth"]');
+  if (timeout) timeout.value = String(auth?.sessionTimeoutMs || 0);
+  if (ownerLock) ownerLock.checked = auth?.lockOwnerWorkspaceAfterInactivity !== false;
+  if (reauth) reauth.checked = auth?.requireReauthForSensitiveActions !== false;
+}
+
+function renderSecurityEvents() {
+  const container = document.querySelector("[data-security-events]");
+  if (!container) return;
+  if (securityEventsCleared) {
+    container.innerHTML = '<div class="security-empty-state">Local event display cleared. Refresh to reload from the audit log.</div>';
+    return;
+  }
+  const events = (securityDashboardState?.events || []).filter((event) => securityEventFilter === "all" || event.category === securityEventFilter);
+  if (!events.length) {
+    container.innerHTML = '<div class="security-empty-state">No matching security events reported.</div>';
+    return;
+  }
+  container.innerHTML = events.map((event) => `
+    <details class="security-list-item">
+      <summary class="security-card-row">
+        <div>
+          <strong>${escapeHtml(event.type || "security.event")}</strong>
+          <p>${escapeHtml(formatSecurityTime(event.timestamp))} · ${escapeHtml(event.actor?.username || "System")} · ${escapeHtml(event.device || "This device")}</p>
+        </div>
+        ${createSecurityBadge(event.result || "ok", event.result || "ok")}
+      </summary>
+      <pre class="security-event-meta">${escapeHtml(JSON.stringify(event.details || {}, null, 2))}</pre>
+    </details>
+  `).join("");
 }
 
 async function refreshSecurityState() {
@@ -14311,9 +14525,136 @@ async function refreshSecurityState() {
   } catch {
     securityState = { setupRequired: false, authenticated: false, user: null };
   }
+  try {
+    if (desktopApiState.api.security.getDashboard && (securityState.authenticated || securityState.accountAuthenticated)) {
+      securityDashboardState = await desktopApiState.api.security.getDashboard();
+    } else {
+      securityDashboardState = null;
+    }
+  } catch (error) {
+    securityDashboardState = null;
+    console.warn("[Security] Dashboard unavailable.", normalizeIpcErrorMessage(error, "Security dashboard unavailable."));
+  }
   renderSecurityState();
   if (isOwnerWorkspaceAuthorized() && (!ownerWorkspaceState.pages || ownerWorkspaceState.pages.length === 0)) {
     refreshOwnerWorkspace().catch(() => {});
+  }
+}
+
+function createSecurityConfirmation({ title, message, phrase = "", confirmLabel = "Confirm" } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "app-modal-backdrop";
+    overlay.innerHTML = `
+      <section class="app-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || "Confirm action")}">
+        <button class="app-modal__close" type="button" data-confirm-cancel aria-label="Close">×</button>
+        <div class="app-modal__header">
+          <p class="eyebrow">Security Confirmation</p>
+          <h2>${escapeHtml(title || "Confirm action")}</h2>
+          <p>${escapeHtml(message || "Confirm this security action.")}</p>
+        </div>
+        ${phrase ? `<label class="settings-field"><span>Type ${escapeHtml(phrase)} to confirm</span><input type="text" data-confirm-phrase autocomplete="off"></label>` : ""}
+        <div class="settings-actions">
+          <button class="inline-action inline-action--primary" type="button" data-confirm-ok>${escapeHtml(confirmLabel)}</button>
+          <button class="inline-action" type="button" data-confirm-cancel>Cancel</button>
+        </div>
+      </section>
+    `;
+    const close = (value) => {
+      document.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      resolve(value);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") close(null);
+    };
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay || event.target.closest("[data-confirm-cancel]")) close(null);
+      if (event.target.closest("[data-confirm-ok]")) {
+        const typed = overlay.querySelector("[data-confirm-phrase]")?.value || "";
+        if (phrase && typed !== phrase) {
+          showToast(`Type ${phrase} to confirm.`);
+          return;
+        }
+        close(phrase || true);
+      }
+    });
+    document.addEventListener("keydown", onKeyDown);
+    document.body.appendChild(overlay);
+    overlay.querySelector("[data-confirm-phrase]")?.focus();
+    overlay.querySelector("[data-confirm-ok]")?.focus();
+  });
+}
+
+function createSecurityTextPrompt({ title, message, label = "Value", confirmLabel = "Save" } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "app-modal-backdrop";
+    overlay.innerHTML = `
+      <section class="app-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || "Enter value")}">
+        <button class="app-modal__close" type="button" data-prompt-cancel aria-label="Close">×</button>
+        <div class="app-modal__header">
+          <p class="eyebrow">Security</p>
+          <h2>${escapeHtml(title || "Enter value")}</h2>
+          <p>${escapeHtml(message || "")}</p>
+        </div>
+        <label class="settings-field"><span>${escapeHtml(label)}</span><input type="text" data-prompt-value autocomplete="off"></label>
+        <div class="settings-actions">
+          <button class="inline-action inline-action--primary" type="button" data-prompt-ok>${escapeHtml(confirmLabel)}</button>
+          <button class="inline-action" type="button" data-prompt-cancel>Cancel</button>
+        </div>
+      </section>
+    `;
+    const close = (value) => {
+      document.removeEventListener("keydown", onKeyDown);
+      overlay.remove();
+      resolve(value);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") close(null);
+      if (event.key === "Enter" && event.target?.matches?.("[data-prompt-value]")) {
+        close(event.target.value.trim() || null);
+      }
+    };
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay || event.target.closest("[data-prompt-cancel]")) close(null);
+      if (event.target.closest("[data-prompt-ok]")) close(overlay.querySelector("[data-prompt-value]")?.value.trim() || null);
+    });
+    document.addEventListener("keydown", onKeyDown);
+    document.body.appendChild(overlay);
+    overlay.querySelector("[data-prompt-value]")?.focus();
+  });
+}
+
+async function runSecurityAction(action, payload = {}) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasSecurity) return;
+  try {
+    const api = desktopApiState.api.security;
+    let result = null;
+    if (action === "revoke-session") result = await api.revokeSession(payload.sessionId);
+    if (action === "revoke-other-sessions") result = await api.revokeOtherSessions();
+    if (action === "remove-device") result = await api.removeTrustedDevice(payload.deviceId);
+    if (action === "rename-device") result = await api.renameTrustedDevice(payload.deviceId, payload.name);
+    if (action === "save-remote-access") result = await api.updateRemoteAccess(payload);
+    if (action === "disable-remote-access") result = await api.disableRemoteAccess();
+    if (action === "rotate-agent-token") result = await api.rotateAgentToken();
+    if (action === "generate-agent-token") result = await api.generateReplacementAgentToken();
+    if (action === "revoke-agent-token") result = await api.revokeAgentToken();
+    if (action === "save-session-settings") result = await api.updateSessionSettings(payload);
+    if (action === "lock-owner-workspace") result = await api.lockOwnerWorkspace();
+    if (action === "emergency") result = await api.emergencyAction(payload);
+    if (result?.overview || result?.sessions || result?.trustedDevices) {
+      securityDashboardState = result;
+    }
+    if (action === "lock-owner-workspace") {
+      ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+      setOwnerWorkspaceNavVisible(false);
+    }
+    await refreshSecurityState();
+    showToast("Security action completed.", "success");
+  } catch (error) {
+    showToast(normalizeIpcErrorMessage(error, "Security action failed."));
   }
 }
 
@@ -16249,8 +16590,106 @@ securityForm?.addEventListener("submit", submitSecurityForm);
 accountPasswordForm?.addEventListener("submit", loginAnxOsAccountWithPassword);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
-document.querySelector('[data-security-action="rotate-agent-token"]')?.addEventListener("click", rotateAgentTokenFromSettings);
 document.querySelector('[data-security-action="enable-remote-control"]')?.addEventListener("click", showRemoteControlSetup);
+document.querySelector('[data-page="security"]')?.addEventListener("click", async (event) => {
+  const revokeSessionButton = event.target.closest("[data-security-revoke-session]");
+  if (revokeSessionButton) {
+    const ok = await createSecurityConfirmation({
+      title: "Revoke Session",
+      message: "This will revoke the selected remembered session.",
+      confirmLabel: "Revoke",
+    });
+    if (ok) await runSecurityAction("revoke-session", { sessionId: revokeSessionButton.dataset.securityRevokeSession });
+    return;
+  }
+  const removeDeviceButton = event.target.closest("[data-security-remove-device]");
+  if (removeDeviceButton) {
+    const ok = await createSecurityConfirmation({
+      title: "Remove Trusted Device",
+      message: "This device will no longer be trusted for security decisions.",
+      confirmLabel: "Remove Trust",
+    });
+    if (ok) await runSecurityAction("remove-device", { deviceId: removeDeviceButton.dataset.securityRemoveDevice });
+    return;
+  }
+  const renameDeviceButton = event.target.closest("[data-security-rename-device]");
+  if (renameDeviceButton) {
+    const name = await createSecurityTextPrompt({
+      title: "Rename Trusted Device",
+      message: "Choose a clear local name for this trusted device.",
+      label: "Device name",
+      confirmLabel: "Rename",
+    });
+    if (name) await runSecurityAction("rename-device", { deviceId: renameDeviceButton.dataset.securityRenameDevice, name });
+    return;
+  }
+  const filterButton = event.target.closest("[data-security-event-filter]");
+  if (filterButton) {
+    securityEventFilter = filterButton.dataset.securityEventFilter || "all";
+    document.querySelectorAll("[data-security-event-filter]").forEach((button) => button.classList.toggle("is-active", button === filterButton));
+    renderSecurityEvents();
+    return;
+  }
+  const emergencyButton = event.target.closest("[data-security-emergency]");
+  if (emergencyButton) {
+    const confirmation = await createSecurityConfirmation({
+      title: "Emergency Security Action",
+      message: "This is a high-impact action. It cannot expose secrets, but it may sign out sessions or remove trust.",
+      phrase: "SECURE ANXOS",
+      confirmLabel: "Run Action",
+    });
+    if (confirmation) await runSecurityAction("emergency", { action: emergencyButton.dataset.securityEmergency, confirmation });
+    return;
+  }
+  const actionButton = event.target.closest("[data-security-action]");
+  if (!actionButton) return;
+  const action = actionButton.dataset.securityAction;
+  if (action === "logout" || action === "logout-all-sessions" || action === "enable-remote-control") return;
+  if (action === "rotate-agent-token") {
+    const ok = await createSecurityConfirmation({ title: "Rotate Agent Token", message: "Restart the agent and desktop app after rotation.", confirmLabel: "Rotate" });
+    if (ok) await runSecurityAction("rotate-agent-token");
+  } else if (action === "generate-agent-token") {
+    const ok = await createSecurityConfirmation({ title: "Generate Replacement Token", message: "The existing token will be replaced. Restart the agent and desktop app afterward.", confirmLabel: "Generate" });
+    if (ok) await runSecurityAction("generate-agent-token");
+  } else if (action === "revoke-agent-token") {
+    const ok = await createSecurityConfirmation({ title: "Revoke Agent Token", message: "Protected remote-agent routes will stop working until a replacement token is configured.", confirmLabel: "Revoke" });
+    if (ok) await runSecurityAction("revoke-agent-token");
+  } else if (action === "revoke-other-sessions") {
+    const ok = await createSecurityConfirmation({ title: "Revoke Other Sessions", message: "Other remembered sessions will be signed out.", confirmLabel: "Revoke" });
+    if (ok) await runSecurityAction("revoke-other-sessions");
+  } else if (action === "save-remote-access") {
+    await runSecurityAction("save-remote-access", {
+      requireAuthenticatedAccount: document.querySelector('[data-security-remote-toggle="account"]')?.checked === true,
+      requireTrustedDevice: document.querySelector('[data-security-remote-toggle="trusted"]')?.checked === true,
+      autoDisableMs: 0,
+    });
+  } else if (action === "copy-remote-details") {
+    await copyText(securityDashboardState?.remoteAccess?.address || "");
+    showToast("Connection details copied.");
+  } else if (action === "disable-remote-access") {
+    const ok = await createSecurityConfirmation({ title: "Disable Remote Access", message: "AnxOS will switch this desktop back to local mode. Firewall rules are not changed.", confirmLabel: "Disable" });
+    if (ok) await runSecurityAction("disable-remote-access");
+  } else if (action === "save-session-settings") {
+    const ok = await createSecurityConfirmation({ title: "Update Session Security", message: "Session security changes affect sensitive actions.", confirmLabel: "Save" });
+    if (ok) await runSecurityAction("save-session-settings", {
+      inactiveSessionExpirationMs: Number.parseInt(document.querySelector("[data-security-session-timeout]")?.value || "0", 10),
+      lockOwnerWorkspaceAfterInactivity: document.querySelector('[data-security-session-toggle="ownerLock"]')?.checked !== false,
+      requireReauthForSensitiveActions: document.querySelector('[data-security-session-toggle="reauth"]')?.checked !== false,
+    });
+  } else if (action === "refresh-events") {
+    securityEventsCleared = false;
+    await refreshSecurityState();
+  } else if (action === "copy-events") {
+    await copyText(JSON.stringify(securityDashboardState?.events || [], null, 2));
+    showToast("Sanitized security events copied.");
+  } else if (action === "open-audit-folder") {
+    await getDesktopApiState().api.security.openAuditFolder?.();
+    showToast("Audit log folder opened.");
+  } else if (action === "clear-event-display") {
+    securityEventsCleared = true;
+    renderSecurityEvents();
+  }
+});
 accountButtons.forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.accountAction;

@@ -2308,7 +2308,7 @@
             </div>
           </header>
 
-          <div class="settings-shell settings-shell--single">
+          <div class="settings-shell settings-shell--security-control">
             <section class="settings-section settings-section--account">
               <div class="settings-section__header">
                 <div>
@@ -2378,6 +2378,37 @@
               </div>
             </section>
 
+            <section class="settings-section settings-section--security-overview">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Security Overview</h2>
+                  <p>Live summary of account, device, session, remote access, and token state.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-security-overview-status>Loading</span>
+              </div>
+              <div class="security-summary-grid" data-security-overview>
+                <div><span>Account</span><strong>Loading</strong></div>
+                <div><span>Device trust</span><strong>Loading</strong></div>
+                <div><span>Sessions</span><strong>Loading</strong></div>
+                <div><span>Remote access</span><strong>Loading</strong></div>
+                <div><span>Agent token</span><strong>Loading</strong></div>
+                <div><span>Warnings</span><strong>Loading</strong></div>
+              </div>
+              <p class="settings-note" data-security-last-event>Last event: Loading</p>
+            </section>
+
+            <section class="settings-section settings-section--security-recommendations">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Security Recommendations</h2>
+                  <p>Only supported recommendations are shown. Unsupported data is labeled clearly.</p>
+                </div>
+              </div>
+              <div class="security-list" data-security-recommendations>
+                <div class="security-empty-state">Loading recommendations...</div>
+              </div>
+            </section>
+
             <section class="settings-section settings-section--security">
               <div class="settings-section__header">
                 <div>
@@ -2403,6 +2434,211 @@
                 <button class="inline-action" type="button" data-security-action="logout-all-sessions">Log out of all sessions</button>
                 <span class="settings-inline-status" data-security-settings-message>Security state unavailable.</span>
               </div>
+            </section>
+
+            <section class="settings-section settings-section--security-sessions">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Active Sessions</h2>
+                  <p>Known local and remembered sessions. Tokens are never displayed.</p>
+                </div>
+                <button class="inline-action" type="button" data-security-action="revoke-other-sessions">Revoke Other Sessions</button>
+              </div>
+              <div class="security-table-wrap">
+                <table class="security-table">
+                  <thead>
+                    <tr>
+                      <th>Device</th>
+                      <th>Last active</th>
+                      <th>Created</th>
+                      <th>Trust</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody data-security-sessions>
+                    <tr><td colspan="5">Loading sessions...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-devices">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Trusted Devices</h2>
+                  <p>Device trust is persisted by the main process, not renderer storage.</p>
+                </div>
+              </div>
+              <div class="security-list" data-security-trusted-devices>
+                <div class="security-empty-state">Loading trusted devices...</div>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-remote">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Remote Access</h2>
+                  <p>Review exposure and require account or trusted-device checks where supported.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-security-remote-status>Loading</span>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Listening address</span>
+                  <input type="text" data-security-remote-field="address" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Network scope</span>
+                  <input type="text" data-security-remote-field="scope" readonly>
+                </label>
+                <label class="settings-check settings-check--toggle">
+                  <input type="checkbox" data-security-remote-toggle="account">
+                  <span>Require authenticated account</span>
+                </label>
+                <label class="settings-check settings-check--toggle">
+                  <input type="checkbox" data-security-remote-toggle="trusted">
+                  <span>Require trusted device</span>
+                </label>
+              </div>
+              <p class="settings-note" data-security-remote-warning>Remote access state unavailable.</p>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-security-action="save-remote-access">Save Remote Controls</button>
+                <button class="inline-action" type="button" data-security-action="copy-remote-details">Copy Connection Details</button>
+                <button class="inline-action" type="button" data-security-action="disable-remote-access">Disable Remote Access</button>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-token">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Agent Token Management</h2>
+                  <p>Existing stored tokens are never shown. Only status and fingerprints are displayed.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-security-token-status>Loading</span>
+              </div>
+              <div class="security-summary-grid" data-security-token-details>
+                <div><span>Fingerprint</span><strong>Loading</strong></div>
+                <div><span>Created</span><strong>Loading</strong></div>
+                <div><span>Last rotated</span><strong>Loading</strong></div>
+                <div><span>Last used</span><strong>Loading</strong></div>
+                <div><span>Scope</span><strong>Loading</strong></div>
+                <div><span>Associated agent</span><strong>Loading</strong></div>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-security-action="rotate-agent-token">Rotate Token</button>
+                <button class="inline-action" type="button" data-security-action="generate-agent-token">Generate Replacement</button>
+                <button class="inline-action" type="button" data-security-action="revoke-agent-token">Revoke Token</button>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-auth">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Authentication Security</h2>
+                  <p>Account security controls open the account-management website when supported.</p>
+                </div>
+              </div>
+              <div class="settings-grid" data-security-authentication>
+                <label class="settings-field">
+                  <span>Email verification</span>
+                  <input type="text" data-security-auth-field="email" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Two-factor authentication</span>
+                  <input type="text" data-security-auth-field="twoFactor" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Password changed</span>
+                  <input type="text" data-security-auth-field="passwordChanged" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Failed sign-ins</span>
+                  <input type="text" data-security-auth-field="failed" readonly>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-account-action="open">Manage 2FA</button>
+                <button class="inline-action" type="button" data-account-action="open">Change Password</button>
+                <button class="inline-action" type="button" data-account-action="open">Recovery Options</button>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-expiration">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Automatic Session Expiration</h2>
+                  <p>Controls are persisted in trusted security settings and enforced by main-process checks where supported.</p>
+                </div>
+              </div>
+              <div class="settings-grid">
+                <label class="settings-field">
+                  <span>Expire inactive sessions after</span>
+                  <select data-security-session-timeout>
+                    <option value="0">Never</option>
+                    <option value="86400000">1 day</option>
+                    <option value="604800000">7 days</option>
+                    <option value="2592000000">30 days</option>
+                    <option value="7776000000">90 days</option>
+                  </select>
+                </label>
+                <label class="settings-check settings-check--toggle">
+                  <input type="checkbox" data-security-session-toggle="ownerLock">
+                  <span>Lock Owner Workspace after inactivity</span>
+                </label>
+                <label class="settings-check settings-check--toggle">
+                  <input type="checkbox" data-security-session-toggle="reauth">
+                  <span>Require reauthentication for sensitive actions</span>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-security-action="save-session-settings">Save Session Settings</button>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-events">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Security Event Log</h2>
+                  <p>Recent audit events are shown with redacted details. Clearing the display does not delete the real audit log.</p>
+                </div>
+              </div>
+              <div class="security-filter-row" data-security-event-filters>
+                <button class="inline-action is-active" type="button" data-security-event-filter="all">All</button>
+                <button class="inline-action" type="button" data-security-event-filter="authentication">Authentication</button>
+                <button class="inline-action" type="button" data-security-event-filter="sessions">Sessions</button>
+                <button class="inline-action" type="button" data-security-event-filter="tokens">Tokens</button>
+                <button class="inline-action" type="button" data-security-event-filter="remote">Remote access</button>
+                <button class="inline-action" type="button" data-security-event-filter="owner">Owner actions</button>
+                <button class="inline-action" type="button" data-security-event-filter="warnings">Warnings</button>
+              </div>
+              <div class="security-list security-list--events" data-security-events>
+                <div class="security-empty-state">Loading security events...</div>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-security-action="refresh-events">Refresh</button>
+                <button class="inline-action" type="button" data-security-action="copy-events">Copy Sanitized Events</button>
+                <button class="inline-action" type="button" data-security-action="open-audit-folder">Open Audit Log Folder</button>
+                <button class="inline-action" type="button" data-security-action="clear-event-display">Clear Local Display</button>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--security-danger">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Danger Zone</h2>
+                  <p>High-impact security actions require typed confirmation.</p>
+                </div>
+                <span class="status-pill status-pill--planned">Confirmation Required</span>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-security-emergency="sign-out-all">Sign out all devices</button>
+                <button class="inline-action" type="button" data-security-emergency="revoke-agent-tokens">Revoke all agent tokens</button>
+                <button class="inline-action" type="button" data-security-emergency="remove-trusted-devices">Remove all trusted devices</button>
+                <button class="inline-action" type="button" data-security-emergency="disable-remote-access">Disable all remote access</button>
+                <button class="inline-action" type="button" data-security-emergency="lock-owner-workspace">Lock Owner Workspace</button>
+                <button class="inline-action" type="button" data-security-emergency="reset-local-security">Reset local security state</button>
+              </div>
+              <p class="settings-note">Type <strong>SECURE ANXOS</strong> in the confirmation dialog for emergency actions.</p>
             </section>
           </div>
         </section>

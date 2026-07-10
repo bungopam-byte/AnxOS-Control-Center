@@ -3,43 +3,43 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   appName: "AnxOS-Control-Center",
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
   logoPath: "assets/anxos-logo.jpg",
-  latestVersion: "1.0.36",
+  latestVersion: "1.0.37",
   releaseDate: "July 10, 2026",
-  releaseTag: "v1.0.36",
+  releaseTag: "v1.0.37",
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.36",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.37",
   downloads: {
     windows: {
       label: "Download for Windows",
-      fileName: "AnxOS-Control-Center-Setup-1.0.36.exe",
+      fileName: "AnxOS-Control-Center-Setup-1.0.37.exe",
       size: "111 MB",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.36/AnxOS-Control-Center-Setup-1.0.36.exe",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.37/AnxOS-Control-Center-Setup-1.0.37.exe",
     },
     linuxDeb: {
       label: "Linux .deb",
-      fileName: "AnxOS-Control-Center-1.0.36.deb",
+      fileName: "AnxOS-Control-Center-1.0.37.deb",
       size: "108 MB",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.36/AnxOS-Control-Center-1.0.36.deb",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.37/AnxOS-Control-Center-1.0.37.deb",
     },
     linuxAppImage: {
       label: "Linux AppImage",
-      fileName: "AnxOS-Control-Center-1.0.36.AppImage",
+      fileName: "AnxOS-Control-Center-1.0.37.AppImage",
       size: "138 MB",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.36/AnxOS-Control-Center-1.0.36.AppImage",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.37/AnxOS-Control-Center-1.0.37.AppImage",
     },
   },
   releaseNotes: [
       {
-          "version": "1.0.36",
-          "tag": "v1.0.36",
+          "version": "1.0.37",
+          "tag": "v1.0.37",
           "date": "July 10, 2026",
           "datetime": "2026-07-10",
-          "title": "AnxOS v1.0.36",
+          "title": "AnxOS v1.0.37",
           "summary": "Latest AnxOS-Control-Center release.",
           "changes": [
               "Updated application build, website metadata, and downloadable release assets."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.36"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.37"
       },
       {
           "version": "1.0.19",

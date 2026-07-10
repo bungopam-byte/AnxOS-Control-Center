@@ -203,7 +203,7 @@ async function routeRequest(request, url) {
   }
 
   if (pathname === "/api/v1/health") {
-    return handleHealth();
+    return handleHealth(config);
   }
 
   if (pathname === "/api/v1/stats" || pathname === "/api/stats" || pathname === "/api/v1/system/summary") {

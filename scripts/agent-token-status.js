@@ -20,8 +20,15 @@ function requestStatus(url, headers = {}) {
     const parsed = new URL(url);
     const client = parsed.protocol === "https:" ? https : http;
     const request = client.request(parsed, { method: "GET", headers, timeout: 3000 }, (response) => {
-      response.resume();
-      response.on("end", () => resolve(response.statusCode));
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        let body = null;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {}
+        resolve({ statusCode: response.statusCode, body });
+      });
     });
     request.on("error", () => resolve(null));
     request.on("timeout", () => {
@@ -34,15 +41,16 @@ function requestStatus(url, headers = {}) {
 
 async function getLiveAgentStatus() {
   const baseUrl = String(config.agentUrl || "http://127.0.0.1:47131").replace(/\/+$/, "");
-  const healthStatus = await requestStatus(`${baseUrl}/api/v1/health`);
+  const health = await requestStatus(`${baseUrl}/api/v1/health`);
   const protectedStatus = status.token
     ? await requestStatus(`${baseUrl}/api/v1/stats`, { Authorization: `Bearer ${status.token}` })
     : null;
   return {
-    reachable: healthStatus !== null,
-    healthStatus,
-    tokenMatches: protectedStatus === 200,
-    protectedStatus,
+    reachable: health !== null,
+    healthStatus: health?.statusCode || null,
+    runningFingerprint: health?.body?.tokenFingerprint || null,
+    tokenMatches: protectedStatus?.statusCode === 200,
+    protectedStatus: protectedStatus?.statusCode || null,
   };
 }
 
@@ -57,6 +65,7 @@ getLiveAgentStatus().then((live) => {
   console.log(`environmentTokenMatches: ${status.environmentTokenMatches === null ? "not set" : status.environmentTokenMatches ? "yes" : "no"}`);
   console.log(`environmentTokenIgnored: ${status.environmentTokenIgnored ? "yes" : "no"}`);
   console.log(`runningAgentReachable: ${live.reachable ? "yes" : "no"}`);
+  console.log(`runningAgentFingerprint: ${live.runningFingerprint || "not reported"}`);
   console.log(`runningAgentTokenMatches: ${live.reachable ? live.tokenMatches ? "yes" : "no" : "not checked"}`);
   if (status.weakStoredTokenReplaced || status.weakEnvironmentTokenIgnored) {
     console.log("weakTokenHandling: weak/default token ignored or replaced");

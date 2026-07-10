@@ -13,6 +13,7 @@ const {
   rotateSharedAgentToken,
 } = require("../src/shared/agentTokenStore");
 const { isAuthorized } = require("../agent/src/auth");
+const { handleHealth } = require("../agent/src/routes/health");
 
 function request(headers = {}) {
   return { headers };
@@ -25,6 +26,10 @@ function auth(headers, config = { token: "shared-token" }, pathname = "/api/v1/s
 function main() {
   const health = auth({}, { token: "" }, "/api/v1/health");
   assert.strictEqual(health.ok, true, "Public health endpoint should work without authentication.");
+  return Promise.resolve(handleHealth({ token: "shared-token", tokenStatus: { fingerprint: "abc123", configPath: "/tmp/agent.json" } })).then((healthResponse) => {
+    assert.strictEqual(healthResponse.body.tokenFingerprint, "abc123", "Health endpoint should expose running token fingerprint.");
+    assert.strictEqual(healthResponse.body.tokenConfigured, true, "Health endpoint should expose safe token configured status.");
+  }).then(() => {
 
   const missing = auth({}, { token: "" });
   assert.strictEqual(missing.ok, false, "Missing server token should fail protected routes.");
@@ -87,7 +92,11 @@ function main() {
   });
   assert.strictEqual(formOverrideConfig.token, imported.agentToken, "Blank Settings form token should preserve the saved paired token.");
 
-  console.log("Agent token smoke checks passed.");
+    console.log("Agent token smoke checks passed.");
+  });
 }
 
-main();
+main()?.catch?.((error) => {
+  console.error(error);
+  process.exit(1);
+});

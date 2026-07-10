@@ -809,19 +809,25 @@ async function testConnection(configOverride = null) {
   try {
     const payload = await getHealth(configOverride);
     const connected = isHealthyPayload(payload);
+    const localFingerprint = config.token ? tokenFingerprint(config.token) : null;
+    const remoteFingerprint = payload?.tokenFingerprint || null;
     if (connected) {
       try {
         await getSystemStats(configOverride);
       } catch (protectedError) {
+        const mismatchDetail = protectedError?.code === "UNAUTHORIZED" && remoteFingerprint
+          ? ` Desktop fingerprint ${localFingerprint || "not configured"} does not match running Agent fingerprint ${remoteFingerprint}.`
+          : "";
         return {
           connected: false,
           status: protectedError?.code === "UNAUTHORIZED" ? "token-mismatch" : "disconnected",
-          message: protectedError?.message || "Agent protected endpoint check failed.",
+          message: `${protectedError?.message || "Agent protected endpoint check failed."}${mismatchDetail}`,
           checkedAt,
           url: config.url,
           health: payload,
           code: protectedError?.code || null,
-          fingerprint: config.token ? tokenFingerprint(config.token) : null,
+          fingerprint: localFingerprint,
+          remoteFingerprint,
           repairAvailable: protectedError?.code === "UNAUTHORIZED",
         };
       }
@@ -834,7 +840,8 @@ async function testConnection(configOverride = null) {
       checkedAt,
       url: config.url,
       health: payload,
-      fingerprint: config.token ? tokenFingerprint(config.token) : null,
+      fingerprint: localFingerprint,
+      remoteFingerprint,
     };
   } catch (error) {
     return {
@@ -846,6 +853,7 @@ async function testConnection(configOverride = null) {
       health: null,
       code: error?.code || null,
       fingerprint: config.token ? tokenFingerprint(config.token) : null,
+      remoteFingerprint: null,
       repairAvailable: error?.code === "UNAUTHORIZED",
     };
   }

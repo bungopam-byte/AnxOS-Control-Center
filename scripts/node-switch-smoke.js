@@ -17,11 +17,19 @@ function includesAll(source, snippets, label) {
   }
 }
 
+function compact(source) {
+  return source.replace(/\s+/g, " ");
+}
+
 includesAll(appSource, [
   "let selectedNodeContextVersion = 0;",
   "function getNodeRequestContext",
   "function isNodeRequestCurrent",
   "function getNodeScopedPayload",
+  "function isNodeSwitching",
+  "function shouldSkipNodeScopedPolling",
+  "function createNodeActionContext",
+  "function isNodeActionStillCurrent",
   "function resetNodeScopedRendererState",
   "async function reloadActiveNodeData",
   "selectedNodeContextVersion += 1;",
@@ -43,6 +51,29 @@ includesAll(appSource, [
   "requestInstanceId !== selectedInstanceId",
   "getActiveConsoleInstance()?.id !== requestInstanceId",
 ], "Stale response protection");
+
+includesAll(compact(appSource), [
+  "if (isNodeRequestCurrent(requestContext)) { markStartupReady(\"system\"); systemRequestInFlight = false;",
+  "if (isNodeRequestCurrent(requestContext)) { dockerRequestInFlight = false;",
+  "if (isNodeRequestCurrent(requestContext)) { instancesRequestInFlight = false;",
+  "if (isNodeRequestCurrent(requestContext)) { backupRequestInFlight = false;",
+], "Current-context request finalizers");
+
+includesAll(appSource, [
+  "if (!shouldSkipNodeScopedPolling()) refreshDashboard();",
+  "if (!shouldSkipNodeScopedPolling()) refreshAmpDashboard();",
+  "if (!shouldSkipNodeScopedPolling()) refreshPlayitStatus();",
+  "if (shouldSkipNodeScopedPolling()) return;",
+], "Node-scoped polling");
+
+includesAll(appSource, [
+  "const requestContext = createNodeActionContext(\"backup-create\");",
+  "const requestContext = createNodeActionContext(`docker-${actionName}`);",
+  "const requestContext = createNodeActionContext(\"instance-create\");",
+  "const requestContext = createNodeActionContext(`instance-${actionName}`);",
+  "const requestContext = createNodeActionContext(\"console-command\");",
+  "if (!isNodeActionStillCurrent(requestContext)) return;",
+], "Node action targeting");
 
 includesAll(preloadSource, [
   "system: {\n    getSnapshot: (payload = {})",

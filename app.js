@@ -3687,10 +3687,10 @@ function canRestartDockerContainer(container) {
 function updateDockerActionButtons() {
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
   const hasDocker = getDesktopApiState().hasDocker && latestDockerSnapshot?.installed && latestDockerSnapshot?.daemonRunning;
-  const disableManagedActions = dockerActionRequestInFlight || !selectedContainer || !hasDocker;
+  const disableManagedActions = isNodeSwitching() || dockerActionRequestInFlight || !selectedContainer || !hasDocker;
 
   if (dockerRefreshButton) {
-    dockerRefreshButton.disabled = dockerRequestInFlight || dockerActionRequestInFlight;
+    dockerRefreshButton.disabled = isNodeSwitching() || dockerRequestInFlight || dockerActionRequestInFlight;
   }
 
   if (dockerStartButton) {
@@ -5137,6 +5137,7 @@ function renderInstanceNetworkSummary(instance) {
 
 async function updateInstancePorts(ports) {
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-update-ports");
   const uniquePorts = [...new Set(ports.map((port) => Number.parseInt(port, 10)).filter((port) => Number.isFinite(port) && port > 0 && port <= 65535))];
 
   if (!selectedInstance) {
@@ -5144,7 +5145,8 @@ async function updateInstancePorts(ports) {
   }
 
   try {
-    await getDesktopApiState().api.instances.update(selectedInstance.id, { ports: uniquePorts }, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await getDesktopApiState().api.instances.update(selectedInstance.id, { ports: uniquePorts }, getNodeScopedPayload(requestContext));
     showToast("Ports updated.");
     await refreshInstances();
   } catch (error) {
@@ -5161,6 +5163,7 @@ async function saveInstanceConfiguration(event) {
   event?.preventDefault();
   const selectedInstance = findInstance();
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("instance-save-config");
 
   if (!selectedInstance || !desktopApiState.hasInstances) {
     return;
@@ -5170,10 +5173,12 @@ async function saveInstanceConfiguration(event) {
   syncInstanceConfigDirtyState();
 
   try {
-    await desktopApiState.api.instances.update(selectedInstance.id, collectInstanceConfigPayload(), { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await desktopApiState.api.instances.update(selectedInstance.id, collectInstanceConfigPayload(), getNodeScopedPayload(requestContext));
 
     if (isMinecraftInstance(selectedInstance)) {
-      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstance.id, collectMinecraftProperties(), { nodeId: getSelectedNodeId() });
+      if (!isNodeActionStillCurrent(requestContext)) return;
+      await desktopApiState.api.instances.saveMinecraftProperties(selectedInstance.id, collectMinecraftProperties(), getNodeScopedPayload(requestContext));
     }
 
     showToast("Instance configuration saved.");
@@ -5330,13 +5335,15 @@ async function sendInstanceConsoleCommand(event) {
   event?.preventDefault();
   const command = instanceConsoleCommandInput?.value?.trim() || "";
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-console-command");
 
   if (!command || !selectedInstance) {
     return;
   }
 
   try {
-    await getDesktopApiState().api.instances.sendCommand(selectedInstance.id, command, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await getDesktopApiState().api.instances.sendCommand(selectedInstance.id, command, getNodeScopedPayload(requestContext));
     instanceConsoleCommandInput.value = "";
     await refreshInstanceLogs();
   } catch (error) {
@@ -5632,13 +5639,15 @@ function syncInstanceFileDirtyState() {
 
 async function saveInstanceTextFile() {
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-save-file");
 
   if (!selectedInstance || !openedInstanceFilePath || !instanceFileEditor) {
     return;
   }
 
   try {
-    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, openedInstanceFilePath, instanceFileEditor.value, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await getDesktopApiState().api.instances.writeFile(selectedInstance.id, openedInstanceFilePath, instanceFileEditor.value, getNodeScopedPayload(requestContext));
     openedInstanceFileSavedContent = instanceFileEditor.value;
     syncInstanceFileDirtyState();
     showToast("File saved.");
@@ -5690,7 +5699,7 @@ function buildArgsWithJar(instance, jarPath) {
   return ["-jar", jarPath, ...args.filter((arg) => arg !== jarPath)];
 }
 
-async function findExistingServerJar(instance, preferredJar = "") {
+async function findExistingServerJar(instance, preferredJar = "", context = getNodeRequestContext("jar-find")) {
   const candidates = [
     preferredJar,
     parseJarFromArgs(instance),
@@ -5701,7 +5710,8 @@ async function findExistingServerJar(instance, preferredJar = "") {
   ].map((candidate) => String(candidate || "").trim()).filter(Boolean);
   for (const candidate of [...new Set(candidates)]) {
     try {
-      await getDesktopApiState().api.instances.readFile(instance.id, candidate, { nodeId: getSelectedNodeId() });
+      if (!isNodeRequestCurrent(context)) return "";
+      await getDesktopApiState().api.instances.readFile(instance.id, candidate, getNodeScopedPayload(context));
       return candidate;
     } catch (error) {
       if (getAgentErrorCode(error) !== "PATH_NOT_FOUND") {
@@ -5712,14 +5722,15 @@ async function findExistingServerJar(instance, preferredJar = "") {
   return "";
 }
 
-async function repairInstanceServerJar(instance, jarPath) {
+async function repairInstanceServerJar(instance, jarPath, context = getNodeRequestContext("jar-repair")) {
+  if (!isNodeRequestCurrent(context)) return;
   await getDesktopApiState().api.instances.update(instance.id, {
     serverJar: jarPath,
     serverJarPath: jarPath,
     startJar: jarPath,
     jar: jarPath,
     args: buildArgsWithJar(instance, jarPath),
-  }, { nodeId: getSelectedNodeId() });
+  }, getNodeScopedPayload(context));
   const index = instances.findIndex((entry) => entry.id === instance.id);
   if (index >= 0) {
     instances[index] = {
@@ -5757,16 +5768,16 @@ async function focusMissingJarInFiles(instance, jarPath) {
   setMissingInstanceFileHint(jarPath);
 }
 
-async function verifyJavaJarBeforeLaunch(instance) {
+async function verifyJavaJarBeforeLaunch(instance, context = getNodeRequestContext("jar-preflight")) {
   if (!isJavaJarInstance(instance)) {
     return true;
   }
 
   const jarPath = getConfiguredJarPath(instance);
   if (!jarPath) {
-    const repairedJar = await findExistingServerJar(instance);
+    const repairedJar = await findExistingServerJar(instance, "", context);
     if (repairedJar) {
-      await repairInstanceServerJar(instance, repairedJar);
+      await repairInstanceServerJar(instance, repairedJar, context);
       return true;
     }
     window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
@@ -5774,7 +5785,8 @@ async function verifyJavaJarBeforeLaunch(instance) {
   }
 
   try {
-    await getDesktopApiState().api.instances.readFile(instance.id, jarPath, { nodeId: getSelectedNodeId() });
+    if (!isNodeRequestCurrent(context)) return false;
+    await getDesktopApiState().api.instances.readFile(instance.id, jarPath, getNodeScopedPayload(context));
     return true;
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -5783,9 +5795,9 @@ async function verifyJavaJarBeforeLaunch(instance) {
     }
 
     if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
-      const repairedJar = await findExistingServerJar(instance, jarPath);
+      const repairedJar = await findExistingServerJar(instance, jarPath, context);
       if (repairedJar) {
-        await repairInstanceServerJar(instance, repairedJar);
+        await repairInstanceServerJar(instance, repairedJar, context);
         return true;
       }
       const message = `${getFileNameFromPath(jarPath)} was not found in this instance.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`;
@@ -5804,7 +5816,7 @@ async function verifyJavaJarBeforeLaunch(instance) {
 function updateInstanceActionButtons() {
   const desktopApiState = getDesktopApiState();
   const selectedInstance = findInstance();
-  const busy = instancesRequestInFlight || instanceActionRequestInFlight;
+  const busy = isNodeSwitching() || instancesRequestInFlight || instanceActionRequestInFlight;
   const hasInstancesBridge = desktopApiState.hasInstances;
 
   instancesRefreshButtons.forEach((button) => {
@@ -8211,7 +8223,7 @@ function renderBackups() {
   renderBackupRestorePanel();
   backupActionButtons.forEach((button) => {
     const action = button.dataset.backupAction;
-    button.disabled = backupRequestInFlight || !getDesktopApiState().hasBackups || (["restore", "delete", "download"].includes(action) && !selected);
+    button.disabled = isNodeSwitching() || backupRequestInFlight || !getDesktopApiState().hasBackups || (["restore", "delete", "download"].includes(action) && !selected);
   });
 }
 
@@ -8279,13 +8291,16 @@ async function refreshBackups() {
       error: error?.message || "Backups could not be loaded.",
     };
   } finally {
-    backupRequestInFlight = false;
-    renderBackups();
+    if (isNodeRequestCurrent(requestContext)) {
+      backupRequestInFlight = false;
+      renderBackups();
+    }
   }
 }
 
 async function createBackupForInstance(instanceId = null) {
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("backup-create");
   if (!desktopApiState.hasBackups) {
     showToast("Backup service is unavailable.");
     return;
@@ -8300,8 +8315,9 @@ async function createBackupForInstance(instanceId = null) {
   backupRequestInFlight = true;
   renderBackups();
   try {
+    if (!isNodeActionStillCurrent(requestContext)) return;
     await desktopApiState.api.backups.create({
-      nodeId: getSelectedNodeId(),
+      nodeId: requestContext.nodeId,
       instanceId: targetInstanceId,
       name: `${targetInstanceId} ${type} backup`,
       type,
@@ -8320,6 +8336,7 @@ async function createBackupForInstance(instanceId = null) {
 async function restoreSelectedBackup() {
   const selected = getSelectedBackup();
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("backup-restore");
   if (!selected || !desktopApiState.hasBackups) {
     return;
   }
@@ -8327,7 +8344,9 @@ async function restoreSelectedBackup() {
     return;
   }
   try {
-    await desktopApiState.api.backups.restore({ nodeId: getSelectedNodeId(), backupId: selected.id, restart: window.confirm("Restart after restore?") });
+    const restart = window.confirm("Restart after restore?");
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await desktopApiState.api.backups.restore({ nodeId: requestContext.nodeId, backupId: selected.id, restart });
     showToast("Backup restored.");
     await refreshInstances();
     await refreshBackups();
@@ -8339,11 +8358,13 @@ async function restoreSelectedBackup() {
 async function deleteSelectedBackup() {
   const selected = getSelectedBackup();
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("backup-delete");
   if (!selected || !desktopApiState.hasBackups || !window.confirm(`Delete backup ${selected.name || selected.id}?`)) {
     return;
   }
   try {
-    await desktopApiState.api.backups.delete(selected.id, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await desktopApiState.api.backups.delete(selected.id, getNodeScopedPayload(requestContext));
     showToast("Backup deleted.");
     backupsState.selectedBackupId = null;
     await refreshBackups();
@@ -8355,11 +8376,13 @@ async function deleteSelectedBackup() {
 async function downloadSelectedBackup() {
   const selected = getSelectedBackup();
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("backup-download");
   if (!selected || !desktopApiState.hasBackups) {
     return;
   }
   try {
-    const result = await desktopApiState.api.backups.download(selected.id, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    const result = await desktopApiState.api.backups.download(selected.id, getNodeScopedPayload(requestContext));
     showToast(result?.canceled ? "Download canceled." : "Backup downloaded.");
   } catch (error) {
     showToast(error?.message || "Backup download failed.");
@@ -8368,6 +8391,7 @@ async function downloadSelectedBackup() {
 
 async function importBackupForInstance() {
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("backup-import");
   if (!desktopApiState.hasBackups) {
     return;
   }
@@ -8376,7 +8400,8 @@ async function importBackupForInstance() {
     return;
   }
   try {
-    const result = await desktopApiState.api.backups.import({ nodeId: getSelectedNodeId(), instanceId, createdBy: securityState.user?.username || "local-user" });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    const result = await desktopApiState.api.backups.import({ nodeId: requestContext.nodeId, instanceId, createdBy: securityState.user?.username || "local-user" });
     showToast(result?.canceled ? "Import canceled." : "Backup imported.");
     await refreshBackups();
   } catch (error) {
@@ -8386,6 +8411,7 @@ async function importBackupForInstance() {
 
 async function configureBackupSchedule(instanceId) {
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("backup-schedule");
   if (!desktopApiState.hasBackupSchedules || !instanceId) {
     showToast("Backup scheduling is unavailable.");
     return;
@@ -8398,8 +8424,9 @@ async function configureBackupSchedule(instanceId) {
   const maxAgeDays = window.prompt("Delete backups older than how many days?", "30") || "30";
   const type = window.confirm("Schedule world-only backups? Choose Cancel for full instance backups.") ? "world" : "full";
   try {
+    if (!isNodeActionStillCurrent(requestContext)) return;
     await desktopApiState.api.backups.saveSchedule({
-      nodeId: getSelectedNodeId(),
+      nodeId: requestContext.nodeId,
       instanceId,
       intervalHours: Number.parseInt(interval, 10),
       keepLast: Number.parseInt(keepLast, 10),
@@ -8477,6 +8504,7 @@ async function installMarketplaceTemplate(event) {
   }
 
   marketplaceInstallInFlight = true;
+  const requestContext = createNodeActionContext("marketplace-install");
   marketplaceLocalDownloadEntries = [];
   setMarketplaceManualRecoveryState(null);
   if (marketplaceInstallButton) {
@@ -8491,6 +8519,7 @@ async function installMarketplaceTemplate(event) {
   const downloadPoll = providerInstall ? null : window.setInterval(refreshMarketplaceDownloads, 1000);
 
   try {
+    if (!isNodeActionStillCurrent(requestContext)) return;
     const result = providerInstall
       ? await desktopApiState.api.marketplace.installPack({
         templateId: template.id,
@@ -8501,12 +8530,12 @@ async function installMarketplaceTemplate(event) {
         minecraftVersion: options.version === "latest" ? template.minecraftVersion || template.gameVersion || "latest" : options.version,
         loader: options.serverType || template.loader || "vanilla",
         loaderVersion: options.loaderVersion || template.loaderVersion || "",
-        nodeId: getSelectedNodeId(),
+        nodeId: requestContext.nodeId,
         options,
       })
       : await desktopApiState.api.marketplace.installTemplate({
         templateId: template.id,
-        nodeId: getSelectedNodeId(),
+        nodeId: requestContext.nodeId,
         options,
       });
     if (result?.status === "waiting-manual-download") {
@@ -8778,8 +8807,10 @@ async function refreshInstances(options = {}) {
       renderInstancesUnavailable(`Instance request failed: ${getAgentErrorMessage(error)}`);
     }
   } finally {
-    instancesRequestInFlight = false;
-    updateInstanceActionButtons();
+    if (isNodeRequestCurrent(requestContext)) {
+      instancesRequestInFlight = false;
+      updateInstanceActionButtons();
+    }
   }
 
   return getInstances();
@@ -8876,8 +8907,10 @@ async function refreshInstanceLogs(options = {}) {
       console.warn("[Instances] Silent log request failed.", error);
     }
   } finally {
-    instanceLogsRequestInFlight = false;
-    updateInstanceActionButtons();
+    if (isNodeRequestCurrent(requestContext)) {
+      instanceLogsRequestInFlight = false;
+      updateInstanceActionButtons();
+    }
   }
 }
 
@@ -8921,6 +8954,7 @@ async function createInstanceFromForm(event) {
   event?.preventDefault();
 
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext("instance-create");
 
   if (!desktopApiState.hasInstances || instanceActionRequestInFlight) {
     return;
@@ -8947,7 +8981,8 @@ async function createInstanceFromForm(event) {
       type: payload.type,
       memoryLimit: payload.memoryLimit || null,
     });
-    payload.nodeId = getSelectedNodeId();
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    payload.nodeId = requestContext.nodeId;
     const response = await desktopApiState.api.instances.create(payload);
     const instance = normalizeInstanceResponse(response);
     createdInstanceId = instance?.id || payload.id;
@@ -8977,8 +9012,10 @@ async function createInstanceFromForm(event) {
     if (payload.type === "minecraft-paper") {
       const acceptEula = document.querySelector('[data-instance-form="acceptEula"]')?.checked === true;
       if (acceptEula) {
-        await desktopApiState.api.instances.writeFile(createdInstanceId, "eula.txt", "eula=true\n", { nodeId: getSelectedNodeId() });
+        if (!isNodeActionStillCurrent(requestContext)) return;
+        await desktopApiState.api.instances.writeFile(createdInstanceId, "eula.txt", "eula=true\n", getNodeScopedPayload(requestContext));
       }
+      if (!isNodeActionStillCurrent(requestContext)) return;
       await desktopApiState.api.instances.saveMinecraftProperties(createdInstanceId, {
         "server-port": payload.ports?.[0] ? String(payload.ports[0]) : "25565",
         motd: payload.displayName || payload.id,
@@ -8994,7 +9031,7 @@ async function createInstanceFromForm(event) {
         "white-list": "false",
         "generate-structures": "true",
         "level-seed": "",
-      }, { nodeId: getSelectedNodeId() });
+      }, getNodeScopedPayload(requestContext));
     }
 
     setInstanceCreateFormVisible(false);
@@ -9042,6 +9079,7 @@ async function createInstanceFromForm(event) {
 async function runInstanceAction(actionName) {
   const selectedInstance = findInstance();
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext(`instance-${actionName}`);
 
   if (!selectedInstance || !desktopApiState.hasInstances || instanceActionRequestInFlight) {
     updateInstanceActionButtons();
@@ -9060,7 +9098,8 @@ async function runInstanceAction(actionName) {
     return;
   }
 
-  if ((actionName === "start" || actionName === "restart") && !(await verifyJavaJarBeforeLaunch(selectedInstance))) {
+  if (!isNodeActionStillCurrent(requestContext)) return;
+  if ((actionName === "start" || actionName === "restart") && !(await verifyJavaJarBeforeLaunch(selectedInstance, requestContext))) {
     return;
   }
 
@@ -9074,7 +9113,8 @@ async function runInstanceAction(actionName) {
       logInstanceLifecycle("start requested", { instanceId: targetInstanceId });
     }
 
-    const actionResult = await desktopApiState.api.instances[actionName](targetInstanceId, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    const actionResult = await desktopApiState.api.instances[actionName](targetInstanceId, getNodeScopedPayload(requestContext));
     if (actionName === "start") {
       logInstanceLifecycle("start result", {
         instanceId: targetInstanceId,
@@ -9439,7 +9479,7 @@ function syncFileEditorButtons() {
 function updateFileActionButtons() {
   const selectedEntry = getSelectedFileEntry(latestFilesListing?.entries || []);
   const connected = filesConnectionState.connected;
-  const busy = filesRequestInFlight || filesActionRequestInFlight;
+  const busy = isNodeSwitching() || filesRequestInFlight || filesActionRequestInFlight;
   const canBrowse = connected && !busy;
   const canMutate = connected && !busy;
   const canDownload = connected && selectedEntry && !selectedEntry.isDirectory && !busy;
@@ -11073,8 +11113,8 @@ async function refreshAmpDashboard(options = {}) {
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
       markStartupReady("amp");
+      ampRequestInFlight = false;
     }
-    ampRequestInFlight = false;
   }
 }
 
@@ -11111,8 +11151,8 @@ async function refreshDashboard() {
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
       markStartupReady("system");
+      systemRequestInFlight = false;
     }
-    systemRequestInFlight = false;
   }
 }
 
@@ -11143,7 +11183,9 @@ async function refreshPlayitStatus() {
     }
     renderPlayitUnavailable(`Playit status request failed: ${error?.message || "Unknown error"}`);
   } finally {
-    playitRequestInFlight = false;
+    if (isNodeRequestCurrent(requestContext)) {
+      playitRequestInFlight = false;
+    }
   }
 }
 
@@ -11227,8 +11269,10 @@ async function refreshDockerStatus() {
     dockerRequestInFlight = false;
     renderDockerUnavailable(`Docker status request failed: ${error?.message || "Unknown error"}`);
   } finally {
-    dockerRequestInFlight = false;
-    updateDockerActionButtons();
+    if (isNodeRequestCurrent(requestContext)) {
+      dockerRequestInFlight = false;
+      updateDockerActionButtons();
+    }
   }
 }
 
@@ -11257,7 +11301,9 @@ async function refreshDockerLogs() {
     }
     setDockerLogsText(error?.message || "Docker logs unavailable.");
   } finally {
-    dockerLogsRequestInFlight = false;
+    if (isNodeRequestCurrent(requestContext)) {
+      dockerLogsRequestInFlight = false;
+    }
   }
 }
 
@@ -11297,7 +11343,9 @@ async function refreshDockerSelectedStats() {
     }
     setDockerStat("status", error?.message || "Docker stats unavailable.");
   } finally {
-    dockerStatsRequestInFlight = false;
+    if (isNodeRequestCurrent(requestContext)) {
+      dockerStatsRequestInFlight = false;
+    }
   }
 }
 
@@ -11332,7 +11380,9 @@ async function refreshDockerInspect() {
       dockerInspectViewer.textContent = error?.message || "Docker inspect unavailable.";
     }
   } finally {
-    dockerInspectRequestInFlight = false;
+    if (isNodeRequestCurrent(requestContext)) {
+      dockerInspectRequestInFlight = false;
+    }
   }
 }
 
@@ -11360,6 +11410,7 @@ function stopDockerPagePolling() {
 }
 
 async function handleDockerAction(actionName) {
+  const requestContext = createNodeActionContext(`docker-${actionName}`);
   if (actionName === "create") {
     const desktopApiState = getDesktopApiState();
     if (!desktopApiState.hasDocker) {
@@ -11379,8 +11430,9 @@ async function handleDockerAction(actionName) {
     try {
       dockerActionRequestInFlight = true;
       updateDockerActionButtons();
+      if (!isNodeActionStillCurrent(requestContext)) return;
       await desktopApiState.api.docker.create({
-        nodeId: getSelectedNodeId(),
+        nodeId: requestContext.nodeId,
         name,
         image,
         ports: port ? [port] : [],
@@ -11435,17 +11487,19 @@ async function handleDockerAction(actionName) {
     }
 
     if (actionName === "logs") {
+      if (!isNodeActionStillCurrent(requestContext)) return;
       setDockerTab("logs");
       await refreshDockerLogs();
       return;
     }
 
+    if (!isNodeActionStillCurrent(requestContext)) return;
     if (actionName === "remove") {
-      await desktopApiState.api.docker.removeContainer(containerTarget, { nodeId: getSelectedNodeId() });
+      await desktopApiState.api.docker.removeContainer(containerTarget, getNodeScopedPayload(requestContext));
     } else {
       const methodName = `${actionName}Container`;
       const method = desktopApiState.api.docker[methodName] || desktopApiState.api.docker[actionName];
-      await method(containerTarget, { nodeId: getSelectedNodeId() });
+      await method(containerTarget, getNodeScopedPayload(requestContext));
     }
 
     showToast(definition.successMessage);
@@ -11513,6 +11567,7 @@ async function refreshFileListing(options = {}) {
     return null;
   }
 
+  const requestContext = options.context || getNodeRequestContext("files");
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasFiles) {
@@ -11540,11 +11595,17 @@ async function refreshFileListing(options = {}) {
       password: options.password,
     });
 
+    if (!isNodeRequestCurrent(requestContext)) {
+      return null;
+    }
     renderFileListing(listing);
     renderFilesView();
     setFilesPasswordPromptState(false);
     return listing;
   } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) {
+      return null;
+    }
     const message = error?.message || "Unknown error";
 
     if (!latestFilesListing || !filesConnectionState.connected) {
@@ -11567,8 +11628,10 @@ async function refreshFileListing(options = {}) {
 
     return null;
   } finally {
-    filesRequestInFlight = false;
-    updateFileActionButtons();
+    if (isNodeRequestCurrent(requestContext)) {
+      filesRequestInFlight = false;
+      updateFileActionButtons();
+    }
   }
 }
 
@@ -12734,26 +12797,27 @@ function renderConsoleStatusPanel() {
 function updateConsoleActionButtons() {
   const instance = getActiveConsoleInstance();
   const desktopApiState = getDesktopApiState();
+  const busy = isNodeSwitching() || instanceActionRequestInFlight;
   consoleActionButtons.forEach((button) => {
     const action = button.dataset.consoleAction;
     if (action === "refresh") {
-      button.disabled = !desktopApiState.hasInstances || consoleLogsRequestInFlight;
+      button.disabled = isNodeSwitching() || !desktopApiState.hasInstances || consoleLogsRequestInFlight;
       return;
     }
     if (action === "files") {
-      button.disabled = !instance;
+      button.disabled = isNodeSwitching() || !instance;
       return;
     }
     if (action === "start") {
-      button.disabled = !desktopApiState.hasInstances || !canStartInstance(instance) || instanceActionRequestInFlight;
+      button.disabled = !desktopApiState.hasInstances || !canStartInstance(instance) || busy;
       return;
     }
     if (action === "stop") {
-      button.disabled = !desktopApiState.hasInstances || !canStopInstance(instance) || instanceActionRequestInFlight;
+      button.disabled = !desktopApiState.hasInstances || !canStopInstance(instance) || busy;
       return;
     }
     if (action === "restart") {
-      button.disabled = !desktopApiState.hasInstances || !canRestartInstance(instance) || instanceActionRequestInFlight;
+      button.disabled = !desktopApiState.hasInstances || !canRestartInstance(instance) || busy;
     }
   });
 }
@@ -12872,8 +12936,10 @@ async function refreshConsoleLogs(options = {}) {
       }
     }
   } finally {
-    consoleLogsRequestInFlight = false;
-    renderConsoleWorkspace();
+    if (isNodeRequestCurrent(requestContext)) {
+      consoleLogsRequestInFlight = false;
+      renderConsoleWorkspace();
+    }
   }
 }
 
@@ -12916,13 +12982,15 @@ async function sendConsoleCommand(event) {
   event?.preventDefault();
   const instance = getActiveConsoleInstance();
   const command = consoleCommandInput?.value?.trim() || "";
+  const requestContext = createNodeActionContext("console-command");
 
   if (!instance || !command || !getDesktopApiState().hasInstances) {
     return;
   }
 
   try {
-    await getDesktopApiState().api.instances.sendCommand(instance.id, command, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await getDesktopApiState().api.instances.sendCommand(instance.id, command, getNodeScopedPayload(requestContext));
     consoleCommandInput.value = "";
     showToast("Command sent.");
     await refreshConsoleLogs({ silent: true });
@@ -12937,16 +13005,16 @@ async function sendConsoleCommand(event) {
   }
 }
 
-async function verifyConsoleJavaJarBeforeLaunch(instance) {
+async function verifyConsoleJavaJarBeforeLaunch(instance, context = getNodeRequestContext("console-jar-preflight")) {
   if (!isJavaJarInstance(instance)) {
     return true;
   }
 
   const jarPath = getConfiguredJarPath(instance);
   if (!jarPath) {
-    const repairedJar = await findExistingServerJar(instance);
+    const repairedJar = await findExistingServerJar(instance, "", context);
     if (repairedJar) {
-      await repairInstanceServerJar(instance, repairedJar);
+      await repairInstanceServerJar(instance, repairedJar, context);
       return true;
     }
     window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
@@ -12954,13 +13022,14 @@ async function verifyConsoleJavaJarBeforeLaunch(instance) {
   }
 
   try {
-    await getDesktopApiState().api.instances.readFile(instance.id, jarPath, { nodeId: getSelectedNodeId() });
+    if (!isNodeRequestCurrent(context)) return false;
+    await getDesktopApiState().api.instances.readFile(instance.id, jarPath, getNodeScopedPayload(context));
     return true;
   } catch (error) {
     if (getAgentErrorCode(error) === "PATH_NOT_FOUND") {
-      const repairedJar = await findExistingServerJar(instance, jarPath);
+      const repairedJar = await findExistingServerJar(instance, jarPath, context);
       if (repairedJar) {
-        await repairInstanceServerJar(instance, repairedJar);
+        await repairInstanceServerJar(instance, repairedJar, context);
         return true;
       }
       window.alert(`${getFileNameFromPath(jarPath)} was not found.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`);
@@ -12980,13 +13049,15 @@ async function verifyConsoleJavaJarBeforeLaunch(instance) {
 async function runConsoleInstanceAction(actionName) {
   const instance = getActiveConsoleInstance();
   const desktopApiState = getDesktopApiState();
+  const requestContext = createNodeActionContext(`console-${actionName}`);
 
   if (!instance || !desktopApiState.hasInstances || !["start", "stop", "restart"].includes(actionName)) {
     updateConsoleActionButtons();
     return;
   }
 
-  if ((actionName === "start" || actionName === "restart") && !(await verifyConsoleJavaJarBeforeLaunch(instance))) {
+  if (!isNodeActionStillCurrent(requestContext)) return;
+  if ((actionName === "start" || actionName === "restart") && !(await verifyConsoleJavaJarBeforeLaunch(instance, requestContext))) {
     return;
   }
 
@@ -12994,7 +13065,8 @@ async function runConsoleInstanceAction(actionName) {
   updateConsoleActionButtons();
 
   try {
-    await desktopApiState.api.instances[actionName](instance.id, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await desktopApiState.api.instances[actionName](instance.id, getNodeScopedPayload(requestContext));
     showToast(`Instance ${actionName} request completed.`);
     await refreshInstances({ refreshMetrics: false });
     await refreshConsoleMetrics();
@@ -14913,6 +14985,26 @@ function getNodeScopedPayload(context, payload = {}) {
   };
 }
 
+function isNodeSwitching() {
+  return nodeSwitchInProgress === true;
+}
+
+function shouldSkipNodeScopedPolling() {
+  return isNodeSwitching();
+}
+
+function createNodeActionContext(label = "node-action") {
+  return getNodeRequestContext(label);
+}
+
+function isNodeActionStillCurrent(context, message = "Node changed. Action canceled.") {
+  if (isNodeRequestCurrent(context)) {
+    return true;
+  }
+  showToast(message, "warning");
+  return false;
+}
+
 function clearDashboardForNodeSwitch(message = "Loading selected node...") {
   [
     "cpuUsage",
@@ -15005,6 +15097,11 @@ async function reloadActiveNodeData(context = getNodeRequestContext("reload-node
   await Promise.allSettled(reloads);
   if (isNodeRequestCurrent(context)) {
     nodeSwitchInProgress = false;
+    updateDockerActionButtons();
+    updateInstanceActionButtons();
+    updateFileActionButtons();
+    updateConsoleActionButtons();
+    renderBackups();
   }
 }
 
@@ -16749,11 +16846,13 @@ document.querySelector('[data-instance-file-action="up"]')?.addEventListener("cl
 document.querySelector('[data-instance-file-action="new-folder"]')?.addEventListener("click", async () => {
   const name = window.prompt("New folder name");
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-file-new-folder");
   if (!name || !selectedInstance) {
     return;
   }
   try {
-    await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name), { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await getDesktopApiState().api.instances.createFolder(selectedInstance.id, joinInstancePath(instanceCurrentFilePath, name), getNodeScopedPayload(requestContext));
     refreshInstanceFiles();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -16765,6 +16864,7 @@ document.querySelector('[data-instance-file-action="new-folder"]')?.addEventList
 });
 document.querySelector('[data-instance-file-action="rename"]')?.addEventListener("click", async () => {
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-file-rename");
   if (!selectedInstanceFilePath || !selectedInstance) {
     return;
   }
@@ -16773,11 +16873,12 @@ document.querySelector('[data-instance-file-action="rename"]')?.addEventListener
     return;
   }
   try {
+    if (!isNodeActionStillCurrent(requestContext)) return;
     await getDesktopApiState().api.instances.renameFile(
       selectedInstance.id,
       selectedInstanceFilePath,
       joinInstancePath(getInstanceParentPath(selectedInstanceFilePath), nextName),
-      { nodeId: getSelectedNodeId() },
+      getNodeScopedPayload(requestContext),
     );
     refreshInstanceFiles();
   } catch (error) {
@@ -16790,11 +16891,13 @@ document.querySelector('[data-instance-file-action="rename"]')?.addEventListener
 });
 document.querySelector('[data-instance-file-action="delete"]')?.addEventListener("click", async () => {
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-file-delete");
   if (!selectedInstanceFilePath || !selectedInstance || !window.confirm(`Delete ${selectedInstanceFilePath}?`)) {
     return;
   }
   try {
-    await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath, { nodeId: getSelectedNodeId() });
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    await getDesktopApiState().api.instances.deleteFile(selectedInstance.id, selectedInstanceFilePath, getNodeScopedPayload(requestContext));
     refreshInstanceFiles();
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
@@ -16817,6 +16920,7 @@ instanceFileDropzone?.addEventListener("drop", async (event) => {
   event.preventDefault();
   instanceFileDropzone.classList.remove("is-dragging");
   const selectedInstance = findInstance();
+  const requestContext = createNodeActionContext("instance-file-drop");
   const files = [...(event.dataTransfer?.files || [])];
   if (!selectedInstance || files.length === 0) {
     return;
@@ -16824,11 +16928,12 @@ instanceFileDropzone?.addEventListener("drop", async (event) => {
   try {
     for (const file of files) {
       const content = await file.text();
+      if (!isNodeActionStillCurrent(requestContext)) return;
       await getDesktopApiState().api.instances.writeFile(
         selectedInstance.id,
         joinInstancePath(instanceCurrentFilePath, file.name),
         content,
-        { nodeId: getSelectedNodeId() },
+        getNodeScopedPayload(requestContext),
       );
     }
     refreshInstanceFiles();
@@ -17073,15 +17178,23 @@ startStartupFallback();
 refreshDockerStatus();
 
 registerRefreshTask(updateLocalTime, 30000);
-registerRefreshTask(refreshDashboard, 1000);
-registerRefreshTask(refreshAmpDashboard, AMP_REFRESH_INTERVAL_MS);
-registerRefreshTask(refreshPlayitStatus, 5000);
 registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling()) refreshDashboard();
+}, 1000);
+registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling()) refreshAmpDashboard();
+}, AMP_REFRESH_INTERVAL_MS);
+registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling()) refreshPlayitStatus();
+}, 5000);
+registerRefreshTask(() => {
+  if (shouldSkipNodeScopedPolling()) return;
   if (getActivePageName() === "instances" || getActivePageName() === "dashboard" || getActivePageName() === "console") {
     refreshInstances();
   }
 }, 5000);
 registerRefreshTask(() => {
+  if (shouldSkipNodeScopedPolling()) return;
   if (getActivePageName() === "console") {
     refreshConsoleMetrics();
     refreshConsoleLogs({ silent: true });

@@ -105,7 +105,11 @@ function applyReleaseNotes() {
 }
 
 function isAccountConfigured() {
-  return Boolean(accountConfig.supabaseUrl && accountConfig.supabaseAnonKey && accountConfig.accountApiUrl);
+  return Boolean(accountConfig.supabaseUrl && accountConfig.supabaseAnonKey);
+}
+
+function isAccountApiConfigured() {
+  return Boolean(accountConfig.accountApiUrl);
 }
 
 function getSupabase() {
@@ -179,6 +183,11 @@ function setFormDisabled(form, disabled) {
 }
 
 async function apiFetch(path, options = {}) {
+  if (!isAccountApiConfigured()) {
+    const error = new Error("AnxOS account API is not configured for this deployment.");
+    error.code = "ACCOUNT_API_NOT_CONFIGURED";
+    throw error;
+  }
   const session = currentSession || (await getSupabase()?.auth.getSession())?.data?.session;
   const headers = {
     "content-type": "application/json",
@@ -200,7 +209,7 @@ async function apiFetch(path, options = {}) {
 
 async function initializeAccount() {
   if (!isAccountConfigured()) {
-    disableAccountForms("AnxOS account service is not configured for this deployment. Local desktop mode still works without an online account.");
+    disableAccountForms("AnxOS account sign-in is not configured for this deployment. Local desktop mode still works without an online account.");
     return;
   }
   const client = getSupabase();
@@ -274,6 +283,12 @@ async function handleSignIn(form) {
     });
     if (error) throw error;
     setMessage("signin", "Signed in.", "ok");
+    const params = getRouteParams();
+    if (params.get("return") === "activate") {
+      const code = normalizeDeviceCode(params.get("code"));
+      window.location.href = `activate.html${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+      return;
+    }
     window.location.hash = "account";
   } catch (error) {
     setMessage("signin", friendlyAuthError(error), "error");
@@ -476,6 +491,13 @@ function applyDeviceLoginPage() {
   if (code) setDeviceCode(code);
 }
 
+function getSignInUrlForActivation() {
+  const code = normalizeDeviceCode(document.querySelector("[data-device-code-input]")?.value || currentDeviceCode);
+  const params = new URLSearchParams({ return: "activate" });
+  if (code) params.set("code", code);
+  return `index.html?${params.toString()}#signin`;
+}
+
 function setDeviceCode(code) {
   currentDeviceCode = normalizeDeviceCode(code);
   document.querySelectorAll("[data-device-code-input]").forEach((input) => { input.value = currentDeviceCode; });
@@ -485,7 +507,11 @@ function setDeviceCode(code) {
 async function lookupDevice() {
   if (!currentSession) {
     setDeviceMessage("Sign in before reviewing a desktop device.", "warn");
-    window.location.hash = "signin";
+    if (document.body?.dataset?.standaloneRoute === "activate") {
+      window.location.href = getSignInUrlForActivation();
+    } else {
+      window.location.hash = "signin";
+    }
     return;
   }
   setDeviceCode(document.querySelector("[data-device-code-input]")?.value || currentDeviceCode);

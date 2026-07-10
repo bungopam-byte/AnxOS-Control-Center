@@ -237,6 +237,11 @@ h3 {
   gap: 12px;
 }
 
+.account-panel[hidden],
+[hidden] {
+  display: none !important;
+}
+
 .account-panel ol {
   margin: 0;
   padding-left: 20px;
@@ -740,6 +745,12 @@ h3 {
   padding: 18px;
 }
 
+.account-form--compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  padding: 0;
+}
+
 .account-form label {
   display: grid;
   gap: 8px;
@@ -757,6 +768,104 @@ h3 {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
   font: inherit;
+}
+
+.account-form button:disabled,
+.route-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.54;
+  transform: none;
+}
+
+.account-form a {
+  color: var(--accent);
+  font-weight: 850;
+}
+
+.form-message,
+[data-device-login-message] {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--muted);
+}
+
+.form-message[data-tone="ok"],
+[data-device-login-message][data-tone="ok"] {
+  color: #78f2b2;
+}
+
+.form-message[data-tone="warn"],
+[data-device-login-message][data-tone="warn"] {
+  color: #f4c96b;
+}
+
+.form-message[data-tone="error"],
+[data-device-login-message][data-tone="error"] {
+  color: #ff8a9a;
+}
+
+.account-dashboard {
+  align-content: start;
+}
+
+.account-dashboard__header,
+.account-subpanel__heading,
+.account-list-item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.account-dashboard__header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+}
+
+.account-dashboard-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.account-subpanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.account-subpanel h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.94rem;
+}
+
+.account-list {
+  display: grid;
+  gap: 10px;
+}
+
+.account-list-item {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 11px 12px;
+  background: rgba(7, 10, 18, 0.34);
+}
+
+.account-list-item strong {
+  display: block;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.account-list-item small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .account-form input:focus {

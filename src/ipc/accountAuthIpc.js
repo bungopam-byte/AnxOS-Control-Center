@@ -3,9 +3,11 @@ const {
   cancelDeviceLogin,
   checkDeviceLogin,
   getStatus,
+  listAccountDevices,
   logout,
   openAccountPage,
   refreshSession,
+  revokeCurrentDevice,
   startDeviceLogin,
   redactSecret,
 } = require("../services/accountAuthService");
@@ -37,6 +39,8 @@ function registerAccountAuthIpc() {
   ipcMain.handle("account:cancelDeviceLogin", async () => invokeAccountOperation(() => cancelDeviceLogin(), "account:cancelDeviceLogin"));
   ipcMain.handle("account:refresh", async () => invokeAccountOperation(() => refreshSession(), "account:refresh"));
   ipcMain.handle("account:openPage", async () => invokeAccountOperation(() => openAccountPage(), "account:openPage"));
+  ipcMain.handle("account:listDevices", async () => invokeAccountOperation(() => listAccountDevices(), "account:listDevices"));
+  ipcMain.handle("account:revokeCurrentDevice", async () => invokeAccountOperation(() => revokeCurrentDevice(), "account:revokeCurrentDevice"));
   ipcMain.handle("account:logout", async () => invokeAccountOperation(() => logout(), "account:logout"));
 }
 

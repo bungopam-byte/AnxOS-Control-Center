@@ -103,6 +103,46 @@ npm start
 
 This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
 
+### One-Click Development Launcher
+
+For local source development, use the AnxDev launcher instead of typing npm commands.
+
+Linux:
+
+```bash
+./AnxDev.sh
+```
+
+You can also double-click `AnxDev.sh` from a file manager if your desktop environment allows launching executable scripts.
+
+Windows:
+
+```text
+Double-click AnxDev.cmd
+```
+
+The launcher menu can:
+
+- Launch AnxOS Development with `npm run start`
+- Launch AnxOS Development with DevTools
+- Run `npm run owner:smoke`
+- Run `npm run marketplace:smoke`
+
+AnxDev sets only trusted source-development flags supported by the app:
+
+- `NODE_ENV=development`
+- `ANXOS_TRUSTED_DEVELOPMENT_MODE=1`
+- `ANXOS_OPEN_DEVTOOLS=1` only for the DevTools option
+
+The development owner fallback password is available only in an unpackaged Electron run with trusted development mode enabled. Packaged releases continue to reject `1245` and weak production setup passwords. The app shows a subtle `Development Mode` badge only when the main process confirms trusted unpackaged development mode.
+
+Troubleshooting:
+
+- If Node.js is missing, install the current LTS from https://nodejs.org/ and reopen the launcher.
+- If npm is missing, repair/reinstall Node.js because npm ships with the standard Node installer.
+- If dependency installation fails, delete an incomplete `node_modules` folder and run the launcher again, or run `npm install` manually to see the full npm error.
+- If Windows blocks PowerShell scripts, use `AnxDev.cmd`; it runs PowerShell with `-ExecutionPolicy Bypass` for this local script only.
+
 ## Build Desktop Packages
 
 The standard build command remains:

@@ -1,0 +1,20 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.45.4": "1108d69216995335d057dbd15907caaf514a4d1ef082f097050573b9d589a57c"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@cubecoders/ampapi@^1.0.1",
+        "npm:bcryptjs@^3.0.3",
+        "npm:dotenv@^17.4.2",
+        "npm:electron-builder@^26.0.12",
+        "npm:electron@43",
+        "npm:monaco-editor@~0.55.1",
+        "npm:ssh2@^1.17.0",
+        "npm:unzipper@~0.12.5"
+      ]
+    }
+  }
+}

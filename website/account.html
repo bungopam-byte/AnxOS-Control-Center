@@ -3,67 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="0; url=index.html#account">
     <title>AnxOS Account</title>
-    <meta name="description" content="Sign in or create an AnxOS account for AnxOS Control Center.">
-    <link rel="icon" type="image/jpeg" href="assets/anxos-logo.jpg">
-    <link rel="stylesheet" href="styles.css">
-    <script src="config.js" defer></script>
-    <script src="site.js" defer></script>
+    <script>
+      const query = window.location.search || "";
+      window.location.replace(`index.html#account${query}`);
+    </script>
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href="index.html" aria-label="AnxOS home">
-        <span class="brand-mark"><img data-logo src="assets/anxos-logo.jpg" alt=""></span>
-        <span class="brand-copy">
-          <strong>AnxOS</strong>
-          <span>Account</span>
-        </span>
-      </a>
-      <nav class="site-nav" aria-label="Primary">
-        <a href="index.html#release">Download</a>
-        <a href="index.html#activate">Device Activation</a>
-        <a href="release-notes.html">Release Notes</a>
-      </nav>
-    </header>
-
-    <main id="top">
-      <section class="hero section-shell account-hero" aria-labelledby="account-title">
-        <div class="hero-copy">
-          <p class="eyebrow">AnxOS Account</p>
-          <h1 id="account-title">Sign in on the web</h1>
-          <p class="lede">Use an AnxOS account to connect devices, remember update channels, and prepare future cloud sync. Local device management still works without an account.</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="index.html#activate">Connect a Device</a>
-            <a class="button button-secondary" href="index.html">Download AnxOS</a>
-          </div>
-        </div>
-        <div class="hero-panel account-panel">
-          <div class="panel-titlebar">
-            <span></span><span></span><span></span>
-            <img class="panel-titlebar__logo" data-logo src="assets/anxos-logo.jpg" alt="" aria-hidden="true">
-            <strong>AnxOS Web Login</strong>
-          </div>
-          <form class="account-form" data-account-web-form>
-            <label>
-              <span>Email or username</span>
-              <input type="text" autocomplete="username" placeholder="you@example.com">
-            </label>
-            <label>
-              <span>Password</span>
-              <input type="password" autocomplete="current-password" placeholder="Password">
-            </label>
-            <button class="button button-primary" type="button">Sign In</button>
-            <p>This page is ready for the account backend. Device approval will activate when the AnxOS auth API is deployed.</p>
-          </form>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <span>AnxOS</span>
-      <a href="index.html">Download</a>
-      <a href="index.html#activate">Device Activation</a>
-      <a data-config-href="repositoryUrl" href="#">GitHub</a>
-    </footer>
+    <a href="index.html#account">Continue to AnxOS account</a>
   </body>
 </html>

@@ -47,12 +47,16 @@ function getGitCommit() {
 }
 
 function getRuntimeInfo() {
+  const trustedDevelopmentMode = process.env.ANXOS_TRUSTED_DEVELOPMENT_MODE === "1" && app.isPackaged === false;
   return {
     version: app.getVersion(),
     gitCommit: getGitCommit(),
     electron: process.versions.electron || null,
     node: process.versions.node || null,
     chromium: process.versions.chrome || null,
+    isPackaged: app.isPackaged === true,
+    trustedDevelopmentMode,
+    developmentMode: trustedDevelopmentMode,
   };
 }
 
@@ -219,6 +223,12 @@ function createWindow() {
   });
 
   window.loadFile(path.join(__dirname, "index.html"));
+
+  if (process.env.ANXOS_OPEN_DEVTOOLS === "1" && app.isPackaged === false) {
+    window.webContents.once("did-finish-load", () => {
+      window.webContents.openDevTools({ mode: "detach" });
+    });
+  }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);

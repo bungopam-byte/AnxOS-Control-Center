@@ -2,6 +2,18 @@
 
 Static download page for `AnxOS-Control-Center`.
 
+The page also contains the optional AnxOS account entry points:
+
+- `#signin`
+- `#signup`
+- `#forgot-password`
+- `#reset-password`
+- `#verify-email`
+- `#account`
+- `#activate`
+
+Account features require Supabase configuration in `account-config.js`. Without that public config, the page disables account forms and shows a setup error instead of pretending authentication works.
+
 ## Release Data
 
 All public release data is generated into `config.js`:
@@ -47,9 +59,29 @@ Required files:
 - `styles.css`
 - `site.js`
 - `config.js`
+- `account-config.js`
 - `assets/anxos-logo.jpg`
 
 For GitHub Pages, publish the `website/` directory as the site root or copy its contents into the configured Pages branch/folder.
+
+For Cloudflare Pages, deploy the contents of `website/` as the output directory and configure Supabase Auth redirect URLs to the deployed domain.
+
+## Account Configuration
+
+`account-config.js` may contain only public browser-safe values:
+
+```js
+window.ANXOS_ACCOUNT_CONFIG = {
+  supabaseUrl: "https://<project-ref>.supabase.co",
+  supabaseAnonKey: "<public anon key>",
+  accountApiUrl: "https://<project-ref>.functions.supabase.co/anxos-account",
+  siteUrl: "https://anxos-control-center.pages.dev",
+};
+```
+
+Never put service-role keys, refresh tokens, desktop token secrets, passwords, or database credentials in this file.
+
+See `../docs/anxos-account-production.md` for migrations, Edge Function deployment, CORS, and desktop integration.
 
 ## Validation
 

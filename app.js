@@ -27,6 +27,7 @@ const titlebarDragSurface = document.querySelector("[data-titlebar-drag]");
 const titlebarPageTarget = document.querySelector("[data-titlebar-page]");
 const titlebarConnection = document.querySelector("[data-titlebar-connection]");
 const titlebarConnectionLabel = document.querySelector("[data-titlebar-connection-label]");
+const developmentBadge = document.querySelector("[data-development-badge]");
 const titlebarWindowButtons = document.querySelectorAll("[data-window-action]");
 const titlebarMaximizeButton = document.querySelector('[data-window-action="maximize"]');
 const consoleSearchInput = document.querySelector("[data-console-search]");
@@ -14620,18 +14621,30 @@ function setAboutFields(info) {
   });
 }
 
+function renderDevelopmentBadge(info) {
+  if (!developmentBadge) {
+    return;
+  }
+  const visible = Boolean(info?.developmentMode && info?.trustedDevelopmentMode && info?.isPackaged === false);
+  developmentBadge.hidden = !visible;
+}
+
 async function loadRuntimeInfo() {
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasApp) {
     setAboutFields(null);
+    renderDevelopmentBadge(null);
     return;
   }
 
   try {
-    setAboutFields(await desktopApiState.api.app.getRuntimeInfo());
+    const info = await desktopApiState.api.app.getRuntimeInfo();
+    setAboutFields(info);
+    renderDevelopmentBadge(info);
   } catch {
     setAboutFields(null);
+    renderDevelopmentBadge(null);
   }
 }
 

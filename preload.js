@@ -38,6 +38,8 @@ const desktopApi = {
     cancelDeviceLogin: () => ipcRenderer.invoke("account:cancelDeviceLogin"),
     refresh: () => ipcRenderer.invoke("account:refresh"),
     openPage: () => ipcRenderer.invoke("account:openPage"),
+    listDevices: () => ipcRenderer.invoke("account:listDevices"),
+    revokeCurrentDevice: () => ipcRenderer.invoke("account:revokeCurrentDevice"),
     logout: () => ipcRenderer.invoke("account:logout"),
   },
   window: windowApi,

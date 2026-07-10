@@ -1,0 +1,4 @@
+project_id = "anxos-control-center"
+
+[functions.anxos-account]
+verify_jwt = false

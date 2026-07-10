@@ -457,6 +457,25 @@ a:focus-visible,
   box-shadow: 0 0 0 5px rgba(255, 107, 138, 0.14);
 }
 
+.app-titlebar__dev-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: max-content;
+  padding: 5px 9px;
+  border: 1px solid rgba(245, 197, 92, 0.32);
+  border-radius: 999px;
+  background: rgba(245, 197, 92, 0.12);
+  color: #f8d990;
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.app-titlebar__dev-badge[hidden] {
+  display: none;
+}
+
 .app-titlebar__controls {
   display: flex;
   flex: 0 0 auto;

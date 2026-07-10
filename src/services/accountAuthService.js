@@ -14,6 +14,7 @@ const APPROVED_AUTH_HOSTS = new Set([
   "localhost",
   "127.0.0.1",
 ]);
+const APPROVED_SUPABASE_FUNCTION_HOST = /^[a-z0-9-]+\.functions\.supabase\.co$/i;
 
 let currentSession = null;
 let pendingDeviceLogin = null;
@@ -56,7 +57,11 @@ function buildWebsiteUrl(route = "account", params = {}) {
 }
 
 function getAccountApiUrl() {
-  return normalizeBaseUrl(process.env.ANXOS_ACCOUNT_API_URL, "");
+  return normalizeBaseUrl(
+    process.env.ANXOS_ACCOUNT_API_URL ||
+    process.env.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL,
+    ""
+  );
 }
 
 function assertApprovedExternalUrl(rawUrl, purpose = "account") {
@@ -75,7 +80,8 @@ function assertApprovedExternalUrl(rawUrl, purpose = "account") {
     error.code = "ACCOUNT_HTTPS_REQUIRED";
     throw error;
   }
-  if (!APPROVED_AUTH_HOSTS.has(parsed.hostname) && !process.env.ANXOS_ACCOUNT_ALLOW_UNTRUSTED_HOSTS) {
+  const isApprovedSupabaseFunction = APPROVED_SUPABASE_FUNCTION_HOST.test(parsed.hostname);
+  if (!APPROVED_AUTH_HOSTS.has(parsed.hostname) && !isApprovedSupabaseFunction && !process.env.ANXOS_ACCOUNT_ALLOW_UNTRUSTED_HOSTS) {
     const error = new Error(`Refusing to open unapproved ${purpose} URL.`);
     error.code = "ACCOUNT_URL_NOT_APPROVED";
     throw error;
@@ -100,6 +106,12 @@ function publicAccount(session) {
     displayName: session.account?.displayName || session.user?.displayName || session.account?.username || session.user?.username || "AnxOS Account",
     provider: session.provider || session.account?.provider || "AnxOS",
     connectedAt: session.createdAt || null,
+    device: session.device ? {
+      id: session.device.id || session.device.deviceId || null,
+      name: session.device.device_name || session.device.deviceName || null,
+      platform: session.device.platform || null,
+      appVersion: session.device.app_version || session.device.appVersion || null,
+    } : null,
   };
 }
 
@@ -138,6 +150,7 @@ function normalizeSession(payload = {}) {
     refreshToken,
     expiresAt,
     account: payload.account || payload.user || null,
+    device: payload.device || null,
     provider: payload.provider || "AnxOS",
     createdAt: payload.connectedAt || payload.createdAt || new Date().toISOString(),
   };
@@ -177,6 +190,41 @@ async function postJson(url, payload, options = {}) {
         ...(options.accessToken ? { authorization: `Bearer ${options.accessToken}` } : {}),
       },
       body: JSON.stringify(payload || {}),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(redactSecret(data.message || data.error_description || data.error || `Account request failed with HTTP ${response.status}.`));
+      error.code = data.code || data.error || `HTTP_${response.status}`;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      const timeoutError = new Error("Account service timed out. Try again.");
+      timeoutError.code = "ACCOUNT_TIMEOUT";
+      throw timeoutError;
+    }
+    if (/fetch failed|network|ENOTFOUND|ECONNREFUSED/i.test(error?.message || "")) {
+      const networkError = new Error("Account service is unavailable. Check your internet connection.");
+      networkError.code = "ACCOUNT_NETWORK_UNAVAILABLE";
+      throw networkError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getJson(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 15000);
+  try {
+    const response = await fetch(assertApprovedExternalUrl(url, "account API"), {
+      method: "GET",
+      headers: {
+        ...(options.accessToken ? { authorization: `Bearer ${options.accessToken}` } : {}),
+      },
       signal: controller.signal,
     });
     const data = await response.json().catch(() => ({}));
@@ -382,6 +430,7 @@ async function refreshSession() {
   writeSession({
     ...nextSession,
     account: nextSession.account || session.account,
+    device: nextSession.device || session.device,
     createdAt: session.createdAt || nextSession.createdAt,
   });
   audit({ action: "account.refresh", outcome: "ok" });
@@ -409,15 +458,41 @@ async function logout() {
   return getStatus();
 }
 
+async function listAccountDevices() {
+  const session = getCurrentSession();
+  if (!session?.accessToken || !getAccountApiUrl()) {
+    return { devices: [] };
+  }
+  return getJson(`${getAccountApiUrl()}/api/account/devices`, { accessToken: session.accessToken });
+}
+
+async function revokeCurrentDevice() {
+  const session = getCurrentSession({ allowExpired: true });
+  const deviceId = session?.device?.id || session?.device?.deviceId || null;
+  if (session?.accessToken && getAccountApiUrl() && deviceId) {
+    await postJson(`${getAccountApiUrl()}/api/account/devices/revoke`, { deviceId }, { accessToken: session.accessToken }).catch((error) => {
+      console.warn("[Account] Device revoke failed.", { code: error?.code || null, message: redactSecret(error?.message || String(error)) });
+    });
+  } else if (session?.accessToken && getAccountApiUrl()) {
+    await postJson(`${getAccountApiUrl()}/api/auth/logout`, {}, { accessToken: session.accessToken }).catch(() => {});
+  }
+  clearSession();
+  pendingDeviceLogin = null;
+  audit({ action: "account.device.revokeCurrent", outcome: "ok" });
+  return getStatus();
+}
+
 module.exports = {
   cancelDeviceLogin,
   checkDeviceLogin,
   getCurrentSession,
   getStatus,
   buildWebsiteUrl,
+  listAccountDevices,
   logout,
   openAccountPage,
   refreshSession,
+  revokeCurrentDevice,
   redactSecret,
   startDeviceLogin,
 };

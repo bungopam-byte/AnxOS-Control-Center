@@ -20,6 +20,7 @@ const APPROVED_SUPABASE_AUTH_HOST = /^[a-z0-9-]+\.supabase\.co$/i;
 let currentSession = null;
 let pendingDeviceLogin = null;
 let pendingRequestInFlight = false;
+let cachedAccountConfig = null;
 
 const sessionStore = new SecureSessionStore({ fileName: "account.json" });
 
@@ -39,8 +40,91 @@ function normalizeBaseUrl(value, fallback = "") {
   return String(value || fallback).replace(/\/+$/, "");
 }
 
+function getBundledAccountConfigPath() {
+  return path.join(__dirname, "..", "..", "website", "account-config.js");
+}
+
+function getAccountConfigSearchPaths() {
+  const paths = [
+    process.env.ANXOS_ACCOUNT_CONFIG_PATH,
+    path.join(getConfigDirectory(), "account-config.json"),
+    path.join(getConfigDirectory(), "account-config.js"),
+    getBundledAccountConfigPath(),
+  ].filter(Boolean);
+  return [...new Set(paths.map((entry) => path.resolve(entry)))];
+}
+
+function normalizeAccountConfig(rawConfig = {}, source = "unknown") {
+  return {
+    source,
+    supabaseUrl: normalizeBaseUrl(rawConfig.supabaseUrl || rawConfig.SUPABASE_URL || rawConfig.ANXOS_SUPABASE_URL, ""),
+    supabaseAnonKey: String(rawConfig.supabaseAnonKey || rawConfig.supabaseAnonKeyPublic || rawConfig.SUPABASE_ANON_KEY || rawConfig.ANXOS_SUPABASE_ANON_KEY || "").trim(),
+    accountApiUrl: normalizeBaseUrl(rawConfig.accountApiUrl || rawConfig.ANXOS_ACCOUNT_API_URL || rawConfig.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL, ""),
+    siteUrl: normalizeBaseUrl(rawConfig.siteUrl || rawConfig.WEBSITE_BASE_URL || rawConfig.ANXOS_WEBSITE_BASE_URL, ""),
+  };
+}
+
+function parseAccountConfigFile(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8");
+  if (/\.json$/i.test(filePath)) {
+    return JSON.parse(raw);
+  }
+  const sandbox = { window: {}, globalThis: {} };
+  sandbox.globalThis = sandbox.window;
+  const vm = require("vm");
+  vm.runInNewContext(raw, sandbox, {
+    filename: filePath,
+    timeout: 1000,
+  });
+  return sandbox.window.ANXOS_ACCOUNT_CONFIG || sandbox.globalThis.ANXOS_ACCOUNT_CONFIG || {};
+}
+
+function readAccountConfigFromDisk() {
+  const errors = [];
+  for (const filePath of getAccountConfigSearchPaths()) {
+    if (!fs.existsSync(filePath)) {
+      continue;
+    }
+    try {
+      const parsed = normalizeAccountConfig(parseAccountConfigFile(filePath), filePath);
+      if (parsed.supabaseUrl || parsed.supabaseAnonKey || parsed.accountApiUrl || parsed.siteUrl) {
+        return parsed;
+      }
+      errors.push(`${filePath}: file did not contain account configuration values`);
+    } catch (error) {
+      errors.push(`${filePath}: ${redactSecret(error?.message || String(error))}`);
+    }
+  }
+  if (errors.length) {
+    const error = new Error(`AnxOS account configuration could not be loaded. ${errors.join("; ")}`);
+    error.code = "ACCOUNT_CONFIG_LOAD_FAILED";
+    throw error;
+  }
+  return normalizeAccountConfig({}, "none");
+}
+
+function getAccountConfig(options = {}) {
+  const envConfig = normalizeAccountConfig({
+    supabaseUrl: process.env.ANXOS_SUPABASE_URL || process.env.SUPABASE_URL,
+    supabaseAnonKey: process.env.ANXOS_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
+    accountApiUrl: process.env.ANXOS_ACCOUNT_API_URL || process.env.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL,
+    siteUrl: process.env.ANXOS_WEBSITE_BASE_URL || process.env.WEBSITE_BASE_URL || process.env.ANXOS_ACCOUNT_SITE_URL,
+  }, "environment");
+  if ((envConfig.supabaseUrl && envConfig.supabaseAnonKey) || envConfig.accountApiUrl) {
+    return envConfig;
+  }
+  if (!cachedAccountConfig || options.reload) {
+    cachedAccountConfig = readAccountConfigFromDisk();
+  }
+  return {
+    ...cachedAccountConfig,
+    ...Object.fromEntries(Object.entries(envConfig).filter(([key, value]) => key === "source" ? false : Boolean(value))),
+    source: cachedAccountConfig?.source && envConfig.siteUrl ? `${cachedAccountConfig.source} + environment` : cachedAccountConfig?.source || envConfig.source,
+  };
+}
+
 function getWebsiteBaseUrl() {
-  return normalizeBaseUrl(process.env.ANXOS_WEBSITE_BASE_URL || process.env.WEBSITE_BASE_URL || process.env.ANXOS_ACCOUNT_SITE_URL, WEBSITE_BASE_URL);
+  return normalizeBaseUrl(getAccountConfig().siteUrl, WEBSITE_BASE_URL);
 }
 
 function buildWebsiteUrl(route = "account", params = {}) {
@@ -64,19 +148,15 @@ function buildWebsiteUrl(route = "account", params = {}) {
 }
 
 function getAccountApiUrl() {
-  return normalizeBaseUrl(
-    process.env.ANXOS_ACCOUNT_API_URL ||
-    process.env.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL,
-    ""
-  );
+  return normalizeBaseUrl(getAccountConfig().accountApiUrl, "");
 }
 
 function getSupabaseUrl() {
-  return normalizeBaseUrl(process.env.ANXOS_SUPABASE_URL || process.env.SUPABASE_URL, "");
+  return normalizeBaseUrl(getAccountConfig().supabaseUrl, "");
 }
 
 function getSupabaseAnonKey() {
-  return String(process.env.ANXOS_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "").trim();
+  return String(getAccountConfig().supabaseAnonKey || "").trim();
 }
 
 function assertApprovedExternalUrl(rawUrl, purpose = "account") {
@@ -349,9 +429,14 @@ function getStatus() {
   const session = getCurrentSession();
   const storedSession = session || getCurrentSession({ allowExpired: true });
   const expired = Boolean(storedSession && !session);
+  const config = getAccountConfig();
+  const passwordConfigured = Boolean(config.supabaseUrl && config.supabaseAnonKey);
+  const apiConfigured = Boolean(config.accountApiUrl);
   return {
-    configured: Boolean(getAccountApiUrl() || (getSupabaseUrl() && getSupabaseAnonKey())),
-    passwordConfigured: Boolean(getSupabaseUrl() && getSupabaseAnonKey()),
+    configured: Boolean(apiConfigured || passwordConfigured),
+    passwordConfigured,
+    accountApiConfigured: apiConfigured,
+    configSource: config.source || null,
     authenticated: Boolean(session),
     account: publicAccount(storedSession),
     expiresAt: storedSession ? new Date(storedSession.expiresAt).toISOString() : null,
@@ -367,7 +452,7 @@ async function postSupabaseAuth(pathname, payload, options = {}) {
   const supabaseUrl = getSupabaseUrl();
   const anonKey = getSupabaseAnonKey();
   if (!supabaseUrl || !anonKey) {
-    const error = new Error("Supabase account sign-in is not configured on this device.");
+    const error = new Error("Supabase account sign-in is not configured on this device. Add Supabase URL and anon key configuration.");
     error.code = "SUPABASE_AUTH_NOT_CONFIGURED";
     throw error;
   }

@@ -83,10 +83,15 @@ function assertDesktopIntegration() {
   const service = read("src/services/accountAuthService.js");
   const ipc = read("src/ipc/accountAuthIpc.js");
   const preload = read("preload.js");
+  const packageJson = read("package.json");
 
   assert(service.includes("ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL"), "Desktop should support Supabase function URL env alias.");
   assert(service.includes("loginWithPassword") && service.includes("grant_type=password"), "Desktop should support Supabase email/password sign-in.");
   assert(service.includes("ANXOS_SUPABASE_ANON_KEY") && service.includes("SUPABASE_ANON_KEY"), "Desktop should use public Supabase anon key configuration.");
+  assert(service.includes("getBundledAccountConfigPath") && service.includes("website\", \"account-config.js"), "Desktop should load bundled website/account-config.js when env config is absent.");
+  assert(service.includes("ACCOUNT_CONFIG_LOAD_FAILED"), "Desktop should report account configuration load failures explicitly.");
+  assert(service.includes("configSource"), "Desktop account status should expose sanitized config source metadata.");
+  assert(packageJson.includes("\"website/account-config.js\""), "Packaged Electron builds should include public account configuration.");
   assert(service.includes("/api/auth/device/start") && service.includes("/api/auth/device/poll"), "Desktop should use device authorization endpoints.");
   assert(service.includes("/api/auth/refresh") && service.includes("/api/auth/logout"), "Desktop should refresh and revoke account sessions.");
   assert(service.includes("/api/account/devices/revoke"), "Desktop should support current-device revocation.");

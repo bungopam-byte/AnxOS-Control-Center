@@ -14275,6 +14275,8 @@ function renderAccountState() {
       : `Signed in as ${account.displayName || account.username || "AnxOS Account"}.`);
   } else if (expired) {
     setAccountMessage(accountState.message || "Your AnxOS account session expired. Sign in again to use cloud and remote features.");
+  } else if (accountState.configError) {
+    setAccountMessage(accountState.message || accountState.configError);
   } else if (accountState.configured === false) {
     setAccountMessage("Using local device mode. An AnxOS account is optional and only needed for cloud and remote features.");
   } else {
@@ -14302,8 +14304,16 @@ async function refreshAccountState() {
         };
       }
     }
-  } catch {
-    accountState = { authenticated: false, account: null, pending: null, configured: false };
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "AnxOS account configuration could not be loaded.");
+    accountState = {
+      authenticated: false,
+      account: null,
+      pending: null,
+      configured: false,
+      configError: message,
+      message,
+    };
   }
   renderAccountState();
 }

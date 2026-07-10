@@ -3,6 +3,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+const smokeConfigRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-marketplace-config-"));
+process.env.ANXHUB_CONFIG_DIR = smokeConfigRoot;
+process.on("exit", () => fs.rmSync(smokeConfigRoot, { recursive: true, force: true }));
+
 const marketplaceService = require("../src/services/marketplaceService");
 const marketplaceInstallService = require("../src/services/marketplaceInstallService");
 const systemService = require("../src/services/systemService");
@@ -419,7 +423,7 @@ function assertSingleDeviceModeExperience() {
   assert(preloadSource.includes("account:startDeviceLogin") && preloadSource.includes("account:checkDeviceLogin") && preloadSource.includes("account:cancelDeviceLogin"), "Preload should expose account device-code APIs.");
   assert(appSource.includes('securitySubmitButton.textContent = securityState.setupRequired ? "Create Owner" : "Sign In"'), "Failed security requests should restore the correct submit button label.");
   assert(appSource.includes("securityLastSubmitAt") && appSource.includes("now - securityLastSubmitAt < 1000"), "Renderer should debounce rapid duplicate security submits.");
-  assert(nodeSource.includes('displayName: "This Device"') && nodeSource.includes("local:"), "Default node should be a visible local This Device node.");
+  assert(nodeSource.includes("getApplicationHostNode") && nodeSource.includes('kind: "agent"') && nodeSource.includes("agentIdentity"), "Nodes should separate the application host from identity-backed Agent nodes.");
   assert(securitySource.includes("localMode") && securitySource.includes('username: "This Device"'), "Security should report local mode and allow local no-account actions.");
   assert(securitySource.includes("getCurrentAccountSession") && securitySource.includes("accountAuthenticated"), "Security should accept a verified AnxOS account session as an authenticated app user.");
   assert(securitySource.includes("requireOwner") && securitySource.includes("Owner access is required."), "Security service should expose trusted owner-only authorization.");
@@ -450,8 +454,8 @@ function assertSingleDeviceModeExperience() {
   assert(appSource.includes("normalizeIpcErrorMessage") && appSource.includes("Error invoking remote method"), "Renderer should strip Electron IPC wrappers from Sign In errors.");
   assert(securitySource.includes("recordRateLimitAttempt(rateLimitKey") && securitySource.includes('resetRateLimit(rateLimitKey, "successful-login")'), "Login rate limiting should count failed attempts and reset after successful auth.");
   assert(securityIpcSource.includes("[Security][IPC] Operation started.") && securityIpcSource.includes("security:login"), "Security IPC should log login request boundaries for duplicate-call diagnosis.");
-  assert(routerSource.includes("shouldUseLocalInstances") && routerSource.includes("localInstanceService"), "Service router should use local instances for the built-in node.");
-  assert(agentSource.includes("shouldUseLocalInstanceService") && agentSource.includes("getLocalInstanceService"), "Agent client should fallback to local instances for legacy/default local call sites.");
+  assert(routerSource.includes("shouldUseLocalInstances") && routerSource.includes("getExecutionTarget"), "Service router should route instances from an explicit execution target.");
+  assert(!routerSource.includes("agentClient.getBackendMode()"), "Workspace routing must not consult singleton backend mode.");
   assert(fileSource.includes("shouldUseLocalFiles") && fileSource.includes("Browsing files on this device."), "File service should support local filesystem browsing.");
 }
 

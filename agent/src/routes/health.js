@@ -1,9 +1,12 @@
+const { getDeviceIdentity } = require("../services/deviceIdentityService");
+
 async function handleHealth(config = {}) {
   return {
     statusCode: 200,
     body: {
       ok: true,
       service: "anxos-agent",
+      identity: getDeviceIdentity(),
       mode: "read-only",
       tokenConfigured: Boolean(config.token),
       tokenFingerprint: config.tokenStatus?.fingerprint || null,

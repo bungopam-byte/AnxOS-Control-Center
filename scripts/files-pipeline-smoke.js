@@ -31,6 +31,7 @@ async function waitForAgent(url, token) {
 
 async function main() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "anx-files-pipeline-"));
+  process.env.ANXHUB_CONFIG_DIR = path.join(tempRoot, "desktop-config");
   const port = await getFreePort();
   const token = "files-pipeline-smoke-token";
   const url = `http://127.0.0.1:${port}`;
@@ -42,6 +43,7 @@ async function main() {
       AGENT_PORT: String(port),
       AGENT_TOKEN: token,
       AGENT_FILE_ROOTS: tempRoot,
+      AGENT_IDENTITY_PATH: path.join(tempRoot, "device-identity.json"),
       AGENT_ACTION_PERMISSIONS: "files:write",
     },
     stdio: ["ignore", "pipe", "pipe"],

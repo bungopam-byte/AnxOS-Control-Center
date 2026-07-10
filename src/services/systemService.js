@@ -3,7 +3,7 @@ const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const agentClient = require("./agentClient");
-const { getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
+const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
@@ -434,8 +434,8 @@ async function getLocalSystemSnapshot() {
 }
 
 function getOptionalSelectedNodeConfig(options = {}) {
-  const selectedNodeId = options?.nodeId || getSelectedNodeId();
-  return selectedNodeId && selectedNodeId !== "default" ? getNodeAgentConfig(selectedNodeId) : null;
+  const target = getExecutionTarget(options?.nodeId || getSelectedNodeId());
+  return target.type === "agent" ? target.config : null;
 }
 
 async function getAgentSystemSnapshot(configOverride = null) {
@@ -444,8 +444,8 @@ async function getAgentSystemSnapshot(configOverride = null) {
 }
 
 async function getSystemSnapshot(options = {}) {
-  const backendMode = agentClient.getBackendMode();
-  const nodeConfig = getOptionalSelectedNodeConfig(options);
+  const target = getExecutionTarget(options?.nodeId || getSelectedNodeId());
+  const nodeConfig = target.type === "agent" ? target.config : null;
 
   if (nodeConfig) {
     try {
@@ -457,28 +457,6 @@ async function getSystemSnapshot(options = {}) {
         stack: error?.stack || null,
       });
       throw error;
-    }
-  }
-
-  if (backendMode === "agent") {
-    try {
-      return await getAgentSystemSnapshot();
-    } catch (error) {
-      console.warn("[AnxOS][System] Default agent stats fetch failed; using local system metrics.", {
-        message: error?.message || String(error),
-        code: error?.code || null,
-      });
-      return getLocalSystemSnapshot();
-    }
-  }
-
-  if (backendMode === "auto") {
-    try {
-      return await getAgentSystemSnapshot();
-    } catch (error) {
-      console.warn("[AnxOS][System] Agent stats unavailable; using local system metrics.", {
-        message: error?.message || String(error),
-      });
     }
   }
 

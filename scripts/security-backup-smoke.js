@@ -38,12 +38,12 @@ async function main() {
   assert.strictEqual(firstRunStatus.localMode, true, "Fresh config should default to Single-Device Mode.");
   assert.strictEqual(firstRunStatus.authenticated, false, "Single-Device Mode should not require sign-in.");
   assert.strictEqual(security.requirePermission("instance:lifecycle", "local-smoke").localMode, true, "Local mode should allow local actions without an owner account.");
-  const defaultNodes = nodeService.listNodes();
-  assert.strictEqual(defaultNodes.selectedNodeId, "default", "The selected node should default to the built-in local node.");
-  assert(defaultNodes.nodes.some((node) => node.id === "default" && node.displayName === "This Device" && node.local), "The built-in local node should be visible as This Device.");
-  const localInstances = await serviceRouter.listInstances({ nodeId: "default" });
+  const defaultNodes = await nodeService.listNodes();
+  assert.strictEqual(defaultNodes.selectedNodeId, "application-host", "The selected node should default to the application host.");
+  assert(defaultNodes.nodes.some((node) => node.id === "application-host" && node.kind === "application-host"), "The application host should be a distinct visible node.");
+  const localInstances = await serviceRouter.listInstances({ nodeId: "application-host" });
   assert(Array.isArray(localInstances.instances), "Dashboard/instances should work against the local node without account/session/token.");
-  const localNodeTest = await nodeService.testNode("default");
+  const localNodeTest = await nodeService.testNode("application-host");
   assert.strictEqual(localNodeTest.connected, true, "The local node health check should pass without contacting an agent.");
   const fileService = new FileService();
   const localFiles = await fileService.list({ storageId: "local", path: root });
@@ -101,17 +101,8 @@ async function main() {
   assert.strictEqual(rotated.configured, true, "Agent token should be rotated through the shared token store.");
   assert(rotated.fingerprint && !rotated.token, "Agent token rotation should return only safe status metadata.");
   assert.strictEqual(rotated.restartRequired, true, "Agent token rotation should require app and agent restart.");
-  const savedNode = nodeService.saveNode({
-    displayName: "Smoke Node",
-    agentUrl: "http://127.0.0.1:47131",
-    agentToken: "smoke-token",
-    docker: { enabled: true },
-  });
-  assert(savedNode.node.id, "Node registration should create an id.");
-  const nodes = nodeService.listNodes();
-  assert(nodes.nodes.some((node) => node.id === savedNode.node.id), "Registered node should be listed.");
-  assert.strictEqual(nodeService.selectNode(savedNode.node.id).selectedNodeId, savedNode.node.id, "Node selection should persist.");
-  assert.strictEqual(nodeService.deleteNode(savedNode.node.id).deleted, true, "Node delete should work.");
+  const nodes = await nodeService.listNodes();
+  assert(nodes.nodes.some((node) => node.kind === "application-host"), "Security context should retain the explicit application host node.");
   security.logout();
   await assert.rejects(
     () => security.login({ username: "owner", password: "wrong password 1" }),

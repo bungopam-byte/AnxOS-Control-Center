@@ -17,8 +17,8 @@ const {
   isOwnerAccount,
 } = require("./ownerAccountConfig");
 const {
+  getExecutionTarget,
   getNode,
-  getNodeAgentConfig,
 } = require("./nodeService");
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
@@ -556,17 +556,14 @@ function getSessionRows(state, status) {
 }
 
 function getNodeScopedAgentSettings(options = {}) {
-  if (options?.nodeId && options.nodeId !== "default") {
-    return getNodeAgentConfig(options.nodeId);
-  }
-  return readAgentSettings();
+  const target = getExecutionTarget(options?.nodeId);
+  return target.type === "agent" ? target.config : { backendMode: "local", agentUrl: "", agentToken: "" };
 }
 
 function getAgentTokenSummary(state, options = {}) {
   const settings = getNodeScopedAgentSettings(options);
-  const effectiveConfig = options?.nodeId && options.nodeId !== "default"
-    ? getAgentConfig(settings)
-    : getAgentConfig();
+  const target = getExecutionTarget(options?.nodeId);
+  const effectiveConfig = getAgentConfig(settings);
   const agentToken = effectiveConfig.token || settings.agentToken || "";
   const agentUrl = settings.agentUrl || effectiveConfig.url || "";
   let stat = null;
@@ -581,11 +578,9 @@ function getAgentTokenSummary(state, options = {}) {
     createdAt: safeIso(tokenRecord.createdAt) || (stat ? stat.birthtime.toISOString() : null),
     lastRotatedAt: safeIso(tokenRecord.lastRotatedAt) || (stat ? stat.mtime.toISOString() : null),
     lastUsedAt: safeIso(tokenRecord.lastUsedAt),
-    scope: options?.nodeId && options.nodeId !== "default" ? "Selected remote node" : settings.backendMode === "agent" ? "Remote agent" : "Local device",
+    scope: target.type === "agent" ? "Selected Agent node" : "Application host",
     expirationState: "No expiration",
-    associatedDevice: options?.nodeId && options.nodeId !== "default"
-      ? getNode(options.nodeId)?.displayName || agentUrl
-      : agentUrl || "This Device",
+    associatedDevice: getNode(options?.nodeId)?.displayName || (target.type === "agent" ? agentUrl : "Application Host"),
     configPath: getAgentConfigPath(),
   };
 }

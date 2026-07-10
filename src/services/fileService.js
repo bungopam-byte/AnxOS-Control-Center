@@ -6,7 +6,7 @@ const { EventEmitter } = require("events");
 const { pipeline } = require("stream/promises");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
-const { AgentClientError, downloadFile, getAgentConfig, getBackendMode, getFileListing, mutateFile, readFileText } = require("./agentClient");
+const { AgentClientError, downloadFile, getFileListing, mutateFile, readFileText } = require("./agentClient");
 const { getNodeAgentConfig } = require("./nodeService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
@@ -33,14 +33,6 @@ function trimValue(value) {
 
 function createProfileLookup() {
   return new SshService();
-}
-
-function getAgentHost() {
-  try {
-    return new URL(getAgentConfig().url).hostname.toLowerCase();
-  } catch {
-    return "";
-  }
 }
 
 function getWindowForDialogs() {
@@ -301,25 +293,27 @@ function sortEntries(entries) {
 }
 
 function shouldUseLocalFiles(options = {}) {
-  if (trimValue(options.nodeId) && options.nodeId !== "default") {
-    return false;
-  }
-  return options.storageId === LOCAL_STORAGE_ID || (!trimValue(options.storageId) && getBackendMode() === "local" && !trimValue(options.profileId));
+  return getProviderType(options) === "renderer-local";
 }
 
 function getFileNodeConfig(options = {}) {
   const nodeId = trimValue(options.nodeId);
-  if (!nodeId) {
-    return null;
-  }
-  if (nodeId === "default") {
-    return getBackendMode() === "agent" ? getAgentConfig() : null;
-  }
+  if (!nodeId) return null;
   return getNodeAgentConfig(nodeId);
 }
 
 function shouldUseNodeAgent(options = {}) {
-  return Boolean(getFileNodeConfig(options)) && !trimValue(options.storageId) && !trimValue(options.profileId);
+  return getProviderType(options) === "agent-native";
+}
+
+function getProviderType(options = {}) {
+  const explicit = trimValue(options.providerType).toLowerCase();
+  if (["renderer-local", "agent-native", "sftp"].includes(explicit)) return explicit;
+  if (explicit) throw new FileServiceError("Unknown filesystem provider type.", { code: "FILES_PROVIDER_INVALID", status: 400 });
+  if (options.storageId === LOCAL_STORAGE_ID) return "renderer-local";
+  if (trimValue(options.profileId) || (trimValue(options.storageId) && options.storageId !== LOCAL_STORAGE_ID)) return "sftp";
+  if (trimValue(options.nodeId)) return "agent-native";
+  throw new FileServiceError("Filesystem provider type is required.", { code: "FILES_PROVIDER_REQUIRED", status: 400 });
 }
 
 function getLocalHomePath() {
@@ -1147,35 +1141,6 @@ class FileService extends EventEmitter {
     }
   }
 
-  shouldUseAgentDownload(options = {}) {
-    if (trimValue(options.transport).toLowerCase() === "agent") {
-      return true;
-    }
-
-    if (getBackendMode() !== "agent") {
-      return false;
-    }
-
-    const remotePath = normalizeRemotePath(options.path);
-
-    if (!remotePath || remotePath === ".") {
-      return false;
-    }
-
-    if (!trimValue(options.profileId)) {
-      return true;
-    }
-
-    try {
-      const profile = this.getProfile(options.profileId);
-      const profileHost = trimValue(profile?.host).toLowerCase();
-      const agentHost = getAgentHost();
-      return Boolean(profileHost) && Boolean(agentHost) && profileHost === agentHost;
-    } catch {
-      return false;
-    }
-  }
-
   async downloadFromAgent(remotePath, configOverride = null) {
     try {
       const selection = await showSaveDialog({
@@ -1228,12 +1193,6 @@ class FileService extends EventEmitter {
         local: true,
       };
     }
-    if (this.shouldUseAgentDownload(options)) {
-      const remotePath = normalizeRemotePath(options.path);
-      console.info(`[Files] Download transport selected: agent (${remotePath})`);
-      return this.downloadFromAgent(remotePath);
-    }
-
     const session = await this.ensureSession(options);
     const remotePath = normalizeRemotePath(options.path, session.currentPath || session.homePath);
 

@@ -8,7 +8,7 @@ function registerActionIpc() {
       requirePermission("backups:write", payload.actionId);
       audit({ action: "backup.action", target: payload.actionId });
     }
-    return executeAction(payload.actionId, payload.params);
+    return executeAction(payload.actionId, payload.params, { nodeId: payload.nodeId });
   });
 }
 

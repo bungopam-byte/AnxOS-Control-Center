@@ -1,52 +1,23 @@
-const {
-  cancelAction: cancelAgentAction,
-  executeAction: executeAgentAction,
-  pollAction: pollAgentAction,
-} = require("./actionClient");
-const { getBackendMode } = require("./agentClient");
+const { cancelAction: cancelAgentAction, executeAction: executeAgentAction, pollAction: pollAgentAction } = require("./actionClient");
+const { getExecutionTarget } = require("./nodeService");
 
 class ActionRouterError extends Error {
-  constructor(message, code = null) {
-    super(message);
-    this.name = "ActionRouterError";
-    this.code = code;
-  }
+  constructor(message, code = null) { super(message); this.name = "ActionRouterError"; this.code = code; }
+}
+
+function getAgentTarget(nodeId) {
+  const target = getExecutionTarget(nodeId);
+  if (target.type !== "agent") throw new ActionRouterError("This action requires an Agent node.", "AGENT_NODE_REQUIRED");
+  return target;
 }
 
 function assertActionId(actionId) {
-  if (typeof actionId !== "string" || actionId.trim() === "") {
-    throw new ActionRouterError("Action id is required.", "ACTION_ID_REQUIRED");
-  }
-
+  if (typeof actionId !== "string" || !actionId.trim()) throw new ActionRouterError("Action id is required.", "ACTION_ID_REQUIRED");
   return actionId.trim();
 }
 
-async function routeAgentAction(actionId, callback) {
-  const normalizedActionId = assertActionId(actionId);
-  const backendMode = getBackendMode();
+async function executeAction(actionId, params = {}, options = {}) { const target = getAgentTarget(options.nodeId); return executeAgentAction(assertActionId(actionId), params, target.config); }
+async function pollAction(actionId, options = {}) { const target = getAgentTarget(options.nodeId); return pollAgentAction(assertActionId(actionId), target.config); }
+async function cancelAction(actionId, params = {}, options = {}) { const target = getAgentTarget(options.nodeId); return cancelAgentAction(assertActionId(actionId), params, target.config); }
 
-  if (backendMode === "local") {
-    throw new ActionRouterError("Local Docker actions are not available yet. Switch to Agent or Auto mode.", "LOCAL_ACTIONS_UNAVAILABLE");
-  }
-
-  return callback(normalizedActionId);
-}
-
-async function executeAction(actionId, params = {}) {
-  return routeAgentAction(actionId, (normalizedActionId) => executeAgentAction(normalizedActionId, params));
-}
-
-async function pollAction(actionId) {
-  return routeAgentAction(actionId, (normalizedActionId) => pollAgentAction(normalizedActionId));
-}
-
-async function cancelAction(actionId, params = {}) {
-  return routeAgentAction(actionId, (normalizedActionId) => cancelAgentAction(normalizedActionId, params));
-}
-
-module.exports = {
-  ActionRouterError,
-  cancelAction,
-  executeAction,
-  pollAction,
-};
+module.exports = { ActionRouterError, cancelAction, executeAction, pollAction };

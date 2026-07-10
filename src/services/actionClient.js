@@ -46,11 +46,12 @@ function normalizeActionError(actionId, error) {
   });
 }
 
-async function executeAction(actionId, payload = {}) {
+async function executeAction(actionId, payload = {}, config = null) {
   const endpoint = buildActionPath(actionId);
 
   try {
     const response = await requestJson(endpoint, {
+      config,
       method: "POST",
       body: payload,
     });
@@ -63,9 +64,10 @@ async function executeAction(actionId, payload = {}) {
   }
 }
 
-async function pollAction(actionId) {
+async function pollAction(actionId, config = null) {
   try {
     return await requestJson(buildActionPath(actionId), {
+      config,
       method: "GET",
     });
   } catch (error) {
@@ -73,9 +75,10 @@ async function pollAction(actionId) {
   }
 }
 
-async function cancelAction(actionId, payload = {}) {
+async function cancelAction(actionId, payload = {}, config = null) {
   try {
     return await requestJson(buildActionPath(actionId, "/cancel"), {
+      config,
       method: "POST",
       body: payload,
     });

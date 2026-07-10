@@ -3,7 +3,7 @@ const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const localInstanceService = require("./localInstanceService");
 const agentClient = require("./agentClient");
-const { getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
+const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
 
 class AgentUnavailableError extends Error {
   constructor() {
@@ -34,10 +34,6 @@ function createUnavailableFileListing(message = "File service unavailable.") {
       },
     },
   };
-}
-
-function getBackendMode() {
-  return agentClient.getBackendMode();
 }
 
 async function getAgentDockerSnapshot(options = {}) {
@@ -98,22 +94,10 @@ async function getDockerSnapshot(options = {}) {
     return createDockerUnavailableSnapshot("Docker is disabled for this node.");
   }
 
-  const backendMode = getBackendMode();
-  const selectedNodeId = options?.nodeId || "";
-
-  if (backendMode === "local" && (!selectedNodeId || selectedNodeId === "default")) {
+  if (isApplicationHostTarget(options)) {
     return localDockerService.getDockerSnapshot();
   }
-
-  if (backendMode === "agent") {
-    return getAgentDockerSnapshot(options);
-  }
-
-  try {
-    return await agentClient.getDockerSnapshot(getOptionalNodeConfig(options));
-  } catch {
-    return localDockerService.getDockerSnapshot();
-  }
+  return getAgentDockerSnapshot(options);
 }
 
 async function createDockerContainer(payload = {}) {
@@ -173,13 +157,11 @@ async function getDockerContainerStats(container, options = {}) {
 }
 
 function shouldUseLocalDocker(options = {}) {
-  const selectedNodeId = options?.nodeId || "";
-  return getBackendMode() === "local" && (!selectedNodeId || selectedNodeId === "default");
+  return isApplicationHostTarget(options);
 }
 
 function shouldUseLocalInstances(options = {}) {
-  const selectedNodeId = options?.nodeId || getSelectedNodeId();
-  return getBackendMode() === "local" && (!selectedNodeId || selectedNodeId === "default");
+  return isApplicationHostTarget(options);
 }
 
 async function listDockerContainers(options = {}) {
@@ -239,26 +221,7 @@ async function getAgentPlayitSnapshot(options = {}) {
 }
 
 async function getPlayitSnapshot(options = {}) {
-  const selectedNodeId = options?.nodeId || "";
-  if (selectedNodeId && selectedNodeId !== "default") {
-    return getAgentPlayitSnapshot(options);
-  }
-
-  const backendMode = getBackendMode();
-
-  if (backendMode === "local") {
-    return localPlayitService.getPlayitSnapshot();
-  }
-
-  if (backendMode === "agent") {
-    return getAgentPlayitSnapshot(options);
-  }
-
-  try {
-    return await agentClient.getPlayitSnapshot(getOptionalNodeConfig(options));
-  } catch {
-    return localPlayitService.getPlayitSnapshot();
-  }
+  return isApplicationHostTarget(options) ? localPlayitService.getPlayitSnapshot() : getAgentPlayitSnapshot(options);
 }
 
 async function getAgentAmpSnapshot(options = {}) {
@@ -270,65 +233,36 @@ async function getAgentAmpSnapshot(options = {}) {
 }
 
 async function getAmpSnapshot(options = {}) {
-  const selectedNodeId = options?.nodeId || "";
-  if (selectedNodeId && selectedNodeId !== "default") {
-    return getAgentAmpSnapshot(options);
-  }
-
-  const backendMode = getBackendMode();
-
-  if (backendMode === "local") {
-    return localAmpService.getAmpSnapshot();
-  }
-
-  if (backendMode === "agent") {
-    return getAgentAmpSnapshot(options);
-  }
-
-  try {
-    return await agentClient.getAmpSnapshot(getOptionalNodeConfig(options));
-  } catch {
-    return localAmpService.getAmpSnapshot();
-  }
+  return isApplicationHostTarget(options) ? localAmpService.getAmpSnapshot() : getAgentAmpSnapshot(options);
 }
 
-async function getAgentFileListing() {
-  if (!(await agentClient.isHealthy())) {
+async function getAgentFileListing(options = {}) {
+  const config = getOptionalNodeConfig(options);
+  if (!(await agentClient.isHealthy(config))) {
     throw new AgentUnavailableError();
   }
 
   try {
-    return await agentClient.getFileListing();
+    return await agentClient.getFileListing(".", config);
   } catch {
     throw new AgentUnavailableError();
   }
 }
 
-async function getFileListing() {
-  const backendMode = getBackendMode();
-
-  if (backendMode === "local") {
-    return createUnavailableFileListing("Local file service is not implemented.");
-  }
-
-  if (backendMode === "agent") {
-    return getAgentFileListing();
-  }
-
-  if (await agentClient.isHealthy()) {
-    try {
-      return await agentClient.getFileListing();
-    } catch {
-      return createUnavailableFileListing("Agent file service unavailable. Local file service is not implemented.");
-    }
-  }
-
-  return createUnavailableFileListing("Local file service is not implemented.");
+async function getFileListing(options = {}) {
+  return isApplicationHostTarget(options)
+    ? createUnavailableFileListing("Use the renderer-local filesystem provider for the application host.")
+    : getAgentFileListing(options);
 }
 
 function getOptionalNodeConfig(options = {}) {
   const nodeId = options?.nodeId || getSelectedNodeId();
-  return nodeId && nodeId !== "default" ? getNodeAgentConfig(nodeId) : null;
+  const target = getExecutionTarget(nodeId);
+  return target.type === "agent" ? target.config : null;
+}
+
+function isApplicationHostTarget(options = {}) {
+  return getExecutionTarget(options?.nodeId || getSelectedNodeId()).type === "application-host";
 }
 
 async function listInstances(options = {}) {
@@ -533,7 +467,6 @@ module.exports = {
   downloadBackup,
   forceKillInstance,
   getAmpSnapshot,
-  getBackendMode,
   getDockerSnapshot,
   getDockerContainerLogs,
   getDockerContainerStats,

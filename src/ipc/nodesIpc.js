@@ -32,8 +32,8 @@ function registerNodesIpc() {
     audit({ action: "node.delete", target: payload.nodeId });
     return deleteNode(payload.nodeId);
   }));
-  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => selectNode(payload.nodeId || "default")));
-  ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(payload.nodeId || "default")));
+  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => selectNode(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(payload.nodeId || "application-host")));
 }
 
 module.exports = {

@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const unzipper = require("unzipper");
 const agentClient = require("./agentClient");
-const { getNodeAgentConfig } = require("./nodeService");
+const { getExecutionTarget } = require("./nodeService");
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 
@@ -1746,7 +1746,8 @@ async function installPack(payload = {}) {
   if (provider === "curseforge") {
     curseforgeProvider.ensureConfigured();
   }
-  const agentConfig = payload.nodeId && payload.nodeId !== "default" ? getNodeAgentConfig(payload.nodeId) : null;
+  const executionTarget = getExecutionTarget(payload.nodeId);
+  const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
   const serverInfo = await resolveServerJar(options);
   const instancePayload = buildInstancePayload(options, serverInfo);
   const instanceId = instancePayload.id;

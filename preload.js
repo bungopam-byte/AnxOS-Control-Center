@@ -134,7 +134,7 @@ const desktopApi = {
     saveMinecraftProperties: (instanceId, properties, options = {}) => ipcRenderer.invoke("instances:saveMinecraftProperties", { ...options, instanceId, properties }),
   },
   actions: {
-    executeAction: (actionId, params = {}) => ipcRenderer.invoke("action:execute", { actionId, params }),
+    executeAction: (actionId, params = {}, options = {}) => ipcRenderer.invoke("action:execute", { actionId, params, ...options }),
   },
   backups: {
     list: (payload = {}) => ipcRenderer.invoke("backups:list", payload),

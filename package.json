@@ -35,6 +35,7 @@
     "icons:linux": "node scripts/generate-linux-icons.js",
     "marketplace:smoke": "node scripts/marketplace-smoke.js",
     "files:smoke": "node scripts/files-pipeline-smoke.js",
+    "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "security:reset-password": "node scripts/reset-local-password.js"
   },
   "build": {

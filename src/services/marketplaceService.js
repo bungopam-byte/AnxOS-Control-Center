@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const agentClient = require("./agentClient");
-const { getNodeAgentConfig } = require("./nodeService");
+const { getExecutionTarget } = require("./nodeService");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
 const CATEGORIES = ["Minecraft", "Game Servers", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
@@ -2114,7 +2114,8 @@ async function installTemplate(payload = {}) {
   pushStep(progress, "Validate template", "complete", `${template.id} is installable.`);
 
   const options = payload.options || {};
-  const agentConfig = payload.nodeId && payload.nodeId !== "default" ? getNodeAgentConfig(payload.nodeId) : null;
+  const executionTarget = getExecutionTarget(payload.nodeId);
+  const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
   const ports = parsePorts(options.ports || options.port, template.defaultPorts);
 
   if (template.runtime === "docker" || template.startupType === "docker-image") {

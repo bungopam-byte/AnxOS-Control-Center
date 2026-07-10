@@ -4,6 +4,7 @@ const { app } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { Client } = require("ssh2");
+const { getAllNodesSync, getSelectedNodeId } = require("./nodeService");
 
 const DEV_SSH_PROFILES_PATH = path.resolve(__dirname, "..", "..", "config", "ssh-profiles.json");
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
@@ -118,6 +119,7 @@ function normalizeServer(server, fallbackHost = "") {
     id,
     displayName: trimValue(server?.displayName) || host,
     host,
+    nodeId: trimValue(server?.nodeId) || null,
   };
 }
 
@@ -140,6 +142,7 @@ function normalizeProfile(profile, serverMap) {
     username: trimValue(profile?.username),
     authType: normalizeAuthType(profile?.authType),
     privateKeyPath: trimValue(profile?.privateKeyPath) || null,
+    nodeId: trimValue(profile?.nodeId) || server?.nodeId || null,
   };
 }
 
@@ -168,6 +171,15 @@ function readProfilesConfig() {
     ensureProfilesFile();
     const rawConfig = fs.readFileSync(getProfilesPath(), "utf8");
     const config = normalizeProfilesConfig(JSON.parse(rawConfig));
+    const originalConfig = JSON.stringify(config);
+    const agentNodes = getAllNodesSync().filter((node) => node.kind === "agent");
+    const matchNodeId = (host) => agentNodes.find((node) => { try { return new URL(node.agentUrl).hostname === host; } catch { return false; } })?.id || null;
+    config.servers = config.servers.map((server) => ({ ...server, nodeId: server.nodeId || matchNodeId(server.host) }));
+    config.profiles = config.profiles.map((profile) => ({ ...profile, nodeId: profile.nodeId || config.servers.find((server) => server.id === profile.serverId)?.nodeId || matchNodeId(profile.host) }));
+
+    if (JSON.stringify(config) !== originalConfig) {
+      writeProfilesConfig(config);
+    }
 
     if (config.profiles.length === 0) {
       writeProfilesConfig(getDefaultProfilesConfig());
@@ -203,6 +215,7 @@ function sanitizeProfile(profile) {
     username: profile.username,
     authType: profile.authType,
     privateKeyPath: profile.privateKeyPath,
+    nodeId: profile.nodeId || null,
   };
 }
 
@@ -249,6 +262,7 @@ function createSessionSnapshot(session) {
     id: session.id,
     profileId: session.profile.id,
     serverId: session.profile.serverId || null,
+    nodeId: session.profile.nodeId || null,
     label: session.label,
     host: session.profile.host,
     port: session.profile.port,
@@ -314,6 +328,7 @@ class SshService extends EventEmitter {
       id: serverId,
       displayName,
       host,
+      nodeId: payload.nodeId || getSelectedNodeId(),
     });
     const nextProfile = normalizeProfile(
       {
@@ -325,6 +340,7 @@ class SshService extends EventEmitter {
         username,
         authType,
         privateKeyPath,
+        nodeId: payload.nodeId || getSelectedNodeId(),
       },
       new Map(nextServer ? [[nextServer.id, nextServer]] : []),
     );
@@ -446,6 +462,9 @@ class SshService extends EventEmitter {
 
   connect(options = {}) {
     const profile = this.getProfile(options.profileId);
+    if (!options.nodeId || profile.nodeId !== options.nodeId) {
+      throw new SshServiceError("SSH profile is not assigned to the selected node.", { code: "SSH_NODE_MISMATCH" });
+    }
     const existingSessionId = this.sessionIdsByProfileId.get(profile.id);
     const existingSession = existingSessionId ? this.sessions.get(existingSessionId) || null : null;
 

@@ -3089,6 +3089,24 @@
                 <span class="settings-inline-status" data-update-status>Updates check automatically on startup.</span>
               </div>
             </section>
+            <section class="settings-section" data-routing-diagnostics hidden>
+              <div class="settings-section-heading">
+                <div>
+                  <span class="settings-section-icon" aria-hidden="true">DEV</span>
+                  <div><h3>Routing Diagnostics</h3><p>Development-only execution and provider state.</p></div>
+                </div>
+              </div>
+              <dl class="about-grid">
+                <div><dt>Application Host</dt><dd data-routing-diagnostic="applicationHost">Unavailable</dd></div>
+                <div><dt>Selected Node</dt><dd data-routing-diagnostic="selectedNode">Unavailable</dd></div>
+                <div><dt>Selected Agent ID</dt><dd data-routing-diagnostic="agentId">None</dd></div>
+                <div><dt>Selected Node ID</dt><dd data-routing-diagnostic="nodeId">Unavailable</dd></div>
+                <div><dt>Execution Target</dt><dd data-routing-diagnostic="executionTarget">Unavailable</dd></div>
+                <div><dt>Filesystem Provider</dt><dd data-routing-diagnostic="filesystemProvider">Unavailable</dd></div>
+                <div><dt>Provider Type</dt><dd data-routing-diagnostic="providerType">Unavailable</dd></div>
+                <div><dt>Routing Target</dt><dd data-routing-diagnostic="routingTarget">Unavailable</dd></div>
+              </dl>
+            </section>
           </form>
         </section>
         </main>

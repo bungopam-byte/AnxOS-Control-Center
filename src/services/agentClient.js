@@ -1687,7 +1687,7 @@ function normalizeBreadcrumbs(payload, currentPath = null) {
   return breadcrumbs;
 }
 
-function normalizeFileListing(payload) {
+function normalizeFileListing(payload, configOverride = null) {
   const listing = unwrapPayload(payload, "listing");
   const candidate =
     listing && typeof listing === "object" && !Array.isArray(listing)
@@ -1727,12 +1727,12 @@ function normalizeFileListing(payload) {
       ? {
           ...candidate.diagnostics,
           agent: {
-            url: getAgentConfig().url,
+            url: getAgentConfig(configOverride).url,
           },
         }
       : {
           agent: {
-            url: getAgentConfig().url,
+            url: getAgentConfig(configOverride).url,
           },
         },
   };
@@ -1747,7 +1747,7 @@ async function getFileList(currentPath = ".", configOverride = null) {
 }
 
 async function getFileListing(currentPath = ".", configOverride = null) {
-  return normalizeFileListing(await getFileList(currentPath, configOverride));
+  return normalizeFileListing(await getFileList(currentPath, configOverride), configOverride);
 }
 
 async function readFileText(currentPath, configOverride = null) {

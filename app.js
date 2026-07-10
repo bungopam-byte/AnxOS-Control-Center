@@ -413,6 +413,8 @@ const backupScheduleFields = document.querySelectorAll("[data-backup-schedule]")
 const backupRestoreFields = document.querySelectorAll("[data-backup-restore]");
 const backupEmptyMessage = document.querySelector("[data-backup-empty-message]");
 const aboutFields = document.querySelectorAll("[data-about-field]");
+const routingDiagnostics = document.querySelector("[data-routing-diagnostics]");
+const routingDiagnosticFields = document.querySelectorAll("[data-routing-diagnostic]");
 const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
@@ -439,7 +441,8 @@ let ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selected
 let ownerAutosaveTimer = null;
 let ownerAnalyticsTimer = null;
 let ownerLogEntries = [];
-let nodesState = { selectedNodeId: "default", nodes: [] };
+let nodesState = { selectedNodeId: "application-host", nodes: [], applicationHost: null };
+let runtimeInfoState = null;
 let selectedNodeContextVersion = 0;
 let nodeSwitchInProgress = false;
 let nodePickerOpen = false;
@@ -9972,30 +9975,37 @@ function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
   const selectedRemoteNode = selected ? null : getSelectedRemoteFilesNode();
   const localSelected = !selected || selected.id === "local";
-  if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Node" : selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
-  if (storageActiveName) storageActiveName.textContent = selectedRemoteNode?.displayName || storageConnectionLabel(selected);
+  renderRoutingDiagnostics();
+  if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Agent" : selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
+  if (storageActiveName) storageActiveName.textContent = selectedRemoteNode ? "Agent Filesystem" : storageConnectionLabel(selected);
   if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || "Not connected";
   document.querySelector('[data-storage-action="edit"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="delete"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="set-default"]')?.toggleAttribute("disabled", !selected || selected.default === true);
   if (!storageList) return;
   storageList.replaceChildren();
-  (storageConnectionsState.connections || []).forEach((connection) => {
+  const agentNode = getSelectedRemoteFilesNode();
+  const visibleConnections = agentNode
+    ? [{ id: `agent-native:${agentNode.id}`, provider: "agent-native", badge: "Agent", name: "Agent Filesystem", nodeId: agentNode.id }, ...(storageConnectionsState.connections || [])]
+    : (storageConnectionsState.connections || []);
+  visibleConnections.forEach((connection) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "storage-connection-item";
-    item.classList.toggle("is-active", connection.id === selectedStorageId);
+    item.classList.toggle("is-active", connection.provider === "agent-native" ? !selectedStorageId : connection.id === selectedStorageId);
     item.innerHTML = `
       <span>${connection.badge || (connection.provider === "sftp" ? "SFTP" : "Local")}</span>
       <strong></strong>
       <small></small>
     `;
     item.querySelector("strong").textContent = `${storageConnectionLabel(connection)}${connection.default ? " · Default" : ""}`;
-    item.querySelector("small").textContent = connection.provider === "sftp" || connection.type === "sftp"
+    item.querySelector("small").textContent = connection.provider === "agent-native"
+      ? `${agentNode.agentIdentity?.operatingSystem || "Agent node"} · ${agentNode.agentUrl || "Agent API"}`
+      : connection.provider === "sftp" || connection.type === "sftp"
       ? `${connection.username || "user"}@${connection.host || "host"}:${connection.port || 22} ${connection.rootDirectory || "/"}`
-      : "Local filesystem on this computer";
+      : "Local filesystem on the application host";
     item.addEventListener("click", () => {
-      selectedStorageId = connection.id;
+      selectedStorageId = connection.provider === "agent-native" ? "" : connection.id;
       filesSelectedProfileId = null;
       setFilesPasswordPromptState(false);
       renderStorageConnections();
@@ -10181,6 +10191,7 @@ async function handleStorageConnectionSaved(payload = {}) {
 
 function getFilesFilteredProfiles() {
   return sshProfilesState.profiles.filter((profile) => {
+    if (profile.nodeId && profile.nodeId !== getSelectedNodeId()) return false;
     if (!filesSelectedServerId) {
       return true;
     }
@@ -10195,7 +10206,7 @@ function getSelectedRemoteFilesNode() {
 }
 
 function isSingleDeviceMode() {
-  return (latestAgentSettingsPayload?.effective?.backendMode || latestAgentSettingsPayload?.stored?.backendMode || "local") === "local";
+  return getSelectedNode()?.kind === "application-host";
 }
 
 function syncFilesSelectionState() {
@@ -11596,18 +11607,19 @@ function getFilesRequestStorageId() {
 function getFilesConnectionTarget() {
   const storage = getSelectedStorageConnection();
   if (storage) {
-    return { key: `storage:${storage.id}`, type: "storage", label: storageConnectionLabel(storage), storage };
+    const providerType = storage.id === "local" || storage.provider === "local" ? "renderer-local" : "sftp";
+    return { key: `storage:${storage.id}`, type: "storage", providerType, label: storageConnectionLabel(storage), storage };
   }
   const profile = getActiveFilesProfile();
   if (profile) {
-    return { key: `profile:${profile.id}`, type: "profile", label: profile.displayName || profile.host, profile };
+    return { key: `profile:${profile.id}`, type: "profile", providerType: "sftp", label: profile.displayName || profile.host, profile };
   }
   const node = getSelectedRemoteFilesNode();
   if (node) {
-    return { key: `node:${node.id}`, type: "node", label: node.displayName || "Remote node", node };
+    return { key: `node:${node.id}`, type: "node", providerType: "agent-native", label: node.displayName || "Remote node", node };
   }
   if (isSingleDeviceMode()) {
-    return { key: "storage:local", type: "local", label: "This Device" };
+    return { key: "storage:local", type: "local", providerType: "renderer-local", label: "Application Host" };
   }
   return null;
 }
@@ -11685,6 +11697,7 @@ async function refreshFileListing(options = {}) {
   try {
     const listing = await desktopApiState.api.files.list({
       nodeId: getSelectedNodeId(),
+      providerType: getFilesConnectionTarget()?.providerType,
       storageId,
       profileId,
       path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined,
@@ -11921,6 +11934,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
   try {
     const payload = await desktopApiState.api.files.readText({
       nodeId: getSelectedNodeId(),
+      providerType: getFilesConnectionTarget()?.providerType,
       storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: entry.path,
@@ -11992,6 +12006,7 @@ async function saveRemoteTextFile() {
   try {
     await desktopApiState.api.files.writeText({
       nodeId: getSelectedNodeId(),
+      providerType: getFilesConnectionTarget()?.providerType,
       storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
       path: latestFileDocument.path,
@@ -12053,6 +12068,7 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath)
 
   filesActionRequestInFlight = true;
   payload.nodeId = getSelectedNodeId();
+  payload.providerType = getFilesConnectionTarget()?.providerType;
   updateFileActionButtons();
   const transferId = startFileTransfer(actionName, payload.path || payload.sourcePath || payload.directoryPath || refreshPath || "Storage operation");
   payload.transferId = transferId;
@@ -13230,7 +13246,7 @@ function openConsoleInstanceFiles() {
 }
 
 function getSshSessionList() {
-  return [...sshSessions.values()];
+  return [...sshSessions.values()].filter((session) => session.nodeId === getSelectedNodeId());
 }
 
 function getActiveSshSession() {
@@ -13272,6 +13288,7 @@ function focusSshPasswordPrompt() {
 
 function getSshProfileFormValues() {
   return {
+    nodeId: getSelectedNodeId(),
     name: sshProfileNameInput?.value || "",
     host: sshProfileHostInput?.value || "",
     port: sshProfilePortInput?.value || "22",
@@ -13687,6 +13704,7 @@ function updateSshWorkspaceStatus() {
 
 function getSshFilteredProfiles() {
   return sshProfilesState.profiles.filter((profile) => {
+    if (profile.nodeId !== getSelectedNodeId()) return false;
     if (!sshSelectedServerId) {
       return true;
     }
@@ -13695,11 +13713,16 @@ function getSshFilteredProfiles() {
   });
 }
 
+function getSshFilteredServers() {
+  return sshProfilesState.servers.filter((server) => !server.nodeId || server.nodeId === getSelectedNodeId());
+}
+
 function syncSshSelectionState() {
-  const availableServerIds = new Set(sshProfilesState.servers.map((server) => server.id));
+  const filteredServers = getSshFilteredServers();
+  const availableServerIds = new Set(filteredServers.map((server) => server.id));
 
   if (!availableServerIds.has(sshSelectedServerId)) {
-    sshSelectedServerId = sshProfilesState.defaultServerId || sshProfilesState.servers[0]?.id || null;
+    sshSelectedServerId = filteredServers.find((server) => server.id === sshProfilesState.defaultServerId)?.id || filteredServers[0]?.id || null;
   }
 
   const filteredProfiles = getSshFilteredProfiles();
@@ -13715,7 +13738,8 @@ function renderSshProfileSelectors() {
   if (sshServerSelect) {
     sshServerSelect.replaceChildren();
 
-    sshProfilesState.servers.forEach((server) => {
+    const filteredServers = getSshFilteredServers();
+    filteredServers.forEach((server) => {
       const option = document.createElement("option");
       option.value = server.id;
       option.textContent = server.displayName;
@@ -13723,7 +13747,7 @@ function renderSshProfileSelectors() {
       sshServerSelect.appendChild(option);
     });
 
-    if (sshProfilesState.servers.length === 0) {
+    if (filteredServers.length === 0) {
       const option = document.createElement("option");
       option.textContent = "No servers configured";
       sshServerSelect.appendChild(option);
@@ -14099,6 +14123,7 @@ async function connectSshSession(options = {}) {
 
   try {
     const session = await desktopApiState.api.ssh.connect({
+      nodeId: getSelectedNodeId(),
       profileId: profile.id,
       password,
       ...measureSshTerminalSize(),
@@ -15189,7 +15214,7 @@ async function rotateAgentTokenFromSettings() {
 }
 
 function getSelectedNodeId() {
-  return nodesState.selectedNodeId || "default";
+  return nodesState.selectedNodeId || "application-host";
 }
 
 function getSelectedNode() {
@@ -15270,6 +15295,7 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
   selectedDockerContainerId = null;
   selectedInstanceId = null;
   activeConsoleInstanceId = null;
+  activeSshSessionId = null;
   consoleOpenInstanceIds = [];
   consoleBufferedEntries = [];
   lastAmpRefreshAt = 0;
@@ -15359,7 +15385,7 @@ function createAgentRobotIcon(state = "offline") {
 }
 
 function getNodeVisualState(node) {
-  if (node?.local || node?.backendMode === "local") {
+  if (node?.kind === "application-host") {
     return "online";
   }
   if (node?.installing) {
@@ -15457,9 +15483,9 @@ function renderNodePicker() {
     const title = document.createElement("strong");
     title.textContent = node.displayName || node.id || "Unnamed node";
     const detail = document.createElement("small");
-    detail.textContent = node.local || node.backendMode === "local"
-      ? "This device · local mode"
-      : `${node.agentUrl || "Remote agent"} · ${node.hasToken ? "token configured" : "token missing"}`;
+    detail.textContent = node.kind === "application-host"
+      ? `${node.applicationHost?.operatingSystem || "Local OS"} · Local Application`
+      : `${node.agentIdentity?.operatingSystem || "Agent"} · ${node.agentUrl || "Agent API"}`;
     copy.append(title, detail);
     const badge = document.createElement("span");
     badge.className = "node-picker-option__badge";
@@ -15468,7 +15494,7 @@ function renderNodePicker() {
     option.addEventListener("click", async (event) => {
       event.stopPropagation();
       closeNodePicker();
-      await selectNode(node.id || "default");
+      await selectNode(node.id || "application-host");
     });
     nodePickerList.append(option);
   });
@@ -15516,10 +15542,11 @@ async function activateNodePickerOption(index) {
     return;
   }
   closeNodePicker();
-  await selectNode(node.id || "default");
+  await selectNode(node.id || "application-host");
 }
 
 function renderNodes() {
+  renderRoutingDiagnostics();
   nodeTargetSelects.forEach((select) => {
     select.replaceChildren();
     (nodesState.nodes || []).forEach((node) => {
@@ -15528,7 +15555,7 @@ function renderNodes() {
       option.textContent = node.default ? `${node.displayName} (default)` : node.displayName;
       select.append(option);
     });
-    select.value = (nodesState.nodes || []).some((node) => node.id === getSelectedNodeId()) ? getSelectedNodeId() : "default";
+    select.value = (nodesState.nodes || []).some((node) => node.id === getSelectedNodeId()) ? getSelectedNodeId() : "application-host";
   });
 
   if (nodeStatus) {
@@ -15539,7 +15566,7 @@ function renderNodes() {
 
   if (sidebarFooter) {
     const selected = getSelectedNode();
-    const nodeName = selected?.displayName || "This Device";
+    const nodeName = selected?.displayName || "Application Host";
     const nodeState = getNodeVisualState(selected);
     const nameTarget = sidebarFooter.querySelector("[data-node-picker-label]");
     const detailTarget = sidebarFooter.querySelector("[data-node-picker-detail]");
@@ -15549,8 +15576,8 @@ function renderNodes() {
     if (detailTarget) {
       detailTarget.textContent = nodeSwitchInProgress
         ? "Switching node..."
-        : selected?.local || selected?.backendMode === "local"
-          ? "Local device"
+      : selected?.kind === "application-host"
+          ? "Application host"
           : selected?.agentUrl || "Remote agent";
     }
     sidebarFooter.dataset.agentState = nodeState;
@@ -15558,10 +15585,10 @@ function renderNodes() {
   }
 
   if (nodeMessage) {
-    const remoteCount = (nodesState.nodes || []).filter((node) => !(node.local || node.backendMode === "local" || node.id === "default")).length;
+    const remoteCount = (nodesState.nodes || []).filter((node) => node.kind === "agent").length;
     nodeMessage.textContent = remoteCount > 0
-      ? `${remoteCount} remote node(s) registered. This Device remains available.`
-      : "You're managing this device. Add a remote node only if you want to control another PC or server.";
+      ? `${remoteCount} Agent node(s) registered. The application host remains available.`
+      : "The application host is selected. Register an Agent node to manage another machine.";
   }
 
   if (nodeList) {
@@ -15577,9 +15604,9 @@ function renderNodes() {
       const title = document.createElement("strong");
       title.textContent = node.displayName || node.id;
       const detail = document.createElement("small");
-      detail.textContent = node.local || node.backendMode === "local"
-        ? "Built-in local node · no account or agent token required"
-        : `${node.agentUrl} · token ${node.hasToken ? "configured" : "not set"} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
+      detail.textContent = node.kind === "application-host"
+        ? `${node.applicationHost?.operatingSystem || "Local OS"} · Local Application`
+        : `${node.agentIdentity?.operatingSystem || "Agent OS unavailable"} · ${node.agentUrl} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
       copy.append(title, detail);
       item.append(copy);
       item.addEventListener("click", () => selectNode(node.id));
@@ -15592,24 +15619,24 @@ function renderNodes() {
 async function refreshNodes() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasNodes) {
-    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "This Device", default: true, local: true, backendMode: "local" }] };
+    nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
     renderNodes();
     return;
   }
   try {
     nodesState = await desktopApiState.api.nodes.list();
   } catch {
-    nodesState = { selectedNodeId: "default", nodes: [{ id: "default", displayName: "This Device", default: true, local: true, backendMode: "local" }] };
+    nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
   }
   renderNodes();
 }
 
 async function selectNode(nodeId) {
   const desktopApiState = getDesktopApiState();
-  const nextNodeId = nodeId || "default";
+  const nextNodeId = nodeId || "application-host";
   const previousNodeId = getSelectedNodeId();
   const previousNodesState = {
-    selectedNodeId: nodesState.selectedNodeId || "default",
+    selectedNodeId: nodesState.selectedNodeId || "application-host",
     nodes: Array.isArray(nodesState.nodes) ? [...nodesState.nodes] : [],
   };
   if (nextNodeId === previousNodeId && !nodeSwitchInProgress) {
@@ -15694,7 +15721,7 @@ async function testSelectedNode() {
 async function deleteSelectedNode() {
   const desktopApiState = getDesktopApiState();
   const nodeId = getSelectedNodeId();
-  if (!desktopApiState.hasNodes || nodeId === "default" || !window.confirm(`Delete node ${nodeId}?`)) {
+  if (!desktopApiState.hasNodes || getSelectedNode()?.kind === "application-host" || !window.confirm(`Delete node ${nodeId}?`)) {
     return;
   }
   try {
@@ -16149,12 +16176,33 @@ async function loadRuntimeInfo() {
 
   try {
     const info = await desktopApiState.api.app.getRuntimeInfo();
+    runtimeInfoState = info;
     setAboutFields(info);
     renderDevelopmentBadge(info);
+    renderRoutingDiagnostics();
   } catch {
     setAboutFields(null);
     renderDevelopmentBadge(null);
   }
+}
+
+function renderRoutingDiagnostics() {
+  const visible = Boolean(runtimeInfoState?.developmentMode && runtimeInfoState?.trustedDevelopmentMode && runtimeInfoState?.isPackaged === false);
+  if (routingDiagnostics) routingDiagnostics.hidden = !visible;
+  if (!visible) return;
+  const node = getSelectedNode();
+  const target = getFilesConnectionTarget();
+  const values = {
+    applicationHost: `${nodesState.applicationHost?.displayName || nodesState.applicationHost?.hostname || "Application Host"} · ${nodesState.applicationHost?.operatingSystem || "Unknown OS"}`,
+    selectedNode: `${node?.displayName || "Unavailable"} · ${node?.kind || "unknown"}`,
+    agentId: node?.kind === "agent" ? node.agentIdentity?.deviceId || "Unavailable" : "None",
+    nodeId: node?.id || "Unavailable",
+    executionTarget: node?.executionTarget?.type || node?.kind || "Unavailable",
+    filesystemProvider: target?.label || "None selected",
+    providerType: target?.providerType || "None",
+    routingTarget: target?.key || node?.executionTarget?.type || "Unavailable",
+  };
+  routingDiagnosticFields.forEach((field) => { field.textContent = values[field.dataset.routingDiagnostic] || "Unavailable"; });
 }
 
 function formatUpdateBytes(value) {
@@ -17580,7 +17628,7 @@ localSetupButtons.forEach((button) => {
   });
 });
 nodeTargetSelects.forEach((select) => {
-  select.addEventListener("change", () => selectNode(select.value || "default"));
+  select.addEventListener("change", () => selectNode(select.value || "application-host"));
 });
 nodePickerTrigger?.addEventListener("click", (event) => {
   event.stopPropagation();

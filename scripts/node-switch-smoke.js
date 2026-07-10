@@ -47,7 +47,7 @@ includesAll(appSource, [
   "document.addEventListener(\"click\"",
   "nodePicker?.addEventListener(\"keydown\"",
   "await activateNodePickerOption(nodePickerActiveIndex);",
-  "closeNodePicker();\n      await selectNode(node.id || \"default\");",
+  "closeNodePicker();\n      await selectNode(node.id || \"application-host\");",
   "sidebarFooter.dataset.agentState = nodeState;",
 ], "Node picker interaction");
 

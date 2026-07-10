@@ -172,7 +172,7 @@ AnxDev sets only trusted source-development flags supported by the app:
 - `ANXOS_TRUSTED_DEVELOPMENT_MODE=1`
 - `ANXOS_OPEN_DEVTOOLS=1` only for the DevTools option
 
-The development owner fallback password is available only in an unpackaged Electron run with trusted development mode enabled. Packaged releases continue to reject `1245` and weak production setup passwords. The app shows a subtle `Development Mode` badge only when the main process confirms trusted unpackaged development mode.
+The development owner fallback password is available only in an unpackaged Electron run with trusted development mode enabled. Packaged releases continue to reject the development fallback and weak production setup passwords. The app shows a subtle `Development Mode` badge only when the main process confirms trusted unpackaged development mode.
 
 Troubleshooting:
 

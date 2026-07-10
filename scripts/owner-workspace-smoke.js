@@ -26,11 +26,21 @@ async function main() {
   const mainJs = readRepoFile("main.js");
 
   assert(indexHtml.includes("data-owner-workspace-nav"), "Owner Workspace sidebar section should be present.");
-  assert(indexHtml.includes('data-page-target="owner-workspace"'), "Owner Workspace sidebar route should be registered.");
+  assert(indexHtml.includes("data-owner-workspace-toggle"), "Owner Workspace sidebar group should be collapsible.");
+  assert(indexHtml.includes('data-owner-nav-section="workspace"'), "Owner Workspace group should include Workspace section.");
+  assert(indexHtml.includes('data-owner-nav-section="development"'), "Owner Workspace group should include Development section.");
+  assert(indexHtml.includes('data-owner-nav-section="diagnostics"'), "Owner Workspace group should include Diagnostics section.");
+  assert(indexHtml.includes('data-owner-nav-section="custom"'), "Owner Workspace group should include custom pages section.");
+  assert(!indexHtml.includes("owner-page-rail"), "Redundant Owner Workspace Pages panel should be removed.");
   assert(indexHtml.includes('data-page="owner-workspace"'), "Owner Workspace page route should be present.");
   assert(preloadJs.includes("ownerWorkspace:getWorkspace"), "Owner Workspace preload bridge should expose workspace IPC.");
+  assert(preloadJs.includes("ownerWorkspace:selectPage"), "Owner Workspace preload bridge should expose selected page persistence.");
   assert(mainJs.includes("registerOwnerWorkspaceIpc()"), "Owner Workspace IPC should be registered by the main process.");
   assert(appJs.includes("ownerWorkspaceAvailable"), "Renderer should use the trusted owner workspace availability state.");
+  assert(appJs.includes("ownerPageTool(page?.id"), "Renderer should route built-in pages to their own tools.");
+  assert(appJs.includes("toggleOwnerNavExpanded"), "Renderer should support collapsible Owner Workspace navigation.");
+  assert(appJs.includes("saveOwnerJson"), "JSON Editor should validate and save JSON content.");
+  assert(appJs.includes("renderOwnerLogs"), "Log Viewer should support rendering and filtering logs.");
 
   const securityPath = "../src/services/securityService";
   const workspacePath = "../src/services/ownerWorkspaceService";
@@ -49,15 +59,44 @@ async function main() {
   assert.strictEqual(security.getStatus().user.role, "Owner", "Trusted development fallback should create an owner session.");
 
   let data = workspace.getWorkspace();
-  assert(data.pages.some((page) => page.id === "notes"), "Built-in Notes page should be available.");
+  const builtIns = ["overview", "notes", "scratchpad", "ui-sandbox", "feature-flags", "api-tester", "internal-analytics", "command-center", "json-editor", "log-viewer"];
+  for (const pageId of builtIns) {
+    assert(data.pages.some((page) => page.id === pageId), `Built-in ${pageId} page should be available.`);
+  }
+  assert.strictEqual(data.selectedPageId, "overview", "Default selected workspace page should be Overview.");
+  workspace.selectPage({ pageId: "api-tester" });
+  data = workspace.getWorkspace();
+  assert.strictEqual(data.selectedPageId, "api-tester", "Selected workspace page should persist.");
   workspace.saveContent({ pageId: "notes", markdown: "# Private\n\nSaved locally." });
   data = workspace.getWorkspace();
   assert.strictEqual(data.contents.notes.markdown.includes("Saved locally."), true, "Autosaved content should persist.");
+  workspace.saveContent({ pageId: "json-editor", json: "{\"ok\":true}" });
+  data = workspace.getWorkspace();
+  assert.strictEqual(data.contents["json-editor"].json.includes("\"ok\""), true, "JSON Editor content should persist.");
 
   const created = workspace.createPage({ title: "Smoke Page", icon: "test", accent: "#45e08f" });
   workspace.saveContent({ pageId: created.page.id, markdown: "- [ ] checklist\n```js\nconsole.log('ok')\n```" });
+  const duplicate = workspace.duplicatePage({ id: created.page.id });
+  assert(duplicate.page.title.includes("Copy"), "Custom pages should duplicate.");
+  workspace.updatePage({ id: created.page.id, title: "Smoke Page Renamed", pinned: false });
+  data = workspace.getWorkspace();
+  assert(data.pages.some((page) => page.title === "Smoke Page Renamed" && page.pinned === false), "Custom pages should rename and pin/unpin.");
+  workspace.deletePage({ id: duplicate.page.id });
+  data = workspace.getWorkspace();
+  assert(!data.pages.some((page) => page.id === duplicate.page.id), "Custom pages should delete.");
   assert(fs.existsSync(workspace.getWorkspacePath()), "Workspace should use a separate owner-workspace storage file.");
   assert(!workspace.getWorkspacePath().endsWith("security.json"), "Workspace data must be separate from security settings.");
+
+  const workspaceDataPath = workspace.getWorkspacePath();
+  fs.writeFileSync(workspaceDataPath, JSON.stringify({
+    version: 1,
+    customPages: [{ id: "existing-custom", title: "Existing Custom", builtIn: false, pinned: true }],
+    contents: { "existing-custom": { markdown: "keep me" } },
+  }, null, 2));
+  data = workspace.getWorkspace();
+  assert(data.pages.some((page) => page.id === "overview"), "Empty or old workspace files should migrate built-in pages.");
+  assert(data.pages.some((page) => page.id === "existing-custom"), "Workspace migration should preserve custom pages.");
+  assert.strictEqual(data.contents["existing-custom"].markdown, "keep me", "Workspace migration should preserve custom content.");
 
   assert.throws(
     () => workspace._test.assertApprovedApiUrl("https://example.com/"),

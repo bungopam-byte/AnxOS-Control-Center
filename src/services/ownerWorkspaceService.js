@@ -88,7 +88,12 @@ function createDefaultState() {
     updatedAt: now,
     builtInPages: BUILT_IN_PAGES,
     customPages: [],
+    selectedPageId: "overview",
     contents: {
+      overview: {
+        markdown: "",
+        updatedAt: now,
+      },
       notes: {
         markdown: "# Notes\n\n",
         updatedAt: now,
@@ -99,6 +104,10 @@ function createDefaultState() {
       },
       "json-editor": {
         json: "{}",
+        updatedAt: now,
+      },
+      "ui-sandbox": {
+        markdown: "",
         updatedAt: now,
       },
     },
@@ -112,15 +121,21 @@ function normalizeState(raw) {
   if (!raw || typeof raw !== "object") {
     return base;
   }
-  return {
+  const next = {
     ...base,
     ...raw,
     builtInPages: BUILT_IN_PAGES,
     customPages: Array.isArray(raw.customPages) ? raw.customPages : [],
-    contents: raw.contents && typeof raw.contents === "object" ? raw.contents : base.contents,
+    selectedPageId: typeof raw.selectedPageId === "string" ? raw.selectedPageId : base.selectedPageId,
+    contents: raw.contents && typeof raw.contents === "object" ? { ...base.contents, ...raw.contents } : base.contents,
     flagOverrides: raw.flagOverrides && typeof raw.flagOverrides === "object" ? raw.flagOverrides : {},
     apiHistory: Array.isArray(raw.apiHistory) ? raw.apiHistory.slice(0, 50) : [],
   };
+  const knownPages = new Set([...next.builtInPages, ...next.customPages].map((page) => page.id));
+  if (!knownPages.has(next.selectedPageId)) {
+    next.selectedPageId = "overview";
+  }
+  return next;
 }
 
 function atomicWriteJson(filePath, payload) {
@@ -132,9 +147,16 @@ function atomicWriteJson(filePath, payload) {
 
 function readState() {
   try {
-    return normalizeState(JSON.parse(fs.readFileSync(getWorkspacePath(), "utf8")));
+    const raw = JSON.parse(fs.readFileSync(getWorkspacePath(), "utf8"));
+    const normalized = normalizeState(raw);
+    if (!Array.isArray(raw.builtInPages) || raw.builtInPages.length !== BUILT_IN_PAGES.length || !raw.contents?.notes) {
+      writeState(normalized);
+    }
+    return normalized;
   } catch {
-    return createDefaultState();
+    const state = createDefaultState();
+    writeState(state);
+    return state;
   }
 }
 
@@ -168,11 +190,26 @@ function getWorkspace() {
   return {
     status: publicStatus(),
     pages: [...state.builtInPages, ...state.customPages],
+    selectedPageId: state.selectedPageId,
     contents: state.contents,
     flags: getFeatureFlags(false),
     apiHistory: state.apiHistory,
     storagePath: getWorkspacePath(),
   };
+}
+
+function selectPage(payload = {}) {
+  assertOwner("owner-workspace:page:select");
+  const state = readState();
+  const pageId = String(payload.pageId || "");
+  const page = [...state.builtInPages, ...state.customPages].find((entry) => entry.id === pageId);
+  if (!page) {
+    const error = new Error("Page not found.");
+    error.code = "PAGE_NOT_FOUND";
+    throw error;
+  }
+  state.selectedPageId = page.id;
+  return { selectedPageId: page.id, workspace: writeState(state) };
 }
 
 function slugify(value) {
@@ -283,6 +320,7 @@ function saveContent(payload = {}) {
     json: typeof payload.json === "string" ? payload.json.slice(0, 2_000_000) : state.contents[pageId]?.json,
     updatedAt: safeIso(),
   };
+  state.selectedPageId = pageId;
   return { content: state.contents[pageId], workspace: writeState(state) };
 }
 
@@ -551,6 +589,7 @@ module.exports = {
   runApiRequest,
   runCommand,
   saveContent,
+  selectPage,
   setFeatureFlag,
   updatePage,
   _test: {

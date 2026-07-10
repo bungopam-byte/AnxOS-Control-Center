@@ -4,6 +4,7 @@ const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
 const ownerWorkspaceNav = document.querySelector("[data-owner-workspace-nav]");
+const ownerWorkspaceToggle = document.querySelector("[data-owner-workspace-toggle]");
 const ownerWorkspaceNavPages = document.querySelector("[data-owner-workspace-nav-pages]");
 const ownerWorkspacePage = document.querySelector("[data-owner-workspace-page]");
 const ownerStatusFields = document.querySelectorAll("[data-owner-status]");
@@ -14,6 +15,8 @@ const ownerPageTitle = document.querySelector("[data-owner-page-title]");
 const ownerPageKicker = document.querySelector("[data-owner-page-kicker]");
 const ownerSaveState = document.querySelector("[data-owner-save-state]");
 const ownerEditor = document.querySelector("[data-owner-editor]");
+const ownerJsonEditor = document.querySelector("[data-owner-json-editor]");
+const ownerJsonMessage = document.querySelector("[data-owner-json-message]");
 const ownerTools = document.querySelectorAll("[data-owner-tool]");
 const ownerActionButtons = document.querySelectorAll("[data-owner-action]");
 const ownerFlags = document.querySelector("[data-owner-flags]");
@@ -23,6 +26,8 @@ const ownerApiFields = document.querySelectorAll("[data-owner-api]");
 const ownerApiMessage = document.querySelector("[data-owner-api-message]");
 const ownerApiHistory = document.querySelector("[data-owner-api-history]");
 const ownerLogViewer = document.querySelector("[data-owner-log-viewer]");
+const ownerLogSearch = document.querySelector("[data-owner-log-search]");
+const ownerLogLevel = document.querySelector("[data-owner-log-level]");
 const titlebar = document.querySelector("[data-titlebar]");
 const titlebarDragSurface = document.querySelector("[data-titlebar-drag]");
 const titlebarPageTarget = document.querySelector("[data-titlebar-page]");
@@ -428,6 +433,7 @@ let accountCountdownTimer = null;
 let ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
 let ownerAutosaveTimer = null;
 let ownerAnalyticsTimer = null;
+let ownerLogEntries = [];
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
 let backupsState = {
@@ -598,6 +604,7 @@ const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
 const STALE_INSTANCE_STORAGE_KEY = "anxos.instances.staleIds.v1";
 const LOCAL_SETUP_STORAGE_KEY = "anxos.localSetup.complete.v1";
+const OWNER_WORKSPACE_NAV_STORAGE_KEY = "anxos.ownerWorkspace.navExpanded.v1";
 const staleInstanceIds = new Set();
 const instanceRemovalAllowedIds = new Set();
 const PRIMARY_NAVIGATION_ORDER = [
@@ -2342,6 +2349,12 @@ function showPage(pageName) {
       item.removeAttribute("aria-current");
     }
   });
+  ownerWorkspaceToggle?.classList.toggle("is-active", safePageName === "owner-workspace");
+  if (safePageName === "owner-workspace") {
+    ownerWorkspaceToggle?.setAttribute("aria-current", "page");
+  } else {
+    ownerWorkspaceToggle?.removeAttribute("aria-current");
+  }
 
   pages.forEach((page) => {
     page.classList.toggle("is-active", page.dataset.page === safePageName);
@@ -2434,12 +2447,31 @@ function getOwnerApiField(name) {
 
 function ownerPageTool(pageId) {
   if (pageId === "overview") return "overview";
+  if (pageId === "ui-sandbox") return "ui-sandbox";
   if (pageId === "feature-flags") return "feature-flags";
   if (pageId === "api-tester") return "api-tester";
   if (pageId === "internal-analytics") return "internal-analytics";
   if (pageId === "command-center") return "command-center";
+  if (pageId === "json-editor") return "json-editor";
   if (pageId === "log-viewer") return "log-viewer";
   return "editor";
+}
+
+function getOwnerNavExpanded() {
+  return window.localStorage.getItem(OWNER_WORKSPACE_NAV_STORAGE_KEY) !== "collapsed";
+}
+
+function setOwnerNavExpanded(expanded) {
+  window.localStorage.setItem(OWNER_WORKSPACE_NAV_STORAGE_KEY, expanded ? "expanded" : "collapsed");
+  ownerWorkspaceToggle?.setAttribute("aria-expanded", expanded ? "true" : "false");
+  ownerWorkspaceNav?.classList.toggle("is-expanded", expanded);
+  if (ownerWorkspaceNavPages) {
+    ownerWorkspaceNavPages.hidden = !expanded;
+  }
+}
+
+function toggleOwnerNavExpanded() {
+  setOwnerNavExpanded(!getOwnerNavExpanded());
 }
 
 function setOwnerStatus(selector, value, tone = null) {
@@ -2466,6 +2498,10 @@ function renderOwnerStatus(status = {}) {
   });
 }
 
+function setOwnerSaveState(message) {
+  if (ownerSaveState) ownerSaveState.textContent = message;
+}
+
 function renderOwnerPageList() {
   if (!ownerPageList) return;
   const query = String(ownerSearchInput?.value || "").trim().toLowerCase();
@@ -2483,23 +2519,66 @@ function renderOwnerPageList() {
   });
 }
 
+function ownerNavGroupForPage(page) {
+  if (!page?.builtIn) return "custom";
+  if (["overview", "notes", "scratchpad"].includes(page.id)) return "workspace";
+  if (["ui-sandbox", "feature-flags", "api-tester"].includes(page.id)) return "development";
+  return "diagnostics";
+}
+
+function ownerNavGroupLabel(group) {
+  if (group === "workspace") return "Workspace";
+  if (group === "development") return "Development";
+  if (group === "diagnostics") return "Diagnostics";
+  return "My Pages";
+}
+
 function renderOwnerSidebarPages() {
   if (!ownerWorkspaceNavPages) return;
-  ownerWorkspaceNavPages.replaceChildren();
-  if (!isOwnerWorkspaceAuthorized()) return;
-  const pinnedPages = (ownerWorkspaceState.pages || []).filter((page) => page.pinned !== false);
-  pinnedPages.forEach((page) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = `owner-nav-page${getActivePageName() === "owner-workspace" && page.id === ownerWorkspaceState.selectedPageId ? " is-active" : ""}`;
-    button.textContent = page.title || "Workspace Page";
-    button.style.setProperty("--owner-accent", page.accent || "#b66cff");
-    button.addEventListener("click", () => {
-      ownerWorkspaceState.selectedPageId = page.id;
-      showPage("owner-workspace");
-      renderOwnerWorkspace();
+  setOwnerNavExpanded(getActivePageName() === "owner-workspace" ? true : getOwnerNavExpanded());
+  const query = String(ownerSearchInput?.value || "").trim().toLowerCase();
+  const pages = (ownerWorkspaceState.pages || [])
+    .filter((page) => page.builtIn || page.pinned !== false)
+    .filter((page) => !query || String(page.title || "").toLowerCase().includes(query));
+  ["workspace", "development", "diagnostics", "custom"].forEach((group) => {
+    const container = ownerWorkspaceNavPages.querySelector(`[data-owner-nav-section="${group}"]`);
+    if (!container) return;
+    container.replaceChildren();
+    const groupPages = pages.filter((page) => ownerNavGroupForPage(page) === group);
+    const header = document.createElement("div");
+    header.className = "owner-nav-group-title";
+    const title = document.createElement("span");
+    title.textContent = ownerNavGroupLabel(group);
+    header.appendChild(title);
+    if (group === "custom") {
+      const add = document.createElement("button");
+      add.type = "button";
+      add.className = "owner-nav-add";
+      add.textContent = "+";
+      add.title = "Create page";
+      add.addEventListener("click", (event) => {
+        event.stopPropagation();
+        handleOwnerAction("create-page");
+      });
+      header.appendChild(add);
+    }
+    container.appendChild(header);
+    if (groupPages.length === 0) {
+      const empty = document.createElement("small");
+      empty.className = "owner-nav-empty";
+      empty.textContent = group === "custom" ? "No custom pages" : "No pages";
+      container.appendChild(empty);
+      return;
+    }
+    groupPages.forEach((page) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `owner-nav-page${getActivePageName() === "owner-workspace" && page.id === ownerWorkspaceState.selectedPageId ? " is-active" : ""}`;
+      button.textContent = page.title || "Workspace Page";
+      button.style.setProperty("--owner-accent", page.accent || "#b66cff");
+      button.addEventListener("click", () => selectOwnerPage(page.id));
+      container.appendChild(button);
     });
-    ownerWorkspaceNavPages.appendChild(button);
   });
 }
 
@@ -2515,9 +2594,21 @@ function renderOwnerTool(page) {
   document.querySelector('[data-owner-action="delete-page"]')?.toggleAttribute("hidden", !custom);
   document.querySelector('[data-owner-action="pin-page"]')?.toggleAttribute("hidden", !custom);
   document.querySelector('[data-owner-action="duplicate-page"]')?.toggleAttribute("hidden", !page);
+  document.querySelector('[data-owner-action="clear-scratchpad"]')?.toggleAttribute("hidden", page?.id !== "scratchpad");
+  setOwnerSaveState(tool === "editor" || tool === "json-editor" ? "Saved" : "Ready");
   if (ownerEditor && tool === "editor") {
     const content = ownerWorkspaceState.contents[page.id] || {};
     ownerEditor.value = content.markdown || content.json || "";
+    ownerEditor.placeholder = page.id === "scratchpad"
+      ? "Temporary owner scratchpad. Autosaves locally."
+      : page.id === "notes"
+        ? "Write private owner notes. Autosaves locally."
+        : "Write markdown, checklists, code blocks, JSON snippets, or internal links.";
+  }
+  if (ownerJsonEditor && tool === "json-editor") {
+    const content = ownerWorkspaceState.contents[page.id] || {};
+    ownerJsonEditor.value = content.json || content.markdown || "{}";
+    if (ownerJsonMessage) ownerJsonMessage.textContent = "JSON ready.";
   }
   if (tool === "feature-flags") renderOwnerFlags();
   if (tool === "command-center") renderOwnerCommands();
@@ -2558,6 +2649,7 @@ async function refreshOwnerWorkspace() {
       ...workspace,
       authorized: true,
       pages: workspace.pages || [],
+      selectedPageId: workspace.selectedPageId || ownerWorkspaceState.selectedPageId || "overview",
       contents: workspace.contents || {},
       apiHistory: workspace.apiHistory || ownerWorkspaceState.apiHistory || [],
     };
@@ -2569,13 +2661,18 @@ async function refreshOwnerWorkspace() {
 
 function selectOwnerPage(pageId) {
   ownerWorkspaceState.selectedPageId = pageId;
+  const desktopApiState = getDesktopApiState();
+  if (desktopApiState.hasOwnerWorkspace && isOwnerWorkspaceAuthorized() && typeof desktopApiState.api.ownerWorkspace.selectPage === "function") {
+    desktopApiState.api.ownerWorkspace.selectPage({ pageId }).catch(() => {});
+  }
+  showPage("owner-workspace");
   renderOwnerWorkspace();
 }
 
 function scheduleOwnerAutosave() {
   if (!ownerEditor || !ownerWorkspaceState.selectedPageId) return;
   clearTimeout(ownerAutosaveTimer);
-  if (ownerSaveState) ownerSaveState.textContent = "Saving";
+  setOwnerSaveState("Saving");
   ownerAutosaveTimer = setTimeout(async () => {
     const desktopApiState = getDesktopApiState();
     if (!desktopApiState.hasOwnerWorkspace || !isOwnerWorkspaceAuthorized()) return;
@@ -2585,9 +2682,9 @@ function scheduleOwnerAutosave() {
         markdown: ownerEditor.value,
       });
       ownerWorkspaceState.contents = response.workspace?.contents || ownerWorkspaceState.contents;
-      if (ownerSaveState) ownerSaveState.textContent = "Saved";
+      setOwnerSaveState("Saved");
     } catch (error) {
-      if (ownerSaveState) ownerSaveState.textContent = "Save failed";
+      setOwnerSaveState("Save failed");
       showToast(normalizeIpcErrorMessage(error, "Owner workspace save failed."));
     }
   }, 450);
@@ -2729,16 +2826,83 @@ function stopOwnerAnalyticsPolling() {
   }
 }
 
-async function refreshOwnerLogs() {
-  const desktopApiState = getDesktopApiState();
-  if (!ownerLogViewer || !desktopApiState.hasOwnerWorkspace) return;
-  const logs = await desktopApiState.api.ownerWorkspace.readLogs().catch(() => []);
+function renderOwnerLogs(logs = ownerLogEntries) {
+  if (!ownerLogViewer) return;
+  const query = String(ownerLogSearch?.value || "").trim().toLowerCase();
+  const level = String(ownerLogLevel?.value || "all").toLowerCase();
   ownerLogViewer.innerHTML = "";
-  logs.forEach((entry) => {
+  const filtered = logs.filter((entry) => {
+    const haystack = `${entry.path || ""}\n${entry.content || ""}`.toLowerCase();
+    const matchesQuery = !query || haystack.includes(query);
+    const matchesLevel = level === "all" || haystack.includes(level);
+    return matchesQuery && matchesLevel;
+  });
+  if (filtered.length === 0) {
+    ownerLogViewer.innerHTML = "<p>No matching logs.</p>";
+    return;
+  }
+  filtered.forEach((entry) => {
     const pre = document.createElement("pre");
     pre.textContent = `${entry.path}\n\n${entry.content}`;
     ownerLogViewer.appendChild(pre);
   });
+}
+
+async function refreshOwnerLogs() {
+  const desktopApiState = getDesktopApiState();
+  if (!ownerLogViewer || !desktopApiState.hasOwnerWorkspace) return;
+  ownerLogEntries = await desktopApiState.api.ownerWorkspace.readLogs().catch(() => []);
+  renderOwnerLogs(ownerLogEntries);
+}
+
+function getJsonErrorLocation(error) {
+  const match = /position\s+(\d+)/i.exec(error?.message || "");
+  if (!match || !ownerJsonEditor) return error?.message || "Invalid JSON.";
+  const position = Number(match[1]);
+  const before = ownerJsonEditor.value.slice(0, position);
+  const lines = before.split("\n");
+  return `Invalid JSON at line ${lines.length}, column ${lines[lines.length - 1].length + 1}.`;
+}
+
+async function formatOwnerJson() {
+  if (!ownerJsonEditor) return;
+  try {
+    const parsed = JSON.parse(ownerJsonEditor.value || "{}");
+    ownerJsonEditor.value = JSON.stringify(parsed, null, 2);
+    if (ownerJsonMessage) ownerJsonMessage.textContent = "JSON formatted.";
+    setOwnerSaveState("Unsaved");
+  } catch (error) {
+    if (ownerJsonMessage) ownerJsonMessage.textContent = getJsonErrorLocation(error);
+  }
+}
+
+async function saveOwnerJson() {
+  const desktopApiState = getDesktopApiState();
+  if (!ownerJsonEditor || !desktopApiState.hasOwnerWorkspace || !isOwnerWorkspaceAuthorized()) return;
+  let formatted;
+  try {
+    formatted = JSON.stringify(JSON.parse(ownerJsonEditor.value || "{}"), null, 2);
+  } catch (error) {
+    if (ownerJsonMessage) ownerJsonMessage.textContent = getJsonErrorLocation(error);
+    setOwnerSaveState("Save failed");
+    return;
+  }
+  setOwnerSaveState("Saving");
+  const response = await desktopApiState.api.ownerWorkspace.saveContent({
+    pageId: ownerWorkspaceState.selectedPageId,
+    json: formatted,
+  }).catch((error) => {
+    showToast(normalizeIpcErrorMessage(error, "JSON save failed."));
+    return null;
+  });
+  if (response?.workspace) {
+    ownerWorkspaceState.contents = response.workspace.contents || ownerWorkspaceState.contents;
+    ownerJsonEditor.value = formatted;
+    if (ownerJsonMessage) ownerJsonMessage.textContent = "JSON saved.";
+    setOwnerSaveState("Saved");
+  } else {
+    setOwnerSaveState("Save failed");
+  }
 }
 
 async function handleOwnerAction(action) {
@@ -2780,6 +2944,34 @@ async function handleOwnerAction(action) {
     await sendOwnerApiRequest();
   } else if (action === "clear-api-history") {
     await clearOwnerApiHistory();
+  } else if (action === "test-notification") {
+    showToast("Owner Workspace notification test.");
+  } else if (action === "format-json") {
+    await formatOwnerJson();
+  } else if (action === "save-json") {
+    await saveOwnerJson();
+  } else if (action === "refresh-logs") {
+    await refreshOwnerLogs();
+  } else if (action === "copy-logs") {
+    const text = ownerLogViewer?.innerText || "";
+    if (text) {
+      await navigator.clipboard?.writeText?.(text).catch(() => {});
+      showToast("Logs copied.");
+    }
+  } else if (action === "clear-scratchpad" && selected?.id === "scratchpad") {
+    if (!window.confirm("Clear the scratchpad?")) return;
+    const response = await desktopApiState.api.ownerWorkspace.saveContent({
+      pageId: selected.id,
+      markdown: "",
+    }).catch((error) => {
+      showToast(normalizeIpcErrorMessage(error, "Scratchpad could not be cleared."));
+      return null;
+    });
+    if (response?.workspace) {
+      ownerWorkspaceState.contents = response.workspace.contents || ownerWorkspaceState.contents;
+      if (ownerEditor) ownerEditor.value = "";
+      setOwnerSaveState("Saved");
+    }
   }
 }
 
@@ -15320,8 +15512,20 @@ instanceAddressCopyButton?.addEventListener("click", () => {
 navItems.forEach((item) => {
   item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
-ownerSearchInput?.addEventListener("input", debounce(renderOwnerPageList, 120));
+ownerWorkspaceToggle?.addEventListener("click", () => {
+  toggleOwnerNavExpanded();
+  if (!ownerWorkspaceState.selectedPageId) {
+    selectOwnerPage("overview");
+  }
+});
+ownerSearchInput?.addEventListener("input", debounce(renderOwnerSidebarPages, 120));
 ownerEditor?.addEventListener("input", scheduleOwnerAutosave);
+ownerJsonEditor?.addEventListener("input", () => {
+  if (ownerJsonMessage) ownerJsonMessage.textContent = "JSON not validated.";
+  setOwnerSaveState("Unsaved");
+});
+ownerLogSearch?.addEventListener("input", debounce(() => renderOwnerLogs(), 120));
+ownerLogLevel?.addEventListener("change", () => renderOwnerLogs());
 ownerActionButtons.forEach((button) => {
   button.addEventListener("click", () => handleOwnerAction(button.dataset.ownerAction));
 });

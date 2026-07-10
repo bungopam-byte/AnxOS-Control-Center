@@ -205,6 +205,7 @@ const desktopApi = {
     duplicatePage: (payload = {}) => ipcRenderer.invoke("ownerWorkspace:duplicatePage", payload),
     deletePage: (payload = {}) => ipcRenderer.invoke("ownerWorkspace:deletePage", payload),
     reorderPages: (payload = {}) => ipcRenderer.invoke("ownerWorkspace:reorderPages", payload),
+    selectPage: (payload = {}) => ipcRenderer.invoke("ownerWorkspace:selectPage", payload),
     saveContent: (payload = {}) => ipcRenderer.invoke("ownerWorkspace:saveContent", payload),
     getAnalytics: () => ipcRenderer.invoke("ownerWorkspace:getAnalytics"),
     getFlags: () => ipcRenderer.invoke("ownerWorkspace:getFlags"),

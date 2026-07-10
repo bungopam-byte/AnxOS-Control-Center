@@ -29,6 +29,7 @@ function registerOwnerWorkspaceIpc() {
   ipcMain.handle("ownerWorkspace:duplicatePage", async (_, payload = {}) => invokeOwnerWorkspace(() => workspace.duplicatePage(payload), "ownerWorkspace:duplicatePage"));
   ipcMain.handle("ownerWorkspace:deletePage", async (_, payload = {}) => invokeOwnerWorkspace(() => workspace.deletePage(payload), "ownerWorkspace:deletePage"));
   ipcMain.handle("ownerWorkspace:reorderPages", async (_, payload = {}) => invokeOwnerWorkspace(() => workspace.reorderPages(payload), "ownerWorkspace:reorderPages"));
+  ipcMain.handle("ownerWorkspace:selectPage", async (_, payload = {}) => invokeOwnerWorkspace(() => workspace.selectPage(payload), "ownerWorkspace:selectPage"));
   ipcMain.handle("ownerWorkspace:saveContent", async (_, payload = {}) => invokeOwnerWorkspace(() => workspace.saveContent(payload), "ownerWorkspace:saveContent"));
   ipcMain.handle("ownerWorkspace:getAnalytics", async () => invokeOwnerWorkspace(() => workspace.getAnalytics(), "ownerWorkspace:getAnalytics"));
   ipcMain.handle("ownerWorkspace:getFlags", async () => invokeOwnerWorkspace(() => workspace.getFeatureFlags(), "ownerWorkspace:getFlags"));

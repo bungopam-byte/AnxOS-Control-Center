@@ -323,11 +323,7 @@
             <span class="nav-item__label" data-nav-label>Security</span>
           </button>
           <div class="nav-section nav-section--owner" data-owner-workspace-nav hidden>
-            <div class="nav-section__title">
-              <span>Anx Workspace</span>
-              <small>Owner Only</small>
-            </div>
-            <button class="nav-item nav-item--owner" type="button" data-page-target="owner-workspace" data-page-label="Anx Workspace" data-tooltip="Anx Workspace" aria-label="Anx Workspace">
+            <button class="nav-item nav-item--owner owner-workspace-toggle" type="button" data-owner-workspace-toggle aria-expanded="false" data-page-label="Anx Workspace" data-tooltip="Anx Workspace" aria-label="Anx Workspace">
               <span class="nav-item__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
                   <path d="M12 3 5 6v5c0 4.2 2.8 8 7 9 4.2-1 7-4.8 7-9V6Z"></path>
@@ -336,9 +332,16 @@
                 </svg>
               </span>
               <span class="nav-item__label" data-nav-label>Anx Workspace</span>
-              <span class="nav-item__badge">Owner</span>
+              <span class="nav-item__badge">Owner Only</span>
+              <span class="owner-workspace-chevron" aria-hidden="true">›</span>
             </button>
-            <div class="owner-nav-pages" data-owner-workspace-nav-pages></div>
+            <div class="owner-nav-pages" data-owner-workspace-nav-pages hidden>
+              <input class="owner-search owner-search--sidebar" type="search" data-owner-search placeholder="Search workspace">
+              <div data-owner-nav-section="workspace"></div>
+              <div data-owner-nav-section="development"></div>
+              <div data-owner-nav-section="diagnostics"></div>
+              <div data-owner-nav-section="custom"></div>
+            </div>
           </div>
           <button class="nav-item" type="button" data-page-target="nodes" data-page-label="Nodes" data-tooltip="Nodes" aria-label="Nodes">
             <span class="nav-item__icon" aria-hidden="true">
@@ -2459,15 +2462,6 @@
           </header>
 
           <div class="owner-workspace-layout">
-            <aside class="owner-page-rail" aria-label="Owner workspace pages">
-              <div class="owner-rail-header">
-                <strong>Pages</strong>
-                <button class="icon-button" type="button" data-owner-action="create-page" aria-label="Create page">+</button>
-              </div>
-              <input class="owner-search" type="search" data-owner-search placeholder="Search workspace">
-              <div class="owner-page-list" data-owner-page-list></div>
-            </aside>
-
             <section class="owner-workspace-panel">
               <div class="owner-panel-header">
                 <div>
@@ -2505,7 +2499,18 @@
               </div>
 
               <div class="owner-editor-shell" data-owner-tool="editor" hidden>
+                <div class="settings-actions owner-editor-actions">
+                  <button class="inline-action" type="button" data-owner-action="clear-scratchpad" hidden>Clear Scratchpad</button>
+                </div>
                 <textarea data-owner-editor placeholder="Write notes, markdown, checklists, code blocks, JSON snippets, or internal links."></textarea>
+              </div>
+
+              <div class="owner-tool-grid owner-sandbox" data-owner-tool="ui-sandbox" hidden>
+                <article class="status-card"><h3>Buttons</h3><button class="inline-action">Default</button> <button class="inline-action inline-action--primary">Primary</button></article>
+                <article class="status-card"><h3>Inputs</h3><label class="settings-field"><span>Text</span><input type="text" placeholder="Sandbox input"></label></article>
+                <article class="status-card"><h3>Badges</h3><span class="status-pill status-pill--ok">Ready</span> <span class="status-pill status-pill--planned">Planned</span></article>
+                <article class="status-card"><h3>Toggles</h3><label class="settings-check settings-check--toggle"><input type="checkbox" checked><span>Sandbox toggle</span></label></article>
+                <article class="status-card"><h3>Notifications</h3><button class="inline-action" type="button" data-owner-action="test-notification">Test Toast</button></article>
               </div>
 
               <div class="owner-tool-grid" data-owner-tool="feature-flags" hidden>
@@ -2542,7 +2547,24 @@
                 <div class="owner-log-output" data-owner-api-history></div>
               </div>
 
-              <div class="owner-log-output" data-owner-tool="log-viewer" data-owner-log-viewer hidden></div>
+              <div class="owner-json-editor" data-owner-tool="json-editor" hidden>
+                <textarea data-owner-json-editor spellcheck="false" placeholder='{"hello":"world"}'></textarea>
+                <div class="settings-actions">
+                  <button class="inline-action" type="button" data-owner-action="format-json">Format JSON</button>
+                  <button class="inline-action inline-action--primary" type="button" data-owner-action="save-json">Save JSON</button>
+                  <span class="settings-inline-status" data-owner-json-message>JSON not validated.</span>
+                </div>
+              </div>
+
+              <div data-owner-tool="log-viewer" hidden>
+                <div class="settings-actions owner-log-controls">
+                  <input class="owner-search" type="search" data-owner-log-search placeholder="Search logs">
+                  <select data-owner-log-level><option value="all">All levels</option><option value="error">Errors</option><option value="warn">Warnings</option><option value="info">Info</option></select>
+                  <button class="inline-action" type="button" data-owner-action="refresh-logs">Refresh</button>
+                  <button class="inline-action" type="button" data-owner-action="copy-logs">Copy</button>
+                </div>
+                <div class="owner-log-output" data-owner-log-viewer></div>
+              </div>
             </section>
           </div>
         </section>

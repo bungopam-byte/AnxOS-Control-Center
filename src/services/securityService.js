@@ -67,6 +67,16 @@ function getSecurityPath() {
   return path.join(getConfigDirectory(), "security.json");
 }
 
+function getLegacySecurityPaths() {
+  if (process.env.ANXHUB_CONFIG_DIR) return [];
+  let appData = "";
+  try { appData = app?.getPath("appData") || ""; } catch {}
+  if (!appData) return [];
+  return ["AnxOS Control Center", "anxos-control-center", "AnxOS-Control-Center", "AnxHub"]
+    .map((directory) => path.join(appData, directory, "config", "security.json"))
+    .filter((filePath) => path.resolve(filePath) !== path.resolve(getSecurityPath()));
+}
+
 function getPersistentSessionPath() {
   return path.join(getConfigDirectory(), "session.dat");
 }
@@ -97,6 +107,26 @@ function isTrustedDevelopmentMode() {
   return process.env.NODE_ENV === "development" && process.defaultApp === true;
 }
 
+function logOwnerAuthDiagnostic(event, details = {}) {
+  if (!isTrustedDevelopmentMode()) return;
+  console.info("[Security][LocalOwner]", {
+    event,
+    ownerExists: details.ownerExists === true,
+    username: details.username || null,
+    usernames: details.usernames || undefined,
+    authenticationProvider: details.authenticationProvider || "local-owner",
+    failureReason: details.failureReason || null,
+    hashFormat: details.hashFormat || null,
+    sourceDirectory: details.sourceDirectory || undefined,
+  });
+}
+
+function getPasswordHashFormat(value) {
+  const hash = String(value || "");
+  if (/^\$2[abxy]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(hash)) return "bcrypt";
+  return hash ? "unsupported" : "missing";
+}
+
 function getDevelopmentOwnerPassword() {
   if (!isTrustedDevelopmentMode()) {
     return null;
@@ -108,42 +138,57 @@ function ensureConfigDirectory() {
   fs.mkdirSync(getConfigDirectory(), { recursive: true });
 }
 
+function normalizeSecurityState(parsed = {}) {
+  return {
+    users: Array.isArray(parsed.users) ? parsed.users : [],
+    persistentSessions: Array.isArray(parsed.persistentSessions) ? parsed.persistentSessions : [],
+    trustedDevices: Array.isArray(parsed.trustedDevices) ? parsed.trustedDevices : [],
+    agentTokens: parsed.agentTokens && typeof parsed.agentTokens === "object" ? parsed.agentTokens : {},
+    settings: {
+      sessionTtlMs: Number.parseInt(parsed.settings?.sessionTtlMs, 10) || SESSION_TTL_MS,
+      persistentSessionTtlMs: Number.parseInt(parsed.settings?.persistentSessionTtlMs, 10) || PERSISTENT_SESSION_TTL_MS,
+      inactiveSessionExpirationMs: Number.parseInt(parsed.settings?.inactiveSessionExpirationMs, 10) || 0,
+      lockOwnerWorkspaceAfterInactivity: parsed.settings?.lockOwnerWorkspaceAfterInactivity !== false,
+      requireReauthForSensitiveActions: parsed.settings?.requireReauthForSensitiveActions !== false,
+      requireAuthenticatedAccountForRemoteAccess: parsed.settings?.requireAuthenticatedAccountForRemoteAccess === true,
+      requireTrustedDeviceForRemoteAccess: parsed.settings?.requireTrustedDeviceForRemoteAccess === true,
+      remoteAccessAutoDisableMs: Number.parseInt(parsed.settings?.remoteAccessAutoDisableMs, 10) || 0,
+    },
+  };
+}
+
+function readSecurityFile(filePath) {
+  return normalizeSecurityState(JSON.parse(fs.readFileSync(filePath, "utf8")));
+}
+
+function migrateLegacyOwnerUsers(state, legacyPaths = getLegacySecurityPaths()) {
+  if (state.users.some((entry) => entry?.role === "Owner" || entry?.role === "Admin")) return state;
+  for (const legacyPath of legacyPaths) {
+    try {
+      const users = readSecurityFile(legacyPath).users.filter((entry) => entry?.role === "Owner" || entry?.role === "Admin");
+      if (!users.length) continue;
+      const migrated = { ...state, users };
+      writeSecurityState(migrated);
+      logOwnerAuthDiagnostic("legacy-owner-migrated", {
+        ownerExists: true,
+        usernames: users.map((entry) => String(entry.username || "")).filter(Boolean),
+        sourceDirectory: path.basename(path.dirname(path.dirname(legacyPath))),
+      });
+      return migrated;
+    } catch {}
+  }
+  return state;
+}
+
 function readSecurityState() {
   try {
-    const parsed = JSON.parse(fs.readFileSync(getSecurityPath(), "utf8"));
-    return {
-      users: Array.isArray(parsed.users) ? parsed.users : [],
-      persistentSessions: Array.isArray(parsed.persistentSessions) ? parsed.persistentSessions : [],
-      trustedDevices: Array.isArray(parsed.trustedDevices) ? parsed.trustedDevices : [],
-      agentTokens: parsed.agentTokens && typeof parsed.agentTokens === "object" ? parsed.agentTokens : {},
-      settings: {
-        sessionTtlMs: Number.parseInt(parsed.settings?.sessionTtlMs, 10) || SESSION_TTL_MS,
-        persistentSessionTtlMs: Number.parseInt(parsed.settings?.persistentSessionTtlMs, 10) || PERSISTENT_SESSION_TTL_MS,
-        inactiveSessionExpirationMs: Number.parseInt(parsed.settings?.inactiveSessionExpirationMs, 10) || 0,
-        lockOwnerWorkspaceAfterInactivity: parsed.settings?.lockOwnerWorkspaceAfterInactivity !== false,
-        requireReauthForSensitiveActions: parsed.settings?.requireReauthForSensitiveActions !== false,
-        requireAuthenticatedAccountForRemoteAccess: parsed.settings?.requireAuthenticatedAccountForRemoteAccess === true,
-        requireTrustedDeviceForRemoteAccess: parsed.settings?.requireTrustedDeviceForRemoteAccess === true,
-        remoteAccessAutoDisableMs: Number.parseInt(parsed.settings?.remoteAccessAutoDisableMs, 10) || 0,
-      },
-    };
-  } catch {
-    return {
-      users: [],
-      persistentSessions: [],
-      trustedDevices: [],
-      agentTokens: {},
-      settings: {
-        sessionTtlMs: SESSION_TTL_MS,
-        persistentSessionTtlMs: PERSISTENT_SESSION_TTL_MS,
-        inactiveSessionExpirationMs: 0,
-        lockOwnerWorkspaceAfterInactivity: true,
-        requireReauthForSensitiveActions: true,
-        requireAuthenticatedAccountForRemoteAccess: false,
-        requireTrustedDeviceForRemoteAccess: false,
-        remoteAccessAutoDisableMs: 0,
-      },
-    };
+    return migrateLegacyOwnerUsers(readSecurityFile(getSecurityPath()));
+  } catch (error) {
+    if (error?.code === "ENOENT") return migrateLegacyOwnerUsers(normalizeSecurityState());
+    logOwnerAuthDiagnostic("security-store-read-failed", {
+      failureReason: "CONFIG_READ_FAILED",
+    });
+    return normalizeSecurityState();
   }
 }
 
@@ -956,13 +1001,29 @@ async function login(payload = {}) {
     throw error;
   }
   const state = readSecurityState();
-  const user = state.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
+  const user = state.users.find((entry) => String(entry?.username || "").toLowerCase() === username.toLowerCase());
+  logOwnerAuthDiagnostic("provider-selected", {
+    ownerExists: Boolean(user),
+    username: user?.username || username,
+  });
   const password = String(payload.password || "");
   const developmentPassword = getDevelopmentOwnerPassword();
   const devFallbackOk = !user && state.users.length === 0 && username.toLowerCase() === "anx" && developmentPassword && password === developmentPassword;
-  const ok = devFallbackOk || (user ? await bcrypt.compare(password, user.passwordHash) : false);
+  const hashFormat = getPasswordHashFormat(user?.passwordHash);
+  const disabled = Boolean(user?.disabled === true || user?.enabled === false);
+  let hashMatches = false;
+  if (user && !disabled && hashFormat === "bcrypt") {
+    try { hashMatches = await bcrypt.compare(password, user.passwordHash); } catch {}
+  }
+  const ok = devFallbackOk || hashMatches;
 
-  if (!isTrustedDevelopmentMode() && password === DEVELOPMENT_FALLBACK_OWNER_PASSWORD) {
+  if (!isTrustedDevelopmentMode() && !user && password === DEVELOPMENT_FALLBACK_OWNER_PASSWORD) {
+    logOwnerAuthDiagnostic("authentication-failed", {
+      ownerExists: false,
+      username,
+      failureReason: "DEVELOPMENT_FALLBACK_DISABLED",
+      hashFormat,
+    });
     audit({ action: "security.login", outcome: "failed", target: username, reason: "DEFAULT_DEV_PASSWORD_REJECTED" });
     recordRateLimitAttempt(rateLimitKey, rateLimitLimit, rateLimitWindowMs, { reason: "INVALID_CREDENTIALS" });
     const error = new Error("Invalid username or password. This is the local owner account for this device, not an online Anx account.");
@@ -971,6 +1032,13 @@ async function login(payload = {}) {
   }
 
   if (!ok) {
+    const failureReason = !user ? "USER_MISSING" : disabled ? "ACCOUNT_DISABLED" : hashFormat !== "bcrypt" ? "HASH_FORMAT_UNSUPPORTED" : "HASH_MISMATCH";
+    logOwnerAuthDiagnostic("authentication-failed", {
+      ownerExists: Boolean(user),
+      username: user?.username || username,
+      failureReason,
+      hashFormat,
+    });
     audit({ action: "security.login", outcome: "failed", target: username, reason: "INVALID_CREDENTIALS" });
     recordRateLimitAttempt(rateLimitKey, rateLimitLimit, rateLimitWindowMs, { reason: "INVALID_CREDENTIALS" });
     const error = new Error("Invalid username or password. This is the local owner account for this device, not an online Anx account.");
@@ -979,6 +1047,11 @@ async function login(payload = {}) {
   }
 
   resetRateLimit(rateLimitKey, "successful-login");
+  logOwnerAuthDiagnostic("authentication-succeeded", {
+    ownerExists: Boolean(user),
+    username: user?.username || username,
+    hashFormat,
+  });
 
   const authenticatedUser = user || {
     id: "development-owner",
@@ -1323,6 +1396,11 @@ function emergencySecurityAction(action, confirmation = "") {
 }
 
 module.exports = {
+  _test: {
+    getPasswordHashFormat,
+    migrateLegacyOwnerUsers,
+    normalizeSecurityState,
+  },
   audit,
   checkRateLimit,
   disableRemoteAccess,

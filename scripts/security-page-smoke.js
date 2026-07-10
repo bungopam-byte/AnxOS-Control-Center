@@ -44,6 +44,10 @@ async function main() {
   assert(appJs.includes("createSecurityConfirmation"), "Security page should use app-native confirmation modals.");
   assert(appJs.includes("function escapeHtml"), "Security/account render paths should define the HTML escaping helper they use.");
   assert(appJs.includes("data-security-event-filter"), "Security event filtering should be wired.");
+  assert(appJs.includes("handleSecurityRecommendation"), "Security recommendation action buttons should be wired.");
+  assert(appJs.includes("dismissSecurityRecommendation"), "Security recommendation dismiss buttons should be wired.");
+  assert(appJs.includes(".settings-section--security-events"), "Failed sign-in recommendations should navigate to security events.");
+  assert(appJs.includes(".settings-section--security-expiration"), "Session-expiration recommendations should navigate to session settings.");
   assert(!appJs.includes("New trusted device name"), "Security page should not use browser prompt for trusted-device rename.");
   assert(indexHtml.includes("data-account-details"), "Account details should have a dedicated visibility container.");
   assert(appJs.includes("accountPasswordForm.hidden = signedIn"), "Signed-in account state should hide the email/password form.");
@@ -62,7 +66,9 @@ async function main() {
   const rotated = security.rotateAgentToken();
   assert(rotated.fingerprint && !rotated.token, "Token rotation should return a fingerprint but no raw token.");
   const afterRotation = security.getSecurityDashboard();
+  assert.strictEqual(afterRotation.overview.agentTokenStatus, "Configured", "Token overview should show configured after token rotation.");
   assert(afterRotation.agentToken.fingerprint, "Token dashboard should expose only a fingerprint.");
+  assert(!afterRotation.recommendations.some((item) => item.id === "agent-token-missing"), "Configured token should clear missing-token recommendation.");
   const serializedDashboard = JSON.stringify(afterRotation);
   assert(!/agentToken"\s*:\s*"[A-Za-z0-9_-]{24,}"/.test(serializedDashboard), "Dashboard should not expose raw agent tokens.");
 

@@ -5,6 +5,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { app, safeStorage } = require("electron");
 const {
+  getAgentConfig,
   getAgentConfigPath,
   readAgentSettings,
   rotateAgentSettingsToken,
@@ -563,14 +564,19 @@ function getNodeScopedAgentSettings(options = {}) {
 
 function getAgentTokenSummary(state, options = {}) {
   const settings = getNodeScopedAgentSettings(options);
+  const effectiveConfig = options?.nodeId && options.nodeId !== "default"
+    ? getAgentConfig(settings)
+    : getAgentConfig();
+  const agentToken = effectiveConfig.token || settings.agentToken || "";
+  const agentUrl = settings.agentUrl || effectiveConfig.url || "";
   let stat = null;
   try {
     stat = fs.statSync(getAgentConfigPath());
   } catch {}
-  const fingerprint = tokenFingerprint(settings.agentToken);
+  const fingerprint = tokenFingerprint(agentToken);
   const tokenRecord = state.agentTokens?.[fingerprint] || {};
   return {
-    configured: Boolean(settings.agentToken),
+    configured: Boolean(agentToken),
     fingerprint,
     createdAt: safeIso(tokenRecord.createdAt) || (stat ? stat.birthtime.toISOString() : null),
     lastRotatedAt: safeIso(tokenRecord.lastRotatedAt) || (stat ? stat.mtime.toISOString() : null),
@@ -578,8 +584,8 @@ function getAgentTokenSummary(state, options = {}) {
     scope: options?.nodeId && options.nodeId !== "default" ? "Selected remote node" : settings.backendMode === "agent" ? "Remote agent" : "Local device",
     expirationState: "No expiration",
     associatedDevice: options?.nodeId && options.nodeId !== "default"
-      ? getNode(options.nodeId)?.displayName || settings.agentUrl
-      : settings.agentUrl || "This Device",
+      ? getNode(options.nodeId)?.displayName || agentUrl
+      : agentUrl || "This Device",
     configPath: getAgentConfigPath(),
   };
 }
@@ -874,7 +880,7 @@ function getStatus() {
     ownerWorkspaceAvailable: Boolean((user || accountUser)?.role === "Owner" && (user || accountUser)?.ownerAuthorized !== false),
     ownerAccountConfigured: Boolean(getConfiguredOwnerAccounts().userIds.length || getConfiguredOwnerAccounts().emails.length),
     trustedDevelopmentMode: isTrustedDevelopmentMode(),
-    agentTokenConfigured: Boolean(readAgentSettings().agentToken),
+    agentTokenConfigured: Boolean(readAgentSettings().agentToken || getAgentConfig().token),
     persistentSession: Boolean(currentSession?.persistent),
     persistentSessionCount: state.persistentSessions.length,
     securityPath: getSecurityPath(),

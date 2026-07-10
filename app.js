@@ -14634,6 +14634,68 @@ function renderSecurityRecommendations(items) {
   `).join("");
 }
 
+function scrollSecuritySection(selector, focusSelector = null) {
+  const section = document.querySelector(selector);
+  if (!section) return false;
+  section.scrollIntoView({ block: "start", behavior: "smooth" });
+  if (focusSelector) {
+    setTimeout(() => document.querySelector(focusSelector)?.focus?.(), 250);
+  }
+  return true;
+}
+
+function dismissSecurityRecommendation(id) {
+  const button = Array.from(document.querySelectorAll("[data-security-dismiss-recommendation]"))
+    .find((candidate) => candidate.dataset.securityDismissRecommendation === id);
+  button?.closest(".security-list-item")?.remove();
+  const container = document.querySelector("[data-security-recommendations]");
+  if (container && !container.querySelector(".security-list-item")) {
+    container.innerHTML = '<div class="security-empty-state">No supported security recommendations right now.</div>';
+  }
+  showToast("Recommendation dismissed.");
+}
+
+async function handleSecurityRecommendation(id) {
+  if (!id) return;
+  if (id === "email-verification-unavailable") {
+    await openAnxOsAccountPage();
+    return;
+  }
+  if (id === "review-active-sessions") {
+    scrollSecuritySection(".settings-section--security-sessions");
+    return;
+  }
+  if (id === "remote-access-exposed") {
+    const ok = await createSecurityConfirmation({
+      title: "Disable Remote Access",
+      message: "AnxOS will switch this desktop back to local mode. Firewall rules are not changed.",
+      confirmLabel: "Disable",
+    });
+    if (ok) await runSecurityAction("disable-remote-access");
+    return;
+  }
+  if (id === "agent-token-missing" || id === "rotate-old-token") {
+    scrollSecuritySection(".settings-section--security-token");
+    showToast("Review the Agent token controls before changing the shared token.");
+    return;
+  }
+  if (id === "failed-signins") {
+    securityEventFilter = "authentication";
+    document.querySelectorAll("[data-security-event-filter]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.securityEventFilter === securityEventFilter);
+    });
+    securityEventsCleared = false;
+    renderSecurityEvents();
+    scrollSecuritySection(".settings-section--security-events");
+    return;
+  }
+  if (id === "session-expiration") {
+    scrollSecuritySection(".settings-section--security-expiration", "[data-security-session-timeout]");
+    return;
+  }
+  showToast("Recommendation action is not available yet.");
+}
+
 function renderSecuritySessions(sessions) {
   const tbody = document.querySelector("[data-security-sessions]");
   if (!tbody) return;
@@ -17255,6 +17317,16 @@ document.querySelector('[data-security-action="logout"]')?.addEventListener("cli
 document.querySelector('[data-security-action="logout-all-sessions"]')?.addEventListener("click", logoutAllSecuritySessions);
 document.querySelector('[data-security-action="enable-remote-control"]')?.addEventListener("click", showRemoteControlSetup);
 document.querySelector('[data-page="security"]')?.addEventListener("click", async (event) => {
+  const recommendationButton = event.target.closest("[data-security-recommendation]");
+  if (recommendationButton) {
+    await handleSecurityRecommendation(recommendationButton.dataset.securityRecommendation || "");
+    return;
+  }
+  const dismissRecommendationButton = event.target.closest("[data-security-dismiss-recommendation]");
+  if (dismissRecommendationButton) {
+    dismissSecurityRecommendation(dismissRecommendationButton.dataset.securityDismissRecommendation || "");
+    return;
+  }
   const revokeSessionButton = event.target.closest("[data-security-revoke-session]");
   if (revokeSessionButton) {
     const ok = await createSecurityConfirmation({

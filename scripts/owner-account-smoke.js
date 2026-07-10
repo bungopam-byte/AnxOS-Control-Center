@@ -64,9 +64,13 @@ function assertSecretRedaction() {
 
 function assertFrontendCannotGrantOwner() {
   const appJs = readRepoFile("app.js");
+  const indexHtml = readRepoFile("index.html");
   const workspaceService = readRepoFile("src/services/ownerWorkspaceService.js");
   const securityService = readRepoFile("src/services/securityService.js");
+  assert(indexHtml.includes("data-owner-workspace-nav-pages"), "Owner sidebar should include workspace page links container.");
   assert(appJs.includes("securityState?.ownerWorkspaceAvailable"), "Renderer should use trusted security status for owner workspace visibility.");
+  assert(appJs.includes("renderOwnerSidebarPages"), "Renderer should populate owner workspace pages in the sidebar.");
+  assert(appJs.includes("refreshOwnerWorkspace().catch"), "Owner auth refresh should load workspace pages after sign-in.");
   assert(workspaceService.includes("requireOwner"), "Owner Workspace service must enforce owner authorization.");
   assert(securityService.includes("isOwnerAccount"), "Security service must resolve account owner authorization in the main process.");
 }

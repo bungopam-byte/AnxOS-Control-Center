@@ -5909,6 +5909,50 @@ body.is-resizing-files * {
   justify-content: center;
 }
 
+.settings-field--wide {
+  grid-column: 1 / -1;
+}
+
+.owner-nav-pages {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  padding-left: 10px;
+}
+
+.owner-nav-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owner-nav-page::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--owner-accent, var(--accent));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--owner-accent, var(--accent)) 55%, transparent);
+}
+
+.owner-nav-page:hover,
+.owner-nav-page.is-active {
+  border-color: rgba(182, 108, 255, 0.24);
+  background: rgba(182, 108, 255, 0.1);
+  color: var(--text);
+}
+
 .settings-field input,
 .settings-field select,
 .settings-field textarea {

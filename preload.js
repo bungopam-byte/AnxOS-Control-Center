@@ -185,6 +185,7 @@ const desktopApi = {
     getAgentConfig: () => ipcRenderer.invoke("settings:getAgentConfig"),
     saveAgentConfig: (settings) => ipcRenderer.invoke("settings:saveAgentConfig", settings),
     testAgentConnection: (settings) => ipcRenderer.invoke("settings:testAgentConnection", settings),
+    pairAgent: (payload = {}) => ipcRenderer.invoke("settings:pairAgent", payload),
     getMarketplaceConfig: () => ipcRenderer.invoke("settings:getMarketplaceConfig"),
     saveMarketplaceConfig: (settings) => ipcRenderer.invoke("settings:saveMarketplaceConfig", settings),
   },

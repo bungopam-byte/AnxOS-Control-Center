@@ -4,8 +4,10 @@ const dotenv = require("dotenv");
 const { app } = require("electron");
 const {
   isWeakAgentToken,
+  parseAgentPairingPayload,
   resolveSharedAgentToken,
   rotateSharedAgentToken,
+  tokenFingerprint,
 } = require("../shared/agentTokenStore");
 
 const DEFAULT_BACKEND_MODE = "local";
@@ -263,6 +265,22 @@ function rotateAgentSettingsToken(updates = {}) {
   return {
     ...rotated,
     settings,
+  };
+}
+
+function pairAgentFromCode(code) {
+  const pairing = parseAgentPairingPayload(code);
+  const saved = saveAgentSettings({
+    backendMode: "agent",
+    agentUrl: pairing.agentUrl,
+    agentToken: pairing.agentToken,
+  });
+  return {
+    paired: true,
+    agentUrl: saved.agentUrl,
+    fingerprint: tokenFingerprint(saved.agentToken),
+    expiresAt: pairing.expiresAt,
+    restartRequired: false,
   };
 }
 
@@ -775,6 +793,23 @@ async function testConnection(configOverride = null) {
   try {
     const payload = await getHealth(configOverride);
     const connected = isHealthyPayload(payload);
+    if (connected) {
+      try {
+        await getSystemStats(configOverride);
+      } catch (protectedError) {
+        return {
+          connected: false,
+          status: protectedError?.code === "UNAUTHORIZED" ? "token-mismatch" : "disconnected",
+          message: protectedError?.message || "Agent protected endpoint check failed.",
+          checkedAt,
+          url: config.url,
+          health: payload,
+          code: protectedError?.code || null,
+          fingerprint: config.token ? tokenFingerprint(config.token) : null,
+          repairAvailable: protectedError?.code === "UNAUTHORIZED",
+        };
+      }
+    }
 
     return {
       connected,
@@ -783,6 +818,7 @@ async function testConnection(configOverride = null) {
       checkedAt,
       url: config.url,
       health: payload,
+      fingerprint: config.token ? tokenFingerprint(config.token) : null,
     };
   } catch (error) {
     return {
@@ -793,6 +829,8 @@ async function testConnection(configOverride = null) {
       url: config.url,
       health: null,
       code: error?.code || null,
+      fingerprint: config.token ? tokenFingerprint(config.token) : null,
+      repairAvailable: error?.code === "UNAUTHORIZED",
     };
   }
 }
@@ -2051,6 +2089,7 @@ module.exports = {
   loadEnvironment,
   normalizeAgentSettings,
   readAgentSettings,
+  pairAgentFromCode,
   getSharedAgentTokenStatus,
   requestBuffer,
   requestJson,

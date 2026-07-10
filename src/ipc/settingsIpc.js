@@ -4,6 +4,7 @@ const {
   getAgentConfigPath,
   getEffectiveAgentSettings,
   getSharedAgentTokenStatus,
+  pairAgentFromCode,
   readAgentSettings,
   saveAgentSettings,
   testConnection,
@@ -73,6 +74,20 @@ function registerSettingsIpc() {
     return getAgentSettingsPayload();
   });
   ipcMain.handle("settings:testAgentConnection", async (_, payload = null) => testConnection(payload));
+  ipcMain.handle("settings:pairAgent", async (_, payload = {}) => {
+    requirePermission("settings:write", "agent-pairing");
+    const result = pairAgentFromCode(payload.code || payload.pairingCode || "");
+    audit({ action: "settings.agent.pair", target: "agent-config", reason: result.fingerprint || null });
+    return {
+      ...getAgentSettingsPayload(),
+      paired: true,
+      pairing: {
+        agentUrl: result.agentUrl,
+        fingerprint: result.fingerprint,
+        restartRequired: result.restartRequired,
+      },
+    };
+  });
   ipcMain.handle("settings:getMarketplaceConfig", async () => getMarketplaceSettingsPayload());
   ipcMain.handle("settings:saveMarketplaceConfig", async (_, payload = {}) => {
     requirePermission("settings:write", "marketplace-config");

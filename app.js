@@ -4,6 +4,7 @@ const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
 const ownerWorkspaceNav = document.querySelector("[data-owner-workspace-nav]");
+const ownerWorkspaceNavPages = document.querySelector("[data-owner-workspace-nav-pages]");
 const ownerWorkspacePage = document.querySelector("[data-owner-workspace-page]");
 const ownerStatusFields = document.querySelectorAll("[data-owner-status]");
 const ownerOverviewFields = document.querySelectorAll("[data-owner-overview]");
@@ -329,6 +330,9 @@ const settingsResetButton = document.querySelector("[data-settings-reset]");
 const agentSettingsInputs = document.querySelectorAll("[data-agent-setting]");
 const agentSettingsSaveButton = document.querySelector('[data-agent-action="save"]');
 const agentSettingsTestButton = document.querySelector('[data-agent-action="test"]');
+const agentSettingsPairButton = document.querySelector('[data-agent-action="pair"]');
+const agentSettingsRepairButton = document.querySelector('[data-agent-action="repair"]');
+const agentPairingCodeInput = document.querySelector("[data-agent-pairing-code]");
 const agentConnectionPill = document.querySelector("[data-agent-connection-pill]");
 const agentConnectionMessage = document.querySelector("[data-agent-connection-message]");
 const agentConfigSource = document.querySelector("[data-agent-config-source]");
@@ -821,7 +825,8 @@ function getDesktopApiState() {
     hasSettings:
       typeof api?.settings?.getAgentConfig === "function" &&
       typeof api?.settings?.saveAgentConfig === "function" &&
-      typeof api?.settings?.testAgentConnection === "function",
+      typeof api?.settings?.testAgentConnection === "function" &&
+      typeof api?.settings?.pairAgent === "function",
     hasMarketplaceSettings:
       typeof api?.settings?.getMarketplaceConfig === "function" &&
       typeof api?.settings?.saveMarketplaceConfig === "function",
@@ -2316,6 +2321,9 @@ function setOwnerWorkspaceNavVisible(visible) {
   if (ownerWorkspaceNav) {
     ownerWorkspaceNav.hidden = !visible;
   }
+  if (!visible && ownerWorkspaceNavPages) {
+    ownerWorkspaceNavPages.replaceChildren();
+  }
 }
 
 function showPage(pageName) {
@@ -2475,6 +2483,26 @@ function renderOwnerPageList() {
   });
 }
 
+function renderOwnerSidebarPages() {
+  if (!ownerWorkspaceNavPages) return;
+  ownerWorkspaceNavPages.replaceChildren();
+  if (!isOwnerWorkspaceAuthorized()) return;
+  const pinnedPages = (ownerWorkspaceState.pages || []).filter((page) => page.pinned !== false);
+  pinnedPages.forEach((page) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `owner-nav-page${getActivePageName() === "owner-workspace" && page.id === ownerWorkspaceState.selectedPageId ? " is-active" : ""}`;
+    button.textContent = page.title || "Workspace Page";
+    button.style.setProperty("--owner-accent", page.accent || "#b66cff");
+    button.addEventListener("click", () => {
+      ownerWorkspaceState.selectedPageId = page.id;
+      showPage("owner-workspace");
+      renderOwnerWorkspace();
+    });
+    ownerWorkspaceNavPages.appendChild(button);
+  });
+}
+
 function renderOwnerTool(page) {
   const tool = ownerPageTool(page?.id || "overview");
   ownerTools.forEach((node) => {
@@ -2506,6 +2534,7 @@ function renderOwnerWorkspace() {
   if (selected) {
     ownerWorkspaceState.selectedPageId = selected.id;
   }
+  renderOwnerSidebarPages();
   renderOwnerStatus(ownerWorkspaceState.status || {});
   renderOwnerPageList();
   renderOwnerTool(selected);
@@ -14054,6 +14083,9 @@ async function refreshSecurityState() {
     securityState = { setupRequired: false, authenticated: false, user: null };
   }
   renderSecurityState();
+  if (isOwnerWorkspaceAuthorized() && (!ownerWorkspaceState.pages || ownerWorkspaceState.pages.length === 0)) {
+    refreshOwnerWorkspace().catch(() => {});
+  }
 }
 
 async function submitSecurityForm(event) {
@@ -14390,6 +14422,14 @@ function setAgentActionButtonsDisabled(disabled) {
   if (agentSettingsTestButton) {
     agentSettingsTestButton.disabled = disabled;
   }
+
+  if (agentSettingsPairButton) {
+    agentSettingsPairButton.disabled = disabled;
+  }
+
+  if (agentSettingsRepairButton) {
+    agentSettingsRepairButton.disabled = disabled;
+  }
 }
 
 function setAgentConnectionDisplay(status, message, options = {}) {
@@ -14410,6 +14450,10 @@ function setAgentConnectionDisplay(status, message, options = {}) {
 
   if (agentConfigSource && options.configSourceText) {
     agentConfigSource.textContent = options.configSourceText;
+  }
+
+  if (agentSettingsRepairButton) {
+    agentSettingsRepairButton.hidden = options.repairAvailable !== true;
   }
 
   updateTitlebar();
@@ -14672,10 +14716,15 @@ async function testAgentConnection(options = {}) {
 
   try {
     const result = await desktopApiState.api.settings.testAgentConnection(getAgentSettingsFormValues());
-    setAgentConnectionDisplay(result?.connected ? "connected" : "disconnected", result?.message || "Agent unavailable.");
+    const fingerprintText = result?.fingerprint ? ` Fingerprint: ${result.fingerprint}.` : "";
+    setAgentConnectionDisplay(
+      result?.connected ? "connected" : result?.status === "token-mismatch" ? "error" : "disconnected",
+      `${result?.message || "Agent unavailable."}${fingerprintText}`,
+      { repairAvailable: result?.repairAvailable === true || result?.status === "token-mismatch" },
+    );
 
     if (!options.silent) {
-      showToast(result?.connected ? "Agent connected." : "Agent unavailable.");
+      showToast(result?.connected ? "Agent connected." : result?.repairAvailable ? "Agent token mismatch. Use Repair Connection." : "Agent unavailable.");
     }
   } catch {
     setAgentConnectionDisplay("disconnected", "Agent unavailable.");
@@ -14687,6 +14736,43 @@ async function testAgentConnection(options = {}) {
     agentConnectionTestInFlight = false;
     setAgentActionButtonsDisabled(agentSettingsRequestInFlight);
   }
+}
+
+async function pairAgentFromSettings() {
+  const desktopApiState = getDesktopApiState();
+  const code = String(agentPairingCodeInput?.value || "").trim();
+  if (!desktopApiState.hasSettings || typeof desktopApiState.api.settings.pairAgent !== "function") {
+    showToast("Agent pairing is unavailable in this build.");
+    return;
+  }
+  if (!code) {
+    showToast("Paste an Agent pairing code first.");
+    agentPairingCodeInput?.focus();
+    return;
+  }
+  agentSettingsRequestInFlight = true;
+  setAgentActionButtonsDisabled(true);
+  try {
+    const response = await desktopApiState.api.settings.pairAgent({ code });
+    if (agentPairingCodeInput) agentPairingCodeInput.value = "";
+    renderAgentSettings(response);
+    const fingerprint = response?.pairing?.fingerprint || response?.tokenStatus?.fingerprint || null;
+    showToast(`Agent paired${fingerprint ? ` (${fingerprint})` : ""}.`);
+    await testAgentConnection({ silent: true });
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Agent pairing failed.");
+    setAgentConnectionDisplay("error", message, { repairAvailable: true });
+    showToast(message);
+  } finally {
+    agentSettingsRequestInFlight = false;
+    setAgentActionButtonsDisabled(false);
+  }
+}
+
+function focusAgentPairingRepair() {
+  showPage("settings");
+  agentPairingCodeInput?.focus();
+  setAgentConnectionDisplay("error", "Run npm run agent:pair on the Debian agent machine, paste the code here, then click Pair Agent.", { repairAvailable: true });
 }
 
 function setAboutFields(info) {
@@ -15861,6 +15947,8 @@ accentSwatchButtons.forEach((button) => {
 settingsResetButton?.addEventListener("click", resetSettings);
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
+agentSettingsPairButton?.addEventListener("click", pairAgentFromSettings);
+agentSettingsRepairButton?.addEventListener("click", focusAgentPairingRepair);
 marketplaceConfigSaveButton?.addEventListener("click", saveMarketplaceConfiguration);
 document.querySelectorAll("[data-update-action]").forEach((button) => {
   button.addEventListener("click", async () => {

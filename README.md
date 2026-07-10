@@ -131,6 +131,16 @@ Recommended agent startup on Linux:
 
 `AnxAgent.sh` points the agent at `config/agent.json`, unsets stale shell `AGENT_TOKEN` values, installs agent dependencies if needed, and starts the agent with `npm --prefix agent start`.
 
+Pair a remote Agent:
+
+```bash
+npm run agent:pair
+```
+
+Run that on the Debian agent machine. It prints the Agent URL, a short token fingerprint, and an `ANXOS-PAIR...` code. Treat the pairing code like a temporary secret because it contains the remote agent token for import.
+
+On the Windows desktop app, open `Settings -> Agent`, paste the code into `Pairing code`, click `Pair Agent`, then click `Test Connection`. The desktop stores the imported token in its own local app config and shows only fingerprints in normal UI. If a protected Agent route returns `401`, use `Repair Connection` and import a fresh code from the Debian machine.
+
 ### One-Click Development Launcher
 
 For local source development, use the AnxDev launcher instead of typing npm commands.

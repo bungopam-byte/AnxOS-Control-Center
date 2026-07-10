@@ -27,6 +27,18 @@ function tokenFingerprint(value) {
   return crypto.createHash("sha256").update(token).digest("hex").slice(0, 12);
 }
 
+function base64UrlEncodeJson(payload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function base64UrlDecodeJson(value) {
+  try {
+    return JSON.parse(Buffer.from(String(value || "").trim(), "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
 function readJson(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -145,11 +157,75 @@ function rotateSharedAgentToken(options = {}) {
   };
 }
 
+function createAgentPairingPayload(options = {}) {
+  const status = resolveSharedAgentToken({
+    configPath: options.configPath,
+    configDir: options.configDir,
+    cwd: options.cwd,
+    environmentToken: options.environmentToken,
+  });
+  const config = readAgentConfigFile(status.configPath);
+  const agentUrl = trimValue(options.agentUrl || config.agentUrl) || DEFAULT_AGENT_CONFIG.agentUrl;
+  const expiresAt = new Date(Date.now() + (Number.parseInt(options.ttlMs, 10) || 15 * 60 * 1000)).toISOString();
+  const payload = {
+    type: "anxos-agent-pairing",
+    version: 1,
+    agentUrl,
+    agentToken: status.token,
+    fingerprint: status.fingerprint,
+    issuedAt: new Date().toISOString(),
+    expiresAt,
+  };
+  return {
+    code: `ANXOS-PAIR.${base64UrlEncodeJson(payload)}`,
+    fingerprint: status.fingerprint,
+    agentUrl,
+    expiresAt,
+    configPath: status.configPath,
+  };
+}
+
+function parseAgentPairingPayload(value) {
+  const raw = String(value || "").trim();
+  const encoded = raw.startsWith("ANXOS-PAIR.") ? raw.slice("ANXOS-PAIR.".length) : raw;
+  const payload = base64UrlDecodeJson(encoded);
+  if (!payload || payload.type !== "anxos-agent-pairing" || payload.version !== 1) {
+    const error = new Error("Invalid AnxOS Agent pairing code.");
+    error.code = "PAIRING_CODE_INVALID";
+    throw error;
+  }
+  if (!trimValue(payload.agentUrl) || !trimValue(payload.agentToken) || isWeakAgentToken(payload.agentToken)) {
+    const error = new Error("Pairing code is missing required Agent connection data.");
+    error.code = "PAIRING_CODE_INCOMPLETE";
+    throw error;
+  }
+  if (payload.expiresAt && Date.parse(payload.expiresAt) <= Date.now()) {
+    const error = new Error("Pairing code expired. Generate a new code on the Agent machine.");
+    error.code = "PAIRING_CODE_EXPIRED";
+    throw error;
+  }
+  const fingerprint = tokenFingerprint(payload.agentToken);
+  if (payload.fingerprint && payload.fingerprint !== fingerprint) {
+    const error = new Error("Pairing code fingerprint does not match its token.");
+    error.code = "PAIRING_CODE_TAMPERED";
+    throw error;
+  }
+  return {
+    agentUrl: trimValue(payload.agentUrl),
+    agentToken: trimValue(payload.agentToken),
+    fingerprint,
+    issuedAt: payload.issuedAt || null,
+    expiresAt: payload.expiresAt || null,
+  };
+}
+
 module.exports = {
   DEFAULT_AGENT_CONFIG,
   generateAgentToken,
+  createAgentPairingPayload,
   getCandidateConfigPaths,
   isWeakAgentToken,
+  parseAgentPairingPayload,
   resolveAgentConfigPath,
   resolveSharedAgentToken,
   rotateSharedAgentToken,

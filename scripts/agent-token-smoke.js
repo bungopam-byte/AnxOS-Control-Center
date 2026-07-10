@@ -7,6 +7,8 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-agent-token-"));
 process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 
 const {
+  createAgentPairingPayload,
+  parseAgentPairingPayload,
   resolveSharedAgentToken,
   rotateSharedAgentToken,
 } = require("../src/shared/agentTokenStore");
@@ -61,6 +63,17 @@ function main() {
   const rotated = rotateSharedAgentToken();
   assert(rotated.fingerprint && !rotated.fingerprint.includes(rotated.token), "Rotation should provide only a fingerprint for display.");
   assert.notStrictEqual(rotated.token, replaced.token, "Rotation should create a new token.");
+
+  const pairing = createAgentPairingPayload({ agentUrl: "http://10.0.0.5:47131" });
+  assert(pairing.code.startsWith("ANXOS-PAIR."), "Pairing export should produce an AnxOS pairing code.");
+  assert(pairing.fingerprint && !pairing.code.includes(pairing.fingerprint), "Pairing code should not rely on fingerprint as the secret.");
+  const imported = parseAgentPairingPayload(pairing.code);
+  assert.strictEqual(imported.agentUrl, "http://10.0.0.5:47131", "Pairing import should preserve agent URL.");
+  assert.strictEqual(imported.fingerprint, pairing.fingerprint, "Pairing import should verify fingerprint.");
+  assert(imported.agentToken && imported.agentToken.length > 30, "Pairing import should recover the token for secure local storage.");
+
+  const expired = createAgentPairingPayload({ ttlMs: -1000 });
+  assert.throws(() => parseAgentPairingPayload(expired.code), /expired/i, "Expired pairing codes should be rejected.");
 
   console.log("Agent token smoke checks passed.");
 }

@@ -7,8 +7,14 @@ const path = require("path");
 
 const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
 const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
+const WEBSITE_CONFIG_URLS = [
+  process.env.ANXOS_WEBSITE_CONFIG_URL,
+  "https://anxos-control-center.pages.dev/config.js",
+].filter(Boolean);
 const UPDATE_MANIFEST_URLS = [
   process.env.ANXHUB_UPDATE_MANIFEST_URL,
+  process.env.ANXOS_UPDATE_MANIFEST_URL,
+  `https://github.com/${UPDATE_REPOSITORY}/releases/latest/download/update-manifest.json`,
   "http://192.168.1.134:8766/update-manifest.json",
 ].filter(Boolean);
 const UPDATE_STATUS_CHANNEL = "updates:status";
@@ -60,6 +66,34 @@ function normalizeManifestRelease(manifest, sourceUrl) {
     html_url: manifest?.html_url || manifest?.releaseUrl || sourceUrl,
     published_at: manifest?.published_at || manifest?.publishedAt || null,
     assets: rawAssets.map(normalizeManifestAsset).filter(Boolean),
+  };
+}
+
+function extractConfigString(configText, key) {
+  const pattern = new RegExp(`${key}\\s*:\\s*["']([^"']+)["']`);
+  return configText.match(pattern)?.[1] || "";
+}
+
+function parseWebsiteConfigRelease(configText, sourceUrl) {
+  const latestVersion = normalizeVersion(extractConfigString(configText, "latestVersion") || extractConfigString(configText, "releaseTag"));
+  if (!latestVersion) return null;
+
+  const releaseUrl = extractConfigString(configText, "releaseUrl") || `${sourceUrl.replace(/\/[^/]*$/, "")}/#release`;
+  const releaseDate = extractConfigString(configText, "releaseDate") || null;
+  const assetMatches = [...String(configText || "").matchAll(/fileName\s*:\s*["']([^"']+)["'][\s\S]{0,300}?url\s*:\s*["']([^"']+)["']/g)];
+  const assets = assetMatches.map((match) => ({
+    name: match[1],
+    size: 10 * 1024 * 1024,
+    browser_download_url: match[2],
+  }));
+
+  return {
+    tag_name: `v${latestVersion}`,
+    name: `v${latestVersion}`,
+    body: "",
+    html_url: releaseUrl,
+    published_at: releaseDate,
+    assets,
   };
 }
 
@@ -170,17 +204,17 @@ class UpdateManager extends EventEmitter {
     };
   }
 
-  requestJson(url) {
+  requestText(url, headers = {}) {
     return new Promise((resolve, reject) => {
       const request = getRequestModule(url).get(url, {
         headers: {
-          "Accept": "application/vnd.github+json",
+          ...headers,
           "User-Agent": `AnxOS-Control-Center/${app.getVersion()}`,
         },
       }, (response) => {
         if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
           response.resume();
-          this.requestJson(response.headers.location).then(resolve, reject);
+          this.requestText(response.headers.location, headers).then(resolve, reject);
           return;
         }
         let body = "";
@@ -195,16 +229,21 @@ class UpdateManager extends EventEmitter {
             reject(error);
             return;
           }
-          try {
-            resolve(JSON.parse(body));
-          } catch (error) {
-            reject(new Error(`Update metadata response was not valid JSON: ${error.message}`));
-          }
+          resolve(body);
         });
       });
       request.setTimeout(15000, () => request.destroy(new Error("Update metadata request timed out.")));
       request.on("error", reject);
     });
+  }
+
+  async requestJson(url) {
+    const body = await this.requestText(url, { "Accept": "application/vnd.github+json" });
+    try {
+      return JSON.parse(body);
+    } catch (error) {
+      throw new Error(`Update metadata response was not valid JSON: ${error.message}`);
+    }
   }
 
   resolveUpdateResult(release, sourceUrl) {
@@ -248,6 +287,20 @@ class UpdateManager extends EventEmitter {
         sourceUrl = UPDATE_RELEASES_URL;
       } catch (error) {
         this.log("GitHub release check failed.", { message: error?.message || String(error), url: UPDATE_RELEASES_URL }, error?.statusCode === 404 ? "warn" : "error");
+      }
+      if (!release) {
+        for (const websiteConfigUrl of WEBSITE_CONFIG_URLS) {
+          try {
+            checkedSources.push(websiteConfigUrl);
+            release = parseWebsiteConfigRelease(await this.requestText(websiteConfigUrl), websiteConfigUrl);
+            if (release) {
+              sourceUrl = websiteConfigUrl;
+              break;
+            }
+          } catch (error) {
+            this.log("Website update config check failed.", { message: error?.message || String(error), url: websiteConfigUrl }, "warn");
+          }
+        }
       }
       if (!release) {
         for (const manifestUrl of UPDATE_MANIFEST_URLS) {
@@ -402,4 +455,5 @@ module.exports = {
   UpdateManager,
   compareVersions,
   normalizeVersion,
+  parseWebsiteConfigRelease,
 };

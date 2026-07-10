@@ -42,8 +42,13 @@ async function main() {
   });
 
   assert(appJs.includes("createSecurityConfirmation"), "Security page should use app-native confirmation modals.");
+  assert(appJs.includes("function escapeHtml"), "Security/account render paths should define the HTML escaping helper they use.");
   assert(appJs.includes("data-security-event-filter"), "Security event filtering should be wired.");
   assert(!appJs.includes("New trusted device name"), "Security page should not use browser prompt for trusted-device rename.");
+  assert(indexHtml.includes("data-account-details"), "Account details should have a dedicated visibility container.");
+  assert(appJs.includes("accountPasswordForm.hidden = signedIn"), "Signed-in account state should hide the email/password form.");
+  assert(appJs.includes("accountDetailsPanel.hidden = !signedIn && !pending"), "Signed-out account state should hide active account details.");
+  assert(appJs.includes("async function switchAnxOsAccount"), "Switch Account should intentionally return to account-selection state.");
 
   await security.setupAdmin({ username: "owner", password: "correct horse battery staple", passwordConfirm: "correct horse battery staple", staySignedIn: true });
   const dashboard = security.getSecurityDashboard();

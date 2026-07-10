@@ -393,6 +393,7 @@ const accountPasswordForm = document.querySelector("[data-account-password-form]
 const accountPasswordEmail = document.querySelector('[data-account-password-field="email"]');
 const accountPasswordPassword = document.querySelector('[data-account-password-field="password"]');
 const accountOwnerBadge = document.querySelector("[data-account-owner-badge]");
+const accountDetailsPanel = document.querySelector("[data-account-details]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -912,6 +913,15 @@ function setField(name, value) {
   (fieldMap.get(name) || []).forEach((field) => {
     field.textContent = value;
   });
+}
+
+function escapeHtml(value = "") {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function updateFieldAttributes(name, updater) {
@@ -14235,6 +14245,12 @@ function renderAccountState() {
   const expiresAt = pending?.expiresAt ? Date.parse(pending.expiresAt) : null;
   const remainingMs = Number.isFinite(expiresAt) ? Math.max(0, expiresAt - Date.now()) : 0;
   const remainingText = pending ? `${Math.ceil(remainingMs / 1000)}s remaining` : "";
+  if (accountPasswordForm) {
+    accountPasswordForm.hidden = signedIn;
+  }
+  if (accountDetailsPanel) {
+    accountDetailsPanel.hidden = !signedIn && !pending;
+  }
   if (accountStatus) {
     accountStatus.textContent = ownerAccount ? "Owner" : signedIn ? "Signed in" : pending ? "Waiting" : expired ? "Session expired" : "Using local device mode";
   }
@@ -14264,6 +14280,9 @@ function renderAccountState() {
   }
   document.querySelectorAll('[data-account-action="logout"]').forEach((button) => {
     button.toggleAttribute("hidden", !signedIn);
+  });
+  document.querySelectorAll('[data-account-action="open"]').forEach((button) => {
+    button.toggleAttribute("hidden", false);
   });
   document.querySelectorAll('[data-account-action="cancel"], [data-account-action="copy-code"]').forEach((button) => {
     button.toggleAttribute("hidden", !pending);
@@ -14376,6 +14395,10 @@ async function startAnxOsAccountLogin() {
     showToast("AnxOS account sign-in is not available in this build.");
     return;
   }
+  if (accountState.authenticated) {
+    await switchAnxOsAccount();
+    return;
+  }
   try {
     accountState = await desktopApiState.api.account.startDeviceLogin();
     renderAccountState();
@@ -14386,6 +14409,25 @@ async function startAnxOsAccountLogin() {
     setAccountMessage(message);
     showToast(message);
   }
+}
+
+async function switchAnxOsAccount() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasAccount) {
+    return;
+  }
+  stopAccountPolling();
+  accountState = await desktopApiState.api.account.logout().catch(() => ({
+    authenticated: false,
+    account: null,
+    pending: null,
+    configured: true,
+    state: "signed-out",
+  }));
+  if (accountPasswordPassword) accountPasswordPassword.value = "";
+  await refreshSecurityState();
+  renderAccountState();
+  showToast("Choose another AnxOS account to sign in.");
 }
 
 async function loginAnxOsAccountWithPassword(event) {

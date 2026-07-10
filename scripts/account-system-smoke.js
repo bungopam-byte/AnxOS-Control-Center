@@ -20,6 +20,8 @@ function assertWebsiteAccountUi() {
   assert(index.includes('data-auth-form="signup"'), "Website should include a real sign-up form.");
   assert(index.includes('data-auth-form="forgot"'), "Website should include forgot-password form.");
   assert(index.includes('data-auth-form="reset"'), "Website should include reset-password form.");
+  assert(index.includes('href="forgot-password.html">Reset Password</a>'), "Signed-out account UI should expose password recovery.");
+  assert(index.includes('href="forgot-password.html">Change Password</a>'), "Signed-in account UI should expose password recovery.");
   assert(forgotPassword.includes('data-auth-form="forgot"'), "Website should provide a standalone forgot-password page.");
   assert(resetPassword.includes('data-auth-form="reset"'), "Website should provide a standalone reset-password page.");
   assert(resetPassword.includes('name="passwordConfirm"'), "Password reset should require password confirmation.");

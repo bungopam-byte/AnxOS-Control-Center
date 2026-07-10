@@ -169,6 +169,7 @@
             <div class="route-actions">
               <a class="button button-primary" href="#signin">Sign In</a>
               <a class="button button-secondary" href="#signup">Sign Up</a>
+              <a class="button button-ghost" href="forgot-password.html">Reset Password</a>
             </div>
           </div>
           <div data-auth-view="signed-in" hidden>
@@ -178,7 +179,10 @@
                 <h3 data-account-display-name>AnxOS Account</h3>
                 <p data-account-email></p>
               </div>
-              <button class="button button-ghost" type="button" data-auth-action="signout">Sign Out</button>
+              <div class="route-actions">
+                <a class="button button-secondary" href="forgot-password.html">Change Password</a>
+                <button class="button button-ghost" type="button" data-auth-action="signout">Sign Out</button>
+              </div>
             </div>
             <form class="account-form account-form--compact" data-auth-form="profile">
               <label>Username<input type="text" name="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>

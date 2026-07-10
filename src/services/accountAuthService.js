@@ -5,12 +5,12 @@ const path = require("path");
 const { app, shell } = require("electron");
 const { SecureSessionStore, getDefaultConfigDirectory } = require("./secureSessionStore");
 
-const DEFAULT_ACCOUNT_SITE_URL = "https://bungopam-byte.github.io/AnxOS-Control-Center";
+const WEBSITE_BASE_URL = "https://anxos-control-center.pages.dev";
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_DEVICE_LOGIN_TTL_MS = 10 * 60 * 1000;
 const MAX_POLL_MS = 10 * 60 * 1000;
 const APPROVED_AUTH_HOSTS = new Set([
-  "bungopam-byte.github.io",
+  "anxos-control-center.pages.dev",
   "localhost",
   "127.0.0.1",
 ]);
@@ -37,8 +37,22 @@ function normalizeBaseUrl(value, fallback = "") {
   return String(value || fallback).replace(/\/+$/, "");
 }
 
-function getAccountSiteUrl() {
-  return normalizeBaseUrl(process.env.ANXOS_ACCOUNT_SITE_URL, DEFAULT_ACCOUNT_SITE_URL);
+function getWebsiteBaseUrl() {
+  return normalizeBaseUrl(process.env.ANXOS_WEBSITE_BASE_URL || process.env.WEBSITE_BASE_URL || process.env.ANXOS_ACCOUNT_SITE_URL, WEBSITE_BASE_URL);
+}
+
+function buildWebsiteUrl(route = "account", params = {}) {
+  const base = assertApprovedExternalUrl(getWebsiteBaseUrl(), "website base");
+  const normalizedRoute = String(route || "account").replace(/^#?\/?/, "");
+  const url = new URL(base);
+  const search = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
+  });
+  url.hash = `${normalizedRoute}${search.toString() ? `?${search.toString()}` : ""}`;
+  return url.toString();
 }
 
 function getAccountApiUrl() {
@@ -210,7 +224,7 @@ function createLocalPendingDeviceLogin() {
   return {
     deviceCode,
     userCode,
-    verificationUrl: `${getAccountSiteUrl()}/device-login.html?code=${encodeURIComponent(userCode)}`,
+    verificationUrl: buildWebsiteUrl("activate", { code: userCode }),
     expiresAt: new Date(Date.now() + DEFAULT_DEVICE_LOGIN_TTL_MS).toISOString(),
     intervalMs: 3000,
     createdAt: Date.now(),
@@ -265,7 +279,7 @@ function getStatus() {
     expiresAt: storedSession ? new Date(storedSession.expiresAt).toISOString() : null,
     sessionStatus: session ? "active" : expired ? "expired" : "local",
     accountPath: sessionStore.filePath,
-    siteUrl: getAccountSiteUrl(),
+    siteUrl: getWebsiteBaseUrl(),
     currentDevice: getDeviceInfo(),
     pending: publicPending(),
   };
@@ -375,7 +389,7 @@ async function refreshSession() {
 }
 
 async function openAccountPage() {
-  const targetUrl = pendingDeviceLogin?.verificationUrl || `${getAccountSiteUrl()}/account.html${getCurrentSession() ? "" : "?action=signin"}`;
+  const targetUrl = pendingDeviceLogin?.verificationUrl || buildWebsiteUrl(getCurrentSession() ? "account" : "signin");
   const url = assertApprovedExternalUrl(targetUrl, "account");
   await shell.openExternal(url);
   return { ok: true, url };
@@ -400,6 +414,7 @@ module.exports = {
   checkDeviceLogin,
   getCurrentSession,
   getStatus,
+  buildWebsiteUrl,
   logout,
   openAccountPage,
   refreshSession,

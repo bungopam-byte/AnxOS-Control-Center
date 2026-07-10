@@ -36,6 +36,8 @@
         <a href="release-notes.html">Release Notes</a>
         <a href="#features">Features</a>
         <a href="#install">Install</a>
+        <a href="#signin">Sign In</a>
+        <a class="site-nav__cta" href="#signup">Sign Up</a>
       </nav>
     </header>
 
@@ -88,6 +90,72 @@
             <span>[11:57:42] marketplace install paused</span>
             <span>[11:57:43] waiting for manual download</span>
             <span>[11:57:44] provider metadata resolved</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="signin" class="section-shell account-route" data-account-route="signin">
+        <div class="account-route__copy">
+          <p class="eyebrow">Online AnxOS Account</p>
+          <h2>Sign in to AnxOS</h2>
+          <p>Use an online AnxOS account for cloud, sync, licensing, and remote account features. This is separate from Local Owner Login inside the desktop app.</p>
+          <div class="route-actions">
+            <a class="button button-primary" href="#activate">Activate a Device</a>
+            <a class="button button-secondary" href="#signup">Create Account</a>
+          </div>
+        </div>
+        <div class="account-panel">
+          <h3>Account service unavailable</h3>
+          <p>The account backend is not connected yet, so website password sign-in is not active. Local device mode and Local Owner Login still work inside the desktop app.</p>
+        </div>
+      </section>
+
+      <section id="signup" class="section-shell account-route" data-account-route="signup">
+        <div class="account-route__copy">
+          <p class="eyebrow">Create Account</p>
+          <h2>Sign up for AnxOS</h2>
+          <p>Accounts will unlock cloud and remote services after the auth backend is deployed. No desktop password is stored here.</p>
+        </div>
+        <div class="account-panel">
+          <h3>Sign up is not live yet</h3>
+          <p>The account provider is still pending. This page is ready for Supabase or another secure auth provider without faking a successful registration.</p>
+        </div>
+      </section>
+
+      <section id="account" class="section-shell account-route" data-account-route="account">
+        <div class="account-route__copy">
+          <p class="eyebrow">Account</p>
+          <h2>AnxOS Account</h2>
+          <p>Manage web account features here once the hosted backend is available.</p>
+        </div>
+        <div class="account-panel">
+          <h3>Using local device mode</h3>
+          <p>Until account services are deployed, open AnxOS and choose Use This Device or Local Owner Login.</p>
+        </div>
+      </section>
+
+      <section id="activate" class="section-shell account-route account-route--active" data-account-route="activate">
+        <div class="account-route__copy">
+          <p class="eyebrow">Device Activation</p>
+          <h2>Activate this desktop app</h2>
+          <p>Review the device code from AnxOS Control Center. After sign-in support is deployed, you will be able to approve or deny this device here.</p>
+          <div class="device-code-card">
+            <span>Device code</span>
+            <strong data-activation-code>Enter the code shown in AnxOS</strong>
+          </div>
+        </div>
+        <div class="account-panel">
+          <h3>Approval requires backend setup</h3>
+          <ol>
+            <li>Sign in or create an account.</li>
+            <li>Review the requesting device.</li>
+            <li>Approve or deny access.</li>
+            <li>Return to AnxOS after approval.</li>
+          </ol>
+          <p data-device-login-message>Device approval will activate when the AnxOS account API is deployed.</p>
+          <div class="route-actions">
+            <a class="button button-secondary" href="#signin">Sign In</a>
+            <a class="button button-ghost" href="#signup">Sign Up</a>
           </div>
         </div>
       </section>

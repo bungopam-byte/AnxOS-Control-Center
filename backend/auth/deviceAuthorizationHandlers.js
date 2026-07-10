@@ -2,6 +2,7 @@ const crypto = require("crypto");
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_SECONDS = 3;
+const DEFAULT_WEBSITE_BASE_URL = "https://anxos-control-center.pages.dev";
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function createUserCode(length = 8) {
@@ -74,7 +75,13 @@ function createDeviceAuthorizationHandlers(options = {}) {
     throw new Error("ANXOS_DEVICE_CODE_SECRET is required for device authorization handlers.");
   }
   const store = options.store || createMemoryDeviceStore();
-  const verificationBaseUrl = String(options.verificationBaseUrl || process.env.ANXOS_ACCOUNT_SITE_URL || "").replace(/\/+$/, "");
+  const verificationBaseUrl = String(
+    options.verificationBaseUrl ||
+    process.env.ANXOS_WEBSITE_BASE_URL ||
+    process.env.WEBSITE_BASE_URL ||
+    process.env.ANXOS_ACCOUNT_SITE_URL ||
+    DEFAULT_WEBSITE_BASE_URL
+  ).replace(/\/+$/, "");
   const ttlMs = options.ttlMs || DEFAULT_TTL_MS;
   const pollInterval = options.pollInterval || DEFAULT_POLL_INTERVAL_SECONDS;
   const createTokens = options.createTokens;
@@ -103,7 +110,7 @@ function createDeviceAuthorizationHandlers(options = {}) {
     return {
       deviceCode,
       userCode,
-      verificationUrl: `${verificationBaseUrl}/device-login.html?code=${encodeURIComponent(userCode)}`,
+      verificationUrl: `${verificationBaseUrl}/#activate?code=${encodeURIComponent(userCode)}`,
       expiresIn: Math.floor(ttlMs / 1000),
       pollInterval,
     };

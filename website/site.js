@@ -115,15 +115,45 @@ function applyReleaseNotes() {
 
 function applyDeviceLoginPage() {
   const input = document.querySelector("[data-device-code-input]");
-  if (!input) return;
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get("code");
+  const codeTarget = document.querySelector("[data-activation-code]");
+  if (!input && !codeTarget) return;
+  const params = getRouteParams();
+  const code = normalizeDeviceCode(params.get("code"));
   if (code) {
-    input.value = code.toUpperCase();
+    if (input) input.value = code;
+    if (codeTarget) codeTarget.textContent = code;
     const message = document.querySelector("[data-device-login-message]");
     if (message) {
-      message.textContent = "Code detected from the desktop app. Sign in support will activate when the AnxOS account API is deployed.";
+      message.textContent = "Device code detected. Sign in support will activate when the AnxOS account API is deployed.";
     }
+  }
+}
+
+function getRouteParams() {
+  const hash = window.location.hash || "";
+  const queryIndex = hash.indexOf("?");
+  const hashParams = queryIndex >= 0 ? new URLSearchParams(hash.slice(queryIndex + 1)) : new URLSearchParams();
+  const pageParams = new URLSearchParams(window.location.search);
+  for (const [key, value] of pageParams.entries()) {
+    if (!hashParams.has(key)) hashParams.set(key, value);
+  }
+  return hashParams;
+}
+
+function normalizeDeviceCode(value) {
+  const normalized = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+  return normalized.length >= 6 ? normalized : "";
+}
+
+function applyHashRoute() {
+  const hash = window.location.hash || "";
+  const route = hash.replace(/^#/, "").split("?")[0] || "top";
+  const supportedRoutes = new Set(["signin", "signup", "account", "activate", "release", "features", "install", "downloads", "top"]);
+  if (!supportedRoutes.has(route)) return;
+  applyDeviceLoginPage();
+  const target = document.getElementById(route);
+  if (target && route !== "top") {
+    target.scrollIntoView({ block: "start" });
   }
 }
 
@@ -131,3 +161,5 @@ applyConfigText();
 applyDownloads();
 applyReleaseNotes();
 applyDeviceLoginPage();
+window.addEventListener("hashchange", applyHashRoute);
+applyHashRoute();

@@ -27,6 +27,12 @@ bot-config/
 config/marketplace.json
 agent/*.log
 
+# Owner Workspace local development/private data
+.anxos-owner-workspace/
+.anxos-dev-credentials*
+owner-workspace/
+config/owner-workspace/
+
 # Code-signing certificates and private keys must never be committed.
 *.pfx
 *.p12

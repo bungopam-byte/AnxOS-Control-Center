@@ -156,6 +156,38 @@ a:focus-visible,
   accent-color: var(--accent);
 }
 
+.nav-section {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.nav-section__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.nav-section__title small {
+  border: 1px solid rgba(245, 196, 81, 0.45);
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--caution);
+  font-size: 0.62rem;
+}
+
+.nav-item--owner {
+  border-color: rgba(245, 196, 81, 0.28);
+}
+
 .startup-logo {
   display: inline-grid;
   place-items: center;
@@ -8996,7 +9028,191 @@ button:disabled {
   }
 }
 
+.owner-hero {
+  border: 1px solid rgba(182, 108, 255, 0.28);
+  border-radius: var(--radius);
+  padding: 22px;
+  background: linear-gradient(135deg, rgba(182, 108, 255, 0.14), rgba(255, 255, 255, 0.035));
+}
+
+.owner-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.owner-status-strip span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.owner-status-strip span.is-ok {
+  border-color: rgba(69, 224, 143, 0.42);
+  color: var(--success);
+}
+
+.owner-status-strip span.is-warn {
+  border-color: rgba(245, 196, 81, 0.45);
+  color: var(--caution);
+}
+
+.owner-workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.owner-page-rail,
+.owner-workspace-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.76);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+}
+
+.owner-page-rail {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+}
+
+.owner-rail-header,
+.owner-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.owner-search {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font: inherit;
+}
+
+.owner-page-list {
+  display: grid;
+  gap: 6px;
+}
+
+.owner-page-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.owner-page-button.is-active,
+.owner-page-button:hover {
+  border-color: var(--line);
+  background: rgba(182, 108, 255, 0.12);
+  color: var(--text);
+}
+
+.owner-page-button small {
+  color: var(--neutral);
+  font-size: 0.72rem;
+}
+
+.owner-workspace-panel {
+  display: grid;
+  gap: 18px;
+  min-height: 620px;
+  padding: 18px;
+}
+
+.owner-panel-header h2,
+.owner-panel-header p {
+  margin: 0;
+}
+
+.owner-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.owner-editor-shell textarea,
+.owner-api-tester textarea {
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  resize: vertical;
+  background: rgba(5, 8, 14, 0.62);
+  color: var(--text);
+  font: 0.95rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.owner-api-tester textarea {
+  min-height: 110px;
+}
+
+.owner-table,
+.owner-command-list,
+.owner-log-output {
+  display: grid;
+  gap: 10px;
+}
+
+.owner-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.owner-row__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.owner-row p,
+.owner-log-output pre {
+  margin: 0;
+  color: var(--muted);
+}
+
+.owner-log-output pre {
+  overflow: auto;
+  max-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(5, 8, 14, 0.7);
+  white-space: pre-wrap;
+}
+
 @media (max-width: 980px) {
+  .owner-workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .settings-shell {
     grid-template-columns: minmax(0, 1fr);
   }

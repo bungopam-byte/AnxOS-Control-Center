@@ -15,6 +15,7 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 10;
 const BCRYPT_ROUNDS = 12;
+const DEVELOPMENT_FALLBACK_OWNER_PASSWORD = "1245";
 const ROLE_PERMISSIONS = {
   Owner: ["*"],
   Admin: [
@@ -55,6 +56,35 @@ function getPersistentSessionPath() {
 
 function getAuditPath() {
   return path.join(getConfigDirectory(), "audit.log");
+}
+
+function isTrustedDevelopmentMode() {
+  if (process.env.ANXOS_FORCE_PRODUCTION === "1") {
+    return false;
+  }
+  if (process.env.ANXOS_TRUSTED_DEVELOPMENT_MODE === "1") {
+    try {
+      if (typeof app?.isPackaged === "boolean") {
+        return app.isPackaged === false;
+      }
+    } catch {
+      return process.env.NODE_ENV === "development" || process.defaultApp === true;
+    }
+    return process.env.NODE_ENV === "development" || process.defaultApp === true;
+  }
+  try {
+    if (app?.isPackaged === false) {
+      return true;
+    }
+  } catch {}
+  return process.env.NODE_ENV === "development" && process.defaultApp === true;
+}
+
+function getDevelopmentOwnerPassword() {
+  if (!isTrustedDevelopmentMode()) {
+    return null;
+  }
+  return process.env.ANXOS_DEV_OWNER_PASSWORD || DEVELOPMENT_FALLBACK_OWNER_PASSWORD;
 }
 
 function ensureConfigDirectory() {
@@ -206,6 +236,14 @@ function getCurrentUser() {
     }
     currentSession = null;
     return null;
+  }
+
+  if (currentSession.developmentOwner === true) {
+    if (!isTrustedDevelopmentMode()) {
+      currentSession = null;
+      return null;
+    }
+    return publicUser(currentSession.userSnapshot);
   }
 
   const user = readSecurityState().users.find((entry) => entry.id === currentSession.userId);
@@ -409,6 +447,23 @@ function validatePassword(value) {
   return password;
 }
 
+function validateProductionOwnerPassword(password) {
+  if (isTrustedDevelopmentMode()) {
+    return;
+  }
+  const normalized = String(password || "");
+  if (normalized === DEVELOPMENT_FALLBACK_OWNER_PASSWORD) {
+    const error = new Error("Choose a stronger owner password.");
+    error.code = "WEAK_PASSWORD";
+    throw error;
+  }
+  if (/^(password|admin|owner|anxos|qwerty|letmein|123456|1234567890)$/i.test(normalized) || /^(\d)\1+$/.test(normalized)) {
+    const error = new Error("Choose a stronger owner password.");
+    error.code = "WEAK_PASSWORD";
+    throw error;
+  }
+}
+
 function getStatus() {
   const user = getCurrentUser();
   const accountSession = getCurrentAccountSession();
@@ -433,6 +488,8 @@ function getStatus() {
     accountAuthenticated: Boolean(accountUser),
     roles: Object.keys(ROLE_PERMISSIONS),
     permissions: user ? ROLE_PERMISSIONS[user.role] || [] : localMode ? ["local:*"] : [],
+    ownerWorkspaceAvailable: Boolean(user?.role === "Owner"),
+    trustedDevelopmentMode: isTrustedDevelopmentMode(),
     agentTokenConfigured: Boolean(readAgentSettings().agentToken),
     persistentSession: Boolean(currentSession?.persistent),
     persistentSessionCount: state.persistentSessions.length,
@@ -451,7 +508,16 @@ async function setupAdmin(payload = {}) {
   }
 
   const username = normalizeUsername(payload.username || "owner");
-  const passwordHash = await bcrypt.hash(validatePassword(payload.password), BCRYPT_ROUNDS);
+  const rawPassword = String(payload.password || "");
+  const developmentPassword = getDevelopmentOwnerPassword();
+  const password = developmentPassword && rawPassword === developmentPassword ? rawPassword : validatePassword(rawPassword);
+  if (payload.passwordConfirm !== undefined && String(payload.passwordConfirm || "") !== password) {
+    const error = new Error("Password confirmation does not match.");
+    error.code = "PASSWORD_CONFIRMATION_MISMATCH";
+    throw error;
+  }
+  validateProductionOwnerPassword(password);
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
   const user = {
     id: crypto.randomUUID(),
     username,
@@ -465,7 +531,7 @@ async function setupAdmin(payload = {}) {
   state.users.push(user);
   writeSecurityState(state);
   audit({ action: "security.setup", outcome: "ok", actor: publicUser(user) });
-  return login({ username, password: payload.password, staySignedIn: payload.staySignedIn });
+  return login({ username, password, staySignedIn: payload.staySignedIn });
 }
 
 async function login(payload = {}) {
@@ -506,7 +572,18 @@ async function login(payload = {}) {
   }
   const state = readSecurityState();
   const user = state.users.find((entry) => entry.username.toLowerCase() === username.toLowerCase());
-  const ok = user ? await bcrypt.compare(String(payload.password || ""), user.passwordHash) : false;
+  const password = String(payload.password || "");
+  const developmentPassword = getDevelopmentOwnerPassword();
+  const devFallbackOk = !user && state.users.length === 0 && username.toLowerCase() === "anx" && developmentPassword && password === developmentPassword;
+  const ok = devFallbackOk || (user ? await bcrypt.compare(password, user.passwordHash) : false);
+
+  if (!isTrustedDevelopmentMode() && password === DEVELOPMENT_FALLBACK_OWNER_PASSWORD) {
+    audit({ action: "security.login", outcome: "failed", target: username, reason: "DEFAULT_DEV_PASSWORD_REJECTED" });
+    recordRateLimitAttempt(rateLimitKey, rateLimitLimit, rateLimitWindowMs, { reason: "INVALID_CREDENTIALS" });
+    const error = new Error("Invalid username or password. This is the local owner account for this device, not an online Anx account.");
+    error.code = "INVALID_CREDENTIALS";
+    throw error;
+  }
 
   if (!ok) {
     audit({ action: "security.login", outcome: "failed", target: username, reason: "INVALID_CREDENTIALS" });
@@ -518,27 +595,45 @@ async function login(payload = {}) {
 
   resetRateLimit(rateLimitKey, "successful-login");
 
-  user.lastLoginAt = new Date().toISOString();
-  user.updatedAt = new Date().toISOString();
-  pruneExpiredPersistentSessions(state);
+  const authenticatedUser = user || {
+    id: "development-owner",
+    username: "Anx",
+    role: "Owner",
+    passwordHash: "development-runtime-only",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  };
+
+  if (user) {
+    user.lastLoginAt = new Date().toISOString();
+    user.updatedAt = new Date().toISOString();
+    pruneExpiredPersistentSessions(state);
+  }
   let persistentSession = null;
-  if (payload.staySignedIn === true) {
+  if (payload.staySignedIn === true && user) {
     persistentSession = await createPersistentSession(state, user);
   } else {
     removePersistentSessionFile();
   }
-  writeSecurityState(state);
+  if (user) {
+    writeSecurityState(state);
+  }
   const expiresAt = persistentSession
     ? Date.parse(persistentSession.expiresAt)
     : Date.now() + (state.settings.sessionTtlMs || SESSION_TTL_MS);
-  createRuntimeSession(user, expiresAt, Boolean(persistentSession), persistentSession?.id || null);
-  audit({ action: "security.login", outcome: "ok", actor: publicUser(user) });
+  createRuntimeSession(authenticatedUser, expiresAt, Boolean(persistentSession), persistentSession?.id || null);
+  if (devFallbackOk) {
+    currentSession.developmentOwner = true;
+    currentSession.userSnapshot = publicUser(authenticatedUser);
+  }
+  audit({ action: "security.login", outcome: "ok", actor: publicUser(authenticatedUser), reason: devFallbackOk ? "DEVELOPMENT_OWNER_FALLBACK" : null });
 
   return {
     token: currentSession.token,
     expiresAt: new Date(currentSession.expiresAt).toISOString(),
     persistent: Boolean(persistentSession),
-    user: publicUser(user),
+    user: publicUser(authenticatedUser),
   };
 }
 
@@ -615,6 +710,17 @@ function requirePermission(permission, target = null) {
   return status.user;
 }
 
+function requireOwner(target = "owner-workspace") {
+  const status = getStatus();
+  if (!status.user || status.user.role !== "Owner" || status.user.account === true) {
+    audit({ action: "security.ownerWorkspace", outcome: "denied", target, reason: "OWNER_REQUIRED" });
+    const error = new Error("Owner access is required.");
+    error.code = "OWNER_REQUIRED";
+    throw error;
+  }
+  return status.user;
+}
+
 function allowReadCompatibility() {
   const status = getStatus();
   return status.setupRequired || status.authenticated;
@@ -642,6 +748,7 @@ module.exports = {
   logout,
   logoutAllSessions,
   requirePermission,
+  requireOwner,
   rotateAgentToken,
   setupAdmin,
   allowReadCompatibility,

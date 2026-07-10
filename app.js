@@ -3,6 +3,25 @@ const toast = document.querySelector("#toast");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
+const ownerWorkspaceNav = document.querySelector("[data-owner-workspace-nav]");
+const ownerWorkspacePage = document.querySelector("[data-owner-workspace-page]");
+const ownerStatusFields = document.querySelectorAll("[data-owner-status]");
+const ownerOverviewFields = document.querySelectorAll("[data-owner-overview]");
+const ownerPageList = document.querySelector("[data-owner-page-list]");
+const ownerSearchInput = document.querySelector("[data-owner-search]");
+const ownerPageTitle = document.querySelector("[data-owner-page-title]");
+const ownerPageKicker = document.querySelector("[data-owner-page-kicker]");
+const ownerSaveState = document.querySelector("[data-owner-save-state]");
+const ownerEditor = document.querySelector("[data-owner-editor]");
+const ownerTools = document.querySelectorAll("[data-owner-tool]");
+const ownerActionButtons = document.querySelectorAll("[data-owner-action]");
+const ownerFlags = document.querySelector("[data-owner-flags]");
+const ownerAnalyticsFields = document.querySelectorAll("[data-owner-analytics]");
+const ownerCommandList = document.querySelector("[data-owner-command-list]");
+const ownerApiFields = document.querySelectorAll("[data-owner-api]");
+const ownerApiMessage = document.querySelector("[data-owner-api-message]");
+const ownerApiHistory = document.querySelector("[data-owner-api-history]");
+const ownerLogViewer = document.querySelector("[data-owner-log-viewer]");
 const titlebar = document.querySelector("[data-titlebar]");
 const titlebarDragSurface = document.querySelector("[data-titlebar-drag]");
 const titlebarPageTarget = document.querySelector("[data-titlebar-page]");
@@ -349,6 +368,7 @@ const securityCurrentRole = document.querySelector("[data-security-current-role]
 const securitySettingsMessage = document.querySelector("[data-security-settings-message]");
 const securityStaySignedIn = document.querySelector('[data-security-field="staySignedIn"]');
 const securityStaySignedInRow = document.querySelector("[data-security-stay-row]");
+const securityConfirmRow = document.querySelector("[data-security-confirm-row]");
 const localSetupButtons = document.querySelectorAll("[data-local-setup-action]");
 const securitySubmitButton = document.querySelector("[data-security-submit]");
 let securityLastSubmitAt = 0;
@@ -358,6 +378,7 @@ const accountSettingsMessage = document.querySelector("[data-account-settings-me
 const accountStatus = document.querySelector("[data-account-status]");
 const accountCurrentUser = document.querySelector("[data-account-current-user]");
 const accountDeviceCode = document.querySelector("[data-account-device-code]");
+const accountFields = document.querySelectorAll("[data-account-field]");
 const nodeTargetSelects = document.querySelectorAll("[data-node-target]");
 const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
@@ -394,6 +415,10 @@ let updateUiState = null;
 let securityState = { setupRequired: false, authenticated: false, user: null };
 let accountState = { authenticated: false, account: null, pending: null, configured: false };
 let accountPollTimer = null;
+let accountCountdownTimer = null;
+let ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+let ownerAutosaveTimer = null;
+let ownerAnalyticsTimer = null;
 let nodesState = { selectedNodeId: "default", nodes: [] };
 let backupRequestInFlight = false;
 let backupsState = {
@@ -808,6 +833,8 @@ function getDesktopApiState() {
       typeof api?.account?.getStatus === "function" &&
       typeof api?.account?.startDeviceLogin === "function" &&
       typeof api?.account?.checkDeviceLogin === "function" &&
+      typeof api?.account?.cancelDeviceLogin === "function" &&
+      typeof api?.account?.refresh === "function" &&
       typeof api?.account?.logout === "function",
     hasSecurity:
       typeof api?.security?.getStatus === "function" &&
@@ -815,6 +842,11 @@ function getDesktopApiState() {
       typeof api?.security?.login === "function" &&
       typeof api?.security?.logout === "function" &&
       typeof api?.security?.rotateAgentToken === "function",
+    hasOwnerWorkspace:
+      typeof api?.ownerWorkspace?.getStatus === "function" &&
+      typeof api?.ownerWorkspace?.getWorkspace === "function" &&
+      typeof api?.ownerWorkspace?.saveContent === "function" &&
+      typeof api?.ownerWorkspace?.runCommand === "function",
     hasBackups:
       typeof api?.backups?.list === "function" &&
       typeof api?.backups?.create === "function" &&
@@ -2264,8 +2296,22 @@ function startStartupFallback() {
   }, Math.max(STARTUP_FALLBACK_MS, getStartupMinimumMs() + 2200));
 }
 
+function isOwnerWorkspaceAuthorized() {
+  return Boolean(securityState?.user?.role === "Owner" && securityState?.user?.account !== true);
+}
+
+function setOwnerWorkspaceNavVisible(visible) {
+  if (ownerWorkspaceNav) {
+    ownerWorkspaceNav.hidden = !visible;
+  }
+}
+
 function showPage(pageName) {
   const safePageName = getSafePageName(pageName);
+  if (safePageName === "owner-workspace" && !isOwnerWorkspaceAuthorized()) {
+    showToast("Owner access is required.");
+    return showPage("dashboard");
+  }
   navItems.forEach((item) => {
     const isActive = item.dataset.pageTarget === safePageName;
     item.classList.toggle("is-active", isActive);
@@ -2348,11 +2394,352 @@ function showPage(pageName) {
     resizeActiveSshSession();
   }
 
+  if (safePageName === "owner-workspace") {
+    refreshOwnerWorkspace();
+    startOwnerAnalyticsPolling();
+  } else {
+    stopOwnerAnalyticsPolling();
+  }
+
   updateTitlebar(safePageName);
 }
 
 function getActivePageName() {
   return document.querySelector(".page.is-active")?.dataset.page || "dashboard";
+}
+
+function getOwnerApiField(name) {
+  return Array.from(ownerApiFields).find((field) => field.dataset.ownerApi === name);
+}
+
+function ownerPageTool(pageId) {
+  if (pageId === "overview") return "overview";
+  if (pageId === "feature-flags") return "feature-flags";
+  if (pageId === "api-tester") return "api-tester";
+  if (pageId === "internal-analytics") return "internal-analytics";
+  if (pageId === "command-center") return "command-center";
+  if (pageId === "log-viewer") return "log-viewer";
+  return "editor";
+}
+
+function setOwnerStatus(selector, value, tone = null) {
+  const target = Array.from(ownerStatusFields).find((field) => field.dataset.ownerStatus === selector);
+  if (!target) return;
+  target.textContent = value;
+  target.classList.toggle("is-ok", tone === "ok");
+  target.classList.toggle("is-warn", tone === "warn");
+}
+
+function renderOwnerStatus(status = {}) {
+  const authOk = status.authentication === "verified";
+  setOwnerStatus("authentication", authOk ? "Authentication verified" : status.authentication === "locked" ? "Authentication locked" : "Authentication unavailable", authOk ? "ok" : "warn");
+  setOwnerStatus("workspace", status.workspace === "loaded" || status.workspace === "ready" ? "Workspace loaded" : "Workspace unavailable", status.workspace ? "ok" : "warn");
+  setOwnerStatus("agents", status.agents === "configured" ? "Agents connected" : status.agents === "disconnected" ? "Agents disconnected" : "Agents unavailable", status.agents === "configured" ? "ok" : "warn");
+  setOwnerStatus("ready", status.ready === "ready" ? "Ready to build" : "Workspace locked", status.ready === "ready" ? "ok" : "warn");
+  ownerOverviewFields.forEach((field) => {
+    const key = field.dataset.ownerOverview;
+    if (key === "access") field.textContent = authOk ? "Owner Only" : "Locked";
+    if (key === "storage") field.textContent = status.storagePath || "Unavailable";
+    if (key === "authentication") field.textContent = authOk ? "Verified" : "Unavailable";
+    if (key === "agents") field.textContent = status.agents || "Unavailable";
+    if (key === "ready") field.textContent = status.ready || "Unavailable";
+  });
+}
+
+function renderOwnerPageList() {
+  if (!ownerPageList) return;
+  const query = String(ownerSearchInput?.value || "").trim().toLowerCase();
+  const pagesToRender = ownerWorkspaceState.pages.filter((page) => !query || page.title.toLowerCase().includes(query));
+  ownerPageList.innerHTML = "";
+  pagesToRender.forEach((page) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `owner-page-button${page.id === ownerWorkspaceState.selectedPageId ? " is-active" : ""}`;
+    button.dataset.ownerPageId = page.id;
+    button.innerHTML = `<span>${escapeHtml(page.title)}</span><small>${page.builtIn ? "Built-in" : page.pinned ? "Pinned" : "Custom"}</small>`;
+    button.style.borderLeftColor = page.accent || "var(--accent)";
+    button.addEventListener("click", () => selectOwnerPage(page.id));
+    ownerPageList.appendChild(button);
+  });
+}
+
+function renderOwnerTool(page) {
+  const tool = ownerPageTool(page?.id || "overview");
+  ownerTools.forEach((node) => {
+    node.hidden = node.dataset.ownerTool !== tool;
+  });
+  if (ownerPageTitle) ownerPageTitle.textContent = page?.title || "Overview";
+  if (ownerPageKicker) ownerPageKicker.textContent = page?.builtIn ? "Built-in" : "Custom";
+  const custom = page && !page.builtIn;
+  document.querySelector('[data-owner-action="rename-page"]')?.toggleAttribute("hidden", !custom);
+  document.querySelector('[data-owner-action="delete-page"]')?.toggleAttribute("hidden", !custom);
+  document.querySelector('[data-owner-action="pin-page"]')?.toggleAttribute("hidden", !custom);
+  document.querySelector('[data-owner-action="duplicate-page"]')?.toggleAttribute("hidden", !page);
+  if (ownerEditor && tool === "editor") {
+    const content = ownerWorkspaceState.contents[page.id] || {};
+    ownerEditor.value = content.markdown || content.json || "";
+  }
+  if (tool === "feature-flags") renderOwnerFlags();
+  if (tool === "command-center") renderOwnerCommands();
+  if (tool === "api-tester") renderOwnerApiHistory(ownerWorkspaceState.apiHistory || []);
+  if (tool === "log-viewer") refreshOwnerLogs();
+  if (tool === "internal-analytics") refreshOwnerAnalytics();
+}
+
+function renderOwnerWorkspace() {
+  setOwnerWorkspaceNavVisible(isOwnerWorkspaceAuthorized());
+  const selected = ownerWorkspaceState.pages.find((page) => page.id === ownerWorkspaceState.selectedPageId)
+    || ownerWorkspaceState.pages[0]
+    || null;
+  if (selected) {
+    ownerWorkspaceState.selectedPageId = selected.id;
+  }
+  renderOwnerStatus(ownerWorkspaceState.status || {});
+  renderOwnerPageList();
+  renderOwnerTool(selected);
+}
+
+async function refreshOwnerWorkspace() {
+  if (!isOwnerWorkspaceAuthorized()) {
+    ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+    renderOwnerWorkspace();
+    return;
+  }
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasOwnerWorkspace) {
+    showToast("Owner Workspace IPC is unavailable.");
+    return;
+  }
+  try {
+    const workspace = await desktopApiState.api.ownerWorkspace.getWorkspace();
+    ownerWorkspaceState = {
+      ...ownerWorkspaceState,
+      ...workspace,
+      authorized: true,
+      pages: workspace.pages || [],
+      contents: workspace.contents || {},
+      apiHistory: workspace.apiHistory || ownerWorkspaceState.apiHistory || [],
+    };
+    renderOwnerWorkspace();
+  } catch (error) {
+    showToast(normalizeIpcErrorMessage(error, "Owner Workspace unavailable."));
+  }
+}
+
+function selectOwnerPage(pageId) {
+  ownerWorkspaceState.selectedPageId = pageId;
+  renderOwnerWorkspace();
+}
+
+function scheduleOwnerAutosave() {
+  if (!ownerEditor || !ownerWorkspaceState.selectedPageId) return;
+  clearTimeout(ownerAutosaveTimer);
+  if (ownerSaveState) ownerSaveState.textContent = "Saving";
+  ownerAutosaveTimer = setTimeout(async () => {
+    const desktopApiState = getDesktopApiState();
+    if (!desktopApiState.hasOwnerWorkspace || !isOwnerWorkspaceAuthorized()) return;
+    try {
+      const response = await desktopApiState.api.ownerWorkspace.saveContent({
+        pageId: ownerWorkspaceState.selectedPageId,
+        markdown: ownerEditor.value,
+      });
+      ownerWorkspaceState.contents = response.workspace?.contents || ownerWorkspaceState.contents;
+      if (ownerSaveState) ownerSaveState.textContent = "Saved";
+    } catch (error) {
+      if (ownerSaveState) ownerSaveState.textContent = "Save failed";
+      showToast(normalizeIpcErrorMessage(error, "Owner workspace save failed."));
+    }
+  }, 450);
+}
+
+function renderOwnerFlags(flags = ownerWorkspaceState.flags || []) {
+  if (!ownerFlags) return;
+  ownerFlags.innerHTML = "";
+  flags.forEach((flag) => {
+    const row = document.createElement("div");
+    row.className = "owner-row";
+    row.innerHTML = `
+      <div class="owner-row__top">
+        <strong>${escapeHtml(flag.name)}</strong>
+        <label class="security-option"><input type="checkbox" ${flag.value ? "checked" : ""}> <span>${flag.value ? "On" : "Off"}</span></label>
+      </div>
+      <p>${escapeHtml(flag.description || "")}</p>
+      <small>${escapeHtml(flag.environment || "local")} · ${flag.productionSafe ? "Production-safe" : "Development-only"}${flag.requiresRestart ? " · Restart required" : ""}</small>
+    `;
+    row.querySelector("input")?.addEventListener("change", async (event) => {
+      if (flag.requiresRestart && !window.confirm("Changing this flag requires restart. Continue?")) {
+        event.target.checked = !event.target.checked;
+        return;
+      }
+      const desktopApiState = getDesktopApiState();
+      const result = await desktopApiState.api.ownerWorkspace.setFlag({ name: flag.name, value: event.target.checked }).catch((error) => {
+        showToast(normalizeIpcErrorMessage(error, "Feature flag update failed."));
+        return null;
+      });
+      if (result?.flags) {
+        ownerWorkspaceState.flags = result.flags;
+        renderOwnerFlags(result.flags);
+      }
+    });
+    ownerFlags.appendChild(row);
+  });
+}
+
+async function renderOwnerCommands() {
+  if (!ownerCommandList) return;
+  const desktopApiState = getDesktopApiState();
+  const commands = await desktopApiState.api.ownerWorkspace.getCommands().catch(() => []);
+  ownerCommandList.innerHTML = "";
+  commands.forEach((command) => {
+    const row = document.createElement("div");
+    row.className = "owner-row";
+    row.innerHTML = `
+      <div class="owner-row__top">
+        <strong>${escapeHtml(command.label)}</strong>
+        <button class="inline-action" type="button" ${command.available ? "" : "disabled"}>${command.available ? "Run" : "Unavailable"}</button>
+      </div>
+      <p>${escapeHtml(command.reason || (command.disruptive ? "Confirmation required." : "Ready."))}</p>
+    `;
+    row.querySelector("button")?.addEventListener("click", async () => {
+      if (command.disruptive && !window.confirm(`${command.label}?`)) return;
+      const result = await desktopApiState.api.ownerWorkspace.runCommand({ commandId: command.id, confirmed: command.disruptive }).catch((error) => ({
+        ok: false,
+        message: normalizeIpcErrorMessage(error, "Command failed."),
+      }));
+      showToast(result.message || (result.ok ? "Command completed." : "Command failed."));
+    });
+    ownerCommandList.appendChild(row);
+  });
+}
+
+function renderOwnerApiHistory(history = []) {
+  if (!ownerApiHistory) return;
+  ownerApiHistory.innerHTML = history.length ? "" : "<p>No API history.</p>";
+  history.forEach((entry) => {
+    const pre = document.createElement("pre");
+    pre.textContent = `${entry.method} ${entry.url}\nStatus: ${entry.status || "Unavailable"} · ${entry.durationMs || 0}ms\n${entry.responseText || ""}`;
+    ownerApiHistory.appendChild(pre);
+  });
+}
+
+async function sendOwnerApiRequest() {
+  const desktopApiState = getDesktopApiState();
+  let headers = {};
+  try {
+    const rawHeaders = getOwnerApiField("headers")?.value || "{}";
+    headers = rawHeaders.trim() ? JSON.parse(rawHeaders) : {};
+  } catch {
+    showToast("Headers must be valid JSON.");
+    return;
+  }
+  const result = await desktopApiState.api.ownerWorkspace.runApiRequest({
+    method: getOwnerApiField("method")?.value || "GET",
+    url: getOwnerApiField("url")?.value || "",
+    headers,
+    body: getOwnerApiField("body")?.value || "",
+  }).catch((error) => {
+    showToast(normalizeIpcErrorMessage(error, "API request failed."));
+    return null;
+  });
+  if (result) {
+    ownerWorkspaceState.apiHistory = result.history || [];
+    renderOwnerApiHistory(ownerWorkspaceState.apiHistory);
+    if (ownerApiMessage) ownerApiMessage.textContent = result.result?.ok ? "Request completed." : "Request failed.";
+  }
+}
+
+async function clearOwnerApiHistory() {
+  const desktopApiState = getDesktopApiState();
+  const result = await desktopApiState.api.ownerWorkspace.clearApiHistory().catch(() => ({ history: [] }));
+  ownerWorkspaceState.apiHistory = result.history || [];
+  renderOwnerApiHistory(ownerWorkspaceState.apiHistory);
+}
+
+async function refreshOwnerAnalytics() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasOwnerWorkspace || !isOwnerWorkspaceAuthorized()) return;
+  const analytics = await desktopApiState.api.ownerWorkspace.getAnalytics().catch(() => null);
+  const values = {
+    rendererFps: analytics?.rendererFps ?? "Not reported",
+    cpuUsage: Number.isFinite(analytics?.cpuUsage) ? `${analytics.cpuUsage.toFixed(1)}%` : "Not reported",
+    memory: analytics?.memory ? `${formatBytes(analytics.memory.used)} / ${formatBytes(analytics.memory.total)}` : "Not reported",
+    disk: analytics?.disk ? `${analytics.disk.percent}% used` : "Not reported",
+    ipcLatency: Number.isFinite(analytics?.ipcLatencyMs) ? `${analytics.ipcLatencyMs} ms` : "Not reported",
+    apiLatency: Number.isFinite(analytics?.apiLatencyMs) ? `${analytics.apiLatencyMs} ms` : "Not reported",
+    agentLatency: Number.isFinite(analytics?.agentLatencyMs) ? `${analytics.agentLatencyMs} ms` : "Not reported",
+    cache: analytics?.cache?.status || "Not reported",
+  };
+  ownerAnalyticsFields.forEach((field) => {
+    field.textContent = values[field.dataset.ownerAnalytics] || "Not reported";
+  });
+}
+
+function startOwnerAnalyticsPolling() {
+  stopOwnerAnalyticsPolling();
+  ownerAnalyticsTimer = setInterval(() => {
+    if (ownerWorkspaceState.selectedPageId === "internal-analytics") refreshOwnerAnalytics();
+  }, 2000);
+}
+
+function stopOwnerAnalyticsPolling() {
+  if (ownerAnalyticsTimer) {
+    clearInterval(ownerAnalyticsTimer);
+    ownerAnalyticsTimer = null;
+  }
+}
+
+async function refreshOwnerLogs() {
+  const desktopApiState = getDesktopApiState();
+  if (!ownerLogViewer || !desktopApiState.hasOwnerWorkspace) return;
+  const logs = await desktopApiState.api.ownerWorkspace.readLogs().catch(() => []);
+  ownerLogViewer.innerHTML = "";
+  logs.forEach((entry) => {
+    const pre = document.createElement("pre");
+    pre.textContent = `${entry.path}\n\n${entry.content}`;
+    ownerLogViewer.appendChild(pre);
+  });
+}
+
+async function handleOwnerAction(action) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasOwnerWorkspace || !isOwnerWorkspaceAuthorized()) {
+    showToast("Owner access is required.");
+    return;
+  }
+  const selected = ownerWorkspaceState.pages.find((page) => page.id === ownerWorkspaceState.selectedPageId);
+  if (action === "create-page") {
+    const title = window.prompt("Page name");
+    if (!title) return;
+    const result = await desktopApiState.api.ownerWorkspace.createPage({ title }).catch((error) => {
+      showToast(normalizeIpcErrorMessage(error, "Page could not be created."));
+      return null;
+    });
+    if (result?.workspace) {
+      ownerWorkspaceState = { ...ownerWorkspaceState, ...result.workspace, selectedPageId: result.page.id };
+      renderOwnerWorkspace();
+    }
+  } else if (action === "rename-page" && selected && !selected.builtIn) {
+    const title = window.prompt("Rename page", selected.title);
+    if (!title) return;
+    await desktopApiState.api.ownerWorkspace.updatePage({ id: selected.id, title });
+    await refreshOwnerWorkspace();
+  } else if (action === "duplicate-page" && selected) {
+    const result = await desktopApiState.api.ownerWorkspace.duplicatePage({ id: selected.id });
+    ownerWorkspaceState = { ...ownerWorkspaceState, ...result.workspace, selectedPageId: result.page.id };
+    renderOwnerWorkspace();
+  } else if (action === "pin-page" && selected && !selected.builtIn) {
+    await desktopApiState.api.ownerWorkspace.updatePage({ id: selected.id, pinned: !selected.pinned });
+    await refreshOwnerWorkspace();
+  } else if (action === "delete-page" && selected && !selected.builtIn) {
+    if (!window.confirm(`Delete ${selected.title}?`)) return;
+    const result = await desktopApiState.api.ownerWorkspace.deletePage({ id: selected.id });
+    ownerWorkspaceState = { ...ownerWorkspaceState, ...result.workspace, selectedPageId: "overview" };
+    renderOwnerWorkspace();
+  } else if (action === "send-api") {
+    await sendOwnerApiRequest();
+  } else if (action === "clear-api-history") {
+    await clearOwnerApiHistory();
+  }
 }
 
 function formatPercent(value) {
@@ -13363,30 +13750,55 @@ function setAccountMessage(message = "") {
 function renderAccountState() {
   const signedIn = Boolean(accountState.authenticated);
   const pending = accountState.pending || null;
+  const expired = accountState.sessionStatus === "expired";
+  const account = accountState.account || {};
+  const device = accountState.currentDevice || pending?.device || {};
+  const expiresAt = pending?.expiresAt ? Date.parse(pending.expiresAt) : null;
+  const remainingMs = Number.isFinite(expiresAt) ? Math.max(0, expiresAt - Date.now()) : 0;
+  const remainingText = pending ? `${Math.ceil(remainingMs / 1000)}s remaining` : "";
   if (accountStatus) {
-    accountStatus.textContent = signedIn ? "Signed in" : pending ? "Waiting" : "Not signed in";
+    accountStatus.textContent = signedIn ? "Signed in" : pending ? "Waiting" : expired ? "Session expired" : "Using local device mode";
   }
   if (accountCurrentUser) {
     accountCurrentUser.value = signedIn
-      ? (accountState.account?.displayName || accountState.account?.username || accountState.account?.email || "AnxOS Account")
+      ? (account.displayName || account.username || account.email || "AnxOS Account")
       : "";
   }
+  accountFields.forEach((field) => {
+    const key = field.dataset.accountField;
+    if (key === "id") field.value = account.id || "";
+    else if (key === "email") field.value = account.email || "";
+    else if (key === "provider") field.value = account.provider || "";
+    else if (key === "connectedAt") field.value = account.connectedAt ? formatDateTime(account.connectedAt) : "";
+    else if (key === "device") field.value = device.deviceName || device.platform ? `${device.deviceName || "This device"} · ${device.platform || "desktop"}` : "";
+    else if (key === "session") field.value = signedIn
+      ? `Active until ${accountState.expiresAt ? formatDateTime(accountState.expiresAt) : "unknown"}`
+      : expired
+        ? "Expired. Sign in again."
+        : "Local device mode";
+  });
   if (accountDeviceCode) {
     accountDeviceCode.value = pending?.userCode || "";
   }
   document.querySelectorAll('[data-account-action="logout"]').forEach((button) => {
     button.toggleAttribute("hidden", !signedIn);
   });
+  document.querySelectorAll('[data-account-action="cancel"], [data-account-action="copy-code"]').forEach((button) => {
+    button.toggleAttribute("hidden", !pending);
+  });
   document.querySelectorAll('[data-account-action="start"]').forEach((button) => {
     button.textContent = pending ? "Waiting for Browser..." : signedIn ? "Switch AnxOS Account" : "Sign in with AnxOS";
     button.disabled = pending && !signedIn;
   });
   if (pending?.userCode) {
-    setAccountMessage(`Browser sign-in code: ${pending.userCode}`);
+    const urlText = pending.verificationUrl ? ` Visit ${pending.verificationUrl}.` : "";
+    setAccountMessage(`Opening your browser... Code ${pending.userCode}.${urlText} ${remainingText}`);
   } else if (signedIn) {
-    setAccountMessage(`Signed in as ${accountState.account?.displayName || accountState.account?.username || "AnxOS Account"}.`);
+    setAccountMessage(`Signed in as ${account.displayName || account.username || "AnxOS Account"}.`);
+  } else if (expired) {
+    setAccountMessage(accountState.message || "Your AnxOS account session expired. Sign in again to use cloud and remote features.");
   } else if (accountState.configured === false) {
-    setAccountMessage("AnxOS account backend is not configured yet. Local mode still works.");
+    setAccountMessage("Using local device mode. An AnxOS account is optional and only needed for cloud and remote features.");
   } else {
     setAccountMessage("Sign in on the AnxOS website to connect this device.");
   }
@@ -13401,6 +13813,17 @@ async function refreshAccountState() {
   }
   try {
     accountState = await desktopApiState.api.account.getStatus();
+    if (accountState.sessionStatus === "expired" && accountState.configured && typeof desktopApiState.api.account.refresh === "function") {
+      try {
+        accountState = await desktopApiState.api.account.refresh();
+      } catch (error) {
+        accountState = {
+          ...accountState,
+          state: "refresh-failed",
+          message: normalizeIpcErrorMessage(error, "Account session refresh failed. Sign in again."),
+        };
+      }
+    }
   } catch {
     accountState = { authenticated: false, account: null, pending: null, configured: false };
   }
@@ -13412,17 +13835,24 @@ function stopAccountPolling() {
     clearInterval(accountPollTimer);
     accountPollTimer = null;
   }
+  if (accountCountdownTimer) {
+    clearInterval(accountCountdownTimer);
+    accountCountdownTimer = null;
+  }
 }
 
 function startAccountPolling(intervalMs = 3000) {
   stopAccountPolling();
+  accountCountdownTimer = setInterval(() => {
+    if (accountState.pending) renderAccountState();
+  }, 1000);
   accountPollTimer = setInterval(async () => {
     const desktopApiState = getDesktopApiState();
     if (!desktopApiState.hasAccount) return;
     try {
       accountState = await desktopApiState.api.account.checkDeviceLogin();
       renderAccountState();
-      if (accountState.authenticated || ["expired", "idle"].includes(accountState.state)) {
+      if (accountState.authenticated || ["expired", "idle", "denied", "cancelled"].includes(accountState.state)) {
         stopAccountPolling();
         await refreshSecurityState();
         if (accountState.authenticated) {
@@ -13430,6 +13860,9 @@ function startAccountPolling(intervalMs = 3000) {
           setSecurityGateVisible(false);
           renderLocalSetupState();
           showToast("Signed in with AnxOS.");
+        }
+        if (accountState.message) {
+          setAccountMessage(accountState.message);
         }
       }
     } catch (error) {
@@ -13440,6 +13873,8 @@ function startAccountPolling(intervalMs = 3000) {
     }
   }, Math.max(1500, Number.parseInt(intervalMs, 10) || 3000));
 }
+
+window.addEventListener("beforeunload", stopAccountPolling);
 
 async function startAnxOsAccountLogin() {
   const desktopApiState = getDesktopApiState();
@@ -13465,6 +13900,22 @@ async function openAnxOsAccountPage() {
   await desktopApiState.api.account.openPage().catch((error) => showToast(error?.message || "Could not open account page."));
 }
 
+async function cancelAnxOsAccountLogin() {
+  const desktopApiState = getDesktopApiState();
+  stopAccountPolling();
+  if (!desktopApiState.hasAccount) return;
+  accountState = await desktopApiState.api.account.cancelDeviceLogin().catch(() => ({ authenticated: false, account: null, pending: null, state: "cancelled" }));
+  renderAccountState();
+  showToast("AnxOS account sign-in cancelled.");
+}
+
+async function copyAnxOsAccountCode() {
+  const code = accountState.pending?.userCode || "";
+  if (!code) return;
+  await navigator.clipboard?.writeText?.(code).catch(() => {});
+  showToast("Device code copied.");
+}
+
 async function logoutAnxOsAccount() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasAccount) return;
@@ -13478,6 +13929,11 @@ async function logoutAnxOsAccount() {
 function renderSecurityState() {
   const setup = Boolean(securityState.setupRequired);
   const authenticated = Boolean(securityState.authenticated);
+  setOwnerWorkspaceNavVisible(isOwnerWorkspaceAuthorized());
+  if (!isOwnerWorkspaceAuthorized() && getActivePageName() === "owner-workspace") {
+    ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+    showPage("dashboard");
+  }
   if (authenticated || !setup) {
     setLocalSetupComplete();
   }
@@ -13499,6 +13955,9 @@ function renderSecurityState() {
   }
   if (securityStaySignedInRow) {
     securityStaySignedInRow.hidden = false;
+  }
+  if (securityConfirmRow) {
+    securityConfirmRow.hidden = !setup;
   }
   if (securityStatus) {
     securityStatus.textContent = authenticated ? "Signed in" : setup ? "Local mode" : "Locked";
@@ -13553,12 +14012,21 @@ async function submitSecurityForm(event) {
   }
   const username = document.querySelector('[data-security-field="username"]')?.value || "";
   const password = document.querySelector('[data-security-field="password"]')?.value || "";
+  const passwordConfirm = document.querySelector('[data-security-field="passwordConfirm"]')?.value || "";
   const staySignedIn = Boolean(securityStaySignedIn?.checked);
   try {
+    const runWithTimeout = (promise, label = "Security request") => Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`${label} timed out. Try again.`));
+        }, 15000);
+      }),
+    ]);
     if (securityState.setupRequired) {
-      await desktopApiState.api.security.setupAdmin({ username, password, staySignedIn });
+      await runWithTimeout(desktopApiState.api.security.setupAdmin({ username, password, passwordConfirm, staySignedIn }), "Local owner setup");
     } else {
-      await desktopApiState.api.security.login({ username, password, staySignedIn });
+      await runWithTimeout(desktopApiState.api.security.login({ username, password, staySignedIn }), "Local owner login");
     }
     if (securityStaySignedIn) {
       securityStaySignedIn.checked = false;
@@ -13589,6 +14057,8 @@ async function logoutSecuritySession() {
   if (!desktopApiState.hasSecurity) {
     return;
   }
+  ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+  setOwnerWorkspaceNavVisible(false);
   await desktopApiState.api.security.logout().catch(() => {});
   await refreshSecurityState();
 }
@@ -13601,6 +14071,8 @@ async function logoutAllSecuritySessions() {
   await desktopApiState.api.security.logoutAllSessions().catch((error) => {
     showToast(error?.message || "Could not log out of all sessions.");
   });
+  ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+  setOwnerWorkspaceNavVisible(false);
   await refreshSecurityState();
 }
 
@@ -14674,6 +15146,11 @@ instanceAddressCopyButton?.addEventListener("click", () => {
 navItems.forEach((item) => {
   item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
+ownerSearchInput?.addEventListener("input", debounce(renderOwnerPageList, 120));
+ownerEditor?.addEventListener("input", scheduleOwnerAutosave);
+ownerActionButtons.forEach((button) => {
+  button.addEventListener("click", () => handleOwnerAction(button.dataset.ownerAction));
+});
 sidebarToggleButton?.addEventListener("click", () => {
   toggleSidebarCollapsed({ lockHoverExpand: true });
 });
@@ -15340,6 +15817,10 @@ accountButtons.forEach((button) => {
       await startAnxOsAccountLogin();
     } else if (action === "open") {
       await openAnxOsAccountPage();
+    } else if (action === "cancel") {
+      await cancelAnxOsAccountLogin();
+    } else if (action === "copy-code") {
+      await copyAnxOsAccountCode();
     } else if (action === "logout") {
       await logoutAnxOsAccount();
     }

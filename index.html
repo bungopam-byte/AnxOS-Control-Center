@@ -45,6 +45,10 @@
           <span>Password</span>
           <input type="password" autocomplete="current-password" data-security-field="password" required>
         </label>
+        <label class="settings-field" data-security-confirm-row hidden>
+          <span>Confirm Password</span>
+          <input type="password" autocomplete="new-password" data-security-field="passwordConfirm">
+        </label>
         <label class="security-option" data-security-stay-row>
           <input type="checkbox" data-security-field="staySignedIn">
           <span>Stay signed in for 30 days on this device</span>
@@ -52,6 +56,9 @@
         <div class="settings-actions">
           <button class="inline-action" type="submit" data-security-submit>Continue</button>
           <button class="inline-action inline-action--primary" type="button" data-account-action="start">Sign in with AnxOS</button>
+          <button class="inline-action" type="button" data-account-action="copy-code" hidden>Copy Code</button>
+          <button class="inline-action" type="button" data-account-action="open">Open Browser</button>
+          <button class="inline-action" type="button" data-account-action="cancel">Cancel</button>
         </div>
         <p class="settings-note" data-security-message></p>
         <p class="settings-note" data-account-message></p>
@@ -67,7 +74,10 @@
         <div class="settings-actions">
           <button class="inline-action inline-action--primary" type="button" data-local-setup-action="use-device">Use this device</button>
           <button class="inline-action" type="button" data-account-action="start">Sign in with AnxOS</button>
-          <button class="inline-action" type="button" data-local-setup-action="remote-control">Enable Remote Control</button>
+          <button class="inline-action" type="button" data-account-action="copy-code" hidden>Copy Code</button>
+          <button class="inline-action" type="button" data-account-action="open">Open Browser</button>
+          <button class="inline-action" type="button" data-account-action="cancel">Cancel</button>
+          <button class="inline-action" type="button" data-local-setup-action="remote-control">Local Owner Login</button>
         </div>
         <p class="settings-note" data-account-message></p>
       </div>
@@ -311,6 +321,23 @@
             </span>
             <span class="nav-item__label" data-nav-label>Security</span>
           </button>
+          <div class="nav-section nav-section--owner" data-owner-workspace-nav hidden>
+            <div class="nav-section__title">
+              <span>Anx Workspace</span>
+              <small>Owner Only</small>
+            </div>
+            <button class="nav-item nav-item--owner" type="button" data-page-target="owner-workspace" data-page-label="Anx Workspace" data-tooltip="Anx Workspace" aria-label="Anx Workspace">
+              <span class="nav-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 3 5 6v5c0 4.2 2.8 8 7 9 4.2-1 7-4.8 7-9V6Z"></path>
+                  <path d="M9 12h6"></path>
+                  <path d="M12 9v6"></path>
+                </svg>
+              </span>
+              <span class="nav-item__label" data-nav-label>Anx Workspace</span>
+              <span class="nav-item__badge">Owner</span>
+            </button>
+          </div>
           <button class="nav-item" type="button" data-page-target="nodes" data-page-label="Nodes" data-tooltip="Nodes" aria-label="Nodes">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -2330,6 +2357,30 @@
                   <input type="text" data-account-current-user readonly>
                 </label>
                 <label class="settings-field">
+                  <span>Account ID</span>
+                  <input type="text" data-account-field="id" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Email</span>
+                  <input type="text" data-account-field="email" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Provider</span>
+                  <input type="text" data-account-field="provider" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Connected</span>
+                  <input type="text" data-account-field="connectedAt" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Current Device</span>
+                  <input type="text" data-account-field="device" readonly>
+                </label>
+                <label class="settings-field">
+                  <span>Session</span>
+                  <input type="text" data-account-field="session" readonly>
+                </label>
+                <label class="settings-field">
                   <span>Device login code</span>
                   <input type="text" data-account-device-code readonly>
                 </label>
@@ -2337,6 +2388,8 @@
               <div class="settings-actions">
                 <button class="inline-action inline-action--primary" type="button" data-account-action="start">Sign in with AnxOS</button>
                 <button class="inline-action" type="button" data-account-action="open">Open Account Page</button>
+                <button class="inline-action" type="button" data-account-action="copy-code">Copy Code</button>
+                <button class="inline-action" type="button" data-account-action="cancel">Cancel</button>
                 <button class="inline-action" type="button" data-account-action="logout">Sign Out</button>
                 <span class="settings-inline-status" data-account-settings-message>Website sign-in is optional.</span>
               </div>
@@ -2367,6 +2420,110 @@
                 <button class="inline-action" type="button" data-security-action="logout-all-sessions">Log out of all sessions</button>
                 <span class="settings-inline-status" data-security-settings-message>Security state unavailable.</span>
               </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="page owner-workspace-page" data-page="owner-workspace" data-owner-workspace-page>
+          <header class="page-header owner-hero">
+            <div>
+              <p class="eyebrow">ANXOS</p>
+              <h1>Welcome back, Anx.</h1>
+              <p class="lede">Systems operational.<br>Your private workspace is ready.</p>
+              <div class="owner-status-strip" aria-label="Workspace status">
+                <span data-owner-status="authentication">Authentication loading</span>
+                <span data-owner-status="workspace">Workspace loading</span>
+                <span data-owner-status="agents">Agents loading</span>
+                <span data-owner-status="ready">Loading</span>
+              </div>
+            </div>
+          </header>
+
+          <div class="owner-workspace-layout">
+            <aside class="owner-page-rail" aria-label="Owner workspace pages">
+              <div class="owner-rail-header">
+                <strong>Pages</strong>
+                <button class="icon-button" type="button" data-owner-action="create-page" aria-label="Create page">+</button>
+              </div>
+              <input class="owner-search" type="search" data-owner-search placeholder="Search workspace">
+              <div class="owner-page-list" data-owner-page-list></div>
+            </aside>
+
+            <section class="owner-workspace-panel">
+              <div class="owner-panel-header">
+                <div>
+                  <p class="eyebrow" data-owner-page-kicker>Private</p>
+                  <h2 data-owner-page-title>Overview</h2>
+                </div>
+                <div class="settings-actions">
+                  <button class="inline-action" type="button" data-owner-action="duplicate-page">Duplicate</button>
+                  <button class="inline-action" type="button" data-owner-action="rename-page">Rename</button>
+                  <button class="inline-action" type="button" data-owner-action="pin-page">Pin</button>
+                  <button class="inline-action" type="button" data-owner-action="delete-page">Delete</button>
+                  <span class="settings-inline-status" data-owner-save-state>Workspace locked</span>
+                </div>
+              </div>
+
+              <div class="owner-tool-grid" data-owner-tool="overview">
+                <article class="status-card">
+                  <h3>Identity</h3>
+                  <p>Private owner identity is fixed for this workspace.</p>
+                  <dl>
+                    <div><dt>Name</dt><dd>Anx</dd></div>
+                    <div><dt>Access</dt><dd data-owner-overview="access">Loading</dd></div>
+                    <div><dt>Storage</dt><dd data-owner-overview="storage">Loading</dd></div>
+                  </dl>
+                </article>
+                <article class="status-card">
+                  <h3>Workspace State</h3>
+                  <p>Only real application state is shown here.</p>
+                  <dl>
+                    <div><dt>Authentication</dt><dd data-owner-overview="authentication">Loading</dd></div>
+                    <div><dt>Agents</dt><dd data-owner-overview="agents">Loading</dd></div>
+                    <div><dt>Ready</dt><dd data-owner-overview="ready">Loading</dd></div>
+                  </dl>
+                </article>
+              </div>
+
+              <div class="owner-editor-shell" data-owner-tool="editor" hidden>
+                <textarea data-owner-editor placeholder="Write notes, markdown, checklists, code blocks, JSON snippets, or internal links."></textarea>
+              </div>
+
+              <div class="owner-tool-grid" data-owner-tool="feature-flags" hidden>
+                <div class="owner-table" data-owner-flags></div>
+              </div>
+
+              <div class="owner-tool-grid" data-owner-tool="internal-analytics" hidden>
+                <article class="status-card"><h3>Renderer FPS</h3><strong data-owner-analytics="rendererFps">Waiting for data</strong></article>
+                <article class="status-card"><h3>CPU Usage</h3><strong data-owner-analytics="cpuUsage">Waiting for data</strong></article>
+                <article class="status-card"><h3>Memory</h3><strong data-owner-analytics="memory">Waiting for data</strong></article>
+                <article class="status-card"><h3>Disk</h3><strong data-owner-analytics="disk">Waiting for data</strong></article>
+                <article class="status-card"><h3>IPC Latency</h3><strong data-owner-analytics="ipcLatency">Waiting for data</strong></article>
+                <article class="status-card"><h3>API Latency</h3><strong data-owner-analytics="apiLatency">Waiting for data</strong></article>
+                <article class="status-card"><h3>Agent Latency</h3><strong data-owner-analytics="agentLatency">Waiting for data</strong></article>
+                <article class="status-card"><h3>Cache</h3><strong data-owner-analytics="cache">Not reported</strong></article>
+              </div>
+
+              <div class="owner-tool-grid" data-owner-tool="command-center" hidden>
+                <div class="owner-command-list" data-owner-command-list></div>
+              </div>
+
+              <div class="owner-api-tester" data-owner-tool="api-tester" hidden>
+                <div class="settings-grid">
+                  <label class="settings-field"><span>Method</span><select data-owner-api="method"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label>
+                  <label class="settings-field"><span>Approved Local / Agent URL</span><input type="url" data-owner-api="url" placeholder="http://127.0.0.1:3000/health"></label>
+                </div>
+                <label class="settings-field"><span>JSON headers</span><textarea data-owner-api="headers" placeholder='{"accept":"application/json"}'></textarea></label>
+                <label class="settings-field"><span>Body</span><textarea data-owner-api="body"></textarea></label>
+                <div class="settings-actions">
+                  <button class="inline-action inline-action--primary" type="button" data-owner-action="send-api">Send Request</button>
+                  <button class="inline-action" type="button" data-owner-action="clear-api-history">Clear History</button>
+                  <span class="settings-inline-status" data-owner-api-message>Restricted to approved local AnxOS services and configured agents.</span>
+                </div>
+                <div class="owner-log-output" data-owner-api-history></div>
+              </div>
+
+              <div class="owner-log-output" data-owner-tool="log-viewer" data-owner-log-viewer hidden></div>
             </section>
           </div>
         </section>

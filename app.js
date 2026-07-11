@@ -2600,6 +2600,26 @@ function isOwnerWorkspaceAuthorized() {
   return hasOwnerWorkspaceAccess();
 }
 
+function shouldShowOwnerWorkspaceNav() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasOwnerWorkspace) {
+    return false;
+  }
+  if (isOwnerWorkspaceAuthorized()) {
+    return true;
+  }
+  if (!desktopApiState.hasSecurity) {
+    return true;
+  }
+  if (securityState?.setupRequired === true) {
+    return false;
+  }
+  if (securityState?.authenticated === true) {
+    return false;
+  }
+  return securityState?.remoteControlEnabled === true || securityState?.setupRequired === false;
+}
+
 function setOwnerWorkspaceNavVisible(visible) {
   if (ownerWorkspaceNav) {
     ownerWorkspaceNav.hidden = !visible;
@@ -2609,8 +2629,8 @@ function setOwnerWorkspaceNavVisible(visible) {
 function showPage(pageName) {
   const safePageName = getSafePageName(pageName);
   if (safePageName === "owner-workspace" && !isOwnerWorkspaceAuthorized()) {
-    showToast("Owner access is required.");
-    return showPage("dashboard");
+    showToast("Sign in as Owner to open Owner Workspace.");
+    return showPage(getDesktopApiState().hasSecurity ? "security" : "dashboard");
   }
   navItems.forEach((item) => {
     const isActive = item.dataset.pageTarget === safePageName;
@@ -3107,6 +3127,26 @@ function ownerNavGroupLabel(group) {
 function renderOwnerSidebarPages() {
   if (!ownerWorkspaceNavPages) return;
   setOwnerNavExpanded(getActivePageName() === "owner-workspace" ? true : getOwnerNavExpanded());
+  if (!isOwnerWorkspaceAuthorized()) {
+    ["workspace", "development", "diagnostics", "custom"].forEach((group) => {
+      const container = ownerWorkspaceNavPages.querySelector(`[data-owner-nav-section="${group}"]`);
+      if (!container) return;
+      container.replaceChildren();
+      const header = document.createElement("div");
+      header.className = "owner-nav-group-title";
+      const title = document.createElement("span");
+      title.textContent = ownerNavGroupLabel(group);
+      header.appendChild(title);
+      container.appendChild(header);
+      if (group === "workspace") {
+        const locked = document.createElement("small");
+        locked.className = "owner-nav-empty";
+        locked.textContent = "Sign in required";
+        container.appendChild(locked);
+      }
+    });
+    return;
+  }
   const query = String(ownerSearchInput?.value || "").trim().toLowerCase();
   const pages = (ownerWorkspaceState.pages || [])
     .filter((page) => page.builtIn || page.pinned !== false)
@@ -3189,7 +3229,7 @@ function renderOwnerTool(page) {
 }
 
 function renderOwnerWorkspace() {
-  setOwnerWorkspaceNavVisible(isOwnerWorkspaceAuthorized());
+  setOwnerWorkspaceNavVisible(shouldShowOwnerWorkspaceNav());
   const selected = ownerWorkspaceState.pages.find((page) => page.id === ownerWorkspaceState.selectedPageId)
     || ownerWorkspaceState.pages[0]
     || null;
@@ -3204,7 +3244,16 @@ function renderOwnerWorkspace() {
 
 async function refreshOwnerWorkspace() {
   if (!isOwnerWorkspaceAuthorized()) {
-    ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
+    ownerWorkspaceState = {
+      ...ownerWorkspaceState,
+      authorized: false,
+      status: {
+        authentication: "locked",
+        workspace: "locked",
+        agents: "unavailable",
+        ready: "locked",
+      },
+    };
     renderOwnerWorkspace();
     return;
   }
@@ -15177,10 +15226,9 @@ async function logoutAnxOsAccount() {
 function renderSecurityState() {
   const setup = Boolean(securityState.setupRequired);
   const authenticated = Boolean(securityState.authenticated);
-  setOwnerWorkspaceNavVisible(isOwnerWorkspaceAuthorized());
+  setOwnerWorkspaceNavVisible(shouldShowOwnerWorkspaceNav());
   if (!isOwnerWorkspaceAuthorized() && getActivePageName() === "owner-workspace") {
-    ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
-    showPage("dashboard");
+    showPage(getDesktopApiState().hasSecurity ? "security" : "dashboard");
   }
   if (authenticated || !setup) {
     setLocalSetupComplete();

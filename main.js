@@ -20,6 +20,7 @@ const { registerSystemIpc } = require("./src/ipc/systemIpc");
 const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services/providers/curseforgeProvider");
 const { UpdateManager } = require("./src/services/updateManager");
 const { configureElectronPaths } = require("./src/services/electronPaths");
+const { DeveloperGitUpdater } = require("./src/services/developerGitUpdater");
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
@@ -29,6 +30,7 @@ const DEFAULT_WINDOW_BOUNDS = {
   height: 820,
 };
 const updateManager = new UpdateManager();
+const developerGitUpdater = new DeveloperGitUpdater({ app, appRoot: __dirname });
 let mainWindow = null;
 let addStorageWindow = null;
 let pendingAddStoragePayload = null;
@@ -98,6 +100,13 @@ function registerUpdatesIpc() {
   ipcMain.handle("updates:open-download", () => updateManager.openDownload());
   ipcMain.handle("updates:open-release", () => updateManager.openRelease());
   ipcMain.handle("updates:skip", (_, payload = {}) => updateManager.skip(payload.version));
+}
+
+function registerDeveloperUpdatesIpc() {
+  ipcMain.handle("developerUpdates:getState", () => developerGitUpdater.getState());
+  ipcMain.handle("developerUpdates:check", (_, options = {}) => developerGitUpdater.check(options));
+  ipcMain.handle("developerUpdates:update", () => developerGitUpdater.update());
+  ipcMain.handle("developerUpdates:openChanges", () => developerGitUpdater.openChanges());
 }
 
 function getWindowStatePath() {
@@ -411,6 +420,7 @@ app.whenReady().then(() => {
   registerWindowIpc();
   registerStorageWindowIpc();
   registerUpdatesIpc();
+  registerDeveloperUpdatesIpc();
   registerAccountAuthIpc();
   registerActionIpc();
   registerSystemIpc();

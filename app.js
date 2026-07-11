@@ -34,6 +34,7 @@ const titlebarPageTarget = document.querySelector("[data-titlebar-page]");
 const titlebarConnection = document.querySelector("[data-titlebar-connection]");
 const titlebarConnectionLabel = document.querySelector("[data-titlebar-connection-label]");
 const developmentBadge = document.querySelector("[data-development-badge]");
+const developmentBadgeLabel = document.querySelector("[data-development-badge-label]");
 const titlebarWindowButtons = document.querySelectorAll("[data-window-action]");
 const titlebarMaximizeButton = document.querySelector('[data-window-action="maximize"]');
 const consoleSearchInput = document.querySelector("[data-console-search]");
@@ -343,6 +344,10 @@ const marketplaceConfigPill = document.querySelector("[data-marketplace-config-p
 const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
 const updateModal = document.querySelector("[data-update-modal]");
+const devUpdateModal = document.querySelector("[data-dev-update-modal]");
+const devUpdateMessage = document.querySelector("[data-dev-update-message]");
+const devUpdateFields = document.querySelectorAll("[data-dev-update-field]");
+const devUpdateButtons = document.querySelectorAll("[data-dev-update-action]");
 const agentControlStatus = document.querySelector("[data-agent-control-status]");
 const agentStatusDot = document.querySelector(".agent-status-dot");
 const agentControlMessage = document.querySelector("[data-agent-control-message]");
@@ -369,6 +374,7 @@ let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentLogEntries = [];
 let updateModalCleanup = null;
+let devUpdateModalCleanup = null;
 let openModalCount = 0;
 let modalBackgroundWasInert = false;
 
@@ -512,6 +518,8 @@ let updateDownloadInFlight = false;
 let latestUpdateInfo = null;
 let downloadedUpdatePath = null;
 let updateUiState = null;
+let developerUpdateState = null;
+let developerUpdateBusy = false;
 let securityState = { setupRequired: false, authenticated: false, user: null };
 let accountState = { authenticated: false, account: null, pending: null, configured: false };
 let accountPollTimer = null;
@@ -953,6 +961,11 @@ function getDesktopApiState() {
       typeof api?.updates?.openDownloaded === "function" &&
       typeof api?.updates?.openRelease === "function" &&
       typeof api?.updates?.onStatus === "function",
+    hasDeveloperUpdates:
+      typeof api?.developerUpdates?.getState === "function" &&
+      typeof api?.developerUpdates?.check === "function" &&
+      typeof api?.developerUpdates?.update === "function" &&
+      typeof api?.developerUpdates?.openChanges === "function",
     hasAccount:
       typeof api?.account?.getStatus === "function" &&
       typeof api?.account?.startDeviceLogin === "function" &&
@@ -16522,12 +16535,151 @@ function setAboutFields(info) {
   });
 }
 
-function renderDevelopmentBadge(info) {
+function getDeveloperBadgeLabel(state = developerUpdateState) {
+  if (developerUpdateBusy && state?.status !== "updating") return "Checking Dev…";
+  if (state?.status === "available") return "Dev Update Available";
+  if (state?.status === "updating") return "Updating Dev…";
+  if (state?.status === "restart-required" || state?.restartRequired) return "Restart Required";
+  if (state?.status === "error") return "Dev Update Error";
+  if (!state?.eligible && state?.status === "checking") return "Checking Dev…";
+  return "Developer Mode";
+}
+
+function formatDevUpdateTime(value) {
+  return value ? formatDateTime(value) : "Not checked yet";
+}
+
+function renderDevelopmentBadge(state = developerUpdateState) {
   if (!developmentBadge) {
     return;
   }
-  const visible = Boolean(info?.developmentMode && info?.trustedDevelopmentMode && info?.isPackaged === false);
+  const visible = Boolean(state?.eligible && state?.available !== false);
   developmentBadge.hidden = !visible;
+  developmentBadge.dataset.devState = state?.status || "up-to-date";
+  developmentBadge.title = visible ? "Open Developer Update status" : "";
+  if (developmentBadgeLabel) {
+    developmentBadgeLabel.textContent = getDeveloperBadgeLabel(state);
+  }
+}
+
+function setDevUpdateModalVisible(isVisible) {
+  if (!devUpdateModal) return;
+  devUpdateModal.hidden = !isVisible;
+  if (isVisible && !devUpdateModalCleanup) {
+    devUpdateModalCleanup = activateModal(devUpdateModal, { initialFocus: () => devUpdateButtons[0] });
+  } else if (!isVisible && devUpdateModalCleanup) {
+    devUpdateModalCleanup();
+    devUpdateModalCleanup = null;
+  }
+}
+
+function setDevUpdateField(name, value) {
+  devUpdateFields.forEach((field) => {
+    if (field.dataset.devUpdateField === name) {
+      field.textContent = value || "Unavailable";
+    }
+  });
+}
+
+function renderDeveloperUpdateModal(state = developerUpdateState) {
+  const behind = Number(state?.behind || 0);
+  const ahead = Number(state?.ahead || 0);
+  if (devUpdateMessage) {
+    devUpdateMessage.textContent = state?.status === "available"
+      ? `${behind} dev commit${behind === 1 ? "" : "s"} available.`
+      : state?.status === "updating"
+        ? "Updating the local dev checkout..."
+        : state?.status === "restart-required" || state?.restartRequired
+          ? "Dev update applied. Restart AnxOS to load the new source."
+          : state?.status === "error"
+            ? state?.error || "Developer update check failed."
+            : "This dev checkout is up to date.";
+  }
+  setDevUpdateField("branch", state?.branch);
+  setDevUpdateField("localCommit", state?.localCommit);
+  setDevUpdateField("remoteCommit", state?.remoteCommit);
+  setDevUpdateField("sync", `${behind} behind / ${ahead} ahead`);
+  setDevUpdateField("latestCommitMessage", state?.latestCommitMessage);
+  setDevUpdateField("lastCheckedAt", formatDevUpdateTime(state?.lastCheckedAt));
+  devUpdateButtons.forEach((button) => {
+    const action = button.dataset.devUpdateAction;
+    if (action === "update") {
+      button.disabled = developerUpdateBusy || behind <= 0 || state?.status === "restart-required" || state?.restartRequired;
+      button.textContent = state?.status === "restart-required" || state?.restartRequired ? "Restart Required" : developerUpdateBusy ? "Updating..." : "Update Now";
+    } else if (action === "check" || action === "changes") {
+      button.disabled = developerUpdateBusy;
+    }
+  });
+}
+
+async function refreshDeveloperUpdateState(options = {}) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasDeveloperUpdates) {
+    developerUpdateState = null;
+    renderDevelopmentBadge(null);
+    return null;
+  }
+
+  developerUpdateBusy = true;
+  if (developerUpdateState?.eligible) {
+    renderDevelopmentBadge({ ...developerUpdateState, status: "checking", available: true });
+  }
+  try {
+    const state = options.check === false
+      ? await desktopApiState.api.developerUpdates.getState()
+      : await desktopApiState.api.developerUpdates.check({ fetch: options.fetch !== false });
+    developerUpdateState = state;
+    renderDevelopmentBadge(state);
+    renderDeveloperUpdateModal(state);
+    return state;
+  } catch (error) {
+    developerUpdateState = { ...(developerUpdateState || {}), eligible: true, available: true, status: "error", error: normalizeIpcErrorMessage(error, "Developer update check failed.") };
+    renderDevelopmentBadge(developerUpdateState);
+    renderDeveloperUpdateModal(developerUpdateState);
+    return developerUpdateState;
+  } finally {
+    developerUpdateBusy = false;
+    renderDevelopmentBadge(developerUpdateState);
+    renderDeveloperUpdateModal(developerUpdateState);
+  }
+}
+
+async function openDeveloperUpdateModal() {
+  await refreshDeveloperUpdateState({ fetch: false });
+  renderDeveloperUpdateModal(developerUpdateState);
+  setDevUpdateModalVisible(true);
+}
+
+async function runDeveloperUpdateAction(action) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasDeveloperUpdates || developerUpdateBusy) return;
+  if (action === "dismiss") {
+    setDevUpdateModalVisible(false);
+    return;
+  }
+
+  developerUpdateBusy = true;
+  if (action === "update") {
+    developerUpdateState = { ...(developerUpdateState || {}), status: "updating", eligible: true, available: true };
+  }
+  renderDevelopmentBadge(developerUpdateState);
+  renderDeveloperUpdateModal(developerUpdateState);
+  try {
+    if (action === "check") developerUpdateState = await desktopApiState.api.developerUpdates.check({ fetch: true });
+    else if (action === "changes") await desktopApiState.api.developerUpdates.openChanges();
+    else if (action === "update") developerUpdateState = await desktopApiState.api.developerUpdates.update();
+    renderDevelopmentBadge(developerUpdateState);
+    renderDeveloperUpdateModal(developerUpdateState);
+  } catch (error) {
+    developerUpdateState = { ...(developerUpdateState || {}), status: "error", error: normalizeIpcErrorMessage(error, "Developer update failed.") };
+    renderDevelopmentBadge(developerUpdateState);
+    renderDeveloperUpdateModal(developerUpdateState);
+    showToast(developerUpdateState.error, "error");
+  } finally {
+    developerUpdateBusy = false;
+    renderDevelopmentBadge(developerUpdateState);
+    renderDeveloperUpdateModal(developerUpdateState);
+  }
 }
 
 async function loadRuntimeInfo() {
@@ -16535,7 +16687,6 @@ async function loadRuntimeInfo() {
 
   if (!desktopApiState.hasApp) {
     setAboutFields(null);
-    renderDevelopmentBadge(null);
     return;
   }
 
@@ -16543,11 +16694,9 @@ async function loadRuntimeInfo() {
     const info = await desktopApiState.api.app.getRuntimeInfo();
     runtimeInfoState = info;
     setAboutFields(info);
-    renderDevelopmentBadge(info);
     renderRoutingDiagnostics();
   } catch {
     setAboutFields(null);
-    renderDevelopmentBadge(null);
   }
 }
 
@@ -17070,6 +17219,15 @@ function setupUpdates() {
       renderUpdateModal("downloaded");
     }
   }).catch(() => {});
+}
+
+function setupDeveloperUpdates() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasDeveloperUpdates) {
+    renderDevelopmentBadge(null);
+    return;
+  }
+  refreshDeveloperUpdateState({ fetch: true }).catch(() => {});
 }
 
 async function copyText(value) {
@@ -17879,6 +18037,11 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
   });
 });
 
+developmentBadge?.addEventListener("click", openDeveloperUpdateModal);
+devUpdateButtons.forEach((button) => {
+  button.addEventListener("click", () => runDeveloperUpdateAction(button.dataset.devUpdateAction));
+});
+
 updateModal?.addEventListener("click", (event) => {
   if (event.target === updateModal) setUpdateModalVisible(false);
 });
@@ -17887,6 +18050,15 @@ updateModal?.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
     setUpdateModalVisible(false);
+  }
+});
+devUpdateModal?.addEventListener("click", (event) => {
+  if (event.target === devUpdateModal) setDevUpdateModalVisible(false);
+});
+devUpdateModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setDevUpdateModalVisible(false);
   }
 });
 securityForm?.addEventListener("submit", submitSecurityForm);
@@ -18149,6 +18321,7 @@ loadMarketplaceSettings();
 applySettings(readStoredSettings(), { openDefaultPage: true });
 loadRuntimeInfo();
 setupUpdates();
+setupDeveloperUpdates();
 startStartupFallback();
 refreshDockerStatus();
 

@@ -80,6 +80,12 @@ const desktopApi = {
       return () => ipcRenderer.removeListener("updates:status", handler);
     },
   },
+  developerUpdates: {
+    getState: () => ipcRenderer.invoke("developerUpdates:getState"),
+    check: (options = {}) => ipcRenderer.invoke("developerUpdates:check", options),
+    update: () => ipcRenderer.invoke("developerUpdates:update"),
+    openChanges: () => ipcRenderer.invoke("developerUpdates:openChanges"),
+  },
   account: {
     getStatus: () => invokeAccount("account:getStatus"),
     startDeviceLogin: () => invokeAccount("account:startDeviceLogin"),

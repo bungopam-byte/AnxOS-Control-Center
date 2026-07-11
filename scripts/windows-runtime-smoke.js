@@ -97,6 +97,12 @@ async function main() {
     assert(appSource.includes("accountStartInFlight"), "renderer should prevent duplicate account sign-in starts");
     assert(appSource.includes("accountStartRetryAfter"), "renderer should cool down failed account sign-in starts");
 
+    const devUpdaterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "developerGitUpdater.js"), "utf8");
+    assert(devUpdaterSource.includes("app?.isPackaged !== false"), "Developer Mode must be disabled in packaged builds.");
+    assert(devUpdaterSource.includes("rev-parse") && devUpdaterSource.includes("--is-inside-work-tree"), "Developer Mode must require a Git working tree.");
+    assert(devUpdaterSource.includes('branch !== "dev"'), "Developer Mode must require the dev branch.");
+    assert(devUpdaterSource.includes("rev-list") && devUpdaterSource.includes("HEAD...origin/dev"), "Developer updater must compare local and remote dev commits.");
+
     console.log("Windows runtime smoke checks passed.");
   } finally {
     global.fetch = originalFetch;

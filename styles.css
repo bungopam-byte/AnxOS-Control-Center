@@ -483,21 +483,82 @@ a:focus-visible,
 
 .app-titlebar__dev-badge {
   display: inline-flex;
+  gap: 6px;
   align-items: center;
   min-width: max-content;
-  padding: 5px 9px;
-  border: 1px solid rgba(245, 197, 92, 0.32);
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid rgba(182, 108, 255, 0.24);
   border-radius: 999px;
-  background: rgba(245, 197, 92, 0.12);
+  background: rgba(182, 108, 255, 0.1);
+  color: rgba(239, 228, 255, 0.92);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1;
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.app-titlebar__dev-badge:hover,
+.app-titlebar__dev-badge:focus-visible {
+  border-color: rgba(206, 150, 255, 0.48);
+  background: rgba(182, 108, 255, 0.16);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.app-titlebar__dev-icon {
+  color: rgba(206, 150, 255, 0.95);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.app-titlebar__dev-badge[data-dev-state="available"] {
+  position: relative;
+  border-color: rgba(245, 197, 92, 0.38);
+  background: rgba(245, 197, 92, 0.13);
   color: #f8d990;
-  font-size: 0.7rem;
-  font-weight: 850;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+}
+
+.app-titlebar__dev-badge[data-dev-state="available"]::after {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f5c55c;
+  box-shadow: 0 0 0 0 rgba(245, 197, 92, 0.34);
+  content: "";
+  animation: devBadgePulse 1800ms ease-out infinite;
+}
+
+.app-titlebar__dev-badge[data-dev-state="updating"] {
+  border-color: rgba(90, 199, 255, 0.34);
+  background: rgba(90, 199, 255, 0.12);
+  color: rgba(202, 236, 255, 0.96);
+}
+
+.app-titlebar__dev-badge[data-dev-state="restart-required"] {
+  border-color: rgba(69, 224, 143, 0.36);
+  background: rgba(69, 224, 143, 0.12);
+  color: rgba(188, 255, 219, 0.96);
+}
+
+.app-titlebar__dev-badge[data-dev-state="error"] {
+  border-color: rgba(255, 107, 138, 0.34);
+  background: rgba(112, 26, 52, 0.24);
+  color: rgba(255, 214, 224, 0.96);
 }
 
 .app-titlebar__dev-badge[hidden] {
   display: none;
+}
+
+@keyframes devBadgePulse {
+  0% { box-shadow: 0 0 0 0 rgba(245, 197, 92, 0.34); }
+  80%, 100% { box-shadow: 0 0 0 7px rgba(245, 197, 92, 0); }
 }
 
 .app-titlebar__controls {
@@ -6740,6 +6801,19 @@ body.has-open-modal {
 
 .app-modal--update {
   width: min(680px, 100%);
+}
+
+.app-modal--developer-update {
+  width: min(620px, 100%);
+}
+
+.app-modal__meta--developer div {
+  flex-basis: 220px;
+}
+
+.app-modal__meta--developer div:nth-child(5),
+.app-modal__meta--developer div:nth-child(6) {
+  flex-basis: 100%;
 }
 
 @keyframes modalFadeIn {

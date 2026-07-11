@@ -98,11 +98,14 @@
             <span class="app-titlebar__label">Page</span>
             <strong data-titlebar-page>Dashboard</strong>
             <span class="app-titlebar__divider" aria-hidden="true"></span>
+            <button class="app-titlebar__dev-badge" type="button" data-development-badge hidden>
+              <span class="app-titlebar__dev-icon" aria-hidden="true">&gt;_</span>
+              <span data-development-badge-label>Developer Mode</span>
+            </button>
             <span class="app-titlebar__connection" data-titlebar-connection>
               <span class="app-titlebar__connection-dot" data-titlebar-connection-dot aria-hidden="true"></span>
               <span data-titlebar-connection-label>Connected</span>
             </span>
-            <span class="app-titlebar__dev-badge" data-development-badge hidden>Development Mode</span>
           </div>
         </div>
 
@@ -3246,6 +3249,33 @@
           <button class="inline-action" type="button" data-update-action="dismiss">Later</button>
           <button class="inline-action" type="button" data-update-action="open-download" hidden>Open Download</button>
           <button class="primary-button" type="button" data-update-action="primary">Download & Install</button>
+        </footer>
+      </section>
+    </div>
+    <div class="app-modal-backdrop" data-dev-update-modal hidden>
+      <section class="app-modal app-modal--developer-update" role="dialog" aria-modal="true" aria-labelledby="dev-update-modal-title" tabindex="-1">
+        <header class="app-modal__header">
+          <div>
+            <p class="app-modal__eyebrow">Source build</p>
+            <h2 id="dev-update-modal-title">Developer Update</h2>
+          </div>
+          <button class="icon-action" type="button" aria-label="Close developer update panel" data-dev-update-action="dismiss">&times;</button>
+        </header>
+        <div class="app-modal__body">
+          <p data-dev-update-message>Checking the dev branch status...</p>
+          <dl class="app-modal__meta app-modal__meta--developer">
+            <div><dt>Current branch</dt><dd data-dev-update-field="branch">Unavailable</dd></div>
+            <div><dt>Local commit</dt><dd data-dev-update-field="localCommit">Unavailable</dd></div>
+            <div><dt>Remote commit</dt><dd data-dev-update-field="remoteCommit">Unavailable</dd></div>
+            <div><dt>Behind / Ahead</dt><dd data-dev-update-field="sync">Unavailable</dd></div>
+            <div><dt>Latest commit</dt><dd data-dev-update-field="latestCommitMessage">Unavailable</dd></div>
+            <div><dt>Last checked</dt><dd data-dev-update-field="lastCheckedAt">Not checked yet</dd></div>
+          </dl>
+        </div>
+        <footer class="app-modal__actions">
+          <button class="inline-action" type="button" data-dev-update-action="check">Check for Updates</button>
+          <button class="inline-action" type="button" data-dev-update-action="changes">View Changes</button>
+          <button class="primary-button" type="button" data-dev-update-action="update">Update Now</button>
         </footer>
       </section>
     </div>

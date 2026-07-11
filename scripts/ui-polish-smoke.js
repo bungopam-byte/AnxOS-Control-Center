@@ -6,6 +6,8 @@ const root = path.resolve(__dirname, "..");
 const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
+const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 
 const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "security", "owner-workspace", "agent-control", "nodes", "settings"];
 expectedPages.forEach((page) => assert(index.includes(`data-page="${page}"`), `Missing workspace root: ${page}`));
@@ -41,6 +43,12 @@ assert(index.includes('role="dialog" aria-modal="true"') && index.includes('tabi
 assert(index.includes('aria-live="polite" aria-atomic="true"'), "Toast feedback must be announced atomically.");
 assert(app.includes('setAttribute("aria-busy"'), "Async workspace loading must expose aria-busy.");
 assert(app.includes("isNodeSwitching() || document.hidden"), "Background polling must pause while the document is hidden.");
+assert(index.indexOf("data-development-badge") < index.indexOf("data-titlebar-connection"), "Developer Mode badge must sit beside and before the Connected badge.");
+assert(index.includes("data-dev-update-modal") && index.includes('data-dev-update-field="branch"') && index.includes('data-dev-update-action="update"'), "Developer update modal must expose Git status and actions.");
+assert(styles.includes('data-dev-state="available"') && styles.includes("devBadgePulse"), "Developer update badge must include a subtle available-update state.");
+assert(app.includes("setupDeveloperUpdates") && app.includes("openDeveloperUpdateModal") && app.includes("renderDevelopmentBadge"), "Developer update badge must be wired in the renderer.");
+assert(preload.includes("developerUpdates") && preload.includes("developerUpdates:check"), "Preload must expose developer update IPC.");
+assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc"), "Main process must own developer update detection.");
 assert(index.includes('data-agent-control-action="start"') && index.includes('data-agent-control-action="installService"'), "Agent Control must expose real lifecycle and service actions.");
 assert(pageMarkup("agent-control").includes("Agent Connection") && pageMarkup("agent-control").includes('data-agent-setting="backendMode"'), "Agent configuration controls must render in Agent Control.");
 assert(!pageMarkup("settings").includes("data-agent-setting"), "Settings must not render the Agent configuration form.");

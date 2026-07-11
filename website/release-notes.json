@@ -1,5 +1,21 @@
 [
   {
+    "version": "1.0.48",
+    "tag": "v1.0.48",
+    "date": "July 11, 2026",
+    "datetime": "2026-07-11",
+    "title": "Secure diagnostics and Agent Control Center",
+    "summary": "This release adds privacy-safe runtime diagnostics and complete in-app controls for local and remote AnxOS Agents.",
+    "changes": [
+      "Added structured, rotated, secret-redacted diagnostics for desktop, renderer, IPC, authentication, services, updater, and Agent failures.",
+      "Added latest-error and runtime-state snapshots, a combined live log, sanitized exports, and authenticated owner-only remote diagnostic capture.",
+      "Added an Agent Control Center with status, lifecycle, service startup, repair, safe configuration, diagnostics, log viewing, and first-run setup.",
+      "Added Linux systemd user and Windows background-startup management through privileged main-process operations instead of terminal instructions.",
+      "Improved the Add Storage dialog lifecycle and guarded asynchronous submissions against duplicate requests.",
+      "Added regression coverage for redaction, rotation, snapshots, failure-safe logging, remote authorization, and real Agent start/restart/stop behavior."
+    ]
+  },
+  {
     "version": "1.0.47",
     "tag": "v1.0.47",
     "date": "July 10, 2026",

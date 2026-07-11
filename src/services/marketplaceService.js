@@ -62,6 +62,17 @@ function getAgentErrorCode(error) {
 }
 
 function mapMarketplaceError(error, fallback = "Template install failed.") {
+  const validation = error?.payload?.error?.details || error?.details?.validation || null;
+  if (validation?.userMessage || validation?.field) {
+    return [
+      validation.userMessage || error?.payload?.error?.message || error?.message || fallback,
+      validation.field ? `field=${validation.field}` : null,
+      validation.expected ? `expected=${validation.expected}` : null,
+      validation.received !== undefined ? `received=${JSON.stringify(validation.received)}` : null,
+      validation.code ? `code=${validation.code}` : null,
+    ].filter(Boolean).join(" | ");
+  }
+
   if (error?.details?.templateId || error?.details?.step) {
     return error.message || fallback;
   }
@@ -87,6 +98,11 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     TEMPLATE_INSTALL_TIMEOUT: "The template installer did not finish in time.",
     TEMPLATE_INSTALL_FAILED: "The server installer failed. Check the instance logs for setup details.",
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
+    INVALID_EXECUTABLE: "The generated startup executable is invalid.",
+    INVALID_ARGS: "The generated startup arguments are invalid.",
+    INVALID_INSTANCE_TYPE: "This installer generated an unsupported instance type.",
+    INVALID_MEMORY_LIMIT: "Use memory like 512M, 2G, or 2048M.",
+    INVALID_PORTS: "Enter valid ports between 1 and 65535.",
   };
 
   return friendlyMessages[code] || error?.message || fallback;
@@ -1631,6 +1647,15 @@ function normalizeTemplateDownloads(template) {
   const source = template.downloadSource || {};
   if (!source.type) {
     return [];
+  }
+
+  if (source.type === "steamcmd") {
+    return [{
+      ...source,
+      destination: `steamcmd-app-${source.appId || template.installer?.appId || template.id}`,
+      fileName: `SteamCMD app ${source.appId || template.installer?.appId || template.id}`,
+      required: false,
+    }];
   }
 
   return [{

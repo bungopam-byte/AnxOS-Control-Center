@@ -386,6 +386,10 @@ function getAgentHttpErrorMessage(status, code, payload) {
   if (payloadMessage && payloadMessage !== "Request failed.") {
     return payloadMessage;
   }
+  const userMessage = payload?.error?.details?.userMessage;
+  if (userMessage) {
+    return userMessage;
+  }
   if (code === "AGENT_TOKEN_MISSING") {
     return "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.";
   }
@@ -393,6 +397,42 @@ function getAgentHttpErrorMessage(status, code, payload) {
     return "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.";
   }
   return `Agent request failed with HTTP ${status}.`;
+}
+
+function redactForAgentLog(value, depth = 0) {
+  if (depth > 6) {
+    return "[truncated]";
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactForAgentLog(entry, depth + 1));
+  }
+  if (!value || typeof value !== "object") {
+    if (typeof value === "string" && /bearer\s+[a-z0-9._-]+|eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/i.test(value)) {
+      return "[redacted]";
+    }
+    return value;
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
+    if (/password|passphrase|token|secret|api[-_]?key|authorization|cookie|session|refresh/i.test(key)) {
+      return [key, "[redacted]"];
+    }
+    return [key, redactForAgentLog(entry, depth + 1)];
+  }));
+}
+
+function logAgentRequestPayload(pathname, details = {}) {
+  if (!["POST", "PUT", "PATCH"].includes(details.method || "GET")) {
+    return;
+  }
+  if (!/^\/api\/v1\/instances(?:\/|$)/.test(pathname)) {
+    return;
+  }
+  console.info("[AnxOS][Agent] Request payload.", {
+    pathname,
+    method: details.method,
+    targetLabel: details.targetLabel || "configured-agent",
+    body: redactForAgentLog(details.body),
+  });
 }
 
 function parseAgentPayload(buffer, contentType) {
@@ -438,6 +478,11 @@ async function requestJson(pathname, options = {}) {
     }
 
     const requestUrl = buildAgentUrl(pathname, configOverride);
+    logAgentRequestPayload(pathname, {
+      method,
+      targetLabel,
+      body,
+    });
     const response = await fetch(requestUrl, {
       method,
       headers,

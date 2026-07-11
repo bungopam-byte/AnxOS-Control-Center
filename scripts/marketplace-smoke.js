@@ -207,11 +207,20 @@ function assertMarketplaceInstallerRegistry() {
   const palworldPlan = marketplaceService._test.getTemplateInstallPlan("palworld");
   assert.strictEqual(palworldPlan.workflow, "steamcmd-native", "SteamCMD-native templates must not be reported as generic downloads.");
   assert.strictEqual(palworldPlan.installerType, "steamcmd-native", "Install plans should expose normalized installer type.");
+  const palworldDownloads = marketplaceService._test.normalizeTemplateDownloads(findTemplate("palworld"));
+  assert.strictEqual(palworldDownloads[0]?.type, "steamcmd", "Palworld should keep a SteamCMD download handoff record.");
+  assert.match(palworldDownloads[0]?.fileName || "", /SteamCMD app 2394010/, "SteamCMD-native Download Manager records should not be mislabeled as server.jar.");
+  assert.notStrictEqual(palworldDownloads[0]?.destination, "server.jar", "SteamCMD-native templates must not create server.jar download tasks.");
 
   const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
   assert(ipcSource.includes("getMarketplaceRecoverySuggestion"), "Marketplace IPC should preserve stable installer error codes with recovery suggestions.");
   assert(ipcSource.includes("STEAMCMD_INSTALL_FAILED"), "Marketplace IPC should preserve SteamCMD-specific failures.");
   assert(ipcSource.includes("MINECRAFT_PORT_INVALID"), "Marketplace IPC should preserve Minecraft port validation failures.");
+  assert(ipcSource.includes("validation?.field"), "Marketplace IPC should expose agent validation field details.");
+  const agentClientSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
+  assert(agentClientSource.includes("logAgentRequestPayload"), "Agent client should log sanitized instance request payloads for validation failures.");
+  const agentRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "instances.js"), "utf8");
+  assert(agentRouteSource.includes("getValidationErrorDetails"), "Agent instance routes should return structured validation details for HTTP 400.");
 }
 
 function assertDockerTemplates() {
@@ -361,6 +370,7 @@ function assertNonMinecraftServerTypeIsCleared() {
   const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(source.includes("delete options.serverType;"), "Renderer must not send hidden Minecraft serverType for non-Minecraft templates.");
   assert(source.includes("serverType: isMinecraft ?"), "Renderer option collection should gate serverType by template category.");
+  assert(source.includes('!["steamcmd-native", "archive-download", "direct-download", "java-runtime", "docker-image"].includes'), "Renderer must not route native/static templates through provider pack install.");
   assert(source.includes("function isMarketplaceProviderSectionVisible() {\n  return isMarketplaceProviderBrowserActive();\n}"), "Marketplace provider filters should only show when the Modpacks category is active.");
   assert(indexSource.includes("Server Runtime"), "Marketplace wizard should label the Minecraft runtime selector as Server Runtime.");
   assert(!indexSource.includes("<option selected>Paper</option>"), "Marketplace wizard must not preselect Paper in static markup.");

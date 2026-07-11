@@ -7361,7 +7361,9 @@ function getMarketplaceProvider(template) {
 }
 
 function isProviderMarketplaceTemplate(template) {
-  return ["modrinth", "curseforge"].includes(getMarketplaceProvider(template)) && Boolean(template?.providerProjectId || template?.projectId);
+  return ["modrinth", "curseforge"].includes(getMarketplaceProvider(template)) &&
+    Boolean(template?.providerProjectId || template?.projectId) &&
+    !["steamcmd-native", "archive-download", "direct-download", "java-runtime", "docker-image"].includes(String(template?.installerType || "").toLowerCase());
 }
 
 function formatMarketplaceProviderLabel(template) {

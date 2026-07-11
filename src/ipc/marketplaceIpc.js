@@ -28,6 +28,7 @@ function getMarketplaceErrorMessage(error) {
   const message = error?.payload?.error?.message || error?.message;
   const details = error?.details || error?.payload?.error?.details || {};
   const status = details.status || error?.status || error?.payload?.status || null;
+  const validation = error?.payload?.error?.details || details.validation || null;
   const url = details.url || details.invalidUrl || null;
   const body = details.body || details.responseBody || null;
   const name = details.originalName || error?.name || null;
@@ -46,6 +47,9 @@ function getMarketplaceErrorMessage(error) {
   if (body) parts.push(`body=${String(body).slice(0, 1000)}`);
   if (details.recovery) parts.push(`recovery=${details.recovery}`);
   if (details.suggestion) parts.push(`suggestion=${details.suggestion}`);
+  if (validation?.field) parts.push(`field=${validation.field}`);
+  if (validation?.expected) parts.push(`expected=${validation.expected}`);
+  if (validation?.received !== undefined) parts.push(`received=${JSON.stringify(validation.received)}`);
   if (Array.isArray(details.expectedEnvNames)) parts.push(`expectedEnvNames=${details.expectedEnvNames.join(",")}`);
   if (Array.isArray(details.expectedFileEnvNames)) parts.push(`expectedFileEnvNames=${details.expectedFileEnvNames.join(",")}`);
   if (Array.isArray(details.envSourcesChecked)) parts.push(`envSourcesChecked=${details.envSourcesChecked.join(";")}`);
@@ -145,10 +149,11 @@ function getMarketplaceUiError(error) {
   if (code) {
     return {
       code,
-      message: message && message !== "Request failed." ? message : getMarketplaceErrorMessage(error),
+      message: validation?.userMessage || (message && message !== "Request failed." ? message : getMarketplaceErrorMessage(error)),
       details: {
         ...details,
-        friendlyMessage: details.friendlyMessage || message || null,
+        validation,
+        friendlyMessage: details.friendlyMessage || validation?.userMessage || message || null,
         suggestion: details.suggestion || getMarketplaceRecoverySuggestion(code),
         debugMessage: getMarketplaceErrorMessage(error),
         originalMessage: message,

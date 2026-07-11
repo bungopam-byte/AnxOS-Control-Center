@@ -138,6 +138,86 @@ function getConfiguredAgentHealthConfig(effective) {
   };
 }
 
+function finiteNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function normalizeServiceState(value, running) {
+  const text = String(value || "").toLowerCase();
+  if (/restart/.test(text)) return "restarting";
+  if (/repair/.test(text)) return "repairing";
+  if (/start/.test(text)) return "starting";
+  if (/stop/.test(text)) return "stopping";
+  if (running) return "running";
+  if (/stop|offline|inactive|registered|not-installed/.test(text)) return "stopped";
+  if (/(^|\b)(run|running|active)(\b|$)/.test(text)) return "running";
+  return "unknown";
+}
+
+function normalizeMemory(stats) {
+  const memory = stats?.memory && typeof stats.memory === "object" ? stats.memory : {};
+  const usedBytes = finiteNumber(memory.used ?? memory.usedBytes);
+  const totalBytes = finiteNumber(memory.total ?? memory.totalBytes);
+  const usagePercent = finiteNumber(memory.percent ?? memory.usagePercent);
+  return {
+    usedBytes,
+    totalBytes,
+    usagePercent: usagePercent ?? (usedBytes !== null && totalBytes > 0 ? (usedBytes / totalBytes) * 100 : null),
+  };
+}
+
+function normalizeCpu(stats) {
+  const cpu = stats?.cpu && typeof stats.cpu === "object" ? stats.cpu : {};
+  return {
+    usagePercent: finiteNumber(cpu.usagePercent),
+    model: cpu.model || null,
+    cores: finiteNumber(cpu.cores),
+  };
+}
+
+function normalizeAgentRuntimeStatus({ base = {}, health = null, stats = null, service = null, latencyMs = null, connected = false, reachable = false, capabilities = {} }) {
+  const running = connected && reachable;
+  const serviceState = normalizeServiceState(base.operationInFlight || service?.state || base.state, running);
+  const memory = normalizeMemory(stats);
+  const cpu = normalizeCpu(stats);
+  const metricsSupported = Boolean(stats && (cpu.usagePercent !== null || memory.usedBytes !== null || memory.totalBytes !== null));
+  const identity = health?.identity || base.identity || {};
+  return {
+    connected,
+    reachable,
+    serviceState,
+    serviceManaged: Boolean(service?.installed || base.serviceManaged || running),
+    hostname: identity.hostname || stats?.hostname || base.hostname || null,
+    url: base.agentUrl || null,
+    version: identity.agentVersion || base.agentVersion || null,
+    uptimeSeconds: finiteNumber(health?.process?.uptimeSeconds ?? base.uptime ?? (reachable ? stats?.uptimeSeconds : null)),
+    latencyMs: finiteNumber(latencyMs),
+    pid: finiteNumber(health?.process?.pid ?? base.pid),
+    cpu,
+    memory,
+    capabilities: {
+      metrics: metricsSupported,
+      lifecycle: capabilities.lifecycle === true,
+      repair: capabilities.repair === true,
+      reconnect: capabilities.reconnect !== false,
+    },
+    partialFailure: stats ? null : base.partialFailure || null,
+  };
+}
+
+function logRuntimePayloadShape(target, payload) {
+  if (app?.isPackaged !== false) return;
+  diagnostics.log("info", "agent-control", "runtime-payload-shape", "Agent runtime payload shape inspected", {
+    target,
+    topLevelKeys: payload && typeof payload === "object" ? Object.keys(payload).sort() : [],
+    identityKeys: payload?.identity && typeof payload.identity === "object" ? Object.keys(payload.identity).sort() : [],
+    processKeys: payload?.process && typeof payload.process === "object" ? Object.keys(payload.process).sort() : [],
+    cpuKeys: payload?.cpu && typeof payload.cpu === "object" ? Object.keys(payload.cpu).sort() : [],
+    memoryKeys: payload?.memory && typeof payload.memory === "object" ? Object.keys(payload.memory).sort() : [],
+  }, { file: "agent" });
+}
+
 async function getConfiguredAgentStatus() {
   const effective = agentClient.getEffectiveAgentSettings();
   const configured = {
@@ -160,6 +240,7 @@ async function getConfiguredAgentStatus() {
     uptime: null,
     memoryBytes: null,
     cpuSeconds: null,
+    runtime: normalizeAgentRuntimeStatus({ base: {}, connected: false, reachable: false, capabilities: { reconnect: true } }),
     connectedClients: 0,
     lastHeartbeat: null,
     latencyMs: null,
@@ -173,8 +254,32 @@ async function getConfiguredAgentStatus() {
   const started = Date.now();
   try {
     const health = await agentClient.getHealth(getConfiguredAgentHealthConfig(effective));
+    logRuntimePayloadShape("configured-agent-health", health);
+    let stats = null;
+    let partialFailure = null;
+    try {
+      stats = await agentClient.getSystemStats(getConfiguredAgentHealthConfig(effective));
+      logRuntimePayloadShape("configured-agent-stats", stats);
+    } catch (statsError) {
+      partialFailure = { code: statsError.code || null, message: statsError.message || "Agent metrics endpoint unavailable." };
+      diagnostics.log("warn", "agent-control", "runtime-metrics-partial", "Agent metrics endpoint did not return full runtime status", {
+        target: "configured-agent",
+        code: partialFailure.code,
+        message: partialFailure.message,
+      }, { file: "agent", errorCode: partialFailure.code });
+    }
     let appVersion = null;
     try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; }
+    const runtime = normalizeAgentRuntimeStatus({
+      base: { agentUrl: effective.agentUrl, agentVersion: health?.identity?.agentVersion || health?.agentVersion, partialFailure },
+      health,
+      stats,
+      service: { state: "running", installed: true },
+      latencyMs: Date.now() - started,
+      connected: true,
+      reachable: true,
+      capabilities: { metrics: Boolean(stats), lifecycle: false, repair: false, reconnect: true },
+    });
     return {
       ...configured,
       state: "Running",
@@ -189,8 +294,12 @@ async function getConfiguredAgentStatus() {
       apiVersion: health?.apiVersion || "v1",
       protocolVersion: health?.protocolVersion || 1,
       uptime: health?.process?.uptimeSeconds ?? null,
-      memoryBytes: health?.process?.memoryBytes ?? null,
+      memoryBytes: runtime.memory.usedBytes,
       cpuSeconds: health?.process?.cpuSeconds ?? null,
+      cpuUsagePercent: runtime.cpu.usagePercent,
+      memoryTotalBytes: runtime.memory.totalBytes,
+      memoryUsagePercent: runtime.memory.usagePercent,
+      runtime,
       connectedClients: health?.process?.connectedClients || 0,
       lastHeartbeat: new Date().toISOString(),
       latencyMs: Date.now() - started,
@@ -199,6 +308,12 @@ async function getConfiguredAgentStatus() {
     return {
       ...configured,
       state: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication failed" : "Unreachable",
+      runtime: normalizeAgentRuntimeStatus({
+        base: { agentUrl: effective.agentUrl, hostname: getUrlHostname(effective.agentUrl) },
+        connected: false,
+        reachable: false,
+        capabilities: { reconnect: true },
+      }),
       mostRecentError: { code: error.code || null, message: error.message || "Configured Agent is unreachable." },
     };
   }
@@ -222,6 +337,32 @@ async function getStatus() {
   const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok);
   let appVersion = null;
   try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; }
+  const localMemoryTotal = os.totalmem();
+  const localMemoryUsed = localMemoryTotal - os.freemem();
+  const localStats = {
+    hostname: os.hostname(),
+    uptimeSeconds: os.uptime(),
+    cpu: {
+      model: os.cpus()[0]?.model || null,
+      cores: os.cpus().length,
+      usagePercent: null,
+    },
+    memory: {
+      used: localMemoryUsed,
+      total: localMemoryTotal,
+      percent: localMemoryTotal > 0 ? (localMemoryUsed / localMemoryTotal) * 100 : null,
+    },
+  };
+  const runtime = normalizeAgentRuntimeStatus({
+    base: { agentUrl, hostname: os.hostname(), agentVersion: health?.identity?.agentVersion || agentPackage.version, uptime: managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null },
+    health,
+    stats: localStats,
+    service,
+    latencyMs,
+    connected: running,
+    reachable: Boolean(health?.ok),
+    capabilities: { metrics: true, lifecycle: true, repair: true, reconnect: true },
+  });
   return {
     local: true,
     targetType: "local-agent",
@@ -240,6 +381,10 @@ async function getStatus() {
     uptime: health?.process?.uptimeSeconds ?? (managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null),
     memoryBytes: health?.process?.memoryBytes || null,
     cpuSeconds: health?.process?.cpuSeconds || null,
+    cpuUsagePercent: runtime.cpu.usagePercent,
+    memoryTotalBytes: runtime.memory.totalBytes,
+    memoryUsagePercent: runtime.memory.usagePercent,
+    runtime,
     connectedClients: health?.process?.connectedClients || 0,
     lastHeartbeat: health ? new Date().toISOString() : null,
     latencyMs,

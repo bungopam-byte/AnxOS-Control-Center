@@ -16,8 +16,13 @@ async function main() {
   const htmlSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(serviceSource.includes("getConfiguredAgentStatus"), "Agent Control must expose configured Agent status separately from local status.");
   assert(serviceSource.includes('targetLabel: "configured-agent"'), "Configured Agent checks must be labeled separately.");
+  assert(serviceSource.includes("normalizeAgentRuntimeStatus"), "Agent Control must normalize runtime status before rendering.");
+  assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");
+  assert(serviceSource.includes("runtime-payload-shape"), "Development diagnostics should log sanitized runtime payload shapes.");
   assert(rendererSource.includes("getAgentControlOverviewTarget"), "Renderer must select the configured Agent state for the overview when applicable.");
   assert(rendererSource.includes("agentControlRefreshInFlight"), "Renderer must avoid overlapping Agent Control refreshes.");
+  assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");
+  assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
   assert(htmlSource.includes("Agent Connection") && htmlSource.includes('data-agent-setting="agentUrl"'), "Agent Connection must render in Agent Control.");
   const control = require("../src/services/agentControlService");
   try {
@@ -26,12 +31,21 @@ async function main() {
     const started = await control.start();
     assert(started.running, "Agent Control should start a real local Agent process.");
     assert(started.pid && started.identity?.deviceId, "Started Agent should report process and stable identity.");
+    assert(started.runtime?.connected, "Started Agent should report a connected normalized runtime.");
+    assert.strictEqual(started.runtime.serviceState, "running", "Started Agent should normalize the process state to running.");
+    assert(started.runtime.version, "Started Agent should expose the real Agent version.");
+    assert(Number.isFinite(started.runtime.uptimeSeconds), "Started Agent should expose runtime uptime.");
+    assert(Number.isFinite(started.runtime.memory.usedBytes), "Started Agent should expose normalized RAM usage.");
+    assert(Number.isFinite(started.runtime.memory.totalBytes), "Started Agent should expose normalized RAM total.");
+    assert(started.runtime.capabilities.lifecycle, "Local Agent runtime should report lifecycle support.");
     const diagnostics = await control.runDiagnostics();
     assert(diagnostics.checks.some((check) => check.id === "process" && check.result === "Passed"));
     const restarted = await control.restart();
     assert(restarted.running, "Agent Control should restart the local Agent.");
+    assert.strictEqual(restarted.runtime?.serviceState, "running", "Restarted Agent should remain normalized as running.");
     const stopped = await control.stop();
     assert(!stopped.running, "Agent Control should stop the local Agent.");
+    assert(["stopped", "stopping", "unknown"].includes(stopped.runtime?.serviceState), "Stopped Agent should not normalize as running.");
     assert(fs.existsSync(path.join(root, "logs", "service-manager.log")), "Lifecycle operations should produce service-manager diagnostics.");
     console.log("Agent Control smoke checks passed.");
   } finally {

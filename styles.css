@@ -8564,6 +8564,12 @@ button:disabled {
 .agent-overview-actions { display: flex; flex-wrap: nowrap; gap: 7px; align-items: center; justify-content: flex-end; }
 .agent-overview-actions .primary-button,
 .agent-overview-actions .inline-action { min-height: 32px; padding: 6px 10px; white-space: nowrap; }
+.agent-overview-actions .primary-button:disabled {
+  border-color: rgba(190, 170, 220, 0.14);
+  background: rgba(226, 216, 240, 0.08);
+  box-shadow: none;
+  color: rgba(226, 216, 240, 0.5);
+}
 .agent-control-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
 .agent-control-metrics div { min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: rgba(7, 9, 14, 0.36); }
 .agent-control-metrics span, .agent-control-metrics strong { display: block; overflow-wrap: anywhere; }

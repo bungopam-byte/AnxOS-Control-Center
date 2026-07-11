@@ -56,6 +56,10 @@ assert(!pageMarkup("settings").includes("data-agent-setting"), "Settings must no
 assert(index.includes("data-agent-log-viewer") && index.includes("data-agent-diagnostics"), "Agent Control must include logs and diagnostics.");
 assert(app.includes("runAgentControlAction") && app.includes("refreshAgentControl"), "Agent Control actions must be wired in the renderer.");
 assert(app.includes("startAgentControlPolling") && app.includes("agentControlRefreshInFlight"), "Agent Control polling must prevent duplicate overlapping refreshes.");
+assert(app.includes("formatAgentCpu") && app.includes("formatAgentMemory") && app.includes("formatAgentProcess"), "Agent Control must format normalized runtime metrics.");
+assert(app.includes("agentControlLastRuntimeSnapshot"), "Agent Control must preserve brief stale metrics during transient failures.");
+assert(!app.includes('"Service managed"'), "Agent Control must not render Service managed as the primary process value.");
+assert(styles.includes(".agent-overview-actions .primary-button:disabled"), "Disabled lifecycle buttons must not keep the active primary styling.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

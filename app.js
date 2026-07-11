@@ -372,6 +372,7 @@ let agentControlState = null;
 let agentControlBusy = false;
 let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
+let agentControlLastRuntimeSnapshot = null;
 let agentLogEntries = [];
 let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
@@ -2691,35 +2692,86 @@ function getAgentTargetLabel(target = {}) {
   return "Local Agent";
 }
 
+function getAgentRuntime(target = {}) {
+  return target.runtime && typeof target.runtime === "object" ? target.runtime : null;
+}
+
+function getAgentRuntimeForDisplay(target = {}) {
+  const runtime = getAgentRuntime(target);
+  if (runtime?.connected || runtime?.reachable) {
+    agentControlLastRuntimeSnapshot = { runtime, timestamp: Date.now() };
+    return { runtime, stale: false };
+  }
+  if (agentControlLastRuntimeSnapshot && Date.now() - agentControlLastRuntimeSnapshot.timestamp < 12000) {
+    return { runtime: agentControlLastRuntimeSnapshot.runtime, stale: true };
+  }
+  return { runtime, stale: false };
+}
+
+function formatAgentMetric(value, supported = true) {
+  if (!supported) return "Not supported";
+  return value || "Unavailable";
+}
+
+function formatAgentCpu(runtime) {
+  return formatAgentMetric(Number.isFinite(runtime?.cpu?.usagePercent) ? `${runtime.cpu.usagePercent.toFixed(1)}%` : null, runtime?.capabilities?.metrics !== false);
+}
+
+function formatAgentMemory(runtime) {
+  const used = runtime?.memory?.usedBytes;
+  const total = runtime?.memory?.totalBytes;
+  const percent = runtime?.memory?.usagePercent;
+  if (Number.isFinite(used) && Number.isFinite(total)) {
+    return `${formatBytes(used)} / ${formatBytes(total)}${Number.isFinite(percent) ? ` (${Math.round(percent)}%)` : ""}`;
+  }
+  return formatAgentMetric(null, runtime?.capabilities?.metrics !== false);
+}
+
+function formatAgentProcess(runtime, fallbackState) {
+  const state = runtime?.serviceState || String(fallbackState || "unknown").toLowerCase();
+  if (state === "running") return "Running";
+  if (state === "stopped") return "Stopped";
+  if (state === "starting") return "Starting";
+  if (state === "stopping") return "Stopping";
+  if (state === "restarting") return "Restarting";
+  if (state === "repairing") return "Repairing";
+  return "Unknown";
+}
+
 function renderAgentControlState(payload = agentControlState) {
   const local = getAgentControlOverviewTarget(payload);
   if (!local) return;
   agentControlState = payload;
-  const running = isAgentTargetRunning(local);
+  const { runtime, stale } = getAgentRuntimeForDisplay(local);
+  const running = runtime?.serviceState === "running" || isAgentTargetRunning(local);
   const busy = agentControlBusy || Boolean(local.operationInFlight);
   const isLocalTarget = isAgentTargetLocal(local);
-  const lifecycleSupported = isLocalTarget && local.lifecycleSupported !== false;
+  const capabilities = runtime?.capabilities || {};
+  const lifecycleSupported = capabilities.lifecycle === true || (isLocalTarget && local.lifecycleSupported !== false);
+  const repairSupported = capabilities.repair === true || lifecycleSupported;
   const state = local.state || "Unavailable";
   const targetLabel = getAgentTargetLabel(local);
   if (agentControlStatus) {
-    agentControlStatus.textContent = state;
+    agentControlStatus.textContent = runtime?.reachable || running ? "Connected" : state;
     agentControlStatus.className = `status-pill ${running ? "status-pill--ok" : state === "Offline" || state === "Unreachable" ? "status-pill--planned" : state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning"}`;
   }
   if (agentStatusDot) {
     agentStatusDot.dataset.agentState = running ? "online" : state === "Offline" || state === "Unreachable" ? "offline" : "warning";
   }
   if (agentControlMessage) {
-    agentControlMessage.textContent = local.mostRecentError?.message || (running ? `${targetLabel} is responding.` : `${targetLabel} is not reachable or is stopped.`);
+    const urlText = runtime?.url || local.agentUrl || "";
+    const serviceText = `Service ${formatAgentProcess(runtime, state)}`;
+    agentControlMessage.textContent = local.mostRecentError?.message || (runtime?.reachable || running ? `${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}` : `${targetLabel} is not reachable or is stopped.`);
   }
-  setAgentControlField("hostname", local.name || local.hostname || local.identity?.hostname);
-  setAgentControlField("agentVersion", local.agentVersion || local.identity?.agentVersion);
-  setAgentControlField("pid", local.pid ? `PID ${local.pid}` : running ? "Service managed" : "Stopped");
+  setAgentControlField("hostname", local.name || runtime?.hostname || local.hostname || local.identity?.hostname);
+  setAgentControlField("agentVersion", runtime?.version || local.agentVersion || local.identity?.agentVersion);
+  setAgentControlField("pid", formatAgentProcess(runtime, state));
   setAgentControlField("service", local.service?.supported ? `${local.service.type} · ${local.service.state}` : "Unsupported");
   setAgentControlField("url", local.agentUrl);
-  setAgentControlField("latency", Number.isFinite(local.latencyMs) ? `${local.latencyMs} ms` : "Unavailable");
-  setAgentControlField("uptime", Number.isFinite(local.uptime) ? formatDuration(local.uptime) : "Unavailable");
-  setAgentControlField("memory", Number.isFinite(local.memoryBytes) ? formatBytes(local.memoryBytes) : "Unavailable");
-  setAgentControlField("cpu", Number.isFinite(local.cpuSeconds) ? `${local.cpuSeconds.toFixed ? local.cpuSeconds.toFixed(1) : local.cpuSeconds}s` : "Unavailable");
+  setAgentControlField("latency", Number.isFinite(runtime?.latencyMs ?? local.latencyMs) ? `${runtime?.latencyMs ?? local.latencyMs} ms` : "Unavailable");
+  setAgentControlField("uptime", Number.isFinite(runtime?.uptimeSeconds ?? local.uptime) ? formatDuration(runtime?.uptimeSeconds ?? local.uptime) : "Unavailable");
+  setAgentControlField("memory", formatAgentMemory(runtime));
+  setAgentControlField("cpu", formatAgentCpu(runtime));
   setAgentControlField("clients", String(local.connectedClients || 0));
   setAgentControlField("platform", `${local.operatingSystem || "Unknown"} · ${local.architecture || "Unknown"}`);
   setAgentControlField("protocol", `${local.apiVersion || "v1"} / ${local.protocolVersion || 1}`);
@@ -2730,7 +2782,7 @@ function renderAgentControlState(payload = agentControlState) {
     const disabled = busy
       || (action === "start" && (!lifecycleSupported || running))
       || (["stop", "restart", "forceRestart"].includes(action) && (!lifecycleSupported || !running))
-      || (action === "repairAgent" && !lifecycleSupported)
+      || (action === "repairAgent" && !repairSupported)
       || (action === "installService" && (!lifecycleSupported || service.installed))
       || (action === "uninstallService" && (!lifecycleSupported || !service.installed))
       || (action === "enableAutoStart" && (!lifecycleSupported || service.enabled))

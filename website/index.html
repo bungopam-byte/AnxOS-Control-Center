@@ -39,6 +39,7 @@
         <a href="#features">Features</a>
         <a href="#install">Install</a>
         <a href="#signin">Sign In</a>
+        <a href="#profile">Profile</a>
         <a class="site-nav__cta" href="#signup">Sign Up</a>
       </nav>
     </header>
@@ -98,6 +99,14 @@
 
       <section id="signin" class="section-shell account-route" data-account-route="signin">
         <div class="auth-shell">
+          <div class="auth-card" data-auth-view="loading" hidden>
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Checking your session</h2>
+              <p>Preparing account sign-in. You can still sign in if session verification takes longer than expected.</p>
+            </div>
+            <p class="form-message" role="status" data-auth-message="signin-loading">Verifying account state...</p>
+          </div>
           <div class="auth-card" data-auth-view="signed-out">
             <div class="auth-card__header">
               <p class="eyebrow">AnxOS Account</p>
@@ -118,6 +127,19 @@
               </div>
               <p class="form-message" role="status" data-auth-message="signin"></p>
             </form>
+          </div>
+          <div class="auth-card" data-auth-view="signed-in" hidden>
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Already signed in</h2>
+              <p>You are signed in as <strong data-account-email>this AnxOS account</strong>.</p>
+            </div>
+            <div class="route-actions">
+              <a class="button button-primary" href="#account">Go to Account</a>
+              <a class="button button-secondary" href="#profile">Edit Profile</a>
+              <button class="button button-ghost" type="button" data-auth-action="signout">Sign Out</button>
+            </div>
+            <p class="form-message" role="status" data-auth-message="signin-state"></p>
           </div>
           <ul class="auth-feature-list" aria-label="AnxOS account features">
             <li>Device approvals without sharing passwords with the desktop app.</li>
@@ -160,9 +182,15 @@
         <div class="account-route__copy">
           <p class="eyebrow">Account</p>
           <h2>AnxOS Account</h2>
-          <p>Manage your profile, connected desktop apps, sessions, and account security.</p>
+          <p>Review devices, sessions, account security, password recovery, and signed-in account status.</p>
         </div>
         <div class="account-panel account-dashboard">
+          <nav class="account-nav" aria-label="Account navigation">
+            <a class="account-nav__item is-active" href="#account">Overview</a>
+            <a class="account-nav__item" href="#profile">Profile</a>
+            <a class="account-nav__item" href="#account-devices">Devices & Sessions</a>
+            <a class="account-nav__item" href="#account-security">Security</a>
+          </nav>
           <div data-auth-view="signed-out">
             <h3>Using local device mode</h3>
             <p>Sign in to sync settings and use remote account services. The desktop app still works locally while signed out.</p>
@@ -180,19 +208,21 @@
                 <p data-account-email></p>
               </div>
               <div class="route-actions">
+                <a class="button button-primary" href="#profile">Edit Profile</a>
                 <a class="button button-secondary" href="forgot-password.html">Change Password</a>
                 <button class="button button-ghost" type="button" data-auth-action="signout">Sign Out</button>
               </div>
             </div>
-            <form class="account-form account-form--compact" data-auth-form="profile">
-              <label>Username<input type="text" name="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>
-              <label>Display name<input type="text" name="displayName" maxlength="80" required></label>
-              <label>Avatar URL<input type="url" name="avatarUrl" placeholder="https://..."></label>
-              <button class="button button-secondary" type="submit">Save Profile</button>
-              <p class="form-message" role="status" data-auth-message="profile"></p>
-            </form>
+            <div class="profile-summary-card">
+              <div class="profile-avatar" data-profile-avatar aria-hidden="true">A</div>
+              <div>
+                <strong data-profile-summary-name>AnxOS Account</strong>
+                <small data-profile-summary-meta>Profile details load after sign-in.</small>
+              </div>
+              <a class="button button-ghost" href="#profile">Edit Profile</a>
+            </div>
             <div class="account-dashboard-grid">
-              <section class="account-subpanel">
+              <section class="account-subpanel" id="account-devices">
                 <div class="account-subpanel__heading"><h4>My Devices</h4><button class="button button-ghost" type="button" data-auth-action="refresh-devices">Refresh</button></div>
                 <div data-account-devices class="account-list"></div>
               </section>
@@ -200,11 +230,89 @@
                 <div class="account-subpanel__heading"><h4>Active Sessions</h4><button class="button button-ghost" type="button" data-auth-action="revoke-sessions">Sign Out All</button></div>
                 <div data-account-sessions class="account-list"></div>
               </section>
-              <section class="account-subpanel">
+              <section class="account-subpanel" id="account-security">
                 <div class="account-subpanel__heading"><h4>Security History</h4></div>
                 <div data-account-events class="account-list"></div>
               </section>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="profile" class="section-shell account-route" data-account-route="profile">
+        <div class="account-route__copy">
+          <p class="eyebrow">Profile</p>
+          <h2>Identity and preferences</h2>
+          <p>Manage account identity fields separately from devices, sessions, and security controls.</p>
+        </div>
+        <div class="account-panel profile-panel">
+          <nav class="account-nav" aria-label="Account navigation">
+            <a class="account-nav__item" href="#account">Overview</a>
+            <a class="account-nav__item is-active" href="#profile">Profile</a>
+            <a class="account-nav__item" href="#account-devices">Devices & Sessions</a>
+            <a class="account-nav__item" href="#account-security">Security</a>
+          </nav>
+          <div data-auth-view="loading" class="profile-loading">
+            <div class="profile-skeleton"></div>
+            <p class="form-message">Validating your session...</p>
+          </div>
+          <div data-auth-view="signed-out" hidden>
+            <h3>Sign in to view your profile</h3>
+            <p>Profile details are private to your authenticated AnxOS account.</p>
+            <div class="route-actions">
+              <a class="button button-primary" href="#signin?return=profile">Sign In</a>
+            </div>
+          </div>
+          <div data-auth-view="signed-in" hidden>
+            <div class="profile-header-card">
+              <div class="profile-avatar profile-avatar--large" data-profile-avatar aria-hidden="true">A</div>
+              <div>
+                <span class="badge" data-profile-role>Account</span>
+                <h3 data-profile-display-name>AnxOS Account</h3>
+                <p><span data-profile-username>@account</span> · <span data-account-email></span></p>
+                <small data-profile-member-since>Member since unavailable</small>
+              </div>
+              <div class="profile-completion">
+                <span>Profile completion</span>
+                <strong data-profile-completion>0%</strong>
+              </div>
+            </div>
+            <form class="account-form profile-form" data-auth-form="profile">
+              <div class="profile-form-grid">
+                <label>Display name<input type="text" name="displayName" autocomplete="name" maxlength="80" required></label>
+                <label>Username<input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>
+                <label>Avatar URL<input type="url" name="avatarUrl" placeholder="https://..."></label>
+                <label>Time zone<input type="text" name="timeZone" autocomplete="off" placeholder="America/Edmonton"></label>
+                <label>Preferred platform<select name="preferredPlatform"><option value="">No preference</option><option value="windows">Windows</option><option value="linux">Linux</option><option value="macos">macOS</option><option value="server">Server/NAS</option></select></label>
+                <label>Website<input type="url" name="websiteUrl" placeholder="https://example.com"></label>
+                <label>GitHub<input type="url" name="githubUrl" placeholder="https://github.com/username"></label>
+                <label class="profile-form-wide">Short bio<textarea name="bio" maxlength="280" rows="4" placeholder="Briefly describe how you use AnxOS."></textarea></label>
+              </div>
+              <div class="profile-avatar-preview">
+                <div class="profile-avatar" data-profile-avatar-preview aria-hidden="true">A</div>
+                <button class="button button-ghost" type="button" data-profile-action="remove-avatar">Remove Avatar</button>
+                <p class="form-message" data-auth-message="avatar">Avatar upload is not enabled yet. Use an image URL for now.</p>
+              </div>
+              <div class="profile-form-actions">
+                <button class="button button-primary" type="submit" data-profile-save disabled>Save Profile</button>
+                <button class="button button-secondary" type="button" data-profile-action="cancel" disabled>Cancel</button>
+                <span class="form-message" role="status" data-auth-message="profile"></span>
+              </div>
+            </form>
+            <section class="account-subpanel profile-details">
+              <div class="account-subpanel__heading"><h4>Account Details</h4></div>
+              <dl class="profile-detail-grid">
+                <div><dt>Email</dt><dd data-account-email></dd></div>
+                <div><dt>Account ID</dt><dd data-profile-account-id>Unavailable</dd></div>
+                <div><dt>Created</dt><dd data-profile-created>Unavailable</dd></div>
+                <div><dt>Updated</dt><dd data-profile-updated>Unavailable</dd></div>
+                <div><dt>Status</dt><dd data-profile-status>Active</dd></div>
+              </dl>
+            </section>
+            <section class="account-subpanel">
+              <div class="account-subpanel__heading"><h4>Connected AnxOS Apps</h4><a class="button button-ghost" href="#account-devices">Manage Devices</a></div>
+              <div data-profile-devices class="account-list"></div>
+            </section>
           </div>
         </div>
       </section>

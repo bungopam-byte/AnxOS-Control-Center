@@ -8,13 +8,26 @@ create table if not exists public.profiles (
   username text not null unique,
   display_name text not null,
   avatar_url text,
+  bio text,
+  time_zone text,
+  preferred_platform text,
+  website_url text,
+  github_url text,
   role text not null default 'user',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint profiles_username_format check (username ~ '^[a-zA-Z0-9_][a-zA-Z0-9_-]{2,31}$'),
   constraint profiles_display_name_length check (char_length(display_name) between 1 and 80),
+  constraint profiles_bio_length check (bio is null or char_length(bio) <= 280),
+  constraint profiles_platform_valid check (preferred_platform is null or preferred_platform in ('windows', 'linux', 'macos', 'server')),
   constraint profiles_role_valid check (role in ('user', 'owner', 'admin'))
 );
+
+alter table public.profiles add column if not exists bio text;
+alter table public.profiles add column if not exists time_zone text;
+alter table public.profiles add column if not exists preferred_platform text;
+alter table public.profiles add column if not exists website_url text;
+alter table public.profiles add column if not exists github_url text;
 
 create table if not exists public.device_authorization_requests (
   id uuid primary key default gen_random_uuid(),
@@ -185,6 +198,14 @@ drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
 on public.profiles for select
 using (auth.uid() = id);
+
+drop policy if exists "profiles_insert_own_safe_fields" on public.profiles;
+create policy "profiles_insert_own_safe_fields"
+on public.profiles for insert
+with check (
+  auth.uid() = id
+  and role = 'user'
+);
 
 drop policy if exists "profiles_update_own_safe_fields" on public.profiles;
 create policy "profiles_update_own_safe_fields"

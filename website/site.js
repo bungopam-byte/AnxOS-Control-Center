@@ -6,6 +6,10 @@ let currentSession = null;
 let currentProfile = null;
 let currentDeviceCode = "";
 let currentDeviceRequest = null;
+let authState = "loading";
+let profileDirty = false;
+let lastProfileSnapshot = "";
+let lastAppliedRoute = "";
 
 function redirectToCanonicalSiteOrigin() {
   const configuredOrigin = String(accountConfig.siteUrl || "").replace(/\/+$/, "");
@@ -160,6 +164,63 @@ function getRouteParams() {
   return hashParams;
 }
 
+function getCurrentRoute() {
+  const hash = window.location.hash || "";
+  return hash.replace(/^#/, "").split("?")[0] || document.body?.dataset?.standaloneRoute || "top";
+}
+
+function getInitials(value) {
+  const text = String(value || "AnxOS Account").trim();
+  const parts = text.split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : text.slice(0, 2)).toUpperCase();
+}
+
+function maskIdentifier(value) {
+  const text = String(value || "");
+  if (text.length <= 12) return text || "Unavailable";
+  return `${text.slice(0, 6)}...${text.slice(-4)}`;
+}
+
+function getProfileValue(key, fallback = "") {
+  return currentProfile && currentProfile[key] !== null && currentProfile[key] !== undefined ? currentProfile[key] : fallback;
+}
+
+function getProfileFormData(form) {
+  return {
+    username: form.elements.username.value.trim(),
+    display_name: form.elements.displayName.value.trim(),
+    avatar_url: form.elements.avatarUrl.value.trim() || null,
+    bio: form.elements.bio.value.trim() || null,
+    time_zone: form.elements.timeZone.value.trim() || null,
+    preferred_platform: form.elements.preferredPlatform.value || null,
+    website_url: form.elements.websiteUrl.value.trim() || null,
+    github_url: form.elements.githubUrl.value.trim() || null,
+  };
+}
+
+function profileSnapshotFromForm(form) {
+  return JSON.stringify(getProfileFormData(form));
+}
+
+function validateProfileData(data) {
+  if (!/^[A-Za-z0-9_][A-Za-z0-9_-]{2,31}$/.test(data.username || "")) {
+    return "Use 3-32 letters, numbers, underscores, or dashes. Usernames must start with a letter, number, or underscore.";
+  }
+  if (!data.display_name || data.display_name.length > 80) {
+    return "Display name is required and must be 80 characters or fewer.";
+  }
+  for (const [key, label] of [["avatar_url", "Avatar URL"], ["website_url", "Website"], ["github_url", "GitHub"]]) {
+    if (!data[key]) continue;
+    try {
+      const parsed = new URL(data[key]);
+      if (!["http:", "https:"].includes(parsed.protocol)) return `${label} must be an HTTP or HTTPS URL.`;
+    } catch {
+      return `${label} must be a valid URL.`;
+    }
+  }
+  return "";
+}
+
 function normalizeDeviceCode(value) {
   const normalized = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
   return normalized.length >= 6 ? normalized : "";
@@ -194,8 +255,24 @@ function setDeviceMessage(message, tone = "muted") {
   });
 }
 
+function logAuthVisibility(operation, context = {}) {
+  const snapshot = {
+    authState,
+    hasSession: Boolean(currentSession?.user),
+    route: getCurrentRoute(),
+    ...context,
+  };
+  console.info("[AnxOS][WebsiteAuth]", {
+    timestamp: new Date().toISOString(),
+    severity: "info",
+    source: "website-auth",
+    operation,
+    context: snapshot,
+  });
+}
+
 function setFormDisabled(form, disabled) {
-  form.querySelectorAll("button, input").forEach((node) => {
+  form.querySelectorAll("button, input, select, textarea").forEach((node) => {
     node.disabled = Boolean(disabled);
   });
 }
@@ -226,6 +303,8 @@ async function apiFetch(path, options = {}) {
 }
 
 async function initializeAccount() {
+  authState = "loading";
+  applyAuthVisibility("initialize-start");
   if (!isAccountConfigured()) {
     disableAccountForms("AnxOS account sign-in is not configured for this deployment. Local desktop mode still works without an online account.");
     return;
@@ -235,63 +314,173 @@ async function initializeAccount() {
     disableAccountForms("Account scripts could not load. Check your connection and try again.");
     return;
   }
-  const { data } = await client.auth.getSession();
-  currentSession = data.session || null;
-  client.auth.onAuthStateChange((_event, session) => {
-    currentSession = session || null;
-    renderAuthState().catch(() => {});
+  try {
+    const { data, error } = await client.auth.getSession();
+    if (error) throw error;
+    currentSession = data.session?.user ? data.session : null;
+  } catch (error) {
+    currentSession = null;
+    authState = "signed-out";
+    setMessage("signin", "Unable to verify your session. You can still try signing in.", "warn");
+    logWebsiteDiagnostic("warn", "auth-session-restore", error);
+    applyAuthVisibility("initialize-error");
+    return;
+  }
+  client.auth.onAuthStateChange((event, session) => {
+    currentSession = session?.user ? session : null;
+    authState = currentSession ? "signed-in" : "signed-out";
+    logAuthVisibility("auth-state-change", { event });
+    renderAuthState().catch((error) => {
+      logWebsiteDiagnostic("error", "auth-state-render", error);
+      currentSession = null;
+      authState = "signed-out";
+      setMessage("signin", "Unable to verify your session. You can still try signing in.", "warn");
+      applyAuthVisibility("auth-state-render-error");
+    });
   });
+  authState = currentSession ? "signed-in" : "signed-out";
   await renderAuthState();
 }
 
 function disableAccountForms(message) {
-  document.querySelectorAll("[data-auth-form], [data-device-login-form]").forEach((form) => setFormDisabled(form, true));
+  authState = "signed-out";
+  document.querySelectorAll("[data-device-login-form]").forEach((form) => setFormDisabled(form, true));
   document.querySelectorAll("[data-auth-message], [data-device-login-message]").forEach((node) => {
     node.textContent = message;
     node.dataset.tone = "warn";
   });
-  renderSignedOut();
+  applyAuthVisibility("account-disabled");
 }
 
 async function renderAuthState() {
   if (!currentSession) {
     currentProfile = null;
-    renderSignedOut();
+    authState = "signed-out";
+    applyAuthVisibility("render-signed-out");
+    if (getCurrentRoute() === "profile") window.location.hash = "signin?return=profile";
     return;
   }
   await loadProfile().catch((error) => {
     currentProfile = null;
     setMessage("profile", friendlyAuthError(error), "warn");
+    logWebsiteDiagnostic("warn", "profile-load", error);
   });
+  authState = "signed-in";
   renderSignedIn();
   await Promise.allSettled([loadDevices(), loadSessions(), loadSecurityEvents()]);
 }
 
-function renderSignedOut() {
-  document.querySelectorAll('[data-auth-view="signed-in"]').forEach((node) => { node.hidden = true; });
-  document.querySelectorAll('[data-auth-view="signed-out"]').forEach((node) => { node.hidden = false; });
+function setScopedAuthView(container, selectedState) {
+  const views = Array.from(container.querySelectorAll("[data-auth-view]"));
+  const fallbackState = views.some((node) => node.dataset.authView === selectedState) ? selectedState : "signed-out";
+  views.forEach((node) => {
+    const show = node.dataset.authView === fallbackState;
+    node.hidden = !show;
+  });
+}
+
+function applyAuthVisibility(operation = "apply") {
+  document.querySelectorAll("[data-account-route]").forEach((section) => {
+    let selectedState = authState;
+    if (section.dataset.accountRoute === "signin" && authState === "loading") selectedState = "signed-out";
+    if (section.dataset.accountRoute === "profile" && authState === "signed-out") selectedState = "signed-out";
+    setScopedAuthView(section, selectedState);
+  });
+  logAuthVisibility(operation, {
+    selectedState: authState,
+    signinDisplays: Array.from(document.querySelectorAll("#signin [data-auth-view]")).map((node) => ({
+      state: node.dataset.authView,
+      hidden: node.hidden,
+      display: window.getComputedStyle ? window.getComputedStyle(node).display : "",
+    })),
+  });
 }
 
 function renderSignedIn() {
-  document.querySelectorAll('[data-auth-view="signed-in"]').forEach((node) => { node.hidden = false; });
-  document.querySelectorAll('[data-auth-view="signed-out"]').forEach((node) => { node.hidden = true; });
+  applyAuthVisibility("render-signed-in");
   setText("[data-account-display-name]", currentProfile?.display_name || currentProfile?.username || currentSession?.user?.email || "AnxOS Account");
   setText("[data-account-email]", currentSession?.user?.email || "");
-  document.querySelectorAll('[data-auth-form="profile"]').forEach((form) => {
-    form.elements.username.value = currentProfile?.username || "";
-    form.elements.displayName.value = currentProfile?.display_name || "";
-    form.elements.avatarUrl.value = currentProfile?.avatar_url || "";
-  });
+  renderProfileViews();
 }
 
 async function loadProfile() {
   const { data, error } = await getSupabase()
     .from("profiles")
-    .select("id,username,display_name,avatar_url,role,created_at,updated_at")
+    .select("id,username,display_name,avatar_url,role,bio,time_zone,preferred_platform,website_url,github_url,created_at,updated_at")
     .eq("id", currentSession.user.id)
     .maybeSingle();
   if (error) throw error;
   currentProfile = data || null;
+}
+
+function setAvatarNode(node, imageUrl, fallbackText) {
+  node.replaceChildren();
+  const fallback = getInitials(fallbackText);
+  node.textContent = fallback;
+  node.classList.remove("has-image");
+  if (!imageUrl) return;
+  const image = document.createElement("img");
+  image.alt = "";
+  image.src = imageUrl;
+  image.addEventListener("load", () => {
+    node.textContent = "";
+    node.append(image);
+    node.classList.add("has-image");
+  }, { once: true });
+  image.addEventListener("error", () => {
+    node.textContent = fallback;
+    node.classList.remove("has-image");
+    setMessage("avatar", "Avatar image could not be loaded. Check the URL or remove it.", "warn");
+  }, { once: true });
+}
+
+function calculateProfileCompletion(profile) {
+  const fields = ["username", "display_name", "avatar_url", "bio", "time_zone", "preferred_platform", "website_url", "github_url"];
+  const complete = fields.filter((field) => Boolean(profile?.[field])).length;
+  return Math.round((complete / fields.length) * 100);
+}
+
+function renderProfileViews() {
+  const displayName = currentProfile?.display_name || currentProfile?.username || currentSession?.user?.email || "AnxOS Account";
+  const username = currentProfile?.username || "account";
+  const avatarUrl = currentProfile?.avatar_url || "";
+  setText("[data-profile-display-name]", displayName);
+  setText("[data-profile-username]", `@${username}`);
+  setText("[data-profile-role]", currentProfile?.role || "Account");
+  setText("[data-profile-member-since]", currentProfile?.created_at ? `Member since ${formatDate(currentProfile.created_at)}` : "Member since unavailable");
+  setText("[data-profile-completion]", `${calculateProfileCompletion(currentProfile)}%`);
+  setText("[data-profile-summary-name]", displayName);
+  setText("[data-profile-summary-meta]", `@${username} · ${currentProfile?.role || "user"} · ${calculateProfileCompletion(currentProfile)}% complete`);
+  setText("[data-profile-account-id]", maskIdentifier(currentSession?.user?.id));
+  setText("[data-profile-created]", formatDate(currentProfile?.created_at || currentSession?.user?.created_at));
+  setText("[data-profile-updated]", formatDate(currentProfile?.updated_at));
+  setText("[data-profile-status]", currentSession?.user?.email_confirmed_at ? "Verified" : "Active");
+  document.querySelectorAll("[data-profile-avatar], [data-profile-avatar-preview]").forEach((node) => setAvatarNode(node, avatarUrl, displayName));
+  document.querySelectorAll('[data-auth-form="profile"]').forEach((form) => {
+    form.elements.username.value = getProfileValue("username", "");
+    form.elements.displayName.value = getProfileValue("display_name", "");
+    form.elements.avatarUrl.value = getProfileValue("avatar_url", "");
+    form.elements.bio.value = getProfileValue("bio", "");
+    form.elements.timeZone.value = getProfileValue("time_zone", "");
+    form.elements.preferredPlatform.value = getProfileValue("preferred_platform", "");
+    form.elements.websiteUrl.value = getProfileValue("website_url", "");
+    form.elements.githubUrl.value = getProfileValue("github_url", "");
+    lastProfileSnapshot = profileSnapshotFromForm(form);
+    setProfileDirty(false);
+  });
+}
+
+function setProfileDirty(dirty) {
+  profileDirty = Boolean(dirty);
+  document.querySelectorAll("[data-profile-save], [data-profile-action=\"cancel\"]").forEach((button) => {
+    button.disabled = !profileDirty;
+  });
+}
+
+function updateProfileDirtyState() {
+  const form = document.querySelector('[data-auth-form="profile"]');
+  if (!form) return;
+  setProfileDirty(profileSnapshotFromForm(form) !== lastProfileSnapshot);
 }
 
 async function handleSignIn(form) {
@@ -310,7 +499,7 @@ async function handleSignIn(form) {
       window.location.href = `activate.html${code ? `?code=${encodeURIComponent(code)}` : ""}`;
       return;
     }
-    window.location.hash = "account";
+    window.location.hash = params.get("return") === "profile" ? "profile" : "account";
   } catch (error) {
     setMessage("signin", friendlyAuthError(error), "error");
   } finally {
@@ -378,15 +567,23 @@ async function handleReset(form) {
 }
 
 async function handleProfile(form) {
+  if (!currentSession?.user) {
+    setMessage("profile", "Sign in before editing your profile.", "error");
+    return;
+  }
+  const patch = {
+    id: currentSession.user.id,
+    ...getProfileFormData(form),
+  };
+  const validationMessage = validateProfileData(patch);
+  if (validationMessage) {
+    setMessage("profile", validationMessage, "error");
+    return;
+  }
   setFormDisabled(form, true);
+  form.querySelectorAll("[data-profile-save], [data-profile-action=\"cancel\"]").forEach((button) => { button.disabled = true; });
   setMessage("profile", "Saving...");
   try {
-    const patch = {
-      id: currentSession.user.id,
-      username: form.elements.username.value.trim(),
-      display_name: form.elements.displayName.value.trim(),
-      avatar_url: form.elements.avatarUrl.value.trim() || null,
-    };
     const { error } = await getSupabase().from("profiles").upsert(patch, { onConflict: "id" });
     if (error) throw error;
     await loadProfile();
@@ -396,6 +593,7 @@ async function handleProfile(form) {
     setMessage("profile", friendlyAuthError(error), "error");
   } finally {
     setFormDisabled(form, false);
+    updateProfileDirtyState();
   }
 }
 
@@ -406,8 +604,10 @@ async function loadDevices() {
   try {
     const { devices = [] } = await apiFetch("/api/account/devices", { method: "GET" });
     renderDeviceList(container, devices);
+    renderProfileDeviceList(devices);
   } catch (error) {
     renderListMessage(container, friendlyAuthError(error));
+    renderProfileDeviceList([]);
   }
 }
 
@@ -489,6 +689,22 @@ function renderDeviceList(container, devices) {
       item.append(button);
     }
     container.append(item);
+  });
+}
+
+function renderProfileDeviceList(devices) {
+  const container = document.querySelector("[data-profile-devices]");
+  if (!container) return;
+  container.replaceChildren();
+  if (!devices.length) {
+    container.append(createListItem("No connected apps", "Approved desktop installations will appear here."));
+    return;
+  }
+  devices.slice(0, 4).forEach((device, index) => {
+    container.append(createListItem(
+      `${device.device_name || "Desktop device"}${index === 0 ? " · Current" : ""}`,
+      `${device.platform || "desktop"} · ${device.app_version || "version not reported"} · last active ${formatDate(device.last_seen_at || device.created_at)}`
+    ));
   });
 }
 
@@ -630,7 +846,9 @@ function bindAccountForms() {
     button.addEventListener("click", async () => {
       await getSupabase()?.auth.signOut();
       currentSession = null;
-      renderSignedOut();
+      currentProfile = null;
+      authState = "signed-out";
+      applyAuthVisibility("signout");
       window.location.hash = "signin";
     });
   });
@@ -653,22 +871,57 @@ function bindAccountForms() {
   document.querySelectorAll('[data-device-action="deny"]').forEach((button) => {
     button.addEventListener("click", () => approveOrDenyDevice("deny"));
   });
+  document.querySelectorAll('[data-auth-form="profile"]').forEach((form) => {
+    form.addEventListener("input", updateProfileDirtyState);
+    form.addEventListener("change", updateProfileDirtyState);
+  });
+  document.querySelectorAll('[data-profile-action="cancel"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      renderProfileViews();
+      setMessage("profile", "Profile edits reset.", "muted");
+    });
+  });
+  document.querySelectorAll('[data-profile-action="remove-avatar"]').forEach((button) => {
+    button.addEventListener("click", () => {
+      const form = document.querySelector('[data-auth-form="profile"]');
+      if (!form) return;
+      form.elements.avatarUrl.value = "";
+      const preview = document.querySelector("[data-profile-avatar-preview]");
+      if (preview) setAvatarNode(preview, "", form.elements.displayName.value || currentSession?.user?.email);
+      updateProfileDirtyState();
+    });
+  });
 }
 
 function applyHashRoute() {
   const hash = window.location.hash || "";
   const standaloneRoute = document.body?.dataset?.standaloneRoute || "";
-  const route = hash.replace(/^#/, "").split("?")[0] || standaloneRoute || "top";
+  const route = getCurrentRoute();
+  const accountAnchorRoutes = new Set(["account-devices", "account-security"]);
+  const activeRoute = accountAnchorRoutes.has(route) ? "account" : route;
+  if (profileDirty && lastAppliedRoute === "profile" && activeRoute !== "profile") {
+    const leave = confirm("You have unsaved profile changes. Leave without saving?");
+    if (!leave) {
+      window.location.hash = "profile";
+      return;
+    }
+    setProfileDirty(false);
+  }
   if (!standaloneRoute && route === "activate") {
     const hashQuery = hash.includes("?") ? `?${hash.split("?").slice(1).join("?")}` : "";
     const query = window.location.search || hashQuery;
     window.location.replace(`activate.html${query}`);
     return;
   }
+  if (activeRoute === "profile" && authState === "signed-out") {
+    window.location.hash = "signin?return=profile";
+    return;
+  }
   const supportedRoutes = new Set([
     "signin",
     "signup",
     "account",
+    "profile",
     "activate",
     "forgot-password",
     "reset-password",
@@ -679,13 +932,15 @@ function applyHashRoute() {
     "downloads",
     "top",
   ]);
-  if (!supportedRoutes.has(route)) return;
+  if (!supportedRoutes.has(activeRoute)) return;
   applyDeviceLoginPage();
   document.querySelectorAll("[data-account-route]").forEach((section) => {
-    section.classList.toggle("account-route--active", section.dataset.accountRoute === route);
+    section.classList.toggle("account-route--active", section.dataset.accountRoute === activeRoute);
   });
   const target = document.getElementById(route);
-  if (target && route !== "top") target.scrollIntoView({ block: "start" });
+  if (target && activeRoute !== "top") target.scrollIntoView({ block: "start" });
+  applyAuthVisibility("route-change");
+  lastAppliedRoute = activeRoute;
 }
 
 redirectToCanonicalSiteOrigin();
@@ -698,6 +953,11 @@ initializeAccount().catch((error) => {
   disableAccountForms(friendlyAuthError(error));
 });
 window.addEventListener("hashchange", applyHashRoute);
+window.addEventListener("beforeunload", (event) => {
+  if (!profileDirty) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 applyHashRoute();
 
 function logWebsiteDiagnostic(severity, operation, error) {

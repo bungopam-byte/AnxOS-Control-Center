@@ -13,11 +13,22 @@ function assertWebsiteAccountUi() {
   const activate = read("website/activate.html");
   const forgotPassword = read("website/forgot-password.html");
   const resetPassword = read("website/reset-password.html");
+  const profilePage = read("website/profile.html");
+  const profileIndex = read("website/profile/index.html");
   const site = read("website/site.js");
   const accountConfig = read("website/account-config.js");
 
   assert(index.includes('data-auth-form="signin"'), "Website should include a real sign-in form.");
   assert(index.includes('data-auth-form="signup"'), "Website should include a real sign-up form.");
+  assert(index.includes('data-auth-message="signin-loading"'), "Sign-in route should keep a visible loading state during auth initialization.");
+  assert(index.includes('Already signed in') && index.includes('Go to Account'), "Sign-in route should show a signed-in card instead of blanking the form.");
+  assert(index.includes('id="profile"') && index.includes('data-account-route="profile"'), "Website should include a dedicated Profile route.");
+  assert(profilePage.includes("index.html#profile") && profileIndex.includes("../index.html#profile"), "Website should provide static /profile entry redirects.");
+  assert(index.includes('href="#profile"'), "Account navigation should link to the Profile route.");
+  assert(index.includes('data-profile-completion'), "Profile page should show completion status.");
+  assert(index.includes('name="bio"') && index.includes('name="timeZone"') && index.includes('name="preferredPlatform"'), "Profile page should expose supported profile preference fields.");
+  assert(index.includes('data-profile-action="remove-avatar"'), "Profile page should support removing an avatar URL.");
+  assert(!index.includes('data-auth-form="profile">\n              <label>Username'), "Account overview should not contain the old inline profile editor.");
   assert(index.includes('data-auth-form="forgot"'), "Website should include forgot-password form.");
   assert(index.includes('data-auth-form="reset"'), "Website should include reset-password form.");
   assert(index.includes('href="forgot-password.html">Reset Password</a>'), "Signed-out account UI should expose password recovery.");
@@ -44,6 +55,13 @@ function assertWebsiteAccountUi() {
   assert(site.includes("updateUser({ password"), "Website should implement password reset.");
   assert(site.includes("loadProfile().catch") && site.includes("currentProfile = null"), "Website profile loading should not block signed-in account state.");
   assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");
+  assert(site.includes('authState = "loading"') && site.includes("applyAuthVisibility"), "Website auth rendering should have an explicit loading state and scoped visibility.");
+  assert(site.includes("fallbackState") && site.includes("selectedState"), "Scoped auth rendering should avoid hiding every auth state.");
+  assert(site.includes("signinDisplays") && site.includes("logAuthVisibility"), "Website should log sanitized auth visibility transitions for diagnosis.");
+  assert(site.includes('window.location.hash = "signin?return=profile"'), "Unauthenticated profile route should preserve return destination through sign-in.");
+  assert(site.includes("profileSnapshotFromForm") && site.includes("beforeunload"), "Profile page should detect dirty edits and warn before navigation.");
+  assert(site.includes("validateProfileData"), "Profile saves should validate username and URL fields.");
+  assert(site.includes("renderProfileDeviceList"), "Profile page should show connected AnxOS apps.");
   assert(site.includes("/api/auth/device/lookup"), "Website should look up device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("approve")'), "Website should approve device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("deny")'), "Website should deny device authorization requests.");
@@ -57,6 +75,11 @@ function assertSupabaseBackend() {
 
   [
     "create table if not exists public.profiles",
+    "bio text",
+    "time_zone text",
+    "preferred_platform text",
+    "website_url text",
+    "github_url text",
     "create table if not exists public.device_authorization_requests",
     "create table if not exists public.registered_devices",
     "create table if not exists public.account_sessions",
@@ -64,6 +87,7 @@ function assertSupabaseBackend() {
     "alter table public.profiles enable row level security",
     "alter table public.device_authorization_requests enable row level security",
     "profiles_update_own_safe_fields",
+    "profiles_insert_own_safe_fields",
     "'user'",
     "cleanup_expired_device_authorizations",
   ].forEach((needle) => assert(migration.includes(needle), `Migration missing ${needle}`));

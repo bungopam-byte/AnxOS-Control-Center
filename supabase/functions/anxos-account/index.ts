@@ -341,7 +341,7 @@ async function createDesktopSession(record: any, request: Request) {
 }
 
 async function getAccount(userId: string) {
-  const { data: profile } = await admin.from("profiles").select("id,username,display_name,avatar_url,role,created_at,updated_at").eq("id", userId).maybeSingle();
+  const { data: profile } = await admin.from("profiles").select("id,username,display_name,avatar_url,role,bio,time_zone,preferred_platform,website_url,github_url,created_at,updated_at").eq("id", userId).maybeSingle();
   const { data: userResult } = await admin.auth.admin.getUserById(userId);
   return {
     id: userId,
@@ -350,6 +350,11 @@ async function getAccount(userId: string) {
     displayName: profile?.display_name || profile?.username || userResult?.user?.email || "AnxOS Account",
     avatarUrl: profile?.avatar_url || null,
     role: profile?.role || "user",
+    bio: profile?.bio || null,
+    timeZone: profile?.time_zone || null,
+    preferredPlatform: profile?.preferred_platform || null,
+    websiteUrl: profile?.website_url || null,
+    githubUrl: profile?.github_url || null,
   };
 }
 

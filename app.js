@@ -344,6 +344,7 @@ const marketplaceConfigMessage = document.querySelector("[data-marketplace-confi
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
 const updateModal = document.querySelector("[data-update-modal]");
 const agentControlStatus = document.querySelector("[data-agent-control-status]");
+const agentStatusDot = document.querySelector(".agent-status-dot");
 const agentControlMessage = document.querySelector("[data-agent-control-message]");
 const agentControlFields = document.querySelectorAll("[data-agent-control-field]");
 const agentControlButtons = document.querySelectorAll("[data-agent-control-action]");
@@ -364,6 +365,8 @@ const agentSetupMessage = document.querySelector("[data-agent-setup-message]");
 const agentSetupSummary = document.querySelector("[data-agent-setup-summary]");
 let agentControlState = null;
 let agentControlBusy = false;
+let agentControlRefreshInFlight = false;
+let agentControlPollTimer = null;
 let agentLogEntries = [];
 let updateModalCleanup = null;
 let openModalCount = 0;
@@ -2536,7 +2539,13 @@ function showPage(pageName) {
     ownerWorkspaceToggle?.removeAttribute("aria-current");
   }
 
-  if (safePageName === "agent-control") refreshAgentControl({ includeConfig: true });
+  if (safePageName === "agent-control") {
+    loadAgentSettings();
+    refreshAgentControl({ includeConfig: true });
+    startAgentControlPolling();
+  } else {
+    stopAgentControlPolling();
+  }
 
   pages.forEach((page) => {
     page.classList.toggle("is-active", page.dataset.page === safePageName);
@@ -2646,16 +2655,51 @@ function renderAgentSetupSummary(local = {}) {
   }
 }
 
+function getAgentControlOverviewTarget(payload = agentControlState) {
+  if (!payload) return null;
+  if (payload.configured?.configured || payload.configured?.backendMode === "agent") {
+    return payload.configured;
+  }
+  return payload.local || payload;
+}
+
+function isAgentTargetRunning(target = {}) {
+  return target.running === true || target.state === "Running" || target.state === "Connected";
+}
+
+function isAgentTargetLocal(target = {}) {
+  return target.local === true || target.targetType === "local-agent";
+}
+
+function getAgentTargetLabel(target = {}) {
+  if (target.targetType === "configured-agent") return "Configured Agent";
+  if (target.targetType === "selected-agent") return "Selected Agent";
+  if (target.targetType === "remote-agent") return "Remote Agent";
+  return "Local Agent";
+}
+
 function renderAgentControlState(payload = agentControlState) {
-  const local = payload?.local || payload;
+  const local = getAgentControlOverviewTarget(payload);
   if (!local) return;
   agentControlState = payload;
-  const running = local.running === true;
+  const running = isAgentTargetRunning(local);
   const busy = agentControlBusy || Boolean(local.operationInFlight);
-  if (agentControlStatus) { agentControlStatus.textContent = local.state || "Unavailable"; agentControlStatus.className = `status-pill ${running ? "status-pill--ok" : local.state === "Offline" ? "status-pill--planned" : "status-pill--warning"}`; }
-  if (agentControlMessage) agentControlMessage.textContent = local.mostRecentError?.message || (running ? "Local Agent check is responding." : "Local Agent check is offline. Remote selected Agents are tested separately.");
-  setAgentControlField("hostname", local.hostname || local.identity?.hostname);
-  setAgentControlField("agentVersion", local.agentVersion);
+  const isLocalTarget = isAgentTargetLocal(local);
+  const lifecycleSupported = isLocalTarget && local.lifecycleSupported !== false;
+  const state = local.state || "Unavailable";
+  const targetLabel = getAgentTargetLabel(local);
+  if (agentControlStatus) {
+    agentControlStatus.textContent = state;
+    agentControlStatus.className = `status-pill ${running ? "status-pill--ok" : state === "Offline" || state === "Unreachable" ? "status-pill--planned" : state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning"}`;
+  }
+  if (agentStatusDot) {
+    agentStatusDot.dataset.agentState = running ? "online" : state === "Offline" || state === "Unreachable" ? "offline" : "warning";
+  }
+  if (agentControlMessage) {
+    agentControlMessage.textContent = local.mostRecentError?.message || (running ? `${targetLabel} is responding.` : `${targetLabel} is not reachable or is stopped.`);
+  }
+  setAgentControlField("hostname", local.name || local.hostname || local.identity?.hostname);
+  setAgentControlField("agentVersion", local.agentVersion || local.identity?.agentVersion);
   setAgentControlField("pid", local.pid ? `PID ${local.pid}` : running ? "Service managed" : "Stopped");
   setAgentControlField("service", local.service?.supported ? `${local.service.type} · ${local.service.state}` : "Unsupported");
   setAgentControlField("url", local.agentUrl);
@@ -2669,9 +2713,22 @@ function renderAgentControlState(payload = agentControlState) {
   setAgentControlField("heartbeat", local.lastHeartbeat ? formatDateTime(local.lastHeartbeat) : "Unavailable");
   agentControlButtons.forEach((button) => {
     const action = button.dataset.agentControlAction;
-    button.disabled = busy || (action === "start" && running) || (["stop", "restart", "forceRestart"].includes(action) && !running) || (action === "installService" && local.service?.installed) || (action === "uninstallService" && !local.service?.installed) || (action === "enableAutoStart" && local.service?.enabled) || (action === "disableAutoStart" && !local.service?.enabled);
+    const service = local.service || {};
+    const disabled = busy
+      || (action === "start" && (!lifecycleSupported || running))
+      || (["stop", "restart", "forceRestart"].includes(action) && (!lifecycleSupported || !running))
+      || (action === "repairAgent" && !lifecycleSupported)
+      || (action === "installService" && (!lifecycleSupported || service.installed))
+      || (action === "uninstallService" && (!lifecycleSupported || !service.installed))
+      || (action === "enableAutoStart" && (!lifecycleSupported || service.enabled))
+      || (action === "disableAutoStart" && (!lifecycleSupported || !service.enabled))
+      || (action === "rotateToken" && !isLocalTarget)
+      || (action === "openDataFolder" && !isLocalTarget)
+      || (action === "copyUrl" && !local.agentUrl)
+      || (action === "copyId" && !local.identity?.deviceId);
+    button.disabled = disabled;
   });
-  renderAgentSetupSummary(local);
+  renderAgentSetupSummary(payload?.local || local);
   renderRemoteAgents(payload?.remote || []);
 }
 
@@ -2731,7 +2788,8 @@ async function refreshAgentLogs() {
 
 async function refreshAgentControl({ includeConfig = false } = {}) {
   const api = getDesktopApiState().api?.agentControl;
-  if (!api || agentControlBusy) return;
+  if (!api || agentControlBusy || agentControlRefreshInFlight) return;
+  agentControlRefreshInFlight = true;
   try {
     const payload = await api.list();
     renderAgentControlState(payload);
@@ -2741,7 +2799,24 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
     await refreshAgentLogs();
   } catch (error) {
     if (agentControlMessage) agentControlMessage.textContent = normalizeIpcErrorMessage(error, "Agent Control unavailable.");
+  } finally {
+    agentControlRefreshInFlight = false;
   }
+}
+
+function startAgentControlPolling() {
+  if (agentControlPollTimer) return;
+  agentControlPollTimer = window.setInterval(() => {
+    if (getActivePageName() === "agent-control" && !document.hidden) {
+      refreshAgentControl();
+    }
+  }, 3000);
+}
+
+function stopAgentControlPolling() {
+  if (!agentControlPollTimer) return;
+  window.clearInterval(agentControlPollTimer);
+  agentControlPollTimer = null;
 }
 
 async function runAgentControlAction(action) {
@@ -2749,15 +2824,19 @@ async function runAgentControlAction(action) {
   if (!api || agentControlBusy) return;
   const destructive = { stop: ["Stop local Agent?", "Active Agent operations will disconnect."], forceRestart: ["Force restart local Agent?", "The Agent process will be terminated immediately."], repairAgent: ["Repair local Agent?", "Background registration will be reinstalled and the Agent restarted."], uninstallService: ["Uninstall Agent background service?", "Automatic startup will be removed."], resetConfig: ["Reset Agent configuration?", "Current settings will be backed up before defaults are restored."] }[action];
   if (destructive && !(await createSecurityConfirmation({ title: destructive[0], message: destructive[1], confirmLabel: "Continue" }))) return;
+  if (action === "refresh") {
+    await refreshAgentControl({ includeConfig: true });
+    return;
+  }
   agentControlBusy = true; renderAgentControlState();
   try {
-    if (action === "reconnect") renderAgentControlState(await api.list());
+    if (action === "reconnect") await testAgentConnection({ silent: false });
     else if (action === "repairAgent") { try { await api.uninstallService(); } catch {} await api.installService(); if (!(await api.status())?.running) await api.start(); }
     else if (action === "checkUpdates") await getDesktopApiState().api.updates.check({ silent: false });
     else if (action === "updateAgent") await getDesktopApiState().api.updates.download();
     else if (action === "rotateToken") { await getDesktopApiState().api.security.rotateAgentToken(); await api.restart(); }
-    else if (action === "copyUrl") { await navigator.clipboard.writeText((agentControlState?.local || agentControlState)?.agentUrl || ""); showToast("Agent URL copied.", "success"); }
-    else if (action === "copyId") { await navigator.clipboard.writeText((agentControlState?.local || agentControlState)?.identity?.deviceId || ""); showToast("Agent ID copied.", "success"); }
+    else if (action === "copyUrl") { await navigator.clipboard.writeText(getAgentControlOverviewTarget()?.agentUrl || ""); showToast("Agent URL copied.", "success"); }
+    else if (action === "copyId") { await navigator.clipboard.writeText(getAgentControlOverviewTarget()?.identity?.deviceId || ""); showToast("Agent ID copied.", "success"); }
     else if (action === "completeSetup") {
       const config = await api.saveConfig(readAgentControlConfig());
       if (agentSetupMode?.value === "local") {
@@ -16312,6 +16391,7 @@ async function saveAgentConfiguration() {
     renderAgentSettings(response);
     showToast("Agent settings saved.");
     await testAgentConnection({ silent: true });
+    await refreshAgentControl({ includeConfig: false });
   } catch {
     showToast("Agent settings could not be saved.");
   } finally {
@@ -16382,6 +16462,9 @@ async function testAgentConnection(options = {}) {
     if (!options.silent) {
       showToast(result?.connected ? "Agent connected." : result?.repairAvailable ? "Agent token mismatch. Use Repair Connection." : "Agent unavailable.");
     }
+    if (getActivePageName() === "agent-control") {
+      await refreshAgentControl({ includeConfig: false });
+    }
   } catch {
     setAgentConnectionDisplay("disconnected", "Agent unavailable.");
 
@@ -16415,6 +16498,7 @@ async function pairAgentFromSettings() {
     const fingerprint = response?.pairing?.fingerprint || response?.tokenStatus?.fingerprint || null;
     showToast(`Agent paired${fingerprint ? ` (${fingerprint})` : ""}.`);
     await testAgentConnection({ silent: true });
+    await refreshAgentControl({ includeConfig: false });
   } catch (error) {
     const message = normalizeIpcErrorMessage(error, "Agent pairing failed.");
     setAgentConnectionDisplay("error", message, { repairAvailable: true });
@@ -16426,7 +16510,7 @@ async function pairAgentFromSettings() {
 }
 
 function focusAgentPairingRepair() {
-  showPage("settings");
+  showPage("agent-control");
   agentPairingCodeInput?.focus();
   setAgentConnectionDisplay("error", "Run npm run agent:pair on the Debian agent machine, paste the code here, then click Pair Agent.", { repairAvailable: true });
 }

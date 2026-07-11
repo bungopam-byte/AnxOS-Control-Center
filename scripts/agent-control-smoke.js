@@ -11,6 +11,14 @@ async function main() {
   process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
   process.env.ANXOS_LOG_DIR = path.join(root, "logs");
   const port = await freePort();
+  const serviceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentControlService.js"), "utf8");
+  const rendererSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  const htmlSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+  assert(serviceSource.includes("getConfiguredAgentStatus"), "Agent Control must expose configured Agent status separately from local status.");
+  assert(serviceSource.includes('targetLabel: "configured-agent"'), "Configured Agent checks must be labeled separately.");
+  assert(rendererSource.includes("getAgentControlOverviewTarget"), "Renderer must select the configured Agent state for the overview when applicable.");
+  assert(rendererSource.includes("agentControlRefreshInFlight"), "Renderer must avoid overlapping Agent Control refreshes.");
+  assert(htmlSource.includes("Agent Connection") && htmlSource.includes('data-agent-setting="agentUrl"'), "Agent Connection must render in Agent Control.");
   const control = require("../src/services/agentControlService");
   try {
     const saved = control.saveConfig({ name: "Control Smoke Agent", host: "127.0.0.1", port, allowedFolders: [root], restartPolicy: "never" });

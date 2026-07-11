@@ -139,7 +139,7 @@ npm run agent:pair
 
 Run that on the Debian agent machine. It prints the Agent URL, a short token fingerprint, and an `ANXOS-PAIR...` code. Treat the pairing code like a temporary secret because it contains the remote agent token for import.
 
-On the Windows desktop app, open `Settings -> Agent`, paste the code into `Pairing code`, click `Pair Agent`, then click `Test Connection`. The desktop stores the imported token in its own local app config and shows only fingerprints in normal UI. If a protected Agent route returns `401`, use `Repair Connection` and import a fresh code from the Debian machine.
+On the Windows desktop app, open `Agent Control -> Agent Connection`, paste the code into `Pairing code`, click `Pair Agent`, then click `Test Connection`. The desktop stores the imported token in its own local app config and shows only fingerprints in normal UI. If a protected Agent route returns `401`, use `Repair Connection` and import a fresh code from the Debian machine.
 
 ### One-Click Development Launcher
 

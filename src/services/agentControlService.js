@@ -120,6 +120,90 @@ function getRemoteHealthConfig(node, selectedNodeId) {
   };
 }
 
+function getUrlHostname(url) {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function getConfiguredAgentHealthConfig(effective) {
+  return {
+    backendMode: "agent",
+    agentUrl: effective.agentUrl,
+    agentToken: effective.agentToken,
+    targetLabel: "configured-agent",
+    logThrottleMs: 15000,
+  };
+}
+
+async function getConfiguredAgentStatus() {
+  const effective = agentClient.getEffectiveAgentSettings();
+  const configured = {
+    local: false,
+    configured: true,
+    backendMode: effective.backendMode,
+    targetType: "configured-agent",
+    healthTargetLabel: "configured-agent",
+    state: effective.backendMode === "agent" ? "Offline" : "Local mode",
+    running: false,
+    agentUrl: effective.backendMode === "agent" ? effective.agentUrl : null,
+    lifecycleSupported: false,
+    service: { supported: false, type: "remote-agent", installed: false, enabled: false, active: false, state: "remote" },
+    hostname: getUrlHostname(effective.agentUrl),
+    identity: null,
+    agentVersion: null,
+    appVersion: null,
+    apiVersion: null,
+    protocolVersion: null,
+    uptime: null,
+    memoryBytes: null,
+    cpuSeconds: null,
+    connectedClients: 0,
+    lastHeartbeat: null,
+    latencyMs: null,
+    mostRecentError: null,
+  };
+
+  if (effective.backendMode !== "agent" || !effective.agentUrl) {
+    return configured;
+  }
+
+  const started = Date.now();
+  try {
+    const health = await agentClient.getHealth(getConfiguredAgentHealthConfig(effective));
+    let appVersion = null;
+    try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; }
+    return {
+      ...configured,
+      state: "Running",
+      running: true,
+      identity: health?.identity || null,
+      name: health?.identity?.hostname || getUrlHostname(effective.agentUrl) || "Configured Agent",
+      hostname: health?.identity?.hostname || getUrlHostname(effective.agentUrl),
+      operatingSystem: health?.identity?.operatingSystem || null,
+      architecture: health?.identity?.architecture || null,
+      agentVersion: health?.identity?.agentVersion || health?.agentVersion || null,
+      appVersion,
+      apiVersion: health?.apiVersion || "v1",
+      protocolVersion: health?.protocolVersion || 1,
+      uptime: health?.process?.uptimeSeconds ?? null,
+      memoryBytes: health?.process?.memoryBytes ?? null,
+      cpuSeconds: health?.process?.cpuSeconds ?? null,
+      connectedClients: health?.process?.connectedClients || 0,
+      lastHeartbeat: new Date().toISOString(),
+      latencyMs: Date.now() - started,
+    };
+  } catch (error) {
+    return {
+      ...configured,
+      state: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication failed" : "Unreachable",
+      mostRecentError: { code: error.code || null, message: error.message || "Configured Agent is unreachable." },
+    };
+  }
+}
+
 async function getStatus() {
   const config = readConfig();
   const service = await getServiceState();
@@ -172,6 +256,7 @@ async function getStatus() {
 
 async function listAgents() {
   const local = await getStatus();
+  const configured = await getConfiguredAgentStatus();
   const selectedNodeId = getSelectedNodeId();
   const effective = agentClient.getEffectiveAgentSettings();
   const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => {
@@ -211,13 +296,17 @@ async function listAgents() {
     localAgentServiceStatus: local.service?.state,
     configuredAgentUrl: effective.backendMode === "agent" ? effective.agentUrl : null,
     selectedAgentId: selectedNodeId,
-    connectedAgents: remote.map((agent) => ({ nodeId: agent.nodeId, deviceId: agent.identity?.deviceId, state: agent.state, version: agent.agentVersion })),
+    connectedAgents: [
+      ...(configured.running ? [{ nodeId: null, deviceId: configured.identity?.deviceId, state: configured.state, version: configured.agentVersion, target: "configured-agent" }] : []),
+      ...remote.map((agent) => ({ nodeId: agent.nodeId, deviceId: agent.identity?.deviceId, state: agent.state, version: agent.agentVersion })),
+    ],
     recentConnectionResult: [
       { target: "local-agent", url: local.agentUrl, state: local.state, latencyMs: local.latencyMs || null },
+      { target: "configured-agent", url: configured.agentUrl, state: configured.state, latencyMs: configured.latencyMs || null },
       ...remote.map((agent) => ({ target: agent.healthTargetLabel, nodeId: agent.nodeId, url: agent.agentUrl, state: agent.state, latencyMs: agent.latencyMs || null })),
     ],
   });
-  return { local, remote };
+  return { local, configured, remote };
 }
 
 async function captureRemoteDiagnostics(nodeId) {

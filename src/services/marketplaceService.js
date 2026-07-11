@@ -26,6 +26,9 @@ const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/ne
 const BUNGEECORD_JAR_URL = "https://hub.spigotmc.org/jenkins/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar";
 const COMMUNITY_TEMPLATE_FORMAT_VERSION = 1;
 const INSTANCE_VERSION_CACHE_VERSION = 2;
+const HTTP_USER_AGENT = "AnxOS-Control-Center/Marketplace";
+const DOWNLOAD_TIMEOUT_MS = 120000;
+const DOWNLOAD_RETRY_DELAYS_MS = [0, 750, 2000];
 const INSTALLER_RESULT_STAGES = new Set([
   "validating",
   "dependency-check",
@@ -129,6 +132,12 @@ function formatErrorDetails(details = {}) {
   if (details.step) parts.push(`step=${details.step}`);
   if (details.url) parts.push(`url=${details.url}`);
   if (details.status !== undefined && details.status !== null) parts.push(`status=${details.status}`);
+  if (details.responseUrl) parts.push(`responseUrl=${details.responseUrl}`);
+  if (details.causeCode) parts.push(`causeCode=${details.causeCode}`);
+  if (details.networkCode) parts.push(`networkCode=${details.networkCode}`);
+  if (details.exitCode !== undefined && details.exitCode !== null) parts.push(`exitCode=${details.exitCode}`);
+  if (details.failureReason) parts.push(`failureReason=${details.failureReason}`);
+  if (details.command) parts.push(`command=${details.command}`);
   if (details.body) parts.push(`body=${truncateText(details.body, 500)}`);
   if (details.message) parts.push(`message=${details.message}`);
   return parts.length ? ` (${parts.join(" | ")})` : "";
@@ -136,6 +145,75 @@ function formatErrorDetails(details = {}) {
 
 function createMarketplaceStepError(message, code, details = {}) {
   return createMarketplaceError(`${message}${formatErrorDetails(details)}`, code, details);
+}
+
+function getNetworkCauseDetails(error = {}) {
+  const cause = error?.cause && typeof error.cause === "object" ? error.cause : {};
+  return {
+    causeName: cause.name || error.name || null,
+    causeCode: cause.code || error.code || null,
+    causeMessage: cause.message || error.message || null,
+    syscall: cause.syscall || error.syscall || null,
+    hostname: cause.hostname || error.hostname || null,
+    address: cause.address || error.address || null,
+    port: cause.port || error.port || null,
+  };
+}
+
+function classifyNetworkError(error = {}) {
+  const code = error?.cause?.code || error?.code || "";
+  if (/ENOTFOUND|EAI_AGAIN/i.test(code)) return "NETWORK_DNS_FAILED";
+  if (/CERT|TLS|SSL/i.test(code)) return "NETWORK_TLS_FAILED";
+  if (/ETIMEDOUT|Timeout/i.test(code) || error?.name === "AbortError") return "NETWORK_TIMEOUT";
+  if (/ECONNRESET|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH/i.test(code)) return "NETWORK_CONNECTION_FAILED";
+  return "DOWNLOAD_FAILED";
+}
+
+function createFetchHeaders(extraHeaders = {}) {
+  return {
+    "User-Agent": HTTP_USER_AGENT,
+    Accept: "*/*",
+    ...extraHeaders,
+  };
+}
+
+async function fetchWithDetails(url, options = {}) {
+  const timeoutMs = options.timeoutMs || DOWNLOAD_TIMEOUT_MS;
+  const attempts = Number.isInteger(options.attempts) ? Math.max(options.attempts, 1) : DOWNLOAD_RETRY_DELAYS_MS.length;
+  const { timeoutMs: _timeoutMs, attempts: _attempts, ...fetchOptions } = options;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const delay = DOWNLOAD_RETRY_DELAYS_MS[attempt] || 0;
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const signal = options.signal && typeof AbortSignal?.any === "function"
+        ? AbortSignal.any([options.signal, controller.signal])
+        : options.signal || controller.signal;
+      const response = await fetch(url, {
+        ...fetchOptions,
+        redirect: options.redirect || "follow",
+        headers: createFetchHeaders(options.headers || {}),
+        signal,
+      });
+      clearTimeout(timeout);
+      response.attempt = attempt + 1;
+      return response;
+    } catch (error) {
+      clearTimeout(timeout);
+      lastError = error;
+      if (options.signal?.aborted || error?.name === "AbortError" && attempt === attempts - 1) {
+        break;
+      }
+    }
+  }
+
+  throw lastError;
 }
 
 function getAgentErrorCode(error) {
@@ -175,6 +253,10 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
     PATH_NOT_FOUND: "A required install file or folder was not found.",
     DOWNLOAD_FAILED: "The template download failed.",
+    NETWORK_DNS_FAILED: "The download host could not be resolved.",
+    NETWORK_TLS_FAILED: "The download failed TLS/certificate validation.",
+    NETWORK_TIMEOUT: "The download timed out.",
+    NETWORK_CONNECTION_FAILED: "The download connection failed.",
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
     DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
@@ -448,10 +530,12 @@ function pushStep(progress, label, status = "complete", detail = "") {
   return step;
 }
 
-function createDownloadRecord(template, fileName) {
+function createDownloadRecord(template, fileName, options = {}) {
   const id = `${template.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const installSessionId = options.installSessionId || id;
   const record = {
     id,
+    installSessionId,
     templateId: template.id,
     name: fileName || template.displayName || template.id,
     installerType: getTemplateInstallerType(template) || null,
@@ -467,7 +551,7 @@ function createDownloadRecord(template, fileName) {
     updatedAt: new Date().toISOString(),
     canRetry: false,
     canCancel: false,
-    parentTaskId: null,
+    parentTaskId: options.parentTaskId || null,
     childTaskIds: [],
     errorCode: null,
     retryContext: null,
@@ -493,6 +577,11 @@ function appendDownloadLog(record, entry = {}) {
     step: entry.step || null,
     url: entry.url || null,
     status: entry.status || null,
+    responseUrl: entry.responseUrl || null,
+    causeCode: entry.causeCode || null,
+    networkCode: entry.networkCode || null,
+    exitCode: entry.exitCode ?? null,
+    failureReason: entry.failureReason || null,
     body: entry.body ? truncateText(entry.body) : null,
   });
   record.logs = logs.slice(-50);
@@ -541,6 +630,7 @@ function createInstallTaskRecord(template, options = {}) {
         memory: options.memory || null,
         start: options.start !== false,
       },
+      installSessionId: record.installSessionId,
     },
   });
   appendDownloadLog(record, {
@@ -579,6 +669,17 @@ function getDownloads() {
   };
 }
 
+function getInstallSessionRecords(record) {
+  if (!record) return [];
+  const sessionId = record.installSessionId || record.retryContext?.installSessionId || record.id;
+  const relatedIds = new Set([record.id, ...(Array.isArray(record.childTaskIds) ? record.childTaskIds : [])]);
+  return [...downloads.values()].filter((entry) =>
+    entry.installSessionId === sessionId ||
+    entry.parentTaskId === record.id ||
+    relatedIds.has(entry.id)
+  );
+}
+
 function cancelDownload(downloadId) {
   const record = downloads.get(downloadId);
   if (!record) {
@@ -598,10 +699,31 @@ function cancelDownload(downloadId) {
   return { download: sanitizeDownload(record) };
 }
 
-function retryDownload(downloadId) {
+async function retryDownload(downloadId) {
   const record = downloads.get(downloadId);
   if (!record) {
     throw createMarketplaceError("Download was not found.", "DOWNLOAD_NOT_FOUND");
+  }
+
+  const retryContext = record.retryContext && typeof record.retryContext === "object"
+    ? JSON.parse(JSON.stringify(record.retryContext))
+    : null;
+  if (retryContext?.templateId) {
+    for (const related of getInstallSessionRecords(record)) {
+      if (related.status === "running" || related.status === "resolving") {
+        throw createMarketplaceError("This install is still running and cannot be retried yet.", "INSTALL_STILL_RUNNING", {
+          templateId: related.templateId,
+          installSessionId: related.installSessionId || null,
+        });
+      }
+    }
+    for (const related of getInstallSessionRecords(record)) {
+      downloads.delete(related.id);
+    }
+    return installTemplate({
+      templateId: retryContext.templateId,
+      options: retryContext.options || {},
+    });
   }
 
   updateDownload(record, {
@@ -658,15 +780,18 @@ function resolveUrlTemplate(download, options = {}) {
 
 async function fetchTextWithDetails(url, label, context = {}) {
   try {
-    const response = await fetch(url);
+    const response = await fetchWithDetails(url, { timeoutMs: context.timeoutMs || DOWNLOAD_TIMEOUT_MS });
     const body = await response.text();
     if (!response.ok) {
       throw createMarketplaceStepError(`${label} failed with HTTP ${response.status}.`, context.code || "DOWNLOAD_RESOLVE_FAILED", {
         ...context,
         url,
+        responseUrl: response.url || url,
         status: response.status,
+        statusText: response.statusText || null,
         body,
         message: `${label} failed with HTTP ${response.status}.`,
+        attempt: response.attempt || null,
       });
     }
     return { body, response };
@@ -674,9 +799,11 @@ async function fetchTextWithDetails(url, label, context = {}) {
     if (error?.code) {
       throw error;
     }
-    throw createMarketplaceStepError(`${label} failed: ${error?.message || "Network request failed."}`, context.code || "DOWNLOAD_RESOLVE_FAILED", {
+    const networkDetails = getNetworkCauseDetails(error);
+    throw createMarketplaceStepError(`${label} failed: ${error?.message || "Network request failed."}`, context.code || classifyNetworkError(error), {
       ...context,
       url,
+      ...networkDetails,
       message: error?.message || "Network request failed.",
     });
   }
@@ -1994,6 +2121,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
   try {
     if (installerType === "steamcmd-native") {
       const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer);
+      const steamcmdCommand = ["steamcmd", ...steamcmdArgs].join(" ");
       pushStep(progress, "Extract files", "running", `Running SteamCMD app ${template.installer.appId}.`);
       await agentClient.updateInstance(instanceId, {
         executable: "steamcmd",
@@ -2008,6 +2136,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
         step: "Extract files",
         installerType: "steamcmd-native",
         handlerName: "runTemplateInstaller",
+        command: steamcmdCommand,
       });
       const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
       for (const requiredFile of requiredFiles) {
@@ -2043,6 +2172,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
       step: "Extract files",
       installerType,
       handlerName: "runTemplateInstaller",
+      command: `bash ${scriptPath}`,
     });
 
     const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
@@ -2199,14 +2329,23 @@ async function persistMarketplaceMetadata(instanceId, metadata, agentConfig = nu
   return cleanMetadata;
 }
 
-async function downloadOneToInstance(template, download, options, instanceId, progress, agentConfig = null) {
+async function downloadOneToInstance(template, download, options, instanceId, progress, agentConfig = null, parentRecord = null) {
   const destination = normalizeInstanceFilePath(download.destination || download.fileName || "server.jar");
   const fileName = fileNameFromDestination(destination);
   const downloadRequired = download.required === true;
-  const record = createDownloadRecord(template, fileName);
+  const record = createDownloadRecord(template, fileName, {
+    parentTaskId: parentRecord?.id || null,
+    installSessionId: parentRecord?.installSessionId || null,
+  });
+  if (parentRecord && !parentRecord.childTaskIds.includes(record.id)) {
+    parentRecord.childTaskIds.push(record.id);
+    downloads.set(parentRecord.id, parentRecord);
+  }
   const baseContext = {
     templateId: template.id,
     step: "Resolve download",
+    installSessionId: record.installSessionId,
+    parentTaskId: record.parentTaskId,
   };
 
   if (options.skipDownload || !download.type || download.type === "manual" || download.type === "docker" || download.type === "docker-compose") {
@@ -2274,6 +2413,9 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
       message: error?.message || "Download resolver failed.",
       url: error?.details?.url,
       status: error?.details?.status,
+      responseUrl: error?.details?.responseUrl,
+      causeCode: error?.details?.causeCode,
+      networkCode: error?.details?.networkCode,
       body: error?.details?.body,
     });
     updateDownload(record, { status: "failed", error: error?.message || "Download resolver failed.", canRetry: true });
@@ -2308,16 +2450,19 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   appendDownloadLog(record, { step: "Download files", message: `Downloading ${url}.`, url });
 
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetchWithDetails(url, { signal: controller.signal, timeoutMs: DOWNLOAD_TIMEOUT_MS });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       throw createMarketplaceStepError(`Download failed with HTTP ${response.status}.`, "DOWNLOAD_FAILED", {
         ...baseContext,
         step: "Download files",
         url,
+        responseUrl: response.url || url,
         status: response.status,
+        statusText: response.statusText || null,
         body,
         message: `Download failed with HTTP ${response.status}.`,
+        attempt: response.attempt || null,
       });
     }
 
@@ -2372,6 +2517,8 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
       ...baseContext,
       step: "Download files",
       url,
+      ...getNetworkCauseDetails(error),
+      networkCode: classifyNetworkError(error),
       message: error?.message || "Download failed.",
     });
     updateDownload(record, {
@@ -2386,6 +2533,9 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
       message: cancelled ? "Download cancelled." : effectiveError.message || "Download failed.",
       url: effectiveError?.details?.url || url,
       status: effectiveError?.details?.status,
+      responseUrl: effectiveError?.details?.responseUrl,
+      causeCode: effectiveError?.details?.causeCode,
+      networkCode: effectiveError?.details?.networkCode,
       body: effectiveError?.details?.body,
     });
 
@@ -2400,7 +2550,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   }
 }
 
-async function downloadToInstance(template, options, instanceId, progress, agentConfig = null) {
+async function downloadToInstance(template, options, instanceId, progress, agentConfig = null, parentRecord = null) {
   const templateDownloads = normalizeTemplateDownloads(template);
   if (!templateDownloads.length) {
     pushStep(progress, "Download files", "skipped", "No direct download is required for this template.");
@@ -2411,7 +2561,7 @@ async function downloadToInstance(template, options, instanceId, progress, agent
   const metadata = {};
   let downloaded = false;
   for (const download of templateDownloads) {
-    const result = await downloadOneToInstance(template, download, options, instanceId, progress, agentConfig);
+    const result = await downloadOneToInstance(template, download, options, instanceId, progress, agentConfig, parentRecord);
     downloaded = downloaded || Boolean(result.downloaded);
     if (result.metadata) {
       Object.entries(result.metadata).forEach(([key, value]) => {
@@ -2534,7 +2684,7 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Download files", "complete", "Starter project generated.");
     }
 
-    const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig);
+    const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig, parentRecord);
     updateDownload(parentRecord, {
       stage: "Extract files",
       progress: Math.max(Number(parentRecord.progress) || 0, downloadResult.downloaded ? 55 : 40),
@@ -2674,7 +2824,7 @@ async function installTemplate(payload = {}) {
       installerType: manifestValidation.installerType,
       runtimeType: template.startupType || template.runtime || template.instanceType || null,
       stage: error?.details?.stage || "Failed",
-      childTaskState: sanitizeDownloads({ downloads: getDownloads().downloads.filter((record) => record.templateId === template.id) }).downloads,
+      childTaskState: sanitizeDownloads({ downloads: getInstallSessionRecords(parentRecord) }).downloads,
       timestamp: new Date().toISOString(),
       retryable: error?.details?.retryable ?? true,
     });

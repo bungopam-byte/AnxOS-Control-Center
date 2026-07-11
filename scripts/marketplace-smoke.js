@@ -316,6 +316,11 @@ function assertMarketplaceIpcErrorSerialization() {
     assert.strictEqual(uiError.code, "INVALID_NUMBER", "IPC should preserve stable validation code.");
     assert.strictEqual(uiError.details.validation.field, "startupTimeoutMs", "IPC should preserve validation field.");
     assert(!/validation is not defined/i.test(uiError.message), "IPC should not throw or surface ReferenceError.");
+    const ipcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "marketplaceIpc.js"), "utf8");
+    assert(
+      /function getMarketplaceUiError[\s\S]*const validation =[\s\S]*if \(code\)/.test(ipcSource),
+      "Static regression check: getMarketplaceUiError must initialize validation before coded-error handling."
+    );
   } finally {
     Module._load = originalLoad;
     delete require.cache[modulePath];
@@ -1428,6 +1433,8 @@ async function assertSharedTemplateInstallFlowMatrix() {
     return {
       ok: true,
       status: 200,
+      statusText: "OK",
+      url: "https://mock.local/final.bin",
       headers: { get: (name) => String(name).toLowerCase() === "content-length" ? String(buffer.length) : null },
       text: async () => body,
       arrayBuffer: async () => buffer,
@@ -1446,13 +1453,24 @@ async function assertSharedTemplateInstallFlowMatrix() {
       if (href.includes("api.github.com/repos/Pryaxis/TShock/releases/latest")) {
         return jsonResponse({ tag_name: "v5.2.4", assets: [{ name: "TShock-linux-x64.zip", browser_download_url: "https://mock.local/tshock.zip", size: 12 }] });
       }
+      if (href === "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/") {
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          url: href,
+          headers: { get: () => "text/html" },
+          text: async () => '<a href="12345-fx/fx.tar.xz">fx.tar.xz</a>',
+          arrayBuffer: async () => Buffer.from(""),
+        };
+      }
       if (href === "https://fill.papermc.io/v3/projects/velocity/versions") {
         return jsonResponse({ versions: [{ version: { id: "3.4.0" } }] });
       }
       if (href === "https://fill.papermc.io/v3/projects/velocity/versions/3.4.0/builds") {
         return jsonResponse([{ id: 500, channel: "STABLE", downloads: { "server:default": { name: "velocity.jar", url: "https://mock.local/velocity.jar" } } }]);
       }
-      if (href === "https://mock.local/tshock.zip" || href === "https://mock.local/velocity.jar" || href === "https://mock.local/mojang/server.jar") {
+      if (href === "https://mock.local/tshock.zip" || href === "https://mock.local/velocity.jar" || href === "https://mock.local/mojang/server.jar" || href.includes("runtime.fivem.net/artifacts/fivem/build_proot_linux/master/12345-fx/fx.tar.xz")) {
         return binaryResponse(`asset:${href}`);
       }
       throw new Error(`Unexpected template smoke URL: ${href}`);
@@ -1495,6 +1513,7 @@ async function assertSharedTemplateInstallFlowMatrix() {
       }
       if (Array.isArray(instance.args) && instance.args.includes("runtime/marketplace-install.sh")) {
         files.set(`${instanceId}:server/TShock.Server`, "tshock");
+        files.set(`${instanceId}:server/run.sh`, "#!/usr/bin/env bash\n");
       }
       instances.set(instanceId, { ...instance, state: "Running", pid: 1234 });
       return { instance: instances.get(instanceId) };
@@ -1508,9 +1527,11 @@ async function assertSharedTemplateInstallFlowMatrix() {
     const cases = [
       ["SteamCMD-native game server", "palworld", { id: "palworld-flow-smoke", name: "Palworld Flow Smoke", port: 8211, memory: "8G", start: false }, "server/PalServer.sh"],
       ["native archive game server", "terraria-tshock", { id: "terraria-flow-smoke", name: "Terraria Flow Smoke", port: 7777, memory: "2G", start: false }, "server/TShock.Server"],
+      ["FiveM FXServer archive game server", "fivem", { id: "fivem-flow-smoke", name: "FiveM Flow Smoke", port: 30120, memory: "2G", start: false }, "server/run.sh"],
       ["Java Minecraft server", "minecraft-vanilla", { id: "minecraft-flow-smoke", name: "Minecraft Flow Smoke", version: "1.21.1", port: 25565, memory: "2G", acceptEula: true, start: false }, "server.jar"],
       ["direct-download server", "velocity", { id: "velocity-flow-smoke", name: "Velocity Flow Smoke", port: 25577, memory: "1G", start: false }, "velocity.jar"],
       ["local-import server", "discord-js", { id: "discord-flow-smoke", name: "Discord Flow Smoke", port: 3000, memory: "512M", start: false }, "index.js"],
+      ["Python bot template", "python-discord-bot", { id: "python-bot-flow-smoke", name: "Python Bot Flow Smoke", memory: "512M", start: false }, "bot.py"],
     ];
 
     for (const [label, templateId, options, expectedFile] of cases) {
@@ -1524,10 +1545,19 @@ async function assertSharedTemplateInstallFlowMatrix() {
     }
 
     const dockerResult = await marketplaceService.installTemplate({
-      templateId: "docker-nginx",
-      options: { id: "docker-nginx-flow-smoke", name: "Docker Nginx Flow Smoke", port: 8080, memory: "256M", start: false },
+      templateId: "docker-minecraft-bedrock",
+      options: { id: "bedrock-docker-flow-smoke", name: "Bedrock Docker Flow Smoke", port: 19132, memory: "2G", start: false },
     });
-    assert.strictEqual(dockerResult.container.name, "docker-nginx-flow-smoke", "Docker-backed server should use Docker handler.");
+    assert.strictEqual(dockerResult.container.name, "bedrock-docker-flow-smoke", "Docker-backed server should use Docker handler.");
+
+    const currentDownloads = marketplaceService.getDownloads().downloads;
+    const childRecords = currentDownloads.filter((download) => download.parentTaskId);
+    assert(childRecords.length > 0, "Shared installs should create parent-associated dependency/stage records.");
+    assert(childRecords.every((download) => download.installSessionId), "Child jobs must carry an install session id.");
+    assert(
+      childRecords.every((download) => currentDownloads.some((parent) => parent.id === download.parentTaskId && parent.installSessionId === download.installSessionId)),
+      "Child jobs must not leak across unrelated parent install sessions."
+    );
 
     const createdBeforeFailure = created.length;
     await assert.rejects(
@@ -1557,9 +1587,64 @@ async function assertSharedTemplateInstallFlowMatrix() {
     );
     agentClient.startInstance = originalStart;
 
+    const originalStatus = agentClient.getInstanceStatus;
+    agentClient.getInstanceStatus = async (instanceId) => {
+      const instance = instances.get(instanceId) || {};
+      if (instance.executable === "steamcmd") {
+        return { instance: { ...instance, state: "Failed", exitCode: 1, failureReason: "PROCESS_EXITED" } };
+      }
+      return originalStatus(instanceId);
+    };
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-steamcmd-exit-smoke", name: "Palworld SteamCMD Exit Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => {
+        assert.strictEqual(error?.code, "STEAMCMD_INSTALL_FAILED", "SteamCMD nonzero exit should preserve SteamCMD failure code.");
+        assert.strictEqual(error?.details?.exitCode, 1, "SteamCMD failure should preserve process exit code.");
+        return true;
+      },
+      "SteamCMD process failures should be surfaced with exit details."
+    );
+    agentClient.getInstanceStatus = originalStatus;
+
+    const originalFetchForFailure = global.fetch;
+    global.fetch = async (url) => {
+      const href = String(url);
+      if (href.includes("api.github.com/repos/Pryaxis/TShock/releases/latest")) {
+        return jsonResponse({ tag_name: "v5.2.4", assets: [{ name: "TShock-linux-x64.zip", browser_download_url: "https://mock.local/tshock-network-failure.zip", size: 12 }] });
+      }
+      if (href === "https://mock.local/tshock-network-failure.zip") {
+        throw Object.assign(new TypeError("fetch failed"), {
+          cause: Object.assign(new Error("getaddrinfo ENOTFOUND mock.local"), { code: "ENOTFOUND", hostname: "mock.local" }),
+        });
+      }
+      return originalFetchForFailure(url);
+    };
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "terraria-tshock",
+        options: { id: "terraria-network-failure-smoke", name: "Terraria Network Failure Smoke", port: 7777, memory: "1G", start: false },
+      }),
+      (error) => {
+        assert(error.message.includes("causeCode=ENOTFOUND") || error?.details?.causeCode === "ENOTFOUND", "Network failures should preserve the underlying DNS/TLS/socket cause.");
+        assert(!/^fetch failed$/i.test(error.message), "Network failures must not collapse to contextless fetch failed.");
+        return true;
+      },
+      "Archive network failures should preserve cause details."
+    );
+    global.fetch = originalFetchForFailure;
+
+    const retryResult = await marketplaceService.retryDownload(
+      marketplaceService.getDownloads().downloads.find((download) => download.templateId === "terraria-tshock" && download.status === "failed" && !download.parentTaskId)?.id
+    );
+    assert(retryResult.progress?.some((step) => step.label === "Complete"), "Retry should rerun the stored parent install request.");
+
     const downloads = marketplaceService.getDownloads().downloads;
     const failed = downloads.filter((download) => download.status === "failed");
     assert(failed.every((download) => Number(download.progress) < 100), "Failed parent/child tasks must not show fake 100% progress.");
+    assert(failed.every((download) => download.status !== "failed" || download.stage !== "Installing" || Number(download.progress) < 100), "Failed jobs must be terminal failures, not idle completed installs.");
     assert(started.includes("palworld-flow-smoke"), "SteamCMD-native install should begin SteamCMD stage.");
     assert(started.includes("terraria-flow-smoke"), "Archive install should begin extraction stage.");
   } finally {

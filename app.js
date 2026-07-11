@@ -8352,7 +8352,8 @@ function renderMarketplaceDownloads(downloads = []) {
     return;
   }
 
-  const visibleDownloads = [...marketplaceLocalDownloadEntries, ...downloads];
+  const visibleDownloads = [...marketplaceLocalDownloadEntries, ...downloads]
+    .filter((download) => !download.parentTaskId);
   downloadList.replaceChildren();
   if (!visibleDownloads.length) {
     const empty = document.createElement("div");
@@ -8388,11 +8389,13 @@ function renderMarketplaceDownloads(downloads = []) {
     bar.append(fill);
 
     const meta = document.createElement("small");
-    const eta = Number.isFinite(download.etaSeconds) ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
+    const eta = Number.isFinite(download.etaSeconds) && download.status !== "failed" ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
     const url = download.url ? ` · ${download.url}` : "";
     const stage = download.stage || "Preparing";
     const installer = download.installerType ? ` · ${download.installerType}` : "";
-    meta.textContent = download.body || `${stage}${installer} · ${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
+    const terminalState = ["failed", "cancelled", "complete"].includes(download.status) ? download.status : "";
+    const speedText = terminalState ? "" : ` · ${formatDownloadSpeed(download.speedBytesPerSecond)}`;
+    meta.textContent = download.body || `${stage}${installer} · ${download.progress || 0}%${speedText}${eta}${url}`;
 
     const metadata = document.createElement("small");
     metadata.textContent = download.metadataText || "";
@@ -8415,7 +8418,12 @@ function renderMarketplaceDownloads(downloads = []) {
         entry.step,
         entry.message,
         entry.url ? `url=${entry.url}` : "",
+        entry.responseUrl ? `responseUrl=${entry.responseUrl}` : "",
         entry.status ? `status=${entry.status}` : "",
+        entry.causeCode ? `causeCode=${entry.causeCode}` : "",
+        entry.networkCode ? `networkCode=${entry.networkCode}` : "",
+        entry.exitCode !== null && entry.exitCode !== undefined ? `exitCode=${entry.exitCode}` : "",
+        entry.failureReason ? `failureReason=${entry.failureReason}` : "",
         entry.body ? `body=${entry.body}` : "",
       ].filter(Boolean).join(" | ");
       logs.append(line);

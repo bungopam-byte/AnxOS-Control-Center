@@ -75,7 +75,7 @@ async function testDeviceStart(accountApiUrl) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(isSupabaseFunctionUrl(accountApiUrl) && anonKey ? { apikey: anonKey, authorization: `Bearer ${anonKey}` } : {}),
+      ...(isSupabaseFunctionUrl(accountApiUrl) && anonKey ? { apikey: anonKey } : {}),
     },
     body: JSON.stringify({
       app: "AnxOS-Control-Center",

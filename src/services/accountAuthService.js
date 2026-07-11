@@ -192,8 +192,6 @@ function getAccountApiHeaders(rawUrl, options = {}) {
   }
   if (options.accessToken) {
     headers.authorization = `Bearer ${options.accessToken}`;
-  } else if (anonKey) {
-    headers.authorization = `Bearer ${anonKey}`;
   }
   return headers;
 }

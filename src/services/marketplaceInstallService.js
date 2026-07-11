@@ -4,6 +4,10 @@ const fs = require("fs");
 const path = require("path");
 const unzipper = require("unzipper");
 const agentClient = require("./agentClient");
+const {
+  applyMinecraftServerProperties,
+  resolveMinecraftPort,
+} = require("./minecraftServerConfig");
 const { getExecutionTarget } = require("./nodeService");
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
@@ -209,8 +213,7 @@ function normalizeLoader(loader) {
 }
 
 function resolvePort(value) {
-  const port = Number.parseInt(value, 10);
-  return Number.isInteger(port) && port > 0 && port <= 65535 ? port : 25565;
+  return resolveMinecraftPort({ port: value }, [25565]);
 }
 
 function validateDownloadUrl(url) {
@@ -1104,7 +1107,7 @@ function buildInstancePayload(options, serverInfo) {
   const name = displayName(options.instanceName || options.name || options.displayName);
   const id = slugify(options.instanceId || name);
   const memory = normalizeMemory(options.memory || options.ram || options.memoryLimit, "4G");
-  const port = resolvePort(options.port || (Array.isArray(options.ports) ? options.ports[0] : 25565));
+  const port = resolveMinecraftPort(options, [25565]);
   return {
     id,
     displayName: name,
@@ -1689,13 +1692,10 @@ async function continueProviderPackInstall(context = {}) {
 
   emitProgress({ instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
   await writeText(instanceId, "eula.txt", `eula=${options.acceptEula === false ? "false" : "true"}\n`, agentConfig);
-  await agentClient.saveMinecraftProperties(instanceId, {
-    "server-port": String(instancePayload.primaryPort || 25565),
-    "max-players": String(options.maxPlayers || 20),
-    motd: options.motd || `${instancePayload.displayName} on AnxOS`,
-    "online-mode": options.onlineMode === false ? "false" : "true",
-    "level-seed": options.seed || "",
-  }, agentConfig);
+  await applyMinecraftServerProperties(agentClient, instanceId, {
+    ...options,
+    name: instancePayload.displayName,
+  }, instancePayload.primaryPort, agentConfig);
   const metadata = buildInstallMetadata(options, serverInfo, installRecords);
   await writeText(instanceId, "metadata.json", `${JSON.stringify(metadata, null, 2)}\n`, agentConfig);
   await writeText(instanceId, "config.json", `${JSON.stringify({ ...instancePayload, status: "stopped", port: instancePayload.primaryPort }, null, 2)}\n`, agentConfig);

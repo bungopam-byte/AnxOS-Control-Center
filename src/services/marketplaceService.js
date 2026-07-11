@@ -1,6 +1,17 @@
 const fs = require("fs");
 const path = require("path");
 const agentClient = require("./agentClient");
+const {
+  applyMinecraftServerProperties,
+  buildMinecraftProperties: buildMinecraftServerProperties,
+  normalizePortList,
+  resolveMinecraftPort,
+} = require("./minecraftServerConfig");
+const {
+  getTemplateInstallerType,
+  validateMarketplaceCatalog,
+  validateMarketplaceTemplate,
+} = require("./marketplaceInstallerRegistry");
 const { getExecutionTarget } = require("./nodeService");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
@@ -102,9 +113,27 @@ function readTemplatesFile() {
 
 function listTemplates() {
   const templates = readTemplatesFile();
+  const validation = validateMarketplaceCatalog(templates);
+  const invalidById = new Map(validation.errors.map((error) => [error.templateId, error]));
   return {
     categories: CATEGORIES,
-    templates,
+    templates: templates.map((template) => {
+      const invalid = invalidById.get(template.id);
+      return invalid
+        ? {
+          ...template,
+          disabled: true,
+          installable: false,
+          installerType: getTemplateInstallerType(template) || null,
+          invalidManifest: true,
+          unavailableReason: `Unavailable due to invalid Marketplace definition: ${invalid.message}`,
+        }
+        : {
+          ...template,
+          installerType: getTemplateInstallerType(template),
+        };
+    }),
+    validation,
   };
 }
 
@@ -134,16 +163,16 @@ function getTemplateInstallPlan(templateId) {
     };
   }
 
-  const hasAutomaticDownload = downloads.some((download) => ["url", "inline", "generated", "steamcmd"].includes(download.type));
-  const hasInstaller = Boolean(template.installer?.type);
-  const hasDocker = template.runtime === "docker" || template.startupType === "docker-image";
-  const installable = hasAutomaticDownload || hasInstaller || hasDocker;
+  const installerType = getTemplateInstallerType(template);
+  const hasAutomaticDownload = downloads.some((download) => ["url", "inline", "generated"].includes(download.type));
+  const installable = Boolean(installerType && installerType !== "no-install");
 
   return {
     templateId: template.id,
     installable,
     disabled: false,
-    workflow: hasDocker ? "docker" : hasInstaller ? template.installer.type : hasAutomaticDownload ? "download" : "manual",
+    workflow: installerType || (hasAutomaticDownload ? "direct-download" : "local-import"),
+    installerType,
     reason: installable ? null : "Template does not define an automatic installer or download source.",
     downloadCount: downloads.length,
     steps,
@@ -268,22 +297,11 @@ function normalizeTemplateTags(template, isMinecraft = template?.category === "M
 }
 
 function parsePorts(value, fallback = []) {
-  if (Array.isArray(value)) {
-    return value.map((port) => Number.parseInt(port, 10)).filter((port) => Number.isInteger(port) && port > 0 && port <= 65535);
+  try {
+    return normalizePortList(value, fallback);
+  } catch (error) {
+    throw createMarketplaceError(error.message, error.code || "PORT_INVALID", error.details || {});
   }
-
-  if (typeof value === "number") {
-    return Number.isInteger(value) && value > 0 && value <= 65535 ? [value] : [];
-  }
-
-  if (typeof value === "string" && value.trim()) {
-    return value
-      .split(",")
-      .map((port) => Number.parseInt(port.trim(), 10))
-      .filter((port) => Number.isInteger(port) && port > 0 && port <= 65535);
-  }
-
-  return Array.isArray(fallback) ? fallback : [];
 }
 
 async function listAgentInstanceIds(agentConfig = null) {
@@ -328,6 +346,8 @@ function createDownloadRecord(template, fileName) {
     id,
     templateId: template.id,
     name: fileName || template.displayName || template.id,
+    installerType: getTemplateInstallerType(template) || null,
+    stage: "Preparing",
     status: "queued",
     progress: 0,
     bytesReceived: 0,
@@ -369,7 +389,20 @@ function appendDownloadLog(record, entry = {}) {
 }
 
 function updateDownload(record, patch) {
-  Object.assign(record, patch, { updatedAt: new Date().toISOString() });
+  const stageFromStatus = {
+    queued: "Preparing",
+    resolving: "Resolving installer",
+    running: "Downloading",
+    complete: "Completed",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    skipped: "Installing",
+    waiting: "Waiting",
+  };
+  Object.assign(record, patch, {
+    stage: patch.stage || stageFromStatus[patch.status] || record.stage || "Preparing",
+    updatedAt: new Date().toISOString(),
+  });
   downloads.set(record.id, record);
   return record;
 }
@@ -1147,23 +1180,7 @@ async function writeInstanceBuffer(instanceId, filePath, buffer, agentConfig = n
 }
 
 function buildMinecraftProperties(options, ports) {
-  const port = ports[0] || 25565;
-  return {
-    "server-port": String(port),
-    motd: options.motd || `${normalizeName(options.name, "AnxOS Server")} on AnxOS`,
-    "max-players": String(options.maxPlayers || 20),
-    difficulty: options.difficulty || "normal",
-    gamemode: options.gamemode || "survival",
-    "view-distance": String(options.viewDistance || 10),
-    "simulation-distance": String(options.simulationDistance || 10),
-    "online-mode": options.onlineMode === false ? "false" : "true",
-    "allow-flight": options.allowFlight ? "true" : "false",
-    "spawn-protection": String(options.spawnProtection || 16),
-    pvp: options.pvp === false ? "false" : "true",
-    "white-list": options.whitelist ? "true" : "false",
-    "generate-structures": options.generateStructures === false ? "false" : "true",
-    "level-seed": options.seed || "",
-  };
+  return buildMinecraftServerProperties(options, ports[0] || 25565);
 }
 
 function firstPort(ports, fallback = 3000) {
@@ -1242,6 +1259,37 @@ function buildSteamCmdInstallerScript(installer) {
     `steamcmd ${commandParts.join(" ")}`,
     "",
   ].join("\n");
+}
+
+function buildSteamCmdInstallerArgs(installer = {}) {
+  if (!installer.appId) {
+    throw createMarketplaceError("SteamCMD template is missing an app ID.", "INVALID_TEMPLATE_CATALOG");
+  }
+  if (installer.login === "required") {
+    throw createMarketplaceError("This SteamCMD template requires authenticated Steam login, which is not implemented for unattended installs.", "INSTALLER_TYPE_UNSUPPORTED", {
+      installerType: "steamcmd-native",
+      appId: installer.appId,
+    });
+  }
+  const args = [
+    "+force_install_dir",
+    installer.installDir || "server",
+    "+login",
+    "anonymous",
+    "+app_update",
+    String(installer.appId),
+  ];
+  if (installer.validate !== false) {
+    args.push("validate");
+  }
+  for (const command of Array.isArray(installer.extraCommands) ? installer.extraCommands : []) {
+    const parts = String(command || "").trim().split(/\s+/).filter(Boolean);
+    if (parts.length > 0) {
+      args.push(`+${parts[0]}`, ...parts.slice(1));
+    }
+  }
+  args.push("+quit");
+  return args;
 }
 
 function buildArchiveInstallerScript(installer) {
@@ -1662,7 +1710,8 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
       return last;
     }
     if (state === "Failed") {
-      throw createMarketplaceStepError("Template installer failed.", "MARKETPLACE_INSTALL_FAILED", {
+      const code = context.installerType === "steamcmd-native" ? "STEAMCMD_INSTALL_FAILED" : "MARKETPLACE_INSTALL_FAILED";
+      throw createMarketplaceStepError("Template installer failed.", code, {
         ...context,
         message: "The installer process entered Failed state.",
         body: JSON.stringify(last),
@@ -1717,6 +1766,30 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
     return;
   }
 
+  if (getTemplateInstallerType(template) === "steamcmd-native") {
+    const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer);
+    pushStep(progress, "Extract files", "running", `Running SteamCMD app ${template.installer.appId}.`);
+    await agentClient.updateInstance(instanceId, {
+      executable: "steamcmd",
+      args: steamcmdArgs,
+      workingDirectory: "data",
+      restartPolicy: "never",
+      startupTimeoutMs: template.installer.timeoutMs || 600000,
+    }, agentConfig);
+    await agentClient.startInstance(instanceId, agentConfig);
+    await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
+      templateId: template.id,
+      step: "Extract files",
+      installerType: "steamcmd-native",
+    });
+    const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
+    for (const requiredFile of requiredFiles) {
+      await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
+    }
+    pushStep(progress, "Extract files", "complete", "SteamCMD installer finished.");
+    return;
+  }
+
   const script = buildTemplateInstallerScript(template);
   if (!script) {
     return;
@@ -1736,6 +1809,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
   await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
     templateId: template.id,
     step: "Extract files",
+    installerType: getTemplateInstallerType(template),
   });
 
   const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
@@ -1916,7 +1990,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
 
   if (download.type === "steamcmd") {
     appendDownloadLog(record, { step: "Download files", message: `SteamCMD will install app ${download.appId || template.installer?.appId || "unknown"} during Extract files.` });
-    updateDownload(record, { status: "queued", progress: 0, canRetry: false, canCancel: false });
+    updateDownload(record, { status: "skipped", stage: "Installing", progress: 0, canRetry: false, canCancel: false });
     pushStep(progress, "Download files", "skipped", "SteamCMD will download server files during installation.");
     return { downloaded: false, record };
   }
@@ -2111,12 +2185,15 @@ async function installTemplate(payload = {}) {
   if (template.comingSoon || template.disabled) {
     throw createMarketplaceError(template.comingSoonMessage || "This template is not ready yet.", "TEMPLATE_NOT_READY");
   }
-  pushStep(progress, "Validate template", "complete", `${template.id} is installable.`);
+  const manifestValidation = validateMarketplaceTemplate(template);
+  pushStep(progress, "Validate template", "complete", `${template.id} is installable as ${manifestValidation.installerType}.`);
 
   const options = payload.options || {};
   const executionTarget = getExecutionTarget(payload.nodeId);
   const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
-  const ports = parsePorts(options.ports || options.port, template.defaultPorts);
+  const ports = template.category === "Minecraft"
+    ? [resolveMinecraftPort(options, template.defaultPorts)]
+    : parsePorts(options.ports || options.port, template.defaultPorts);
 
   if (template.runtime === "docker" || template.startupType === "docker-image") {
     try {
@@ -2208,7 +2285,7 @@ async function installTemplate(payload = {}) {
     pushStep(progress, "Write config", "running");
     if (isMinecraft) {
       await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`, agentConfig);
-      await agentClient.saveMinecraftProperties(createdInstanceId, buildMinecraftProperties(options, ports), agentConfig);
+      await applyMinecraftServerProperties(agentClient, createdInstanceId, options, ports[0], agentConfig);
       await agentClient.readInstanceFile(createdInstanceId, "eula.txt", agentConfig);
       await agentClient.readInstanceFile(createdInstanceId, "server.properties", agentConfig);
     } else if (Array.isArray(template.configFiles) && template.configFiles.length > 0) {
@@ -2306,15 +2383,20 @@ async function installTemplate(payload = {}) {
 module.exports = {
   _test: {
     buildInstancePayload,
+    buildMinecraftProperties,
+    buildSteamCmdInstallerArgs,
     buildResolvedVersionMetadata,
     buildTemplateInstallerScript,
     categorizeMinecraftVersion,
     compareMinecraftVersions,
+    getTemplateInstallerType,
     getTemplateInstallPlan,
     normalizeTemplateDownloads,
     normalizeTemplateTags,
     parsePorts,
     uniqueVersionEntries,
+    validateMarketplaceCatalog,
+    validateMarketplaceTemplate,
   },
   cancelDownload,
   getDownloads: () => sanitizeDownloads(getDownloads()),

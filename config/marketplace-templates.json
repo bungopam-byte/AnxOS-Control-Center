@@ -11,8 +11,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "2G",
-    "defaultPorts": [25565],
-    "downloadSource": { "type": "url", "fileName": "server.jar", "required": true },
+    "defaultPorts": [
+      25565
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "server.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -23,8 +29,23 @@
         "overwrite": true
       }
     ],
-    "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
-    "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "generate-eula",
+      "generate-server-properties",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "version",
+      "memory",
+      "port",
+      "acceptEula",
+      "playitTunnel"
+    ],
+    "installerType": "java-runtime"
   },
   {
     "id": "minecraft-paper",
@@ -38,7 +59,9 @@
     "instanceType": "minecraft-paper",
     "startupType": "java-jar",
     "defaultRam": "4G",
-    "defaultPorts": [25565],
+    "defaultPorts": [
+      25565
+    ],
     "downloadSource": {
       "type": "url",
       "fileName": "paper.jar",
@@ -55,8 +78,23 @@
         "overwrite": true
       }
     ],
-    "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
-    "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "generate-eula",
+      "generate-server-properties",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "version",
+      "memory",
+      "port",
+      "acceptEula",
+      "playitTunnel"
+    ],
+    "installerType": "java-runtime"
   },
   {
     "id": "minecraft-purpur",
@@ -70,8 +108,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "4G",
-    "defaultPorts": [25565],
-    "downloadSource": { "type": "url", "fileName": "purpur.jar", "required": true },
+    "defaultPorts": [
+      25565
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "purpur.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -82,8 +126,23 @@
         "overwrite": true
       }
     ],
-    "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
-    "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "generate-eula",
+      "generate-server-properties",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "version",
+      "memory",
+      "port",
+      "acceptEula",
+      "playitTunnel"
+    ],
+    "installerType": "java-runtime"
   },
   {
     "id": "minecraft-fabric",
@@ -97,8 +156,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "4G",
-    "defaultPorts": [25565],
-    "downloadSource": { "type": "url", "fileName": "fabric-server.jar", "required": true },
+    "defaultPorts": [
+      25565
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "fabric-server.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -109,8 +174,23 @@
         "overwrite": true
       }
     ],
-    "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
-    "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "generate-eula",
+      "generate-server-properties",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "version",
+      "memory",
+      "port",
+      "acceptEula",
+      "playitTunnel"
+    ],
+    "installerType": "java-runtime"
   },
   {
     "id": "minecraft-forge",
@@ -124,8 +204,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "4G",
-    "defaultPorts": [25565],
-    "downloadSource": { "type": "url", "fileName": "forge-installer.jar", "required": true },
+    "defaultPorts": [
+      25565
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "forge-installer.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -139,18 +225,40 @@
     "postInstall": {
       "type": "java-installer",
       "jar": "forge-installer.jar",
-      "args": ["--installServer"],
-      "requiredFiles": ["run.sh"],
+      "args": [
+        "--installServer"
+      ],
+      "requiredFiles": [
+        "run.sh"
+      ],
       "timeoutMs": 300000
     },
     "startup": {
       "executable": "bash",
-      "args": ["run.sh", "nogui"],
+      "args": [
+        "run.sh",
+        "nogui"
+      ],
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
     },
-    "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
-    "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "generate-eula",
+      "generate-server-properties",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "version",
+      "memory",
+      "port",
+      "acceptEula",
+      "playitTunnel"
+    ],
+    "installerType": "java-runtime"
   },
   {
     "id": "minecraft-neoforge",
@@ -164,8 +272,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "4G",
-    "defaultPorts": [25565],
-    "downloadSource": { "type": "url", "fileName": "neoforge-installer.jar", "required": true },
+    "defaultPorts": [
+      25565
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "neoforge-installer.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -179,18 +293,40 @@
     "postInstall": {
       "type": "java-installer",
       "jar": "neoforge-installer.jar",
-      "args": ["--installServer"],
-      "requiredFiles": ["run.sh"],
+      "args": [
+        "--installServer"
+      ],
+      "requiredFiles": [
+        "run.sh"
+      ],
       "timeoutMs": 300000
     },
     "startup": {
       "executable": "bash",
-      "args": ["run.sh", "nogui"],
+      "args": [
+        "run.sh",
+        "nogui"
+      ],
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
     },
-    "installScript": ["create-instance", "create-folders", "download", "generate-eula", "generate-server-properties", "start"],
-    "configurationSchema": ["name", "version", "memory", "port", "acceptEula", "playitTunnel"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "generate-eula",
+      "generate-server-properties",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "version",
+      "memory",
+      "port",
+      "acceptEula",
+      "playitTunnel"
+    ],
+    "installerType": "java-runtime"
   },
   {
     "id": "velocity",
@@ -204,8 +340,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "1G",
-    "defaultPorts": [25577],
-    "downloadSource": { "type": "url", "fileName": "velocity.jar", "required": true },
+    "defaultPorts": [
+      25577
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "velocity.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -219,12 +361,27 @@
     ],
     "startup": {
       "executable": "java",
-      "args": ["-Xmx{memory}", "-jar", "{jar}"],
+      "args": [
+        "-Xmx{memory}",
+        "-jar",
+        "{jar}"
+      ],
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
     },
-    "installScript": ["create-instance", "create-folders", "download", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "direct-download"
   },
   {
     "id": "waterfall",
@@ -238,8 +395,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "1G",
-    "defaultPorts": [25577],
-    "downloadSource": { "type": "url", "fileName": "waterfall.jar", "required": true },
+    "defaultPorts": [
+      25577
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "waterfall.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -253,12 +416,27 @@
     ],
     "startup": {
       "executable": "java",
-      "args": ["-Xmx{memory}", "-jar", "{jar}"],
+      "args": [
+        "-Xmx{memory}",
+        "-jar",
+        "{jar}"
+      ],
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
     },
-    "installScript": ["create-instance", "create-folders", "download", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "direct-download"
   },
   {
     "id": "bungeecord",
@@ -272,8 +450,14 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "1G",
-    "defaultPorts": [25577],
-    "downloadSource": { "type": "url", "fileName": "BungeeCord.jar", "required": true },
+    "defaultPorts": [
+      25577
+    ],
+    "downloadSource": {
+      "type": "url",
+      "fileName": "BungeeCord.jar",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -286,12 +470,27 @@
     ],
     "startup": {
       "executable": "java",
-      "args": ["-Xmx{memory}", "-jar", "{jar}"],
+      "args": [
+        "-Xmx{memory}",
+        "-jar",
+        "{jar}"
+      ],
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
     },
-    "installScript": ["create-instance", "create-folders", "download", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "download",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "direct-download"
   },
   {
     "id": "terraria-tshock",
@@ -305,9 +504,22 @@
     "instanceType": "custom-command",
     "startupType": "native",
     "defaultRam": "1G",
-    "defaultPorts": [7777],
-    "tags": ["terraria", "tshock", "game-server"],
-    "downloadSource": { "type": "url", "resolver": "github-release", "repo": "Pryaxis/TShock", "assetPattern": "linux.*x64.*\\.zip$", "fileName": "tshock.zip", "required": true },
+    "defaultPorts": [
+      7777
+    ],
+    "tags": [
+      "terraria",
+      "tshock",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "url",
+      "resolver": "github-release",
+      "repo": "Pryaxis/TShock",
+      "assetPattern": "linux.*x64.*\\.zip$",
+      "fileName": "tshock.zip",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -324,12 +536,17 @@
       "type": "archive",
       "archive": "tshock.zip",
       "extractDir": "server",
-      "verifyFiles": ["server/TShock.Server"],
+      "verifyFiles": [
+        "server/TShock.Server"
+      ],
       "timeoutMs": 300000
     },
     "startup": {
       "executable": "bash",
-      "args": ["-lc", "chmod +x ./TShock.Server 2>/dev/null || true; exec ./TShock.Server -port {port} -world ./Worlds/world.wld -autocreate 2"],
+      "args": [
+        "-lc",
+        "chmod +x ./TShock.Server 2>/dev/null || true; exec ./TShock.Server -port {port} -world ./Worlds/world.wld -autocreate 2"
+      ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
@@ -339,8 +556,23 @@
       "notes": "Requires unzip on the host. TShock may ask for an initial setup token in the console on first start."
     },
     "configNotes": "The first TShock start prints a setup code in the console. Use it to claim server admin in-game.",
-    "installScript": ["create-instance", "verify-instance", "create-folders", "download", "install-archive", "write-config", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "verify-instance",
+      "create-folders",
+      "download",
+      "install-archive",
+      "write-config",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "archive-download"
   },
   {
     "id": "valheim",
@@ -354,21 +586,39 @@
     "instanceType": "custom-command",
     "startupType": "steamcmd-native",
     "defaultRam": "2G",
-    "defaultPorts": [2456, 2457, 2458],
-    "tags": ["valheim", "steamcmd", "game-server"],
-    "downloadSource": { "type": "steamcmd", "appId": 896660, "login": "anonymous", "required": true },
+    "defaultPorts": [
+      2456,
+      2457,
+      2458
+    ],
+    "tags": [
+      "valheim",
+      "steamcmd",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "steamcmd",
+      "appId": 896660,
+      "login": "anonymous",
+      "required": true
+    },
     "installer": {
       "type": "steamcmd",
       "appId": 896660,
       "installDir": "server",
       "login": "anonymous",
       "validate": true,
-      "verifyFiles": ["server/valheim_server.x86_64"],
+      "verifyFiles": [
+        "server/valheim_server.x86_64"
+      ],
       "timeoutMs": 600000
     },
     "startup": {
       "executable": "bash",
-      "args": ["-lc", "chmod +x ./valheim_server.x86_64 2>/dev/null || true; export SteamAppId=892970; exec ./valheim_server.x86_64 -nographics -batchmode -name \"{name}\" -port {port} -world Dedicated -password changeme123 -public 1 -savedir saves"],
+      "args": [
+        "-lc",
+        "chmod +x ./valheim_server.x86_64 2>/dev/null || true; export SteamAppId=892970; exec ./valheim_server.x86_64 -nographics -batchmode -name \"{name}\" -port {port} -world Dedicated -password changeme123 -public 1 -savedir saves"
+      ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
@@ -379,8 +629,22 @@
       "notes": "Requires steamcmd and compatible Linux dedicated-server dependencies on the host."
     },
     "configNotes": "Change the default Valheim password before exposing the server publicly.",
-    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "verify-instance",
+      "create-folders",
+      "steamcmd-install",
+      "write-config",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "steamcmd-native"
   },
   {
     "id": "rust",
@@ -394,21 +658,38 @@
     "instanceType": "custom-command",
     "startupType": "steamcmd-native",
     "defaultRam": "6G",
-    "defaultPorts": [28015, 28016],
-    "tags": ["rust", "steamcmd", "game-server"],
-    "downloadSource": { "type": "steamcmd", "appId": 258550, "login": "anonymous", "required": true },
+    "defaultPorts": [
+      28015,
+      28016
+    ],
+    "tags": [
+      "rust",
+      "steamcmd",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "steamcmd",
+      "appId": 258550,
+      "login": "anonymous",
+      "required": true
+    },
     "installer": {
       "type": "steamcmd",
       "appId": 258550,
       "installDir": "server",
       "login": "anonymous",
       "validate": true,
-      "verifyFiles": ["server/RustDedicated"],
+      "verifyFiles": [
+        "server/RustDedicated"
+      ],
       "timeoutMs": 900000
     },
     "startup": {
       "executable": "bash",
-      "args": ["-lc", "chmod +x ./RustDedicated 2>/dev/null || true; exec ./RustDedicated -batchmode +server.port {port} +server.queryport 28016 +server.identity anxhub +server.hostname \"{name}\" +server.maxplayers 50 +server.worldsize 3500 +server.seed 12345 +server.saveinterval 300"],
+      "args": [
+        "-lc",
+        "chmod +x ./RustDedicated 2>/dev/null || true; exec ./RustDedicated -batchmode +server.port {port} +server.queryport 28016 +server.identity anxhub +server.hostname \"{name}\" +server.maxplayers 50 +server.worldsize 3500 +server.seed 12345 +server.saveinterval 300"
+      ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
@@ -431,8 +712,22 @@
       "notes": "Requires steamcmd and Linux native runtime dependencies on the host."
     },
     "configNotes": "RCON, owner IDs, Oxide/uMod, and production server identity should be configured after installation.",
-    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "verify-instance",
+      "create-folders",
+      "steamcmd-install",
+      "write-config",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "steamcmd-native"
   },
   {
     "id": "cs2",
@@ -446,21 +741,38 @@
     "instanceType": "custom-command",
     "startupType": "steamcmd-native",
     "defaultRam": "4G",
-    "defaultPorts": [27015],
-    "tags": ["cs2", "counter-strike", "steamcmd", "game-server"],
-    "downloadSource": { "type": "steamcmd", "appId": 730, "login": "anonymous", "required": true },
+    "defaultPorts": [
+      27015
+    ],
+    "tags": [
+      "cs2",
+      "counter-strike",
+      "steamcmd",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "steamcmd",
+      "appId": 730,
+      "login": "anonymous",
+      "required": true
+    },
     "installer": {
       "type": "steamcmd",
       "appId": 730,
       "installDir": "server",
       "login": "anonymous",
       "validate": true,
-      "verifyFiles": ["server/game/bin/linuxsteamrt64/cs2"],
+      "verifyFiles": [
+        "server/game/bin/linuxsteamrt64/cs2"
+      ],
       "timeoutMs": 1200000
     },
     "startup": {
       "executable": "bash",
-      "args": ["-lc", "chmod +x ./game/bin/linuxsteamrt64/cs2 2>/dev/null || true; exec ./game/bin/linuxsteamrt64/cs2 -dedicated -usercon -port {port} +game_type 0 +game_mode 1 +map de_dust2 +servercfgfile server.cfg"],
+      "args": [
+        "-lc",
+        "chmod +x ./game/bin/linuxsteamrt64/cs2 2>/dev/null || true; exec ./game/bin/linuxsteamrt64/cs2 -dedicated -usercon -port {port} +game_type 0 +game_mode 1 +map de_dust2 +servercfgfile server.cfg"
+      ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
@@ -482,8 +794,22 @@
       "notes": "Requires steamcmd. Public Internet servers may require a Steam Game Server Login Token configured by the operator."
     },
     "configNotes": "Set a Steam Game Server Login Token before publishing a public CS2 server.",
-    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "verify-instance",
+      "create-folders",
+      "steamcmd-install",
+      "write-config",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "steamcmd-native"
   },
   {
     "id": "fivem",
@@ -497,9 +823,21 @@
     "instanceType": "custom-command",
     "startupType": "fxserver",
     "defaultRam": "2G",
-    "defaultPorts": [30120],
-    "tags": ["fivem", "fxserver", "gta", "game-server"],
-    "downloadSource": { "type": "url", "resolver": "fivem-linux", "fileName": "fx.tar.xz", "required": true },
+    "defaultPorts": [
+      30120
+    ],
+    "tags": [
+      "fivem",
+      "fxserver",
+      "gta",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "url",
+      "resolver": "fivem-linux",
+      "fileName": "fx.tar.xz",
+      "required": true
+    },
     "downloads": [
       {
         "type": "url",
@@ -514,12 +852,17 @@
       "type": "archive",
       "archive": "fx.tar.xz",
       "extractDir": "server",
-      "verifyFiles": ["server/run.sh"],
+      "verifyFiles": [
+        "server/run.sh"
+      ],
       "timeoutMs": 300000
     },
     "startup": {
       "executable": "bash",
-      "args": ["-lc", "chmod +x ./run.sh 2>/dev/null || true; exec ./run.sh +exec server.cfg"],
+      "args": [
+        "-lc",
+        "chmod +x ./run.sh 2>/dev/null || true; exec ./run.sh +exec server.cfg"
+      ],
       "workingDirectory": "data/server",
       "restartPolicy": "never"
     },
@@ -545,8 +888,23 @@
       "notes": "Requires tar with xz support. A Cfx.re license key must be added to server.cfg before start."
     },
     "configNotes": "Edit server.cfg and replace CHANGE_ME_FIVEM_LICENSE_KEY with a valid Cfx.re license key before starting.",
-    "installScript": ["create-instance", "verify-instance", "create-folders", "download", "install-archive", "write-config", "verify", "manual-start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "verify-instance",
+      "create-folders",
+      "download",
+      "install-archive",
+      "write-config",
+      "verify",
+      "manual-start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "archive-download"
   },
   {
     "id": "palworld",
@@ -560,21 +918,38 @@
     "instanceType": "custom-command",
     "startupType": "steamcmd-native",
     "defaultRam": "8G",
-    "defaultPorts": [8211, 27015],
-    "tags": ["palworld", "steamcmd", "game-server"],
-    "downloadSource": { "type": "steamcmd", "appId": 2394010, "login": "anonymous", "required": true },
+    "defaultPorts": [
+      8211,
+      27015
+    ],
+    "tags": [
+      "palworld",
+      "steamcmd",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "steamcmd",
+      "appId": 2394010,
+      "login": "anonymous",
+      "required": true
+    },
     "installer": {
       "type": "steamcmd",
       "appId": 2394010,
       "installDir": "server",
       "login": "anonymous",
       "validate": true,
-      "verifyFiles": ["server/PalServer.sh"],
+      "verifyFiles": [
+        "server/PalServer.sh"
+      ],
       "timeoutMs": 900000
     },
     "startup": {
       "executable": "bash",
-      "args": ["-lc", "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port={port} -players=32 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"],
+      "args": [
+        "-lc",
+        "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port={port} -players=32 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"
+      ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
@@ -585,8 +960,22 @@
       "notes": "Requires steamcmd and Linux native runtime dependencies on the host."
     },
     "configNotes": "Edit Pal/Saved/Config/LinuxServer/PalWorldSettings.ini after first start for production settings.",
-    "installScript": ["create-instance", "verify-instance", "create-folders", "steamcmd-install", "write-config", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "verify-instance",
+      "create-folders",
+      "steamcmd-install",
+      "write-config",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "steamcmd-native"
   },
   {
     "id": "hytale",
@@ -601,8 +990,15 @@
     "startupType": "manual",
     "defaultRam": "4G",
     "defaultPorts": [],
-    "tags": ["hytale", "coming-soon", "game-server"],
-    "downloadSource": { "type": "manual", "required": false },
+    "tags": [
+      "hytale",
+      "coming-soon",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "manual",
+      "required": false
+    },
     "disabled": true,
     "comingSoon": true,
     "comingSoonMessage": "Official Hytale dedicated server binaries are not publicly available yet. AnxOS will enable this template only after an official dedicated server install method is released.",
@@ -612,7 +1008,8 @@
     },
     "configNotes": "This card is informational only. It cannot create instances until Hytale publishes an official dedicated server distribution method.",
     "installScript": [],
-    "configurationSchema": []
+    "configurationSchema": [],
+    "installerType": "no-install"
   },
   {
     "id": "docker-minecraft-bedrock",
@@ -627,18 +1024,38 @@
     "instanceType": "docker-container",
     "startupType": "docker-image",
     "defaultRam": "2G",
-    "defaultPorts": [19132],
-    "tags": ["minecraft", "bedrock", "docker", "game-server"],
-    "downloadSource": { "type": "docker", "image": "itzg/minecraft-bedrock-server:latest", "required": true },
+    "defaultPorts": [
+      19132
+    ],
+    "tags": [
+      "minecraft",
+      "bedrock",
+      "docker",
+      "game-server"
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "itzg/minecraft-bedrock-server:latest",
+      "required": true
+    },
     "docker": {
       "image": "itzg/minecraft-bedrock-server:latest",
-      "ports": ["19132:19132/udp"],
+      "ports": [
+        "19132:19132/udp"
+      ],
       "restartPolicy": "unless-stopped"
     },
     "compatibility": {
-      "requires": ["docker"],
-      "platforms": ["linux"],
-      "architectures": ["amd64", "arm64"]
+      "requires": [
+        "docker"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "architectures": [
+        "amd64",
+        "arm64"
+      ]
     },
     "updateCheck": {
       "type": "docker-tag",
@@ -650,8 +1067,18 @@
       "source": "Docker Hub itzg/minecraft-bedrock-server",
       "notes": "Requires Docker on the target node."
     },
-    "installScript": ["create-container", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-container",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "docker-image"
   },
   {
     "id": "docker-nginx",
@@ -666,18 +1093,37 @@
     "instanceType": "docker-container",
     "startupType": "docker-image",
     "defaultRam": "512M",
-    "defaultPorts": [8080],
-    "tags": ["nginx", "docker", "app-server"],
-    "downloadSource": { "type": "docker", "image": "nginx:stable-alpine", "required": true },
+    "defaultPorts": [
+      8080
+    ],
+    "tags": [
+      "nginx",
+      "docker",
+      "app-server"
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "nginx:stable-alpine",
+      "required": true
+    },
     "docker": {
       "image": "nginx:stable-alpine",
-      "ports": ["8080:80"],
+      "ports": [
+        "8080:80"
+      ],
       "restartPolicy": "unless-stopped"
     },
     "compatibility": {
-      "requires": ["docker"],
-      "platforms": ["linux"],
-      "architectures": ["amd64", "arm64"]
+      "requires": [
+        "docker"
+      ],
+      "platforms": [
+        "linux"
+      ],
+      "architectures": [
+        "amd64",
+        "arm64"
+      ]
     },
     "updateCheck": {
       "type": "docker-tag",
@@ -689,8 +1135,18 @@
       "source": "Docker Hub nginx",
       "notes": "Requires Docker on the target node."
     },
-    "installScript": ["create-container", "verify", "start"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-container",
+      "verify",
+      "start"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "docker-image"
   },
   {
     "id": "jellyfin",
@@ -704,12 +1160,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "2G",
-    "defaultPorts": [8096],
-    "downloadSource": { "type": "docker", "image": "jellyfin/jellyfin:latest" },
+    "defaultPorts": [
+      8096
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "jellyfin/jellyfin:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "immich",
@@ -723,12 +1193,25 @@
     "instanceType": "custom-command",
     "startupType": "docker-compose",
     "defaultRam": "4G",
-    "defaultPorts": [2283],
-    "downloadSource": { "type": "docker-compose" },
+    "defaultPorts": [
+      2283
+    ],
+    "downloadSource": {
+      "type": "docker-compose"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "nextcloud",
@@ -742,12 +1225,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "2G",
-    "defaultPorts": [8080],
-    "downloadSource": { "type": "docker", "image": "nextcloud:latest" },
+    "defaultPorts": [
+      8080
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "nextcloud:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "gitea",
@@ -761,12 +1258,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "1G",
-    "defaultPorts": [3000],
-    "downloadSource": { "type": "docker", "image": "gitea/gitea:latest" },
+    "defaultPorts": [
+      3000
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "gitea/gitea:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "uptime-kuma",
@@ -780,12 +1291,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "512M",
-    "defaultPorts": [3001],
-    "downloadSource": { "type": "docker", "image": "louislam/uptime-kuma:latest" },
+    "defaultPorts": [
+      3001
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "louislam/uptime-kuma:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "grafana",
@@ -799,12 +1324,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "1G",
-    "defaultPorts": [3000],
-    "downloadSource": { "type": "docker", "image": "grafana/grafana:latest" },
+    "defaultPorts": [
+      3000
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "grafana/grafana:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "prometheus",
@@ -818,12 +1357,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "1G",
-    "defaultPorts": [9090],
-    "downloadSource": { "type": "docker", "image": "prom/prometheus:latest" },
+    "defaultPorts": [
+      9090
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "prom/prometheus:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "postgresql",
@@ -837,12 +1390,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "1G",
-    "defaultPorts": [5432],
-    "downloadSource": { "type": "docker", "image": "postgres:latest" },
+    "defaultPorts": [
+      5432
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "postgres:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "mariadb",
@@ -856,12 +1423,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "1G",
-    "defaultPorts": [3306],
-    "downloadSource": { "type": "docker", "image": "mariadb:latest" },
+    "defaultPorts": [
+      3306
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "mariadb:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "redis",
@@ -875,12 +1456,26 @@
     "instanceType": "custom-command",
     "startupType": "docker-image",
     "defaultRam": "512M",
-    "defaultPorts": [6379],
-    "downloadSource": { "type": "docker", "image": "redis:latest" },
+    "defaultPorts": [
+      6379
+    ],
+    "downloadSource": {
+      "type": "docker",
+      "image": "redis:latest"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   },
   {
     "id": "discord-js",
@@ -895,9 +1490,21 @@
     "startupType": "node",
     "defaultRam": "512M",
     "defaultPorts": [],
-    "downloadSource": { "type": "generated", "fileName": "index.js" },
-    "installScript": ["create-instance", "create-folders", "generate-project"],
-    "configurationSchema": ["name", "storageLocation", "memory"]
+    "downloadSource": {
+      "type": "generated",
+      "fileName": "index.js"
+    },
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "generate-project"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "memory"
+    ],
+    "installerType": "local-import"
   },
   {
     "id": "python-discord-bot",
@@ -912,9 +1519,21 @@
     "startupType": "python",
     "defaultRam": "512M",
     "defaultPorts": [],
-    "downloadSource": { "type": "generated", "fileName": "bot.py" },
-    "installScript": ["create-instance", "create-folders", "generate-project"],
-    "configurationSchema": ["name", "storageLocation", "memory"]
+    "downloadSource": {
+      "type": "generated",
+      "fileName": "bot.py"
+    },
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "generate-project"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "memory"
+    ],
+    "installerType": "local-import"
   },
   {
     "id": "node-app",
@@ -928,10 +1547,25 @@
     "instanceType": "node-app",
     "startupType": "node",
     "defaultRam": "512M",
-    "defaultPorts": [3000],
-    "downloadSource": { "type": "generated", "fileName": "index.js" },
-    "installScript": ["create-instance", "create-folders", "generate-project"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "defaultPorts": [
+      3000
+    ],
+    "downloadSource": {
+      "type": "generated",
+      "fileName": "index.js"
+    },
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "generate-project"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "local-import"
   },
   {
     "id": "python-app",
@@ -945,10 +1579,25 @@
     "instanceType": "python-app",
     "startupType": "python",
     "defaultRam": "512M",
-    "defaultPorts": [8000],
-    "downloadSource": { "type": "generated", "fileName": "app.py" },
-    "installScript": ["create-instance", "create-folders", "generate-project"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "defaultPorts": [
+      8000
+    ],
+    "downloadSource": {
+      "type": "generated",
+      "fileName": "app.py"
+    },
+    "installScript": [
+      "create-instance",
+      "create-folders",
+      "generate-project"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "local-import"
   },
   {
     "id": "java-app",
@@ -962,11 +1611,25 @@
     "instanceType": "java-app",
     "startupType": "java-jar",
     "defaultRam": "1G",
-    "defaultPorts": [8080],
-    "downloadSource": { "type": "manual", "fileName": "app.jar" },
+    "defaultPorts": [
+      8080
+    ],
+    "downloadSource": {
+      "type": "manual",
+      "fileName": "app.jar"
+    },
     "comingSoon": true,
     "comingSoonMessage": "This template is not ready yet.",
-    "installScript": ["create-instance", "create-folders"],
-    "configurationSchema": ["name", "storageLocation", "port", "memory"]
+    "installScript": [
+      "create-instance",
+      "create-folders"
+    ],
+    "configurationSchema": [
+      "name",
+      "storageLocation",
+      "port",
+      "memory"
+    ],
+    "installerType": "no-install"
   }
 ]

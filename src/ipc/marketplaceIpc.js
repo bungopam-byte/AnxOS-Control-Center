@@ -142,11 +142,42 @@ function getMarketplaceUiError(error) {
     };
   }
 
+  if (code) {
+    return {
+      code,
+      message: message && message !== "Request failed." ? message : getMarketplaceErrorMessage(error),
+      details: {
+        ...details,
+        friendlyMessage: details.friendlyMessage || message || null,
+        suggestion: details.suggestion || getMarketplaceRecoverySuggestion(code),
+        debugMessage: getMarketplaceErrorMessage(error),
+        originalMessage: message,
+      },
+    };
+  }
+
   return {
     code: code || "MARKETPLACE_IPC_ERROR",
     message: "Marketplace request failed.",
     details: {},
   };
+}
+
+function getMarketplaceRecoverySuggestion(code) {
+  const suggestions = {
+    INSTALLER_TYPE_UNSUPPORTED: "Choose another server version or update the Marketplace definition.",
+    MARKETPLACE_MANIFEST_INVALID: "This Marketplace entry needs to be fixed before it can be installed.",
+    MINECRAFT_PORT_INVALID: "Enter a whole-number port between 1 and 65535.",
+    MINECRAFT_PORT_IN_USE: "Choose a different local server port.",
+    SERVER_PROPERTIES_NOT_WRITABLE: "Check the instance folder permissions, then retry.",
+    SERVER_PROPERTIES_UPDATE_FAILED: "Retry the install or open the instance files to inspect server.properties.",
+    STEAMCMD_NOT_FOUND: "Install SteamCMD on the selected node, then retry.",
+    STEAMCMD_INSTALL_FAILED: "Open the install logs, fix the SteamCMD failure, then retry.",
+    DOWNLOAD_NOT_FOUND: "Choose another server version or retry later.",
+    DOWNLOAD_FAILED: "Check the network connection and retry.",
+    EXECUTABLE_NOT_FOUND: "The installer completed but the expected server executable was missing.",
+  };
+  return suggestions[code] || "Review the technical details, then retry when the underlying issue is fixed.";
 }
 
 async function invokeMarketplaceOperation(operation) {

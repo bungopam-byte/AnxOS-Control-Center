@@ -173,16 +173,45 @@ function assertSteamCmdTemplates() {
   for (const [id, appId] of expected) {
     const template = findTemplate(id);
     assert.strictEqual(template.category, "Game Servers", `${id} must be a game server.`);
+    assert.strictEqual(template.installerType, "steamcmd-native", `${id} must declare steamcmd-native installer type.`);
     assert.strictEqual(template.installer?.type, "steamcmd", `${id} must use SteamCMD.`);
     assert.strictEqual(template.installer?.appId, appId, `${id} must use app ${appId}.`);
     assert(Array.isArray(template.installer.verifyFiles) && template.installer.verifyFiles.length > 0, `${id} must verify installed files.`);
 
-    const script = marketplaceService._test.buildTemplateInstallerScript(template);
-    assert(script.includes("command -v steamcmd"), `${id} script must check SteamCMD.`);
-    assert(script.includes("+login anonymous"), `${id} script must use anonymous login.`);
-    assert(script.includes(`+app_update ${appId} validate`), `${id} script must update app ${appId}.`);
-    assert(script.includes("+force_install_dir"), `${id} script must set install directory.`);
+    const args = marketplaceService._test.buildSteamCmdInstallerArgs(template.installer);
+    assert.deepStrictEqual(args.slice(0, 4), ["+force_install_dir", template.installer.installDir || "server", "+login", "anonymous"], `${id} SteamCMD installer must use argument arrays.`);
+    assert(args.includes("+app_update") && args.includes(String(appId)) && args.includes("validate"), `${id} must update app ${appId} with validation.`);
+    assert(!args.some((arg) => /[;&|`$<>]/.test(arg)), `${id} SteamCMD args must not contain shell control characters.`);
   }
+}
+
+function assertMarketplaceInstallerRegistry() {
+  const validation = marketplaceService._test.validateMarketplaceCatalog(templates);
+  assert.deepStrictEqual(validation.errors, [], `Marketplace catalog should validate.\n${JSON.stringify(validation.errors, null, 2)}`);
+  assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("palworld")), "steamcmd-native", "Palworld must route through SteamCMD-native.");
+  assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("minecraft-forge")), "java-runtime", "Forge must route through Java runtime installer.");
+  assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("fivem")), "archive-download", "FiveM must route through archive download.");
+  assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("docker-nginx")), "docker-image", "Docker templates must route through Docker image installers.");
+
+  assert.throws(
+    () => marketplaceService._test.validateMarketplaceTemplate({
+      id: "broken-installer-type",
+      displayName: "Broken Installer Type",
+      category: "Game Servers",
+      installerType: "magic-shell",
+    }),
+    (error) => error?.code === "INSTALLER_TYPE_UNSUPPORTED",
+    "Unknown installer types should be rejected before install."
+  );
+
+  const palworldPlan = marketplaceService._test.getTemplateInstallPlan("palworld");
+  assert.strictEqual(palworldPlan.workflow, "steamcmd-native", "SteamCMD-native templates must not be reported as generic downloads.");
+  assert.strictEqual(palworldPlan.installerType, "steamcmd-native", "Install plans should expose normalized installer type.");
+
+  const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
+  assert(ipcSource.includes("getMarketplaceRecoverySuggestion"), "Marketplace IPC should preserve stable installer error codes with recovery suggestions.");
+  assert(ipcSource.includes("STEAMCMD_INSTALL_FAILED"), "Marketplace IPC should preserve SteamCMD-specific failures.");
+  assert(ipcSource.includes("MINECRAFT_PORT_INVALID"), "Marketplace IPC should preserve Minecraft port validation failures.");
 }
 
 function assertDockerTemplates() {
@@ -278,7 +307,7 @@ function assertGameTemplateInstallPlans() {
       assert.match(plan.reason || template.comingSoonMessage || "", /official hytale dedicated server binaries/i);
     } else {
       assert.strictEqual(plan.installable, true, `${id} must route to an automatic workflow.`);
-      assert(["download", "steamcmd", "archive", "docker"].includes(plan.workflow), `${id} should declare an actionable workflow.`);
+      assert(["direct-download", "java-runtime", "steamcmd-native", "archive-download", "docker-image"].includes(plan.workflow), `${id} should declare an actionable workflow.`);
     }
   }
 }
@@ -907,7 +936,7 @@ async function assertVanillaInstallVersionPipeline() {
     };
     agentClient.saveMinecraftProperties = async (instanceId, properties) => {
       files.set(`${instanceId}:server.properties`, Object.entries(properties || {}).map(([key, value]) => `${key}=${value}`).join("\n"));
-      return { ok: true };
+      return { ok: true, properties };
     };
     agentClient.updateInstance = async (instanceId, patch) => {
       const next = { ...currentInstance(instanceId), ...patch };
@@ -931,6 +960,7 @@ async function assertVanillaInstallVersionPipeline() {
       return { id: instanceId, deleted: true };
     };
 
+    const selectedPort = 25566;
     const result = await marketplaceService.installTemplate({
       templateId: "minecraft-vanilla",
       options: {
@@ -938,8 +968,8 @@ async function assertVanillaInstallVersionPipeline() {
         name: "Vanilla Version Pipeline Smoke",
         version: selectedVersion,
         memory: "2G",
-        port: 25565,
-        ports: [25565],
+        port: selectedPort,
+        ports: [selectedPort],
         acceptEula: true,
         start: false,
       },
@@ -960,6 +990,8 @@ async function assertVanillaInstallVersionPipeline() {
     assert.strictEqual(apiInstance.gameVersion, selectedVersion, `Agent /instances lost gameVersion.\n${JSON.stringify(trace, null, 2)}`);
     assert.strictEqual(apiInstance.versionInfo?.gameVersion, selectedVersion, `Agent /instances lost versionInfo.gameVersion.\n${JSON.stringify(trace, null, 2)}`);
     assert.strictEqual(pickVersionTrace(rendererInput).gameVersion, selectedVersion, `IPC/renderer input lost gameVersion.\n${JSON.stringify(trace, null, 2)}`);
+    assert.strictEqual(apiInstance.primaryPort, selectedPort, "Template install should store selected custom port on the instance.");
+    assert(files.get("vanilla-version-pipeline-smoke:server.properties").includes(`server-port=${selectedPort}`), "Template install should write the selected custom port to server.properties.");
   } finally {
     global.fetch = originalFetch;
     patchedAgentMethods.forEach((name) => {
@@ -1092,7 +1124,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     };
     agentClient.saveMinecraftProperties = async (instanceId, properties) => {
       files.set(`${instanceId}:server.properties`, JSON.stringify(properties));
-      return { ok: true };
+      return { ok: true, properties };
     };
     agentClient.updateInstance = async (instanceId, patch) => {
       instances.set(instanceId, { ...(instances.get(instanceId) || {}), ...patch });
@@ -1146,15 +1178,16 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       ["modrinth", { provider: "modrinth", loader: "vanilla", providerProjectId: "mr-pack" }, "mods/modrinth-smoke.jar"],
     ];
 
-    for (const [name, payload, expectedFile] of cases) {
+    for (const [index, [name, payload, expectedFile]] of cases.entries()) {
       const id = `marketplace-${name}-smoke`;
+      const selectedPort = 25566 + index;
       await marketplaceInstallService.installPack({
         ...payload,
         id,
         name: `Marketplace ${name} Smoke`,
         minecraftVersion: "1.21.1",
         memory: "2G",
-        port: 25565,
+        port: selectedPort,
         acceptEula: true,
         start: false,
       });
@@ -1168,7 +1201,25 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       assert.strictEqual(metadata.serverJar, configuredJar, `${name} metadata should preserve the configured server jar.`);
       assert.strictEqual(metadata.serverJarPath, configuredJar, `${name} metadata should preserve serverJarPath.`);
       assert.strictEqual(metadata.startJar, configuredJar, `${name} metadata should preserve startJar.`);
+      assert.strictEqual(instance.primaryPort, selectedPort, `${name} install should store selected custom port on the instance.`);
+      assert.deepStrictEqual(instance.ports, [selectedPort], `${name} install should store selected custom port as the instance port list.`);
+      assert.strictEqual(JSON.parse(files.get(`${id}:server.properties`))["server-port"], String(selectedPort), `${name} install should write selected custom port to server.properties.`);
     }
+
+    await assert.rejects(
+      () => marketplaceInstallService.installPack({
+        provider: "anxhub",
+        loader: "vanilla",
+        id: "marketplace-invalid-port-smoke",
+        name: "Marketplace Invalid Port Smoke",
+        minecraftVersion: "1.21.1",
+        port: "25565.5",
+        acceptEula: true,
+        start: false,
+      }),
+      (error) => error?.code === "MINECRAFT_PORT_INVALID",
+      "Invalid Minecraft ports should be rejected instead of silently falling back to 25565."
+    );
 
     assert(fetchUrls.includes("https://fill.papermc.io/v3/projects/paper"), "Paper installer must use the Paper Downloads v3 project API.");
     assert(fetchUrls.includes("https://fill.papermc.io/v3/projects/paper/versions/1.21.1/builds"), "Paper installer must use the Paper Downloads v3 builds API.");
@@ -1874,6 +1925,7 @@ async function main() {
   assertDashboardRuntimeFallbacks();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
+  assertMarketplaceInstallerRegistry();
   assertDockerTemplates();
   assertMarketplaceMetadata();
   assertMinecraftVersionPickerSupport();

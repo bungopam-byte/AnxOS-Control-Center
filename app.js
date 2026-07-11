@@ -6913,6 +6913,14 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     DOWNLOAD_REQUIRED: "This template requires a downloadable server file.",
     DOWNLOAD_URL_INCOMPLETE: "The template download URL is incomplete.",
     DOWNLOAD_RESOLVE_FAILED: "Unable to resolve the latest server download.",
+    INSTALLER_TYPE_UNSUPPORTED: "This Marketplace installer type is not supported.",
+    MARKETPLACE_MANIFEST_INVALID: "This Marketplace entry has an invalid definition.",
+    MINECRAFT_PORT_INVALID: "Enter a whole-number Minecraft port between 1 and 65535.",
+    MINECRAFT_PORT_IN_USE: "That Minecraft port is already in use.",
+    SERVER_PROPERTIES_NOT_WRITABLE: "server.properties could not be written.",
+    SERVER_PROPERTIES_UPDATE_FAILED: "The selected Minecraft port could not be saved to server.properties.",
+    STEAMCMD_NOT_FOUND: "SteamCMD is required on the selected node.",
+    STEAMCMD_INSTALL_FAILED: "SteamCMD failed to install this dedicated server.",
     FABRIC_RESOLVE_FAILED: "Unable to resolve Fabric download.",
     FORGE_RESOLVE_FAILED: "Unable to download Forge installer.",
     NEOFORGE_RESOLVE_FAILED: "Unable to download NeoForge installer.",
@@ -8360,13 +8368,17 @@ function renderMarketplaceDownloads(downloads = []) {
     const bar = document.createElement("div");
     bar.className = "download-progress";
     const fill = document.createElement("span");
-    fill.style.width = `${Math.max(0, Math.min(Number(download.progress) || 0, 100))}%`;
+    const rawProgress = Math.max(0, Math.min(Number(download.progress) || 0, 100));
+    const renderedProgress = download.status === "failed" ? Math.min(rawProgress, 96) : rawProgress;
+    fill.style.width = `${renderedProgress}%`;
     bar.append(fill);
 
     const meta = document.createElement("small");
     const eta = Number.isFinite(download.etaSeconds) ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
     const url = download.url ? ` · ${download.url}` : "";
-    meta.textContent = download.body || `${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
+    const stage = download.stage || "Preparing";
+    const installer = download.installerType ? ` · ${download.installerType}` : "";
+    meta.textContent = download.body || `${stage}${installer} · ${download.progress || 0}% · ${formatDownloadSpeed(download.speedBytesPerSecond)}${eta}${url}`;
 
     const metadata = document.createElement("small");
     metadata.textContent = download.metadataText || "";

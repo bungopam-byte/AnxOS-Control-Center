@@ -164,6 +164,16 @@ function createMarketplaceStepError(message, code, details = {}) {
   return createMarketplaceError(`${message}${formatErrorDetails(details)}`, code, details);
 }
 
+function getMissingInstallerDependencyMessage(context = {}, instance = {}) {
+  if (context.installerType === "steamcmd-native" || String(instance.executable || "").toLowerCase() === "steamcmd") {
+    return "SteamCMD is not installed or is not available on PATH on the selected Agent.";
+  }
+  const executable = String(instance.executable || "").trim();
+  return executable
+    ? `Required executable "${executable}" is not installed or is not available on PATH on the selected Agent.`
+    : "A required installer executable is not installed or is not available on PATH on the selected Agent.";
+}
+
 function getNetworkCauseDetails(error = {}) {
   const cause = error?.cause && typeof error.cause === "object" ? error.cause : {};
   return {
@@ -263,6 +273,9 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
   }
 
   if (error?.details?.templateId || error?.details?.step) {
+    if (getAgentErrorCode(error) === "DEPENDENCY_MISSING" && error?.details?.failureReason === "EXECUTABLE_NOT_FOUND") {
+      return error.message || "A required runtime dependency is missing.";
+    }
     return error.message || fallback;
   }
 
@@ -2072,13 +2085,17 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
       const code = instance.failureReason === "EXECUTABLE_NOT_FOUND"
         ? "DEPENDENCY_MISSING"
         : context.installerType === "steamcmd-native" ? "STEAMCMD_INSTALL_FAILED" : "MARKETPLACE_INSTALL_FAILED";
-      throw createMarketplaceStepError("Template installer failed.", code, {
+      const details = {
         ...context,
         message: "The installer process entered Failed state.",
         body: JSON.stringify(last),
         exitCode: instance.exitCode ?? null,
         failureReason: instance.failureReason || null,
-      });
+      };
+      if (code === "DEPENDENCY_MISSING") {
+        throw createMarketplaceError(getMissingInstallerDependencyMessage(context, instance), code, details);
+      }
+      throw createMarketplaceStepError("Template installer failed.", code, details);
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }

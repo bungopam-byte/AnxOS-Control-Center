@@ -179,6 +179,7 @@ function getMarketplaceRecoverySuggestion(code) {
     MINECRAFT_PORT_IN_USE: "Choose a different local server port.",
     SERVER_PROPERTIES_NOT_WRITABLE: "Check the instance folder permissions, then retry.",
     SERVER_PROPERTIES_UPDATE_FAILED: "Retry the install or open the instance files to inspect server.properties.",
+    DEPENDENCY_MISSING: "Install the missing dependency on the selected Agent, then retry.",
     STEAMCMD_NOT_FOUND: "Install SteamCMD on the selected node, then retry.",
     STEAMCMD_INSTALL_FAILED: "Open the install logs, fix the SteamCMD failure, then retry.",
     DOWNLOAD_NOT_FOUND: "Choose another server version or retry later.",

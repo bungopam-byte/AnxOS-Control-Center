@@ -1645,6 +1645,30 @@ async function assertSharedTemplateInstallFlowMatrix() {
     );
     agentClient.getInstanceStatus = originalStatus;
 
+    agentClient.getInstanceStatus = async (instanceId) => {
+      const instance = instances.get(instanceId) || {};
+      if (instance.executable === "steamcmd") {
+        return { instance: { ...instance, state: "Failed", exitCode: null, failureReason: "EXECUTABLE_NOT_FOUND" } };
+      }
+      return originalStatus(instanceId);
+    };
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-steamcmd-missing-smoke", name: "Palworld SteamCMD Missing Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => {
+        assert.strictEqual(error?.code, "DEPENDENCY_MISSING", "Missing SteamCMD should be classified as a dependency failure.");
+        assert.match(error.message, /SteamCMD is not installed/i, "Missing SteamCMD should be directly actionable.");
+        assert(!error.message.includes("body="), "Main missing-dependency message must not include the full Agent response body.");
+        assert.strictEqual(error?.details?.failureReason, "EXECUTABLE_NOT_FOUND", "Technical details should preserve Agent failure reason.");
+        assert(error?.details?.body?.includes("EXECUTABLE_NOT_FOUND"), "Technical details should keep the Agent response body.");
+        return true;
+      },
+      "Missing SteamCMD should produce a concise dependency error."
+    );
+    agentClient.getInstanceStatus = originalStatus;
+
     const originalFetchForFailure = global.fetch;
     global.fetch = async (url) => {
       const href = String(url);

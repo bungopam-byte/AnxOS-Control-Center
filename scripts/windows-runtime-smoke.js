@@ -82,6 +82,12 @@ async function main() {
     assert.strictEqual(secondRemoteError.payload?.error?.details?.originalMessage, "connect ECONNREFUSED 127.0.0.1:47131");
     assert.strictEqual(consoleErrors.length, 1, "expected repeated identical remote failures to be deduplicated");
     assert.strictEqual(consoleErrors[0][1].targetLabel, "selected-agent");
+    assert(
+      /Agent unavailable at http:\/\/192\.168\.1\.134:47131\/api\/v1\/health/.test(consoleErrors[0][1].message),
+      "remote Agent failure logs should show the actionable Agent URL instead of bare fetch failed"
+    );
+    assert.strictEqual(consoleErrors[0][1].originalMessage, "connect ECONNREFUSED 127.0.0.1:47131");
+    assert.strictEqual(consoleErrors[0][1].causeCode, "ECONNREFUSED");
 
     const paths = resolveElectronPaths({
       platform: "win32",

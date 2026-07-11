@@ -371,6 +371,8 @@ function logAgentRequestFailure(pathname, status, errorCode = null, details = {}
     errorCode: errorCode || null,
     responseBody: details.responseBody || null,
     message: details.message || null,
+    originalMessage: details.originalMessage || null,
+    causeCode: details.causeCode || null,
     stack: details.stack || null,
     suppressedCount,
   });
@@ -542,17 +544,19 @@ async function requestJson(pathname, options = {}) {
         return urlError?.payload?.error?.details?.invalidUrl || null;
       }
     })();
+    const transportMessage = getAgentTransportErrorMessage(errorCode, requestUrl);
     if (!(suppressConnectionRefusedLog && errorCode === "ECONNREFUSED")) {
       logAgentRequestFailure(pathname, null, errorCode, {
         url: requestUrl,
         method,
         targetLabel,
         logThrottleMs,
-        message: error?.message || null,
+        message: transportMessage,
+        originalMessage: error?.message || null,
+        causeCode: error?.cause?.code || error?.code || null,
         stack: error?.stack || null,
       });
     }
-    const transportMessage = getAgentTransportErrorMessage(errorCode, requestUrl);
     throw new AgentClientError(transportMessage, {
       code: errorCode,
       payload: {
@@ -885,14 +889,39 @@ async function requestBuffer(pathname, options = {}) {
     const errorCode = error?.name === "AbortError"
       ? "AGENT_TIMEOUT"
       : getTransportErrorCode(error) || "AGENT_UNAVAILABLE";
+    const requestUrl = (() => {
+      try {
+        return buildAgentUrl(pathname, configOverride);
+      } catch (urlError) {
+        return urlError?.payload?.error?.details?.invalidUrl || null;
+      }
+    })();
+    const transportMessage = getAgentTransportErrorMessage(errorCode, requestUrl);
     logAgentRequestFailure(pathname, null, errorCode, {
-      url: buildAgentUrl(pathname, configOverride),
+      url: requestUrl,
       method,
-      message: error?.message || null,
+      message: transportMessage,
+      originalMessage: error?.message || null,
+      causeCode: error?.cause?.code || error?.code || null,
       stack: error?.stack || null,
     });
-    throw new AgentClientError("Agent unavailable.", {
+    throw new AgentClientError(transportMessage, {
       code: errorCode,
+      payload: {
+        error: {
+          code: errorCode,
+          message: transportMessage,
+          details: {
+            name: error?.name || null,
+            message: transportMessage,
+            originalMessage: error?.message || null,
+            causeCode: error?.cause?.code || error?.code || null,
+            stack: error?.stack || null,
+            url: requestUrl,
+            payload: error?.payload || null,
+          },
+        },
+      },
     });
   } finally {
     clearTimeout(timeout);

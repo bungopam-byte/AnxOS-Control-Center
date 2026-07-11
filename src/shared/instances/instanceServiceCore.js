@@ -41,6 +41,8 @@ const DEFAULT_RESTART_POLICY = "never";
 const RESTART_POLICIES = new Set(["never", "on-failure", "always"]);
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10000;
+const MAX_STARTUP_TIMEOUT_MS = 30 * 60 * 1000;
+const MAX_SHUTDOWN_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_LINES = 1000;
 const STARTUP_EARLY_EXIT_MS = 8000;
@@ -68,8 +70,8 @@ const DEFAULT_EXECUTABLE_ROOTS = [
 const runningProcesses = new Map();
 const metricsSamples = new Map();
 
-function createInstanceError(code, statusCode = 400) {
-  return Object.assign(new Error(code), { code, statusCode });
+function createInstanceError(code, statusCode = 400, details = {}) {
+  return Object.assign(new Error(code), { code, statusCode, ...details });
 }
 
 function nowIso() {
@@ -135,7 +137,7 @@ function validateBoolean(value, fallback) {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function validatePositiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER) {
+function validatePositiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER, field = "number") {
   if (value === undefined || value === null || value === "") {
     return fallback;
   }
@@ -143,7 +145,7 @@ function validatePositiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER)
   const parsed = Number.parseInt(value, 10);
 
   if (!Number.isFinite(parsed) || parsed <= 0 || parsed > max) {
-    throw createInstanceError("INVALID_NUMBER");
+    throw createInstanceError("INVALID_NUMBER", 400, { field, expected: `positive integer up to ${max}`, received: value });
   }
 
   return parsed;
@@ -558,8 +560,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     environment: normalizeEnvironment(payload.environment || payload.env),
     autoStart: validateBoolean(payload.autoStart, false),
     restartPolicy: validateRestartPolicy(payload.restartPolicy),
-    startupTimeoutMs: validatePositiveInteger(payload.startupTimeoutMs, DEFAULT_STARTUP_TIMEOUT_MS, 10 * 60 * 1000),
-    shutdownTimeoutMs: validatePositiveInteger(payload.shutdownTimeoutMs, DEFAULT_SHUTDOWN_TIMEOUT_MS, 10 * 60 * 1000),
+    startupTimeoutMs: validatePositiveInteger(payload.startupTimeoutMs, DEFAULT_STARTUP_TIMEOUT_MS, MAX_STARTUP_TIMEOUT_MS, "startupTimeoutMs"),
+    shutdownTimeoutMs: validatePositiveInteger(payload.shutdownTimeoutMs, DEFAULT_SHUTDOWN_TIMEOUT_MS, MAX_SHUTDOWN_TIMEOUT_MS, "shutdownTimeoutMs"),
     memoryLimit: payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null,
     serverJar: normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar) || null,
     serverJarPath: normalizeOptionalJarPath(payload.serverJarPath) || normalizeOptionalJarPath(payload.serverJar) || normalizeOptionalJarPath(payload.jar) || null,
@@ -1968,10 +1970,10 @@ async function updateInstance(instanceId, payload = {}) {
     autoStart: payload.autoStart !== undefined ? validateBoolean(payload.autoStart, current.autoStart) : current.autoStart,
     restartPolicy: payload.restartPolicy !== undefined ? validateRestartPolicy(payload.restartPolicy) : current.restartPolicy,
     startupTimeoutMs: payload.startupTimeoutMs !== undefined
-      ? validatePositiveInteger(payload.startupTimeoutMs, current.startupTimeoutMs, 10 * 60 * 1000)
+      ? validatePositiveInteger(payload.startupTimeoutMs, current.startupTimeoutMs, MAX_STARTUP_TIMEOUT_MS, "startupTimeoutMs")
       : current.startupTimeoutMs,
     shutdownTimeoutMs: payload.shutdownTimeoutMs !== undefined
-      ? validatePositiveInteger(payload.shutdownTimeoutMs, current.shutdownTimeoutMs, 10 * 60 * 1000)
+      ? validatePositiveInteger(payload.shutdownTimeoutMs, current.shutdownTimeoutMs, MAX_SHUTDOWN_TIMEOUT_MS, "shutdownTimeoutMs")
       : current.shutdownTimeoutMs,
     memoryLimit: payload.memoryLimit !== undefined
       ? (payload.memoryLimit ? validateMemoryValue(payload.memoryLimit) : null)
@@ -2247,6 +2249,23 @@ async function startInstance(instanceId) {
       commandDiagnostics,
     });
 
+  child.on("error", (error) => {
+    const reason = error?.code === "ENOENT" ? "EXECUTABLE_NOT_FOUND" : "PROCESS_ERROR";
+    const entry = runningProcesses.get(config.id);
+    if (entry) {
+      entry.failureReason = reason;
+      entry.suppressRestart = true;
+      appendProcessTail(entry, "stderr", `${error?.message || reason}\n`);
+    }
+    appendLog(config.id, "stderr", `${error?.message || reason}\n`).catch(() => {});
+    updateRuntimeState(config.id, {
+      state: INSTANCE_STATES.FAILED,
+      pid: null,
+      failureReason: reason,
+      lastStoppedAt: nowIso(),
+    }).catch(() => {});
+  });
+
   if (!child.pid) {
     const failedConfig = await updateRuntimeState(config.id, {
       state: INSTANCE_STATES.FAILED,
@@ -2299,15 +2318,6 @@ async function startInstance(instanceId) {
         entry.failureReason = "FIVEM_LICENSE_REQUIRED";
       }
     }
-  });
-
-  child.on("error", () => {
-    updateRuntimeState(config.id, {
-      state: INSTANCE_STATES.FAILED,
-      pid: null,
-      failureReason: "PROCESS_ERROR",
-      lastStoppedAt: nowIso(),
-    }).catch(() => {});
   });
 
   child.on("exit", (exitCode, signal) => {

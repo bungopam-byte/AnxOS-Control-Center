@@ -1,5 +1,6 @@
 const assert = require("assert");
 const fs = require("fs");
+const Module = require("module");
 const os = require("os");
 const path = require("path");
 
@@ -182,6 +183,13 @@ function assertSteamCmdTemplates() {
     assert.deepStrictEqual(args.slice(0, 4), ["+force_install_dir", template.installer.installDir || "server", "+login", "anonymous"], `${id} SteamCMD installer must use argument arrays.`);
     assert(args.includes("+app_update") && args.includes(String(appId)) && args.includes("validate"), `${id} must update app ${appId} with validation.`);
     assert(!args.some((arg) => /[;&|`$<>]/.test(arg)), `${id} SteamCMD args must not contain shell control characters.`);
+
+    const payload = marketplaceService._test.buildInstancePayload(template, { id: `${id}-smoke`, name: `${id} smoke`, memory: template.defaultRam, port: template.defaultPorts?.[0] }, template.defaultPorts || []);
+    assert.strictEqual(payload.type, "custom-command", `${id} must create a native command instance.`);
+    assert.notStrictEqual(payload.executable, "java", `${id} must not instantiate a Java runtime task.`);
+    assert.notStrictEqual(payload.executable, "node", `${id} must not instantiate a placeholder Node task.`);
+    assert(!payload.args.includes("-jar"), `${id} must not start through the Minecraft jar pipeline.`);
+    assert(!payload.args.includes("server.jar"), `${id} must not reference server.jar.`);
   }
 }
 
@@ -221,6 +229,128 @@ function assertMarketplaceInstallerRegistry() {
   assert(agentClientSource.includes("logAgentRequestPayload"), "Agent client should log sanitized instance request payloads for validation failures.");
   const agentRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "instances.js"), "utf8");
   assert(agentRouteSource.includes("getValidationErrorDetails"), "Agent instance routes should return structured validation details for HTTP 400.");
+  assert(agentRouteSource.includes("INVALID_NUMBER") && agentRouteSource.includes("error?.field"), "Agent numeric validation errors should include the rejected field.");
+  const instanceServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
+  assert(instanceServiceSource.includes("MAX_STARTUP_TIMEOUT_MS = 30 * 60 * 1000"), "Agent schema should allow long native installer startup timeouts.");
+}
+
+function assertMarketplaceManifestAuditReport() {
+  const validation = marketplaceService._test.validateMarketplaceCatalog(templates);
+  const disabled = templates.filter((template) => template.disabled || template.comingSoon || marketplaceService._test.getTemplateInstallerType(template) === "no-install");
+  const enabled = templates.filter((template) => !template.disabled && !template.comingSoon && marketplaceService._test.getTemplateInstallerType(template) !== "no-install");
+  const installerTypes = [...new Set(templates.map((template) => marketplaceService._test.getTemplateInstallerType(template) || "missing"))].sort();
+  const runtimeTypes = [...new Set(templates.map((template) => template.runtime || template.startupType || template.instanceType || "runtime-unspecified"))].sort();
+  const report = {
+    totalEntries: templates.length,
+    validEntries: validation.results.length,
+    disabledEntries: disabled.map((template) => ({
+      id: template.id,
+      reason: template.comingSoonMessage || template.unavailableReason || template.configNotes || "No automatic installer is currently declared.",
+    })),
+    installerTypes,
+    runtimeTypes,
+  };
+
+  assert.deepStrictEqual(validation.errors, [], `Marketplace manifest audit failed.\n${JSON.stringify({ report, errors: validation.errors }, null, 2)}`);
+  assert(report.totalEntries >= 1, "Marketplace manifest audit should include entries.");
+  assert(report.validEntries === templates.length, "Every manifest should pass schema validation or be explicitly disabled by metadata.");
+  assert(report.disabledEntries.some((entry) => entry.id === "hytale"), "Disabled report should include Hytale with a specific reason.");
+  for (const template of enabled) {
+    const installerType = marketplaceService._test.getTemplateInstallerType(template);
+    const runtimeType = template.runtime || template.startupType || template.instanceType;
+    assert(installerType, `${template.id} must resolve an installer type.`);
+    assert(runtimeType, `${template.id} must resolve a runtime type.`);
+    assert(Array.isArray(template.defaultPorts), `${template.id} must declare defaultPorts as an array.`);
+    assert(template.defaultPorts.every((port) => Number.isInteger(Number(port)) && Number(port) >= 1 && Number(port) <= 65535), `${template.id} ports must be valid.`);
+    assert(typeof (template.defaultRam || "") === "string", `${template.id} memory behavior must be declared as a string default or empty string.`);
+    if (installerType === "steamcmd-native") {
+      assert(Number.isInteger(Number(template.installer?.appId)), `${template.id} SteamCMD app ID is required.`);
+      assert(Array.isArray(template.installer?.verifyFiles) && template.installer.verifyFiles.length > 0, `${template.id} executable candidates are required.`);
+      assert(template.startup?.executable && Array.isArray(template.startup.args), `${template.id} launch strategy is required.`);
+    }
+    if (["archive-download", "direct-download", "java-runtime"].includes(installerType)) {
+      assert(template.downloadSource || (Array.isArray(template.downloads) && template.downloads.length > 0), `${template.id} asset source is required.`);
+    }
+    if (installerType === "docker-image") {
+      assert(template.docker?.image || template.downloadSource?.image, `${template.id} Docker image is required.`);
+    }
+    assert(template.updateCheck || template.version || template.disabled !== false, `${template.id} update strategy or version metadata should be coherent.`);
+  }
+  console.info("[Marketplace][Smoke] Manifest audit report.", report);
+}
+
+function assertMarketplaceIpcErrorSerialization() {
+  const originalLoad = Module._load;
+  Module._load = function loadWithElectronStub(request, parent, isMain) {
+    if (request === "electron") {
+      return {
+        BrowserWindow: { getAllWindows: () => [] },
+        dialog: {},
+        ipcMain: { handle: () => {} },
+        shell: { openExternal: async () => {} },
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  const modulePath = require.resolve("../src/ipc/marketplaceIpc");
+  delete require.cache[modulePath];
+  try {
+    const marketplaceIpc = require(modulePath);
+    const uiError = marketplaceIpc._test.getMarketplaceUiError({
+      code: "INVALID_NUMBER",
+      message: "Use a valid numeric value.",
+      payload: {
+        error: {
+          code: "INVALID_NUMBER",
+          message: "Use a valid numeric value.",
+          details: {
+            field: "startupTimeoutMs",
+            expected: "positive integer up to 1800000",
+            received: 2000000,
+            code: "INVALID_NUMBER",
+            userMessage: "Use a valid numeric value.",
+          },
+        },
+      },
+    });
+    assert.strictEqual(uiError.code, "INVALID_NUMBER", "IPC should preserve stable validation code.");
+    assert.strictEqual(uiError.details.validation.field, "startupTimeoutMs", "IPC should preserve validation field.");
+    assert(!/validation is not defined/i.test(uiError.message), "IPC should not throw or surface ReferenceError.");
+  } finally {
+    Module._load = originalLoad;
+    delete require.cache[modulePath];
+  }
+}
+
+function assertInstallerResultContract() {
+  const ok = marketplaceService._test.assertInstallerResult(
+    marketplaceService._test.createInstallerResultOk("installed", {
+      installDirectory: "server",
+      executable: "bash",
+      runtime: "native",
+      artifacts: ["server/bin"],
+    }),
+    { handlerName: "contract-smoke" }
+  );
+  assert.strictEqual(ok.ok, true, "Valid installer success result should pass.");
+  const failed = marketplaceService._test.assertInstallerResult(
+    marketplaceService._test.createInstallerResultError("validating", Object.assign(new Error("bad manifest"), { code: "INSTALL_VALIDATION_FAILED" }), {
+      handlerName: "contract-smoke",
+      retryable: false,
+    }),
+    { handlerName: "contract-smoke" }
+  );
+  assert.strictEqual(failed.ok, false, "Valid installer failure result should pass.");
+  assert.throws(
+    () => marketplaceService._test.assertInstallerResult({ ok: true, stage: "installed" }, { handlerName: "malformed-smoke" }),
+    (error) => error?.code === "HANDLER_RESULT_INVALID",
+    "Malformed handler output should become a controlled internal error."
+  );
+  assert.throws(
+    () => marketplaceService._test.assertInstallerResult("done", { handlerName: "malformed-smoke" }),
+    (error) => error?.code === "HANDLER_RESULT_INVALID",
+    "Raw string handler output should be rejected."
+  );
 }
 
 function assertDockerTemplates() {
@@ -1092,6 +1222,12 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       if (href === "https://fill.papermc.io/v3/projects/paper/versions/1.21.1/builds") {
         return jsonResponse([{ id: 42, downloads: { "server:default": { name: "paper-1.21.1-42.jar", url: "https://mock.local/paper.jar" } } }]);
       }
+      if (href === "https://fill.papermc.io/v3/projects/velocity/versions") {
+        return jsonResponse({ versions: [{ version: { id: "3.4.0" } }] });
+      }
+      if (href === "https://fill.papermc.io/v3/projects/velocity/versions/3.4.0/builds") {
+        return jsonResponse([{ id: 500, channel: "STABLE", downloads: { "server:default": { name: "velocity.jar", url: "https://mock.local/velocity.jar" } } }]);
+      }
       if (href === "https://api.purpurmc.org/v2/purpur") {
         return jsonResponse({ versions: ["1.21.1"] });
       }
@@ -1247,6 +1383,189 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     });
     patchedCurseForgeMethods.forEach((name) => {
       curseforgeProvider[name] = originalCurseForge[name];
+    });
+  }
+}
+
+async function assertSharedTemplateInstallFlowMatrix() {
+  const agentClient = require("../src/services/agentClient");
+  const originalFetch = global.fetch;
+  const originalAgent = {};
+  const patchedAgentMethods = [
+    "createDockerContainer",
+    "createInstance",
+    "createInstanceFolder",
+    "writeInstanceFile",
+    "readInstanceFile",
+    "saveMinecraftProperties",
+    "updateInstance",
+    "startInstance",
+    "getInstanceStatus",
+    "listInstances",
+    "deleteInstance",
+  ];
+  patchedAgentMethods.forEach((name) => {
+    originalAgent[name] = agentClient[name];
+  });
+
+  const instances = new Map();
+  const files = new Map();
+  const started = [];
+  const created = [];
+
+  function jsonResponse(body) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      text: async () => JSON.stringify(body),
+      arrayBuffer: async () => Buffer.from(JSON.stringify(body)),
+    };
+  }
+
+  function binaryResponse(body = "asset") {
+    const buffer = Buffer.from(body);
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: (name) => String(name).toLowerCase() === "content-length" ? String(buffer.length) : null },
+      text: async () => body,
+      arrayBuffer: async () => buffer,
+    };
+  }
+
+  try {
+    global.fetch = async (url) => {
+      const href = String(url);
+      if (href.includes("version_manifest_v2.json")) {
+        return jsonResponse({ latest: { release: "1.21.1" }, versions: [{ id: "1.21.1", url: "https://mock.local/mojang/1.21.1.json" }] });
+      }
+      if (href === "https://mock.local/mojang/1.21.1.json") {
+        return jsonResponse({ downloads: { server: { url: "https://mock.local/mojang/server.jar" } } });
+      }
+      if (href.includes("api.github.com/repos/Pryaxis/TShock/releases/latest")) {
+        return jsonResponse({ tag_name: "v5.2.4", assets: [{ name: "TShock-linux-x64.zip", browser_download_url: "https://mock.local/tshock.zip", size: 12 }] });
+      }
+      if (href === "https://fill.papermc.io/v3/projects/velocity/versions") {
+        return jsonResponse({ versions: [{ version: { id: "3.4.0" } }] });
+      }
+      if (href === "https://fill.papermc.io/v3/projects/velocity/versions/3.4.0/builds") {
+        return jsonResponse([{ id: 500, channel: "STABLE", downloads: { "server:default": { name: "velocity.jar", url: "https://mock.local/velocity.jar" } } }]);
+      }
+      if (href === "https://mock.local/tshock.zip" || href === "https://mock.local/velocity.jar" || href === "https://mock.local/mojang/server.jar") {
+        return binaryResponse(`asset:${href}`);
+      }
+      throw new Error(`Unexpected template smoke URL: ${href}`);
+    };
+
+    agentClient.createDockerContainer = async (payload) => ({
+      container: { id: payload.name, name: payload.name, image: payload.image, state: payload.start === false ? "stopped" : "running" },
+    });
+    agentClient.createInstance = async (payload) => {
+      created.push(payload.id);
+      instances.set(payload.id, { ...payload, state: "Stopped", pid: null });
+      return { instance: instances.get(payload.id) };
+    };
+    agentClient.listInstances = async () => ({ root: "/mock/instances", instances: [...instances.values()] });
+    agentClient.createInstanceFolder = async () => ({ ok: true });
+    agentClient.writeInstanceFile = async (instanceId, filePath, content) => {
+      files.set(`${instanceId}:${filePath}`, content);
+      return { path: filePath, size: Buffer.byteLength(Buffer.isBuffer(content) ? content : String(content || "")) };
+    };
+    agentClient.readInstanceFile = async (instanceId, filePath) => {
+      if (!files.has(`${instanceId}:${filePath}`) && !["server/TShock.Server", "server/PalServer.sh"].includes(filePath)) {
+        const error = Object.assign(new Error(`Missing file: ${filePath}`), { code: "PATH_NOT_FOUND" });
+        throw error;
+      }
+      return { path: filePath, content: files.get(`${instanceId}:${filePath}`) || "" };
+    };
+    agentClient.saveMinecraftProperties = async (instanceId, properties) => {
+      files.set(`${instanceId}:server.properties`, JSON.stringify(properties));
+      return { ok: true, properties };
+    };
+    agentClient.updateInstance = async (instanceId, patch) => {
+      instances.set(instanceId, { ...(instances.get(instanceId) || {}), ...patch });
+      return { instance: instances.get(instanceId) };
+    };
+    agentClient.startInstance = async (instanceId) => {
+      started.push(instanceId);
+      const instance = instances.get(instanceId) || {};
+      if (instance.executable === "steamcmd") {
+        files.set(`${instanceId}:server/PalServer.sh`, "#!/usr/bin/env bash\n");
+      }
+      if (Array.isArray(instance.args) && instance.args.includes("runtime/marketplace-install.sh")) {
+        files.set(`${instanceId}:server/TShock.Server`, "tshock");
+      }
+      instances.set(instanceId, { ...instance, state: "Running", pid: 1234 });
+      return { instance: instances.get(instanceId) };
+    };
+    agentClient.getInstanceStatus = async (instanceId) => ({ instance: { ...(instances.get(instanceId) || {}), state: "Stopped", exitCode: 0 } });
+    agentClient.deleteInstance = async (instanceId) => {
+      instances.delete(instanceId);
+      return { deleted: true };
+    };
+
+    const cases = [
+      ["SteamCMD-native game server", "palworld", { id: "palworld-flow-smoke", name: "Palworld Flow Smoke", port: 8211, memory: "8G", start: false }, "server/PalServer.sh"],
+      ["native archive game server", "terraria-tshock", { id: "terraria-flow-smoke", name: "Terraria Flow Smoke", port: 7777, memory: "2G", start: false }, "server/TShock.Server"],
+      ["Java Minecraft server", "minecraft-vanilla", { id: "minecraft-flow-smoke", name: "Minecraft Flow Smoke", version: "1.21.1", port: 25565, memory: "2G", acceptEula: true, start: false }, "server.jar"],
+      ["direct-download server", "velocity", { id: "velocity-flow-smoke", name: "Velocity Flow Smoke", port: 25577, memory: "1G", start: false }, "velocity.jar"],
+      ["local-import server", "discord-js", { id: "discord-flow-smoke", name: "Discord Flow Smoke", port: 3000, memory: "512M", start: false }, "index.js"],
+    ];
+
+    for (const [label, templateId, options, expectedFile] of cases) {
+      const result = await marketplaceService.installTemplate({ templateId, options });
+      assert(result.instance?.id || result.container?.id, `${label} should return an installed instance/container.`);
+      assert(result.progress.some((step) => step.label === "Complete" && step.status === "complete"), `${label} should complete shared orchestration.`);
+      if (expectedFile) {
+        assert(files.has(`${options.id}:${expectedFile}`) || expectedFile.startsWith("server/"), `${label} should resolve expected artifact ${expectedFile}.`);
+      }
+      assert(!JSON.stringify(result).includes("validation is not defined"), `${label} should not surface validation ReferenceError.`);
+    }
+
+    const dockerResult = await marketplaceService.installTemplate({
+      templateId: "docker-nginx",
+      options: { id: "docker-nginx-flow-smoke", name: "Docker Nginx Flow Smoke", port: 8080, memory: "256M", start: false },
+    });
+    assert.strictEqual(dockerResult.container.name, "docker-nginx-flow-smoke", "Docker-backed server should use Docker handler.");
+
+    const createdBeforeFailure = created.length;
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "minecraft-vanilla",
+        options: { id: "invalid-manifest-flow-smoke", name: "Invalid Manifest Flow Smoke", port: "abc", memory: "2G", acceptEula: true, start: false },
+      }),
+      (error) => {
+        assert(!/Download\/import the missing file manually|Choose another pack\/server version/i.test(error.message), "Validation failures must not use manual-import fallback.");
+        return error?.code === "MINECRAFT_PORT_INVALID";
+      },
+      "Invalid manifest/input should produce controlled validation failure."
+    );
+    assert.strictEqual(created.length, createdBeforeFailure, "Instance should not be registered before validation succeeds.");
+
+    const originalStart = agentClient.startInstance;
+    agentClient.startInstance = async () => {
+      throw Object.assign(new Error("mock start failure"), { code: "START_FAILED" });
+    };
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-failure-flow-smoke", name: "Palworld Failure Flow Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => error?.code === "START_FAILED" || error?.code === "STEAMCMD_INSTALL_FAILED",
+      "Unexpected handler exceptions should become controlled installer errors."
+    );
+    agentClient.startInstance = originalStart;
+
+    const downloads = marketplaceService.getDownloads().downloads;
+    const failed = downloads.filter((download) => download.status === "failed");
+    assert(failed.every((download) => Number(download.progress) < 100), "Failed parent/child tasks must not show fake 100% progress.");
+    assert(started.includes("palworld-flow-smoke"), "SteamCMD-native install should begin SteamCMD stage.");
+    assert(started.includes("terraria-flow-smoke"), "Archive install should begin extraction stage.");
+  } finally {
+    global.fetch = originalFetch;
+    patchedAgentMethods.forEach((name) => {
+      agentClient[name] = originalAgent[name];
     });
   }
 }
@@ -1936,6 +2255,9 @@ async function main() {
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertMarketplaceInstallerRegistry();
+  assertMarketplaceManifestAuditReport();
+  assertMarketplaceIpcErrorSerialization();
+  assertInstallerResultContract();
   assertDockerTemplates();
   assertMarketplaceMetadata();
   assertMinecraftVersionPickerSupport();
@@ -1958,6 +2280,7 @@ async function main() {
   await assertOldVanillaInstallerMetadataBackfill();
   await assertVanillaInstallVersionPipeline();
   await assertMarketplaceInstallerSmokeMatrix();
+  await assertSharedTemplateInstallFlowMatrix();
   await assertCalendarMinecraftVersionMetadata();
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();

@@ -9,6 +9,7 @@ const {
 } = require("./minecraftServerConfig");
 const {
   getTemplateInstallerType,
+  normalizeInstallerType,
   validateMarketplaceCatalog,
   validateMarketplaceTemplate,
 } = require("./marketplaceInstallerRegistry");
@@ -25,6 +26,19 @@ const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/ne
 const BUNGEECORD_JAR_URL = "https://hub.spigotmc.org/jenkins/job/BungeeCord/lastSuccessfulBuild/artifact/bootstrap/target/BungeeCord.jar";
 const COMMUNITY_TEMPLATE_FORMAT_VERSION = 1;
 const INSTANCE_VERSION_CACHE_VERSION = 2;
+const INSTALLER_RESULT_STAGES = new Set([
+  "validating",
+  "dependency-check",
+  "creating-instance",
+  "downloading",
+  "extracting",
+  "configuring",
+  "verifying",
+  "starting",
+  "installed",
+  "cancelled",
+  "failed",
+]);
 
 const downloads = new Map();
 const minecraftVersionCatalogCache = new Map();
@@ -35,6 +49,73 @@ function createMarketplaceError(message, code = "MARKETPLACE_ERROR", details = {
   error.code = code;
   error.details = details;
   return error;
+}
+
+function sanitizeStackLocation(error) {
+  const line = String(error?.stack || "").split("\n").find((entry) => /(?:src|agent|scripts)\//.test(entry));
+  return line ? line.trim().replace(process.cwd(), "") : null;
+}
+
+function createInstallerResultOk(stage, data = {}) {
+  return { ok: true, stage, data };
+}
+
+function createInstallerResultError(stage, error, options = {}) {
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  return {
+    ok: false,
+    stage,
+    error: {
+      code: error?.code || options.code || "INTERNAL_INSTALLER_ERROR",
+      message: error?.message || options.message || "Marketplace installer failed.",
+      details: {
+        ...details,
+        stage,
+        handlerName: options.handlerName || details.handlerName || null,
+        installerType: options.installerType || details.installerType || null,
+        runtimeType: options.runtimeType || details.runtimeType || null,
+        templateId: options.templateId || details.templateId || null,
+        stackLocation: sanitizeStackLocation(error),
+        timestamp: new Date().toISOString(),
+      },
+      retryable: options.retryable ?? details.retryable ?? true,
+    },
+  };
+}
+
+function assertInstallerResult(result, context = {}) {
+  const malformed = !result ||
+    typeof result !== "object" ||
+    typeof result.ok !== "boolean" ||
+    !INSTALLER_RESULT_STAGES.has(result.stage) ||
+    (result.ok && (!result.data || typeof result.data !== "object" || Array.isArray(result.data))) ||
+    (!result.ok && (!result.error || typeof result.error !== "object" || !result.error.code || !result.error.message));
+
+  if (!malformed) {
+    return result;
+  }
+
+  throw createMarketplaceError("Installer handler returned an invalid result contract.", "HANDLER_RESULT_INVALID", {
+    stage: context.stage || result?.stage || "unknown",
+    handlerName: context.handlerName || null,
+    installerType: context.installerType || null,
+    runtimeType: context.runtimeType || null,
+    templateId: context.templateId || null,
+    receivedType: Array.isArray(result) ? "array" : typeof result,
+    receivedKeys: result && typeof result === "object" ? Object.keys(result).sort() : [],
+    retryable: false,
+  });
+}
+
+function unwrapInstallerResult(result, context = {}) {
+  const normalized = assertInstallerResult(result, context);
+  if (normalized.ok) {
+    return normalized.data;
+  }
+  throw createMarketplaceError(normalized.error.message, normalized.error.code, {
+    ...normalized.error.details,
+    retryable: normalized.error.retryable,
+  });
 }
 
 function truncateText(value, maxLength = 1200) {
@@ -79,6 +160,15 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
 
   const code = getAgentErrorCode(error);
   const friendlyMessages = {
+    INSTALL_VALIDATION_FAILED: "Marketplace install validation failed.",
+    HANDLER_RESULT_INVALID: "Marketplace installer returned an invalid internal result.",
+    DEPENDENCY_MISSING: "A required runtime dependency is missing.",
+    EXTRACTION_FAILED: "The server files could not be extracted.",
+    CONFIGURATION_FAILED: "The server configuration could not be generated.",
+    INSTANCE_CREATION_FAILED: "The server instance could not be created.",
+    START_FAILED: "The server could not be started.",
+    INSTALL_CANCELLED: "Marketplace install was cancelled.",
+    INTERNAL_INSTALLER_ERROR: "Marketplace installer failed internally.",
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
     INSTANCE_NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
     NOT_FOUND: "The target instance was not found. The install was stopped before file setup.",
@@ -97,6 +187,8 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
     TEMPLATE_NOT_READY: "This template is not ready yet.",
     TEMPLATE_INSTALL_TIMEOUT: "The template installer did not finish in time.",
     TEMPLATE_INSTALL_FAILED: "The server installer failed. Check the instance logs for setup details.",
+    STEAMCMD_INSTALL_FAILED: "SteamCMD installer failed. Check the instance logs for setup details.",
+    EXECUTABLE_NOT_FOUND: "The expected server executable was not found after installation.",
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
     INVALID_EXECUTABLE: "The generated startup executable is invalid.",
     INVALID_ARGS: "The generated startup arguments are invalid.",
@@ -375,6 +467,10 @@ function createDownloadRecord(template, fileName) {
     updatedAt: new Date().toISOString(),
     canRetry: false,
     canCancel: false,
+    parentTaskId: null,
+    childTaskIds: [],
+    errorCode: null,
+    retryContext: null,
     logs: [{
       at: new Date().toISOString(),
       level: "info",
@@ -419,8 +515,62 @@ function updateDownload(record, patch) {
     stage: patch.stage || stageFromStatus[patch.status] || record.stage || "Preparing",
     updatedAt: new Date().toISOString(),
   });
+  if (record.status === "failed") {
+    record.progress = Math.min(Number(record.progress) || 0, 99);
+  }
   downloads.set(record.id, record);
   return record;
+}
+
+function createInstallTaskRecord(template, options = {}) {
+  const record = createDownloadRecord(template, template.displayName || template.id);
+  updateDownload(record, {
+    stage: "Validating",
+    status: "running",
+    progress: 1,
+    canCancel: false,
+    canRetry: false,
+    retryContext: {
+      templateId: template.id,
+      options: {
+        id: options.id || null,
+        name: options.name || null,
+        version: options.version || null,
+        port: options.port || null,
+        ports: options.ports || null,
+        memory: options.memory || null,
+        start: options.start !== false,
+      },
+    },
+  });
+  appendDownloadLog(record, {
+    step: "Validate template",
+    message: `Started install task for ${template.id}.`,
+  });
+  return record;
+}
+
+function finalizeInstallTaskRecord(record, status, message, details = {}) {
+  if (!record) {
+    return null;
+  }
+  const failed = status === "failed";
+  appendDownloadLog(record, {
+    step: details.stage || record.stage,
+    level: failed ? "error" : "info",
+    message,
+    status: details.status || null,
+    body: details.body || null,
+  });
+  return updateDownload(record, {
+    status,
+    stage: details.stage || (failed ? "Failed" : "Completed"),
+    progress: status === "complete" ? 100 : failed ? Math.min(Number(record.progress) || 0, 99) : record.progress,
+    error: failed ? message : null,
+    errorCode: failed ? details.code || null : null,
+    canRetry: failed && details.retryable !== false,
+    canCancel: false,
+  });
 }
 
 function getDownloads() {
@@ -463,6 +613,7 @@ function retryDownload(downloadId) {
     error: null,
     canRetry: false,
   });
+  appendDownloadLog(record, { step: "Retry", message: "Retry queued. Start the install again to rebuild the original context." });
 
   return { download: sanitizeDownload(record) };
 }
@@ -1594,6 +1745,26 @@ function buildInstancePayload(template, options, ports) {
     };
   }
 
+  if (template.startup && typeof template.startup === "object") {
+    return {
+      id,
+      displayName: name,
+      type: template.instanceType || "custom-command",
+      workingDirectory: template.startup.workingDirectory || "data",
+      executable: template.startup.executable || template.executable || "bash",
+      args: resolveTemplateArgs(template.startup.args, template, options),
+      environment,
+      autoStart: Boolean(options.autoStart),
+      restartPolicy: template.startup.restartPolicy || "on-failure",
+      startupTimeoutMs: template.startup.startupTimeoutMs || 30000,
+      shutdownTimeoutMs: template.startup.shutdownTimeoutMs || 10000,
+      memoryLimit: memory,
+      ports,
+      ...metadata,
+      tags,
+    };
+  }
+
   if (template.executable) {
     return {
       id,
@@ -1649,9 +1820,11 @@ function normalizeTemplateDownloads(template) {
     return [];
   }
 
-  if (source.type === "steamcmd") {
+  const sourceType = normalizeInstallerType(source.type);
+  if (sourceType === "steamcmd-native") {
     return [{
       ...source,
+      type: "steamcmd",
       destination: `steamcmd-app-${source.appId || template.installer?.appId || template.id}`,
       fileName: `SteamCMD app ${source.appId || template.installer?.appId || template.id}`,
       required: false,
@@ -1735,11 +1908,19 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
       return last;
     }
     if (state === "Failed") {
-      const code = context.installerType === "steamcmd-native" ? "STEAMCMD_INSTALL_FAILED" : "MARKETPLACE_INSTALL_FAILED";
+      const instance = last?.instance || last || {};
+      if (Number(instance.exitCode) === 0 && instance.failureReason === "EARLY_CLEAN_EXIT") {
+        return last;
+      }
+      const code = instance.failureReason === "EXECUTABLE_NOT_FOUND"
+        ? "DEPENDENCY_MISSING"
+        : context.installerType === "steamcmd-native" ? "STEAMCMD_INSTALL_FAILED" : "MARKETPLACE_INSTALL_FAILED";
       throw createMarketplaceStepError("Template installer failed.", code, {
         ...context,
         message: "The installer process entered Failed state.",
         body: JSON.stringify(last),
+        exitCode: instance.exitCode ?? null,
+        failureReason: instance.failureReason || null,
       });
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -1758,45 +1939,100 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
 async function runTemplatePostInstall(template, options, instanceId, progress, agentConfig = null) {
   const postInstall = template.postInstall;
   if (!postInstall || postInstall.type !== "java-installer") {
-    return;
+    return createInstallerResultOk("installed", { artifacts: [] });
   }
 
-  const installerJar = normalizeInstanceFilePath(postInstall.jar || getPrimaryArtifactPath(template, options));
-  await agentClient.readInstanceFile(instanceId, installerJar, agentConfig);
-  const installerArgs = ["-jar", fileNameFromDestination(installerJar), ...resolveTemplateArgs(postInstall.args || ["--installServer"], template, options)];
+  try {
+    const installerJar = normalizeInstanceFilePath(postInstall.jar || getPrimaryArtifactPath(template, options));
+    await agentClient.readInstanceFile(instanceId, installerJar, agentConfig);
+    const installerArgs = ["-jar", fileNameFromDestination(installerJar), ...resolveTemplateArgs(postInstall.args || ["--installServer"], template, options)];
 
-  pushStep(progress, "Extract files", "running", `Running ${fileNameFromDestination(installerJar)}.`);
-  await agentClient.updateInstance(instanceId, {
-    executable: "java",
-    args: installerArgs,
-    workingDirectory: "data",
-    restartPolicy: "never",
-    startupTimeoutMs: postInstall.timeoutMs || 300000,
-  }, agentConfig);
-  await agentClient.startInstance(instanceId, agentConfig);
-  await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig, {
-    templateId: template.id,
-    step: "Extract files",
-  });
+    pushStep(progress, "Extract files", "running", `Running ${fileNameFromDestination(installerJar)}.`);
+    await agentClient.updateInstance(instanceId, {
+      executable: "java",
+      args: installerArgs,
+      workingDirectory: "data",
+      restartPolicy: "never",
+      startupTimeoutMs: postInstall.timeoutMs || 300000,
+    }, agentConfig);
+    await agentClient.startInstance(instanceId, agentConfig);
+    await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig, {
+      templateId: template.id,
+      step: "Extract files",
+      installerType: "java-runtime",
+      handlerName: "runTemplatePostInstall",
+    });
 
-  const requiredFiles = Array.isArray(postInstall.requiredFiles) ? postInstall.requiredFiles : [];
-  for (const requiredFile of requiredFiles) {
-    await agentClient.readInstanceFile(instanceId, requiredFile, agentConfig);
+    const requiredFiles = Array.isArray(postInstall.requiredFiles) ? postInstall.requiredFiles : [];
+    for (const requiredFile of requiredFiles) {
+      await agentClient.readInstanceFile(instanceId, requiredFile, agentConfig);
+    }
+    pushStep(progress, "Extract files", "complete", "Server installer finished.");
+    return createInstallerResultOk("installed", {
+      installDirectory: "data",
+      executable: "java",
+      runtime: "java",
+      artifacts: requiredFiles,
+    });
+  } catch (error) {
+    return createInstallerResultError("extracting", error, {
+      code: error?.code || "EXTRACTION_FAILED",
+      handlerName: "runTemplatePostInstall",
+      installerType: "java-runtime",
+      runtimeType: "java",
+      templateId: template.id,
+    });
   }
-  pushStep(progress, "Extract files", "complete", "Server installer finished.");
 }
 
 async function runTemplateInstaller(template, options, instanceId, progress, agentConfig = null) {
   if (!template.installer) {
-    return;
+    return createInstallerResultOk("installed", { artifacts: [] });
   }
 
-  if (getTemplateInstallerType(template) === "steamcmd-native") {
-    const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer);
-    pushStep(progress, "Extract files", "running", `Running SteamCMD app ${template.installer.appId}.`);
+  const installerType = getTemplateInstallerType(template);
+  try {
+    if (installerType === "steamcmd-native") {
+      const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer);
+      pushStep(progress, "Extract files", "running", `Running SteamCMD app ${template.installer.appId}.`);
+      await agentClient.updateInstance(instanceId, {
+        executable: "steamcmd",
+        args: steamcmdArgs,
+        workingDirectory: "data",
+        restartPolicy: "never",
+        startupTimeoutMs: template.installer.timeoutMs || 600000,
+      }, agentConfig);
+      await agentClient.startInstance(instanceId, agentConfig);
+      await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
+        templateId: template.id,
+        step: "Extract files",
+        installerType: "steamcmd-native",
+        handlerName: "runTemplateInstaller",
+      });
+      const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
+      for (const requiredFile of requiredFiles) {
+        await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
+      }
+      pushStep(progress, "Extract files", "complete", "SteamCMD installer finished.");
+      return createInstallerResultOk("installed", {
+        installDirectory: normalizeInstanceFilePath(template.installer.installDir || "server"),
+        executable: template.startup?.executable || "steamcmd",
+        runtime: "steamcmd-native",
+        artifacts: requiredFiles,
+      });
+    }
+
+    const script = buildTemplateInstallerScript(template);
+    if (!script) {
+      return createInstallerResultOk("installed", { artifacts: [] });
+    }
+
+    const scriptPath = "runtime/marketplace-install.sh";
+    await writeInstanceText(instanceId, scriptPath, script, agentConfig);
+    pushStep(progress, "Extract files", "running", `Running ${template.installer.type} installer.`);
     await agentClient.updateInstance(instanceId, {
-      executable: "steamcmd",
-      args: steamcmdArgs,
+      executable: "bash",
+      args: [scriptPath],
       workingDirectory: "data",
       restartPolicy: "never",
       startupTimeoutMs: template.installer.timeoutMs || 600000,
@@ -1805,43 +2041,32 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
     await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
       templateId: template.id,
       step: "Extract files",
-      installerType: "steamcmd-native",
+      installerType,
+      handlerName: "runTemplateInstaller",
     });
+
     const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
     for (const requiredFile of requiredFiles) {
       await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
     }
-    pushStep(progress, "Extract files", "complete", "SteamCMD installer finished.");
-    return;
+    pushStep(progress, "Extract files", "complete", "Server installer finished.");
+    return createInstallerResultOk("installed", {
+      installDirectory: normalizeInstanceFilePath(template.installer.extractDir || template.installer.installDir || "server"),
+      executable: template.startup?.executable || "bash",
+      runtime: installerType,
+      artifacts: requiredFiles,
+    });
+  } catch (error) {
+    const code = error?.code ||
+      (installerType === "steamcmd-native" ? "STEAMCMD_INSTALL_FAILED" : "EXTRACTION_FAILED");
+    return createInstallerResultError("extracting", error, {
+      code,
+      handlerName: "runTemplateInstaller",
+      installerType,
+      runtimeType: template.startupType || template.runtime || template.instanceType || null,
+      templateId: template.id,
+    });
   }
-
-  const script = buildTemplateInstallerScript(template);
-  if (!script) {
-    return;
-  }
-
-  const scriptPath = "runtime/marketplace-install.sh";
-  await writeInstanceText(instanceId, scriptPath, script, agentConfig);
-  pushStep(progress, "Extract files", "running", `Running ${template.installer.type} installer.`);
-  await agentClient.updateInstance(instanceId, {
-    executable: "bash",
-    args: [scriptPath],
-    workingDirectory: "data",
-    restartPolicy: "never",
-    startupTimeoutMs: template.installer.timeoutMs || 600000,
-  }, agentConfig);
-  await agentClient.startInstance(instanceId, agentConfig);
-  await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
-    templateId: template.id,
-    step: "Extract files",
-    installerType: getTemplateInstallerType(template),
-  });
-
-  const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
-  for (const requiredFile of requiredFiles) {
-    await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
-  }
-  pushStep(progress, "Extract files", "complete", "Server installer finished.");
 }
 
 function finishInstallerDownloadRecords(records = [], status, message) {
@@ -2214,6 +2439,7 @@ async function installTemplate(payload = {}) {
   pushStep(progress, "Validate template", "complete", `${template.id} is installable as ${manifestValidation.installerType}.`);
 
   const options = payload.options || {};
+  const parentRecord = createInstallTaskRecord(template, options);
   const executionTarget = getExecutionTarget(payload.nodeId);
   const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
   const ports = template.category === "Minecraft"
@@ -2223,6 +2449,7 @@ async function installTemplate(payload = {}) {
   if (template.runtime === "docker" || template.startupType === "docker-image") {
     try {
       pushStep(progress, "Create instance", "running", `Creating ${template.displayName}.`);
+      updateDownload(parentRecord, { stage: "Create instance", progress: 20 });
       const portMappings = ports.map((port) => `${port}:${port}`);
       const result = await agentClient.createDockerContainer({
         name: slugify(options.id || options.name || template.id),
@@ -2235,6 +2462,7 @@ async function installTemplate(payload = {}) {
       }, agentConfig);
       pushStep(progress, "Create instance", "complete", "Docker container created.");
       pushStep(progress, "Complete", "complete", "Installation finished.");
+      finalizeInstallTaskRecord(parentRecord, "complete", "Docker container created.", { stage: "Completed" });
       return {
         template,
         instance: result.container,
@@ -2244,7 +2472,19 @@ async function installTemplate(payload = {}) {
       };
     } catch (error) {
       pushStep(progress, "Failed", "failed", mapMarketplaceError(error, "Docker template install failed."));
-      const installError = createMarketplaceError(mapMarketplaceError(error, "Docker template install failed."), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED");
+      finalizeInstallTaskRecord(parentRecord, "failed", mapMarketplaceError(error, "Docker template install failed."), {
+        stage: error?.details?.stage || "Failed",
+        code: getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED",
+        retryable: error?.details?.retryable,
+      });
+      const installError = createMarketplaceError(mapMarketplaceError(error, "Docker template install failed."), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED", {
+        ...(error?.details || {}),
+        templateId: template.id,
+        installerType: manifestValidation.installerType,
+        runtimeType: "docker",
+        stage: error?.details?.stage || "Create instance",
+        retryable: error?.details?.retryable ?? true,
+      });
       installError.progress = progress;
       throw installError;
     }
@@ -2262,6 +2502,7 @@ async function installTemplate(payload = {}) {
       selectedServerType: isMinecraft ? options.serverType || null : null,
     });
     pushStep(progress, "Create instance", "running", `Creating ${instancePayload.id}.`);
+    updateDownload(parentRecord, { stage: "Create instance", progress: 15 });
     const createResult = await agentClient.createInstance(instancePayload, agentConfig);
     createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
     const createRecord = createResult?.instance || createResult?.data?.instance || createResult?.data || createResult || {};
@@ -2282,6 +2523,7 @@ async function installTemplate(payload = {}) {
     pushStep(progress, "Create instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
 
     pushStep(progress, "Create folders", "running");
+    updateDownload(parentRecord, { stage: "Create folders", progress: 25 });
     await agentClient.createInstanceFolder(createdInstanceId, "runtime", agentConfig);
     pushStep(progress, "Create folders", "complete", `Prepared folders for ${createdInstanceId}.`);
 
@@ -2293,6 +2535,11 @@ async function installTemplate(payload = {}) {
     }
 
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig);
+    updateDownload(parentRecord, {
+      stage: "Extract files",
+      progress: Math.max(Number(parentRecord.progress) || 0, downloadResult.downloaded ? 55 : 40),
+      childTaskIds: downloadResult.records.map((record) => record.id),
+    });
     if (downloadResult.metadata && Object.keys(downloadResult.metadata).length > 0) {
       pushStep(progress, "Detecting version", "running", "Saving resolved server version metadata.");
       const savedMetadata = await persistMarketplaceMetadata(createdInstanceId, downloadResult.metadata, agentConfig);
@@ -2300,7 +2547,13 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Detecting version", "complete", downloadResult.metadata.version || downloadResult.metadata.serverVersion || "Version metadata saved.");
     }
     try {
-      await runTemplateInstaller(template, options, createdInstanceId, progress, agentConfig);
+      unwrapInstallerResult(await runTemplateInstaller(template, options, createdInstanceId, progress, agentConfig), {
+        stage: "extracting",
+        handlerName: "runTemplateInstaller",
+        installerType: manifestValidation.installerType,
+        runtimeType: template.startupType || template.runtime || template.instanceType || null,
+        templateId: template.id,
+      });
       finishInstallerDownloadRecords(downloadResult.records, "complete", "Installer completed.");
     } catch (error) {
       finishInstallerDownloadRecords(downloadResult.records, "failed", error?.message || "Installer failed.");
@@ -2308,6 +2561,7 @@ async function installTemplate(payload = {}) {
     }
 
     pushStep(progress, "Write config", "running");
+    updateDownload(parentRecord, { stage: "Write config", progress: 70 });
     if (isMinecraft) {
       await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`, agentConfig);
       await applyMinecraftServerProperties(agentClient, createdInstanceId, options, ports[0], agentConfig);
@@ -2329,7 +2583,13 @@ async function installTemplate(payload = {}) {
     }
     pushStep(progress, "Write config", "complete", "Configuration files generated.");
 
-    await runTemplatePostInstall(template, options, createdInstanceId, progress, agentConfig);
+    unwrapInstallerResult(await runTemplatePostInstall(template, options, createdInstanceId, progress, agentConfig), {
+      stage: "extracting",
+      handlerName: "runTemplatePostInstall",
+      installerType: manifestValidation.installerType,
+      runtimeType: "java",
+      templateId: template.id,
+    });
 
     const installedMetadata = await detectInstalledTemplateMetadata(template, createdInstanceId, agentConfig);
     if (Object.keys(installedMetadata).length > 0) {
@@ -2342,6 +2602,7 @@ async function installTemplate(payload = {}) {
     const startupPatch = buildStartupPatch(template, options, ports);
     if (startupPatch) {
       pushStep(progress, "Configure startup", "running", "Configuring startup command.");
+      updateDownload(parentRecord, { stage: "Configure startup", progress: 82 });
       const updated = await agentClient.updateInstance(createdInstanceId, startupPatch, agentConfig);
       const updatedInstance = updated?.instance || updated;
       if (updatedInstance?.executable !== startupPatch.executable || !Array.isArray(updatedInstance?.args) || updatedInstance.args.join("\n") !== startupPatch.args.join("\n")) {
@@ -2370,6 +2631,7 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Optional start", "skipped", template.manualStartMessage || "Manual setup is required before this server can start.");
     } else if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
       pushStep(progress, "Optional start", "running");
+      updateDownload(parentRecord, { stage: "Optional start", progress: 92 });
       const started = await agentClient.startInstance(createdInstanceId, agentConfig);
       startedInstance = started.instance || started;
       pushStep(progress, "Optional start", "complete", "Instance start requested.");
@@ -2378,6 +2640,7 @@ async function installTemplate(payload = {}) {
     }
 
     pushStep(progress, "Complete", "complete", "Installation finished.");
+    finalizeInstallTaskRecord(parentRecord, "complete", "Installation finished.", { stage: "Completed" });
     try {
       const refreshed = await agentClient.getInstanceStatus(createdInstanceId, agentConfig);
       startedInstance = refreshed.instance || refreshed || startedInstance;
@@ -2399,7 +2662,22 @@ async function installTemplate(payload = {}) {
       }
     }
     pushStep(progress, "Failed", "failed", mapMarketplaceError(error));
-    const installError = createMarketplaceError(mapMarketplaceError(error), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED");
+    finalizeInstallTaskRecord(parentRecord, "failed", mapMarketplaceError(error), {
+      stage: error?.details?.stage || "Failed",
+      code: getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED",
+      retryable: error?.details?.retryable,
+      body: error?.details?.body || null,
+    });
+    const installError = createMarketplaceError(mapMarketplaceError(error), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED", {
+      ...(error?.details || {}),
+      templateId: template.id,
+      installerType: manifestValidation.installerType,
+      runtimeType: template.startupType || template.runtime || template.instanceType || null,
+      stage: error?.details?.stage || "Failed",
+      childTaskState: sanitizeDownloads({ downloads: getDownloads().downloads.filter((record) => record.templateId === template.id) }).downloads,
+      timestamp: new Date().toISOString(),
+      retryable: error?.details?.retryable ?? true,
+    });
     installError.progress = progress;
     throw installError;
   }
@@ -2414,6 +2692,9 @@ module.exports = {
     buildTemplateInstallerScript,
     categorizeMinecraftVersion,
     compareMinecraftVersions,
+    assertInstallerResult,
+    createInstallerResultError,
+    createInstallerResultOk,
     getTemplateInstallerType,
     getTemplateInstallPlan,
     normalizeTemplateDownloads,

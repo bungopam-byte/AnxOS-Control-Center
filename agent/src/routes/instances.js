@@ -69,6 +69,7 @@ function getValidationErrorDetails(error) {
     INVALID_ARGS: { field: "args", expected: "argument array with safe string values", userMessage: "The generated startup arguments are invalid." },
     INVALID_PORTS: { field: "ports", expected: "ports between 1 and 65535", userMessage: "Enter valid ports between 1 and 65535." },
     INVALID_MEMORY_LIMIT: { field: "memoryLimit", expected: "memory value such as 512M, 2G, or 2048M", userMessage: "Use memory like 512M, 2G, or 2048M." },
+    INVALID_NUMBER: { field: error?.field || "number", expected: error?.expected || "positive integer within the allowed range", userMessage: "Use a valid numeric value." },
     INVALID_RESTART_POLICY: { field: "restartPolicy", expected: "never, on-failure, or always", userMessage: "The restart policy is invalid." },
     RUNTIME_FIELDS_READ_ONLY: { field: "state", expected: "runtime fields omitted from create/update requests", userMessage: "Runtime-only fields cannot be changed by install requests." },
     PATH_NOT_ALLOWED: { field: "workingDirectory", expected: "path inside the approved instance directory", userMessage: "The generated path is outside the instance directory." },
@@ -104,6 +105,9 @@ function attachReceivedValidationValue(error, body = {}) {
     error.received = body.executable ?? body.command;
   } else if (field === "memoryLimit") {
     error.received = body.memoryLimit ?? body.memory;
+  }
+  if (error.received === undefined && error.field && Object.prototype.hasOwnProperty.call(body, error.field)) {
+    error.received = body[error.field];
   }
   return error;
 }

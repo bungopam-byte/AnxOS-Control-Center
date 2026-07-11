@@ -77,6 +77,9 @@ function getMarketplaceErrorMessage(error) {
 function getMarketplaceUiError(error) {
   const code = error?.payload?.error?.code || error?.code;
   const details = error?.details || error?.payload?.error?.details || {};
+  const validation = error?.payload?.error?.details?.field
+    ? error.payload.error.details
+    : details.validation || null;
   const message = error?.payload?.error?.message || error?.message || "";
   if ([
     "PROVIDER_REQUIRED_FILE_RESTRICTED",

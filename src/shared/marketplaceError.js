@@ -41,7 +41,7 @@
     const providerName = details.providerName || (provider ? String(provider).replace(/^./, (letter) => letter.toUpperCase()) : "Provider");
     const projectId = details.projectId || details.projectID || null;
     const fileId = details.fileId || details.fileID || null;
-    const suggestion = details.suggestion || "Download/import the missing file manually, or choose another pack/server version.";
+    const suggestion = details.suggestion || "";
     const expectedFileName = details.expectedFileName || payloadError.expectedFileName || null;
     const actualFileName = details.actualFileName || payloadError.actualFileName || null;
     const manualRequired = [
@@ -86,6 +86,7 @@
         rawMessage,
         cleanMessage,
         debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+        details,
       };
     }
 
@@ -131,15 +132,17 @@
         rawMessage,
         cleanMessage,
         debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+        details,
       };
     }
 
     const title = friendlyMessage || cleanMessage || context.fallback || "Marketplace install failed.";
+    const action = suggestion || details.userMessage || "Review the technical details, fix the reported install stage, then retry.";
     return {
       code: code || "MARKETPLACE_INSTALL_FAILED",
       title,
       body: title,
-      action: suggestion,
+      action,
       provider,
       providerName,
       file,
@@ -148,6 +151,7 @@
       rawMessage,
       cleanMessage,
       debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+      details,
     };
   }
 

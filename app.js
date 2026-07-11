@@ -8003,7 +8003,19 @@ function renderMarketplaceProgress(steps = []) {
       summary.textContent = "Technical details";
       const pre = document.createElement("pre");
       pre.textContent = step.debug;
-      debug.append(summary, pre);
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "inline-action";
+      copy.textContent = "Copy Error Details";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(step.debug);
+          showToast("Error details copied.");
+        } catch {
+          showToast("Could not copy error details.", "warning");
+        }
+      });
+      debug.append(summary, copy, pre);
       row.append(debug);
     }
     marketplaceProgress.append(row);
@@ -8114,7 +8126,7 @@ function normalizeMarketplaceError(error, fallback = "Template install failed.")
     code: error?.payload?.error?.code || error?.code || "MARKETPLACE_INSTALL_FAILED",
     title: cleanMessage,
     body: cleanMessage,
-    action: "Retry the install or import the required server files manually.",
+    action: "Review the technical details, fix the reported install stage, then retry.",
     file: null,
     projectId: null,
     fileId: null,
@@ -8255,7 +8267,7 @@ function rememberFailedMarketplaceDownload(template, normalizedError) {
     id: `failed-${Date.now()}`,
     name: template?.displayName || template?.name || template?.id || "Marketplace install",
     status: "failed",
-    progress: 100,
+    progress: 0,
     speedBytesPerSecond: 0,
     canCancel: false,
     canRetry: false,

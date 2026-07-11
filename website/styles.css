@@ -211,6 +211,10 @@ h3 {
   display: block;
 }
 
+.account-route:target {
+  display: block;
+}
+
 #account.account-route--active {
   display: grid;
   grid-template-columns: minmax(0, 0.65fr) minmax(360px, 1fr);

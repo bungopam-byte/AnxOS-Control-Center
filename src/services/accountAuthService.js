@@ -191,6 +191,30 @@ function redactSecret(value) {
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "[redacted]");
 }
 
+async function readResponsePayload(response) {
+  const text = await response.text().catch(() => "");
+  if (!text) {
+    return { data: {}, text: "" };
+  }
+  try {
+    return { data: JSON.parse(text), text };
+  } catch {
+    return { data: {}, text };
+  }
+}
+
+function getHttpErrorMessage(response, data = {}, text = "", fallback = "Account request failed") {
+  const structuredMessage = data.message || data.error_description || data.error;
+  if (structuredMessage) {
+    return redactSecret(structuredMessage);
+  }
+  const responseText = String(text || "").replace(/\s+/g, " ").trim();
+  if (responseText) {
+    return redactSecret(`${fallback} with HTTP ${response.status}: ${responseText.slice(0, 240)}`);
+  }
+  return `${fallback} with HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}.`;
+}
+
 function publicAccount(session) {
   if (!session) {
     return null;
@@ -301,9 +325,9 @@ async function postJson(url, payload, options = {}) {
       body: JSON.stringify(payload || {}),
       signal: controller.signal,
     });
-    const data = await response.json().catch(() => ({}));
+    const { data, text } = await readResponsePayload(response);
     if (!response.ok) {
-      const error = new Error(redactSecret(data.message || data.error_description || data.error || `Account request failed with HTTP ${response.status}.`));
+      const error = new Error(getHttpErrorMessage(response, data, text, "Account request failed"));
       error.code = data.code || data.error || `HTTP_${response.status}`;
       throw error;
     }
@@ -336,9 +360,9 @@ async function getJson(url, options = {}) {
       },
       signal: controller.signal,
     });
-    const data = await response.json().catch(() => ({}));
+    const { data, text } = await readResponsePayload(response);
     if (!response.ok) {
-      const error = new Error(redactSecret(data.message || data.error_description || data.error || `Account request failed with HTTP ${response.status}.`));
+      const error = new Error(getHttpErrorMessage(response, data, text, "Account request failed"));
       error.code = data.code || data.error || `HTTP_${response.status}`;
       throw error;
     }
@@ -470,13 +494,13 @@ async function postSupabaseAuth(pathname, payload, options = {}) {
       body: JSON.stringify(payload || {}),
       signal: controller.signal,
     });
-    const data = await response.json().catch(() => ({}));
+    const { data, text } = await readResponsePayload(response);
     if (!response.ok) {
       const reason = data.error_code || data.error || data.msg || data.message || `HTTP_${response.status}`;
       const error = new Error(redactSecret(
         response.status === 400 || response.status === 401
           ? "Invalid email or password."
-          : data.msg || data.message || `Supabase Auth request failed with HTTP ${response.status}.`
+          : data.msg || data.message || getHttpErrorMessage(response, data, text, "Supabase Auth request failed")
       ));
       error.code = reason;
       throw error;

@@ -149,6 +149,15 @@ class DeveloperGitUpdater {
     }
   }
 
+  restart() {
+    if (this.app?.isPackaged !== false) {
+      return { ...this.getState(), restarted: false, error: "packaged" };
+    }
+    this.app.relaunch();
+    this.app.exit(0);
+    return { ...this.getState(), restarted: true };
+  }
+
   async openChanges() {
     const state = this.check({ fetch: false });
     if (!state.eligible) return { opened: false };

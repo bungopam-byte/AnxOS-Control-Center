@@ -485,6 +485,13 @@ const nodeFields = document.querySelectorAll("[data-node-field]");
 const nodeList = document.querySelector("[data-node-list]");
 const nodeMessage = document.querySelector("[data-node-message]");
 const nodeStatus = document.querySelector("[data-node-status]");
+const nodeSummaryFields = document.querySelectorAll("[data-node-summary]");
+const nodeModal = document.querySelector("[data-node-modal]");
+const nodeModalTitle = document.querySelector("[data-node-modal-title]");
+const nodeDetailsModal = document.querySelector("[data-node-details-modal]");
+const nodeDetailsTitle = document.querySelector("[data-node-details-title]");
+const nodeDetailsFields = document.querySelectorAll("[data-node-detail]");
+const nodeDetailsBadges = document.querySelector("[data-node-details-badges]");
 const nodePickerTrigger = document.querySelector("[data-node-picker-trigger]");
 const nodePicker = document.querySelector("[data-node-picker]");
 const nodePickerList = document.querySelector("[data-node-picker-list]");
@@ -536,6 +543,11 @@ let runtimeInfoState = null;
 let selectedNodeContextVersion = 0;
 let nodeSwitchInProgress = false;
 let nodePickerOpen = false;
+let nodeModalCleanup = null;
+let nodeDetailsCleanup = null;
+let nodeEditId = null;
+let nodeDetailsId = null;
+let nodeRefreshTimer = null;
 let nodePickerActiveIndex = 0;
 let backupRequestInFlight = false;
 let backupsState = {
@@ -966,6 +978,7 @@ function getDesktopApiState() {
       typeof api?.developerUpdates?.getState === "function" &&
       typeof api?.developerUpdates?.check === "function" &&
       typeof api?.developerUpdates?.update === "function" &&
+      typeof api?.developerUpdates?.restart === "function" &&
       typeof api?.developerUpdates?.openChanges === "function",
     hasAccount:
       typeof api?.account?.getStatus === "function" &&
@@ -2559,6 +2572,13 @@ function showPage(pageName) {
     startAgentControlPolling();
   } else {
     stopAgentControlPolling();
+  }
+
+  if (safePageName === "nodes") {
+    refreshNodes();
+    startNodeRefreshPolling();
+  } else {
+    stopNodeRefreshPolling();
   }
 
   pages.forEach((page) => {
@@ -15813,16 +15833,152 @@ function getNodeVisualState(node) {
   if (node?.kind === "application-host") {
     return "online";
   }
+  if (node?.connection?.status === "online" || node?.connection?.connected === true) {
+    return "online";
+  }
+  if (node?.connection?.status === "warning") {
+    return "warning";
+  }
+  if (node?.connection?.status === "offline" || node?.connection?.connected === false) {
+    return "offline";
+  }
   if (node?.installing) {
     return "installing";
   }
   if (node?.error) {
     return "error";
   }
-  if (node?.id && node.id === getSelectedNodeId()) {
-    return "online";
-  }
   return node?.hasToken ? "offline" : "error";
+}
+
+function getNodeStatusLabel(node) {
+  const state = getNodeVisualState(node);
+  if (state === "online") return node?.kind === "application-host" ? "Healthy" : "Connected";
+  if (state === "warning") return "Warning";
+  if (state === "installing") return "Installing";
+  if (state === "error") return "Error";
+  return "Offline";
+}
+
+function createNodeBadge(label, state = "planned") {
+  const badge = document.createElement("span");
+  badge.className = `status-pill node-status-badge node-status-badge--${state}`;
+  badge.dataset.agentState = state;
+  badge.textContent = label;
+  return badge;
+}
+
+function getNodeIdentity(node = {}) {
+  return node.kind === "application-host" ? node.applicationHost || {} : node.agentIdentity || {};
+}
+
+function formatNodeLastSeen(node = {}) {
+  const value = node.connection?.lastSeen || node.updatedAt || node.createdAt;
+  return value ? formatDateTime(value) : "Never";
+}
+
+function formatNodePlatform(node = {}) {
+  const identity = getNodeIdentity(node);
+  if (node.kind === "application-host") {
+    return identity.operatingSystem || node.operatingSystem || "Local OS";
+  }
+  return identity.operatingSystem || identity.platform || "Agent OS unavailable";
+}
+
+function setNodeSummary(name, value) {
+  nodeSummaryFields.forEach((field) => {
+    if (field.dataset.nodeSummary === name) {
+      field.textContent = String(value ?? "0");
+    }
+  });
+}
+
+function renderNodeSummary() {
+  const nodes = getNodePickerNodes();
+  const remoteNodes = nodes.filter((node) => node.kind === "agent");
+  const online = nodes.filter((node) => getNodeVisualState(node) === "online").length;
+  const offline = nodes.filter((node) => ["offline", "error"].includes(getNodeVisualState(node))).length;
+  const docker = remoteNodes.filter((node) => node.docker?.enabled !== false).length;
+  const selectedAgent = nodes.find((node) => node.id === getSelectedNodeId() && node.kind === "agent");
+  setNodeSummary("total", nodes.length);
+  setNodeSummary("online", online);
+  setNodeSummary("offline", offline);
+  setNodeSummary("docker", docker);
+  setNodeSummary("connected", selectedAgent && getNodeVisualState(selectedAgent) === "online" ? selectedAgent.displayName || "Agent" : "None");
+}
+
+function setNodeModalVisible(isVisible, node = null) {
+  if (!nodeModal) return;
+  nodeModal.hidden = !isVisible;
+  if (isVisible) {
+    nodeEditId = node?.kind === "agent" ? node.id : null;
+    if (nodeModalTitle) nodeModalTitle.textContent = nodeEditId ? "Edit Node" : "Add Node";
+    const saveButton = nodeModal.querySelector('[data-node-action="save"]');
+    if (saveButton) saveButton.textContent = nodeEditId ? "Save Node" : "Register Node";
+    nodeFields.forEach((field) => {
+      const key = field.dataset.nodeField;
+      if (key === "dockerEnabled") {
+        field.checked = node?.docker?.enabled !== false;
+      } else if (key === "displayName") {
+        field.value = node?.displayName || "";
+      } else if (key === "agentUrl") {
+        field.value = node?.agentUrl || "";
+      } else if (key === "agentToken") {
+        field.value = "";
+      }
+    });
+    if (!nodeModalCleanup) {
+      nodeModalCleanup = activateModal(nodeModal, { initialFocus: () => nodeModal.querySelector("[data-node-field=\"displayName\"]") });
+    }
+  } else if (nodeModalCleanup) {
+    nodeModalCleanup();
+    nodeModalCleanup = null;
+    nodeEditId = null;
+  }
+}
+
+function openNodeDetails(nodeId) {
+  const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
+  if (!node || !nodeDetailsModal) return;
+  nodeDetailsId = node.id;
+  const identity = getNodeIdentity(node);
+  const visualState = getNodeVisualState(node);
+  if (nodeDetailsTitle) nodeDetailsTitle.textContent = node.displayName || node.id || "Node";
+  if (nodeDetailsBadges) {
+    nodeDetailsBadges.replaceChildren(
+      createNodeBadge(getNodeStatusLabel(node), visualState),
+      createNodeBadge(node.docker?.enabled === false ? "Docker Off" : "Docker Enabled", node.docker?.enabled === false ? "planned" : "online"),
+      createNodeBadge(node.kind === "application-host" ? "Application Host" : "Agent", node.kind === "application-host" ? "online" : visualState),
+      createNodeBadge(node.ownerMachine ? "Owner Machine" : "Standard Node", node.ownerMachine ? "online" : "planned"),
+    );
+  }
+  const values = {
+    hostname: identity.hostname || node.displayName || "Unavailable",
+    os: formatNodePlatform(node),
+    version: identity.agentVersion || (node.kind === "application-host" ? runtimeInfoState?.version : null) || "Unavailable",
+    docker: node.kind === "application-host" ? "Local provider" : node.docker?.enabled === false ? "Disabled" : "Enabled",
+    lastSeen: formatNodeLastSeen(node),
+    connection: node.connection?.message || getNodeStatusLabel(node),
+    url: node.kind === "application-host" ? "Local Application" : node.agentUrl || "Unavailable",
+    token: node.kind === "application-host" ? "Not required" : node.hasToken ? "Configured" : "Missing",
+  };
+  nodeDetailsFields.forEach((field) => {
+    field.textContent = values[field.dataset.nodeDetail] || "Unavailable";
+  });
+  nodeDetailsModal.hidden = false;
+  if (!nodeDetailsCleanup) {
+    nodeDetailsCleanup = activateModal(nodeDetailsModal, { initialFocus: () => nodeDetailsModal.querySelector("[data-node-action=\"close-details\"]") });
+  }
+}
+
+function setNodeDetailsVisible(isVisible) {
+  if (!nodeDetailsModal) return;
+  nodeDetailsModal.hidden = !isVisible;
+  if (!isVisible && nodeDetailsCleanup) {
+    nodeDetailsCleanup();
+    nodeDetailsCleanup = null;
+    nodeDetailsId = null;
+  }
 }
 
 function getNodePickerNodes() {
@@ -15972,6 +16128,7 @@ async function activateNodePickerOption(index) {
 
 function renderNodes() {
   renderRoutingDiagnostics();
+  renderNodeSummary();
   nodeTargetSelects.forEach((select) => {
     select.replaceChildren();
     (nodesState.nodes || []).forEach((node) => {
@@ -16018,23 +16175,87 @@ function renderNodes() {
 
   if (nodeList) {
     nodeList.replaceChildren();
-    (nodesState.nodes || []).forEach((node) => {
+    const nodes = nodesState.nodes || [];
+    const remoteCount = nodes.filter((node) => node.kind === "agent").length;
+    if (remoteCount === 0) {
+      const empty = document.createElement("div");
+      empty.className = "nodes-empty-state";
+      const title = document.createElement("strong");
+      title.textContent = "No remote nodes have been registered yet.";
+      const copy = document.createElement("p");
+      copy.textContent = "This Device is ready. Add a remote Agent node to manage another PC or server.";
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "primary-button";
+      action.textContent = "Add Node";
+      action.addEventListener("click", () => setNodeModalVisible(true));
+      empty.append(title, copy, action);
+      nodeList.append(empty);
+    }
+    nodes.forEach((node) => {
+      const state = getNodeVisualState(node);
       const item = document.createElement("article");
-      item.className = "download-item";
-      item.dataset.agentState = getNodeVisualState(node);
+      item.className = "download-item node-card";
+      item.dataset.agentState = state;
       item.classList.toggle("is-selected", node.id === getSelectedNodeId());
-      item.append(createAgentRobotIcon(getNodeVisualState(node)));
-      const copy = document.createElement("div");
-      copy.className = "agent-node-copy";
+      item.append(createAgentRobotIcon(state));
+      const body = document.createElement("div");
+      body.className = "agent-node-copy node-card__body";
+      const header = document.createElement("div");
+      header.className = "node-card__header";
+      const titleGroup = document.createElement("div");
       const title = document.createElement("strong");
       title.textContent = node.displayName || node.id;
       const detail = document.createElement("small");
       detail.textContent = node.kind === "application-host"
-        ? `${node.applicationHost?.operatingSystem || "Local OS"} · Local Application`
-        : `${node.agentIdentity?.operatingSystem || "Agent OS unavailable"} · ${node.agentUrl} · Docker ${node.docker?.enabled === false ? "off" : "on"}`;
-      copy.append(title, detail);
-      item.append(copy);
-      item.addEventListener("click", () => selectNode(node.id));
+        ? `${formatNodePlatform(node)} · Local Application`
+        : `${formatNodePlatform(node)} · ${node.agentUrl || "Agent API"}`;
+      titleGroup.append(title, detail);
+      const badges = document.createElement("div");
+      badges.className = "node-card__badges";
+      badges.append(
+        createNodeBadge(getNodeStatusLabel(node), state),
+        createNodeBadge(node.docker?.enabled === false ? "Docker Off" : "Docker", node.docker?.enabled === false ? "planned" : "online"),
+        createNodeBadge(node.ownerMachine ? "Owner" : node.kind === "application-host" ? "This Device" : "Agent", node.ownerMachine || node.kind === "application-host" ? "online" : "planned"),
+      );
+      header.append(titleGroup, badges);
+      const meta = document.createElement("dl");
+      meta.className = "node-card__meta";
+      [
+        ["Agent", node.kind === "application-host" ? "Local Application" : node.agentUrl || "Unavailable"],
+        ["Last seen", formatNodeLastSeen(node)],
+        ["Health", node.connection?.message || getNodeStatusLabel(node)],
+      ].forEach(([label, value]) => {
+        const wrapper = document.createElement("div");
+        const dt = document.createElement("dt");
+        const dd = document.createElement("dd");
+        dt.textContent = label;
+        dd.textContent = value;
+        wrapper.append(dt, dd);
+        meta.append(wrapper);
+      });
+      const actions = document.createElement("div");
+      actions.className = "node-card__actions";
+      [
+        ["select", node.id === getSelectedNodeId() ? "Selected" : "Select"],
+        ["test", "Test Connection"],
+        ["edit", "Edit"],
+        ["refresh", "Refresh"],
+        ["details", "View Details"],
+        ["remove", "Remove"],
+      ].forEach(([actionName, label]) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = actionName === "remove" ? "inline-action inline-action--danger" : "inline-action";
+        button.dataset.nodeCardAction = actionName;
+        button.dataset.nodeId = node.id;
+        button.textContent = label;
+        button.disabled = (node.kind === "application-host" && ["edit", "remove"].includes(actionName)) || (actionName === "select" && node.id === getSelectedNodeId());
+        actions.append(button);
+      });
+      body.append(header, meta, actions);
+      item.append(body);
+      item.addEventListener("click", () => openNodeDetails(node.id));
       nodeList.append(item);
     });
   }
@@ -16054,6 +16275,23 @@ async function refreshNodes() {
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
   }
   renderNodes();
+}
+
+function startNodeRefreshPolling() {
+  if (nodeRefreshTimer || document.hidden) return;
+  nodeRefreshTimer = window.setInterval(() => {
+    if (getActivePageName() !== "nodes" || document.hidden) {
+      return;
+    }
+    refreshNodes();
+  }, 5000);
+}
+
+function stopNodeRefreshPolling() {
+  if (nodeRefreshTimer) {
+    window.clearInterval(nodeRefreshTimer);
+    nodeRefreshTimer = null;
+  }
 }
 
 async function selectNode(nodeId) {
@@ -16105,6 +16343,9 @@ async function selectNode(nodeId) {
 
 function getNodeFormPayload() {
   const payload = { docker: {} };
+  if (nodeEditId) {
+    payload.id = nodeEditId;
+  }
   nodeFields.forEach((field) => {
     if (field.dataset.nodeField === "dockerEnabled") {
       payload.docker.enabled = field.checked;
@@ -16121,14 +16362,16 @@ async function saveNodeFromSettings() {
     return;
   }
   try {
+    const wasEditing = Boolean(nodeEditId);
     await desktopApiState.api.nodes.save(getNodeFormPayload());
     nodeFields.forEach((field) => {
       if (field.type !== "checkbox") {
         field.value = "";
       }
     });
+    setNodeModalVisible(false);
     await refreshNodes();
-    showToast("Node registered.");
+    showToast(wasEditing ? "Node updated." : "Node registered.");
   } catch (error) {
     showToast(error?.message || "Node could not be saved.");
   }
@@ -16145,8 +16388,9 @@ async function testSelectedNode() {
 
 async function deleteSelectedNode() {
   const desktopApiState = getDesktopApiState();
-  const nodeId = getSelectedNodeId();
-  if (!desktopApiState.hasNodes || getSelectedNode()?.kind === "application-host" || !window.confirm(`Delete node ${nodeId}?`)) {
+  const nodeId = nodeEditId || getSelectedNodeId();
+  const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
+  if (!desktopApiState.hasNodes || node?.kind === "application-host" || !window.confirm(`Delete node ${nodeId}?`)) {
     return;
   }
   try {
@@ -16156,6 +16400,47 @@ async function deleteSelectedNode() {
   } catch (error) {
     showToast(error?.message || "Node could not be deleted.");
   }
+}
+
+async function testNodeById(nodeId) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasNodes) return;
+  const result = await desktopApiState.api.nodes.test(nodeId || getSelectedNodeId()).catch((error) => ({ connected: false, message: error.message }));
+  await refreshNodes();
+  showToast(result.connected ? "Node connected." : result.message || "Node unavailable.");
+}
+
+async function deleteNodeById(nodeId) {
+  const desktopApiState = getDesktopApiState();
+  const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
+  if (!desktopApiState.hasNodes || !node || node.kind === "application-host" || !window.confirm(`Remove ${node.displayName || node.id}?`)) {
+    return;
+  }
+  try {
+    await desktopApiState.api.nodes.delete(node.id);
+    setNodeDetailsVisible(false);
+    setNodeModalVisible(false);
+    await refreshNodes();
+    showToast("Node removed.");
+  } catch (error) {
+    showToast(error?.message || "Node could not be removed.");
+  }
+}
+
+function editNodeById(nodeId) {
+  const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
+  if (!node || node.kind === "application-host") return;
+  setNodeDetailsVisible(false);
+  setNodeModalVisible(true, node);
+}
+
+async function handleNodeCardAction(action, nodeId) {
+  if (action === "select") await selectNode(nodeId);
+  else if (action === "test") await testNodeById(nodeId);
+  else if (action === "edit") editNodeById(nodeId);
+  else if (action === "refresh") await refreshNodes();
+  else if (action === "details") openNodeDetails(nodeId);
+  else if (action === "remove") await deleteNodeById(nodeId);
 }
 
 function getSettingInputValue(input) {
@@ -16656,8 +16941,9 @@ function renderDeveloperUpdateModal(state = developerUpdateState) {
   devUpdateButtons.forEach((button) => {
     const action = button.dataset.devUpdateAction;
     if (action === "update") {
-      button.disabled = developerUpdateBusy || behind <= 0 || state?.status === "restart-required" || state?.restartRequired;
-      button.textContent = state?.status === "restart-required" || state?.restartRequired ? "Restart Required" : developerUpdateBusy ? "Updating..." : "Update Now";
+      const restartRequired = state?.status === "restart-required" || state?.restartRequired;
+      button.disabled = developerUpdateBusy || (!restartRequired && behind <= 0);
+      button.textContent = restartRequired ? "Restart Now" : developerUpdateBusy ? "Updating..." : "Update Now";
     } else if (action === "check" || action === "changes") {
       button.disabled = developerUpdateBusy;
     }
@@ -16719,7 +17005,13 @@ async function runDeveloperUpdateAction(action) {
   try {
     if (action === "check") developerUpdateState = await desktopApiState.api.developerUpdates.check({ fetch: true });
     else if (action === "changes") await desktopApiState.api.developerUpdates.openChanges();
-    else if (action === "update") developerUpdateState = await desktopApiState.api.developerUpdates.update();
+    else if (action === "update") {
+      if (developerUpdateState?.status === "restart-required" || developerUpdateState?.restartRequired) {
+        await desktopApiState.api.developerUpdates.restart();
+        return;
+      }
+      developerUpdateState = await desktopApiState.api.developerUpdates.update();
+    }
     renderDevelopmentBadge(developerUpdateState);
     renderDeveloperUpdateModal(developerUpdateState);
   } catch (error) {
@@ -18312,9 +18604,55 @@ document.addEventListener("click", () => {
 });
 window.addEventListener("resize", positionNodePicker);
 window.addEventListener("scroll", positionNodePicker, true);
+document.querySelector('[data-node-action="open-add"]')?.addEventListener("click", () => setNodeModalVisible(true));
+document.querySelector('[data-node-action="refresh"]')?.addEventListener("click", refreshNodes);
 document.querySelector('[data-node-action="save"]')?.addEventListener("click", saveNodeFromSettings);
 document.querySelector('[data-node-action="test"]')?.addEventListener("click", testSelectedNode);
 document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);
+document.querySelectorAll('[data-node-action="close-modal"]').forEach((button) => button.addEventListener("click", () => setNodeModalVisible(false)));
+document.querySelectorAll('[data-node-action="close-details"]').forEach((button) => button.addEventListener("click", () => setNodeDetailsVisible(false)));
+nodeModal?.addEventListener("click", (event) => {
+  if (event.target === nodeModal) setNodeModalVisible(false);
+});
+nodeModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setNodeModalVisible(false);
+  }
+});
+nodeDetailsModal?.addEventListener("click", (event) => {
+  if (event.target === nodeDetailsModal) setNodeDetailsVisible(false);
+});
+nodeDetailsModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setNodeDetailsVisible(false);
+  }
+});
+nodeList?.addEventListener("click", async (event) => {
+  const actionButton = event.target.closest("[data-node-card-action]");
+  if (!actionButton) return;
+  event.preventDefault();
+  event.stopPropagation();
+  await handleNodeCardAction(actionButton.dataset.nodeCardAction, actionButton.dataset.nodeId);
+});
+nodeDetailsModal?.addEventListener("click", async (event) => {
+  const actionButton = event.target.closest("[data-node-details-action]");
+  if (!actionButton) return;
+  const action = actionButton.dataset.nodeDetailsAction;
+  if (action === "test") await testNodeById(nodeDetailsId);
+  else if (action === "select") {
+    await selectNode(nodeDetailsId);
+    setNodeDetailsVisible(false);
+  }
+  else if (action === "edit") editNodeById(nodeDetailsId);
+  else if (action === "refresh") {
+    await refreshNodes();
+    openNodeDetails(nodeDetailsId);
+  } else if (action === "remove") {
+    await deleteNodeById(nodeDetailsId);
+  }
+});
 agentControlButtons.forEach((button) => button.addEventListener("click", () => runAgentControlAction(button.dataset.agentControlAction)));
 agentLogSearch?.addEventListener("input", renderAgentLogs);
 agentLogSeverity?.addEventListener("change", renderAgentLogs);

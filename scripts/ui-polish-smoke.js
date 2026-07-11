@@ -41,14 +41,20 @@ buttons.forEach(([, attributes, content]) => {
 
 assert(index.includes('role="dialog" aria-modal="true"') && index.includes('tabindex="-1"'), "Static dialogs must be modal and programmatically focusable.");
 assert(index.includes('aria-live="polite" aria-atomic="true"'), "Toast feedback must be announced atomically.");
+assert(index.includes("nodes-summary-grid") && index.includes('data-node-summary="online"'), "Nodes workspace must expose a compact dashboard summary.");
+assert(index.includes("[data-node-list]") || index.includes("data-node-list"), "Nodes workspace must expose the node card list.");
+assert(index.includes("data-node-modal") && index.includes('data-node-action="open-add"'), "Nodes registration form must live in an Add Node modal.");
+assert(index.includes("data-node-details-modal") && index.includes("node-details-drawer"), "Nodes workspace must include a details drawer.");
 assert(app.includes('setAttribute("aria-busy"'), "Async workspace loading must expose aria-busy.");
 assert(app.includes("isNodeSwitching() || document.hidden"), "Background polling must pause while the document is hidden.");
+assert(app.includes("renderNodeSummary") && app.includes("startNodeRefreshPolling"), "Nodes workspace must render summary stats and page-scoped live refresh.");
+assert(app.includes("setNodeModalVisible") && app.includes("openNodeDetails") && app.includes("handleNodeCardAction"), "Nodes modal, details, and quick actions must be wired.");
 assert(index.indexOf("data-development-badge") < index.indexOf("data-titlebar-connection"), "Developer Mode badge must sit beside and before the Connected badge.");
 assert(index.includes("data-dev-update-modal") && index.includes('data-dev-update-field="branch"') && index.includes('data-dev-update-action="update"'), "Developer update modal must expose Git status and actions.");
 assert(styles.includes('data-dev-state="available"') && styles.includes("devBadgePulse"), "Developer update badge must include a subtle available-update state.");
 assert(app.includes("setupDeveloperUpdates") && app.includes("openDeveloperUpdateModal") && app.includes("renderDevelopmentBadge"), "Developer update badge must be wired in the renderer.");
-assert(preload.includes("developerUpdates") && preload.includes("developerUpdates:check"), "Preload must expose developer update IPC.");
-assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc"), "Main process must own developer update detection.");
+assert(preload.includes("developerUpdates") && preload.includes("developerUpdates:check") && preload.includes("developerUpdates:restart"), "Preload must expose developer update IPC.");
+assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc") && main.includes("developerUpdates:restart"), "Main process must own developer update detection and restart.");
 assert(index.includes('data-agent-control-action="start"') && index.includes('data-agent-control-action="installService"'), "Agent Control must expose real lifecycle and service actions.");
 assert(pageMarkup("agent-control").includes("Agent Connection") && pageMarkup("agent-control").includes('data-agent-setting="backendMode"'), "Agent configuration controls must render in Agent Control.");
 assert(pageMarkup("agent-control").indexOf("Diagnostics") < pageMarkup("agent-control").indexOf("Agent Connection"), "Agent Connection should sit below Diagnostics in Agent Control.");
@@ -60,6 +66,7 @@ assert(app.includes("formatAgentCpu") && app.includes("formatAgentMemory") && ap
 assert(app.includes("agentControlLastRuntimeSnapshot"), "Agent Control must preserve brief stale metrics during transient failures.");
 assert(!app.includes('"Service managed"'), "Agent Control must not render Service managed as the primary process value.");
 assert(styles.includes(".agent-overview-actions .primary-button:disabled"), "Disabled lifecycle buttons must not keep the active primary styling.");
+assert(styles.includes(".node-card__actions") && styles.includes(".node-details-drawer") && styles.includes("@keyframes nodeDrawerIn"), "Nodes polish CSS must include compact cards, drawer, and subtle animation.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

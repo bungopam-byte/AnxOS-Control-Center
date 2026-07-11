@@ -106,6 +106,7 @@ function registerDeveloperUpdatesIpc() {
   ipcMain.handle("developerUpdates:getState", () => developerGitUpdater.getState());
   ipcMain.handle("developerUpdates:check", (_, options = {}) => developerGitUpdater.check(options));
   ipcMain.handle("developerUpdates:update", () => developerGitUpdater.update());
+  ipcMain.handle("developerUpdates:restart", () => developerGitUpdater.restart());
   ipcMain.handle("developerUpdates:openChanges", () => developerGitUpdater.openChanges());
 }
 

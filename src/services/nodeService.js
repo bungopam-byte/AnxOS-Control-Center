@@ -31,6 +31,14 @@ function normalizeAgentNode(node = {}) {
     agentToken: String(node.agentToken || node.token || ""),
     agentIdentity: { deviceId, hostname: identity.hostname || "", operatingSystem: identity.operatingSystem || "", platform: identity.platform || "", architecture: identity.architecture || "", agentVersion: identity.agentVersion || "" },
     docker: { enabled: node.docker?.enabled !== false, runtime: node.docker?.runtime || "docker" },
+    ownerMachine: Boolean(node.ownerMachine),
+    connection: node.connection && typeof node.connection === "object" ? {
+      connected: node.connection.connected === true,
+      status: node.connection.status || (node.connection.connected ? "online" : "offline"),
+      message: node.connection.message || "",
+      lastSeen: node.connection.lastSeen || null,
+      latencyMs: Number.isFinite(Number(node.connection.latencyMs)) ? Number(node.connection.latencyMs) : null,
+    } : null,
     createdAt: node.createdAt || new Date().toISOString(),
     updatedAt: node.updatedAt || new Date().toISOString(),
     executionTarget: { type: "agent", deviceId },
@@ -79,21 +87,58 @@ function readNodeState() {
 
 function writeNodeState(state) {
   ensureConfigDirectory();
-  fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes: state.nodes }, null, 2)}\n`, { mode: 0o600 });
+  const nodes = state.nodes.map((node) => {
+    const { connection, ...persistentNode } = node;
+    return persistentNode;
+  });
+  fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes }, null, 2)}\n`, { mode: 0o600 });
 }
 
 function publicNode(node) {
-  if (node.kind === "application-host") return node;
+  if (node.kind === "application-host") {
+    return {
+      ...node,
+      connection: {
+        connected: true,
+        status: "online",
+        message: "Application host is available.",
+        lastSeen: new Date().toISOString(),
+        latencyMs: 0,
+      },
+    };
+  }
   return { ...node, hasToken: Boolean(node.agentToken), agentToken: node.agentToken ? "[configured]" : "", local: false, modeLabel: "Agent" };
 }
 
 async function refreshIdentities(state) {
   const refreshed = [];
   for (const node of state.nodes) {
+    const startedAt = Date.now();
     try {
       const health = await getHealth(getNodeAgentConfigFromNode(node));
-      refreshed.push(normalizeAgentNode({ ...node, agentIdentity: health.identity || node.agentIdentity }));
-    } catch { refreshed.push(node); }
+      refreshed.push(normalizeAgentNode({
+        ...node,
+        agentIdentity: health.identity || node.agentIdentity,
+        connection: {
+          connected: true,
+          status: "online",
+          message: "Agent is responding.",
+          lastSeen: new Date().toISOString(),
+          latencyMs: Date.now() - startedAt,
+        },
+      }));
+    } catch (error) {
+      refreshed.push(normalizeAgentNode({
+        ...node,
+        connection: {
+          connected: false,
+          status: error.status === 401 || error.code === "UNAUTHORIZED" ? "warning" : "offline",
+          message: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication failed." : error.message || "Agent is unreachable.",
+          lastSeen: node.connection?.lastSeen || null,
+          latencyMs: null,
+        },
+      }));
+    }
   }
   const nodes = mergeAgentNodes(refreshed);
   const selectedDevice = state.nodes.find((node) => node.id === state.selectedNodeId)?.agentIdentity?.deviceId;

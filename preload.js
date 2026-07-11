@@ -84,6 +84,7 @@ const desktopApi = {
     getState: () => ipcRenderer.invoke("developerUpdates:getState"),
     check: (options = {}) => ipcRenderer.invoke("developerUpdates:check", options),
     update: () => ipcRenderer.invoke("developerUpdates:update"),
+    restart: () => ipcRenderer.invoke("developerUpdates:restart"),
     openChanges: () => ipcRenderer.invoke("developerUpdates:openChanges"),
   },
   account: {

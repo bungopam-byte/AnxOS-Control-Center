@@ -2909,10 +2909,19 @@
               <h1>Nodes</h1>
               <p class="lede">You're managing this device. Add a remote node only if you want to control another PC or server.</p>
             </div>
+            <button class="primary-button" type="button" data-node-action="open-add">Add Node</button>
           </header>
 
-          <div class="settings-shell settings-shell--single">
-            <section class="settings-section settings-section--nodes">
+          <div class="nodes-dashboard" data-nodes-dashboard>
+            <section class="nodes-summary-grid" aria-label="Node summary">
+              <div class="nodes-summary-card"><span>Total Nodes</span><strong data-node-summary="total">0</strong></div>
+              <div class="nodes-summary-card"><span>Online Nodes</span><strong data-node-summary="online">0</strong></div>
+              <div class="nodes-summary-card"><span>Offline Nodes</span><strong data-node-summary="offline">0</strong></div>
+              <div class="nodes-summary-card"><span>Docker Enabled</span><strong data-node-summary="docker">0</strong></div>
+              <div class="nodes-summary-card"><span>Connected Agent</span><strong data-node-summary="connected">None</strong></div>
+            </section>
+
+            <section class="settings-section settings-section--nodes nodes-panel">
               <div class="settings-section__header">
                 <div>
                   <h2>Nodes</h2>
@@ -2920,16 +2929,9 @@
                 </div>
                 <span class="status-pill status-pill--planned" data-node-status>Default</span>
               </div>
-              <div class="settings-grid">
-                <label class="settings-field"><span>Node name</span><input type="text" data-node-field="displayName" placeholder="Game Node 1"></label>
-                <label class="settings-field"><span>Agent URL</span><input type="url" data-node-field="agentUrl" placeholder="http://127.0.0.1:47131"></label>
-                <label class="settings-field"><span>Agent token</span><input type="password" data-node-field="agentToken" placeholder="Bearer token"></label>
-                <label class="settings-check settings-check--toggle"><input type="checkbox" data-node-field="dockerEnabled" checked><span>Docker enabled on this node</span></label>
-              </div>
-              <div class="settings-actions">
-                <button class="inline-action" type="button" data-node-action="save">Register Node</button>
+              <div class="nodes-toolbar">
+                <button class="inline-action" type="button" data-node-action="refresh">Refresh</button>
                 <button class="inline-action" type="button" data-node-action="test">Test Selected</button>
-                <button class="inline-action" type="button" data-node-action="delete">Delete Selected</button>
                 <span class="settings-inline-status" data-node-message>No additional nodes registered.</span>
               </div>
               <div class="download-list" data-node-list></div>
@@ -3200,6 +3202,59 @@
         </section>
         </main>
       </div>
+    </div>
+
+    <div class="app-modal-backdrop" data-node-modal hidden>
+      <section class="app-modal app-modal--node" role="dialog" aria-modal="true" aria-labelledby="node-modal-title" tabindex="-1">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">Remote Agent</p>
+            <h2 id="node-modal-title" data-node-modal-title>Add Node</h2>
+          </div>
+          <button class="icon-action" type="button" aria-label="Close node form" data-node-action="close-modal">&times;</button>
+        </header>
+        <div class="settings-grid nodes-form-grid">
+          <label class="settings-field"><span>Node name</span><input type="text" data-node-field="displayName" placeholder="Game Node 1"></label>
+          <label class="settings-field"><span>Agent URL</span><input type="url" data-node-field="agentUrl" placeholder="http://127.0.0.1:47131"></label>
+          <label class="settings-field settings-field--wide"><span>Agent token</span><input type="password" data-node-field="agentToken" placeholder="Leave blank to keep the existing token"></label>
+          <label class="settings-check settings-check--toggle"><input type="checkbox" data-node-field="dockerEnabled" checked><span>Docker enabled on this node</span></label>
+        </div>
+        <div class="settings-actions">
+          <button class="primary-button" type="button" data-node-action="save">Register Node</button>
+          <button class="inline-action" type="button" data-node-action="close-modal">Cancel</button>
+          <button class="inline-action" type="button" data-node-action="delete">Delete Selected</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="app-modal-backdrop app-modal-backdrop--drawer" data-node-details-modal hidden>
+      <aside class="node-details-drawer" role="dialog" aria-modal="true" aria-labelledby="node-details-title" tabindex="-1">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">Node Details</p>
+            <h2 id="node-details-title" data-node-details-title>Node</h2>
+          </div>
+          <button class="icon-action" type="button" aria-label="Close node details" data-node-action="close-details">&times;</button>
+        </header>
+        <div class="node-details-badges" data-node-details-badges></div>
+        <dl class="node-details-list">
+          <div><dt>Hostname</dt><dd data-node-detail="hostname">Unavailable</dd></div>
+          <div><dt>Operating System</dt><dd data-node-detail="os">Unavailable</dd></div>
+          <div><dt>Agent Version</dt><dd data-node-detail="version">Unavailable</dd></div>
+          <div><dt>Docker Status</dt><dd data-node-detail="docker">Unavailable</dd></div>
+          <div><dt>Last Seen</dt><dd data-node-detail="lastSeen">Unavailable</dd></div>
+          <div><dt>Connection Status</dt><dd data-node-detail="connection">Unavailable</dd></div>
+          <div><dt>URL</dt><dd data-node-detail="url">Unavailable</dd></div>
+          <div><dt>Token</dt><dd data-node-detail="token">Unavailable</dd></div>
+        </dl>
+        <div class="settings-actions node-details-actions">
+          <button class="inline-action" type="button" data-node-details-action="select">Select</button>
+          <button class="inline-action" type="button" data-node-details-action="test">Test Connection</button>
+          <button class="inline-action" type="button" data-node-details-action="edit">Edit</button>
+          <button class="inline-action" type="button" data-node-details-action="refresh">Refresh</button>
+          <button class="inline-action" type="button" data-node-details-action="remove">Remove</button>
+        </div>
+      </aside>
     </div>
 
     <div class="update-ready-banner" data-update-ready-banner hidden>

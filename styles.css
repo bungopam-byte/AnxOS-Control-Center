@@ -8521,9 +8521,13 @@ button:disabled {
   margin-left: auto;
 }
 .agent-log-toolbar .settings-check {
+  flex: 0 0 auto;
   gap: 7px;
   padding: 0 10px;
   color: rgba(238, 234, 246, .86);
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
 }
 .agent-log-toolbar .settings-check input {
   width: 14px;
@@ -8531,8 +8535,17 @@ button:disabled {
   margin: 0;
   flex: 0 0 auto;
 }
+.agent-log-toolbar .settings-check span {
+  display: inline-block;
+  min-width: max-content;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+}
 .agent-log-refresh {
+  flex: 0 0 auto;
   justify-content: center;
+  white-space: nowrap;
 }
 .agent-log-viewer { min-height: 360px; max-height: 560px; overflow: auto; margin: 0; padding: 14px; border: 1px solid rgba(115,220,202,.18); border-radius: var(--radius); background: #05070b; color: rgba(220,244,255,.9); font: .8rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
 .agent-log-viewer.is-nowrap { white-space: pre; }
@@ -9808,11 +9821,11 @@ button:disabled {
 
   .agent-log-toolbar .settings-check {
     width: auto;
-    flex: 1 1 96px;
+    flex: 0 0 auto;
   }
 
   .agent-log-toolbar .inline-action {
-    flex: 1 1 120px;
+    flex: 0 0 auto;
     justify-content: center;
   }
 

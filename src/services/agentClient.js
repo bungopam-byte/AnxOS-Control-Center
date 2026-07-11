@@ -381,6 +381,16 @@ function getTransportErrorCode(error) {
   return error?.cause?.code || error?.code || null;
 }
 
+function getAgentTransportErrorMessage(errorCode, requestUrl) {
+  if (["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH", "EAI_AGAIN"].includes(errorCode)) {
+    return `Agent unavailable at ${requestUrl || "the configured URL"}. Check that the Agent is running, reachable, and listening on the configured port.`;
+  }
+  if (["ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "AGENT_TIMEOUT"].includes(errorCode)) {
+    return `Agent request timed out at ${requestUrl || "the configured URL"}. Check the Agent host, firewall, and network route.`;
+  }
+  return "Agent unavailable. Check Agent settings.";
+}
+
 function getAgentHttpErrorMessage(status, code, payload) {
   const payloadMessage = payload?.error?.message;
   if (payloadMessage && payloadMessage !== "Request failed.") {
@@ -542,15 +552,18 @@ async function requestJson(pathname, options = {}) {
         stack: error?.stack || null,
       });
     }
-    throw new AgentClientError(error?.message && error.message !== "URL" ? error.message : "Agent unavailable.", {
+    const transportMessage = getAgentTransportErrorMessage(errorCode, requestUrl);
+    throw new AgentClientError(transportMessage, {
       code: errorCode,
       payload: {
         error: {
           code: errorCode,
-          message: error?.message || "Agent unavailable.",
+          message: transportMessage,
           details: {
             name: error?.name || null,
-            message: error?.message || null,
+            message: transportMessage,
+            originalMessage: error?.message || null,
+            causeCode: error?.cause?.code || error?.code || null,
             stack: error?.stack || null,
             url: requestUrl,
             payload: error?.payload || null,

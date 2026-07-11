@@ -73,7 +73,13 @@ async function main() {
       logThrottleMs: 60000,
     };
     await expectRejects(() => agentClient.getHealth(remoteConfig));
-    await expectRejects(() => agentClient.getHealth(remoteConfig));
+    const secondRemoteError = await expectRejects(() => agentClient.getHealth(remoteConfig));
+    assert.strictEqual(secondRemoteError.code, "ECONNREFUSED");
+    assert(
+      /Agent unavailable at http:\/\/192\.168\.1\.134:47131\/api\/v1\/health/.test(secondRemoteError.message),
+      "remote Agent ECONNREFUSED should surface the configured Agent URL instead of bare fetch failed"
+    );
+    assert.strictEqual(secondRemoteError.payload?.error?.details?.originalMessage, "connect ECONNREFUSED 127.0.0.1:47131");
     assert.strictEqual(consoleErrors.length, 1, "expected repeated identical remote failures to be deduplicated");
     assert.strictEqual(consoleErrors[0][1].targetLabel, "selected-agent");
 

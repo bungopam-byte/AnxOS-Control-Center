@@ -58,10 +58,10 @@ node scripts/bootstrap-owner-account.js --email owner@example.com
 node scripts/bootstrap-owner-account.js --id <supabase-user-uuid>
 ```
 
-The bootstrap file is stored in the desktop app config directory as `owner-accounts.json`. On Windows, that is `%APPDATA%\AnxOS Control Center\config\owner-accounts.json`. To target a specific app profile, pass `--config-dir`:
+The bootstrap file is stored in the desktop app config directory as `owner-accounts.json`. On Windows, the current desktop profile is `%APPDATA%\AnxHub\config\owner-accounts.json`. To target a specific app profile, pass `--config-dir`:
 
 ```bash
-node scripts/bootstrap-owner-account.js --email owner@example.com --config-dir "C:\Users\You\AppData\Roaming\AnxOS Control Center\config"
+node scripts/bootstrap-owner-account.js --email owner@example.com --config-dir "C:\Users\You\AppData\Roaming\AnxHub\config"
 ```
 
 It stores only owner UUIDs/emails, not passwords, tokens, service-role keys, or agent tokens. Restart AnxOS after changing the owner allowlist.

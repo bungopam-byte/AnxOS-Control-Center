@@ -3,7 +3,7 @@ const os = require("os");
 const path = require("path");
 const { getConfiguredOwnerAccounts, getOwnerAccountsPath, writeOwnerAccounts } = require("../src/services/ownerAccountConfig");
 
-const PRODUCT_NAME = "AnxOS Control Center";
+const PRODUCT_NAME = "AnxHub";
 
 function getDesktopConfigDirectory() {
   if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR;
@@ -25,7 +25,7 @@ Usage:
   node scripts/bootstrap-owner-account.js --email owner@example.com
   node scripts/bootstrap-owner-account.js --id <supabase-user-uuid>
   node scripts/bootstrap-owner-account.js --email owner@example.com --id <supabase-user-uuid>
-  node scripts/bootstrap-owner-account.js --email owner@example.com --config-dir "C:\\Users\\You\\AppData\\Roaming\\AnxOS Control Center\\config"
+  node scripts/bootstrap-owner-account.js --email owner@example.com --config-dir "C:\\Users\\You\\AppData\\Roaming\\AnxHub\\config"
 
 This writes a local owner allowlist for the desktop app. It does not store passwords,
 tokens, Supabase service-role keys, or agent tokens.`);

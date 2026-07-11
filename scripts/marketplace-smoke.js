@@ -259,6 +259,14 @@ function assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent() {
   }
 }
 
+function assertInstanceProcessStateGuards() {
+  const source = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
+  assert(source.includes("getActiveRunningProcess(config.id)"), "Instance starts must block duplicate starts using the active in-memory child process.");
+  assert(source.includes("entry.child !== child"), "Child exit handlers must ignore stale exits from superseded processes.");
+  assert(source.includes("Ignoring stale instance process exit"), "Stale process exits should be diagnosable in logs.");
+  assert(source.includes("entry?.child === child && child.exitCode === null"), "Startup timers must only promote the active child process.");
+}
+
 function assertMarketplaceManifestAuditReport() {
   const validation = marketplaceService._test.validateMarketplaceCatalog(templates);
   const disabled = templates.filter((template) => template.disabled || template.comingSoon || marketplaceService._test.getTemplateInstallerType(template) === "no-install");
@@ -2426,6 +2434,7 @@ async function main() {
   assertSteamCmdTemplates();
   assertMarketplaceInstallerRegistry();
   assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent();
+  assertInstanceProcessStateGuards();
   assertMarketplaceManifestAuditReport();
   assertMarketplaceIpcErrorSerialization();
   assertInstallerResultContract();

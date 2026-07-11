@@ -1870,6 +1870,16 @@ function isProcessAlive(pid) {
   }
 }
 
+function getActiveRunningProcess(instanceId) {
+  const entry = runningProcesses.get(instanceId);
+  return entry?.child?.pid && isProcessAlive(entry.child.pid) ? entry : null;
+}
+
+function isCurrentRunningProcess(instanceId, child) {
+  const entry = runningProcesses.get(instanceId);
+  return Boolean(entry && entry.child === child);
+}
+
 async function reconcileConfigState(config) {
   const processEntry = runningProcesses.get(config.id);
   const pid = processEntry?.child?.pid || config.pid;
@@ -2174,7 +2184,7 @@ function buildSpawnEnvironment(config) {
 async function startInstance(instanceId) {
   let config = await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId)), { force: true });
 
-  if (config.pid && isProcessAlive(config.pid)) {
+  if (getActiveRunningProcess(config.id) || (config.pid && isProcessAlive(config.pid))) {
     throw createInstanceError("INSTANCE_ALREADY_RUNNING", 409);
   }
 
@@ -2250,6 +2260,9 @@ async function startInstance(instanceId) {
     });
 
   child.on("error", (error) => {
+    if (!isCurrentRunningProcess(config.id, child)) {
+      return;
+    }
     const reason = error?.code === "ENOENT" ? "EXECUTABLE_NOT_FOUND" : "PROCESS_ERROR";
     const entry = runningProcesses.get(config.id);
     if (entry) {
@@ -2274,7 +2287,9 @@ async function startInstance(instanceId) {
       lastStoppedAt: nowIso(),
     });
 
-    runningProcesses.delete(config.id);
+    if (isCurrentRunningProcess(config.id, child)) {
+      runningProcesses.delete(config.id);
+    }
     return publicConfig(failedConfig);
   }
 
@@ -2290,6 +2305,9 @@ async function startInstance(instanceId) {
       }
     }
     if (/Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running/i.test(String(chunk))) {
+      if (!isCurrentRunningProcess(config.id, child)) {
+        return;
+      }
       updateRuntimeState(config.id, {
         state: INSTANCE_STATES.RUNNING,
         pid: child.pid,
@@ -2322,6 +2340,16 @@ async function startInstance(instanceId) {
 
   child.on("exit", (exitCode, signal) => {
     const entry = runningProcesses.get(config.id);
+    if (!entry || entry.child !== child) {
+      console.info("[Instances] Ignoring stale instance process exit.", {
+        instanceId: config.id,
+        pid: child.pid || null,
+        exitCode,
+        signal,
+        activePid: entry?.child?.pid || null,
+      });
+      return;
+    }
     const requestedStop = entry?.requestedStop || false;
     const suppressRestart = entry?.suppressRestart || false;
     const failureReason = entry?.failureReason || "PROCESS_EXITED";
@@ -2387,7 +2415,7 @@ async function startInstance(instanceId) {
   const startupTimer = setTimeout(() => {
     const entry = runningProcesses.get(config.id);
 
-    if (entry && child.exitCode === null && isProcessAlive(child.pid)) {
+    if (entry?.child === child && child.exitCode === null && isProcessAlive(child.pid)) {
       updateRuntimeState(config.id, {
         state: INSTANCE_STATES.RUNNING,
         pid: child.pid,

@@ -1588,6 +1588,20 @@ async function assertSharedTemplateInstallFlowMatrix() {
       assert(!JSON.stringify(result).includes("validation is not defined"), `${label} should not surface validation ReferenceError.`);
     }
 
+    const steamcmdStartsBeforeIdempotentInstall = started.length;
+    files.set("palworld-idempotent-smoke:server/steamapps/appmanifest_2394010.acf", '"AppState" { "appid" "2394010" "buildid" "123" }');
+    files.set("palworld-idempotent-smoke:server/PalServer.sh", "#!/usr/bin/env bash\n");
+    const idempotentResult = await marketplaceService.installTemplate({
+      templateId: "palworld",
+      options: { id: "palworld-idempotent-smoke", name: "Palworld Idempotent Smoke", port: 8211, memory: "8G", start: false },
+    });
+    assert(idempotentResult.progress.some((step) => /already installed/i.test(step.detail || "")), "SteamCMD-native installer should skip when declared artifacts already exist.");
+    assert.strictEqual(
+      started.length,
+      steamcmdStartsBeforeIdempotentInstall,
+      "SteamCMD-native retry must not rerun SteamCMD when app manifest and verify files already exist."
+    );
+
     const dockerResult = await marketplaceService.installTemplate({
       templateId: "docker-minecraft-bedrock",
       options: { id: "bedrock-docker-flow-smoke", name: "Bedrock Docker Flow Smoke", port: 19132, memory: "2G", start: false },

@@ -2110,6 +2110,41 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
   });
 }
 
+async function startAndWaitForInstanceInstaller(instanceId, timeoutMs, agentConfig = null, context = {}) {
+  try {
+    await agentClient.startInstance(instanceId, agentConfig);
+  } catch (error) {
+    if (getAgentErrorCode(error) !== "INSTANCE_ALREADY_RUNNING") {
+      throw error;
+    }
+  }
+
+  return waitForInstanceInstaller(instanceId, timeoutMs, agentConfig, context);
+}
+
+function getSteamCmdInstallArtifactPaths(template) {
+  const installer = template.installer || {};
+  const installDir = normalizeInstanceFilePath(installer.installDir || "server");
+  return [
+    installer.appId ? normalizeInstanceFilePath(`${installDir}/steamapps/appmanifest_${installer.appId}.acf`) : null,
+    ...((Array.isArray(installer.verifyFiles) ? installer.verifyFiles : []).map(normalizeInstanceFilePath)),
+  ].filter(Boolean);
+}
+
+async function hasInstalledArtifacts(instanceId, artifactPaths = [], agentConfig = null) {
+  if (!artifactPaths.length) {
+    return false;
+  }
+  for (const artifactPath of artifactPaths) {
+    try {
+      await agentClient.readInstanceFile(instanceId, artifactPath, agentConfig);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function runTemplatePostInstall(template, options, instanceId, progress, agentConfig = null) {
   const postInstall = template.postInstall;
   if (!postInstall || postInstall.type !== "java-installer") {
@@ -2129,8 +2164,7 @@ async function runTemplatePostInstall(template, options, instanceId, progress, a
       restartPolicy: "never",
       startupTimeoutMs: postInstall.timeoutMs || 300000,
     }, agentConfig);
-    await agentClient.startInstance(instanceId, agentConfig);
-    await waitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig, {
+    await startAndWaitForInstanceInstaller(instanceId, postInstall.timeoutMs || 300000, agentConfig, {
       templateId: template.id,
       step: "Extract files",
       installerType: "java-runtime",
@@ -2169,6 +2203,16 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
     if (installerType === "steamcmd-native") {
       const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer);
       const steamcmdCommand = ["steamcmd", ...steamcmdArgs].join(" ");
+      const artifactPaths = getSteamCmdInstallArtifactPaths(template);
+      if (await hasInstalledArtifacts(instanceId, artifactPaths, agentConfig)) {
+        pushStep(progress, "Extract files", "complete", "SteamCMD app is already installed.");
+        return createInstallerResultOk("installed", {
+          installDirectory: normalizeInstanceFilePath(template.installer.installDir || "server"),
+          executable: template.startup?.executable || "steamcmd",
+          runtime: "steamcmd-native",
+          artifacts: artifactPaths,
+        });
+      }
       pushStep(progress, "Extract files", "running", `Running SteamCMD app ${template.installer.appId}.`);
       await agentClient.updateInstance(instanceId, {
         executable: "steamcmd",
@@ -2177,14 +2221,20 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
         restartPolicy: "never",
         startupTimeoutMs: template.installer.timeoutMs || 600000,
       }, agentConfig);
-      await agentClient.startInstance(instanceId, agentConfig);
-      await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
-        templateId: template.id,
-        step: "Extract files",
-        installerType: "steamcmd-native",
-        handlerName: "runTemplateInstaller",
-        command: steamcmdCommand,
-      });
+      try {
+        await startAndWaitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
+          templateId: template.id,
+          step: "Extract files",
+          installerType: "steamcmd-native",
+          handlerName: "runTemplateInstaller",
+          command: steamcmdCommand,
+        });
+      } catch (error) {
+        if (!(await hasInstalledArtifacts(instanceId, artifactPaths, agentConfig))) {
+          throw error;
+        }
+        pushStep(progress, "Extract files", "complete", "SteamCMD app was already installed after a retry failure.");
+      }
       const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
       for (const requiredFile of requiredFiles) {
         await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
@@ -2213,8 +2263,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
       restartPolicy: "never",
       startupTimeoutMs: template.installer.timeoutMs || 600000,
     }, agentConfig);
-    await agentClient.startInstance(instanceId, agentConfig);
-    await waitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
+    await startAndWaitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
       templateId: template.id,
       step: "Extract files",
       installerType,

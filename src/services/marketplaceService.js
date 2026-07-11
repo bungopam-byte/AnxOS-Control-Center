@@ -220,6 +220,19 @@ function getAgentErrorCode(error) {
   return error?.payload?.error?.code || error?.code || null;
 }
 
+function getErrorDetails(error) {
+  const details = error?.details && typeof error.details === "object" ? error.details : {};
+  const payloadDetails = error?.payload?.error?.details && typeof error.payload.error.details === "object"
+    ? error.payload.error.details
+    : {};
+  return { ...payloadDetails, ...details };
+}
+
+function getErrorStage(error, fallback = "Failed") {
+  const details = getErrorDetails(error);
+  return details.stage || details.step || fallback;
+}
+
 function mapMarketplaceError(error, fallback = "Template install failed.") {
   const validation = error?.payload?.error?.details || error?.details?.validation || null;
   if (validation?.userMessage || validation?.field) {
@@ -2817,21 +2830,23 @@ async function installTemplate(payload = {}) {
       }
     }
     pushStep(progress, "Failed", "failed", mapMarketplaceError(error));
+    const errorDetails = getErrorDetails(error);
+    const failureStage = getErrorStage(error, createdInstanceId ? "Failed" : "Create instance");
     finalizeInstallTaskRecord(parentRecord, "failed", mapMarketplaceError(error), {
-      stage: error?.details?.stage || "Failed",
+      stage: failureStage,
       code: getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED",
-      retryable: error?.details?.retryable,
-      body: error?.details?.body || null,
+      retryable: errorDetails.retryable,
+      body: errorDetails.body || null,
     });
     const installError = createMarketplaceError(mapMarketplaceError(error), getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED", {
-      ...(error?.details || {}),
+      ...errorDetails,
       templateId: template.id,
       installerType: manifestValidation.installerType,
       runtimeType: template.startupType || template.runtime || template.instanceType || null,
-      stage: error?.details?.stage || "Failed",
+      stage: failureStage,
       childTaskState: sanitizeDownloads({ downloads: getInstallSessionRecords(parentRecord) }).downloads,
       timestamp: new Date().toISOString(),
-      retryable: error?.details?.retryable ?? true,
+      retryable: errorDetails.retryable ?? true,
     });
     installError.progress = progress;
     throw installError;

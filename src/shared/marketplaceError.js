@@ -29,6 +29,25 @@
     return error?.payload?.error?.message || error?.message || String(error || "");
   }
 
+  function buildDebugText(details, rawMessage, cleanMessage) {
+    const explicit = details.debugMessage || details.originalMessage || "";
+    const fields = {
+      code: details.code || null,
+      stage: details.stage || details.step || null,
+      url: details.url || null,
+      causeCode: details.causeCode || null,
+      originalMessage: details.originalMessage || null,
+      templateId: details.templateId || null,
+      installerType: details.installerType || null,
+      runtimeType: details.runtimeType || null,
+    };
+    const summary = Object.entries(fields)
+      .filter(([, value]) => value !== null && value !== undefined && value !== "")
+      .map(([key, value]) => `${key}=${value}`)
+      .join(" | ");
+    return [explicit || rawMessage || cleanMessage, summary].filter(Boolean).join(" | ");
+  }
+
   function normalizeMarketplaceError(error = {}, context = {}) {
     const payloadError = error?.payload?.error || {};
     const details = error?.details || payloadError.details || {};
@@ -85,7 +104,7 @@
         manualDownload: details.manualDownload || null,
         rawMessage,
         cleanMessage,
-        debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+        debug: buildDebugText(details, rawMessage, cleanMessage),
         details,
       };
     }
@@ -131,7 +150,7 @@
         manualDownload: details.manualDownload || null,
         rawMessage,
         cleanMessage,
-        debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+        debug: buildDebugText(details, rawMessage, cleanMessage),
         details,
       };
     }
@@ -150,7 +169,7 @@
       fileId,
       rawMessage,
       cleanMessage,
-      debug: details.debugMessage || details.originalMessage || rawMessage || cleanMessage,
+      debug: buildDebugText(details, rawMessage, cleanMessage),
       details,
     };
   }

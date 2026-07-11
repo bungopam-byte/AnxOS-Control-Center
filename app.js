@@ -9097,9 +9097,16 @@ async function installMarketplaceTemplate(event) {
     await refreshInstances();
   } catch (error) {
     const normalizedError = normalizeMarketplaceError(error, "Template install failed.");
+    const failureDownloads = Array.isArray(normalizedError.details?.childTaskState)
+      ? normalizedError.details.childTaskState
+      : [];
     setMarketplaceInstallState("Failed", "failed");
     setMarketplaceManualRecoveryState(null);
-    rememberFailedMarketplaceDownload(template, normalizedError);
+    if (failureDownloads.length > 0) {
+      marketplaceLocalDownloadEntries = [];
+    } else {
+      rememberFailedMarketplaceDownload(template, normalizedError);
+    }
     renderMarketplaceProgress([
       {
         label: normalizedError.title,
@@ -9110,7 +9117,7 @@ async function installMarketplaceTemplate(event) {
     ]);
     marketplaceInstallProgressEvents = [];
     marketplacePendingProgressSteps = null;
-    renderMarketplaceDownloads([]);
+    renderMarketplaceDownloads(failureDownloads);
     setMarketplaceMessage("Install failed. See Download Manager.", "error");
     showToast(normalizedError.title);
   } finally {

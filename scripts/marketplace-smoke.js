@@ -2286,6 +2286,30 @@ async function assertProviderInstallSupport() {
       fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes(".marketplace-progress-debug"),
     "Renderer should keep technical install failure details in an expandable debug section."
   );
+  assert(
+    appSource.includes("normalizedError.details?.childTaskState") &&
+      appSource.includes("marketplaceLocalDownloadEntries = []") &&
+      appSource.includes("renderMarketplaceDownloads(failureDownloads)"),
+    "Renderer should use service-owned failed install tasks instead of adding duplicate local failed Download Manager rows."
+  );
+  const unreachableAgentError = normalizeMarketplaceError({
+    code: "ECONNREFUSED",
+    message: "Agent unavailable at http://192.168.1.134:47131/api/v1/instances.",
+    details: {
+      templateId: "palworld",
+      installerType: "steamcmd-native",
+      runtimeType: "steamcmd-native",
+      stage: "Create instance",
+      url: "http://192.168.1.134:47131/api/v1/instances",
+      causeCode: "ECONNREFUSED",
+      originalMessage: "fetch failed",
+      childTaskState: [{ id: "parent", status: "failed" }],
+    },
+  });
+  assert.strictEqual(unreachableAgentError.code, "ECONNREFUSED", "Unreachable Agent errors should keep the transport code.");
+  assert(unreachableAgentError.debug.includes("stage=Create instance"), "Unreachable Agent debug details should keep the failing stage.");
+  assert(unreachableAgentError.debug.includes("url=http://192.168.1.134:47131/api/v1/instances"), "Unreachable Agent debug details should keep the Agent URL.");
+  assert(unreachableAgentError.debug.includes("causeCode=ECONNREFUSED"), "Unreachable Agent debug details should keep the transport cause.");
   const installSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceInstallService.js"), "utf8");
   assert(
     installSource.includes("logSkippedCurseForgeRestrictedFile(error") &&

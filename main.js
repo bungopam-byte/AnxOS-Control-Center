@@ -19,6 +19,7 @@ const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
 const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services/providers/curseforgeProvider");
 const { UpdateManager } = require("./src/services/updateManager");
+const { configureElectronPaths } = require("./src/services/electronPaths");
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
@@ -34,9 +35,7 @@ let pendingAddStoragePayload = null;
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
-const userDataPath = path.join(app.getPath("appData"), "AnxHub");
-app.setPath("userData", userDataPath);
-app.setPath("cache", path.join(userDataPath, "Cache"));
+configureElectronPaths(app);
 const diagnostics = require("./src/services/diagnosticsService");
 const { registerDiagnosticsIpc } = require("./src/ipc/diagnosticsIpc");
 const { registerAgentControlIpc } = require("./src/ipc/agentControlIpc");

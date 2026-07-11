@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { app, shell } = require("electron");
 const agentClient = require("./agentClient");
-const { getAllNodesSync, getNodeAgentConfig } = require("./nodeService");
+const { getAllNodesSync, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
 const agentPackage = require("../../agent/package.json");
 
@@ -96,9 +96,129 @@ async function uninstallService() { if (process.platform === "linux") { await co
 async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") await command("schtasks.exe", ["/Change", "/TN", SERVICE_NAME, enabled ? "/ENABLE" : "/DISABLE"]); saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
 
 async function probePort(port) { return new Promise((resolve) => { const socket = net.connect({ host: "127.0.0.1", port, timeout: 800 }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => resolve(false)); socket.once("timeout", () => { socket.destroy(); resolve(false); }); }); }
-async function getStatus() { const config = readConfig(); const service = await getServiceState(); let health = null; let latencyMs = null; const started = Date.now(); try { health = await agentClient.getHealth({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}`, agentToken: "" }); latencyMs = Date.now() - started; } catch {} const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok); let appVersion = null; try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; } return { local: true, state: operationInFlight === "start" ? "Starting" : operationInFlight === "stop" ? "Stopping" : running ? "Running" : "Offline", operationInFlight, running, pid: health?.process?.pid || managedProcess?.pid || null, config, service, identity: health?.identity || null, agentVersion: health?.identity?.agentVersion || agentPackage.version, appVersion, apiVersion: health?.apiVersion || "v1", protocolVersion: health?.protocolVersion || 1, uptime: health?.process?.uptimeSeconds ?? (managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null), memoryBytes: health?.process?.memoryBytes || null, cpuSeconds: health?.process?.cpuSeconds || null, connectedClients: health?.process?.connectedClients || 0, lastHeartbeat: health ? new Date().toISOString() : null, latencyMs, hostname: os.hostname(), operatingSystem: `${os.type()} ${os.release()}`, architecture: os.arch(), agentUrl: `http://127.0.0.1:${config.port}`, port: config.port, startupMode: service.type, lastRestartReason, mostRecentError: lastError }; }
 
-async function listAgents() { const local = await getStatus(); const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => { const started = Date.now(); try { const health = await agentClient.getHealth(getNodeAgentConfig(node.id)); return { local: false, nodeId: node.id, state: "Running", name: node.displayName, agentUrl: node.agentUrl, identity: health.identity, agentVersion: health.identity?.agentVersion, latencyMs: Date.now() - started, lastHeartbeat: new Date().toISOString() }; } catch (error) { return { local: false, nodeId: node.id, state: error.status === 401 ? "Authentication failed" : "Unreachable", name: node.displayName, agentUrl: node.agentUrl, identity: node.agentIdentity, mostRecentError: { code: error.code || null, message: error.message } }; } })); diagnostics.updateRuntimeState({ localAgentProcessStatus: local.state, localAgentServiceStatus: local.service?.state, configuredAgentUrl: local.agentUrl, connectedAgents: remote.map((agent) => ({ nodeId: agent.nodeId, deviceId: agent.identity?.deviceId, state: agent.state, version: agent.agentVersion })), recentConnectionResult: remote.map((agent) => ({ nodeId: agent.nodeId, state: agent.state, latencyMs: agent.latencyMs || null })) }); return { local, remote }; }
+function getLocalAgentUrl(config) {
+  return `http://127.0.0.1:${config.port}`;
+}
+
+function getLocalAgentHealthConfig(config) {
+  return {
+    backendMode: "agent",
+    agentUrl: getLocalAgentUrl(config),
+    agentToken: "",
+    targetLabel: "local-agent",
+    suppressConnectionRefusedLog: true,
+    logThrottleMs: 60000,
+  };
+}
+
+function getRemoteHealthConfig(node, selectedNodeId) {
+  return {
+    ...getNodeAgentConfig(node.id),
+    targetLabel: node.id === selectedNodeId ? "selected-agent" : "remote-agent",
+    logThrottleMs: node.id === selectedNodeId ? 15000 : 30000,
+  };
+}
+
+async function getStatus() {
+  const config = readConfig();
+  const service = await getServiceState();
+  const agentUrl = getLocalAgentUrl(config);
+  let health = null;
+  let latencyMs = null;
+  const started = Date.now();
+
+  try {
+    health = await agentClient.getHealth(getLocalAgentHealthConfig(config));
+    latencyMs = Date.now() - started;
+  } catch {
+    // Missing localhost is expected when the user is controlling a remote Agent.
+  }
+
+  const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok);
+  let appVersion = null;
+  try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; }
+  return {
+    local: true,
+    targetType: "local-agent",
+    healthTargetLabel: "local-agent",
+    state: operationInFlight === "start" ? "Starting" : operationInFlight === "stop" ? "Stopping" : running ? "Running" : "Offline",
+    operationInFlight,
+    running,
+    pid: health?.process?.pid || managedProcess?.pid || null,
+    config,
+    service,
+    identity: health?.identity || null,
+    agentVersion: health?.identity?.agentVersion || agentPackage.version,
+    appVersion,
+    apiVersion: health?.apiVersion || "v1",
+    protocolVersion: health?.protocolVersion || 1,
+    uptime: health?.process?.uptimeSeconds ?? (managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null),
+    memoryBytes: health?.process?.memoryBytes || null,
+    cpuSeconds: health?.process?.cpuSeconds || null,
+    connectedClients: health?.process?.connectedClients || 0,
+    lastHeartbeat: health ? new Date().toISOString() : null,
+    latencyMs,
+    hostname: os.hostname(),
+    operatingSystem: `${os.type()} ${os.release()}`,
+    architecture: os.arch(),
+    agentUrl,
+    port: config.port,
+    startupMode: service.type,
+    lastRestartReason,
+    mostRecentError: lastError,
+  };
+}
+
+async function listAgents() {
+  const local = await getStatus();
+  const selectedNodeId = getSelectedNodeId();
+  const effective = agentClient.getEffectiveAgentSettings();
+  const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => {
+    const started = Date.now();
+    const healthConfig = getRemoteHealthConfig(node, selectedNodeId);
+    try {
+      const health = await agentClient.getHealth(healthConfig);
+      return {
+        local: false,
+        targetType: healthConfig.targetLabel,
+        healthTargetLabel: healthConfig.targetLabel,
+        nodeId: node.id,
+        state: "Running",
+        name: node.displayName,
+        agentUrl: node.agentUrl,
+        identity: health.identity,
+        agentVersion: health.identity?.agentVersion,
+        latencyMs: Date.now() - started,
+        lastHeartbeat: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        local: false,
+        targetType: healthConfig.targetLabel,
+        healthTargetLabel: healthConfig.targetLabel,
+        nodeId: node.id,
+        state: error.status === 401 ? "Authentication failed" : "Unreachable",
+        name: node.displayName,
+        agentUrl: node.agentUrl,
+        identity: node.agentIdentity,
+        mostRecentError: { code: error.code || null, message: error.message },
+      };
+    }
+  }));
+  diagnostics.updateRuntimeState({
+    localAgentProcessStatus: local.state,
+    localAgentServiceStatus: local.service?.state,
+    configuredAgentUrl: effective.backendMode === "agent" ? effective.agentUrl : null,
+    selectedAgentId: selectedNodeId,
+    connectedAgents: remote.map((agent) => ({ nodeId: agent.nodeId, deviceId: agent.identity?.deviceId, state: agent.state, version: agent.agentVersion })),
+    recentConnectionResult: [
+      { target: "local-agent", url: local.agentUrl, state: local.state, latencyMs: local.latencyMs || null },
+      ...remote.map((agent) => ({ target: agent.healthTargetLabel, nodeId: agent.nodeId, url: agent.agentUrl, state: agent.state, latencyMs: agent.latencyMs || null })),
+    ],
+  });
+  return { local, remote };
+}
 
 async function captureRemoteDiagnostics(nodeId) {
   const node = getAllNodesSync().find((entry) => entry.id === nodeId && entry.kind === "agent");

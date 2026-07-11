@@ -2636,7 +2636,7 @@ function renderAgentControlState(payload = agentControlState) {
   const running = local.running === true;
   const busy = agentControlBusy || Boolean(local.operationInFlight);
   if (agentControlStatus) { agentControlStatus.textContent = local.state || "Unavailable"; agentControlStatus.className = `status-pill ${running ? "status-pill--success" : local.state === "Offline" ? "status-pill--planned" : "status-pill--warning"}`; }
-  if (agentControlMessage) agentControlMessage.textContent = local.mostRecentError?.message || (running ? "Local Agent is responding." : "Local Agent is stopped. Start it here or install background startup.");
+  if (agentControlMessage) agentControlMessage.textContent = local.mostRecentError?.message || (running ? "Local Agent check is responding." : "Local Agent check is offline. Remote selected Agents are tested separately.");
   setAgentControlField("hostname", local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", local.agentVersion);
   setAgentControlField("pid", local.pid ? `PID ${local.pid}` : running ? "Service managed" : "Stopped");
@@ -2670,7 +2670,7 @@ function renderRemoteAgents(agents = []) {
   if (!agentRemoteList) return;
   agentRemoteList.replaceChildren();
   if (!agents.length) { agentRemoteList.innerHTML = '<div class="security-empty-state">No remote Agents are registered. Add one from Nodes.</div>'; return; }
-  agents.forEach((agent) => { const card = document.createElement("article"); card.className = "agent-remote-card"; card.innerHTML = `<div><strong>${escapeHtml(agent.name || agent.identity?.hostname || "Remote Agent")}</strong><p>${escapeHtml(agent.identity?.operatingSystem || "Unknown OS")} · ${escapeHtml(agent.agentUrl || "URL unavailable")} · ${escapeHtml(agent.state || "Unknown")}${Number.isFinite(agent.latencyMs) ? ` · ${agent.latencyMs} ms` : ""}</p></div><div class="settings-actions"><button class="inline-action" type="button" data-remote-agent-diagnostics="${escapeHtml(agent.nodeId || "")}" ${agent.state !== "Running" ? "disabled" : ""}>Capture Diagnostics</button></div>`; agentRemoteList.append(card); });
+  agents.forEach((agent) => { const card = document.createElement("article"); card.className = "agent-remote-card"; const targetLabel = agent.healthTargetLabel === "selected-agent" ? "Selected Agent check" : "Remote Agent check"; card.innerHTML = `<div><strong>${escapeHtml(agent.name || agent.identity?.hostname || "Remote Agent")}</strong><p>${escapeHtml(targetLabel)} · ${escapeHtml(agent.identity?.operatingSystem || "Unknown OS")} · ${escapeHtml(agent.agentUrl || "URL unavailable")} · ${escapeHtml(agent.state || "Unknown")}${Number.isFinite(agent.latencyMs) ? ` · ${agent.latencyMs} ms` : ""}</p></div><div class="settings-actions"><button class="inline-action" type="button" data-remote-agent-diagnostics="${escapeHtml(agent.nodeId || "")}" ${agent.state !== "Running" ? "disabled" : ""}>Capture Diagnostics</button></div>`; agentRemoteList.append(card); });
 }
 
 function renderAgentDiagnostics(result = {}) {

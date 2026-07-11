@@ -19,6 +19,7 @@ let environmentLoaded = false;
 let lastLoggedAgentSelection = null;
 let lastLoggedAgentConfigMeta = null;
 let localInstanceService = null;
+const requestFailureLogState = new Map();
 
 class AgentClientError extends Error {
   constructor(message, details = {}) {
@@ -340,7 +341,29 @@ function buildAgentUrl(pathname, configOverride = null) {
 }
 
 function logAgentRequestFailure(pathname, status, errorCode = null, details = {}) {
+  const targetLabel = details.targetLabel || "configured-agent";
+  const throttleMs = Number.isFinite(details.logThrottleMs) ? details.logThrottleMs : 30000;
+  const now = Date.now();
+  const key = JSON.stringify({
+    targetLabel,
+    pathname,
+    url: details.url || null,
+    method: details.method || "GET",
+    status: status ?? null,
+    errorCode: errorCode || null,
+    message: details.message || null,
+  });
+  const previous = requestFailureLogState.get(key);
+
+  if (previous && now - previous.lastLoggedAt < throttleMs) {
+    previous.suppressedCount += 1;
+    requestFailureLogState.set(key, previous);
+    return;
+  }
+
+  const suppressedCount = previous?.suppressedCount || 0;
   console.error("[AnxOS][Agent] Request failed.", {
+    targetLabel,
     pathname,
     url: details.url || null,
     method: details.method || "GET",
@@ -349,7 +372,9 @@ function logAgentRequestFailure(pathname, status, errorCode = null, details = {}
     responseBody: details.responseBody || null,
     message: details.message || null,
     stack: details.stack || null,
+    suppressedCount,
   });
+  requestFailureLogState.set(key, { lastLoggedAt: now, suppressedCount: 0 });
 }
 
 function getTransportErrorCode(error) {
@@ -391,6 +416,9 @@ async function requestJson(pathname, options = {}) {
     config: configOverride = null,
     method = "GET",
     body = null,
+    targetLabel = configOverride?.targetLabel || "configured-agent",
+    suppressConnectionRefusedLog = configOverride?.suppressConnectionRefusedLog === true,
+    logThrottleMs = configOverride?.logThrottleMs,
   } = options;
   const config = getAgentConfig(configOverride);
   const controller = new AbortController();
@@ -434,6 +462,8 @@ async function requestJson(pathname, options = {}) {
       logAgentRequestFailure(pathname, response.status, responseErrorCode, {
         url: requestUrl,
         method,
+        targetLabel,
+        logThrottleMs,
         responseBody: typeof payload === "string" ? payload : JSON.stringify(payload),
         message: error.message,
         stack: error.stack,
@@ -457,12 +487,16 @@ async function requestJson(pathname, options = {}) {
         return urlError?.payload?.error?.details?.invalidUrl || null;
       }
     })();
-    logAgentRequestFailure(pathname, null, errorCode, {
-      url: requestUrl,
-      method,
-      message: error?.message || null,
-      stack: error?.stack || null,
-    });
+    if (!(suppressConnectionRefusedLog && errorCode === "ECONNREFUSED")) {
+      logAgentRequestFailure(pathname, null, errorCode, {
+        url: requestUrl,
+        method,
+        targetLabel,
+        logThrottleMs,
+        message: error?.message || null,
+        stack: error?.stack || null,
+      });
+    }
     throw new AgentClientError(error?.message && error.message !== "URL" ? error.message : "Agent unavailable.", {
       code: errorCode,
       payload: {
@@ -689,9 +723,10 @@ function isHealthyPayload(payload) {
   return true;
 }
 
-async function getHealth(configOverride = null) {
+async function getHealth(configOverride = null, options = {}) {
   return requestJson("/api/v1/health", {
     config: configOverride,
+    ...options,
   });
 }
 

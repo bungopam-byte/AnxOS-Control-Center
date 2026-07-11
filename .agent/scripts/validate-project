@@ -76,6 +76,7 @@ function main() {
     "ui:polish:smoke",
     "diagnostics:smoke",
     "agent-control:smoke",
+    "windows-runtime:smoke",
     "marketplace:smoke",
   ];
 

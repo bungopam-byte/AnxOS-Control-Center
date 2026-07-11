@@ -41,6 +41,11 @@ function assertWebsiteAccountUi() {
   assert(index.includes('data-account-devices'), "Website should include account devices list.");
   assert(index.includes('data-account-sessions'), "Website should include account sessions list.");
   assert(index.includes('data-account-events'), "Website should include security history list.");
+  assert(index.includes('data-auth-action="clear-revoked-devices"'), "Devices card should include a Clear Revoked action.");
+  assert(index.includes('data-auth-action="clear-expired-sessions"'), "Sessions card should include a Clear Expired action.");
+  assert(index.includes("Account Data Cleanup") && index.includes('data-auth-action="cleanup-inactive-records"'), "Account page should include compact account data cleanup controls.");
+  assert(index.includes("data-cleanup-modal") && index.includes("Confirm Cleanup"), "Cleanup actions should use a confirmation modal.");
+  assert(index.includes("data-toast-region"), "Cleanup actions should have a toast notification region.");
   assert(!index.includes("Account service unavailable"), "Placeholder unavailable panel should be removed.");
   assert(!index.includes("Sign up is not live yet"), "Placeholder signup panel should be removed.");
   assert(!index.includes("Approval requires backend setup"), "Placeholder device backend panel should be removed.");
@@ -62,6 +67,10 @@ function assertWebsiteAccountUi() {
   assert(site.includes("profileSnapshotFromForm") && site.includes("beforeunload"), "Profile page should detect dirty edits and warn before navigation.");
   assert(site.includes("validateProfileData"), "Profile saves should validate username and URL fields.");
   assert(site.includes("renderProfileDeviceList"), "Profile page should show connected AnxOS apps.");
+  assert(site.includes("renderDeviceList") && site.includes("revokedDevicesExpanded"), "Website should group active devices and collapse revoked history.");
+  assert(site.includes("Clear Revoked") && site.includes("Clear Expired"), "Website should show cleanup counts in card actions.");
+  assert(site.includes("clearSafeStorageEntries") && site.includes("supabase|sb-|auth|token|session|profile|preferences"), "Local cache cleanup should preserve auth tokens, profile data, and preferences.");
+  assert(site.includes("runAccountCleanup") && site.includes("confirmCleanup"), "Inactive account cleanup should require confirmation before deletion.");
   assert(site.includes("/api/auth/device/lookup"), "Website should look up device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("approve")'), "Website should approve device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("deny")'), "Website should deny device authorization requests.");
@@ -101,7 +110,10 @@ function assertSupabaseBackend() {
     "/api/auth/refresh",
     "/api/auth/logout",
     "/api/account/devices",
+    "/api/account/devices/clear-revoked",
     "/api/account/sessions",
+    "/api/account/sessions/clear-expired",
+    "/api/account/cleanup-inactive",
     "/api/account/security-events",
     "SUPABASE_SERVICE_ROLE_KEY",
     "ANXOS_DESKTOP_TOKEN_SECRET",
@@ -114,6 +126,8 @@ function assertSupabaseBackend() {
 
   assert(!fn.includes("access-control-allow-origin\": \"*\""), "Production CORS must not be wildcard.");
   assert(fn.includes("sanitizeMessage") && fn.includes("[redacted]"), "Edge Function should redact secret-like values.");
+  assert(fn.includes("deleteRevokedDevicesForUser") && fn.includes(".eq(\"user_id\", userId)"), "Cleanup endpoints must enforce ownership server-side.");
+  assert(fn.includes("revoked_devices_cleared") && fn.includes("inactive_account_records_cleared"), "Cleanup endpoints should audit cleanup actions.");
 }
 
 function assertDesktopIntegration() {

@@ -223,16 +223,43 @@
             </div>
             <div class="account-dashboard-grid">
               <section class="account-subpanel" id="account-devices">
-                <div class="account-subpanel__heading"><h4>My Devices</h4><button class="button button-ghost" type="button" data-auth-action="refresh-devices">Refresh</button></div>
+                <div class="account-subpanel__heading">
+                  <h4>My Devices</h4>
+                  <div class="account-subpanel__actions">
+                    <button class="button button-ghost" type="button" data-auth-action="clear-revoked-devices" disabled>Clear Revoked (0)</button>
+                    <button class="button button-ghost" type="button" data-auth-action="refresh-devices">Refresh</button>
+                  </div>
+                </div>
                 <div data-account-devices class="account-list"></div>
               </section>
               <section class="account-subpanel">
-                <div class="account-subpanel__heading"><h4>Active Sessions</h4><button class="button button-ghost" type="button" data-auth-action="revoke-sessions">Sign Out All</button></div>
+                <div class="account-subpanel__heading">
+                  <h4>Active Sessions</h4>
+                  <div class="account-subpanel__actions">
+                    <button class="button button-ghost" type="button" data-auth-action="clear-expired-sessions" disabled>Clear Expired (0)</button>
+                    <button class="button button-ghost" type="button" data-auth-action="revoke-sessions">Sign Out All</button>
+                  </div>
+                </div>
                 <div data-account-sessions class="account-list"></div>
               </section>
               <section class="account-subpanel" id="account-security">
                 <div class="account-subpanel__heading"><h4>Security History</h4></div>
                 <div data-account-events class="account-list"></div>
+              </section>
+              <section class="account-subpanel account-cleanup-panel">
+                <div class="account-subpanel__heading">
+                  <div>
+                    <h4>Account Data Cleanup</h4>
+                    <p>Remove inactive device and session clutter without deleting your account.</p>
+                  </div>
+                </div>
+                <div class="account-cleanup-actions">
+                  <button class="button button-ghost" type="button" data-auth-action="cleanup-revoked-devices" disabled>Clear revoked devices</button>
+                  <button class="button button-ghost" type="button" data-auth-action="cleanup-expired-sessions" disabled>Clear expired sessions</button>
+                  <button class="button button-ghost" type="button" data-auth-action="clear-local-cache">Clear local website cache</button>
+                  <button class="button button-ghost button-danger" type="button" data-auth-action="cleanup-inactive-records" disabled>Clear all inactive records</button>
+                </div>
+                <p class="form-message" role="status" data-auth-message="cleanup"></p>
               </section>
             </div>
           </div>
@@ -455,5 +482,18 @@
       <a href="release-notes.html">Release Notes</a>
       <a data-config-href="repositoryUrl" href="#">GitHub</a>
     </footer>
+    <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
+    <div class="confirm-modal" data-cleanup-modal hidden>
+      <div class="confirm-modal__backdrop" data-cleanup-modal-cancel></div>
+      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="cleanup-modal-title" aria-describedby="cleanup-modal-message">
+        <p class="eyebrow">Account cleanup</p>
+        <h2 id="cleanup-modal-title" data-cleanup-modal-title>Confirm cleanup</h2>
+        <p id="cleanup-modal-message" data-cleanup-modal-message>This will remove inactive account records.</p>
+        <div class="confirm-modal__actions">
+          <button class="button button-ghost" type="button" data-cleanup-modal-cancel>Cancel</button>
+          <button class="button button-primary" type="button" data-cleanup-modal-confirm>Confirm Cleanup</button>
+        </div>
+      </section>
+    </div>
   </body>
 </html>

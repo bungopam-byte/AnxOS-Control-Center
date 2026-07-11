@@ -10,6 +10,10 @@ let authState = "loading";
 let profileDirty = false;
 let lastProfileSnapshot = "";
 let lastAppliedRoute = "";
+let latestAccountDevices = [];
+let latestAccountSessions = [];
+let revokedDevicesExpanded = false;
+let accountCleanupBusy = false;
 
 function redirectToCanonicalSiteOrigin() {
   const configuredOrigin = String(accountConfig.siteUrl || "").replace(/\/+$/, "");
@@ -355,6 +359,9 @@ function disableAccountForms(message) {
 async function renderAuthState() {
   if (!currentSession) {
     currentProfile = null;
+    latestAccountDevices = [];
+    latestAccountSessions = [];
+    updateCleanupControls();
     authState = "signed-out";
     applyAuthVisibility("render-signed-out");
     if (getCurrentRoute() === "profile") window.location.hash = "signin?return=profile";
@@ -603,11 +610,15 @@ async function loadDevices() {
   renderListLoading(container);
   try {
     const { devices = [] } = await apiFetch("/api/account/devices", { method: "GET" });
+    latestAccountDevices = devices;
     renderDeviceList(container, devices);
     renderProfileDeviceList(devices);
+    updateCleanupControls();
   } catch (error) {
+    latestAccountDevices = [];
     renderListMessage(container, friendlyAuthError(error));
     renderProfileDeviceList([]);
+    updateCleanupControls();
   }
 }
 
@@ -617,15 +628,13 @@ async function loadSessions() {
   renderListLoading(container);
   try {
     const { sessions = [] } = await apiFetch("/api/account/sessions", { method: "GET" });
-    renderGenericList(container, sessions, (session) => {
-      const device = session.registered_devices || {};
-      return {
-        title: device.device_name || "Desktop session",
-        meta: `${device.platform || "desktop"} · ${formatDate(session.last_seen_at || session.created_at)}${session.revoked_at ? " · Revoked" : ""}`,
-      };
-    });
+    latestAccountSessions = sessions;
+    renderSessionList(container, sessions);
+    updateCleanupControls();
   } catch (error) {
+    latestAccountSessions = [];
     renderListMessage(container, friendlyAuthError(error));
+    updateCleanupControls();
   }
 }
 
@@ -660,7 +669,11 @@ function renderGenericList(container, items, mapItem) {
   }
   items.forEach((item) => {
     const mapped = mapItem(item);
-    container.append(createListItem(mapped.title, mapped.meta));
+    const listItem = createListItem(mapped.title, mapped.meta);
+    if (mapped.status) {
+      listItem.append(createStatusBadge(mapped.status, mapped.status.toLowerCase()));
+    }
+    container.append(listItem);
   });
 }
 
@@ -670,26 +683,79 @@ function renderDeviceList(container, devices) {
     container.append(createListItem("No devices", "Approved desktop apps will appear here."));
     return;
   }
-  devices.forEach((device) => {
-    const item = createListItem(
-      device.device_name || "Desktop device",
-      `${device.platform || "desktop"} · ${device.app_version || "version not reported"} · ${device.revoked_at ? "Revoked" : "Active"}`
-    );
-    if (!device.revoked_at) {
-      const button = document.createElement("button");
-      button.className = "button button-ghost";
-      button.type = "button";
-      button.textContent = "Revoke";
-      button.addEventListener("click", async () => {
-        if (!confirm("Revoke this desktop device? It will need to sign in again.")) return;
-        await apiFetch("/api/account/devices/revoke", { body: { deviceId: device.id } });
-        await loadDevices();
-        await loadSessions();
-      });
-      item.append(button);
+  const activeDevices = devices.filter((device) => !device.revoked_at);
+  const revokedDevices = devices.filter((device) => device.revoked_at);
+  activeDevices.forEach((device) => container.append(createDeviceListItem(device)));
+  if (revokedDevices.length) {
+    const toggle = document.createElement("button");
+    toggle.className = "account-list-toggle";
+    toggle.type = "button";
+    toggle.textContent = `${revokedDevicesExpanded ? "Hide" : "Show"} revoked devices (${revokedDevices.length})`;
+    toggle.setAttribute("aria-expanded", String(revokedDevicesExpanded));
+    toggle.addEventListener("click", () => {
+      revokedDevicesExpanded = !revokedDevicesExpanded;
+      renderDeviceList(container, latestAccountDevices);
+    });
+    container.append(toggle);
+    if (revokedDevicesExpanded) {
+      revokedDevices.forEach((device) => container.append(createDeviceListItem(device)));
     }
-    container.append(item);
+  }
+}
+
+function createDeviceListItem(device) {
+  const item = createListItem(
+    device.device_name || "Desktop device",
+    `${device.platform || "desktop"} · ${device.app_version || "version not reported"} · last active ${formatDate(device.last_seen_at || device.created_at)}`
+  );
+  item.append(createStatusBadge(device.revoked_at ? "Revoked" : "Active", device.revoked_at ? "revoked" : "active"));
+  if (!device.revoked_at) {
+    const button = document.createElement("button");
+    button.className = "button button-ghost";
+    button.type = "button";
+    button.textContent = "Revoke";
+    button.addEventListener("click", async () => {
+      if (!confirm("Revoke this desktop device? It will need to sign in again.")) return;
+      await apiFetch("/api/account/devices/revoke", { body: { deviceId: device.id } });
+      showToast("Device revoked.", "ok");
+      await refreshAccountLists();
+    });
+    item.append(button);
+  }
+  return item;
+}
+
+function renderSessionList(container, sessions) {
+  renderGenericList(container, sessions, (session) => {
+    const device = session.registered_devices || {};
+    const state = getSessionState(session);
+    return {
+      title: device.device_name || "Desktop session",
+      meta: `${device.platform || "desktop"} · ${formatDate(session.last_seen_at || session.created_at)} · ${state}`,
+      status: state,
+    };
   });
+}
+
+function getSessionState(session) {
+  if (session.revoked_at) return "Revoked";
+  if (isPast(session.expires_at)) return "Expired";
+  return "Active";
+}
+
+function isInactiveSession(session) {
+  return Boolean(session.revoked_at || isPast(session.expires_at));
+}
+
+function isPast(value) {
+  return Boolean(value && Date.parse(value) <= Date.now());
+}
+
+function createStatusBadge(label, tone = "active") {
+  const badge = document.createElement("span");
+  badge.className = `account-status-badge account-status-badge--${tone}`;
+  badge.textContent = label;
+  return badge;
 }
 
 function renderProfileDeviceList(devices) {
@@ -725,6 +791,183 @@ function formatDate(value) {
   if (!value) return "Not reported";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Not reported" : date.toLocaleString();
+}
+
+function getCleanupCounts() {
+  return {
+    revokedDevices: latestAccountDevices.filter((device) => device.revoked_at).length,
+    expiredSessions: latestAccountSessions.filter(isInactiveSession).length,
+  };
+}
+
+function updateCleanupControls() {
+  const counts = getCleanupCounts();
+  const inactiveTotal = counts.revokedDevices + counts.expiredSessions;
+  document.querySelectorAll('[data-auth-action="clear-revoked-devices"]').forEach((button) => {
+    button.textContent = `Clear Revoked (${counts.revokedDevices})`;
+    button.disabled = accountCleanupBusy || counts.revokedDevices === 0;
+  });
+  document.querySelectorAll('[data-auth-action="clear-expired-sessions"]').forEach((button) => {
+    button.textContent = `Clear Expired (${counts.expiredSessions})`;
+    button.disabled = accountCleanupBusy || counts.expiredSessions === 0;
+  });
+  document.querySelectorAll('[data-auth-action="cleanup-revoked-devices"]').forEach((button) => {
+    button.textContent = `Clear revoked devices (${counts.revokedDevices})`;
+    button.disabled = accountCleanupBusy || counts.revokedDevices === 0;
+  });
+  document.querySelectorAll('[data-auth-action="cleanup-expired-sessions"]').forEach((button) => {
+    button.textContent = `Clear expired sessions (${counts.expiredSessions})`;
+    button.disabled = accountCleanupBusy || counts.expiredSessions === 0;
+  });
+  document.querySelectorAll('[data-auth-action="cleanup-inactive-records"]').forEach((button) => {
+    button.textContent = `Clear all inactive records (${inactiveTotal})`;
+    button.disabled = accountCleanupBusy || inactiveTotal === 0;
+  });
+  document.querySelectorAll('[data-auth-action="clear-local-cache"]').forEach((button) => {
+    button.disabled = accountCleanupBusy;
+  });
+}
+
+async function refreshAccountLists() {
+  await Promise.allSettled([loadDevices(), loadSessions(), loadSecurityEvents()]);
+}
+
+function setCleanupBusy(busy) {
+  accountCleanupBusy = Boolean(busy);
+  updateCleanupControls();
+}
+
+async function runAccountCleanup(action, endpoint, counts, successLabel) {
+  if (accountCleanupBusy) return;
+  const confirmed = await confirmCleanup(action, counts);
+  if (!confirmed) return;
+  setCleanupBusy(true);
+  setMessage("cleanup", "Cleaning account records...");
+  try {
+    const result = await apiFetch(endpoint, { body: {} });
+    const deletedDevices = Number(result.deletedDevices || 0);
+    const deletedSessions = Number(result.deletedSessions || 0);
+    const summary = [
+      deletedDevices ? `${deletedDevices} device${deletedDevices === 1 ? "" : "s"}` : null,
+      deletedSessions ? `${deletedSessions} session${deletedSessions === 1 ? "" : "s"}` : null,
+    ].filter(Boolean).join(" and ") || "No records";
+    setMessage("cleanup", `${summary} removed.`, "ok");
+    showToast(`${successLabel}: ${summary} removed.`, "ok");
+    revokedDevicesExpanded = false;
+    await refreshAccountLists();
+  } catch (error) {
+    const message = friendlyAuthError(error);
+    setMessage("cleanup", message, "error");
+    showToast(message, "error");
+  } finally {
+    setCleanupBusy(false);
+  }
+}
+
+function confirmCleanup(action, counts) {
+  const modal = document.querySelector("[data-cleanup-modal]");
+  if (!modal) return Promise.resolve(window.confirm("Confirm account cleanup?"));
+  const title = modal.querySelector("[data-cleanup-modal-title]");
+  const message = modal.querySelector("[data-cleanup-modal-message]");
+  const confirmButton = modal.querySelector("[data-cleanup-modal-confirm]");
+  const cancelButtons = modal.querySelectorAll("[data-cleanup-modal-cancel]");
+  const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const copy = getCleanupModalCopy(action, counts);
+  title.textContent = copy.title;
+  message.textContent = copy.message;
+  confirmButton.textContent = copy.confirmLabel;
+  modal.hidden = false;
+  confirmButton.focus();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      modal.hidden = true;
+      confirmButton.removeEventListener("click", onConfirm);
+      cancelButtons.forEach((button) => button.removeEventListener("click", onCancel));
+      window.removeEventListener("keydown", onKeydown);
+      focusTarget?.focus?.();
+      resolve(value);
+    };
+    const onConfirm = () => finish(true);
+    const onCancel = () => finish(false);
+    const onKeydown = (event) => {
+      if (event.key === "Escape") finish(false);
+    };
+    confirmButton.addEventListener("click", onConfirm);
+    cancelButtons.forEach((button) => button.addEventListener("click", onCancel));
+    window.addEventListener("keydown", onKeydown);
+  });
+}
+
+function getCleanupModalCopy(action, counts) {
+  const revoked = Number(counts.revokedDevices || 0);
+  const sessions = Number(counts.expiredSessions || 0);
+  if (action === "revoked-devices") {
+    return {
+      title: "Clear revoked devices?",
+      message: `This will permanently remove ${revoked} revoked device record${revoked === 1 ? "" : "s"} from your account history. Active devices will not be removed.`,
+      confirmLabel: "Confirm Cleanup",
+    };
+  }
+  if (action === "expired-sessions") {
+    return {
+      title: "Clear expired sessions?",
+      message: `This will permanently remove ${sessions} expired or revoked session record${sessions === 1 ? "" : "s"}. Active sessions will not be removed.`,
+      confirmLabel: "Confirm Cleanup",
+    };
+  }
+  return {
+    title: "Clear all inactive records?",
+    message: `This will permanently remove ${revoked} revoked device record${revoked === 1 ? "" : "s"} and ${sessions} expired or revoked session record${sessions === 1 ? "" : "s"}. Active devices and the current signed-in website session will not be removed.`,
+    confirmLabel: "Confirm Cleanup",
+  };
+}
+
+async function clearLocalWebsiteCache() {
+  if (accountCleanupBusy) return;
+  setCleanupBusy(true);
+  try {
+    const removedStorage = clearSafeStorageEntries(localStorage) + clearSafeStorageEntries(sessionStorage);
+    let removedCaches = 0;
+    if (window.caches?.keys) {
+      const cacheNames = await window.caches.keys();
+      const safeNames = cacheNames.filter((name) => /anxos|anxhub|account-api|website|ui-cache/i.test(name) && !/supabase|auth|session|token/i.test(name));
+      await Promise.all(safeNames.map((name) => window.caches.delete(name).then((removed) => { if (removed) removedCaches += 1; })));
+    }
+    const message = `Cleared ${removedStorage} cached storage entr${removedStorage === 1 ? "y" : "ies"} and ${removedCaches} cache bucket${removedCaches === 1 ? "" : "s"}.`;
+    setMessage("cleanup", message, "ok");
+    showToast("Local website cache cleared.", "ok");
+  } catch (error) {
+    const message = friendlyAuthError(error);
+    setMessage("cleanup", message, "error");
+    showToast(message, "error");
+  } finally {
+    setCleanupBusy(false);
+  }
+}
+
+function clearSafeStorageEntries(storage) {
+  if (!storage) return 0;
+  const safeKeys = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (!key || /supabase|sb-|auth|token|session|profile|preferences/i.test(key)) continue;
+    if (/anxos|anxhub|account-cache|api-cache|ui-state|temporary|stale/i.test(key)) safeKeys.push(key);
+  }
+  safeKeys.forEach((key) => storage.removeItem(key));
+  return safeKeys.length;
+}
+
+function showToast(message, tone = "muted") {
+  const region = document.querySelector("[data-toast-region]");
+  if (!region) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast--${tone}`;
+  toast.textContent = message;
+  region.append(toast);
+  window.setTimeout(() => toast.remove(), 4200);
 }
 
 function applyDeviceLoginPage() {
@@ -853,14 +1096,27 @@ function bindAccountForms() {
     });
   });
   document.querySelectorAll('[data-auth-action="refresh-devices"]').forEach((button) => {
-    button.addEventListener("click", () => Promise.allSettled([loadDevices(), loadSessions(), loadSecurityEvents()]));
+    button.addEventListener("click", refreshAccountLists);
   });
   document.querySelectorAll('[data-auth-action="revoke-sessions"]').forEach((button) => {
     button.addEventListener("click", async () => {
       if (!confirm("Sign out all desktop sessions for this account?")) return;
       await apiFetch("/api/account/sessions/revoke-all", { body: {} });
-      await loadSessions();
+      showToast("All desktop sessions were signed out.", "ok");
+      await refreshAccountLists();
     });
+  });
+  document.querySelectorAll('[data-auth-action="clear-revoked-devices"], [data-auth-action="cleanup-revoked-devices"]').forEach((button) => {
+    button.addEventListener("click", () => runAccountCleanup("revoked-devices", "/api/account/devices/clear-revoked", getCleanupCounts(), "Revoked devices cleared"));
+  });
+  document.querySelectorAll('[data-auth-action="clear-expired-sessions"], [data-auth-action="cleanup-expired-sessions"]').forEach((button) => {
+    button.addEventListener("click", () => runAccountCleanup("expired-sessions", "/api/account/sessions/clear-expired", getCleanupCounts(), "Expired sessions cleared"));
+  });
+  document.querySelectorAll('[data-auth-action="cleanup-inactive-records"]').forEach((button) => {
+    button.addEventListener("click", () => runAccountCleanup("inactive-records", "/api/account/cleanup-inactive", getCleanupCounts(), "Inactive records cleared"));
+  });
+  document.querySelectorAll('[data-auth-action="clear-local-cache"]').forEach((button) => {
+    button.addEventListener("click", clearLocalWebsiteCache);
   });
   document.querySelectorAll('[data-device-action="lookup"]').forEach((button) => {
     button.addEventListener("click", lookupDevice);

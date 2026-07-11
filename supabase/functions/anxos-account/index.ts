@@ -43,8 +43,11 @@ Deno.serve(async (request) => {
     if (request.method === "POST" && route === "/api/auth/logout") return json(request, await logoutDesktopSession(request));
     if (request.method === "GET" && route === "/api/account/devices") return json(request, await listDevices(request));
     if (request.method === "POST" && route === "/api/account/devices/revoke") return json(request, await revokeDevice(request));
+    if (request.method === "POST" && route === "/api/account/devices/clear-revoked") return json(request, await clearRevokedDevices(request));
     if (request.method === "GET" && route === "/api/account/sessions") return json(request, await listSessions(request));
     if (request.method === "POST" && route === "/api/account/sessions/revoke-all") return json(request, await revokeAllSessions(request));
+    if (request.method === "POST" && route === "/api/account/sessions/clear-expired") return json(request, await clearExpiredSessions(request));
+    if (request.method === "POST" && route === "/api/account/cleanup-inactive") return json(request, await clearInactiveAccountRecords(request));
     if (request.method === "GET" && route === "/api/account/security-events") return json(request, await listSecurityEvents(request));
 
     return json(request, { code: "NOT_FOUND", message: "Endpoint not found." }, 404);
@@ -274,6 +277,13 @@ async function revokeDevice(request: Request) {
   return { ok: true };
 }
 
+async function clearRevokedDevices(request: Request) {
+  const user = await requireWebsiteUser(request);
+  const result = await deleteRevokedDevicesForUser(user.id);
+  await logSecurityEvent(user.id, "revoked_devices_cleared", "ok", request, { deletedDevices: result.deletedDevices });
+  return { ok: true, ...result };
+}
+
 async function listSessions(request: Request) {
   const user = await requireWebsiteUser(request);
   const { data, error } = await admin
@@ -291,6 +301,43 @@ async function revokeAllSessions(request: Request) {
   await admin.from("account_sessions").update({ revoked_at: new Date().toISOString() }).eq("user_id", user.id).is("revoked_at", null);
   await logSecurityEvent(user.id, "sessions_revoked", "ok", request, {});
   return { ok: true };
+}
+
+async function clearExpiredSessions(request: Request) {
+  const user = await requireWebsiteUser(request);
+  const result = await deleteInactiveSessionsForUser(user.id);
+  await logSecurityEvent(user.id, "expired_sessions_cleared", "ok", request, { deletedSessions: result.deletedSessions });
+  return { ok: true, ...result };
+}
+
+async function clearInactiveAccountRecords(request: Request) {
+  const user = await requireWebsiteUser(request);
+  const sessions = await deleteInactiveSessionsForUser(user.id);
+  const devices = await deleteRevokedDevicesForUser(user.id);
+  const result = { deletedDevices: devices.deletedDevices, deletedSessions: sessions.deletedSessions };
+  await logSecurityEvent(user.id, "inactive_account_records_cleared", "ok", request, result);
+  return { ok: true, ...result };
+}
+
+async function deleteRevokedDevicesForUser(userId: string) {
+  const { count, error } = await admin
+    .from("registered_devices")
+    .delete({ count: "exact" })
+    .eq("user_id", userId)
+    .not("revoked_at", "is", null);
+  if (error) throw httpError(500, "REVOKED_DEVICES_CLEAR_FAILED", "Could not clear revoked devices.");
+  return { deletedDevices: count || 0 };
+}
+
+async function deleteInactiveSessionsForUser(userId: string) {
+  const now = new Date().toISOString();
+  const { count, error } = await admin
+    .from("account_sessions")
+    .delete({ count: "exact" })
+    .eq("user_id", userId)
+    .or(`revoked_at.not.is.null,expires_at.lt.${now}`);
+  if (error) throw httpError(500, "EXPIRED_SESSIONS_CLEAR_FAILED", "Could not clear expired sessions.");
+  return { deletedSessions: count || 0 };
 }
 
 async function listSecurityEvents(request: Request) {

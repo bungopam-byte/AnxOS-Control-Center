@@ -2511,9 +2511,6 @@ function setOwnerWorkspaceNavVisible(visible) {
   if (ownerWorkspaceNav) {
     ownerWorkspaceNav.hidden = !visible;
   }
-  if (!visible && ownerWorkspaceNavPages) {
-    ownerWorkspaceNavPages.replaceChildren();
-  }
 }
 
 function showPage(pageName) {
@@ -2996,7 +2993,7 @@ async function refreshOwnerWorkspace() {
       ...workspace,
       authorized: true,
       pages: workspace.pages || [],
-      selectedPageId: workspace.selectedPageId || ownerWorkspaceState.selectedPageId || "overview",
+      selectedPageId: ownerWorkspaceState.selectedPageId || workspace.selectedPageId || "overview",
       contents: workspace.contents || {},
       apiHistory: workspace.apiHistory || ownerWorkspaceState.apiHistory || [],
     };
@@ -17055,6 +17052,16 @@ navItems.forEach((item) => {
   item.addEventListener("click", () => showPage(item.dataset.pageTarget));
 });
 ownerWorkspaceToggle?.addEventListener("click", () => {
+  if (!isOwnerWorkspaceAuthorized()) {
+    showToast("Owner access is required.");
+    return;
+  }
+  if (getActivePageName() !== "owner-workspace") {
+    ownerWorkspaceState.selectedPageId = ownerWorkspaceState.selectedPageId || "overview";
+    showPage("owner-workspace");
+    setOwnerNavExpanded(true);
+    return;
+  }
   toggleOwnerNavExpanded();
   if (!ownerWorkspaceState.selectedPageId) {
     selectOwnerPage("overview");

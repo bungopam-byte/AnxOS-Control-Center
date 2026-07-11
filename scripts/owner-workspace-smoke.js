@@ -39,6 +39,9 @@ async function main() {
   assert(appJs.includes("ownerWorkspaceAvailable"), "Renderer should use the trusted owner workspace availability state.");
   assert(appJs.includes("ownerPageTool(page?.id"), "Renderer should route built-in pages to their own tools.");
   assert(appJs.includes("toggleOwnerNavExpanded"), "Renderer should support collapsible Owner Workspace navigation.");
+  assert(!appJs.includes("ownerWorkspaceNavPages.replaceChildren()"), "Renderer must not delete the Owner sidebar scaffold when locked.");
+  assert(appJs.includes('showPage("owner-workspace")'), "Owner sidebar toggle should navigate to the Owner Workspace.");
+  assert(appJs.includes('selectedPageId: ownerWorkspaceState.selectedPageId || workspace.selectedPageId || "overview"'), "Owner Workspace should default to Overview on first renderer mount.");
   assert(appJs.includes("saveOwnerJson"), "JSON Editor should validate and save JSON content.");
   assert(appJs.includes("renderOwnerLogs"), "Log Viewer should support rendering and filtering logs.");
 

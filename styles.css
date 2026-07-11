@@ -27,6 +27,7 @@
   --control-transition: 140ms ease;
   --panel-shadow: 0 14px 34px rgba(4, 1, 12, 0.18);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--app-font-scale, 100%);
 }
 
 * {
@@ -43,6 +44,25 @@ body {
   height: 100%;
   min-height: 100vh;
   scroll-behavior: smooth;
+}
+
+html[data-ui-density="compact"] .settings-section,
+html[data-ui-density="compact"] .panel,
+html[data-ui-density="compact"] .card {
+  padding-block: 12px;
+}
+
+html[data-sidebar-density="compact"] .nav-item {
+  min-height: 34px;
+}
+
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
 }
 
 body {
@@ -8756,6 +8776,106 @@ button:disabled {
   align-items: stretch;
 }
 
+.settings-workspace {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.settings-nav {
+  position: sticky;
+  top: calc(var(--titlebar-height) + 12px);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(190, 170, 220, 0.12);
+  border-radius: 10px;
+  background: rgba(7, 9, 14, 0.28);
+}
+
+.settings-search {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-search span {
+  color: rgba(226, 216, 240, 0.62);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.settings-search input {
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 7, 12, 0.72);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-search-results {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(190, 170, 220, 0.12);
+  border-radius: 8px;
+  background: rgba(12, 9, 20, 0.72);
+}
+
+.settings-search-results button,
+.settings-category-list button {
+  width: 100%;
+  min-height: 32px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(226, 216, 240, 0.78);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-search-results button:hover,
+.settings-search-results button:focus-visible,
+.settings-category-list button:hover,
+.settings-category-list button:focus-visible,
+.settings-category-list button.is-active {
+  border-color: rgba(168, 128, 255, 0.28);
+  background: rgba(126, 86, 255, 0.12);
+  color: rgba(248, 245, 255, 0.96);
+}
+
+.settings-category-list {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-shell--workspace {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  max-width: 1180px;
+}
+
+.settings-shell--workspace > .settings-section {
+  height: auto;
+}
+
+.settings-shell--workspace > .settings-section[hidden] {
+  display: none;
+}
+
+.settings-highlight {
+  outline: 2px solid rgba(206, 150, 255, 0.72);
+  outline-offset: 3px;
+}
+
 .settings-shell--single {
   grid-template-columns: minmax(0, 1fr);
   max-width: 920px;
@@ -9031,6 +9151,26 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
+  .settings-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-nav {
+    position: static;
+  }
+
+  .settings-category-list {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .settings-category-list button {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+  }
+
   .security-summary-grid,
   .settings-section--security .settings-grid {
     grid-template-columns: 1fr;

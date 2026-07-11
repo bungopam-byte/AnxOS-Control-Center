@@ -327,8 +327,13 @@ const sshAutoscrollInput = document.querySelector("[data-ssh-autoscroll]");
 const sshWorkspaceStatusFields = document.querySelectorAll("[data-ssh-status]");
 const settingsForm = document.querySelector("[data-settings-form]");
 const settingsInputs = document.querySelectorAll("[data-setting]");
+const settingsCategoryButtons = document.querySelectorAll("[data-settings-category-target]");
+const settingsCategorySections = document.querySelectorAll("[data-settings-category]");
+const settingsSearchInput = document.querySelector("[data-settings-search]");
+const settingsSearchResults = document.querySelector("[data-settings-search-results]");
 const accentSwatchButtons = document.querySelectorAll("[data-accent-swatch]");
 const settingsResetButton = document.querySelector("[data-settings-reset]");
+const settingsResetCategoryButtons = document.querySelectorAll("[data-settings-reset-category]");
 const agentSettingsInputs = document.querySelectorAll("[data-agent-setting]");
 const agentSettingsSaveButton = document.querySelector('[data-agent-action="save"]');
 const agentSettingsTestButton = document.querySelector('[data-agent-action="test"]');
@@ -528,6 +533,8 @@ let downloadedUpdatePath = null;
 let updateUiState = null;
 let developerUpdateState = null;
 let developerUpdateBusy = false;
+let activeSettingsCategory = "general";
+let settingsSaveInFlight = false;
 let securityState = { setupRequired: false, authenticated: false, user: null };
 let accountState = { authenticated: false, account: null, pending: null, configured: false };
 let accountPollTimer = null;
@@ -823,6 +830,53 @@ const DEFAULT_SETTINGS = {
   "startup.sound": true,
   "startup.soundVolume": 42,
   "general.defaultPage": "dashboard",
+  "general.restorePreviousPage": true,
+  "general.confirmDestructiveActions": true,
+  "general.openExternalLinks": "system",
+  "general.language": "en",
+  "appearance.theme": "dark",
+  "appearance.density": "comfortable",
+  "appearance.sidebarDensity": "comfortable",
+  "appearance.fontScale": 100,
+  "appearance.animations": true,
+  "appearance.reduceMotion": false,
+  "appearance.transparency": true,
+  "startup.launchOnLogin": false,
+  "startup.startMinimized": false,
+  "startup.restoreWindowState": true,
+  "startup.reconnectLastAgent": true,
+  "notifications.enabled": true,
+  "notifications.sound": false,
+  "notifications.volume": 40,
+  "notifications.quietHours": false,
+  "notifications.quietStart": "22:00",
+  "notifications.quietEnd": "07:00",
+  "security.requireOwnerForSensitiveActions": true,
+  "security.lockAfterInactivity": true,
+  "security.inactivityTimeoutMinutes": 30,
+  "security.maskSecrets": true,
+  "security.revealSecretTimeoutSeconds": 30,
+  "network.requestTimeoutMs": 10000,
+  "network.retryAttempts": 2,
+  "network.retryBackoffMs": 750,
+  "network.heartbeatIntervalMs": 5000,
+  "network.automaticReconnect": true,
+  "network.ipPreference": "auto",
+  "network.proxyMode": "system",
+  "network.proxyUrl": "",
+  "network.proxyBypass": "localhost,127.0.0.1",
+  "performance.hardwareAcceleration": true,
+  "performance.refreshIntervalMs": 3000,
+  "performance.pausePollingMinimized": true,
+  "performance.logRetentionDays": 14,
+  "performance.maxLogSizeMb": 10,
+  "performance.backgroundOperationLimit": 3,
+  "backups.configBackups": true,
+  "backups.frequency": "weekly",
+  "backups.retentionCount": 10,
+  "backups.includePreferences": true,
+  "backups.includeNodes": true,
+  "backups.includeIntegrations": true,
   "amp.url": "",
   "amp.username": "",
   "minecraft.defaultAddress": "",
@@ -962,6 +1016,10 @@ function getDesktopApiState() {
       typeof api?.settings?.saveAgentConfig === "function" &&
       typeof api?.settings?.testAgentConnection === "function" &&
       typeof api?.settings?.pairAgent === "function",
+    hasPreferences:
+      typeof api?.settings?.getPreferences === "function" &&
+      typeof api?.settings?.savePreferences === "function" &&
+      typeof api?.settings?.resetPreferences === "function",
     hasMarketplaceSettings:
       typeof api?.settings?.getMarketplaceConfig === "function" &&
       typeof api?.settings?.saveMarketplaceConfig === "function",
@@ -2212,6 +2270,11 @@ function applySettings(settings, options = {}) {
   document.title = displayName;
   document.documentElement.style.setProperty("--accent", accentColor);
   document.documentElement.style.setProperty("--accent-soft", hexToRgba(accentColor, 0.16));
+  document.documentElement.style.setProperty("--app-font-scale", `${normalizeNumber(settings["appearance.fontScale"], 100, 90, 115)}%`);
+  document.documentElement.dataset.uiDensity = settings["appearance.density"] === "compact" ? "compact" : "comfortable";
+  document.documentElement.dataset.sidebarDensity = settings["appearance.sidebarDensity"] === "compact" ? "compact" : "comfortable";
+  document.documentElement.dataset.reduceMotion = settings["appearance.reduceMotion"] === true || settings["appearance.animations"] === false ? "true" : "false";
+  document.documentElement.dataset.transparency = settings["appearance.transparency"] === false ? "off" : "on";
   appNameTargets.forEach((target) => {
     target.textContent = displayName;
   });
@@ -16629,18 +16692,99 @@ function renderMarketplaceSettings(settingsPayload) {
   }
 }
 
-function loadSettings() {
-  const settings = readStoredSettings();
+function setSettingsStatus(message, tone = "neutral") {
+  document.querySelectorAll("[data-settings-status]").forEach((target) => {
+    target.textContent = message;
+    target.dataset.tone = tone;
+  });
+}
 
+function setActiveSettingsCategory(category = "general", highlightSelector = null) {
+  activeSettingsCategory = category || "general";
+  try { window.sessionStorage.setItem("anxos-settings-category", activeSettingsCategory); } catch {}
+  settingsCategoryButtons.forEach((button) => {
+    const active = button.dataset.settingsCategoryTarget === activeSettingsCategory;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+  settingsCategorySections.forEach((section) => {
+    section.hidden = section.dataset.settingsCategory !== activeSettingsCategory;
+  });
+  if (highlightSelector) {
+    requestAnimationFrame(() => {
+      const target = document.querySelector(highlightSelector);
+      target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      target?.classList?.add("settings-highlight");
+      target?.focus?.();
+      window.setTimeout(() => target?.classList?.remove("settings-highlight"), 1400);
+    });
+  }
+}
+
+function getSettingSearchEntries() {
+  return Array.from(settingsCategorySections).map((section) => {
+    const title = section.querySelector("h3")?.textContent || section.dataset.settingsCategory || "Settings";
+    const description = section.querySelector(".settings-section__header p")?.textContent || "";
+    const keywords = section.dataset.settingsKeywords || "";
+    return {
+      category: section.dataset.settingsCategory,
+      title,
+      description,
+      haystack: `${title} ${description} ${keywords} ${section.textContent || ""}`.toLowerCase(),
+      selector: `[data-settings-category="${section.dataset.settingsCategory}"]`,
+    };
+  });
+}
+
+function renderSettingsSearch() {
+  if (!settingsSearchResults || !settingsSearchInput) return;
+  const query = settingsSearchInput.value.trim().toLowerCase();
+  settingsSearchResults.replaceChildren();
+  settingsSearchResults.hidden = !query;
+  if (!query) return;
+  const matches = getSettingSearchEntries().filter((entry) => entry.haystack.includes(query)).slice(0, 8);
+  if (!matches.length) {
+    const empty = document.createElement("p");
+    empty.textContent = "No matching settings.";
+    settingsSearchResults.append(empty);
+    return;
+  }
+  matches.forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = entry.title;
+    button.addEventListener("click", () => {
+      setActiveSettingsCategory(entry.category, entry.selector);
+      settingsSearchResults.hidden = true;
+    });
+    settingsSearchResults.append(button);
+  });
+}
+
+async function loadSettings() {
+  const desktopApiState = getDesktopApiState();
+  let settings = readStoredSettings();
+  if (desktopApiState.hasPreferences) {
+    try {
+      const payload = await desktopApiState.api.settings.getPreferences();
+      settings = { ...DEFAULT_SETTINGS, ...(payload?.settings || {}) };
+      writeStoredSettings(settings);
+    } catch (error) {
+      setSettingsStatus(normalizeIpcErrorMessage(error, "Settings could not be loaded. Using local fallback."), "error");
+    }
+  }
   settingsInputs.forEach((input) => {
     setSettingInputValue(input, settings[input.dataset.setting]);
   });
 
   applySettings(settings);
   syncAccentSwatches();
+  const storedCategory = (() => { try { return window.sessionStorage.getItem("anxos-settings-category"); } catch { return null; } })();
+  setActiveSettingsCategory(storedCategory || activeSettingsCategory || "general");
 }
 
-function saveSettings() {
+async function saveSettings() {
+  if (settingsSaveInFlight) return;
   const settings = {
     ...DEFAULT_SETTINGS,
   };
@@ -16653,11 +16797,40 @@ function saveSettings() {
   applySettings(settings);
   syncAccentSwatches();
   refreshPlayitStatus();
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasPreferences) {
+    setSettingsStatus("Settings saved locally.");
+    return;
+  }
+  settingsSaveInFlight = true;
+  setSettingsStatus("Saving settings...");
+  try {
+    const payload = await desktopApiState.api.settings.savePreferences(settings);
+    writeStoredSettings({ ...DEFAULT_SETTINGS, ...(payload?.settings || settings) });
+    setSettingsStatus("Settings saved.");
+  } catch (error) {
+    setSettingsStatus(normalizeIpcErrorMessage(error, "Settings could not be saved."), "error");
+  } finally {
+    settingsSaveInFlight = false;
+  }
 }
 
-function resetSettings() {
+async function resetSettings(category = null) {
+  const label = category ? `${category} settings` : "all settings";
+  if (!window.confirm(`Reset ${label}?`)) return;
+  const desktopApiState = getDesktopApiState();
+  let settings = { ...DEFAULT_SETTINGS };
+  if (desktopApiState.hasPreferences) {
+    try {
+      const payload = await desktopApiState.api.settings.resetPreferences(category);
+      settings = { ...DEFAULT_SETTINGS, ...(payload?.settings || {}) };
+    } catch (error) {
+      setSettingsStatus(normalizeIpcErrorMessage(error, "Settings could not be reset."), "error");
+      return;
+    }
+  }
   window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
-  const settings = { ...DEFAULT_SETTINGS };
+  writeStoredSettings(settings);
 
   settingsInputs.forEach((input) => {
     setSettingInputValue(input, settings[input.dataset.setting]);
@@ -16665,7 +16838,8 @@ function resetSettings() {
 
   applySettings(settings);
   syncAccentSwatches();
-  showToast("Settings reset.");
+  setSettingsStatus(category ? `${category} settings reset.` : "Settings reset.");
+  showToast(category ? `${category} settings reset.` : "Settings reset.");
 }
 
 async function loadAgentSettings() {
@@ -18329,6 +18503,13 @@ settingsInputs.forEach((input) => {
   input.addEventListener("input", saveSettings);
   input.addEventListener("change", saveSettings);
 });
+settingsCategoryButtons.forEach((button) => {
+  button.addEventListener("click", () => setActiveSettingsCategory(button.dataset.settingsCategoryTarget || "general"));
+});
+settingsSearchInput?.addEventListener("input", renderSettingsSearch);
+settingsResetCategoryButtons.forEach((button) => {
+  button.addEventListener("click", () => resetSettings(button.dataset.settingsResetCategory || null));
+});
 accentSwatchButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const accentInput = document.querySelector('[data-setting="appearance.accentColor"]');
@@ -18341,7 +18522,37 @@ accentSwatchButtons.forEach((button) => {
     saveSettings();
   });
 });
-settingsResetButton?.addEventListener("click", resetSettings);
+settingsResetButton?.addEventListener("click", () => resetSettings());
+document.querySelector('[data-page="settings"]')?.addEventListener("click", async (event) => {
+  const categoryButton = event.target.closest("[data-settings-category-target]");
+  if (categoryButton) {
+    setActiveSettingsCategory(categoryButton.dataset.settingsCategoryTarget || "general");
+    return;
+  }
+  const securityButton = event.target.closest("[data-security-action]");
+  if (!securityButton) return;
+  const action = securityButton.dataset.securityAction;
+  if (action === "logout-all-sessions") {
+    await logoutAllSecuritySessions();
+  } else if (action === "rotate-agent-token") {
+    const ok = window.confirm("Rotate the Agent token? Restart the agent and desktop app after rotation.");
+    if (ok) await runSecurityAction("rotate-agent-token");
+  } else if (action === "open-audit-folder") {
+    await runSecurityAction("open-audit-folder");
+  }
+});
+document.querySelector('[data-settings-action="test-notification"]')?.addEventListener("click", () => {
+  if ("Notification" in window) {
+    try {
+      new Notification("AnxOS notification test", { body: "Notifications are available in this environment." });
+      showToast("Test notification sent.");
+    } catch {
+      showToast("System notifications are not available in this environment.");
+    }
+  } else {
+    showToast("System notifications are not available in this environment.");
+  }
+});
 agentSettingsSaveButton?.addEventListener("click", saveAgentConfiguration);
 agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 agentSettingsPairButton?.addEventListener("click", pairAgentFromSettings);

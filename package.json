@@ -39,6 +39,7 @@
     "files:smoke": "node scripts/files-pipeline-smoke.js",
     "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
+    "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
     "agent-control:smoke": "node scripts/agent-control-smoke.js",

@@ -2948,29 +2948,28 @@
             </div>
           </header>
 
-          <form class="settings-shell" data-settings-form>
-            <section class="settings-section settings-section--marketplace">
-              <div class="settings-section__header">
-                <div>
-                  <h3>Marketplace</h3>
-                  <p>CurseForge API Key</p>
-                </div>
-                <span class="status-pill status-pill--planned" data-marketplace-config-pill>Providers</span>
-              </div>
-              <p class="settings-note" data-marketplace-config-message>Save a CurseForge API key to browse and install CurseForge modpacks.</p>
-              <div class="settings-grid">
-                <label class="settings-field">
-                  <span>CurseForge API key</span>
-                  <input type="password" autocomplete="off" placeholder="Paste API key" data-marketplace-config="curseForgeApiKey">
-                </label>
-              </div>
-              <div class="settings-actions">
-                <button class="inline-action" type="button" data-marketplace-config-action="save">Save API Key</button>
-                <span class="settings-inline-status" data-marketplace-config-source>Saved securely in config/marketplace.json.</span>
-              </div>
-            </section>
-
-            <section class="settings-section settings-section--general">
+          <div class="settings-workspace" data-settings-workspace>
+            <aside class="settings-nav" aria-label="Settings categories">
+              <label class="settings-search"><span>Search settings</span><input type="search" data-settings-search placeholder="Search settings"></label>
+              <div class="settings-search-results" data-settings-search-results hidden></div>
+              <nav class="settings-category-list">
+                <button type="button" data-settings-category-target="general">General</button>
+                <button type="button" data-settings-category-target="appearance">Appearance</button>
+                <button type="button" data-settings-category-target="startup">Startup</button>
+                <button type="button" data-settings-category-target="notifications">Notifications</button>
+                <button type="button" data-settings-category-target="security">Security</button>
+                <button type="button" data-settings-category-target="network">Network</button>
+                <button type="button" data-settings-category-target="performance">Performance</button>
+                <button type="button" data-settings-category-target="storage">Storage</button>
+                <button type="button" data-settings-category-target="backups">Backups</button>
+                <button type="button" data-settings-category-target="integrations">Integrations</button>
+                <button type="button" data-settings-category-target="updates">Updates</button>
+                <button type="button" data-settings-category-target="developer">Developer</button>
+                <button type="button" data-settings-category-target="about">About</button>
+              </nav>
+            </aside>
+          <form class="settings-shell settings-shell--workspace" data-settings-form>
+            <section class="settings-section settings-section--general" data-settings-category="general" data-settings-keywords="general app display name default page language destructive restore links">
               <div class="settings-section__header">
                 <div>
                   <h3>General</h3>
@@ -3002,22 +3001,31 @@
                     <option value="settings">Settings</option>
                   </select>
                 </label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="general.restorePreviousPage"><span>Restore previous page on launch</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="general.confirmDestructiveActions"><span>Confirm before destructive actions</span></label>
+                <label class="settings-field"><span>Language</span><select data-setting="general.language" disabled title="English is the only bundled language."><option value="en">English only</option></select></label>
+                <label class="settings-field"><span>External links</span><select data-setting="general.openExternalLinks"><option value="system">Open in system browser</option></select></label>
               </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="general">Reset General</button><span class="settings-inline-status" data-settings-status>Preferences are saved automatically.</span></div>
             </section>
 
-            <section class="settings-section settings-section--appearance">
+            <section class="settings-section settings-section--appearance" data-settings-category="appearance" data-settings-keywords="appearance theme accent color compact density font animation motion transparency">
               <div class="settings-section__header">
                 <div>
                   <h3>Appearance</h3>
-                  <p>Tune the AnxOS accent color without changing the dark theme.</p>
+                  <p>Tune the AnxOS accent color and compactness without changing the visual identity.</p>
                 </div>
                 <span class="status-pill status-pill--local">UI</span>
               </div>
               <div class="settings-grid">
-                <label class="settings-field settings-field--color">
-                  <span>Accent color</span>
-                  <input type="color" data-setting="appearance.accentColor">
-                </label>
+                <label class="settings-field settings-field--color"><span>Accent color</span><input type="color" data-setting="appearance.accentColor"></label>
+                <label class="settings-field"><span>Theme</span><select data-setting="appearance.theme"><option value="dark">Dark</option><option value="system">System</option></select></label>
+                <label class="settings-field"><span>UI density</span><select data-setting="appearance.density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+                <label class="settings-field"><span>Sidebar density</span><select data-setting="appearance.sidebarDensity"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label>
+                <label class="settings-field"><span>Font scaling</span><input type="number" min="90" max="115" step="1" data-setting="appearance.fontScale"></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="appearance.animations"><span>Enable animations</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="appearance.reduceMotion"><span>Reduce motion</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="appearance.transparency"><span>Blur/transparency effects</span></label>
                 <div class="settings-accent-swatches" aria-label="Accent color presets">
                   <button type="button" data-accent-swatch="#b66cff" style="--swatch-color: #b66cff"><span>Purple</span></button>
                   <button type="button" data-accent-swatch="#45e08f" style="--swatch-color: #45e08f"><span>Green</span></button>
@@ -3025,37 +3033,124 @@
                   <button type="button" data-accent-swatch="#f5c451" style="--swatch-color: #f5c451"><span>Gold</span></button>
                 </div>
               </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="appearance">Reset Appearance</button></div>
             </section>
 
-            <section class="settings-section settings-section--startup">
+            <section class="settings-section settings-section--startup" data-settings-category="startup" data-settings-keywords="startup splash sound login minimized window reconnect agent restore">
               <div class="settings-section__header">
                 <div>
                   <h3>Startup</h3>
-                  <p>Control the splash screen timing and startup audio.</p>
+                  <p>Control the splash screen timing, startup audio, and session restore preferences.</p>
                 </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
-                <label class="settings-check settings-check--toggle">
-                  <input type="checkbox" data-setting="startup.enabled">
-                  <span>Enable startup splash</span>
-                </label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="startup.enabled"><span>Enable startup splash</span></label>
+                <label class="settings-field"><span>Splash minimum duration</span><input type="number" min="0" max="15000" step="250" data-setting="startup.minimumDurationMs"></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="startup.sound"><span>Enable startup sound</span></label>
+                <label class="settings-field"><span>Startup sound volume</span><input type="range" min="0" max="100" step="1" data-setting="startup.soundVolume"></label>
+                <label class="settings-check settings-check--toggle" title="OS login startup is not available yet."><input type="checkbox" data-setting="startup.launchOnLogin" disabled><span>Launch application on OS login</span></label>
+                <label class="settings-check settings-check--toggle" title="Start minimized is not available yet."><input type="checkbox" data-setting="startup.startMinimized" disabled><span>Start minimized</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="startup.restoreWindowState"><span>Restore previous window size and position</span></label>
+                <label class="settings-check settings-check--toggle" title="Automatic reconnect policy controls are not available yet."><input type="checkbox" data-setting="startup.reconnectLastAgent" disabled><span>Automatically reconnect to last active agent</span></label>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="startup">Reset Startup</button></div>
+            </section>
+
+            <section class="settings-section settings-section--notifications" data-settings-category="notifications" data-settings-keywords="notifications alerts sound quiet hours update backup docker marketplace security">
+              <div class="settings-section__header"><div><h3>Notifications</h3><p>Notification preferences are saved now; system delivery is enabled only where Electron notifications are available.</p></div><span class="status-pill status-pill--manual">Preferences</span></div>
+              <div class="settings-grid">
+                <label class="settings-check settings-check--toggle" title="Notification preference enforcement is not available yet."><input type="checkbox" data-setting="notifications.enabled" disabled><span>Desktop notifications</span></label>
+                <label class="settings-check settings-check--toggle" title="Notification sounds are not available yet."><input type="checkbox" data-setting="notifications.sound" disabled><span>Notification sound enabled</span></label>
+                <label class="settings-field" title="Notification sounds are not available yet."><span>Notification volume</span><input type="range" min="0" max="100" step="1" data-setting="notifications.volume" disabled></label>
+                <label class="settings-check settings-check--toggle" title="Quiet-hours enforcement is not available yet."><input type="checkbox" data-setting="notifications.quietHours" disabled><span>Quiet hours</span></label>
+                <label class="settings-field" title="Quiet-hours enforcement is not available yet."><span>Quiet-hours start</span><input type="time" data-setting="notifications.quietStart" disabled></label>
+                <label class="settings-field" title="Quiet-hours enforcement is not available yet."><span>Quiet-hours end</span><input type="time" data-setting="notifications.quietEnd" disabled></label>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-settings-action="test-notification">Test Notification</button><button class="inline-action" type="button" data-settings-reset-category="notifications">Reset Notifications</button></div>
+            </section>
+
+            <section class="settings-section settings-section--security" data-settings-category="security" data-settings-keywords="security owner lock timeout token audit sessions secrets mask">
+              <div class="settings-section__header"><div><h3>Security</h3><p>Owner and account security controls continue to use the existing trusted security service.</p></div><span class="status-pill status-pill--ok">Protected</span></div>
+              <div class="settings-grid">
+                <label class="settings-check settings-check--toggle" title="Owner authorization is already enforced by protected IPC paths. This policy toggle is not available yet."><input type="checkbox" data-setting="security.requireOwnerForSensitiveActions" disabled><span>Require Owner authentication before sensitive actions</span></label>
+                <label class="settings-check settings-check--toggle" title="Inactivity locking policy controls are not available yet."><input type="checkbox" data-setting="security.lockAfterInactivity" disabled><span>Lock the application after inactivity</span></label>
+                <label class="settings-field" title="Inactivity locking policy controls are not available yet."><span>Inactivity timeout minutes</span><input type="number" min="1" max="240" data-setting="security.inactivityTimeoutMinutes" disabled></label>
+                <label class="settings-check settings-check--toggle" title="Secrets are already masked by default. This policy toggle is not available yet."><input type="checkbox" data-setting="security.maskSecrets" disabled><span>Mask secrets by default</span></label>
+                <label class="settings-field" title="Reveal-secret timers are not available yet."><span>Reveal-secret timeout seconds</span><input type="number" min="5" max="300" data-setting="security.revealSecretTimeoutSeconds" disabled></label>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-security-action="logout-all-sessions">Sign out all sessions</button><button class="inline-action" type="button" data-security-action="rotate-agent-token">Rotate Agent Token</button><button class="inline-action" type="button" data-security-action="open-audit-folder">Open audit log</button><button class="inline-action" type="button" data-settings-reset-category="security">Reset Security Preferences</button></div>
+            </section>
+
+            <section class="settings-section settings-section--network" data-settings-category="network" data-settings-keywords="network proxy timeout retry backoff heartbeat reconnect ipv4 ipv6 dns">
+              <div class="settings-section__header"><div><h3>Network</h3><p>Connection defaults for app-to-agent requests. Secrets in proxy URLs are rejected.</p></div><span class="status-pill status-pill--local">Local</span></div>
+              <div class="settings-grid">
+                <label class="settings-field" title="Network policy plumbing is not available yet."><span>Agent request timeout</span><input type="number" min="1000" max="120000" data-setting="network.requestTimeoutMs" disabled></label>
+                <label class="settings-field" title="Network policy plumbing is not available yet."><span>Connection retry attempts</span><input type="number" min="0" max="8" data-setting="network.retryAttempts" disabled></label>
+                <label class="settings-field" title="Network policy plumbing is not available yet."><span>Retry backoff</span><input type="number" min="100" max="30000" data-setting="network.retryBackoffMs" disabled></label>
+                <label class="settings-field" title="Network policy plumbing is not available yet."><span>Heartbeat interval</span><input type="number" min="1000" max="60000" data-setting="network.heartbeatIntervalMs" disabled></label>
+                <label class="settings-check settings-check--toggle" title="Network policy plumbing is not available yet."><input type="checkbox" data-setting="network.automaticReconnect" disabled><span>Automatic reconnect</span></label>
+                <label class="settings-field" title="Network policy plumbing is not available yet."><span>IP preference</span><select data-setting="network.ipPreference" disabled><option value="auto">Automatic</option><option value="ipv4">Prefer IPv4</option><option value="ipv6">Prefer IPv6</option></select></label>
+                <label class="settings-field" title="Proxy configuration is not available yet."><span>Proxy mode</span><select data-setting="network.proxyMode" disabled><option value="system">System proxy</option><option value="none">No proxy</option><option value="manual">Manual proxy</option></select></label>
+                <label class="settings-field" title="Proxy configuration is not available yet."><span>Manual proxy URL</span><input type="url" data-setting="network.proxyUrl" placeholder="http://proxy.example:8080" disabled></label>
+                <label class="settings-field settings-field--wide" title="Proxy configuration is not available yet."><span>Proxy bypass list</span><input data-setting="network.proxyBypass" disabled></label>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-agent-action="test">Test connection</button><button class="inline-action" type="button" data-settings-reset-category="network">Reset Network</button></div>
+            </section>
+
+            <section class="settings-section settings-section--performance" data-settings-category="performance" data-settings-keywords="performance hardware acceleration polling logs retention cache marketplace concurrency restart">
+              <div class="settings-section__header"><div><h3>Performance</h3><p>Safe runtime limits and refresh preferences. Hardware acceleration changes require restart.</p></div><span class="status-pill status-pill--warning">Some restart</span></div>
+              <div class="settings-grid">
+                <label class="settings-check settings-check--toggle" title="Hardware acceleration is configured before app startup and cannot be changed here yet."><input type="checkbox" data-setting="performance.hardwareAcceleration" disabled><span>Hardware acceleration</span></label>
+                <label class="settings-field" title="Refresh interval policy is not available yet."><span>Background refresh interval</span><input type="number" min="1000" max="60000" data-setting="performance.refreshIntervalMs" disabled></label>
+                <label class="settings-check settings-check--toggle" title="Polling policy is not available yet."><input type="checkbox" data-setting="performance.pausePollingMinimized" disabled><span>Pause polling while app is minimized</span></label>
+                <label class="settings-field" title="Log retention is controlled by diagnostics defaults for now."><span>Log retention days</span><input type="number" min="1" max="90" data-setting="performance.logRetentionDays" disabled></label>
+                <label class="settings-field" title="Log rotation size is controlled by diagnostics defaults for now."><span>Maximum log size MB</span><input type="number" min="1" max="100" data-setting="performance.maxLogSizeMb" disabled></label>
+                <label class="settings-field" title="Operation concurrency limits are not available yet."><span>Concurrent background operations</span><input type="number" min="1" max="8" data-setting="performance.backgroundOperationLimit" disabled></label>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="performance">Reset Performance</button></div>
+            </section>
+
+            <section class="settings-section settings-section--storage" data-settings-category="storage" data-settings-keywords="storage cache logs temporary marketplace downloads application data cleanup">
+              <div class="settings-section__header"><div><h3>Storage</h3><p>Detailed usage and destructive cleanup are not enabled until path-safe cleanup service support lands.</p></div><span class="status-pill status-pill--planned">Not available yet</span></div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-diagnostics-action="open">Open logs folder</button><button class="inline-action" type="button" disabled title="Path-safe storage cleanup is not available yet.">Clear cache</button><button class="inline-action" type="button" disabled title="Path-safe storage cleanup is not available yet.">Recalculate usage</button></div>
+            </section>
+
+            <section class="settings-section settings-section--backups" data-settings-category="backups" data-settings-keywords="backups configuration restore import export retention schedule">
+              <div class="settings-section__header"><div><h3>Backups</h3><p>Configuration backup preferences are persisted; import/restore flows stay disabled until encrypted backup packaging is available.</p></div><span class="status-pill status-pill--manual">Preferences</span></div>
+              <div class="settings-grid">
+                <label class="settings-check settings-check--toggle" title="Versioned settings backup scheduling is not available yet."><input type="checkbox" data-setting="backups.configBackups" disabled><span>Automatic configuration backups</span></label>
+                <label class="settings-field" title="Versioned settings backup scheduling is not available yet."><span>Backup frequency</span><select data-setting="backups.frequency" disabled><option value="manual">Manual</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+                <label class="settings-field" title="Versioned settings backup scheduling is not available yet."><span>Backup retention count</span><input type="number" min="1" max="50" data-setting="backups.retentionCount" disabled></label>
+                <label class="settings-check settings-check--toggle" title="Versioned settings backup export is not available yet."><input type="checkbox" data-setting="backups.includePreferences" disabled><span>Include application preferences</span></label>
+                <label class="settings-check settings-check--toggle" title="Versioned settings backup export is not available yet."><input type="checkbox" data-setting="backups.includeNodes" disabled><span>Include node configuration</span></label>
+                <label class="settings-check settings-check--toggle" title="Versioned settings backup export is not available yet."><input type="checkbox" data-setting="backups.includeIntegrations" disabled><span>Include integration configuration without secrets</span></label>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" disabled title="Versioned settings backup export is not available yet.">Create backup now</button><button class="inline-action" type="button" disabled title="Validated restore previews are not available yet.">Restore backup</button><button class="inline-action" type="button" data-settings-reset-category="backups">Reset Backups</button></div>
+            </section>
+
+            <section class="settings-section settings-section--marketplace" data-settings-category="integrations" data-settings-keywords="integrations marketplace curseforge api key modpacks">
+              <div class="settings-section__header">
+                <div>
+                  <h3>Marketplace</h3>
+                  <p>CurseForge API Key</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-marketplace-config-pill>Providers</span>
+              </div>
+              <p class="settings-note" data-marketplace-config-message>Save a CurseForge API key to browse and install CurseForge modpacks.</p>
+              <div class="settings-grid">
                 <label class="settings-field">
-                  <span>Splash minimum duration</span>
-                  <input type="number" min="0" max="15000" step="250" data-setting="startup.minimumDurationMs">
+                  <span>CurseForge API key</span>
+                  <input type="password" autocomplete="off" placeholder="Paste API key" data-marketplace-config="curseForgeApiKey">
                 </label>
-                <label class="settings-check settings-check--toggle">
-                  <input type="checkbox" data-setting="startup.sound">
-                  <span>Enable startup sound</span>
-                </label>
-                <label class="settings-field">
-                  <span>Startup sound volume</span>
-                  <input type="range" min="0" max="100" step="1" data-setting="startup.soundVolume">
-                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-marketplace-config-action="save">Save API Key</button>
+                <span class="settings-inline-status" data-marketplace-config-source>Saved securely in config/marketplace.json.</span>
               </div>
             </section>
 
-            <section class="settings-section settings-section--amp">
+            <section class="settings-section settings-section--amp" data-settings-category="integrations" data-settings-keywords="integrations amp panel url username password env">
               <div class="settings-section__header">
                 <div>
                   <h3>AMP</h3>
@@ -3076,7 +3171,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--minecraft">
+            <section class="settings-section settings-section--minecraft" data-settings-category="integrations" data-settings-keywords="integrations minecraft server address">
               <div class="settings-section__header">
                 <div>
                   <h3>Minecraft</h3>
@@ -3092,7 +3187,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--playit">
+            <section class="settings-section settings-section--playit" data-settings-category="integrations" data-settings-keywords="integrations playit tunnel address">
               <div class="settings-section__header">
                 <div>
                   <h3>Playit</h3>
@@ -3108,7 +3203,29 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--developer">
+            <section class="settings-section settings-section--updates" data-settings-category="updates" data-settings-keywords="updates version release restart developer git stable beta check download">
+              <div class="settings-section__header">
+                <div>
+                  <h3>Updates</h3>
+                  <p>Production updater status and Developer Git update status are kept separate.</p>
+                </div>
+                <span class="status-pill status-pill--external">Updater</span>
+              </div>
+              <dl class="settings-about-grid">
+                <div><dt>Current Version</dt><dd data-about-field="version">Unavailable</dd></div>
+                <div><dt>Latest Version</dt><dd data-update-latest-about>Checking...</dd></div>
+                <div><dt>Last Update Check</dt><dd data-update-last-check>Not checked yet</dd></div>
+                <div><dt>Status</dt><dd data-update-about-status>Updates check automatically on startup.</dd></div>
+              </dl>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-update-action="check">Check for Updates</button>
+                <button class="inline-action" type="button" data-update-action="release">View Release Notes</button>
+                <button class="primary-button" type="button" data-update-action="install" hidden>Install Update</button>
+                <span class="settings-inline-status" data-update-status>Updates check automatically on startup.</span>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--developer" data-settings-category="developer" data-settings-keywords="developer debug logs diagnostics devtools reset">
               <div class="settings-section__header">
                 <div>
                   <h3>Developer</h3>
@@ -3127,7 +3244,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--about">
+            <section class="settings-section settings-section--about" data-settings-category="about" data-settings-keywords="about version electron node chromium git commit license repository website">
               <div class="settings-section__header">
                 <div>
                   <h3>About</h3>
@@ -3143,18 +3260,6 @@
                 <div>
                   <dt>Version</dt>
                   <dd data-about-field="version">Unavailable</dd>
-                </div>
-                <div>
-                  <dt>Latest Version</dt>
-                  <dd data-update-latest-about>Checking...</dd>
-                </div>
-                <div>
-                  <dt>Last Update Check</dt>
-                  <dd data-update-last-check>Not checked yet</dd>
-                </div>
-                <div>
-                  <dt>Status</dt>
-                  <dd data-update-about-status>Updates check automatically on startup.</dd>
                 </div>
                 <div>
                   <dt>Git Commit</dt>
@@ -3174,10 +3279,8 @@
                 </div>
               </dl>
               <div class="settings-actions">
-                <button class="inline-action" type="button" data-update-action="check">Check for Updates</button>
                 <button class="inline-action" type="button" data-update-action="release">View Release Notes</button>
-                <button class="primary-button" type="button" data-update-action="install" hidden>Install Update</button>
-                <span class="settings-inline-status" data-update-status>Updates check automatically on startup.</span>
+                <button class="inline-action" type="button" data-settings-category-target="updates">Open Updates</button>
               </div>
             </section>
             <section class="settings-section" data-routing-diagnostics hidden>
@@ -3199,6 +3302,7 @@
               </dl>
             </section>
           </form>
+          </div>
         </section>
         </main>
       </div>

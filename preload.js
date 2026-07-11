@@ -253,6 +253,9 @@ const desktopApi = {
     },
   },
   settings: {
+    getPreferences: () => ipcRenderer.invoke("settings:getPreferences"),
+    savePreferences: (settings = {}) => ipcRenderer.invoke("settings:savePreferences", { settings }),
+    resetPreferences: (category = null) => ipcRenderer.invoke("settings:resetPreferences", { category }),
     getAgentConfig: () => ipcRenderer.invoke("settings:getAgentConfig"),
     saveAgentConfig: (settings) => ipcRenderer.invoke("settings:saveAgentConfig", settings),
     testAgentConnection: (settings) => ipcRenderer.invoke("settings:testAgentConnection", settings),

@@ -14,6 +14,11 @@ const {
   readMarketplaceConfig,
   saveMarketplaceConfig,
 } = require("../services/providerConfigService");
+const {
+  readPreferences,
+  resetPreferences,
+  updatePreferences,
+} = require("../services/settingsPreferenceService");
 const curseforgeProvider = require("../services/providers/curseforgeProvider");
 const { audit, requirePermission } = require("../services/securityService");
 
@@ -66,6 +71,19 @@ function getMarketplaceSettingsPayload() {
 }
 
 function registerSettingsIpc() {
+  ipcMain.handle("settings:getPreferences", async () => readPreferences());
+  ipcMain.handle("settings:savePreferences", async (_, payload = {}) => {
+    requirePermission("settings:write", "preferences");
+    const result = updatePreferences(payload.settings || payload);
+    audit({ action: "settings.preferences.save", target: "preferences" });
+    return result;
+  });
+  ipcMain.handle("settings:resetPreferences", async (_, payload = {}) => {
+    requirePermission("settings:write", "preferences");
+    const result = resetPreferences(payload.category || null);
+    audit({ action: "settings.preferences.reset", target: payload.category || "all" });
+    return result;
+  });
   ipcMain.handle("settings:getAgentConfig", async () => getAgentSettingsPayload());
   ipcMain.handle("settings:saveAgentConfig", async (_, payload = {}) => {
     requirePermission("settings:write", "agent-config");

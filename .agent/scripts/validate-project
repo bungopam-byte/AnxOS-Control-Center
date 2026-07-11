@@ -73,6 +73,7 @@ function main() {
     "agent:token:smoke",
     "node:switch:smoke",
     "security:page:smoke",
+    "settings:preferences:smoke",
     "ui:polish:smoke",
     "diagnostics:smoke",
     "agent-control:smoke",

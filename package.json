@@ -37,6 +37,7 @@
     "files:smoke": "node scripts/files-pipeline-smoke.js",
     "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
+    "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
     "security:reset-password": "node scripts/reset-local-password.js"
   },
   "build": {

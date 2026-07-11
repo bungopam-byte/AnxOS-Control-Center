@@ -343,6 +343,60 @@ const marketplaceConfigPill = document.querySelector("[data-marketplace-config-p
 const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
 const updateModal = document.querySelector("[data-update-modal]");
+let updateModalCleanup = null;
+let openModalCount = 0;
+let modalBackgroundWasInert = false;
+
+function getModalFocusables(container) {
+  return [...container.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+    .filter((element) => !element.hidden && element.getClientRects().length > 0);
+}
+
+function activateModal(overlay, { initialFocus = null } = {}) {
+  if (!overlay || overlay.dataset.modalActive === "true") return () => {};
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const appShell = document.querySelector(".app-shell");
+  overlay.dataset.modalActive = "true";
+  if (!openModalCount) modalBackgroundWasInert = Boolean(appShell?.inert);
+  openModalCount += 1;
+  document.body.classList.add("has-open-modal");
+  if (appShell && !overlay.contains(appShell)) appShell.inert = true;
+  const trapFocus = (event) => {
+    if (event.key !== "Tab") return;
+    const focusables = getModalFocusables(overlay);
+    if (!focusables.length) {
+      event.preventDefault();
+      overlay.querySelector('[role="dialog"]')?.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  overlay.addEventListener("keydown", trapFocus);
+  requestAnimationFrame(() => {
+    const target = initialFocus?.() || initialFocus || getModalFocusables(overlay)[0] || overlay.querySelector('[role="dialog"]');
+    target?.focus?.();
+  });
+  return () => {
+    if (overlay.dataset.modalActive !== "true") return;
+    delete overlay.dataset.modalActive;
+    overlay.removeEventListener("keydown", trapFocus);
+    openModalCount = Math.max(0, openModalCount - 1);
+    if (!openModalCount) {
+      document.body.classList.remove("has-open-modal");
+      if (appShell) appShell.inert = modalBackgroundWasInert;
+      modalBackgroundWasInert = false;
+    }
+    if (previousFocus?.isConnected) previousFocus.focus();
+  };
+}
 const updateTitle = document.querySelector("[data-update-title]");
 const updateMessage = document.querySelector("[data-update-message]");
 const updateCurrentVersion = document.querySelector("[data-update-current-version]");
@@ -3502,7 +3556,9 @@ function setDockerStat(name, value) {
 function setDockerLoading(isLoading) {
   if (dockerLoading) {
     dockerLoading.hidden = !isLoading;
+    dockerLoading.setAttribute("aria-busy", isLoading ? "true" : "false");
   }
+  document.querySelector('[data-page="docker"]')?.setAttribute("aria-busy", isLoading ? "true" : "false");
 }
 
 function setDockerEmpty(isEmpty) {
@@ -5913,7 +5969,9 @@ function updateInstanceActionButtons() {
 function setInstancesLoading(isLoading) {
   if (instancesLoading) {
     instancesLoading.hidden = !isLoading;
+    instancesLoading.setAttribute("aria-busy", isLoading ? "true" : "false");
   }
+  document.querySelector('[data-page="instances"]')?.setAttribute("aria-busy", isLoading ? "true" : "false");
 }
 
 function setInstancesEmpty(isVisible, message = "Create an instance to begin.") {
@@ -6609,10 +6667,12 @@ function setMarketplaceLoading(loading) {
   marketplaceRequestInFlight = Boolean(loading);
   if (marketplaceLoading) {
     marketplaceLoading.hidden = !loading;
+    marketplaceLoading.setAttribute("aria-busy", loading ? "true" : "false");
   }
   if (marketplaceRefreshButton) {
     marketplaceRefreshButton.disabled = loading;
   }
+  document.querySelector('[data-page="marketplace"]')?.setAttribute("aria-busy", loading ? "true" : "false");
 }
 
 function renderMarketplaceCategories() {
@@ -9583,12 +9643,14 @@ function updateFileActionButtons() {
 function setFilesLoading(isLoading, message = "Loading files...") {
   if (filesLoading) {
     filesLoading.hidden = !isLoading;
+    filesLoading.setAttribute("aria-busy", isLoading ? "true" : "false");
     const statusText = filesLoading.querySelector("span:last-child");
 
     if (statusText) {
       statusText.textContent = message;
     }
   }
+  document.querySelector('[data-page="files"]')?.setAttribute("aria-busy", isLoading ? "true" : "false");
 }
 
 function setFilesEmpty(isVisible, title, message) {
@@ -15005,7 +15067,7 @@ function createSecurityConfirmation({ title, message, phrase = "", confirmLabel 
     const overlay = document.createElement("div");
     overlay.className = "app-modal-backdrop";
     overlay.innerHTML = `
-      <section class="app-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || "Confirm action")}">
+      <section class="app-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || "Confirm action")}" tabindex="-1">
         <button class="app-modal__close" type="button" data-confirm-cancel aria-label="Close">×</button>
         <div class="app-modal__header">
           <p class="eyebrow">Security Confirmation</p>
@@ -15021,6 +15083,7 @@ function createSecurityConfirmation({ title, message, phrase = "", confirmLabel 
     `;
     const close = (value) => {
       document.removeEventListener("keydown", onKeyDown);
+      deactivateModal();
       overlay.remove();
       resolve(value);
     };
@@ -15040,8 +15103,9 @@ function createSecurityConfirmation({ title, message, phrase = "", confirmLabel 
     });
     document.addEventListener("keydown", onKeyDown);
     document.body.appendChild(overlay);
-    overlay.querySelector("[data-confirm-phrase]")?.focus();
-    overlay.querySelector("[data-confirm-ok]")?.focus();
+    const deactivateModal = activateModal(overlay, {
+      initialFocus: () => overlay.querySelector("[data-confirm-phrase]") || overlay.querySelector("[data-confirm-ok]"),
+    });
   });
 }
 
@@ -15050,7 +15114,7 @@ function createSecurityTextPrompt({ title, message, label = "Value", confirmLabe
     const overlay = document.createElement("div");
     overlay.className = "app-modal-backdrop";
     overlay.innerHTML = `
-      <section class="app-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || "Enter value")}">
+      <section class="app-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title || "Enter value")}" tabindex="-1">
         <button class="app-modal__close" type="button" data-prompt-cancel aria-label="Close">×</button>
         <div class="app-modal__header">
           <p class="eyebrow">Security</p>
@@ -15066,6 +15130,7 @@ function createSecurityTextPrompt({ title, message, label = "Value", confirmLabe
     `;
     const close = (value) => {
       document.removeEventListener("keydown", onKeyDown);
+      deactivateModal();
       overlay.remove();
       resolve(value);
     };
@@ -15081,7 +15146,7 @@ function createSecurityTextPrompt({ title, message, label = "Value", confirmLabe
     });
     document.addEventListener("keydown", onKeyDown);
     document.body.appendChild(overlay);
-    overlay.querySelector("[data-prompt-value]")?.focus();
+    const deactivateModal = activateModal(overlay, { initialFocus: () => overlay.querySelector("[data-prompt-value]") });
   });
 }
 
@@ -15247,7 +15312,7 @@ function isNodeSwitching() {
 }
 
 function shouldSkipNodeScopedPolling() {
-  return isNodeSwitching();
+  return isNodeSwitching() || document.hidden;
 }
 
 function createNodeActionContext(label = "node-action") {
@@ -16239,6 +16304,12 @@ function setUpdateModalVisible(isVisible) {
   }
 
   updateModal.hidden = !isVisible;
+  if (isVisible && !updateModalCleanup) {
+    updateModalCleanup = activateModal(updateModal, { initialFocus: () => updatePrimaryButton });
+  } else if (!isVisible && updateModalCleanup) {
+    updateModalCleanup();
+    updateModalCleanup = null;
+  }
 }
 
 function renderUpdateProgress(progress = null) {
@@ -17484,6 +17555,17 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
     }
   });
 });
+
+updateModal?.addEventListener("click", (event) => {
+  if (event.target === updateModal) setUpdateModalVisible(false);
+});
+
+updateModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setUpdateModalVisible(false);
+  }
+});
 securityForm?.addEventListener("submit", submitSecurityForm);
 accountPasswordForm?.addEventListener("submit", loginAnxOsAccountWithPassword);
 document.querySelector('[data-security-action="logout"]')?.addEventListener("click", logoutSecuritySession);
@@ -17723,13 +17805,13 @@ refreshDockerStatus();
 
 registerRefreshTask(updateLocalTime, 30000);
 registerRefreshTask(() => {
-  if (!shouldSkipNodeScopedPolling()) refreshDashboard();
+  if (!shouldSkipNodeScopedPolling() && getActivePageName() === "dashboard") refreshDashboard();
 }, 1000);
 registerRefreshTask(() => {
-  if (!shouldSkipNodeScopedPolling()) refreshAmpDashboard();
+  if (!shouldSkipNodeScopedPolling() && ["dashboard", "amp", "minecraft"].includes(getActivePageName())) refreshAmpDashboard();
 }, AMP_REFRESH_INTERVAL_MS);
 registerRefreshTask(() => {
-  if (!shouldSkipNodeScopedPolling()) refreshPlayitStatus();
+  if (!shouldSkipNodeScopedPolling() && ["dashboard", "playit"].includes(getActivePageName())) refreshPlayitStatus();
 }, 5000);
 registerRefreshTask(() => {
   if (shouldSkipNodeScopedPolling()) return;

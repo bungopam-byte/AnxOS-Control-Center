@@ -75,9 +75,9 @@ includesAll(compact(appSource), [
 ], "Current-context request finalizers");
 
 includesAll(appSource, [
-  "if (!shouldSkipNodeScopedPolling()) refreshDashboard();",
-  "if (!shouldSkipNodeScopedPolling()) refreshAmpDashboard();",
-  "if (!shouldSkipNodeScopedPolling()) refreshPlayitStatus();",
+  "!shouldSkipNodeScopedPolling() && getActivePageName() === \"dashboard\"",
+  "!shouldSkipNodeScopedPolling() && [\"dashboard\", \"amp\", \"minecraft\"].includes(getActivePageName())",
+  "!shouldSkipNodeScopedPolling() && [\"dashboard\", \"playit\"].includes(getActivePageName())",
   "if (shouldSkipNodeScopedPolling()) return;",
 ], "Node-scoped polling");
 

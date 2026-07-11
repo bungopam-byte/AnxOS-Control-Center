@@ -24,11 +24,18 @@
   --caution: #f5c451;
   --neutral: #a8a1b5;
   --radius: 8px;
+  --control-transition: 140ms ease;
+  --panel-shadow: 0 14px 34px rgba(4, 1, 12, 0.18);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 * {
   box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(182, 108, 255, 0.34);
+  color: var(--text);
 }
 
 html,
@@ -59,6 +66,23 @@ a {
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea,
+[role="button"] {
+  transition-duration: 140ms;
+  transition-timing-function: ease;
 }
 
 button:focus-visible,
@@ -1115,6 +1139,7 @@ body.window-is-maximized .app-workspace {
 
 .page {
   display: none;
+  min-width: 0;
   max-width: 1180px;
   margin: 0 auto;
 }
@@ -1151,6 +1176,33 @@ body.window-is-maximized .app-workspace {
   gap: 24px;
   align-items: end;
   margin-bottom: 28px;
+}
+
+.page-header > * {
+  min-width: 0;
+}
+
+.page-header h1,
+.page-header h2,
+.page-header p {
+  overflow-wrap: anywhere;
+}
+
+[aria-busy="true"] {
+  cursor: progress;
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .page-header > :last-child:not(:first-child) {
+    max-width: 100%;
+  }
 }
 
 .dashboard-ops-grid {
@@ -6615,6 +6667,7 @@ dd {
   background: rgba(7, 2, 15, 0.72);
   backdrop-filter: blur(14px);
   animation: modalFadeIn 160ms ease both;
+  overscroll-behavior: contain;
 }
 
 .app-modal {
@@ -6629,6 +6682,60 @@ dd {
   background: linear-gradient(145deg, rgba(33, 16, 51, 0.98), rgba(16, 8, 28, 0.98));
   box-shadow: 0 28px 80px rgba(4, 1, 12, 0.5);
   animation: modalScaleIn 180ms cubic-bezier(.2,.9,.25,1) both;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+body.has-open-modal {
+  overscroll-behavior: none;
+}
+
+.app-modal-backdrop[hidden] {
+  pointer-events: none;
+}
+
+.app-modal__close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(190, 170, 220, 0.16);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--muted);
+  font: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.app-modal__close:hover,
+.app-modal__close:focus-visible {
+  border-color: rgba(206, 150, 255, 0.56);
+  background: rgba(182, 108, 255, 0.14);
+  color: var(--text);
+}
+
+.app-modal:has(.app-modal__close) {
+  position: relative;
+  padding-top: 24px;
+}
+
+@media (max-width: 640px), (max-height: 560px) {
+  .app-modal-backdrop {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .app-modal {
+    width: 100%;
+    max-height: calc(100dvh - var(--titlebar-height) - 12px);
+    gap: 14px;
+    padding: 16px;
+  }
 }
 
 .app-modal--update {

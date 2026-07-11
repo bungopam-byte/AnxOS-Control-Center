@@ -73,6 +73,7 @@ function main() {
     "agent:token:smoke",
     "node:switch:smoke",
     "security:page:smoke",
+    "ui:polish:smoke",
     "marketplace:smoke",
   ];
 

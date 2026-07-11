@@ -1151,6 +1151,48 @@ h3 {
   justify-content: flex-start;
 }
 
+.account-history-actions {
+  max-width: 100%;
+}
+
+.account-filter-chip {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.account-filter-chip:hover,
+.account-filter-chip:focus-visible,
+.account-filter-chip.is-active {
+  border-color: rgba(197, 129, 255, 0.48);
+  color: var(--text);
+  outline: none;
+}
+
+.account-history-toggle {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 32px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.account-history-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .button-danger {
   border-color: rgba(255, 107, 138, 0.34);
   color: #ffd7df;
@@ -1213,10 +1255,20 @@ h3 {
 }
 
 .account-status-badge--revoked,
-.account-status-badge--expired {
+.account-status-badge--expired,
+.account-status-badge--error {
   border-color: rgba(255, 107, 138, 0.28);
   color: #ffb2c0;
   background: rgba(255, 107, 138, 0.08);
+}
+
+.account-status-badge--device,
+.account-status-badge--session,
+.account-status-badge--cleanup,
+.account-status-badge--all {
+  border-color: rgba(197, 129, 255, 0.25);
+  color: #dac5ff;
+  background: rgba(197, 129, 255, 0.07);
 }
 
 .account-list-item strong {

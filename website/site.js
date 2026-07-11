@@ -12,8 +12,11 @@ let lastProfileSnapshot = "";
 let lastAppliedRoute = "";
 let latestAccountDevices = [];
 let latestAccountSessions = [];
+let latestSecurityEvents = [];
 let revokedDevicesExpanded = false;
 let accountCleanupBusy = false;
+let securityHistoryFilter = "all";
+let securityHistoryHideOld = true;
 
 function redirectToCanonicalSiteOrigin() {
   const configuredOrigin = String(accountConfig.siteUrl || "").replace(/\/+$/, "");
@@ -361,6 +364,7 @@ async function renderAuthState() {
     currentProfile = null;
     latestAccountDevices = [];
     latestAccountSessions = [];
+    latestSecurityEvents = [];
     updateCleanupControls();
     authState = "signed-out";
     applyAuthVisibility("render-signed-out");
@@ -644,13 +648,50 @@ async function loadSecurityEvents() {
   renderListLoading(container);
   try {
     const { events = [] } = await apiFetch("/api/account/security-events", { method: "GET" });
-    renderGenericList(container, events, (event) => ({
-      title: event.event_type || "Security event",
-      meta: `${event.outcome || "ok"} · ${formatDate(event.created_at)}`,
-    }));
+    latestSecurityEvents = events;
+    renderSecurityEvents();
   } catch (error) {
+    latestSecurityEvents = [];
     renderListMessage(container, friendlyAuthError(error));
   }
+}
+
+function renderSecurityEvents() {
+  const container = document.querySelector("[data-account-events]");
+  if (!container) return;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const filtered = latestSecurityEvents.filter((event) => {
+    const category = getSecurityEventCategory(event);
+    const old = event.created_at ? Date.parse(event.created_at) < cutoff : false;
+    return (securityHistoryFilter === "all" || category === securityHistoryFilter)
+      && (!securityHistoryHideOld || !old);
+  });
+  renderGenericList(container, filtered, (event) => {
+    const category = getSecurityEventCategory(event);
+    return {
+      title: event.event_type || "Security event",
+      meta: `${event.outcome || "ok"} · ${formatDate(event.created_at)}`,
+      status: category === "error" ? "Error" : titleCase(category),
+    };
+  });
+  if (!filtered.length && latestSecurityEvents.length) {
+    container.replaceChildren(createListItem("No matching events", "Adjust the filter or show older audit records."));
+  }
+}
+
+function getSecurityEventCategory(event) {
+  const type = String(event?.event_type || "").toLowerCase();
+  const outcome = String(event?.outcome || "").toLowerCase();
+  if (outcome.includes("error") || outcome.includes("fail") || outcome.includes("denied")) return "error";
+  if (type.includes("cleanup") || type.includes("cleared")) return "cleanup";
+  if (type.includes("session") || type.includes("login") || type.includes("logout")) return "session";
+  if (type.includes("device")) return "device";
+  return "all";
+}
+
+function titleCase(value) {
+  const text = String(value || "");
+  return text ? `${text.slice(0, 1).toUpperCase()}${text.slice(1)}` : "";
 }
 
 function renderListLoading(container) {
@@ -1117,6 +1158,21 @@ function bindAccountForms() {
   });
   document.querySelectorAll('[data-auth-action="clear-local-cache"]').forEach((button) => {
     button.addEventListener("click", clearLocalWebsiteCache);
+  });
+  document.querySelectorAll("[data-security-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      securityHistoryFilter = button.dataset.securityFilter || "all";
+      document.querySelectorAll("[data-security-filter]").forEach((node) => {
+        node.classList.toggle("is-active", node === button);
+      });
+      renderSecurityEvents();
+    });
+  });
+  document.querySelectorAll("[data-security-hide-old]").forEach((input) => {
+    input.addEventListener("change", () => {
+      securityHistoryHideOld = input.checked;
+      renderSecurityEvents();
+    });
   });
   document.querySelectorAll('[data-device-action="lookup"]').forEach((button) => {
     button.addEventListener("click", lookupDevice);

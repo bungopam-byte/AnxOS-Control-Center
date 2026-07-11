@@ -243,7 +243,20 @@
                 <div data-account-sessions class="account-list"></div>
               </section>
               <section class="account-subpanel" id="account-security">
-                <div class="account-subpanel__heading"><h4>Security History</h4></div>
+                <div class="account-subpanel__heading">
+                  <div>
+                    <h4>Security History</h4>
+                    <p>Audit records are preserved; use filters to reduce clutter.</p>
+                  </div>
+                  <div class="account-subpanel__actions account-history-actions">
+                    <button class="account-filter-chip is-active" type="button" data-security-filter="all">All</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="device">Device</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="session">Session</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="cleanup">Cleanup</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="error">Errors</button>
+                    <label class="account-history-toggle"><input type="checkbox" data-security-hide-old checked><span>Hide older than 30 days</span></label>
+                  </div>
+                </div>
                 <div data-account-events class="account-list"></div>
               </section>
               <section class="account-subpanel account-cleanup-panel">

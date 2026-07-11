@@ -54,6 +54,23 @@ function createMarketplaceError(message, code = "MARKETPLACE_ERROR", details = {
   return error;
 }
 
+function resolveMarketplaceAgentConfig(nodeId = null) {
+  const executionTarget = getExecutionTarget(nodeId);
+  if (executionTarget.type === "agent") {
+    return executionTarget.config;
+  }
+
+  const effectiveAgent = agentClient.getEffectiveAgentSettings();
+  if (effectiveAgent.backendMode === "agent") {
+    return {
+      ...effectiveAgent,
+      targetLabel: "configured-agent",
+    };
+  }
+
+  return { backendMode: "local" };
+}
+
 function sanitizeStackLocation(error) {
   const line = String(error?.stack || "").split("\n").find((entry) => /(?:src|agent|scripts)\//.test(entry));
   return line ? line.trim().replace(process.cwd(), "") : null;
@@ -2608,8 +2625,7 @@ async function installTemplate(payload = {}) {
 
   const options = payload.options || {};
   const parentRecord = createInstallTaskRecord(template, options);
-  const executionTarget = getExecutionTarget(payload.nodeId);
-  const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
+  const agentConfig = resolveMarketplaceAgentConfig(payload.nodeId);
   const ports = template.category === "Minecraft"
     ? [resolveMinecraftPort(options, template.defaultPorts)]
     : parsePorts(options.ports || options.port, template.defaultPorts);
@@ -2870,6 +2886,7 @@ module.exports = {
     normalizeTemplateDownloads,
     normalizeTemplateTags,
     parsePorts,
+    resolveMarketplaceAgentConfig,
     uniqueVersionEntries,
     validateMarketplaceCatalog,
     validateMarketplaceTemplate,

@@ -234,6 +234,31 @@ function assertMarketplaceInstallerRegistry() {
   assert(instanceServiceSource.includes("MAX_STARTUP_TIMEOUT_MS = 30 * 60 * 1000"), "Agent schema should allow long native installer startup timeouts.");
 }
 
+function assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent() {
+  const agentClient = require("../src/services/agentClient");
+  const configPath = agentClient.getAgentConfigPath();
+  const originalConfig = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : null;
+
+  try {
+    agentClient.saveAgentSettings({
+      backendMode: "agent",
+      agentUrl: "http://192.168.1.134:47131",
+      agentToken: "smoke-token",
+    });
+    const resolved = marketplaceService._test.resolveMarketplaceAgentConfig("application-host");
+    assert.strictEqual(resolved.backendMode, "agent", "Marketplace installs must not force localhost when configured backend mode is agent.");
+    assert.strictEqual(resolved.agentUrl, "http://192.168.1.134:47131", "Marketplace installs should use the configured Agent URL.");
+    assert.strictEqual(resolved.agentToken, "smoke-token", "Marketplace installs should preserve the configured Agent token.");
+  } finally {
+    if (originalConfig === null) {
+      fs.rmSync(configPath, { force: true });
+    } else {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, originalConfig);
+    }
+  }
+}
+
 function assertMarketplaceManifestAuditReport() {
   const validation = marketplaceService._test.validateMarketplaceCatalog(templates);
   const disabled = templates.filter((template) => template.disabled || template.comingSoon || marketplaceService._test.getTemplateInstallerType(template) === "no-install");
@@ -2376,6 +2401,7 @@ async function main() {
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertMarketplaceInstallerRegistry();
+  assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent();
   assertMarketplaceManifestAuditReport();
   assertMarketplaceIpcErrorSerialization();
   assertInstallerResultContract();

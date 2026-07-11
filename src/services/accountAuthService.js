@@ -40,6 +40,27 @@ function normalizeBaseUrl(value, fallback = "") {
   return String(value || fallback).replace(/\/+$/, "");
 }
 
+function validateAccountApiUrl(value, source = "account configuration") {
+  const normalized = normalizeBaseUrl(value, "");
+  if (!normalized) {
+    return "";
+  }
+  let parsed;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    const error = new Error(`Account API URL in ${source} is invalid.`);
+    error.code = "ACCOUNT_API_URL_INVALID";
+    throw error;
+  }
+  if (/^functions\.supabase\.co$/i.test(parsed.hostname) || /^supabase\.co$/i.test(parsed.hostname)) {
+    const error = new Error("Account API URL is missing the Supabase project reference. Use https://<project-ref>.functions.supabase.co/anxos-account.");
+    error.code = "ACCOUNT_API_PROJECT_MISSING";
+    throw error;
+  }
+  return normalized;
+}
+
 function getBundledAccountConfigPath() {
   return path.join(__dirname, "..", "..", "website", "account-config.js");
 }
@@ -59,7 +80,7 @@ function normalizeAccountConfig(rawConfig = {}, source = "unknown") {
     source,
     supabaseUrl: normalizeBaseUrl(rawConfig.supabaseUrl || rawConfig.SUPABASE_URL || rawConfig.ANXOS_SUPABASE_URL, ""),
     supabaseAnonKey: String(rawConfig.supabaseAnonKey || rawConfig.supabaseAnonKeyPublic || rawConfig.SUPABASE_ANON_KEY || rawConfig.ANXOS_SUPABASE_ANON_KEY || "").trim(),
-    accountApiUrl: normalizeBaseUrl(rawConfig.accountApiUrl || rawConfig.ANXOS_ACCOUNT_API_URL || rawConfig.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL, ""),
+    accountApiUrl: validateAccountApiUrl(rawConfig.accountApiUrl || rawConfig.ANXOS_ACCOUNT_API_URL || rawConfig.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL, source),
     siteUrl: normalizeBaseUrl(rawConfig.siteUrl || rawConfig.WEBSITE_BASE_URL || rawConfig.ANXOS_WEBSITE_BASE_URL, ""),
   };
 }
@@ -157,6 +178,24 @@ function getSupabaseUrl() {
 
 function getSupabaseAnonKey() {
   return String(getAccountConfig().supabaseAnonKey || "").trim();
+}
+
+function getAccountApiHeaders(rawUrl, options = {}) {
+  const headers = { "content-type": "application/json" };
+  let isSupabaseFunction = false;
+  try {
+    isSupabaseFunction = APPROVED_SUPABASE_FUNCTION_HOST.test(new URL(rawUrl).hostname);
+  } catch {}
+  const anonKey = isSupabaseFunction ? getSupabaseAnonKey() : "";
+  if (anonKey) {
+    headers.apikey = anonKey;
+  }
+  if (options.accessToken) {
+    headers.authorization = `Bearer ${options.accessToken}`;
+  } else if (anonKey) {
+    headers.authorization = `Bearer ${anonKey}`;
+  }
+  return headers;
 }
 
 function assertApprovedExternalUrl(rawUrl, purpose = "account") {
@@ -318,10 +357,7 @@ async function postJson(url, payload, options = {}) {
   try {
     const response = await fetch(assertApprovedExternalUrl(url, "account API"), {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(options.accessToken ? { authorization: `Bearer ${options.accessToken}` } : {}),
-      },
+      headers: getAccountApiHeaders(url, options),
       body: JSON.stringify(payload || {}),
       signal: controller.signal,
     });
@@ -355,9 +391,7 @@ async function getJson(url, options = {}) {
   try {
     const response = await fetch(assertApprovedExternalUrl(url, "account API"), {
       method: "GET",
-      headers: {
-        ...(options.accessToken ? { authorization: `Bearer ${options.accessToken}` } : {}),
-      },
+      headers: getAccountApiHeaders(url, options),
       signal: controller.signal,
     });
     const { data, text } = await readResponsePayload(response);

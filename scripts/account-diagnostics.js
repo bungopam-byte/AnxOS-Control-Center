@@ -7,6 +7,14 @@ function normalizeBaseUrl(value) {
   return String(value || "").trim().replace(/\/+$/, "");
 }
 
+function isSupabaseFunctionUrl(value) {
+  try {
+    return /^[a-z0-9-]+\.functions\.supabase\.co$/i.test(new URL(value).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function mask(value) {
   const text = String(value || "");
   if (!text) return "";
@@ -59,9 +67,16 @@ function loadConfig() {
 
 async function testDeviceStart(accountApiUrl) {
   if (!accountApiUrl) return { skipped: true, reason: "accountApiUrl is not configured" };
+  if (/^https:\/\/functions\.supabase\.co\b/i.test(accountApiUrl)) {
+    return { ok: false, code: "ACCOUNT_API_PROJECT_MISSING", message: "Account API URL is missing the Supabase project reference." };
+  }
+  const anonKey = process.env.ANXOS_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || loadConfig().parsed.supabaseAnonKey || "";
   const response = await fetch(`${accountApiUrl}/api/auth/device/start`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(isSupabaseFunctionUrl(accountApiUrl) && anonKey ? { apikey: anonKey, authorization: `Bearer ${anonKey}` } : {}),
+    },
     body: JSON.stringify({
       app: "AnxOS-Control-Center",
       appVersion: require("../package.json").version,

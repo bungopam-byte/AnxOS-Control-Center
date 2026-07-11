@@ -87,7 +87,9 @@ async function main() {
     });
     assert(paths.userData.startsWith("C:\\Users\\anjor\\AppData\\Roaming"), "userData should be under the roaming per-user directory");
     assert(paths.cache.startsWith("C:\\Users\\anjor\\AppData\\Local"), "cache should be under the local per-user directory");
+    assert(paths.cache.includes("ElectronCache"), "cache should use the dedicated ElectronCache directory");
     assert(paths.sessionData.startsWith("C:\\Users\\anjor\\AppData\\Local"), "sessionData should be under the local per-user directory");
+    assert(paths.sessionData.includes("SessionData"), "session data should avoid the legacy spaced Session Data directory");
     assert(!/Program Files/i.test(paths.cache), "cache must not resolve inside Program Files");
 
     const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");

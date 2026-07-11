@@ -19,12 +19,13 @@ function resolveElectronPaths(options = {}) {
     ? firstWritableBase([localAppDataPath, appDataPath, tempPath])
     : firstWritableBase([options.cachePath, localAppDataPath, appDataPath, tempPath]);
   const userData = path.join(roamingBase, APP_DATA_NAME);
-  const cache = path.join(cacheBase, APP_DATA_NAME, "Cache");
+  const cache = path.join(cacheBase, APP_DATA_NAME, "ElectronCache");
 
   return {
     userData,
     cache,
-    sessionData: path.join(cacheBase, APP_DATA_NAME, "Session Data"),
+    mediaCache: path.join(cacheBase, APP_DATA_NAME, "MediaCache"),
+    sessionData: path.join(cacheBase, APP_DATA_NAME, "SessionData"),
     logs: path.join(userData, "logs"),
     crashDumps: path.join(userData, "Crashpad"),
   };
@@ -59,6 +60,9 @@ function configureElectronPaths(app, options = {}) {
   app.setPath("cache", writable.cache);
   app.setPath("logs", writable.logs);
   app.setPath("crashDumps", writable.crashDumps);
+  app.commandLine.appendSwitch("user-data-dir", writable.userData);
+  app.commandLine.appendSwitch("disk-cache-dir", writable.cache);
+  app.commandLine.appendSwitch("media-cache-dir", writable.mediaCache);
   try {
     app.setPath("sessionData", writable.sessionData);
   } catch {

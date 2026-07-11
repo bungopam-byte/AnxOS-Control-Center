@@ -349,6 +349,7 @@ const agentControlFields = document.querySelectorAll("[data-agent-control-field]
 const agentControlButtons = document.querySelectorAll("[data-agent-control-action]");
 const agentConfigFields = document.querySelectorAll("[data-agent-config]");
 const agentConfigMessage = document.querySelector("[data-agent-config-message]");
+const agentConfigSummary = document.querySelector("[data-agent-config-summary]");
 const agentDiagnosticsList = document.querySelector("[data-agent-diagnostics]");
 const agentRemoteList = document.querySelector("[data-agent-remote-list]");
 const agentLogViewer = document.querySelector("[data-agent-log-viewer]");
@@ -356,9 +357,11 @@ const agentLogSearch = document.querySelector("[data-agent-log-search]");
 const agentLogSeverity = document.querySelector("[data-agent-log-severity]");
 const agentLogPause = document.querySelector("[data-agent-log-pause]");
 const agentLogWrap = document.querySelector("[data-agent-log-wrap]");
+const agentSetupPanel = document.querySelector("[data-agent-setup-panel]");
 const agentSetupMode = document.querySelector('[data-agent-setup="mode"]');
 const agentSetupAutoStart = document.querySelector('[data-agent-setup="autoStart"]');
 const agentSetupMessage = document.querySelector("[data-agent-setup-message]");
+const agentSetupSummary = document.querySelector("[data-agent-setup-summary]");
 let agentControlState = null;
 let agentControlBusy = false;
 let agentLogEntries = [];
@@ -2631,13 +2634,28 @@ function setAgentControlField(name, value) {
   agentControlFields.forEach((field) => { if (field.dataset.agentControlField === name) field.textContent = value ?? "Unavailable"; });
 }
 
+function renderAgentSetupSummary(local = {}) {
+  const configured = Boolean(local.config?.name || local.port || local.agentUrl);
+  if (agentSetupSummary) {
+    agentSetupSummary.textContent = configured
+      ? `Agent is configured. ${local.config?.autoStart || local.service?.enabled ? "Auto start is enabled." : "Auto start is not enabled."}`
+      : "Configure and connect a local Agent without opening a terminal.";
+  }
+  if (agentSetupPanel) {
+    agentSetupPanel.classList.toggle("is-configured", configured);
+  }
+  if (agentSetupMessage && configured && !agentSetupMessage.textContent.trim()) {
+    agentSetupMessage.textContent = "Agent is configured.";
+  }
+}
+
 function renderAgentControlState(payload = agentControlState) {
   const local = payload?.local || payload;
   if (!local) return;
   agentControlState = payload;
   const running = local.running === true;
   const busy = agentControlBusy || Boolean(local.operationInFlight);
-  if (agentControlStatus) { agentControlStatus.textContent = local.state || "Unavailable"; agentControlStatus.className = `status-pill ${running ? "status-pill--success" : local.state === "Offline" ? "status-pill--planned" : "status-pill--warning"}`; }
+  if (agentControlStatus) { agentControlStatus.textContent = local.state || "Unavailable"; agentControlStatus.className = `status-pill ${running ? "status-pill--ok" : local.state === "Offline" ? "status-pill--planned" : "status-pill--warning"}`; }
   if (agentControlMessage) agentControlMessage.textContent = local.mostRecentError?.message || (running ? "Local Agent check is responding." : "Local Agent check is offline. Remote selected Agents are tested separately.");
   setAgentControlField("hostname", local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", local.agentVersion);
@@ -2647,6 +2665,7 @@ function renderAgentControlState(payload = agentControlState) {
   setAgentControlField("latency", Number.isFinite(local.latencyMs) ? `${local.latencyMs} ms` : "Unavailable");
   setAgentControlField("uptime", Number.isFinite(local.uptime) ? formatDuration(local.uptime) : "Unavailable");
   setAgentControlField("memory", Number.isFinite(local.memoryBytes) ? formatBytes(local.memoryBytes) : "Unavailable");
+  setAgentControlField("cpu", Number.isFinite(local.cpuSeconds) ? `${local.cpuSeconds.toFixed ? local.cpuSeconds.toFixed(1) : local.cpuSeconds}s` : "Unavailable");
   setAgentControlField("clients", String(local.connectedClients || 0));
   setAgentControlField("platform", `${local.operatingSystem || "Unknown"} · ${local.architecture || "Unknown"}`);
   setAgentControlField("protocol", `${local.apiVersion || "v1"} / ${local.protocolVersion || 1}`);
@@ -2655,11 +2674,17 @@ function renderAgentControlState(payload = agentControlState) {
     const action = button.dataset.agentControlAction;
     button.disabled = busy || (action === "start" && running) || (["stop", "restart", "forceRestart"].includes(action) && !running) || (action === "installService" && local.service?.installed) || (action === "uninstallService" && !local.service?.installed) || (action === "enableAutoStart" && local.service?.enabled) || (action === "disableAutoStart" && !local.service?.enabled);
   });
+  renderAgentSetupSummary(local);
   renderRemoteAgents(payload?.remote || []);
 }
 
 function populateAgentConfig(config = {}) {
   agentConfigFields.forEach((field) => { const key = field.dataset.agentConfig; const value = config[key]; if (field.type === "checkbox") field.checked = Boolean(value); else field.value = Array.isArray(value) ? value.join("\n") : value ?? ""; });
+  if (agentConfigSummary) {
+    const folders = Array.isArray(config.allowedFolders) ? config.allowedFolders.length : 0;
+    const roots = Array.isArray(config.storageRoots) ? config.storageRoots.length : 0;
+    agentConfigSummary.textContent = `${config.name || "Agent"} · ${config.host || "127.0.0.1"}:${config.port || "47131"} · ${config.loggingLevel || "info"} logging · ${folders} folders · ${roots} storage roots`;
+  }
 }
 
 function readAgentControlConfig() {
@@ -2672,7 +2697,17 @@ function renderRemoteAgents(agents = []) {
   if (!agentRemoteList) return;
   agentRemoteList.replaceChildren();
   if (!agents.length) { agentRemoteList.innerHTML = '<div class="security-empty-state">No remote Agents are registered. Add one from Nodes.</div>'; return; }
-  agents.forEach((agent) => { const card = document.createElement("article"); card.className = "agent-remote-card"; const targetLabel = agent.healthTargetLabel === "selected-agent" ? "Selected Agent check" : "Remote Agent check"; card.innerHTML = `<div><strong>${escapeHtml(agent.name || agent.identity?.hostname || "Remote Agent")}</strong><p>${escapeHtml(targetLabel)} · ${escapeHtml(agent.identity?.operatingSystem || "Unknown OS")} · ${escapeHtml(agent.agentUrl || "URL unavailable")} · ${escapeHtml(agent.state || "Unknown")}${Number.isFinite(agent.latencyMs) ? ` · ${agent.latencyMs} ms` : ""}</p></div><div class="settings-actions"><button class="inline-action" type="button" data-remote-agent-diagnostics="${escapeHtml(agent.nodeId || "")}" ${agent.state !== "Running" ? "disabled" : ""}>Capture Diagnostics</button></div>`; agentRemoteList.append(card); });
+  const table = document.createElement("table");
+  table.className = "agent-remote-table";
+  table.innerHTML = "<thead><tr><th>Status</th><th>Name</th><th>Version</th><th>Latency</th><th>Platform</th><th>Actions</th></tr></thead><tbody></tbody>";
+  const body = table.querySelector("tbody");
+  agents.forEach((agent) => {
+    const row = document.createElement("tr");
+    const statusClass = agent.state === "Running" ? "status-pill--ok" : agent.state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning";
+    row.innerHTML = `<td><span class="status-pill ${statusClass}">${escapeHtml(agent.state || "Unknown")}</span></td><td><strong>${escapeHtml(agent.name || agent.identity?.hostname || "Remote Agent")}</strong><small>${escapeHtml(agent.healthTargetLabel === "selected-agent" ? "Selected Agent" : "Remote Agent")}</small></td><td>${escapeHtml(agent.agentVersion || agent.identity?.agentVersion || "Unavailable")}</td><td>${Number.isFinite(agent.latencyMs) ? `${agent.latencyMs} ms` : "Unavailable"}</td><td>${escapeHtml(agent.identity?.operatingSystem || "Unknown OS")}</td><td><button class="inline-action" type="button" data-remote-agent-diagnostics="${escapeHtml(agent.nodeId || "")}" ${agent.state !== "Running" ? "disabled" : ""}>Diagnostics</button></td>`;
+    body.append(row);
+  });
+  agentRemoteList.append(table);
 }
 
 function renderAgentDiagnostics(result = {}) {

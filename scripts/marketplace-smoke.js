@@ -321,6 +321,17 @@ function assertMarketplaceIpcErrorSerialization() {
       /function getMarketplaceUiError[\s\S]*const validation =[\s\S]*if \(code\)/.test(ipcSource),
       "Static regression check: getMarketplaceUiError must initialize validation before coded-error handling."
     );
+    assert(
+      ipcSource.includes("ok: false") && ipcSource.includes("error: {") && ipcSource.includes("details: uiError.details"),
+      "Marketplace IPC failures should return a structured error envelope instead of throwing raw remote-method errors."
+    );
+    const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+    assert(
+      preloadSource.includes("async function invokeMarketplace") &&
+        preloadSource.includes("result.ok === false") &&
+        preloadSource.includes("error.details = result.error.details"),
+      "Preload should reconstruct Marketplace errors with code/details from the IPC envelope."
+    );
   } finally {
     Module._load = originalLoad;
     delete require.cache[modulePath];
@@ -1628,6 +1639,7 @@ async function assertSharedTemplateInstallFlowMatrix() {
         options: { id: "terraria-network-failure-smoke", name: "Terraria Network Failure Smoke", port: 7777, memory: "1G", start: false },
       }),
       (error) => {
+        assert.strictEqual(error?.code, "NETWORK_DNS_FAILED", "DNS failures should use a specific network classification.");
         assert(error.message.includes("causeCode=ENOTFOUND") || error?.details?.causeCode === "ENOTFOUND", "Network failures should preserve the underlying DNS/TLS/socket cause.");
         assert(!/^fetch failed$/i.test(error.message), "Network failures must not collapse to contextless fetch failed.");
         return true;

@@ -206,10 +206,14 @@ async function invokeMarketplaceOperation(operation) {
       payload: error?.payload || null,
       stack: error?.stack || null,
     });
-    const wrapped = new Error(uiError.message);
-    wrapped.code = uiError.code;
-    wrapped.details = uiError.details;
-    throw wrapped;
+    return {
+      ok: false,
+      error: {
+        code: uiError.code,
+        message: uiError.message,
+        details: uiError.details,
+      },
+    };
   }
 }
 

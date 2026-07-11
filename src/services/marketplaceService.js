@@ -2513,14 +2513,19 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
     return { downloaded: true, record, metadata: buildResolvedVersionMetadata(template, resolved) };
   } catch (error) {
     const cancelled = error?.name === "AbortError";
-    const effectiveError = error?.code ? error : createMarketplaceStepError(error?.message || "Download failed.", "DOWNLOAD_FAILED", {
-      ...baseContext,
-      step: "Download files",
-      url,
-      ...getNetworkCauseDetails(error),
-      networkCode: classifyNetworkError(error),
-      message: error?.message || "Download failed.",
-    });
+    const networkCode = classifyNetworkError(error);
+    const effectiveError = error?.code ? error : createMarketplaceStepError(
+      networkCode === "DOWNLOAD_FAILED" ? (error?.message || "Download failed.") : `Download failed: ${error?.message || "network request failed"}.`,
+      networkCode,
+      {
+        ...baseContext,
+        step: "Download files",
+        url,
+        ...getNetworkCauseDetails(error),
+        networkCode,
+        message: error?.message || "Download failed.",
+      }
+    );
     updateDownload(record, {
       status: cancelled ? "cancelled" : "failed",
       error: cancelled ? null : effectiveError.message,

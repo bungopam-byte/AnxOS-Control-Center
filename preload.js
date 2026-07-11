@@ -20,6 +20,21 @@ async function invokeAccount(channel, payload) {
   return result;
 }
 
+async function invokeMarketplace(channel, payload) {
+  const result = payload === undefined
+    ? await ipcRenderer.invoke(channel)
+    : await ipcRenderer.invoke(channel, payload);
+
+  if (result && result.ok === false && result.error) {
+    const error = new Error(result.error.message || "Marketplace request failed.");
+    error.code = result.error.code || "MARKETPLACE_REQUEST_FAILED";
+    error.details = result.error.details || {};
+    throw error;
+  }
+
+  return result;
+}
+
 const windowApi = {
   minimize: () => ipcRenderer.send("window:minimize"),
   maximize: () => ipcRenderer.send("window:maximize"),
@@ -130,26 +145,26 @@ const desktopApi = {
     getStats: (container, payload = {}) => ipcRenderer.invoke("docker:getStats", { ...payload, container }),
   },
   marketplace: {
-    listTemplates: () => ipcRenderer.invoke("marketplace:listTemplates"),
-    getMinecraftVersions: (templateId) => ipcRenderer.invoke("marketplace:getMinecraftVersions", { templateId }),
-    searchProviderPacks: (payload = {}) => ipcRenderer.invoke("marketplace:searchProviderPacks", payload),
-    getProviderPackVersions: (payload = {}) => ipcRenderer.invoke("marketplace:getProviderPackVersions", payload),
-    getProviderPackDetails: (payload = {}) => ipcRenderer.invoke("marketplace:getProviderPackDetails", payload),
-    getImportSupport: () => ipcRenderer.invoke("marketplace:getImportSupport"),
-    importCommunityTemplate: (payload = {}) => ipcRenderer.invoke("marketplace:importCommunityTemplate", payload),
-    installTemplate: (payload) => ipcRenderer.invoke("marketplace:installTemplate", payload),
-    installPack: (payload) => ipcRenderer.invoke("marketplace:installPack", payload),
-    openManualDownloadPage: (sessionId) => ipcRenderer.invoke("marketplace:openManualDownloadPage", { sessionId }),
-    importManualDownloadFile: (sessionId) => ipcRenderer.invoke("marketplace:importManualDownloadFile", { sessionId }),
-    resumeManualInstall: (sessionId) => ipcRenderer.invoke("marketplace:resumeManualInstall", { sessionId }),
+    listTemplates: () => invokeMarketplace("marketplace:listTemplates"),
+    getMinecraftVersions: (templateId) => invokeMarketplace("marketplace:getMinecraftVersions", { templateId }),
+    searchProviderPacks: (payload = {}) => invokeMarketplace("marketplace:searchProviderPacks", payload),
+    getProviderPackVersions: (payload = {}) => invokeMarketplace("marketplace:getProviderPackVersions", payload),
+    getProviderPackDetails: (payload = {}) => invokeMarketplace("marketplace:getProviderPackDetails", payload),
+    getImportSupport: () => invokeMarketplace("marketplace:getImportSupport"),
+    importCommunityTemplate: (payload = {}) => invokeMarketplace("marketplace:importCommunityTemplate", payload),
+    installTemplate: (payload) => invokeMarketplace("marketplace:installTemplate", payload),
+    installPack: (payload) => invokeMarketplace("marketplace:installPack", payload),
+    openManualDownloadPage: (sessionId) => invokeMarketplace("marketplace:openManualDownloadPage", { sessionId }),
+    importManualDownloadFile: (sessionId) => invokeMarketplace("marketplace:importManualDownloadFile", { sessionId }),
+    resumeManualInstall: (sessionId) => invokeMarketplace("marketplace:resumeManualInstall", { sessionId }),
     onInstallProgress: (callback) => {
       const handler = (_, payload) => callback(payload);
       ipcRenderer.on("marketplace:install-progress", handler);
       return () => ipcRenderer.removeListener("marketplace:install-progress", handler);
     },
-    getDownloads: () => ipcRenderer.invoke("marketplace:getDownloads"),
-    cancelDownload: (downloadId) => ipcRenderer.invoke("marketplace:cancelDownload", { downloadId }),
-    retryDownload: (downloadId) => ipcRenderer.invoke("marketplace:retryDownload", { downloadId }),
+    getDownloads: () => invokeMarketplace("marketplace:getDownloads"),
+    cancelDownload: (downloadId) => invokeMarketplace("marketplace:cancelDownload", { downloadId }),
+    retryDownload: (downloadId) => invokeMarketplace("marketplace:retryDownload", { downloadId }),
   },
   instances: {
     list: (payload = {}) => ipcRenderer.invoke("instances:list", payload),

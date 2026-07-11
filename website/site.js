@@ -699,3 +699,10 @@ initializeAccount().catch((error) => {
 });
 window.addEventListener("hashchange", applyHashRoute);
 applyHashRoute();
+
+function logWebsiteDiagnostic(severity, operation, error) {
+  const message = redactSecret(error?.message || String(error || "Website account error"));
+  console[severity === "error" ? "error" : "warn"]("[AnxOS][Website]", { timestamp: new Date().toISOString(), severity, source: "website-account", process: "browser", operation, message, errorCode: error?.code || null });
+}
+window.addEventListener("error", (event) => logWebsiteDiagnostic("error", "window-error", event.error || new Error(event.message)));
+window.addEventListener("unhandledrejection", (event) => logWebsiteDiagnostic("error", "unhandled-rejection", event.reason));

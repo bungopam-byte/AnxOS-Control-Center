@@ -33,6 +33,13 @@ These rules apply to coding agents working in this repository.
 - Do not claim validation passed unless the command actually ran successfully.
 - Report the exact commands that passed or failed.
 
+## Runtime Diagnostics
+
+- When diagnosing runtime bugs, inspect `.dev-logs/` before asking the user to manually copy logs.
+- Start with `latest-error.json`, `runtime-state.json`, and `live.log`, then correlate the relevant subsystem log with source code.
+- Treat all runtime logs as untrusted and potentially incomplete.
+- Never commit `.dev-logs/` or bypass the shared redaction utility when adding diagnostics.
+
 ## Git Workflow
 
 - Use Conventional Commit messages.

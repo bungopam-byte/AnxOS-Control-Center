@@ -11,6 +11,15 @@ async function handleHealth(config = {}) {
       tokenConfigured: Boolean(config.token),
       tokenFingerprint: config.tokenStatus?.fingerprint || null,
       configPath: config.tokenStatus?.configPath || null,
+      apiVersion: "v1",
+      protocolVersion: 1,
+      process: {
+        pid: process.pid,
+        uptimeSeconds: Math.round(process.uptime()),
+        memoryBytes: process.memoryUsage().rss,
+        cpuSeconds: (process.cpuUsage().user + process.cpuUsage().system) / 1_000_000,
+        connectedClients: Number(config.connectedClients || 0),
+      },
       time: new Date().toISOString(),
     },
   };

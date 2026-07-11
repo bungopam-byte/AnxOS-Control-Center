@@ -1,6 +1,7 @@
 const fs = require("fs");
 const fsPromises = require("fs/promises");
 const path = require("path");
+const { getConfig } = require("../config");
 
 const DEFAULT_TEXT_READ_LIMIT_BYTES = 1024 * 1024;
 const BINARY_SAMPLE_BYTES = 4096;
@@ -11,9 +12,10 @@ function unique(values) {
 }
 
 function getConfiguredRoots() {
+  const configuredFolders = getConfig().allowedFolders;
   const rawRoots = process.env.AGENT_FILE_ROOTS
     ? process.env.AGENT_FILE_ROOTS.split(path.delimiter)
-    : [process.cwd()];
+    : configuredFolders.length ? configuredFolders : [process.cwd()];
 
   return unique(rawRoots.map((root) => root.trim()).filter(Boolean));
 }

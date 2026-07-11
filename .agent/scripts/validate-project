@@ -74,6 +74,8 @@ function main() {
     "node:switch:smoke",
     "security:page:smoke",
     "ui:polish:smoke",
+    "diagnostics:smoke",
+    "agent-control:smoke",
     "marketplace:smoke",
   ];
 

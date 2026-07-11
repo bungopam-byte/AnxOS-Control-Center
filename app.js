@@ -343,6 +343,25 @@ const marketplaceConfigPill = document.querySelector("[data-marketplace-config-p
 const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
 const updateModal = document.querySelector("[data-update-modal]");
+const agentControlStatus = document.querySelector("[data-agent-control-status]");
+const agentControlMessage = document.querySelector("[data-agent-control-message]");
+const agentControlFields = document.querySelectorAll("[data-agent-control-field]");
+const agentControlButtons = document.querySelectorAll("[data-agent-control-action]");
+const agentConfigFields = document.querySelectorAll("[data-agent-config]");
+const agentConfigMessage = document.querySelector("[data-agent-config-message]");
+const agentDiagnosticsList = document.querySelector("[data-agent-diagnostics]");
+const agentRemoteList = document.querySelector("[data-agent-remote-list]");
+const agentLogViewer = document.querySelector("[data-agent-log-viewer]");
+const agentLogSearch = document.querySelector("[data-agent-log-search]");
+const agentLogSeverity = document.querySelector("[data-agent-log-severity]");
+const agentLogPause = document.querySelector("[data-agent-log-pause]");
+const agentLogWrap = document.querySelector("[data-agent-log-wrap]");
+const agentSetupMode = document.querySelector('[data-agent-setup="mode"]');
+const agentSetupAutoStart = document.querySelector('[data-agent-setup="autoStart"]');
+const agentSetupMessage = document.querySelector("[data-agent-setup-message]");
+let agentControlState = null;
+let agentControlBusy = false;
+let agentLogEntries = [];
 let updateModalCleanup = null;
 let openModalCount = 0;
 let modalBackgroundWasInert = false;
@@ -691,6 +710,7 @@ const PRIMARY_NAVIGATION_ORDER = [
   "console",
   "backups",
   "security",
+  "agent-control",
   "nodes",
   "settings",
 ];
@@ -2514,6 +2534,8 @@ function showPage(pageName) {
     ownerWorkspaceToggle?.removeAttribute("aria-current");
   }
 
+  if (safePageName === "agent-control") refreshAgentControl({ includeConfig: true });
+
   pages.forEach((page) => {
     page.classList.toggle("is-active", page.dataset.page === safePageName);
   });
@@ -2596,10 +2618,128 @@ function showPage(pageName) {
   }
 
   updateTitlebar(safePageName);
+  getDesktopApiState().api?.diagnostics?.capture?.({ currentWorkspace: safePageName }).catch(() => {});
 }
 
 function getActivePageName() {
   return document.querySelector(".page.is-active")?.dataset.page || "dashboard";
+}
+
+function setAgentControlField(name, value) {
+  agentControlFields.forEach((field) => { if (field.dataset.agentControlField === name) field.textContent = value ?? "Unavailable"; });
+}
+
+function renderAgentControlState(payload = agentControlState) {
+  const local = payload?.local || payload;
+  if (!local) return;
+  agentControlState = payload;
+  const running = local.running === true;
+  const busy = agentControlBusy || Boolean(local.operationInFlight);
+  if (agentControlStatus) { agentControlStatus.textContent = local.state || "Unavailable"; agentControlStatus.className = `status-pill ${running ? "status-pill--success" : local.state === "Offline" ? "status-pill--planned" : "status-pill--warning"}`; }
+  if (agentControlMessage) agentControlMessage.textContent = local.mostRecentError?.message || (running ? "Local Agent is responding." : "Local Agent is stopped. Start it here or install background startup.");
+  setAgentControlField("hostname", local.hostname || local.identity?.hostname);
+  setAgentControlField("agentVersion", local.agentVersion);
+  setAgentControlField("pid", local.pid ? `PID ${local.pid}` : running ? "Service managed" : "Stopped");
+  setAgentControlField("service", local.service?.supported ? `${local.service.type} · ${local.service.state}` : "Unsupported");
+  setAgentControlField("url", local.agentUrl);
+  setAgentControlField("latency", Number.isFinite(local.latencyMs) ? `${local.latencyMs} ms` : "Unavailable");
+  setAgentControlField("uptime", Number.isFinite(local.uptime) ? formatDuration(local.uptime) : "Unavailable");
+  setAgentControlField("memory", Number.isFinite(local.memoryBytes) ? formatBytes(local.memoryBytes) : "Unavailable");
+  setAgentControlField("clients", String(local.connectedClients || 0));
+  setAgentControlField("platform", `${local.operatingSystem || "Unknown"} · ${local.architecture || "Unknown"}`);
+  setAgentControlField("protocol", `${local.apiVersion || "v1"} / ${local.protocolVersion || 1}`);
+  setAgentControlField("heartbeat", local.lastHeartbeat ? formatDateTime(local.lastHeartbeat) : "Unavailable");
+  agentControlButtons.forEach((button) => {
+    const action = button.dataset.agentControlAction;
+    button.disabled = busy || (action === "start" && running) || (["stop", "restart", "forceRestart"].includes(action) && !running) || (action === "installService" && local.service?.installed) || (action === "uninstallService" && !local.service?.installed) || (action === "enableAutoStart" && local.service?.enabled) || (action === "disableAutoStart" && !local.service?.enabled);
+  });
+  renderRemoteAgents(payload?.remote || []);
+}
+
+function populateAgentConfig(config = {}) {
+  agentConfigFields.forEach((field) => { const key = field.dataset.agentConfig; const value = config[key]; if (field.type === "checkbox") field.checked = Boolean(value); else field.value = Array.isArray(value) ? value.join("\n") : value ?? ""; });
+}
+
+function readAgentControlConfig() {
+  const result = {};
+  agentConfigFields.forEach((field) => { const key = field.dataset.agentConfig; result[key] = ["allowedFolders", "allowedOrigins", "storageRoots"].includes(key) ? field.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) : field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value; });
+  return result;
+}
+
+function renderRemoteAgents(agents = []) {
+  if (!agentRemoteList) return;
+  agentRemoteList.replaceChildren();
+  if (!agents.length) { agentRemoteList.innerHTML = '<div class="security-empty-state">No remote Agents are registered. Add one from Nodes.</div>'; return; }
+  agents.forEach((agent) => { const card = document.createElement("article"); card.className = "agent-remote-card"; card.innerHTML = `<div><strong>${escapeHtml(agent.name || agent.identity?.hostname || "Remote Agent")}</strong><p>${escapeHtml(agent.identity?.operatingSystem || "Unknown OS")} · ${escapeHtml(agent.agentUrl || "URL unavailable")} · ${escapeHtml(agent.state || "Unknown")}${Number.isFinite(agent.latencyMs) ? ` · ${agent.latencyMs} ms` : ""}</p></div><div class="settings-actions"><button class="inline-action" type="button" data-remote-agent-diagnostics="${escapeHtml(agent.nodeId || "")}" ${agent.state !== "Running" ? "disabled" : ""}>Capture Diagnostics</button></div>`; agentRemoteList.append(card); });
+}
+
+function renderAgentDiagnostics(result = {}) {
+  if (!agentDiagnosticsList) return;
+  agentDiagnosticsList.replaceChildren();
+  (result.checks || []).forEach((check) => { const item = document.createElement("article"); item.className = "agent-diagnostic-item"; item.innerHTML = `<div><strong>${escapeHtml(check.label)}</strong><p>${escapeHtml(check.explanation)}</p></div><div><span class="status-pill">${escapeHtml(check.result)}</span>${check.repairAction ? ` <button class="inline-action" type="button" data-agent-repair="${escapeHtml(check.repairAction)}">Repair</button>` : ""}</div>`; agentDiagnosticsList.append(item); });
+}
+
+function renderAgentLogs() {
+  if (!agentLogViewer) return;
+  const search = String(agentLogSearch?.value || "").toLowerCase();
+  const severity = agentLogSeverity?.value || "all";
+  const visible = agentLogEntries.filter((entry) => (severity === "all" || entry.severity === severity) && (!search || JSON.stringify(entry).toLowerCase().includes(search)));
+  agentLogViewer.textContent = visible.length ? visible.map((entry) => `${entry.timestamp} ${String(entry.severity || "info").toUpperCase().padEnd(5)} [${entry.source}:${entry.operation}] ${entry.message}${entry.errorCode ? ` (${entry.errorCode})` : ""}`).join("\n") : "No matching sanitized logs.";
+  agentLogViewer.classList.toggle("is-nowrap", agentLogWrap?.checked === false);
+}
+
+async function refreshAgentLogs() {
+  if (agentLogPause?.checked) return;
+  const api = getDesktopApiState().api?.diagnostics;
+  if (!api) return;
+  try { agentLogEntries = (await api.read({ limit: 400 }))?.entries || []; renderAgentLogs(); } catch (error) { if (agentLogViewer) agentLogViewer.textContent = normalizeIpcErrorMessage(error, "Logs unavailable."); }
+}
+
+async function refreshAgentControl({ includeConfig = false } = {}) {
+  const api = getDesktopApiState().api?.agentControl;
+  if (!api || agentControlBusy) return;
+  try { const payload = await api.list(); renderAgentControlState(payload); if (includeConfig) populateAgentConfig(await api.getConfig()); await refreshAgentLogs(); } catch (error) { if (agentControlMessage) agentControlMessage.textContent = normalizeIpcErrorMessage(error, "Agent Control unavailable."); }
+}
+
+async function runAgentControlAction(action) {
+  const api = getDesktopApiState().api?.agentControl;
+  if (!api || agentControlBusy) return;
+  const destructive = { stop: ["Stop local Agent?", "Active Agent operations will disconnect."], forceRestart: ["Force restart local Agent?", "The Agent process will be terminated immediately."], repairAgent: ["Repair local Agent?", "Background registration will be reinstalled and the Agent restarted."], uninstallService: ["Uninstall Agent background service?", "Automatic startup will be removed."], resetConfig: ["Reset Agent configuration?", "Current settings will be backed up before defaults are restored."] }[action];
+  if (destructive && !(await createSecurityConfirmation({ title: destructive[0], message: destructive[1], confirmLabel: "Continue" }))) return;
+  agentControlBusy = true; renderAgentControlState();
+  try {
+    if (action === "reconnect") renderAgentControlState(await api.list());
+    else if (action === "repairAgent") { try { await api.uninstallService(); } catch {} await api.installService(); if (!(await api.status())?.running) await api.start(); }
+    else if (action === "checkUpdates") await getDesktopApiState().api.updates.check({ silent: false });
+    else if (action === "updateAgent") await getDesktopApiState().api.updates.download();
+    else if (action === "rotateToken") { await getDesktopApiState().api.security.rotateAgentToken(); await api.restart(); }
+    else if (action === "copyUrl") { await navigator.clipboard.writeText((agentControlState?.local || agentControlState)?.agentUrl || ""); showToast("Agent URL copied.", "success"); }
+    else if (action === "copyId") { await navigator.clipboard.writeText((agentControlState?.local || agentControlState)?.identity?.deviceId || ""); showToast("Agent ID copied.", "success"); }
+    else if (action === "completeSetup") {
+      const config = await api.saveConfig(readAgentControlConfig());
+      if (agentSetupMode?.value === "local") {
+        await getDesktopApiState().api.settings.saveAgentConfig({ backendMode: "local" });
+        if (agentSetupMessage) agentSetupMessage.textContent = "Local-only mode configured. You can enable the Agent later.";
+      } else {
+        await getDesktopApiState().api.settings.saveAgentConfig({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}` });
+        await getDesktopApiState().api.security.rotateAgentToken();
+        if (agentSetupAutoStart?.checked) await api.installService();
+        if (!(await api.status())?.running) await api.start();
+        const connection = await getDesktopApiState().api.settings.testAgentConnection({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}` });
+        if (!connection?.connected) throw new Error(connection?.message || "Agent connectivity test failed.");
+        if (agentSetupMessage) agentSetupMessage.textContent = "Agent configured and connected. The token is stored securely and is not displayed.";
+      }
+    }
+    else if (action === "saveConfig") { await api.saveConfig(readAgentControlConfig()); if (agentConfigMessage) agentConfigMessage.textContent = "Configuration saved. Restart the Agent to apply changes."; }
+    else if (action === "reloadConfig") populateAgentConfig(await api.getConfig());
+    else if (action === "restoreConfig") populateAgentConfig(await api.restoreConfig());
+    else if (action === "resetConfig") populateAgentConfig(await api.resetConfig());
+    else if (action === "runDiagnostics") renderAgentDiagnostics(await api.diagnostics());
+    else if (action === "refreshLogs") await refreshAgentLogs();
+    else if (typeof api[action] === "function") await api[action]();
+    showToast("Agent operation completed.", "success");
+  } catch (error) { const message = normalizeIpcErrorMessage(error, "Agent operation failed."); showToast(message, "error"); if (agentControlMessage) agentControlMessage.textContent = message; }
+  finally { agentControlBusy = false; await refreshAgentControl(); }
 }
 
 function getOwnerApiField(name) {
@@ -15057,6 +15197,13 @@ async function refreshSecurityState() {
     console.warn("[Security] Dashboard unavailable.", normalizeIpcErrorMessage(error, "Security dashboard unavailable."));
   }
   renderSecurityState();
+  getDesktopApiState().api?.diagnostics?.capture?.({
+    accountSignedIn: securityState?.accountAuthenticated === true,
+    ownerAuthorized: securityState?.ownerWorkspaceAvailable === true,
+    localOwnerAuthenticated: securityState?.authenticated === true && securityState?.user?.account !== true,
+    rememberedSessionCount: securityState?.persistentSessionCount || 0,
+    authenticationProvider: securityState?.user?.account ? "cloud-account" : securityState?.authenticated ? "local-owner" : "none",
+  }).catch(() => {});
   if (isOwnerWorkspaceAuthorized() && (!ownerWorkspaceState.pages || ownerWorkspaceState.pages.length === 0)) {
     refreshOwnerWorkspace().catch(() => {});
   }
@@ -17033,6 +17180,19 @@ window.addEventListener("beforeunload", () => {
   disposeMonacoEditorResources();
   disconnectAllSshListeners();
 });
+
+window.addEventListener("error", (event) => {
+  getDesktopApiState().api?.diagnostics?.log?.({ severity: "error", operation: "window-error", message: event.message || "Renderer error", context: { filename: event.filename || null, line: event.lineno || null, column: event.colno || null, stack: event.error?.stack || null } }).catch(() => {});
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  getDesktopApiState().api?.diagnostics?.log?.({ severity: "error", operation: "unhandled-rejection", message: reason?.message || String(reason || "Unhandled renderer rejection"), context: { code: reason?.code || null, stack: reason?.stack || null } }).catch(() => {});
+});
+const originalRendererConsoleError = console.error.bind(console);
+console.error = (...args) => {
+  originalRendererConsoleError(...args);
+  getDesktopApiState().api?.diagnostics?.log?.({ severity: "error", operation: "console-error", message: args.map((value) => value?.message || String(value)).join(" "), context: { arguments: args } }).catch(() => {});
+};
 filesServerSelect?.addEventListener("change", () => {
   filesSelectedServerId = filesServerSelect.value || null;
   setFilesPasswordPromptState(false);
@@ -17768,6 +17928,32 @@ window.addEventListener("scroll", positionNodePicker, true);
 document.querySelector('[data-node-action="save"]')?.addEventListener("click", saveNodeFromSettings);
 document.querySelector('[data-node-action="test"]')?.addEventListener("click", testSelectedNode);
 document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);
+agentControlButtons.forEach((button) => button.addEventListener("click", () => runAgentControlAction(button.dataset.agentControlAction)));
+agentLogSearch?.addEventListener("input", renderAgentLogs);
+agentLogSeverity?.addEventListener("change", renderAgentLogs);
+agentLogWrap?.addEventListener("change", renderAgentLogs);
+agentRemoteList?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-remote-agent-diagnostics]");
+  if (!button) return;
+  button.disabled = true;
+  try { await getDesktopApiState().api.agentControl.remoteDiagnostics(button.dataset.remoteAgentDiagnostics); showToast("Remote diagnostics captured.", "success"); }
+  catch (error) { showToast(normalizeIpcErrorMessage(error, "Remote diagnostics failed."), "error"); }
+  finally { button.disabled = false; }
+});
+agentDiagnosticsList?.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-agent-repair]")?.dataset.agentRepair;
+  if (action === "start") runAgentControlAction("start");
+  if (action === "install-service") runAgentControlAction("installService");
+  if (action === "select-port") agentConfigFields.forEach((field) => { if (field.dataset.agentConfig === "port") field.focus(); });
+});
+document.querySelectorAll("[data-diagnostics-action]").forEach((button) => button.addEventListener("click", async () => {
+  const api = getDesktopApiState().api?.diagnostics;
+  if (!api) return;
+  button.disabled = true;
+  try { const action = button.dataset.diagnosticsAction; if (action === "capture") await api.capture({ currentWorkspace: getActivePageName() }); if (action === "open") await api.openFolder(); if (action === "copy") await api.copySummary(); if (action === "export") await api.exportBundle(); showToast("Diagnostic action completed.", "success"); }
+  catch (error) { showToast(normalizeIpcErrorMessage(error, "Diagnostic action failed."), "error"); }
+  finally { button.disabled = false; }
+}));
 backupActionButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const action = button.dataset.backupAction;
@@ -17831,3 +18017,6 @@ registerRefreshTask(() => {
     refreshMarketplaceDownloads();
   }
 }, 2000);
+registerRefreshTask(() => {
+  if (getActivePageName() === "agent-control" && !document.hidden) refreshAgentControl();
+}, 5000);

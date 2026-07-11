@@ -10,6 +10,7 @@ const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console")
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDocker, handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
+const { handleDiagnostics } = require("./routes/diagnostics");
 const { handleFilesDownload, handleFilesList, handleFilesMutate, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
@@ -17,6 +18,9 @@ const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handleStats, handleSystemSummary } = require("./routes/system");
 
 const config = getConfig();
+const { logger } = require("./services/diagnosticsLogger");
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => { originalConsoleError(...args); logger.write("error", "console-error", args.map((value) => value?.message || String(value)).join(" "), { arguments: args }, { file: "agent" }); };
 const rateBuckets = new Map();
 
 function checkRateLimit(key, limit, windowMs) {
@@ -207,7 +211,7 @@ async function routeRequest(request, url) {
   }
 
   if (pathname === "/api/v1/health") {
-    return handleHealth(config);
+    return handleHealth({ ...config, connectedClients: connectedClients.size });
   }
 
   if (pathname === "/api/v1/stats" || pathname === "/api/stats" || pathname === "/api/v1/system/summary") {
@@ -280,6 +284,10 @@ async function routeRequest(request, url) {
   if (pathname === "/api/v1/actions") {
     return handleActionsList();
   }
+  if (pathname === "/api/v1/diagnostics" && request.method === "GET") {
+    auditAction(request, { actionId: "diagnostics.export", permission: "owner", outcome: "ok", reason: "SANITIZED_BUNDLE" });
+    return handleDiagnostics();
+  }
 
   return {
     statusCode: 404,
@@ -313,6 +321,7 @@ async function handleRequest(request, response) {
     const auth = isAuthorized(request, config, url.pathname);
 
     if (!auth.ok) {
+      logger.warn("authentication", "Agent request authorization failed", { method: request.method, pathname: url.pathname, code: auth.code }, { file: "auth", errorCode: auth.code });
       if (isActionInvokeRoute(request, url.pathname)) {
         auditAction(request, {
           actionId: getActionIdFromPath(url.pathname),
@@ -332,6 +341,7 @@ async function handleRequest(request, response) {
     const statusCode = error.statusCode || 500;
     const code = error.code || (error.statusCode === 413 ? "REQUEST_TOO_LARGE" : "INTERNAL_ERROR");
     logRequestError(request, error, statusCode, code);
+    logger.error("request", error, { method: request.method, url: request.url, statusCode }, { file: "agent", errorCode: code });
     if (!response.headersSent) {
       sendError(response, statusCode, code, error.message || "Request failed.", sanitizeErrorDetails(error, {
         method: request.method,
@@ -342,6 +352,8 @@ async function handleRequest(request, response) {
 }
 
 const server = http.createServer(handleRequest);
+const connectedClients = new Set();
+server.on("connection", (socket) => { connectedClients.add(socket); socket.once("close", () => connectedClients.delete(socket)); });
 
 server.headersTimeout = config.requestTimeoutMs + 1000;
 server.requestTimeout = config.requestTimeoutMs;
@@ -353,6 +365,7 @@ server.on("clientError", (error, socket) => {
 });
 
 server.on("error", (error) => {
+  logger.error("startup", error, {}, { file: "agent" });
   console.error(`AnxOS Agent failed to start: ${error.code || "STARTUP_ERROR"}`);
   process.exitCode = 1;
 });
@@ -360,4 +373,8 @@ server.on("error", (error) => {
 server.listen(config.port, config.host, () => {
   startBackupScheduler();
   console.info(`AnxOS Agent listening on http://${config.host}:${config.port}`);
+  logger.info("startup", "AnxOS Agent listening", { host: config.host, port: config.port, pid: process.pid });
 });
+
+process.on("uncaughtException", (error) => logger.error("uncaught-exception", error, {}, { file: "agent" }));
+process.on("unhandledRejection", (reason) => logger.error("unhandled-rejection", reason instanceof Error ? reason : new Error(String(reason)), {}, { file: "agent" }));

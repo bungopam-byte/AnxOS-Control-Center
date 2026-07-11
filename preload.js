@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+function forwardPreloadError(operation, error) {
+  ipcRenderer.send("diagnostics:log", { severity: "error", source: "preload", file: "desktop", operation, message: error?.message || String(error), context: { code: error?.code || null, stack: error?.stack || null } });
+}
+process.on("uncaughtException", (error) => forwardPreloadError("uncaught-exception", error));
+process.on("unhandledRejection", (reason) => forwardPreloadError("unhandled-rejection", reason instanceof Error ? reason : new Error(String(reason))));
+
 async function invokeAccount(channel, payload) {
   const result = payload === undefined
     ? await ipcRenderer.invoke(channel)
@@ -30,6 +36,34 @@ const windowApi = {
 const desktopApi = {
   app: {
     getRuntimeInfo: () => ipcRenderer.invoke("app:getRuntimeInfo"),
+  },
+  diagnostics: {
+    log: (payload = {}) => ipcRenderer.invoke("diagnostics:log", payload),
+    capture: (payload = {}) => ipcRenderer.invoke("diagnostics:capture", payload),
+    read: (payload = {}) => ipcRenderer.invoke("diagnostics:read", payload),
+    openFolder: () => ipcRenderer.invoke("diagnostics:openFolder"),
+    copySummary: () => ipcRenderer.invoke("diagnostics:copySummary"),
+    exportBundle: () => ipcRenderer.invoke("diagnostics:export"),
+  },
+  agentControl: {
+    list: () => ipcRenderer.invoke("agentControl:list"),
+    status: () => ipcRenderer.invoke("agentControl:status"),
+    diagnostics: () => ipcRenderer.invoke("agentControl:diagnostics"),
+    remoteDiagnostics: (nodeId) => ipcRenderer.invoke("agentControl:remoteDiagnostics", { nodeId }),
+    getConfig: () => ipcRenderer.invoke("agentControl:getConfig"),
+    saveConfig: (payload = {}) => ipcRenderer.invoke("agentControl:saveConfig", payload),
+    restoreConfig: () => ipcRenderer.invoke("agentControl:restoreConfig"),
+    resetConfig: () => ipcRenderer.invoke("agentControl:resetConfig"),
+    start: () => ipcRenderer.invoke("agentControl:start"),
+    stop: () => ipcRenderer.invoke("agentControl:stop"),
+    restart: () => ipcRenderer.invoke("agentControl:restart"),
+    forceRestart: () => ipcRenderer.invoke("agentControl:forceRestart"),
+    installService: () => ipcRenderer.invoke("agentControl:installService"),
+    uninstallService: () => ipcRenderer.invoke("agentControl:uninstallService"),
+    enableAutoStart: () => ipcRenderer.invoke("agentControl:enableAutoStart"),
+    disableAutoStart: () => ipcRenderer.invoke("agentControl:disableAutoStart"),
+    openLogs: () => ipcRenderer.invoke("agentControl:openLogs"),
+    openDataFolder: () => ipcRenderer.invoke("agentControl:openDataFolder"),
   },
   updates: {
     getState: () => ipcRenderer.invoke("updates:getState"),

@@ -37,6 +37,31 @@ app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 const userDataPath = path.join(app.getPath("appData"), "AnxHub");
 app.setPath("userData", userDataPath);
 app.setPath("cache", path.join(userDataPath, "Cache"));
+const diagnostics = require("./src/services/diagnosticsService");
+const { registerDiagnosticsIpc } = require("./src/ipc/diagnosticsIpc");
+const { registerAgentControlIpc } = require("./src/ipc/agentControlIpc");
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+  originalConsoleError(...args);
+  diagnostics.log("error", "desktop", "console-error", args.map((value) => value?.message || String(value)).join(" "), { arguments: args }, { file: "desktop" });
+};
+
+function instrumentIpcHandlers() {
+  const register = ipcMain.handle.bind(ipcMain);
+  ipcMain.handle = (channel, listener) => register(channel, async (...args) => {
+    const correlationId = diagnostics.correlationId("ipc");
+    const startedAt = Date.now();
+    diagnostics.log("info", "ipc", channel, "IPC request started", {}, { file: "ipc", correlationId });
+    try {
+      const result = await listener(...args);
+      diagnostics.log("info", "ipc", channel, "IPC request completed", { durationMs: Date.now() - startedAt }, { file: "ipc", correlationId });
+      return result;
+    } catch (error) {
+      diagnostics.logError("ipc", channel, error, { durationMs: Date.now() - startedAt }, { file: "ipc", correlationId });
+      throw error;
+    }
+  });
+}
 
 function getGitCommit() {
   try {
@@ -206,7 +231,7 @@ function openAddStorageWindow(payload = {}) {
     minHeight: 560,
     title: "Add Storage — AnxOS Control Center",
     parent: parent || undefined,
-    modal: false,
+    modal: Boolean(parent),
     skipTaskbar: true,
     icon: APP_ICON_PATH,
     backgroundColor: "#07020f",
@@ -373,6 +398,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  instrumentIpcHandlers();
+  registerDiagnosticsIpc();
+  registerAgentControlIpc();
+  ipcMain.on("diagnostics:log", (_, payload = {}) => diagnostics.log(payload.severity || "info", payload.source || "preload", payload.operation || "event", payload.message || "Runtime event", payload.context || {}, { file: payload.file || payload.source || "desktop" }));
+  diagnostics.captureSnapshot({ applicationRunning: true, providerMode: "initializing" });
+  updateManager.on("status", (payload = {}) => {
+    const severity = /error|failed/i.test(payload.type || payload.state?.status || "") ? "error" : "info";
+    diagnostics.log(severity, "updater", payload.type || "status", payload.message || `Updater state: ${payload.type || payload.state?.status || "unknown"}`, { status: payload.state?.status || null, version: payload.update?.latestVersion || payload.state?.latest?.latestVersion || null }, { file: "updater", errorCode: payload.error?.code || null });
+  });
   logCurseForgeStartupStatus();
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
@@ -410,7 +444,11 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  diagnostics.updateRuntimeState({ applicationRunning: false });
   updateManager.stop();
   disposeFilesIpc();
   disposeSshIpc();
 });
+
+process.on("uncaughtException", (error) => diagnostics.logError("desktop", "uncaught-exception", error, {}, { file: "desktop" }));
+process.on("unhandledRejection", (reason) => diagnostics.logError("desktop", "unhandled-rejection", reason instanceof Error ? reason : new Error(String(reason)), {}, { file: "desktop" }));

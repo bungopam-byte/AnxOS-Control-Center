@@ -20,6 +20,7 @@ const {
   getExecutionTarget,
   getNode,
 } = require("./nodeService");
+const diagnostics = require("./diagnosticsService");
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -1024,6 +1025,7 @@ async function login(payload = {}) {
       failureReason: "DEVELOPMENT_FALLBACK_DISABLED",
       hashFormat,
     });
+    diagnostics.log("warn", "authentication", "local-owner-login", "Local Owner authentication failed", { username: user?.username || username, ownerExists: Boolean(user), failureReason, hashFormat }, { file: "auth", errorCode: failureReason });
     audit({ action: "security.login", outcome: "failed", target: username, reason: "DEFAULT_DEV_PASSWORD_REJECTED" });
     recordRateLimitAttempt(rateLimitKey, rateLimitLimit, rateLimitWindowMs, { reason: "INVALID_CREDENTIALS" });
     const error = new Error("Invalid username or password. This is the local owner account for this device, not an online Anx account.");
@@ -1052,6 +1054,7 @@ async function login(payload = {}) {
     username: user?.username || username,
     hashFormat,
   });
+  diagnostics.log("info", "authentication", "local-owner-login", "Local Owner authentication succeeded", { username: user?.username || username, provider: "local-owner" }, { file: "auth" });
 
   const authenticatedUser = user || {
     id: "development-owner",

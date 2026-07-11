@@ -8437,9 +8437,30 @@ button:disabled {
 /* Settings page refinement */
 .page[data-page="settings"],
 .page[data-page="security"],
-.page[data-page="nodes"] {
+.page[data-page="nodes"],
+.page[data-page="agent-control"] {
   max-width: 1760px;
 }
+
+.agent-control-shell { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.agent-control-overview, .settings-section--wide { grid-column: 1 / -1; }
+.agent-control-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.agent-control-metrics div { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(7, 9, 14, 0.36); }
+.agent-control-metrics span, .agent-control-metrics strong { display: block; overflow-wrap: anywhere; }
+.agent-control-metrics span { color: var(--muted); font-size: .76rem; font-weight: 800; text-transform: uppercase; }
+.agent-control-metrics strong { margin-top: 5px; }
+.agent-control-actions { flex-wrap: wrap; }
+.agent-config-grid .settings-field--wide { grid-column: 1 / -1; }
+.agent-diagnostic-list, .agent-remote-list { display: grid; gap: 10px; }
+.agent-diagnostic-item, .agent-remote-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(7, 9, 14, .34); }
+.agent-diagnostic-item p, .agent-remote-card p { margin: 4px 0 0; color: var(--muted); }
+.agent-log-actions, .agent-log-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.agent-log-toolbar { margin-bottom: 10px; }
+.agent-log-toolbar input { flex: 1 1 260px; min-height: 40px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: rgba(5,7,12,.72); color: var(--text); }
+.agent-log-viewer { min-height: 360px; max-height: 560px; overflow: auto; margin: 0; padding: 14px; border: 1px solid rgba(115,220,202,.18); border-radius: var(--radius); background: #05070b; color: rgba(220,244,255,.9); font: .8rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
+.agent-log-viewer.is-nowrap { white-space: pre; }
+@media (max-width: 1100px) { .agent-control-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .agent-control-shell { grid-template-columns: minmax(0, 1fr); } .agent-control-overview, .settings-section--wide { grid-column: auto; } .agent-control-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-diagnostic-item, .agent-remote-card { grid-template-columns: minmax(0, 1fr); } }
 
 .page[data-page="settings"] .page-header,
 .page[data-page="security"] .page-header,

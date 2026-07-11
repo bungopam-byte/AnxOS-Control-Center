@@ -695,6 +695,10 @@ async function getHealth(configOverride = null) {
   });
 }
 
+async function getDiagnostics(configOverride = null) {
+  return requestJson("/api/v1/diagnostics", { config: configOverride });
+}
+
 async function getSystemStats(configOverride = null) {
   try {
     return await requestJson("/api/v1/stats", {
@@ -2120,6 +2124,7 @@ module.exports = {
   getDockerContainerStats,
   getDockerSnapshot,
   getDockerSummary,
+  getDiagnostics,
   inspectDockerContainer,
   getFileList,
   getFileListing,

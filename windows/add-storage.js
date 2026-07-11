@@ -7,6 +7,13 @@ const storageTitle = document.querySelector("[data-storage-title]");
 
 let storageFormMode = "sftp";
 let editingStorageId = null;
+let storageRequestInFlight = false;
+
+function setStorageBusy(busy) {
+  storageRequestInFlight = Boolean(busy);
+  storageForm?.setAttribute("aria-busy", busy ? "true" : "false");
+  document.querySelectorAll("button, input, select, textarea").forEach((control) => { control.disabled = Boolean(busy); });
+}
 
 function setMessage(message, tone = null) {
   if (!storageMessage) return;
@@ -82,11 +89,12 @@ function loadConnection(connection = null) {
 async function saveStorageConnection(event) {
   event?.preventDefault();
   const api = window.desktopApi;
-  if (!api?.files) {
+  if (storageRequestInFlight || !api?.files) {
     setMessage("File service is unavailable.", "warn");
     return;
   }
   setMessage("Saving storage...");
+  setStorageBusy(true);
   try {
     const result = await api.files.saveConnection(getStorageFormPayload());
     const connectionId = result.connection?.id || editingStorageId || null;
@@ -94,21 +102,26 @@ async function saveStorageConnection(event) {
     await api.storageWindow?.saved?.({ connectionId });
   } catch (error) {
     setMessage(error?.message || "Storage connection could not be saved.", "warn");
+  } finally {
+    setStorageBusy(false);
   }
 }
 
 async function testStorageConnectionFromForm() {
   const api = window.desktopApi;
-  if (!api?.files) {
+  if (storageRequestInFlight || !api?.files) {
     setMessage("File service is unavailable.", "warn");
     return;
   }
   setMessage("Testing connection...");
+  setStorageBusy(true);
   try {
     const result = await api.files.testConnection(getStorageFormPayload());
     setMessage(result?.message || "Connection verified.", "ok");
   } catch (error) {
     setMessage(error?.message || "Connection test failed.", "warn");
+  } finally {
+    setStorageBusy(false);
   }
 }
 
@@ -120,6 +133,9 @@ storageForm?.addEventListener("submit", saveStorageConnection);
 document.querySelector('[data-storage-action="test"]')?.addEventListener("click", testStorageConnectionFromForm);
 document.querySelector('[data-storage-action="cancel"]')?.addEventListener("click", () => window.desktopApi?.storageWindow?.close?.());
 document.querySelector('[data-storage-field="authType"]')?.addEventListener("change", syncStorageAuthFields);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !storageRequestInFlight) window.desktopApi?.storageWindow?.close?.();
+});
 
 window.desktopApi?.storageWindow?.onInit?.((payload = {}) => {
   loadConnection(payload.connection || payload);

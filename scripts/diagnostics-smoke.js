@@ -1,0 +1,87 @@
+const assert = require("assert");
+const fs = require("fs");
+const net = require("net");
+const os = require("os");
+const path = require("path");
+const { spawn } = require("child_process");
+const { sanitize, redactString } = require("../src/shared/redaction");
+const { StructuredLogger } = require("../src/shared/structuredLogger");
+
+const root = path.resolve(__dirname, "..");
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-diagnostics-"));
+process.env.ANXHUB_CONFIG_DIR = path.join(temp, "desktop-config");
+process.env.ANXOS_LOG_DIR = path.join(temp, "desktop-logs");
+
+function freePort() { return new Promise((resolve, reject) => { const server = net.createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const port = server.address().port; server.close(() => resolve(port)); }); }); }
+async function waitFor(url) { for (let index = 0; index < 80; index += 1) { try { if ((await fetch(url)).ok) return; } catch {} await new Promise((resolve) => setTimeout(resolve, 75)); } throw new Error("Agent did not start."); }
+
+async function main() {
+  console.log("Checking redaction and local log rotation...");
+  const secret = "super-secret-password";
+  const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvd25lciJ9.abcdefghijklmnopqrstuvwxyz123456";
+  const clean = sanitize({ password: secret, agentToken: "agent-secret", nested: { authorization: "Bearer abc.def.ghi", safe: "ok" }, message: `password=${secret} Authorization: Bearer ${jwt}` });
+  assert.strictEqual(clean.password, "[redacted]");
+  assert.strictEqual(clean.agentToken, "[redacted]");
+  assert.strictEqual(clean.nested.authorization, "[redacted]");
+  assert.strictEqual(clean.nested.safe, "ok");
+  assert(!JSON.stringify(clean).includes(secret) && !JSON.stringify(clean).includes(jwt));
+  assert(!redactString(`Bearer ${jwt}`).includes(jwt));
+  const agentControl = require("../src/services/agentControlService");
+  const desktopDiagnostics = require("../src/services/diagnosticsService");
+  const validatedConfig = agentControl.validateConfig({ name: "Local Test Agent", host: "127.0.0.1", port: 48131, allowedFolders: [temp] });
+  assert.strictEqual(validatedConfig.port, 48131);
+  assert.throws(() => agentControl.validateConfig({ name: "Agent", host: "example.com", port: 80 }), /listening address|Port/i, "Agent configuration must reject unsafe host/port values.");
+  desktopDiagnostics.updateRuntimeState({ currentWorkspace: "agent-control", ownerAuthorized: true });
+  desktopDiagnostics.log("error", "renderer", "smoke-error", `Failed password=${secret}`, { providerMode: "agent", accessToken: "hidden" }, { file: "renderer" });
+  const latestSnapshot = JSON.parse(fs.readFileSync(path.join(process.env.ANXOS_LOG_DIR, "latest-error.json"), "utf8"));
+  assert.strictEqual(latestSnapshot.runtimeState.currentWorkspace, "agent-control");
+  assert(Array.isArray(latestSnapshot.recentRelatedEntries) && Array.isArray(latestSnapshot.suggestedDiagnosticChecks));
+  assert(!JSON.stringify(latestSnapshot).includes(secret), "Latest error snapshot must redact secrets before writing.");
+
+  const logDir = path.join(temp, "logs");
+  const logger = new StructuredLogger({ directory: logDir, source: "smoke", processName: "test", maxBytes: 500, retainedFiles: 2, retentionMs: 1000 });
+  logger.info("write", "Structured event", { password: secret, safe: true });
+  logger.error("failure", Object.assign(new Error(`Failed with token=${jwt}`), { code: "SMOKE_FAILED" }), { apiKey: "hidden" });
+  assert(fs.existsSync(path.join(logDir, "smoke.log")));
+  assert(fs.existsSync(path.join(logDir, "live.log")));
+  assert(fs.existsSync(path.join(logDir, "latest-error.json")));
+  logger.snapshot("runtime-state.json", { applicationRunning: true, authorization: "private" });
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(logDir, "runtime-state.json"), "utf8")).authorization, "[redacted]");
+  for (let index = 0; index < 30; index += 1) logger.info("rotation", `event-${index}-${"x".repeat(100)}`, {});
+  assert(fs.existsSync(path.join(logDir, "smoke.log.1")), "Log rotation should retain bounded history.");
+  const blockedPath = path.join(temp, "not-a-directory");
+  fs.writeFileSync(blockedPath, "blocked");
+  const unavailable = new StructuredLogger({ directory: path.join(blockedPath, "logs"), source: "failure-safe" });
+  assert.doesNotThrow(() => unavailable.error("write", new Error("ignored")), "Logging failures must not crash the app.");
+
+  const port = await freePort();
+  console.log("Checking authenticated Agent diagnostics...");
+  const token = "diagnostics-smoke-agent-token";
+  const agentRoot = path.join(temp, "agent");
+  fs.mkdirSync(agentRoot, { recursive: true });
+  const child = spawn(process.execPath, [path.join(root, "agent", "src", "server.js")], { cwd: agentRoot, env: { ...process.env, AGENT_HOST: "127.0.0.1", AGENT_PORT: String(port), AGENT_TOKEN: token, AGENT_FILE_ROOTS: agentRoot, AGENT_IDENTITY_PATH: path.join(agentRoot, "identity.json"), ANXOS_LOG_DIR: path.join(temp, "agent-logs") }, stdio: "ignore" });
+  try {
+    await waitFor(`http://127.0.0.1:${port}/api/v1/health`);
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/api/v1/diagnostics`);
+    assert.strictEqual(unauthorized.status, 401, "Remote diagnostics must require Agent authentication.");
+    const authorized = await fetch(`http://127.0.0.1:${port}/api/v1/diagnostics`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.strictEqual(authorized.status, 200);
+    const bundle = await authorized.json();
+    assert(bundle.identity?.deviceId && Array.isArray(bundle.logs));
+    assert(!JSON.stringify(bundle).includes(token), "Remote diagnostic bundle must not expose the Agent token.");
+  } finally { child.kill("SIGTERM"); }
+
+  const combined = [logDir, path.join(temp, "agent-logs")].flatMap((directory) => { try { return fs.readdirSync(directory).map((entry) => path.join(directory, entry)); } catch { return []; } }).filter((filePath) => /\.(log|json)(\.\d+)?$/.test(filePath)).map((filePath) => { try { return fs.readFileSync(filePath, "utf8"); } catch { return ""; } }).join("\n");
+  assert(!combined.includes(secret) && !combined.includes(jwt) && !combined.includes(token), "Generated diagnostics must not contain test secrets.");
+
+  const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
+  const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const controlIpc = fs.readFileSync(path.join(root, "src", "ipc", "agentControlIpc.js"), "utf8");
+  assert(main.includes('process.on("uncaughtException"') && main.includes('process.on("unhandledRejection"'));
+  assert(preload.includes("forwardPreloadError") && app.includes('window.addEventListener("unhandledrejection"'));
+  assert(controlIpc.includes('authorize("remote-diagnostics")') && controlIpc.includes("requireOwner"), "Remote diagnostic capture must be owner-gated in the main process.");
+  console.log("Diagnostics smoke checks passed.");
+}
+
+main().finally(() => fs.rmSync(temp, { recursive: true, force: true })).catch((error) => { console.error(error.stack || error.message); process.exitCode = 1; });

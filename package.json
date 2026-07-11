@@ -38,6 +38,8 @@
     "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
+    "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
+    "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "security:reset-password": "node scripts/reset-local-password.js"
   },
   "build": {
@@ -55,6 +57,7 @@
       "config/**/*",
       "website/account-config.js",
       "src/**/*",
+      "agent/**/*",
       "package.json",
       "node_modules/**/*"
     ],

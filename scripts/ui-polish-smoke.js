@@ -7,7 +7,7 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
-const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "security", "owner-workspace", "nodes", "settings"];
+const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "security", "owner-workspace", "agent-control", "nodes", "settings"];
 expectedPages.forEach((page) => assert(index.includes(`data-page="${page}"`), `Missing workspace root: ${page}`));
 
 const ids = [...index.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
@@ -34,6 +34,9 @@ assert(index.includes('role="dialog" aria-modal="true"') && index.includes('tabi
 assert(index.includes('aria-live="polite" aria-atomic="true"'), "Toast feedback must be announced atomically.");
 assert(app.includes('setAttribute("aria-busy"'), "Async workspace loading must expose aria-busy.");
 assert(app.includes("isNodeSwitching() || document.hidden"), "Background polling must pause while the document is hidden.");
+assert(index.includes('data-agent-control-action="start"') && index.includes('data-agent-control-action="installService"'), "Agent Control must expose real lifecycle and service actions.");
+assert(index.includes("data-agent-log-viewer") && index.includes("data-agent-diagnostics"), "Agent Control must include logs and diagnostics.");
+assert(app.includes("runAgentControlAction") && app.includes("refreshAgentControl"), "Agent Control actions must be wired in the renderer.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

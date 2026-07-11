@@ -510,6 +510,8 @@ let securityState = { setupRequired: false, authenticated: false, user: null };
 let accountState = { authenticated: false, account: null, pending: null, configured: false };
 let accountPollTimer = null;
 let accountCountdownTimer = null;
+let accountStartInFlight = false;
+let accountStartRetryAfter = 0;
 let ownerWorkspaceState = { authorized: false, pages: [], contents: {}, selectedPageId: "overview", apiHistory: [] };
 let ownerAutosaveTimer = null;
 let ownerAnalyticsTimer = null;
@@ -14574,6 +14576,15 @@ function setAccountMessage(message = "") {
   }
 }
 
+function assertAccountResultOk(result, fallback = "AnxOS account request failed.") {
+  if (result?.ok === false) {
+    const error = new Error(result.error?.message || result.message || fallback);
+    error.code = result.error?.code || "ACCOUNT_REQUEST_FAILED";
+    throw error;
+  }
+  return result;
+}
+
 function renderAccountState() {
   const signedIn = Boolean(accountState.authenticated);
   const pending = accountState.pending || null;
@@ -14627,8 +14638,8 @@ function renderAccountState() {
     button.toggleAttribute("hidden", !pending);
   });
   document.querySelectorAll('[data-account-action="start"]').forEach((button) => {
-    button.textContent = pending ? "Waiting for Browser..." : signedIn ? "Switch AnxOS Account" : "Sign in with AnxOS";
-    button.disabled = pending && !signedIn;
+    button.textContent = accountStartInFlight ? "Opening..." : pending ? "Waiting for Browser..." : signedIn ? "Switch AnxOS Account" : "Sign in with AnxOS";
+    button.disabled = accountStartInFlight || (pending && !signedIn) || (!signedIn && Date.now() < accountStartRetryAfter);
   });
   if (pending?.userCode) {
     const urlText = pending.verificationUrl ? ` Visit ${pending.verificationUrl}.` : "";
@@ -14656,10 +14667,10 @@ async function refreshAccountState() {
     return;
   }
   try {
-    accountState = await desktopApiState.api.account.getStatus();
+    accountState = assertAccountResultOk(await desktopApiState.api.account.getStatus(), "AnxOS account status unavailable.");
     if (accountState.sessionStatus === "expired" && accountState.configured && typeof desktopApiState.api.account.refresh === "function") {
       try {
-        accountState = await desktopApiState.api.account.refresh();
+        accountState = assertAccountResultOk(await desktopApiState.api.account.refresh(), "Account session refresh failed. Sign in again.");
       } catch (error) {
         accountState = {
           ...accountState,
@@ -14702,7 +14713,7 @@ function startAccountPolling(intervalMs = 3000) {
     const desktopApiState = getDesktopApiState();
     if (!desktopApiState.hasAccount) return;
     try {
-      accountState = await desktopApiState.api.account.checkDeviceLogin();
+      accountState = assertAccountResultOk(await desktopApiState.api.account.checkDeviceLogin(), "AnxOS account sign-in failed.");
       renderAccountState();
       if (accountState.authenticated || ["expired", "idle", "denied", "cancelled"].includes(accountState.state)) {
         stopAccountPolling();
@@ -14730,23 +14741,40 @@ window.addEventListener("beforeunload", stopAccountPolling);
 
 async function startAnxOsAccountLogin() {
   const desktopApiState = getDesktopApiState();
+  const now = Date.now();
   if (!desktopApiState.hasAccount) {
     showToast("AnxOS account sign-in is not available in this build.");
+    return;
+  }
+  if (accountStartInFlight || (!accountState.authenticated && now < accountStartRetryAfter)) {
     return;
   }
   if (accountState.authenticated) {
     await switchAnxOsAccount();
     return;
   }
+  accountStartInFlight = true;
+  renderAccountState();
   try {
-    accountState = await desktopApiState.api.account.startDeviceLogin();
+    accountState = assertAccountResultOk(await desktopApiState.api.account.startDeviceLogin(), "Could not start AnxOS account sign-in.");
     renderAccountState();
-    startAccountPolling(accountState.pending?.intervalMs);
-    showToast("Opened AnxOS sign-in in your browser.");
+    if (accountState.pending) {
+      startAccountPolling(accountState.pending.intervalMs);
+      showToast("Opened AnxOS sign-in in your browser.");
+    } else {
+      stopAccountPolling();
+      setAccountMessage(accountState.message || "AnxOS account sign-in did not start.");
+      showToast(accountState.message || "AnxOS account sign-in did not start.");
+    }
   } catch (error) {
     const message = normalizeIpcErrorMessage(error, "Could not start AnxOS account sign-in.");
+    accountStartRetryAfter = Date.now() + 10000;
+    stopAccountPolling();
     setAccountMessage(message);
     showToast(message);
+  } finally {
+    accountStartInFlight = false;
+    renderAccountState();
   }
 }
 
@@ -14756,7 +14784,7 @@ async function switchAnxOsAccount() {
     return;
   }
   stopAccountPolling();
-  accountState = await desktopApiState.api.account.logout().catch(() => ({
+  accountState = await desktopApiState.api.account.logout().then((result) => assertAccountResultOk(result, "Account sign-out failed.")).catch(() => ({
     authenticated: false,
     account: null,
     pending: null,
@@ -14784,7 +14812,7 @@ async function loginAnxOsAccountWithPassword(event) {
     submit.textContent = "Signing in...";
   }
   try {
-    accountState = await desktopApiState.api.account.loginWithPassword({ email, password });
+    accountState = assertAccountResultOk(await desktopApiState.api.account.loginWithPassword({ email, password }), "AnxOS account sign-in failed.");
     if (accountPasswordPassword) accountPasswordPassword.value = "";
     await refreshSecurityState();
     renderAccountState();
@@ -14815,7 +14843,7 @@ async function cancelAnxOsAccountLogin() {
   const desktopApiState = getDesktopApiState();
   stopAccountPolling();
   if (!desktopApiState.hasAccount) return;
-  accountState = await desktopApiState.api.account.cancelDeviceLogin().catch(() => ({ authenticated: false, account: null, pending: null, state: "cancelled" }));
+  accountState = await desktopApiState.api.account.cancelDeviceLogin().then((result) => assertAccountResultOk(result, "Could not cancel account sign-in.")).catch(() => ({ authenticated: false, account: null, pending: null, state: "cancelled" }));
   renderAccountState();
   showToast("AnxOS account sign-in cancelled.");
 }
@@ -14831,7 +14859,7 @@ async function logoutAnxOsAccount() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasAccount) return;
   stopAccountPolling();
-  accountState = await desktopApiState.api.account.logout().catch(() => ({ authenticated: false, account: null, pending: null }));
+  accountState = await desktopApiState.api.account.logout().then((result) => assertAccountResultOk(result, "Account sign-out failed.")).catch(() => ({ authenticated: false, account: null, pending: null }));
   renderAccountState();
   await refreshSecurityState();
   showToast("Signed out of AnxOS account.");

@@ -1,4 +1,5 @@
 const assert = require("assert");
+const fs = require("fs");
 const path = require("path");
 
 const { resolveElectronPaths } = require("../src/services/electronPaths");
@@ -88,6 +89,11 @@ async function main() {
     assert(paths.cache.startsWith("C:\\Users\\anjor\\AppData\\Local"), "cache should be under the local per-user directory");
     assert(paths.sessionData.startsWith("C:\\Users\\anjor\\AppData\\Local"), "sessionData should be under the local per-user directory");
     assert(!/Program Files/i.test(paths.cache), "cache must not resolve inside Program Files");
+
+    const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+    assert(appSource.includes("assertAccountResultOk"), "renderer should reject account IPC ok:false results");
+    assert(appSource.includes("accountStartInFlight"), "renderer should prevent duplicate account sign-in starts");
+    assert(appSource.includes("accountStartRetryAfter"), "renderer should cool down failed account sign-in starts");
 
     console.log("Windows runtime smoke checks passed.");
   } finally {

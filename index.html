@@ -2809,8 +2809,33 @@
               <div class="settings-section__header"><div><h2>Connected Remote Agents</h2><p>Remote controls use authenticated Agent APIs and explicit node identities.</p></div></div><div class="agent-remote-list" data-agent-remote-list><div class="security-empty-state">No remote Agents loaded.</div></div>
             </section>
             <section class="settings-section settings-section--wide">
-              <div class="settings-section__header"><div><h2>Developer Logs</h2><p>Sanitized structured events from desktop, renderer, Agent, authentication, IPC, services, and updater.</p></div><div class="agent-log-actions"><button class="inline-action" type="button" data-diagnostics-action="capture">Capture Snapshot</button><button class="inline-action" type="button" data-diagnostics-action="open">Open Logs Folder</button><button class="inline-action" type="button" data-diagnostics-action="copy">Copy Summary</button><button class="inline-action" type="button" data-diagnostics-action="export">Export Bundle</button></div></div>
-              <div class="agent-log-toolbar"><input type="search" data-agent-log-search placeholder="Search sanitized logs"><select data-agent-log-severity><option value="all">All severities</option><option value="error">Errors</option><option value="warn">Warnings</option><option value="info">Information</option></select><label class="settings-check"><input type="checkbox" data-agent-log-pause><span>Pause</span></label><label class="settings-check"><input type="checkbox" data-agent-log-wrap checked><span>Wrap</span></label><button class="inline-action" type="button" data-agent-control-action="refreshLogs">Refresh</button></div><pre class="agent-log-viewer" data-agent-log-viewer aria-live="polite">Logs will appear here.</pre>
+              <div class="settings-section__header agent-log-header">
+                <div>
+                  <h2>Developer Logs</h2>
+                  <p>Sanitized structured events from desktop, renderer, Agent, authentication, IPC, services, and updater.</p>
+                </div>
+                <div class="agent-log-actions" aria-label="Developer log actions">
+                  <button class="inline-action" type="button" data-diagnostics-action="capture">Capture Snapshot</button>
+                  <button class="inline-action" type="button" data-diagnostics-action="open">Open Logs Folder</button>
+                  <button class="inline-action" type="button" data-diagnostics-action="copy">Copy Summary</button>
+                  <button class="inline-action" type="button" data-diagnostics-action="export">Export Bundle</button>
+                </div>
+              </div>
+              <div class="agent-log-toolbar" aria-label="Developer log filters">
+                <input type="search" data-agent-log-search placeholder="Search sanitized logs">
+                <select data-agent-log-severity>
+                  <option value="all">All severities</option>
+                  <option value="error">Errors</option>
+                  <option value="warn">Warnings</option>
+                  <option value="info">Information</option>
+                </select>
+                <div class="agent-log-toolbar__controls">
+                  <label class="settings-check agent-log-toggle"><input type="checkbox" data-agent-log-pause><span>Pause</span></label>
+                  <label class="settings-check agent-log-toggle"><input type="checkbox" data-agent-log-wrap checked><span>Wrap</span></label>
+                  <button class="inline-action agent-log-refresh" type="button" data-agent-control-action="refreshLogs">Refresh</button>
+                </div>
+              </div>
+              <pre class="agent-log-viewer" data-agent-log-viewer aria-live="polite">Logs will appear here.</pre>
             </section>
           </div>
         </section>

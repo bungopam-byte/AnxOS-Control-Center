@@ -8454,13 +8454,90 @@ button:disabled {
 .agent-diagnostic-list, .agent-remote-list { display: grid; gap: 10px; }
 .agent-diagnostic-item, .agent-remote-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(7, 9, 14, .34); }
 .agent-diagnostic-item p, .agent-remote-card p { margin: 4px 0 0; color: var(--muted); }
-.agent-log-actions, .agent-log-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.agent-log-toolbar { margin-bottom: 10px; }
-.agent-log-toolbar input { flex: 1 1 260px; min-height: 40px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; background: rgba(5,7,12,.72); color: var(--text); }
+.agent-log-header {
+  align-items: flex-start;
+  gap: 14px;
+}
+.agent-log-header > div:first-child {
+  min-width: min(100%, 360px);
+}
+.agent-log-actions {
+  display: flex;
+  flex: 1 1 440px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+  min-width: min(100%, 300px);
+}
+.agent-log-actions .inline-action,
+.agent-log-toolbar .inline-action,
+.agent-log-toolbar .settings-check {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: .84rem;
+  line-height: 1;
+}
+.agent-log-actions .inline-action,
+.agent-log-toolbar .inline-action {
+  padding: 0 10px;
+}
+.agent-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid rgba(190, 170, 220, 0.12);
+  border-radius: var(--radius);
+  background: rgba(7, 9, 14, .26);
+}
+.agent-log-toolbar input,
+.agent-log-toolbar select {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5,7,12,.72);
+  color: var(--text);
+  font: inherit;
+  font-size: .86rem;
+}
+.agent-log-toolbar input {
+  flex: 1 1 280px;
+  min-width: min(100%, 220px);
+  padding: 7px 10px;
+}
+.agent-log-toolbar select {
+  flex: 0 1 170px;
+  padding: 0 34px 0 10px;
+}
+.agent-log-toolbar__controls {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+.agent-log-toolbar .settings-check {
+  gap: 7px;
+  padding: 0 10px;
+  color: rgba(238, 234, 246, .86);
+}
+.agent-log-toolbar .settings-check input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+.agent-log-refresh {
+  justify-content: center;
+}
 .agent-log-viewer { min-height: 360px; max-height: 560px; overflow: auto; margin: 0; padding: 14px; border: 1px solid rgba(115,220,202,.18); border-radius: var(--radius); background: #05070b; color: rgba(220,244,255,.9); font: .8rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
 .agent-log-viewer.is-nowrap { white-space: pre; }
 @media (max-width: 1100px) { .agent-control-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 760px) { .agent-control-shell { grid-template-columns: minmax(0, 1fr); } .agent-control-overview, .settings-section--wide { grid-column: auto; } .agent-control-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-diagnostic-item, .agent-remote-card { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .agent-control-shell { grid-template-columns: minmax(0, 1fr); } .agent-control-overview, .settings-section--wide { grid-column: auto; } .agent-control-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-diagnostic-item, .agent-remote-card { grid-template-columns: minmax(0, 1fr); } .agent-log-actions, .agent-log-toolbar__controls { justify-content: flex-start; margin-left: 0; width: 100%; } .agent-log-toolbar input, .agent-log-toolbar select { flex-basis: 100%; } }
 
 .page[data-page="settings"] .page-header,
 .page[data-page="security"] .page-header,
@@ -9726,6 +9803,16 @@ button:disabled {
 
   .settings-actions .inline-action,
   .settings-check {
+    justify-content: center;
+  }
+
+  .agent-log-toolbar .settings-check {
+    width: auto;
+    flex: 1 1 96px;
+  }
+
+  .agent-log-toolbar .inline-action {
+    flex: 1 1 120px;
     justify-content: center;
   }
 

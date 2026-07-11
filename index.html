@@ -2783,45 +2783,6 @@
 
         <section class="page" data-page="agent-control">
           <header class="page-header"><div><p class="eyebrow">Infrastructure</p><h1>Agent Control</h1><p class="lede">Manage the local Agent, inspect remote Agents, review sanitized logs, and repair common failures without leaving AnxOS.</p></div><button class="inline-action" type="button" data-agent-control-action="refresh">Refresh</button></header>
-          <section class="settings-section agent-connection-section">
-            <div class="settings-section__header">
-              <div>
-                <h2>Agent Connection</h2>
-                <p>Configure the default Agent endpoint and connection mode.</p>
-              </div>
-              <span class="status-pill status-pill--planned" data-agent-connection-pill>Disconnected</span>
-            </div>
-            <p class="settings-note" data-agent-connection-message>Use the Agent for remote service data when local access is unavailable.</p>
-            <div class="settings-grid agent-connection-grid">
-              <label class="settings-field">
-                <span>Backend mode</span>
-                <select data-agent-setting="backendMode">
-                  <option value="local">Local</option>
-                  <option value="agent">Agent</option>
-                  <option value="auto">Auto</option>
-                </select>
-              </label>
-              <label class="settings-field">
-                <span>Agent URL</span>
-                <input type="url" placeholder="http://127.0.0.1:47131" data-agent-setting="agentUrl">
-              </label>
-              <label class="settings-field">
-                <span>Agent token</span>
-                <input type="password" autocomplete="off" placeholder="Optional bearer token" data-agent-setting="agentToken">
-              </label>
-              <label class="settings-field settings-field--wide">
-                <span>Pairing code</span>
-                <textarea rows="3" autocomplete="off" spellcheck="false" placeholder="Paste ANXOS-PAIR code from the remote Agent" data-agent-pairing-code></textarea>
-              </label>
-            </div>
-            <div class="settings-actions">
-              <button class="inline-action" type="button" data-agent-action="save">Save Agent Settings</button>
-              <button class="inline-action" type="button" data-agent-action="test">Test Connection</button>
-              <button class="inline-action inline-action--primary" type="button" data-agent-action="pair">Pair Agent</button>
-              <button class="inline-action" type="button" data-agent-action="repair" hidden>Repair Connection</button>
-              <span class="settings-inline-status" data-agent-config-source>Saved in config/agent.json.</span>
-            </div>
-          </section>
           <div class="agent-control-shell">
             <div class="agent-control-column agent-control-column--left">
             <section class="settings-section settings-section--wide agent-control-overview">
@@ -2850,6 +2811,45 @@
                 <div><span>Service</span><button class="inline-action" type="button" data-agent-control-action="installService">Install</button><button class="inline-action" type="button" data-agent-control-action="uninstallService">Uninstall</button><button class="inline-action" type="button" data-agent-control-action="enableAutoStart">Auto Start On</button><button class="inline-action" type="button" data-agent-control-action="disableAutoStart">Auto Start Off</button></div>
                 <div><span>Maintenance</span><button class="inline-action" type="button" data-agent-control-action="checkUpdates">Check Updates</button><button class="inline-action" type="button" data-agent-control-action="updateAgent">Update</button><button class="inline-action" type="button" data-agent-control-action="rotateToken">Rotate Token</button></div>
                 <div><span>Utilities</span><button class="inline-action" type="button" data-agent-control-action="copyUrl">Copy URL</button><button class="inline-action" type="button" data-agent-control-action="copyId">Copy ID</button><button class="inline-action" type="button" data-agent-control-action="openLogs">Logs Folder</button><button class="inline-action" type="button" data-agent-control-action="openDataFolder">Data Folder</button></div>
+              </div>
+            </section>
+            <section class="settings-section agent-connection-section">
+              <div class="settings-section__header">
+                <div>
+                  <h2>Agent Connection</h2>
+                  <p>Default endpoint and connection mode.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-agent-connection-pill>Disconnected</span>
+              </div>
+              <p class="settings-note" data-agent-connection-message>Use the Agent for remote service data when local access is unavailable.</p>
+              <div class="settings-grid agent-connection-grid">
+                <label class="settings-field">
+                  <span>Backend mode</span>
+                  <select data-agent-setting="backendMode">
+                    <option value="local">Local</option>
+                    <option value="agent">Agent</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                </label>
+                <label class="settings-field">
+                  <span>Agent URL</span>
+                  <input type="url" placeholder="http://127.0.0.1:47131" data-agent-setting="agentUrl">
+                </label>
+                <label class="settings-field">
+                  <span>Agent token</span>
+                  <input type="password" autocomplete="off" placeholder="Optional bearer token" data-agent-setting="agentToken">
+                </label>
+                <label class="settings-field settings-field--wide">
+                  <span>Pairing code</span>
+                  <textarea rows="3" autocomplete="off" spellcheck="false" placeholder="Paste ANXOS-PAIR code from the remote Agent" data-agent-pairing-code></textarea>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-agent-action="save">Save Agent Settings</button>
+                <button class="inline-action" type="button" data-agent-action="test">Test Connection</button>
+                <button class="inline-action inline-action--primary" type="button" data-agent-action="pair">Pair Agent</button>
+                <button class="inline-action" type="button" data-agent-action="repair" hidden>Repair Connection</button>
+                <span class="settings-inline-status" data-agent-config-source>Saved in config/agent.json.</span>
               </div>
             </section>
             <section class="settings-section">

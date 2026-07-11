@@ -8540,6 +8540,12 @@ button:disabled {
 .agent-connection-section .inline-action {
   justify-content: center;
 }
+.agent-control-column .agent-connection-section {
+  margin-bottom: 0;
+}
+.agent-control-column .agent-connection-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
 .agent-control-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; align-self: start; }
 .agent-control-column > .settings-section,
 .agent-control-column > .agent-config-details { width: 100%; height: auto; min-height: 0; align-self: start; }

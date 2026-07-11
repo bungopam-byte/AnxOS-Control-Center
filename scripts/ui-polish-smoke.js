@@ -51,6 +51,7 @@ assert(preload.includes("developerUpdates") && preload.includes("developerUpdate
 assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc"), "Main process must own developer update detection.");
 assert(index.includes('data-agent-control-action="start"') && index.includes('data-agent-control-action="installService"'), "Agent Control must expose real lifecycle and service actions.");
 assert(pageMarkup("agent-control").includes("Agent Connection") && pageMarkup("agent-control").includes('data-agent-setting="backendMode"'), "Agent configuration controls must render in Agent Control.");
+assert(pageMarkup("agent-control").indexOf("Diagnostics") < pageMarkup("agent-control").indexOf("Agent Connection"), "Agent Connection should sit below Diagnostics in Agent Control.");
 assert(!pageMarkup("settings").includes("data-agent-setting"), "Settings must not render the Agent configuration form.");
 assert(index.includes("data-agent-log-viewer") && index.includes("data-agent-diagnostics"), "Agent Control must include logs and diagnostics.");
 assert(app.includes("runAgentControlAction") && app.includes("refreshAgentControl"), "Agent Control actions must be wired in the renderer.");

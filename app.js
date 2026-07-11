@@ -2735,7 +2735,16 @@ async function refreshAgentLogs() {
 async function refreshAgentControl({ includeConfig = false } = {}) {
   const api = getDesktopApiState().api?.agentControl;
   if (!api || agentControlBusy) return;
-  try { const payload = await api.list(); renderAgentControlState(payload); if (includeConfig) populateAgentConfig(await api.getConfig()); await refreshAgentLogs(); } catch (error) { if (agentControlMessage) agentControlMessage.textContent = normalizeIpcErrorMessage(error, "Agent Control unavailable."); }
+  try {
+    const payload = await api.list();
+    renderAgentControlState(payload);
+    if (includeConfig && isOwnerWorkspaceAuthorized()) {
+      populateAgentConfig(await api.getConfig());
+    }
+    await refreshAgentLogs();
+  } catch (error) {
+    if (agentControlMessage) agentControlMessage.textContent = normalizeIpcErrorMessage(error, "Agent Control unavailable.");
+  }
 }
 
 async function runAgentControlAction(action) {

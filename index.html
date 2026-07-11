@@ -2781,6 +2781,7 @@
         <section class="page" data-page="agent-control">
           <header class="page-header"><div><p class="eyebrow">Infrastructure</p><h1>Agent Control</h1><p class="lede">Manage the local Agent, inspect remote Agents, review sanitized logs, and repair common failures without leaving AnxOS.</p></div><button class="inline-action" type="button" data-agent-control-action="refresh">Refresh</button></header>
           <div class="agent-control-shell">
+            <div class="agent-control-column agent-control-column--left">
             <section class="settings-section settings-section--wide agent-control-overview">
               <div class="agent-overview-main">
                 <div>
@@ -2812,7 +2813,9 @@
             <section class="settings-section">
               <div class="settings-section__header"><div><h2>Connected Remote Agents</h2><p>Authenticated Agent APIs and explicit node identities.</p></div></div><div class="agent-remote-list" data-agent-remote-list><div class="security-empty-state">No remote Agents loaded.</div></div>
             </section>
-            <section class="settings-section settings-section--wide">
+            </div>
+            <div class="agent-control-column agent-control-column--right">
+            <section class="settings-section agent-log-section">
               <div class="settings-section__header agent-log-header">
                 <div>
                   <h2>Developer Logs</h2>
@@ -2853,6 +2856,7 @@
               <div class="settings-grid"><label class="settings-field"><span>Mode</span><select data-agent-setup="mode"><option value="agent">Local Agent mode</option><option value="local">Local-only desktop mode</option></select></label><label class="settings-check settings-check--toggle"><input type="checkbox" data-agent-setup="autoStart" checked><span>Start Agent automatically when I sign in</span></label></div>
               <div class="settings-actions"><button class="primary-button" type="button" data-agent-control-action="completeSetup">Complete Setup</button><span class="settings-inline-status" data-agent-setup-message>Review the configuration above, then complete setup.</span></div>
             </section>
+            </div>
           </div>
         </section>
 

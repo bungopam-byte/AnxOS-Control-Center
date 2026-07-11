@@ -124,6 +124,14 @@ function readAccountConfigFromDisk() {
   return normalizeAccountConfig({}, "none");
 }
 
+function readBundledAccountConfig() {
+  try {
+    return normalizeAccountConfig(parseAccountConfigFile(getBundledAccountConfigPath()), getBundledAccountConfigPath());
+  } catch {
+    return normalizeAccountConfig({}, "bundled-unavailable");
+  }
+}
+
 function getAccountConfig(options = {}) {
   const envConfig = normalizeAccountConfig({
     supabaseUrl: process.env.ANXOS_SUPABASE_URL || process.env.SUPABASE_URL,
@@ -468,6 +476,18 @@ function normalizeDeviceStartResponse(response = {}) {
   return login;
 }
 
+function isProjectMissingError(error) {
+  return error?.code === "ACCOUNT_API_PROJECT_MISSING"
+    || /project not specified|missing the Supabase project reference/i.test(error?.message || "");
+}
+
+async function startRemoteDeviceLogin(apiUrl) {
+  return {
+    ...normalizeDeviceStartResponse(await postJson(`${apiUrl}/api/auth/device/start`, getDeviceInfo())),
+    apiUrl,
+  };
+}
+
 function publicPending(login = pendingDeviceLogin) {
   if (!login) {
     return null;
@@ -591,9 +611,20 @@ async function startDeviceLogin() {
   pendingRequestInFlight = true;
   try {
     const apiUrl = getAccountApiUrl();
-    pendingDeviceLogin = apiUrl
-      ? normalizeDeviceStartResponse(await postJson(`${apiUrl}/api/auth/device/start`, getDeviceInfo()))
-      : createLocalPendingDeviceLogin();
+    if (apiUrl) {
+      try {
+        pendingDeviceLogin = await startRemoteDeviceLogin(apiUrl);
+      } catch (error) {
+        const bundled = readBundledAccountConfig();
+        const bundledApiUrl = bundled.accountApiUrl || "";
+        if (!isProjectMissingError(error) || !bundledApiUrl || bundledApiUrl === apiUrl) {
+          throw error;
+        }
+        pendingDeviceLogin = await startRemoteDeviceLogin(bundledApiUrl);
+      }
+    } else {
+      pendingDeviceLogin = createLocalPendingDeviceLogin();
+    }
     const verificationUrl = assertApprovedExternalUrl(pendingDeviceLogin.verificationUrl, "verification");
     await shell.openExternal(verificationUrl);
     audit({
@@ -635,7 +666,8 @@ async function checkDeviceLogin() {
     return { ...getStatus(), state: "pending", message: "Waiting for the AnxOS account backend to be configured." };
   }
 
-  const response = await postJson(`${getAccountApiUrl()}/api/auth/device/poll`, { deviceCode: pendingDeviceLogin.deviceCode });
+  const pollApiUrl = pendingDeviceLogin.apiUrl || getAccountApiUrl();
+  const response = await postJson(`${pollApiUrl}/api/auth/device/poll`, { deviceCode: pendingDeviceLogin.deviceCode });
   const state = response.state || response.status || (response.pending ? "pending" : null);
   if (state === "pending" || state === "authorization_pending") {
     return { ...getStatus(), state: "pending", message: "Waiting for browser sign-in approval." };

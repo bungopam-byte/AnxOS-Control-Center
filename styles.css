@@ -8442,8 +8442,13 @@ button:disabled {
   max-width: 1760px;
 }
 
-.agent-control-shell { display: grid; grid-template-columns: minmax(380px, .88fr) minmax(480px, 1.12fr); gap: 12px; align-items: start; }
-.agent-control-overview, .settings-section--wide, .agent-config-details { grid-column: 1 / -1; }
+.agent-control-shell { display: grid; grid-template-columns: minmax(380px, .82fr) minmax(520px, 1.18fr); gap: 12px; align-items: start; }
+.agent-control-column { display: flex; flex-direction: column; gap: 12px; min-width: 0; align-self: start; }
+.agent-control-column > .settings-section,
+.agent-control-column > .agent-config-details { width: 100%; height: auto; min-height: 0; align-self: start; }
+.agent-control-shell .agent-control-overview,
+.agent-control-shell .settings-section--wide,
+.agent-control-shell .agent-config-details { grid-column: auto; }
 .agent-control-shell .settings-section { border-radius: 10px; }
 .agent-control-overview { display: grid; gap: 10px; min-height: 132px; padding: 14px 16px; }
 .agent-overview-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; }
@@ -8493,7 +8498,7 @@ button:disabled {
 }
 .agent-log-actions .inline-action,
 .agent-log-toolbar .inline-action,
-.agent-log-toolbar .settings-check {
+.agent-log-toolbar .agent-log-toggle {
   min-height: 34px;
   border-radius: 8px;
   font-size: .84rem;
@@ -8541,22 +8546,66 @@ button:disabled {
   align-items: center;
   margin-left: auto;
 }
-.agent-log-toolbar .settings-check {
+.agent-log-toolbar .agent-log-toggle {
   flex: 0 0 auto;
   gap: 7px;
-  padding: 0 10px;
+  width: auto;
+  min-width: 0;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
   color: rgba(238, 234, 246, .86);
   white-space: nowrap;
   writing-mode: horizontal-tb;
   text-orientation: mixed;
+  border-color: transparent;
+  background: transparent;
 }
-.agent-log-toolbar .settings-check input {
-  width: 14px;
-  height: 14px;
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  flex: 0 0 17px;
+  min-width: 0;
+  min-height: 0;
+  width: 17px;
+  height: 17px;
   margin: 0;
-  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid rgba(190, 170, 220, .34);
+  border-radius: 4px;
+  box-sizing: border-box;
+  background: rgba(7, 9, 14, .78);
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
-.agent-log-toolbar .settings-check span {
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"]::after {
+  position: absolute;
+  inset: 3px 4px 4px 4px;
+  width: 7px;
+  height: 4px;
+  border-bottom: 2px solid transparent;
+  border-left: 2px solid transparent;
+  content: "";
+  transform: rotate(-45deg);
+}
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"]:checked {
+  border-color: rgba(168, 128, 255, .72);
+  background: rgba(126, 86, 255, .86);
+}
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"]:checked::after {
+  border-color: #fff;
+}
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"]:hover {
+  border-color: rgba(206, 150, 255, .62);
+}
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(206, 150, 255, .84);
+  outline-offset: 2px;
+}
+.agent-log-toolbar .agent-log-toggle input[type="checkbox"]:disabled {
+  opacity: .5;
+}
+.agent-log-toolbar .agent-log-toggle span {
   display: inline-block;
   min-width: max-content;
   white-space: nowrap;
@@ -8579,8 +8628,8 @@ button:disabled {
 .agent-quick-setup.is-configured .settings-grid, .agent-quick-setup.is-configured .settings-actions { display: none; }
 .agent-quick-setup.is-configured { padding-block: 12px; }
 @media (max-width: 1180px) { .agent-control-shell { grid-template-columns: minmax(0, 1fr); } .agent-control-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 860px) { .agent-overview-main { grid-template-columns: minmax(0, 1fr); } .agent-overview-actions { justify-content: flex-start; flex-wrap: wrap; } .agent-control-overview, .settings-section--wide, .agent-config-details { grid-column: auto; } }
-@media (max-width: 760px) { .agent-control-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-diagnostic-item, .agent-remote-card { grid-template-columns: minmax(0, 1fr); } .agent-log-actions, .agent-log-toolbar__controls { justify-content: flex-start; margin-left: 0; width: 100%; } .agent-log-toolbar input, .agent-log-toolbar select { flex-basis: 100%; } .agent-config-details summary { align-items: flex-start; flex-direction: column; } .agent-config-details summary small { text-align: left; } }
+@media (max-width: 860px) { .agent-overview-main { grid-template-columns: minmax(0, 1fr); } .agent-overview-actions { justify-content: flex-start; flex-wrap: wrap; } }
+@media (max-width: 760px) { .agent-control-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agent-diagnostic-item, .agent-remote-card { grid-template-columns: minmax(0, 1fr); } .agent-log-actions, .agent-log-toolbar__controls { justify-content: flex-start; margin-left: 0; width: 100%; } .agent-log-toolbar > input, .agent-log-toolbar > select { flex-basis: 100%; } .agent-log-toolbar .agent-log-toggle input[type="checkbox"] { flex-basis: 17px; } .agent-config-details summary { align-items: flex-start; flex-direction: column; } .agent-config-details summary small { text-align: left; } }
 
 .page[data-page="settings"] .page-header,
 .page[data-page="security"] .page-header,
@@ -9849,9 +9898,10 @@ button:disabled {
     justify-content: center;
   }
 
-  .agent-log-toolbar .settings-check {
+  .agent-log-toolbar .agent-log-toggle {
     width: auto;
     flex: 0 0 auto;
+    justify-content: center;
   }
 
   .agent-log-toolbar .inline-action {

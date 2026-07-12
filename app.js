@@ -282,6 +282,16 @@ const globalSearchResults = document.querySelector("[data-global-search-results]
 const globalSearchRecentsWrap = document.querySelector("[data-global-search-recents-wrap]");
 const globalSearchRecents = document.querySelector("[data-global-search-recents]");
 const globalSearchClearRecentsButton = document.querySelector("[data-global-search-clear-recents]");
+const commandPaletteOpenButtons = document.querySelectorAll("[data-command-palette-open]");
+const commandPaletteOverlay = document.querySelector("[data-command-palette]");
+const commandPaletteDialog = document.querySelector(".command-palette-dialog");
+const commandPaletteCloseButton = document.querySelector("[data-command-palette-close]");
+const commandPaletteInput = document.querySelector("[data-command-palette-input]");
+const commandPaletteStatus = document.querySelector("[data-command-palette-status]");
+const commandPaletteResults = document.querySelector("[data-command-palette-results]");
+const commandPaletteRecentsWrap = document.querySelector("[data-command-palette-recents-wrap]");
+const commandPaletteRecents = document.querySelector("[data-command-palette-recents]");
+const commandPaletteClearRecentsButton = document.querySelector("[data-command-palette-clear-recents]");
 const fileToolbar = filesPage?.querySelector(".file-toolbar");
 const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const filesStorageDivider = filesPage?.querySelector('[data-files-resizer="storage"]');
@@ -756,6 +766,18 @@ const globalSearchState = {
   error: null,
 };
 let globalSearchDebounceTimer = null;
+const commandPaletteState = {
+  open: false,
+  query: "",
+  commands: [],
+  filtered: [],
+  activeIndex: 0,
+  recentCommandIds: [],
+  previousFocus: null,
+  runningId: null,
+  error: null,
+};
+let commandPaletteDebounceTimer = null;
 let securityRequestInFlight = false;
 const filesConnectionState = {
   connected: false,
@@ -783,6 +805,7 @@ const FILES_DETAILS_WIDTH_STORAGE_KEY = "anxos.files.detailsWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const OPERATIONS_STORAGE_KEY = "anxos.operations.history.v1";
 const GLOBAL_SEARCH_RECENTS_STORAGE_KEY = "anxos.globalSearch.recents.v1";
+const COMMAND_PALETTE_RECENTS_STORAGE_KEY = "anxos.commandPalette.recents.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
@@ -793,6 +816,8 @@ const GLOBAL_SEARCH_DEBOUNCE_MS = 140;
 const GLOBAL_SEARCH_PROVIDER_LIMIT = 8;
 const GLOBAL_SEARCH_TOTAL_LIMIT = 48;
 const GLOBAL_SEARCH_RECENT_LIMIT = 8;
+const COMMAND_PALETTE_DEBOUNCE_MS = 80;
+const COMMAND_PALETTE_RECENT_LIMIT = 8;
 const staleInstanceIds = new Set();
 const instanceRemovalAllowedIds = new Set();
 const PRIMARY_NAVIGATION_ORDER = [
@@ -11496,6 +11521,21 @@ function getWorkspaceSearchEntries() {
 function getGlobalSearchProviders() {
   const providers = [
     {
+      id: "commands",
+      label: "Commands",
+      type: "Action",
+      search(query) {
+        return [{ id: "command-palette", label: "Open Command Palette", description: "Run existing AnxOS actions. Shortcut: Ctrl+Shift+P" }]
+          .filter((entry) => matchesSearchQuery(query, entry.label, entry.description, "commands actions palette"))
+          .map((entry) => createGlobalSearchResult(this, {
+            id: entry.id,
+            label: entry.label,
+            description: entry.description,
+            action: () => openCommandPalette(),
+          }));
+      },
+    },
+    {
       id: "workspaces",
       label: "Workspaces",
       type: "Workspace",
@@ -11901,6 +11941,46 @@ function renderGlobalSearchResults() {
   });
 }
 
+async function refreshCurrentFilesDirectory() {
+  return refreshFileListing({
+    profileId: getFilesRequestProfileId(),
+    storageId: getFilesRequestStorageId(),
+    path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+  });
+}
+
+async function runDiagnosticsAction(action) {
+  const api = getDesktopApiState().api?.diagnostics;
+  if (!api) {
+    showToast("Diagnostics are unavailable in this build.", "warning");
+    return;
+  }
+  const operationId = startOperation({
+    type: "Diagnostics",
+    title: {
+      capture: "Capture diagnostics snapshot",
+      open: "Open logs folder",
+      copy: "Copy diagnostics summary",
+      export: "Export diagnostics bundle",
+    }[action] || "Run diagnostics action",
+    target: getActivePageName(),
+    step: "Running diagnostics action.",
+  });
+  try {
+    if (action === "capture") await api.capture({ currentWorkspace: getActivePageName() });
+    if (action === "open") await api.openFolder();
+    if (action === "copy") await api.copySummary();
+    if (action === "export") await api.exportBundle();
+    finishOperation(operationId, true, "Diagnostic action completed.");
+    showToast("Diagnostic action completed.", "success");
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Diagnostic action failed.");
+    finishOperation(operationId, false, message);
+    showToast(message, "error");
+    throw error;
+  }
+}
+
 async function runGlobalSearch(query) {
   const requestId = ++globalSearchState.requestId;
   const normalized = String(query || "").trim();
@@ -12023,6 +12103,577 @@ function handleGlobalSearchKeydown(event) {
   }
 }
 
+function readCommandPaletteRecents() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(COMMAND_PALETTE_RECENTS_STORAGE_KEY) || "[]");
+    return Array.isArray(value) ? value.filter((entry) => typeof entry === "string").slice(0, COMMAND_PALETTE_RECENT_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCommandPaletteRecents() {
+  try {
+    window.localStorage.setItem(COMMAND_PALETTE_RECENTS_STORAGE_KEY, JSON.stringify(commandPaletteState.recentCommandIds.slice(0, COMMAND_PALETTE_RECENT_LIMIT)));
+  } catch {}
+}
+
+function createCommand(command = {}) {
+  if (!command.id || !command.title || typeof command.execute !== "function") {
+    throw new Error("Invalid command registration.");
+  }
+  return {
+    id: String(command.id),
+    title: String(command.title),
+    description: command.description ? String(command.description) : "",
+    category: command.category ? String(command.category) : "Application",
+    shortcut: command.shortcut ? String(command.shortcut) : "",
+    keywords: Array.isArray(command.keywords) ? command.keywords.map(String) : [],
+    visible: typeof command.visible === "function" ? command.visible : () => true,
+    enabled: typeof command.enabled === "function" ? command.enabled : () => true,
+    disabledReason: typeof command.disabledReason === "function" ? command.disabledReason : () => command.disabledReason || "Command unavailable.",
+    confirm: command.confirm || null,
+    execute: command.execute,
+  };
+}
+
+function getCommandRegistry() {
+  const desktopApiState = getDesktopApiState();
+  const commands = [
+    ...getWorkspaceSearchEntries()
+      .filter((entry) => !entry.disabled)
+      .map((entry) => createCommand({
+        id: `nav.${entry.id}`,
+        title: `Open ${entry.label}`,
+        description: entry.description || "Open workspace",
+        category: "Navigation",
+        keywords: [entry.id, "workspace", "page"],
+        execute: () => showPage(entry.id),
+      })),
+    createCommand({
+      id: "search.open",
+      title: "Open Global Search",
+      description: "Find workspaces and loaded desktop content.",
+      category: "Application",
+      shortcut: "Ctrl+K",
+      keywords: ["find", "search"],
+      execute: () => openGlobalSearch(),
+    }),
+    createCommand({
+      id: "agent.refresh",
+      title: "Check Agent Status",
+      description: "Refresh local Agent status and sanitized logs.",
+      category: "Agent",
+      enabled: () => Boolean(desktopApiState.api?.agentControl),
+      disabledReason: () => "Agent Control is unavailable in this build.",
+      execute: () => { showPage("agent-control"); return refreshAgentControl({ includeConfig: true }); },
+    }),
+    ...["start", "stop", "restart", "reconnect", "runDiagnostics", "checkUpdates"].map((action) => createCommand({
+      id: `agent.${action}`,
+      title: {
+        start: "Start Agent",
+        stop: "Stop Agent",
+        restart: "Restart Agent",
+        reconnect: "Reconnect Agent",
+        runDiagnostics: "Run Agent Diagnostics",
+        checkUpdates: "Check Agent Updates",
+      }[action],
+      description: {
+        start: "Start the local Agent through Agent Control.",
+        stop: "Stop the local Agent.",
+        restart: "Restart the local Agent.",
+        reconnect: "Run the existing Agent connection test.",
+        runDiagnostics: "Run existing Agent diagnostics.",
+        checkUpdates: "Check for Agent update availability.",
+      }[action],
+      category: "Agent",
+      enabled: () => Boolean(desktopApiState.api?.agentControl) && !agentControlBusy,
+      disabledReason: () => agentControlBusy ? "Agent operation already running." : "Agent Control is unavailable in this build.",
+      confirm: ["stop", "restart"].includes(action)
+        ? { title: `${action === "stop" ? "Stop" : "Restart"} local Agent?`, message: "Active Agent operations may disconnect while this runs.", confirmLabel: action === "stop" ? "Stop Agent" : "Restart Agent" }
+        : null,
+      execute: () => { showPage("agent-control"); return runAgentControlAction(action); },
+    })),
+    createCommand({
+      id: "marketplace.open",
+      title: "Browse Marketplace",
+      description: "Open installable Marketplace templates.",
+      category: "Marketplace",
+      execute: () => showPage("marketplace"),
+    }),
+    createCommand({
+      id: "marketplace.refresh",
+      title: "Refresh Marketplace",
+      description: "Reload Marketplace templates and download state.",
+      category: "Marketplace",
+      enabled: () => !marketplaceRequestInFlight,
+      disabledReason: () => "Marketplace is already refreshing.",
+      execute: () => { showPage("marketplace"); return refreshMarketplace(); },
+    }),
+    createCommand({
+      id: "instances.open",
+      title: "Open Installed Instances",
+      description: "Open the existing instance management workspace.",
+      category: "Marketplace",
+      execute: () => showPage("instances"),
+    }),
+    createCommand({
+      id: "files.open",
+      title: "Open Files",
+      description: "Open the Files workspace.",
+      category: "Files",
+      execute: () => showPage("files"),
+    }),
+    createCommand({
+      id: "files.refresh",
+      title: "Refresh Current Directory",
+      description: "Refresh the currently connected file listing.",
+      category: "Files",
+      enabled: () => filesConnectionState.connected && !filesRequestInFlight,
+      disabledReason: () => filesConnectionState.connected ? "Files are already refreshing." : "No filesystem is connected.",
+      execute: () => { showPage("files"); return refreshCurrentFilesDirectory(); },
+    }),
+    createCommand({
+      id: "files.upload",
+      title: "Upload File",
+      description: "Run the existing upload action for the connected Files workspace.",
+      category: "Files",
+      enabled: () => filesConnectionState.connected && !filesActionRequestInFlight,
+      disabledReason: () => filesConnectionState.connected ? "A file operation is already running." : "Connect a filesystem first.",
+      execute: () => { showPage("files"); return uploadRemoteFile(); },
+    }),
+    createCommand({
+      id: "files.newFolder",
+      title: "Create Folder",
+      description: "Create a folder in the current Files location.",
+      category: "Files",
+      enabled: () => filesConnectionState.connected && !filesActionRequestInFlight,
+      disabledReason: () => filesConnectionState.connected ? "A file operation is already running." : "Connect a filesystem first.",
+      execute: () => { showPage("files"); return createRemoteFolder(); },
+    }),
+    ...["capture", "copy", "export", "open"].map((action) => createCommand({
+      id: `diagnostics.${action}`,
+      title: {
+        capture: "Run Diagnostics",
+        copy: "Copy Diagnostics Summary",
+        export: "Export Diagnostics Bundle",
+        open: "Open Diagnostics Folder",
+      }[action],
+      description: {
+        capture: "Capture a diagnostics snapshot for the current workspace.",
+        copy: "Copy the existing redacted diagnostics summary.",
+        export: "Export a redacted support bundle.",
+        open: "Open the local diagnostics folder.",
+      }[action],
+      category: "Diagnostics",
+      enabled: () => Boolean(desktopApiState.api?.diagnostics),
+      disabledReason: () => "Diagnostics are unavailable in this build.",
+      execute: () => runDiagnosticsAction(action),
+    })),
+    createCommand({
+      id: "maintenance.open",
+      title: "Open Maintenance",
+      description: "Open cache and maintenance controls.",
+      category: "Maintenance",
+      execute: () => showPage("maintenance"),
+    }),
+    createCommand({
+      id: "maintenance.scan",
+      title: "Scan Cache Sizes",
+      description: "Measure trusted maintenance categories.",
+      category: "Maintenance",
+      enabled: () => desktopApiState.hasMaintenance && !maintenanceState.scanning && !maintenanceState.clearing,
+      disabledReason: () => desktopApiState.hasMaintenance ? "Maintenance is already busy." : "Maintenance service is unavailable.",
+      execute: () => { showPage("maintenance"); return scanMaintenanceStorage({ trackOperation: true }); },
+    }),
+    createCommand({
+      id: "maintenance.clearSafe",
+      title: "Clear Safe Caches",
+      description: "Clear safe, supported maintenance categories with measured data.",
+      category: "Maintenance",
+      enabled: () => desktopApiState.hasMaintenance && !maintenanceState.scanning && !maintenanceState.clearing && maintenanceState.categories.some((category) => category.supported && !category.signsOut && !category.confirmationRequired && Number(category.sizeBytes || 0) > 0),
+      disabledReason: () => maintenanceState.categories.length ? "No safe non-empty cache category is selected or available." : "Run Scan Cache Sizes first.",
+      confirm: { title: "Clear safe maintenance caches?", message: "This uses the Maintenance Center's existing cleanup path for supported categories that do not sign you out.", confirmLabel: "Clear Safe Caches" },
+      execute: () => {
+        showPage("maintenance");
+        const safeIds = maintenanceState.categories
+          .filter((category) => category.supported && !category.signsOut && !category.confirmationRequired && Number(category.sizeBytes || 0) > 0)
+          .map((category) => category.id);
+        return clearMaintenanceCategories(safeIds, "Clear safe maintenance caches");
+      },
+    }),
+    createCommand({
+      id: "maintenance.resetUi",
+      title: "Reset UI State",
+      description: "Clear noncritical renderer state while preserving accounts, credentials, instances, files, backups, and preferences.",
+      category: "Maintenance",
+      enabled: () => !maintenanceState.scanning && !maintenanceState.clearing,
+      disabledReason: () => "Maintenance is already busy.",
+      confirm: { title: "Reset renderer UI state?", message: "This clears last workspace, panel sizes, recent searches, recent commands, and temporary page selection. It does not clear accounts, Agent tokens, Marketplace instances, server files, backups, saved storage locations, or preferences.", confirmLabel: "Reset UI State" },
+      execute: () => { showPage("maintenance"); return resetRendererUiState(); },
+    }),
+    createCommand({
+      id: "operations.open",
+      title: "Open Operations Center",
+      description: "Open operation history and long-running task details.",
+      category: "Operations",
+      execute: () => showPage("operations"),
+    }),
+    ...["running", "failed"].map((filter) => createCommand({
+      id: `operations.show.${filter}`,
+      title: `Show ${filter === "running" ? "Running" : "Failed"} Operations`,
+      description: `Open Operations Center filtered to ${filter} tasks.`,
+      category: "Operations",
+      execute: () => {
+        showPage("operations");
+        operationsState.filter = filter;
+        renderOperationsCenter();
+      },
+    })),
+    createCommand({
+      id: "operations.clearCompleted",
+      title: "Clear Completed Operation History",
+      description: "Clear completed, failed, and canceled operation records.",
+      category: "Operations",
+      confirm: { title: "Clear completed operation history?", message: "Completed, failed, and canceled operation records will be removed from local history. Running operations are preserved.", confirmLabel: "Clear History" },
+      execute: () => {
+        loadOperationHistory();
+        [...operationsState.items.entries()].forEach(([id, operation]) => {
+          if (["completed", "failed", "canceled"].includes(operation.status)) operationsState.items.delete(id);
+        });
+        if (!operationsState.items.has(operationsState.selectedId)) operationsState.selectedId = null;
+        showPage("operations");
+        renderOperationsCenter();
+        persistOperationHistory();
+      },
+    }),
+    createCommand({
+      id: "security.open",
+      title: "Open Security",
+      description: "Open security and account-security controls.",
+      category: "Security",
+      execute: () => { showPage("settings"); setActiveSettingsCategory("security", '[data-settings-category="security"]'); },
+    }),
+    createCommand({
+      id: "security.rotateAgentToken",
+      title: "Rotate Agent Token",
+      description: "Run the existing Agent token rotation flow.",
+      category: "Security",
+      enabled: () => desktopApiState.hasSecurity && !securityState.setupRequired,
+      disabledReason: () => desktopApiState.hasSecurity ? "Finish local security setup first." : "Security service is unavailable.",
+      confirm: { title: "Rotate Agent token?", message: "Restart the Agent and desktop app after rotation. Existing Agent sessions may disconnect.", confirmLabel: "Rotate Token" },
+      execute: () => runSecurityAction("rotate-agent-token"),
+    }),
+    createCommand({
+      id: "security.logoutAll",
+      title: "Sign Out All Local Sessions",
+      description: "Use the existing local security session revocation flow.",
+      category: "Security",
+      enabled: () => desktopApiState.hasSecurity && securityState.authenticated,
+      disabledReason: () => securityState.authenticated ? "Security service is unavailable." : "You are not signed in locally.",
+      confirm: { title: "Sign out all local sessions?", message: "Remembered local owner sessions will be revoked and Owner Workspace access will close.", confirmLabel: "Sign Out All" },
+      execute: () => logoutAllSecuritySessions(),
+    }),
+    createCommand({
+      id: "account.open",
+      title: "Open Account",
+      description: "Open the account section.",
+      category: "Account",
+      execute: () => showPage("security"),
+    }),
+    createCommand({
+      id: "account.signIn",
+      title: "Sign In with AnxOS",
+      description: "Start the existing AnxOS device-login flow.",
+      category: "Account",
+      enabled: () => desktopApiState.hasAccount && !accountState.authenticated && !accountStartInFlight,
+      disabledReason: () => accountState.authenticated ? "You are already signed in." : "Account sign-in is unavailable.",
+      execute: () => startAnxOsAccountLogin(),
+    }),
+    createCommand({
+      id: "account.signOut",
+      title: "Sign Out of AnxOS Account",
+      description: "Sign out of the current AnxOS account session.",
+      category: "Account",
+      enabled: () => desktopApiState.hasAccount && accountState.authenticated,
+      disabledReason: () => accountState.authenticated ? "Account sign-out is unavailable." : "You are not signed in.",
+      confirm: { title: "Sign out of AnxOS account?", message: "Cloud and remote account features will be disconnected on this device.", confirmLabel: "Sign Out" },
+      execute: () => logoutAnxOsAccount(),
+    }),
+    createCommand({
+      id: "account.refresh",
+      title: "Refresh Account State",
+      description: "Reload AnxOS account status.",
+      category: "Account",
+      enabled: () => desktopApiState.hasAccount,
+      disabledReason: () => "Account service is unavailable.",
+      execute: () => refreshAccountState(),
+    }),
+    createCommand({
+      id: "updates.check",
+      title: "Check for Updates",
+      description: "Run the existing application update check.",
+      category: "Updates",
+      enabled: () => desktopApiState.hasUpdates && !updateCheckInFlight,
+      disabledReason: () => updateCheckInFlight ? "Update check already running." : "Updates are unavailable in this build.",
+      execute: () => checkForUpdates({ silent: false }),
+    }),
+    createCommand({
+      id: "updates.open",
+      title: "Open Update Status",
+      description: "Open update settings.",
+      category: "Updates",
+      execute: () => { showPage("settings"); setActiveSettingsCategory("updates", '[data-settings-category="updates"]'); },
+    }),
+    createCommand({
+      id: "updates.install",
+      title: "Install Downloaded Update",
+      description: "Open the downloaded update installer when one is available.",
+      category: "Updates",
+      enabled: () => Boolean(desktopApiState.hasUpdates && downloadedUpdatePath),
+      disabledReason: () => downloadedUpdatePath ? "Updates are unavailable in this build." : "No downloaded update is ready to install.",
+      confirm: { title: "Install downloaded update?", message: "The update installer will open. Save active work before continuing.", confirmLabel: "Install Update" },
+      execute: () => installUpdate(),
+    }),
+  ];
+
+  if (isOwnerWorkspaceAuthorized()) {
+    commands.push(createCommand({
+      id: "owner.refresh",
+      title: "Refresh Owner Workspace",
+      description: "Reload authorized Owner Workspace data.",
+      category: "Owner",
+      execute: () => { showPage("owner-workspace"); return refreshOwnerWorkspace(); },
+    }));
+  }
+
+  return commands.filter((command, index, source) => command.visible() && source.findIndex((candidate) => candidate.id === command.id) === index);
+}
+
+function commandMatchesQuery(command, query) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return true;
+  return getSearchHaystack(command.title, command.description, command.category, command.id, command.keywords).includes(normalized);
+}
+
+function refreshCommandPaletteCommands() {
+  commandPaletteState.commands = getCommandRegistry();
+  const commandIds = new Set(commandPaletteState.commands.map((command) => command.id));
+  commandPaletteState.recentCommandIds = commandPaletteState.recentCommandIds.filter((id) => commandIds.has(id));
+}
+
+function filterCommandPalette(query = commandPaletteState.query) {
+  commandPaletteState.query = String(query || "").trim();
+  refreshCommandPaletteCommands();
+  const matches = commandPaletteState.commands.filter((command) => commandMatchesQuery(command, commandPaletteState.query));
+  const recentRank = new Map(commandPaletteState.recentCommandIds.map((id, index) => [id, index]));
+  commandPaletteState.filtered = matches.sort((left, right) => {
+    const leftRecent = recentRank.has(left.id) ? recentRank.get(left.id) : 999;
+    const rightRecent = recentRank.has(right.id) ? recentRank.get(right.id) : 999;
+    if (leftRecent !== rightRecent && !commandPaletteState.query) return leftRecent - rightRecent;
+    if (left.category !== right.category) return left.category.localeCompare(right.category);
+    return left.title.localeCompare(right.title);
+  });
+  commandPaletteState.activeIndex = Math.max(0, commandPaletteState.filtered.findIndex((command) => command.enabled()));
+  renderCommandPalette();
+}
+
+function renderCommandPaletteEmpty(title, message) {
+  if (!commandPaletteResults) return;
+  const empty = document.createElement("div");
+  empty.className = "command-palette-empty";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const span = document.createElement("span");
+  span.textContent = message;
+  empty.append(strong, span);
+  commandPaletteResults.replaceChildren(empty);
+}
+
+function renderCommandPaletteRecents() {
+  if (!commandPaletteRecents || !commandPaletteRecentsWrap) return;
+  commandPaletteRecents.replaceChildren();
+  const commandMap = new Map(commandPaletteState.commands.map((command) => [command.id, command]));
+  const recents = commandPaletteState.recentCommandIds.map((id) => commandMap.get(id)).filter(Boolean);
+  const shouldShow = commandPaletteState.open && !commandPaletteState.query && recents.length > 0;
+  commandPaletteRecentsWrap.hidden = !shouldShow;
+  if (!shouldShow) return;
+  recents.forEach((command) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "command-palette-recent";
+    button.textContent = command.title;
+    button.addEventListener("click", () => {
+      if (commandPaletteInput) commandPaletteInput.value = command.title;
+      filterCommandPalette(command.title);
+    });
+    commandPaletteRecents.append(button);
+  });
+}
+
+function renderCommandPalette() {
+  if (!commandPaletteResults) return;
+  renderCommandPaletteRecents();
+  if (commandPaletteStatus) {
+    commandPaletteStatus.textContent = commandPaletteState.error
+      ? commandPaletteState.error
+      : commandPaletteState.runningId
+        ? "Running command..."
+        : `${commandPaletteState.filtered.length} command${commandPaletteState.filtered.length === 1 ? "" : "s"}`;
+  }
+  if (commandPaletteState.error) {
+    renderCommandPaletteEmpty("Command failed", commandPaletteState.error);
+    return;
+  }
+  if (!commandPaletteState.filtered.length) {
+    renderCommandPaletteEmpty("No matching commands", "Try another command name, category, or workspace action.");
+    return;
+  }
+  commandPaletteResults.replaceChildren();
+  let flatIndex = 0;
+  const groups = new Map();
+  commandPaletteState.filtered.forEach((command) => {
+    if (!groups.has(command.category)) groups.set(command.category, []);
+    groups.get(command.category).push(command);
+  });
+  groups.forEach((commands, category) => {
+    const group = document.createElement("section");
+    group.className = "command-palette-group";
+    const heading = document.createElement("div");
+    heading.className = "command-palette-group-title";
+    heading.textContent = category;
+    group.append(heading);
+    commands.forEach((command) => {
+      const index = flatIndex;
+      const enabled = command.enabled();
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "command-palette-result";
+      button.disabled = commandPaletteState.runningId !== null;
+      button.dataset.commandPaletteIndex = String(index);
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", index === commandPaletteState.activeIndex ? "true" : "false");
+      button.classList.toggle("is-active", index === commandPaletteState.activeIndex);
+      button.classList.toggle("is-disabled", !enabled);
+      const top = document.createElement("span");
+      top.className = "command-palette-result__top";
+      const title = document.createElement("strong");
+      appendHighlightedText(title, command.title, commandPaletteState.query);
+      const shortcut = document.createElement("span");
+      shortcut.className = "command-palette-shortcut";
+      shortcut.textContent = command.shortcut || command.category;
+      top.append(title, shortcut);
+      const description = document.createElement("p");
+      description.textContent = enabled ? command.description || "Run command" : command.disabledReason();
+      button.append(top, description);
+      button.addEventListener("click", () => runCommandPaletteCommand(index));
+      group.append(button);
+      flatIndex += 1;
+    });
+    commandPaletteResults.append(group);
+  });
+}
+
+function scheduleCommandPaletteFilter(query) {
+  window.clearTimeout(commandPaletteDebounceTimer);
+  commandPaletteDebounceTimer = window.setTimeout(() => filterCommandPalette(query), COMMAND_PALETTE_DEBOUNCE_MS);
+}
+
+function moveCommandPaletteSelection(delta) {
+  const enabled = commandPaletteState.filtered.map((command, index) => ({ command, index })).filter((entry) => entry.command.enabled());
+  if (!enabled.length) return;
+  const currentEnabledIndex = Math.max(0, enabled.findIndex((entry) => entry.index === commandPaletteState.activeIndex));
+  const next = enabled[(currentEnabledIndex + delta + enabled.length) % enabled.length];
+  commandPaletteState.activeIndex = next.index;
+  renderCommandPalette();
+  commandPaletteResults?.querySelector(`[data-command-palette-index="${commandPaletteState.activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+function rememberCommand(commandId) {
+  commandPaletteState.recentCommandIds = [commandId, ...commandPaletteState.recentCommandIds.filter((id) => id !== commandId)].slice(0, COMMAND_PALETTE_RECENT_LIMIT);
+  writeCommandPaletteRecents();
+}
+
+async function runCommandPaletteCommand(index = commandPaletteState.activeIndex) {
+  const command = commandPaletteState.filtered[index];
+  if (!command) {
+    showToast("Command is no longer available.", "warning");
+    return;
+  }
+  if (!command.enabled()) {
+    showToast(command.disabledReason(), "warning");
+    return;
+  }
+  if (command.confirm) {
+    const confirmed = await createSecurityConfirmation(command.confirm);
+    if (!confirmed) return;
+  }
+  commandPaletteState.runningId = command.id;
+  commandPaletteState.error = null;
+  renderCommandPalette();
+  rememberCommand(command.id);
+  closeCommandPalette();
+  try {
+    await command.execute();
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Command failed.");
+    commandPaletteState.error = message;
+    showToast(message, "error");
+  } finally {
+    commandPaletteState.runningId = null;
+  }
+}
+
+function openCommandPalette(initialQuery = "") {
+  if (!commandPaletteOverlay || !commandPaletteInput) return;
+  if (openModalCount > 0 || globalSearchState.open) return;
+  commandPaletteState.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  commandPaletteState.open = true;
+  commandPaletteState.error = null;
+  commandPaletteState.recentCommandIds = readCommandPaletteRecents();
+  commandPaletteOverlay.hidden = false;
+  document.body.classList.add("has-open-modal");
+  commandPaletteInput.value = String(initialQuery || "");
+  filterCommandPalette(commandPaletteInput.value);
+  requestAnimationFrame(() => {
+    commandPaletteInput.focus();
+    commandPaletteInput.select();
+  });
+}
+
+function closeCommandPalette() {
+  if (!commandPaletteOverlay) return;
+  window.clearTimeout(commandPaletteDebounceTimer);
+  commandPaletteState.open = false;
+  commandPaletteOverlay.hidden = true;
+  if (openModalCount === 0 && !globalSearchState.open) document.body.classList.remove("has-open-modal");
+  commandPaletteState.previousFocus?.focus?.();
+  commandPaletteState.previousFocus = null;
+}
+
+function handleCommandPaletteKeydown(event) {
+  if (!commandPaletteState.open) {
+    if (!event.defaultPrevented && !event.altKey && (event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "p") {
+      event.preventDefault();
+      openCommandPalette();
+    }
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCommandPalette();
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveCommandPaletteSelection(1);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveCommandPaletteSelection(-1);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    runCommandPaletteCommand();
+  }
+}
+
 async function scanMaintenanceStorage({ trackOperation = false } = {}) {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasMaintenance || maintenanceState.scanning) {
@@ -12125,6 +12776,7 @@ function resetRendererUiState() {
     STALE_INSTANCE_STORAGE_KEY,
     OWNER_WORKSPACE_NAV_STORAGE_KEY,
     GLOBAL_SEARCH_RECENTS_STORAGE_KEY,
+    COMMAND_PALETTE_RECENTS_STORAGE_KEY,
   ];
   try {
     keys.forEach((key) => window.localStorage.removeItem(key));
@@ -19886,11 +20538,7 @@ filesList?.addEventListener("keydown", (event) => {
   }
 });
 filesRefreshButton?.addEventListener("click", () => {
-  refreshFileListing({
-    profileId: getFilesRequestProfileId(),
-    storageId: getFilesRequestStorageId(),
-    path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
-  });
+  refreshCurrentFilesDirectory();
 });
 getDesktopApiState().api?.storageWindow?.onSaved?.((payload) => {
   handleStorageConnectionSaved(payload).catch((error) => {
@@ -19930,6 +20578,9 @@ fileEditor?.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("keydown", (event) => {
+  handleCommandPaletteKeydown(event);
+  if (event.defaultPrevented) return;
+
   handleGlobalSearchKeydown(event);
   if (event.defaultPrevented) return;
 
@@ -20384,6 +21035,35 @@ globalSearchClearRecentsButton?.addEventListener("click", () => {
   writeGlobalSearchRecents();
   renderGlobalSearchRecents();
 });
+commandPaletteOpenButtons.forEach((button) => {
+  button.addEventListener("click", () => openCommandPalette());
+});
+commandPaletteCloseButton?.addEventListener("click", closeCommandPalette);
+commandPaletteOverlay?.addEventListener("mousedown", (event) => {
+  if (event.target === commandPaletteOverlay) closeCommandPalette();
+});
+commandPaletteDialog?.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+  const focusables = getModalFocusables(commandPaletteDialog);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+commandPaletteInput?.addEventListener("input", () => {
+  scheduleCommandPaletteFilter(commandPaletteInput.value || "");
+});
+commandPaletteClearRecentsButton?.addEventListener("click", () => {
+  commandPaletteState.recentCommandIds = [];
+  writeCommandPaletteRecents();
+  renderCommandPaletteRecents();
+});
 maintenanceActionButtons.forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.maintenanceAction;
@@ -20738,23 +21418,10 @@ agentDiagnosticsList?.addEventListener("click", (event) => {
   if (action === "select-port") agentConfigFields.forEach((field) => { if (field.dataset.agentConfig === "port") field.focus(); });
 });
 document.querySelectorAll("[data-diagnostics-action]").forEach((button) => button.addEventListener("click", async () => {
-  const api = getDesktopApiState().api?.diagnostics;
-  if (!api) return;
   button.disabled = true;
   const action = button.dataset.diagnosticsAction;
-  const operationId = startOperation({
-    type: "Diagnostics",
-    title: {
-      capture: "Capture diagnostics snapshot",
-      open: "Open logs folder",
-      copy: "Copy diagnostics summary",
-      export: "Export diagnostics bundle",
-    }[action] || "Run diagnostics action",
-    target: getActivePageName(),
-    step: "Running diagnostics action.",
-  });
-  try { if (action === "capture") await api.capture({ currentWorkspace: getActivePageName() }); if (action === "open") await api.openFolder(); if (action === "copy") await api.copySummary(); if (action === "export") await api.exportBundle(); finishOperation(operationId, true, "Diagnostic action completed."); showToast("Diagnostic action completed.", "success"); }
-  catch (error) { const message = normalizeIpcErrorMessage(error, "Diagnostic action failed."); finishOperation(operationId, false, message); showToast(message, "error"); }
+  try { await runDiagnosticsAction(action); }
+  catch {}
   finally { button.disabled = false; }
 }));
 backupActionButtons.forEach((button) => {

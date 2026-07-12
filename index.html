@@ -106,6 +106,14 @@
               <span>Search</span>
               <kbd>Ctrl K</kbd>
             </button>
+            <button class="app-titlebar__search app-titlebar__search--command" type="button" data-command-palette-open aria-label="Open command palette" title="Command Palette (Ctrl+Shift+P)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m8 7 5 5-5 5"></path>
+                <path d="M14 17h4"></path>
+              </svg>
+              <span>Commands</span>
+              <kbd>Ctrl Shift P</kbd>
+            </button>
             <span class="app-titlebar__divider" aria-hidden="true"></span>
             <button class="app-titlebar__dev-badge" type="button" data-development-badge hidden>
               <span class="app-titlebar__dev-icon" aria-hidden="true">&gt;_</span>
@@ -173,6 +181,40 @@
             <div class="global-search-recent-list" data-global-search-recents></div>
           </div>
           <div class="global-search-results" data-global-search-results role="listbox" aria-label="Global search results"></div>
+        </section>
+      </div>
+
+      <div class="command-palette-backdrop" data-command-palette hidden>
+        <section class="command-palette-dialog" role="dialog" aria-modal="true" aria-labelledby="command-palette-title" aria-describedby="command-palette-description" tabindex="-1">
+          <header class="command-palette-header">
+            <div>
+              <p class="eyebrow">Actions</p>
+              <h2 id="command-palette-title">Command Palette</h2>
+              <p id="command-palette-description">Run existing AnxOS actions without leaving your current workspace.</p>
+            </div>
+            <button class="app-titlebar__control" type="button" data-command-palette-close aria-label="Close command palette" title="Close">
+              <svg viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M2 2l6 6"></path>
+                <path d="M8 2L2 8"></path>
+              </svg>
+            </button>
+          </header>
+          <label class="command-palette-input">
+            <span>Run Command</span>
+            <input type="search" data-command-palette-input placeholder="Type a command..." autocomplete="off" spellcheck="false">
+          </label>
+          <div class="command-palette-meta">
+            <span data-command-palette-status role="status" aria-live="polite">Type to filter commands.</span>
+            <span>Enter runs - Esc closes</span>
+          </div>
+          <div class="command-palette-recents" data-command-palette-recents-wrap hidden>
+            <div class="command-palette-section-heading">
+              <span>Recent commands</span>
+              <button class="inline-action" type="button" data-command-palette-clear-recents>Clear</button>
+            </div>
+            <div class="command-palette-recent-list" data-command-palette-recents></div>
+          </div>
+          <div class="command-palette-results" data-command-palette-results role="listbox" aria-label="Command palette commands"></div>
         </section>
       </div>
 

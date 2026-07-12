@@ -87,6 +87,9 @@ assert(styles.includes(".maintenance-shell") && styles.includes(".maintenance-de
 assert(index.includes("data-global-search-open") && index.includes("data-global-search-results") && index.includes("data-global-search-recents"), "Global Search must expose a visible trigger, results, and recent searches.");
 assert(app.includes("function getGlobalSearchProviders") && app.includes("function runGlobalSearch") && app.includes("GLOBAL_SEARCH_RECENTS_STORAGE_KEY"), "Renderer must wire provider-based Global Search and recent search storage.");
 assert(styles.includes(".global-search-dialog") && styles.includes(".global-search-result.is-active"), "Global Search CSS must include dialog and active result styling.");
+assert(index.includes("data-command-palette-open") && index.includes("data-command-palette-results") && index.includes("data-command-palette-recents"), "Command Palette must expose a visible trigger, command results, and recent commands.");
+assert(app.includes("function getCommandRegistry") && app.includes("function runCommandPaletteCommand") && app.includes("COMMAND_PALETTE_RECENTS_STORAGE_KEY"), "Renderer must wire a registry-backed Command Palette and recent command storage.");
+assert(styles.includes(".command-palette-dialog") && styles.includes(".command-palette-result.is-active"), "Command Palette CSS must include dialog and active command styling.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

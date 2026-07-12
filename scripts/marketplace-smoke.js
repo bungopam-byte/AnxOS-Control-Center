@@ -1,4 +1,5 @@
 const assert = require("assert");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const Module = require("module");
 const os = require("os");
@@ -200,6 +201,9 @@ function assertMarketplaceInstallerRegistry() {
   assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("minecraft-forge")), "java-runtime", "Forge must route through Java runtime installer.");
   assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("fivem")), "archive-download", "FiveM must route through archive download.");
   assert.strictEqual(marketplaceService._test.getTemplateInstallerType(findTemplate("docker-nginx")), "docker-image", "Docker templates must route through Docker image installers.");
+  const tshockInstallerScript = marketplaceService._test.buildTemplateInstallerScript(findTemplate("terraria-tshock"));
+  assert(tshockInstallerScript.includes("NESTED_ARCHIVES_FILE=$(mktemp)") && tshockInstallerScript.includes("*.tar"), "Archive installers should extract nested tar payloads from zip assets.");
+  assert(tshockInstallerScript.includes("EXPECTED_FILES=('TShock.Server')"), "Archive installers should normalize single-root layouts using declared verify files.");
 
   assert.throws(
     () => marketplaceService._test.validateMarketplaceTemplate({
@@ -404,6 +408,27 @@ function assertInstallerResultContract() {
     (error) => error?.code === "HANDLER_RESULT_INVALID",
     "Raw string handler output should be rejected."
   );
+}
+
+function assertNestedArchiveInstallerExtraction() {
+  const template = findTemplate("terraria-tshock");
+  const script = marketplaceService._test.buildTemplateInstallerScript(template);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anx-nested-archive-"));
+  try {
+    const dataDir = path.join(root, "data");
+    const payloadDir = path.join(root, "payload", "TShock-Beta-Linux-x64-Release");
+    fs.mkdirSync(payloadDir, { recursive: true });
+    fs.writeFileSync(path.join(payloadDir, "TShock.Server"), "#!/usr/bin/env bash\n");
+    execFileSync("tar", ["-cf", path.join(root, "TShock-Beta-Linux-x64-Release.tar"), "-C", path.join(root, "payload"), "TShock-Beta-Linux-x64-Release"]);
+    fs.mkdirSync(dataDir, { recursive: true });
+    execFileSync("zip", ["-q", path.join(dataDir, "tshock.zip"), "TShock-Beta-Linux-x64-Release.tar"], { cwd: root });
+    const scriptPath = path.join(dataDir, "marketplace-install.sh");
+    fs.writeFileSync(scriptPath, script);
+    execFileSync("bash", [scriptPath], { cwd: dataDir });
+    assert(fs.existsSync(path.join(dataDir, "server", "TShock.Server")), "Nested zip/tar archive should extract the expected executable into the declared install directory.");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function assertDockerTemplates() {
@@ -2451,6 +2476,7 @@ async function main() {
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertMarketplaceInstallerRegistry();
+  assertNestedArchiveInstallerExtraction();
   assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent();
   assertInstanceProcessStateGuards();
   assertMarketplaceManifestAuditReport();

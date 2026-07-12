@@ -1529,6 +1529,13 @@ function shellQuote(value) {
   return `'${String(value ?? "").replace(/'/g, "'\"'\"'")}'`;
 }
 
+function normalizeArchiveVerifyFile(filePath, extractDir) {
+  const normalizedFile = normalizeInstanceFilePath(filePath);
+  const normalizedExtractDir = normalizeInstanceFilePath(extractDir).replace(/\/+$/, "");
+  const prefix = `${normalizedExtractDir}/`;
+  return normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : normalizedFile;
+}
+
 function templateValue(key, template, options = {}, ports = []) {
   const values = {
     id: slugify(options.id || options.name || template.id),
@@ -1635,6 +1642,57 @@ function buildArchiveInstallerScript(installer) {
   const extractDir = installer.extractDir || "server";
   const stripComponents = Number.isInteger(installer.stripComponents) ? installer.stripComponents : 0;
   const tarFlags = String(archivePath).endsWith(".tar.xz") ? "-xJf" : String(archivePath).endsWith(".tar.gz") || String(archivePath).endsWith(".tgz") ? "-xzf" : "";
+  const expectedFiles = (Array.isArray(installer.verifyFiles) ? installer.verifyFiles : [])
+    .map((filePath) => normalizeArchiveVerifyFile(filePath, extractDir))
+    .filter(Boolean);
+  const nestedArchiveExtraction = [
+    "NESTED_ARCHIVES_FILE=$(mktemp)",
+    "find \"$EXTRACT_DIR\" -maxdepth 2 -type f \\( -name '*.tar' -o -name '*.tar.gz' -o -name '*.tgz' -o -name '*.tar.xz' \\) > \"$NESTED_ARCHIVES_FILE\"",
+    "if [ -s \"$NESTED_ARCHIVES_FILE\" ]; then",
+    "  if ! command -v tar >/dev/null 2>&1; then",
+    "    echo \"tar is required to extract nested archive payloads.\" >&2",
+    "    rm -f \"$NESTED_ARCHIVES_FILE\"",
+    "    exit 127",
+    "  fi",
+    "  while IFS= read -r nested_archive; do",
+    "    case \"$nested_archive\" in",
+    "      *.tar.xz) tar -xJf \"$nested_archive\" -C \"$EXTRACT_DIR\" ;;",
+    "      *.tar.gz|*.tgz) tar -xzf \"$nested_archive\" -C \"$EXTRACT_DIR\" ;;",
+    "      *.tar) tar -xf \"$nested_archive\" -C \"$EXTRACT_DIR\" ;;",
+    "    esac",
+    "  done < \"$NESTED_ARCHIVES_FILE\"",
+    "fi",
+    "rm -f \"$NESTED_ARCHIVES_FILE\"",
+  ];
+  const singleRootNormalization = expectedFiles.length > 0 ? [
+    `EXPECTED_FILES=(${expectedFiles.map(shellQuote).join(" ")})`,
+    "missing_expected=0",
+    "for expected_file in \"${EXPECTED_FILES[@]}\"; do",
+    "  if [ ! -e \"$EXTRACT_DIR/$expected_file\" ]; then",
+    "    missing_expected=1",
+    "  fi",
+    "done",
+    "if [ \"$missing_expected\" -eq 1 ]; then",
+    "  mapfile -t root_dirs < <(find \"$EXTRACT_DIR\" -mindepth 1 -maxdepth 1 -type d)",
+    "  if [ \"${#root_dirs[@]}\" -eq 1 ]; then",
+    "    root_dir=\"${root_dirs[0]}\"",
+    "    root_matches=1",
+    "    for expected_file in \"${EXPECTED_FILES[@]}\"; do",
+    "      if [ ! -e \"$root_dir/$expected_file\" ]; then",
+    "        root_matches=0",
+    "      fi",
+    "    done",
+    "    if [ \"$root_matches\" -eq 1 ]; then",
+    "      shopt -s dotglob nullglob",
+    "      mv \"$root_dir\"/* \"$EXTRACT_DIR\"/",
+    "      shopt -u dotglob nullglob",
+    "      rmdir \"$root_dir\" 2>/dev/null || true",
+    "    fi",
+    "  fi",
+    "fi",
+  ] : [
+    "# No installer verify files declared; skipping archive layout normalization.",
+  ];
 
   if (tarFlags) {
     return [
@@ -1644,8 +1702,10 @@ function buildArchiveInstallerScript(installer) {
       "  echo \"tar is required to extract this server runtime.\" >&2",
       "  exit 127",
       "fi",
-      `mkdir -p ${shellQuote(extractDir)}`,
-      `tar ${tarFlags} ${shellQuote(archivePath)} -C ${shellQuote(extractDir)}${stripComponents > 0 ? ` --strip-components=${stripComponents}` : ""}`,
+      `EXTRACT_DIR=${shellQuote(extractDir)}`,
+      "mkdir -p \"$EXTRACT_DIR\"",
+      `tar ${tarFlags} ${shellQuote(archivePath)} -C "$EXTRACT_DIR"${stripComponents > 0 ? ` --strip-components=${stripComponents}` : ""}`,
+      ...singleRootNormalization,
       "",
     ].join("\n");
   }
@@ -1657,8 +1717,11 @@ function buildArchiveInstallerScript(installer) {
     "  echo \"unzip is required to extract this server runtime.\" >&2",
     "  exit 127",
     "fi",
-    `mkdir -p ${shellQuote(extractDir)}`,
-    `unzip -o ${shellQuote(archivePath)} -d ${shellQuote(extractDir)}`,
+    `EXTRACT_DIR=${shellQuote(extractDir)}`,
+    "mkdir -p \"$EXTRACT_DIR\"",
+    `unzip -o ${shellQuote(archivePath)} -d "$EXTRACT_DIR"`,
+    ...nestedArchiveExtraction,
+    ...singleRootNormalization,
     "",
   ].join("\n");
 }

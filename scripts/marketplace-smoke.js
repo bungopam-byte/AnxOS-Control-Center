@@ -268,6 +268,98 @@ function assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent() {
   }
 }
 
+async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
+  const agentClient = require("../src/services/agentClient");
+  const configPath = agentClient.getAgentConfigPath();
+  const originalConfig = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : null;
+  const originalAgent = {};
+  const patchedAgentMethods = [
+    "checkDependencies",
+    "installDependencies",
+    "createInstance",
+    "listInstances",
+    "createInstanceFolder",
+    "writeInstanceFile",
+    "deleteInstance",
+  ];
+  patchedAgentMethods.forEach((name) => {
+    originalAgent[name] = agentClient[name];
+  });
+
+  let createCalls = 0;
+  let installCalls = 0;
+  let dependenciesReady = false;
+  const instances = new Map();
+
+  try {
+    agentClient.saveAgentSettings({
+      backendMode: "agent",
+      agentUrl: "http://192.168.1.134:47131",
+      agentToken: "smoke-token",
+    });
+    agentClient.checkDependencies = async () => ({
+      ok: dependenciesReady,
+      dependencies: dependenciesReady ? [] : [{
+        id: "nodejs",
+        displayName: "Node.js",
+        state: "missing",
+        installed: false,
+        supported: true,
+        packages: ["nodejs"],
+        packageManager: "apt",
+        requiresElevation: true,
+      }],
+      missingDependencyIds: dependenciesReady ? [] : ["nodejs"],
+    });
+    agentClient.installDependencies = async () => {
+      installCalls += 1;
+      dependenciesReady = true;
+      return { ok: true, results: [{ id: "nodejs", state: "installed" }], dependencies: [], missingDependencyIds: [] };
+    };
+    agentClient.createInstance = async (payload) => {
+      createCalls += 1;
+      const instance = { ...payload, state: "Stopped", pid: null };
+      instances.set(payload.id, instance);
+      return { instance };
+    };
+    agentClient.listInstances = async () => ({ root: "/mock/instances", instances: [...instances.values()] });
+    agentClient.createInstanceFolder = async () => ({ ok: true });
+    agentClient.writeInstanceFile = async () => ({ ok: true });
+    agentClient.deleteInstance = async (instanceId) => {
+      instances.delete(instanceId);
+      return { deleted: true };
+    };
+
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "discord-js",
+        options: { id: "dependency-block-smoke", name: "Dependency Block Smoke", start: false },
+      }),
+      (error) => error?.code === "DEPENDENCIES_REQUIRED",
+      "Missing dependencies should block before creating an instance."
+    );
+    assert.strictEqual(createCalls, 0, "Dependency preflight must run before instance creation.");
+
+    const result = await marketplaceService.installTemplate({
+      templateId: "discord-js",
+      options: { id: "dependency-resume-smoke", name: "Dependency Resume Smoke", start: false, autoInstallDependencies: true },
+    });
+    assert.strictEqual(installCalls, 1, "autoInstallDependencies should invoke the Agent dependency installer once.");
+    assert.strictEqual(createCalls, 1, "Install should resume and create the instance after dependencies pass.");
+    assert.strictEqual(result.instance.id, "dependency-resume-smoke", "Resumed install should return the created instance.");
+  } finally {
+    patchedAgentMethods.forEach((name) => {
+      agentClient[name] = originalAgent[name];
+    });
+    if (originalConfig === null) {
+      fs.rmSync(configPath, { force: true });
+    } else {
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, originalConfig);
+    }
+  }
+}
+
 function assertInstanceProcessStateGuards() {
   const source = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
   assert(source.includes("getActiveRunningProcess(config.id)"), "Instance starts must block duplicate starts using the active in-memory child process.");
@@ -1068,6 +1160,8 @@ async function assertVanillaInstallVersionPipeline() {
     "getInstanceStatus",
     "startInstance",
     "deleteInstance",
+    "checkDependencies",
+    "installDependencies",
   ];
   patchedAgentMethods.forEach((name) => {
     originalAgent[name] = agentClient[name];
@@ -1178,6 +1272,8 @@ async function assertVanillaInstallVersionPipeline() {
       instances.delete(instanceId);
       return { id: instanceId, deleted: true };
     };
+    agentClient.checkDependencies = async () => ({ ok: true, dependencies: [], missingDependencyIds: [] });
+    agentClient.installDependencies = async () => ({ ok: true, results: [], dependencies: [], missingDependencyIds: [] });
 
     const selectedPort = 25566;
     const result = await marketplaceService.installTemplate({
@@ -1236,6 +1332,8 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     "getInstanceStatus",
     "forceKillInstance",
     "deleteInstance",
+    "checkDependencies",
+    "installDependencies",
   ];
   const patchedModrinthMethods = ["getProject", "resolveVersion", "resolveDependencies"];
   const patchedCurseForgeMethods = ["ensureConfigured", "resolveFile", "downloadFile", "resolveDependencies"];
@@ -1370,6 +1468,8 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       instances.delete(instanceId);
       return { deleted: true };
     };
+    agentClient.checkDependencies = async () => ({ ok: true, dependencies: [], missingDependencyIds: [] });
+    agentClient.installDependencies = async () => ({ ok: true, results: [], dependencies: [], missingDependencyIds: [] });
 
     modrinthProvider.getProject = async () => ({
       id: "mr-pack",
@@ -1482,6 +1582,8 @@ async function assertSharedTemplateInstallFlowMatrix() {
     "getInstanceStatus",
     "listInstances",
     "deleteInstance",
+    "checkDependencies",
+    "installDependencies",
   ];
   patchedAgentMethods.forEach((name) => {
     originalAgent[name] = agentClient[name];
@@ -1597,6 +1699,8 @@ async function assertSharedTemplateInstallFlowMatrix() {
       instances.delete(instanceId);
       return { deleted: true };
     };
+    agentClient.checkDependencies = async () => ({ ok: true, dependencies: [], missingDependencyIds: [] });
+    agentClient.installDependencies = async () => ({ ok: true, results: [], dependencies: [], missingDependencyIds: [] });
 
     const cases = [
       ["SteamCMD-native game server", "palworld", { id: "palworld-flow-smoke", name: "Palworld Flow Smoke", port: 8211, memory: "8G", start: false }, "server/PalServer.sh"],
@@ -1618,8 +1722,8 @@ async function assertSharedTemplateInstallFlowMatrix() {
       assert(!JSON.stringify(result).includes("validation is not defined"), `${label} should not surface validation ReferenceError.`);
     }
     const terrariaInstance = instances.get("terraria-flow-smoke");
-    assert(terrariaInstance?.args?.[1]?.includes("required_command in 'dotnet'"), "Terraria startup should preflight the declared dotnet runtime dependency.");
-    assert(terrariaInstance?.args?.[1]?.includes("Missing required runtime dependency"), "Missing startup dependencies should produce a clear runtime message.");
+    assert(!terrariaInstance?.args?.[1]?.includes("required_command in 'dotnet'"), "Terraria startup should not use the old raw-command dependency wrapper.");
+    assert(!terrariaInstance?.args?.[1]?.includes("Missing required runtime dependency"), "Missing dependencies should be handled by shared preflight, not startup shell snippets.");
 
     const steamcmdStartsBeforeIdempotentInstall = started.length;
     files.set("palworld-idempotent-smoke:server/steamapps/appmanifest_2394010.acf", '"AppState" { "appid" "2394010" "buildid" "123" }');
@@ -2482,6 +2586,7 @@ async function main() {
   assertMarketplaceInstallerRegistry();
   assertNestedArchiveInstallerExtraction();
   assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent();
+  await assertMarketplaceDependencyPreflightBlocksAndResumes();
   assertInstanceProcessStateGuards();
   assertMarketplaceManifestAuditReport();
   assertMarketplaceIpcErrorSerialization();

@@ -27,12 +27,34 @@ function runNormalizationChecks() {
   assert.strictEqual(attached.stats.memoryUsage, "410MiB", "Memory usage should survive service normalization.");
   assert.strictEqual(attached.stats.memoryLimit, "1GiB", "Memory limit should survive service normalization.");
   assert.strictEqual(attached.stats.memoryPercent, "40.04%", "Memory percent should survive service normalization.");
+
+  const liveBot = dockerService.normalizeContainer({
+    ID: "bot123",
+    Names: "/discord-bot",
+    Image: "discord-bot-clean-discord-bot",
+    Status: "Up 4 days (healthy)",
+    State: "running",
+    Ports: "",
+    RunningFor: "4 days ago",
+  });
+  const [botWithStats] = dockerService.attachStats([liveBot], [dockerService.normalizeStats({
+    ID: "bot123",
+    Name: "discord-bot",
+    CPUPerc: "0.02%",
+    MemUsage: "90.95MiB / 15.37GiB",
+  })]);
+  assert.strictEqual(botWithStats.name, "discord-bot", "Live Discord bot container names should be normalized.");
+  assert.strictEqual(botWithStats.state, "running", "Live Discord bot running state should be preserved.");
+  assert.strictEqual(botWithStats.stats.cpuPercent, "0.02%", "Live Discord bot CPU stats should attach by name or ID.");
 }
 
 async function main() {
   runNormalizationChecks();
   const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   const styleSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+  const dockerIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "dockerIpc.js"), "utf8");
+  const serviceRouterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "serviceRouter.js"), "utf8");
+  const dockerServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "dockerService.js"), "utf8");
   [
     "function getDockerWorkspaceState",
     "function getDockerFastFailure",
@@ -42,7 +64,13 @@ async function main() {
     "data-docker-recovery-action",
     "updateDockerInspectorTabs(false)",
     "document.hidden || !dockerWorkspaceState?.ready",
+    "logDockerDiagnostic(\"snapshot-success\"",
   ].forEach((needle) => assert(appSource.includes(needle), `Docker workspace regression guard missing: ${needle}`));
+  const fastFailureBody = appSource.match(/function getDockerFastFailure\(\) \{[\s\S]*?\n\}/)?.[0] || "";
+  assert(!fastFailureBody.includes("getCurrentAgentHealthTarget") && !fastFailureBody.includes("getNodeVisualState"), "Docker refresh must not be blocked by stale Agent Control or node visual state.");
+  assert(dockerIpcSource.includes("DOCKER_REQUEST_FAILED") && dockerIpcSource.includes("docker:getSnapshot") && dockerIpcSource.includes("invokeDockerOperation(() => getDockerSnapshot(payload))"), "Docker IPC must preserve coded snapshot errors.");
+  assert(serviceRouterSource.includes("agent-snapshot-failed") && !serviceRouterSource.includes("throw new AgentUnavailableError();\n  }\n}\n\nfunction createDockerUnavailableSnapshot"), "Remote Docker failures must not be flattened into generic Agent unavailable.");
+  assert(dockerServiceSource.includes("DOCKER_SOCKET_PERMISSION_DENIED") && dockerServiceSource.includes("DOCKER_SOCKET_UNAVAILABLE") && dockerServiceSource.includes("DOCKER_SERVICE_UNREACHABLE"), "Docker service must classify socket and service failures explicitly.");
   assert(styleSource.includes(".docker-empty-actions"), "Docker empty state actions must have stable layout.");
 
   const snapshot = await dockerService.getDockerSnapshot();

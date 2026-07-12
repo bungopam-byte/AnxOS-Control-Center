@@ -4,6 +4,7 @@ const localPlayitService = require("./playitService");
 const localInstanceService = require("./localInstanceService");
 const agentClient = require("./agentClient");
 const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
+const diagnostics = require("./diagnosticsService");
 const fs = require("fs");
 const path = require("path");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
@@ -45,8 +46,14 @@ function createUnavailableFileListing(message = "File service unavailable.") {
 async function getAgentDockerSnapshot(options = {}) {
   try {
     return await agentClient.getDockerSnapshot(getOptionalNodeConfig(options));
-  } catch {
-    throw new AgentUnavailableError();
+  } catch (error) {
+    diagnostics.log("warn", "docker", "agent-snapshot-failed", "Remote Docker snapshot request failed", {
+      nodeId: options?.nodeId || getSelectedNodeId(),
+      stage: "agent-request",
+      errorCode: error?.code || error?.payload?.error?.code || "DOCKER_AGENT_REQUEST_FAILED",
+      endpointCategory: "agent",
+    }, { file: "docker" });
+    throw error;
   }
 }
 

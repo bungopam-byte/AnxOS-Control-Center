@@ -5391,9 +5391,10 @@ function getDockerUnavailableReason(input = {}) {
   const code = String(input.code || input.errorCode || "").toUpperCase();
   const message = String(input.message || "");
   if (/TIMEOUT|ABORT/.test(code) || /timed? out|timeout/i.test(message)) return "timeout";
-  if (/PERMISSION|EACCES|ACCESS/.test(code) || /permission denied|access is denied/i.test(message)) return "permission-denied";
+  if (/DOCKER_SOCKET_PERMISSION_DENIED/.test(code)) return "permission-denied";
+  if (/PERMISSION|EACCES|EPERM|ACCESS/.test(code) || /permission denied|access is denied/i.test(message)) return "permission-denied";
   if (/NOT_INSTALLED|not installed|not available on PATH/i.test(`${code} ${message}`)) return "not-installed";
-  if (/DAEMON|daemon.*not.*running|stopped/i.test(`${code} ${message}`)) return "daemon-stopped";
+  if (/SOCKET_UNAVAILABLE|SERVICE_UNREACHABLE|DAEMON|daemon.*not.*running|stopped/i.test(`${code} ${message}`)) return "daemon-stopped";
   if (/AGENT|ECONNREFUSED|UNAVAILABLE|disconnected|unreachable/i.test(`${code} ${message}`)) return "agent-unavailable";
   return "error";
 }
@@ -16847,17 +16848,6 @@ function getDockerFastFailure() {
   if (selectedNode.docker?.enabled === false) {
     return createTimeoutError("Docker is disabled for this node.", "DOCKER_UNAVAILABLE");
   }
-  if (selectedNode.kind === "agent") {
-    const target = getCurrentAgentHealthTarget();
-    const selectedTarget = target?.nodeId === selectedNode.id || target?.healthTargetLabel === "selected-agent" ? target : null;
-    const stateText = String(selectedTarget?.state || selectedNode.connection?.status || "").toLowerCase();
-    const connected = selectedTarget ? isAgentTargetRunning(selectedTarget) : getNodeVisualState(selectedNode) === "online";
-    if (!connected || /auth|unreachable|offline|disconnect/.test(stateText)) {
-      const error = createTimeoutError("The selected node is disconnected, so Docker data cannot be loaded.", /auth/.test(stateText) ? "AGENT_AUTH_FAILED" : "AGENT_UNAVAILABLE");
-      error.nodeId = selectedNode.id;
-      return error;
-    }
-  }
   return null;
 }
 
@@ -16875,6 +16865,23 @@ function notifyDockerFailure(state) {
     relatedDiagnosticCode: state.errorCode || state.key,
     actions: ["openDiagnostics", "reconnectAgent"],
   });
+}
+
+function logDockerDiagnostic(stage, level = "info", details = {}) {
+  getDesktopApiState().api?.diagnostics?.log?.({
+    severity: level,
+    operation: `docker-${stage}`,
+    message: details.message || `Docker ${stage}.`,
+    context: {
+      nodeId: getSelectedNodeId(),
+      stage,
+      errorCode: details.errorCode || details.code || null,
+      endpointCategory: getSelectedNode()?.kind === "agent" ? "agent" : "application-host",
+      previouslyReachable: Boolean(latestDockerSnapshot?.installed && latestDockerSnapshot?.daemonRunning),
+      staleStateDiscarded: details.staleStateDiscarded === true,
+    },
+    file: "docker",
+  }).catch(() => {});
 }
 
 async function refreshDockerStatus() {
@@ -16896,6 +16903,10 @@ async function refreshDockerStatus() {
   if (fastFailure) {
     dockerRequestInFlight = false;
     renderDockerUnavailable(fastFailure);
+    logDockerDiagnostic("preflight", "warn", {
+      message: fastFailure.message,
+      errorCode: fastFailure.code,
+    });
     notifyDockerFailure(dockerWorkspaceState);
     updateDockerActionButtons();
     return;
@@ -16912,16 +16923,32 @@ async function refreshDockerStatus() {
       "DOCKER_REQUEST_TIMEOUT",
     );
     if (!isNodeRequestCurrent(requestContext) || requestId !== dockerRequestSerial) {
+      logDockerDiagnostic("stale-response", "info", {
+        message: "Discarded stale Docker response after node context changed.",
+        staleStateDiscarded: true,
+      });
       return;
     }
     dockerRequestInFlight = false;
     renderDockerSnapshot(snapshot);
+    logDockerDiagnostic("snapshot-success", "info", {
+      message: `Docker snapshot loaded with ${Array.isArray(snapshot?.containers) ? snapshot.containers.length : 0} container(s).`,
+    });
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext) || requestId !== dockerRequestSerial) {
+      logDockerDiagnostic("stale-error", "info", {
+        message: "Discarded stale Docker error after node context changed.",
+        errorCode: error?.code || null,
+        staleStateDiscarded: true,
+      });
       return;
     }
     dockerRequestInFlight = false;
     renderDockerUnavailable(error);
+    logDockerDiagnostic("snapshot-failed", "warn", {
+      message: error?.message || "Docker snapshot failed.",
+      errorCode: error?.code || error?.errorCode || null,
+    });
     notifyDockerFailure(dockerWorkspaceState);
   } finally {
     if (isNodeRequestCurrent(requestContext)) {

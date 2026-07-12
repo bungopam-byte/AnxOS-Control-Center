@@ -21,12 +21,16 @@ function invokeDockerOperation(operation) {
   return Promise.resolve()
     .then(operation)
     .catch((error) => {
-      throw new Error(error?.message || error?.code || "Docker request failed.");
+      const code = error?.code || error?.payload?.error?.code || "DOCKER_REQUEST_FAILED";
+      const wrapped = new Error(`${code}: ${error?.message || "Docker request failed."}`);
+      wrapped.code = code;
+      wrapped.statusCode = error?.statusCode || error?.status || null;
+      throw wrapped;
     });
 }
 
 function registerDockerIpc() {
-  ipcMain.handle("docker:getSnapshot", async (_, payload = {}) => getDockerSnapshot(payload));
+  ipcMain.handle("docker:getSnapshot", async (_, payload = {}) => invokeDockerOperation(() => getDockerSnapshot(payload)));
   ipcMain.handle("docker:listContainers", async (_, payload = {}) => invokeDockerOperation(() => listDockerContainers(payload)));
   ipcMain.handle("docker:inspectContainer", async (_, payload = {}) => invokeDockerOperation(() => inspectDockerContainer(payload.container, payload)));
   ipcMain.handle("docker:listImages", async (_, payload = {}) => invokeDockerOperation(() => listDockerImages(payload)));

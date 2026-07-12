@@ -109,11 +109,27 @@ function classifyDockerFailure(result) {
   }
 
   if (/permission denied|got permission denied|access is denied|requires elevated privileges|connect: operation not permitted/i.test(output)) {
-    return new DockerServiceError("Docker is installed, but this user does not have permission to access it.", "DOCKER_PERMISSION_DENIED", 403, output.trim() || null);
+    const socketRelated = /docker\.sock|\/\/\.\/pipe\/docker|docker_engine|daemon socket|var\/run\/docker/i.test(output);
+    return new DockerServiceError(
+      socketRelated
+        ? "Docker is running, but the Agent process cannot access the Docker socket."
+        : "Docker is installed, but this user does not have permission to access it.",
+      socketRelated ? "DOCKER_SOCKET_PERMISSION_DENIED" : "DOCKER_PERMISSION_DENIED",
+      403,
+      output.trim() || null,
+    );
   }
 
-  if (/cannot connect|is the docker daemon running|error during connect|docker daemon is not running|open \/\/\.\/pipe\/docker/i.test(output)) {
-    return new DockerServiceError("Docker is installed, but the Docker daemon is not running or is unavailable on this node.", "DOCKER_DAEMON_UNAVAILABLE", 503, output.trim() || null);
+  if (/cannot connect|is the docker daemon running|error during connect|docker daemon is not running|open \/\/\.\/pipe\/docker|Cannot connect to the Docker daemon/i.test(output)) {
+    const socketUnavailable = /docker\.sock|\/\/\.\/pipe\/docker|docker_engine|var\/run\/docker/i.test(output);
+    return new DockerServiceError(
+      socketUnavailable
+        ? "Docker is installed, but the Agent process cannot reach the Docker socket."
+        : "Docker is installed, but the Docker daemon is not running or is unavailable on this node.",
+      socketUnavailable ? "DOCKER_SOCKET_UNAVAILABLE" : "DOCKER_SERVICE_UNREACHABLE",
+      503,
+      output.trim() || null,
+    );
   }
 
   return new DockerServiceError("Docker command failed.", "DOCKER_COMMAND_FAILED", 502, output.trim() || null);

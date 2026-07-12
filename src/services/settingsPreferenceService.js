@@ -6,7 +6,7 @@ const SETTINGS_SCHEMA_VERSION = 1;
 
 const SETTING_DEFINITIONS = {
   "app.displayName": { category: "general", type: "string", default: "AnxOS Control Center", maxLength: 48 },
-  "general.defaultPage": { category: "general", type: "enum", default: "dashboard", values: ["dashboard", "minecraft", "amp", "playit", "docker", "ssh", "files", "console", "backups", "operations", "maintenance", "security", "nodes", "agent-control", "coolpals", "settings"] },
+  "general.defaultPage": { category: "general", type: "enum", default: "dashboard", values: ["dashboard", "minecraft", "amp", "playit", "docker", "ssh", "files", "console", "backups", "operations", "notifications", "maintenance", "security", "nodes", "agent-control", "coolpals", "settings"] },
   "general.restorePreviousPage": { category: "general", type: "boolean", default: true },
   "general.confirmDestructiveActions": { category: "general", type: "boolean", default: true },
   "general.openExternalLinks": { category: "general", type: "enum", default: "system", values: ["system"] },
@@ -31,6 +31,7 @@ const SETTING_DEFINITIONS = {
   "startup.reconnectLastAgent": { category: "startup", type: "boolean", default: true },
 
   "notifications.enabled": { category: "notifications", type: "boolean", default: true },
+  "notifications.persistHistory": { category: "notifications", type: "boolean", default: true },
   "notifications.sound": { category: "notifications", type: "boolean", default: false },
   "notifications.volume": { category: "notifications", type: "number", default: 40, min: 0, max: 100 },
   "notifications.quietHours": { category: "notifications", type: "boolean", default: false },

@@ -372,6 +372,16 @@
             </span>
             <span class="nav-item__label" data-nav-label>Operations</span>
           </button>
+          <button class="nav-item" type="button" data-page-target="notifications" data-page-label="Notifications" data-tooltip="Notifications" aria-label="Notifications">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+                <path d="M10 20a2 2 0 0 0 4 0"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Notifications</span>
+            <span class="nav-item__badge" data-notification-nav-count hidden>0</span>
+          </button>
           <button class="nav-item" type="button" data-page-target="maintenance" data-page-label="Maintenance" data-tooltip="Maintenance" aria-label="Maintenance">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -2498,6 +2508,53 @@
           </section>
         </section>
 
+        <section class="page" data-page="notifications">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Event History</p>
+              <h1>Notifications</h1>
+              <p class="lede">Durable, actionable application events from operations, diagnostics, Marketplace, files, security, account, updates, and maintenance.</p>
+            </div>
+          </header>
+
+          <section class="notification-center" aria-label="Notification Center">
+            <div class="notification-summary-grid">
+              <article class="notification-summary-card"><span class="service-icon">NEW</span><div><span>Unread</span><strong data-notification-summary="unread">0</strong></div></article>
+              <article class="notification-summary-card"><span class="service-icon">PIN</span><div><span>Pinned</span><strong data-notification-summary="pinned">0</strong></div></article>
+              <article class="notification-summary-card"><span class="service-icon">ERR</span><div><span>Critical</span><strong data-notification-summary="critical">0</strong></div></article>
+              <article class="notification-summary-card"><span class="service-icon">ALL</span><div><span>History</span><strong data-notification-summary="total">0</strong></div></article>
+            </div>
+
+            <div class="notification-toolbar">
+              <div class="segmented-control" aria-label="Filter notifications">
+                <button class="inline-action is-active" type="button" data-notification-filter="all" aria-pressed="true">All</button>
+                <button class="inline-action" type="button" data-notification-filter="unread" aria-pressed="false">Unread</button>
+                <button class="inline-action" type="button" data-notification-filter="pinned" aria-pressed="false">Pinned</button>
+                <button class="inline-action" type="button" data-notification-filter="critical" aria-pressed="false">Critical</button>
+              </div>
+              <select data-notification-category aria-label="Filter notifications by category">
+                <option value="all">All categories</option>
+              </select>
+              <select data-notification-severity aria-label="Filter notifications by severity">
+                <option value="all">All severities</option>
+                <option value="info">Info</option>
+                <option value="success">Success</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+                <option value="critical">Critical</option>
+              </select>
+              <div class="notification-toolbar__actions">
+                <button class="inline-action" type="button" data-notification-action="mark-all-read">Mark All Read</button>
+                <button class="inline-action" type="button" data-notification-action="clear-read">Clear Read</button>
+                <button class="inline-action" type="button" data-notification-action="clear-noncritical">Clear Noncritical</button>
+              </div>
+            </div>
+
+            <div class="notification-list" data-notification-list role="feed" aria-live="polite" aria-label="Notification history"></div>
+            <div class="notification-status" data-notification-status role="status" aria-live="polite">Notification history ready.</div>
+          </section>
+        </section>
+
         <section class="page" data-page="maintenance">
           <header class="page-header">
             <div>
@@ -3339,7 +3396,8 @@
             <section class="settings-section settings-section--notifications" data-settings-category="notifications" data-settings-keywords="notifications alerts sound quiet hours update backup docker marketplace security">
               <div class="settings-section__header"><div><h3>Notifications</h3><p>Notification preferences are saved now; system delivery is enabled only where Electron notifications are available.</p></div><span class="status-pill status-pill--manual">Preferences</span></div>
               <div class="settings-grid">
-                <label class="settings-check settings-check--toggle" title="Notification preference enforcement is not available yet."><input type="checkbox" data-setting="notifications.enabled" disabled><span>Desktop notifications</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="notifications.enabled"><span>Show toast notifications</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="notifications.persistHistory"><span>Persist Notification Center history</span></label>
                 <label class="settings-check settings-check--toggle" title="Notification sounds are not available yet."><input type="checkbox" data-setting="notifications.sound" disabled><span>Notification sound enabled</span></label>
                 <label class="settings-field" title="Notification sounds are not available yet."><span>Notification volume</span><input type="range" min="0" max="100" step="1" data-setting="notifications.volume" disabled></label>
                 <label class="settings-check settings-check--toggle" title="Quiet-hours enforcement is not available yet."><input type="checkbox" data-setting="notifications.quietHours" disabled><span>Quiet hours</span></label>

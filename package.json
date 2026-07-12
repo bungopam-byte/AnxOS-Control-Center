@@ -48,6 +48,7 @@
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
     "website:smoke": "node scripts/website-production-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
+    "notifications:smoke": "node scripts/notification-center-smoke.js",
     "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",
     "security:reset-password": "node scripts/reset-local-password.js"

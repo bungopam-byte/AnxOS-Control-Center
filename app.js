@@ -1,5 +1,13 @@
 const timeTarget = document.querySelector("#local-time");
 const toast = document.querySelector("#toast");
+const notificationNavCount = document.querySelector("[data-notification-nav-count]");
+const notificationList = document.querySelector("[data-notification-list]");
+const notificationStatus = document.querySelector("[data-notification-status]");
+const notificationFilterButtons = document.querySelectorAll("[data-notification-filter]");
+const notificationCategorySelect = document.querySelector("[data-notification-category]");
+const notificationSeveritySelect = document.querySelector("[data-notification-severity]");
+const notificationActionButtons = document.querySelectorAll("[data-notification-action]");
+const notificationSummaryFields = document.querySelectorAll("[data-notification-summary]");
 const copyButtons = document.querySelectorAll("[data-copy]");
 const navItems = document.querySelectorAll("[data-page-target]");
 const pages = document.querySelectorAll("[data-page]");
@@ -765,6 +773,13 @@ const operationsState = {
   selectedId: null,
   loaded: false,
 };
+const notificationState = {
+  items: [],
+  loaded: false,
+  filter: "all",
+  category: "all",
+  severity: "all",
+};
 const maintenanceState = {
   categories: [],
   selectedIds: new Set(),
@@ -825,6 +840,7 @@ const FILES_STORAGE_WIDTH_STORAGE_KEY = "anxos.files.storageWidth.v1";
 const FILES_DETAILS_WIDTH_STORAGE_KEY = "anxos.files.detailsWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const OPERATIONS_STORAGE_KEY = "anxos.operations.history.v1";
+const NOTIFICATIONS_STORAGE_KEY = "anxos.notifications.history.v1";
 const GLOBAL_SEARCH_RECENTS_STORAGE_KEY = "anxos.globalSearch.recents.v1";
 const COMMAND_PALETTE_RECENTS_STORAGE_KEY = "anxos.commandPalette.recents.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
@@ -833,6 +849,15 @@ const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
 const STALE_INSTANCE_STORAGE_KEY = "anxos.instances.staleIds.v1";
 const LOCAL_SETUP_STORAGE_KEY = "anxos.localSetup.complete.v1";
 const OWNER_WORKSPACE_NAV_STORAGE_KEY = "anxos.ownerWorkspace.navExpanded.v1";
+const NOTIFICATION_HISTORY_LIMIT = 120;
+const NOTIFICATION_OCCURRENCE_LIMIT = 8;
+const NOTIFICATION_MAX_MESSAGE_LENGTH = 520;
+const NOTIFICATION_INFO_RETENTION_MS = 1000 * 60 * 60 * 24 * 14;
+const NOTIFICATION_DEFAULT_RETENTION_MS = 1000 * 60 * 60 * 24 * 45;
+const NOTIFICATION_CRITICAL_RETENTION_MS = 1000 * 60 * 60 * 24 * 120;
+const NOTIFICATION_DEDUP_WINDOW_MS = 1000 * 60 * 10;
+const NOTIFICATION_CATEGORIES = ["Agent", "Nodes", "Marketplace", "Dependencies", "Files", "Operations", "Diagnostics", "Maintenance", "Security", "Account", "Updates", "Backups", "Application"];
+const NOTIFICATION_SEVERITIES = ["info", "success", "warning", "error", "critical"];
 const GLOBAL_SEARCH_DEBOUNCE_MS = 140;
 const GLOBAL_SEARCH_PROVIDER_LIMIT = 8;
 const GLOBAL_SEARCH_TOTAL_LIMIT = 48;
@@ -954,6 +979,7 @@ const DEFAULT_SETTINGS = {
   "startup.restoreWindowState": true,
   "startup.reconnectLastAgent": true,
   "notifications.enabled": true,
+  "notifications.persistHistory": true,
   "notifications.sound": false,
   "notifications.volume": 40,
   "notifications.quietHours": false,
@@ -12156,6 +12182,478 @@ function loadOperationHistory() {
   }
 }
 
+const NOTIFICATION_ACTIONS = {
+  openOperations: { label: "Open Operations", run: (notification) => openNotificationRelatedOperation(notification) },
+  openDiagnostics: { label: "Open Diagnostics", run: (notification) => openNotificationDiagnostics(notification) },
+  openMarketplace: { label: "Open Marketplace", run: () => showPage("marketplace") },
+  openFiles: { label: "Open Files", run: () => showPage("files") },
+  openMaintenance: { label: "Open Maintenance", run: () => showPage("maintenance") },
+  openSecurity: { label: "Open Security", run: () => { showPage("settings"); setActiveSettingsCategory("security", '[data-settings-category="security"]'); } },
+  openAccount: { label: "Open Account", run: () => showPage("security") },
+  openUpdates: { label: "Open Updates", run: () => { showPage("settings"); setActiveSettingsCategory("updates", '[data-settings-category="updates"]'); } },
+  reconnectAgent: { label: "Reconnect Agent", run: () => refreshAgentControl({ includeConfig: true }) },
+  recheckDependencies: { label: "Recheck Dependencies", run: () => runDependencyAction("check") },
+  checkUpdates: { label: "Check Updates", run: () => checkForUpdates({ silent: false }) },
+  copyMessage: { label: "Copy Details", run: (notification) => copyNotificationDetails(notification) },
+};
+
+function sanitizeNotificationText(value = "", limit = NOTIFICATION_MAX_MESSAGE_LENGTH) {
+  return redactOperationText(value)
+    .replace(/\b[A-Za-z0-9+/]{180,}={0,2}\b/g, "[redacted-base64]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, limit);
+}
+
+function normalizeNotificationSeverity(severity = "info") {
+  const normalized = String(severity || "info").toLowerCase();
+  if (normalized === "fatal") return "critical";
+  if (normalized === "warn") return "warning";
+  return NOTIFICATION_SEVERITIES.includes(normalized) ? normalized : "info";
+}
+
+function normalizeNotificationCategory(category = "Application") {
+  const normalized = String(category || "Application").trim();
+  return NOTIFICATION_CATEGORIES.find((entry) => entry.toLowerCase() === normalized.toLowerCase()) || "Application";
+}
+
+function notificationSeverityLabel(severity = "info") {
+  return {
+    info: "Info",
+    success: "Success",
+    warning: "Warning",
+    error: "Error",
+    critical: "Critical",
+  }[normalizeNotificationSeverity(severity)] || "Info";
+}
+
+function notificationSeverityTone(severity = "info") {
+  return {
+    info: "status-pill--planned",
+    success: "status-pill--ok",
+    warning: "status-pill--warning",
+    error: "status-pill--critical",
+    critical: "status-pill--critical",
+  }[normalizeNotificationSeverity(severity)] || "status-pill--planned";
+}
+
+function isNotificationExpired(notification, now = Date.now()) {
+  if (notification.pinned || notification.resolved === false || notification.severity === "critical") return false;
+  const age = now - Number(notification.lastSeen || notification.createdAt || now);
+  const retention = notification.severity === "info"
+    ? NOTIFICATION_INFO_RETENTION_MS
+    : notification.severity === "success"
+      ? NOTIFICATION_DEFAULT_RETENTION_MS
+      : NOTIFICATION_CRITICAL_RETENTION_MS;
+  return age > retention;
+}
+
+function serializeNotification(notification) {
+  return {
+    id: String(notification.id),
+    dedupKey: String(notification.dedupKey || notification.id),
+    category: normalizeNotificationCategory(notification.category),
+    severity: normalizeNotificationSeverity(notification.severity),
+    title: sanitizeNotificationText(notification.title || "Notification", 120),
+    message: sanitizeNotificationText(notification.message || "", NOTIFICATION_MAX_MESSAGE_LENGTH),
+    createdAt: Number(notification.createdAt) || Date.now(),
+    firstSeen: Number(notification.firstSeen) || Number(notification.createdAt) || Date.now(),
+    lastSeen: Number(notification.lastSeen) || Date.now(),
+    read: notification.read === true,
+    pinned: notification.pinned === true,
+    resolved: notification.resolved !== false,
+    occurrenceCount: Math.max(1, Number(notification.occurrenceCount) || 1),
+    relatedOperationId: notification.relatedOperationId ? sanitizeNotificationText(notification.relatedOperationId, 160) : "",
+    relatedDiagnosticCode: notification.relatedDiagnosticCode ? sanitizeNotificationText(notification.relatedDiagnosticCode, 80) : "",
+    relatedWorkspace: notification.relatedWorkspace ? sanitizeNotificationText(notification.relatedWorkspace, 80) : "",
+    actions: Array.isArray(notification.actions) ? notification.actions.filter((action) => NOTIFICATION_ACTIONS[action]).slice(0, 4) : [],
+    occurrences: Array.isArray(notification.occurrences)
+      ? notification.occurrences.slice(-NOTIFICATION_OCCURRENCE_LIMIT).map((entry) => ({
+        timestamp: Number(entry.timestamp) || Date.now(),
+        message: sanitizeNotificationText(entry.message || "", 220),
+      }))
+      : [],
+  };
+}
+
+function persistNotificationHistory() {
+  if (!notificationState.loaded || settings["notifications.persistHistory"] === false) return;
+  try {
+    const history = notificationState.items
+      .filter((item) => !isNotificationExpired(item))
+      .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
+      .slice(0, NOTIFICATION_HISTORY_LIMIT)
+      .map(serializeNotification);
+    window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    if (notificationStatus) notificationStatus.textContent = "Notification history could not be persisted.";
+  }
+}
+
+function loadNotificationHistory() {
+  if (notificationState.loaded) return;
+  notificationState.loaded = true;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(NOTIFICATIONS_STORAGE_KEY) || "[]");
+    if (!Array.isArray(parsed)) return;
+    notificationState.items = parsed
+      .map((entry) => {
+        if (!entry?.id || !entry?.title) return null;
+        return serializeNotification(entry);
+      })
+      .filter(Boolean)
+      .filter((entry) => !isNotificationExpired(entry))
+      .slice(0, NOTIFICATION_HISTORY_LIMIT);
+  } catch {
+    notificationState.items = [];
+    window.localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+  }
+}
+
+function inferNotificationCategoryFromText(message = "") {
+  const text = String(message || "").toLowerCase();
+  if (/\bmarketplace|template|install|modpack\b/.test(text)) return "Marketplace";
+  if (/\bdependency|runtime|java|steamcmd|docker\b/.test(text)) return "Dependencies";
+  if (/\bfile|folder|upload|download|storage\b/.test(text)) return "Files";
+  if (/\bagent|node|connection\b/.test(text)) return "Agent";
+  if (/\bdiagnostic|log\b/.test(text)) return "Diagnostics";
+  if (/\bmaintenance|cache|cleanup\b/.test(text)) return "Maintenance";
+  if (/\bsecurity|token|session|owner\b/.test(text)) return "Security";
+  if (/\baccount|sign in|signed out\b/.test(text)) return "Account";
+  if (/\bupdate|release\b/.test(text)) return "Updates";
+  if (/\bbackup|restore\b/.test(text)) return "Backups";
+  return "Application";
+}
+
+function getOperationNotificationCategory(operation = {}) {
+  const type = String(operation.type || operation.title || "").toLowerCase();
+  if (type.includes("marketplace")) return "Marketplace";
+  if (type.includes("dependency")) return "Dependencies";
+  if (type.includes("file")) return "Files";
+  if (type.includes("diagnostic")) return "Diagnostics";
+  if (type.includes("maintenance")) return "Maintenance";
+  if (type.includes("security")) return "Security";
+  if (type.includes("account")) return "Account";
+  if (type.includes("update")) return "Updates";
+  if (type.includes("backup")) return "Backups";
+  if (type.includes("agent")) return "Agent";
+  return "Operations";
+}
+
+function shouldPersistToastNotification(message, severity) {
+  if (settings["notifications.persistHistory"] === false) return false;
+  const text = String(message || "");
+  if (!text.trim()) return false;
+  if (/\b(copied|copy|opened|selected|filter|search cleared|toast test|test notification)\b/i.test(text)) return false;
+  return ["warning", "error", "critical"].includes(normalizeNotificationSeverity(severity));
+}
+
+function createNotification(input = {}) {
+  loadNotificationHistory();
+  if (settings["notifications.persistHistory"] === false) return null;
+  const now = Date.now();
+  const severity = normalizeNotificationSeverity(input.severity);
+  const category = normalizeNotificationCategory(input.category || inferNotificationCategoryFromText(`${input.title || ""} ${input.message || ""}`));
+  const title = sanitizeNotificationText(input.title || notificationSeverityLabel(severity), 120);
+  const message = sanitizeNotificationText(input.message || title, NOTIFICATION_MAX_MESSAGE_LENGTH);
+  const dedupKey = sanitizeNotificationText(input.dedupKey || `${category}:${severity}:${input.eventType || title}:${input.relatedOperationId || input.relatedDiagnosticCode || ""}`, 220);
+  const existing = notificationState.items.find((item) => item.dedupKey === dedupKey && now - Number(item.lastSeen || now) <= NOTIFICATION_DEDUP_WINDOW_MS);
+  if (existing) {
+    existing.message = message;
+    existing.lastSeen = now;
+    existing.read = false;
+    existing.resolved = input.resolved !== false;
+    existing.occurrenceCount = Math.max(1, Number(existing.occurrenceCount || 1) + 1);
+    existing.occurrences = [...(existing.occurrences || []), { timestamp: now, message }].slice(-NOTIFICATION_OCCURRENCE_LIMIT);
+    if (severity === "critical") existing.pinned = true;
+  } else {
+    notificationState.items.unshift(serializeNotification({
+      id: input.id || `notification:${now}:${Math.random().toString(16).slice(2)}`,
+      dedupKey,
+      category,
+      severity,
+      title,
+      message,
+      createdAt: now,
+      firstSeen: now,
+      lastSeen: now,
+      read: false,
+      pinned: severity === "critical" || input.pinned === true,
+      resolved: input.resolved !== false,
+      occurrenceCount: 1,
+      relatedOperationId: input.relatedOperationId || "",
+      relatedDiagnosticCode: input.relatedDiagnosticCode || "",
+      relatedWorkspace: input.relatedWorkspace || "",
+      actions: input.actions || [],
+      occurrences: [{ timestamp: now, message }],
+    }));
+  }
+  notificationState.items = notificationState.items
+    .filter((item) => !isNotificationExpired(item))
+    .sort((a, b) => (b.pinned === true) - (a.pinned === true) || (b.lastSeen || 0) - (a.lastSeen || 0))
+    .slice(0, NOTIFICATION_HISTORY_LIMIT);
+  persistNotificationHistory();
+  renderNotificationCenter();
+  return notificationState.items.find((item) => item.dedupKey === dedupKey) || null;
+}
+
+function createOperationNotification(operation = {}) {
+  const status = normalizeOperationStatus(operation.status);
+  if (!["completed", "failed", "canceled"].includes(status)) return;
+  const failed = status === "failed";
+  createNotification({
+    category: getOperationNotificationCategory(operation),
+    severity: failed ? "error" : status === "canceled" ? "warning" : "success",
+    title: failed ? `${operation.title || "Operation"} failed` : `${operation.title || "Operation"} ${status}`,
+    message: failed ? operation.error || operation.step || "Operation failed." : operation.step || operationStatusLabel(status),
+    dedupKey: `operation:${operation.id}:${status}`,
+    relatedOperationId: operation.id,
+    relatedWorkspace: "operations",
+    actions: failed ? ["openOperations", "openDiagnostics", "copyMessage"] : ["openOperations"],
+    resolved: !failed,
+  });
+}
+
+function getFilteredNotifications() {
+  loadNotificationHistory();
+  const filter = notificationState.filter;
+  return notificationState.items.filter((notification) => {
+    const matchesFilter =
+      filter === "all" ||
+      (filter === "unread" && !notification.read) ||
+      (filter === "pinned" && notification.pinned) ||
+      (filter === "critical" && notification.severity === "critical");
+    const matchesCategory = notificationState.category === "all" || notification.category === notificationState.category;
+    const matchesSeverity = notificationState.severity === "all" || notification.severity === notificationState.severity;
+    return matchesFilter && matchesCategory && matchesSeverity;
+  });
+}
+
+function updateNotificationCategoryOptions() {
+  if (!notificationCategorySelect) return;
+  const current = notificationCategorySelect.value || "all";
+  const categories = [...new Set(notificationState.items.map((item) => item.category))].sort();
+  notificationCategorySelect.replaceChildren();
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All categories";
+  notificationCategorySelect.append(all);
+  categories.forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category;
+    option.textContent = category;
+    notificationCategorySelect.append(option);
+  });
+  notificationCategorySelect.value = categories.includes(current) ? current : "all";
+  notificationState.category = notificationCategorySelect.value;
+}
+
+function updateNotificationSummaries() {
+  const unread = notificationState.items.filter((item) => !item.read).length;
+  const pinned = notificationState.items.filter((item) => item.pinned).length;
+  const critical = notificationState.items.filter((item) => item.severity === "critical").length;
+  const values = { unread, pinned, critical, total: notificationState.items.length };
+  notificationSummaryFields.forEach((field) => {
+    const key = field.dataset.notificationSummary;
+    field.textContent = String(values[key] ?? 0);
+  });
+  if (notificationNavCount) {
+    notificationNavCount.hidden = unread === 0;
+    notificationNavCount.textContent = String(Math.min(unread, 99));
+    notificationNavCount.setAttribute("aria-label", `${unread} unread notification${unread === 1 ? "" : "s"}`);
+  }
+}
+
+function createNotificationActionButton(notification, actionId) {
+  const action = NOTIFICATION_ACTIONS[actionId];
+  if (!action) return null;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "inline-action";
+  button.textContent = action.label;
+  button.addEventListener("click", async () => {
+    try {
+      await action.run(notification);
+      notification.read = true;
+      persistNotificationHistory();
+      renderNotificationCenter();
+    } catch (error) {
+      showToast(normalizeIpcErrorMessage(error, "Notification action failed."), "error");
+    }
+  });
+  return button;
+}
+
+function renderNotificationCenter() {
+  loadNotificationHistory();
+  updateNotificationCategoryOptions();
+  updateNotificationSummaries();
+  notificationFilterButtons.forEach((button) => {
+    const active = button.dataset.notificationFilter === notificationState.filter;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  if (notificationSeveritySelect) notificationSeveritySelect.value = notificationState.severity;
+  if (!notificationList) return;
+  notificationList.replaceChildren();
+  const visible = getFilteredNotifications();
+  if (notificationStatus) {
+    notificationStatus.textContent = `${visible.length} notification${visible.length === 1 ? "" : "s"} shown.`;
+  }
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "notification-empty";
+    const title = createTextElement("strong", notificationState.items.length ? "No notifications match the current filters." : "No durable notifications yet.");
+    const message = createTextElement("span", notificationState.items.length ? "Clear filters or wait for new application events." : "Important warnings, failures, and operation outcomes will appear here.");
+    empty.append(title, message);
+    notificationList.append(empty);
+    return;
+  }
+  visible.forEach((notification) => {
+    const item = document.createElement("article");
+    item.className = "notification-item";
+    item.dataset.severity = notification.severity;
+    item.dataset.read = notification.read ? "true" : "false";
+    item.setAttribute("role", "article");
+    item.setAttribute("aria-label", `${notificationSeverityLabel(notification.severity)} ${notification.category} notification: ${notification.title}`);
+
+    const header = document.createElement("div");
+    header.className = "notification-item__header";
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "notification-item__title";
+    const title = createTextElement("strong", notification.title);
+    const meta = createTextElement("small", [
+      notification.category,
+      notificationSeverityLabel(notification.severity),
+      notification.occurrenceCount > 1 ? `${notification.occurrenceCount} occurrences` : "",
+      formatDateTime(notification.lastSeen),
+    ].filter(Boolean).join(" · "));
+    titleWrap.append(title, meta);
+    const badges = document.createElement("div");
+    badges.className = "notification-item__badges";
+    badges.append(createTextElement("span", notification.read ? "Read" : "Unread", `status-pill ${notification.read ? "status-pill--planned" : "status-pill--external"}`));
+    badges.append(createTextElement("span", notificationSeverityLabel(notification.severity), `status-pill ${notificationSeverityTone(notification.severity)}`));
+    if (notification.pinned) badges.append(createTextElement("span", "Pinned", "status-pill status-pill--manual"));
+    header.append(titleWrap, badges);
+
+    const message = createTextElement("p", notification.message || "No message available.");
+    message.title = notification.message || "";
+
+    const actions = document.createElement("div");
+    actions.className = "notification-item__actions";
+    const mark = document.createElement("button");
+    mark.type = "button";
+    mark.className = "inline-action";
+    mark.textContent = notification.read ? "Mark Unread" : "Mark Read";
+    mark.addEventListener("click", () => {
+      notification.read = !notification.read;
+      persistNotificationHistory();
+      renderNotificationCenter();
+    });
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.className = "inline-action";
+    pin.textContent = notification.pinned ? "Unpin" : "Pin";
+    pin.addEventListener("click", () => {
+      notification.pinned = !notification.pinned;
+      persistNotificationHistory();
+      renderNotificationCenter();
+    });
+    actions.append(mark, pin);
+    (notification.actions || []).forEach((actionId) => {
+      const button = createNotificationActionButton(notification, actionId);
+      if (button) actions.append(button);
+    });
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "inline-action";
+    clear.textContent = "Clear";
+    clear.disabled = notification.severity === "critical" && notification.resolved === false;
+    clear.title = clear.disabled ? "Unresolved critical notifications require explicit review and cannot be cleared here." : "";
+    clear.addEventListener("click", () => {
+      notificationState.items = notificationState.items.filter((item) => item.id !== notification.id);
+      persistNotificationHistory();
+      renderNotificationCenter();
+    });
+    actions.append(clear);
+
+    if ((notification.occurrences || []).length > 1) {
+      const details = document.createElement("details");
+      details.className = "notification-occurrences";
+      const summary = createTextElement("summary", "Recent occurrences");
+      const list = document.createElement("ol");
+      notification.occurrences.forEach((occurrence) => {
+        const row = document.createElement("li");
+        row.textContent = `${formatDateTime(occurrence.timestamp)} ${occurrence.message}`;
+        list.append(row);
+      });
+      details.append(summary, list);
+      item.append(header, message, details, actions);
+    } else {
+      item.append(header, message, actions);
+    }
+    notificationList.append(item);
+  });
+}
+
+function openNotificationRelatedOperation(notification) {
+  if (!notification?.relatedOperationId) {
+    showToast("This notification has no related operation.", "warning");
+    return;
+  }
+  loadOperationHistory();
+  if (!operationsState.items.has(notification.relatedOperationId)) {
+    showToast("The related operation is no longer available.", "warning");
+    return;
+  }
+  operationsState.selectedId = notification.relatedOperationId;
+  showPage("operations");
+  renderOperationsCenter();
+}
+
+function openNotificationDiagnostics(notification) {
+  showPage("agent-control");
+  if (agentLogSearch) {
+    agentLogSearch.value = notification.relatedDiagnosticCode || notification.title || "";
+    renderAgentLogs();
+    agentLogSearch.focus();
+  }
+}
+
+async function copyNotificationDetails(notification) {
+  const text = [
+    `Notification: ${notification.title}`,
+    `Category: ${notification.category}`,
+    `Severity: ${notificationSeverityLabel(notification.severity)}`,
+    `Last seen: ${formatDateTime(notification.lastSeen)}`,
+    `Occurrences: ${notification.occurrenceCount}`,
+    `Message: ${notification.message}`,
+  ].join("\n");
+  await navigator.clipboard.writeText(text);
+  showToast("Notification details copied.", "success");
+}
+
+function markAllNotificationsRead() {
+  loadNotificationHistory();
+  notificationState.items.forEach((item) => { item.read = true; });
+  persistNotificationHistory();
+  renderNotificationCenter();
+}
+
+function clearReadNotifications() {
+  loadNotificationHistory();
+  notificationState.items = notificationState.items.filter((item) => !item.read || item.pinned || (item.severity === "critical" && item.resolved === false));
+  persistNotificationHistory();
+  renderNotificationCenter();
+}
+
+function clearNoncriticalNotifications() {
+  loadNotificationHistory();
+  notificationState.items = notificationState.items.filter((item) => item.severity === "critical" || item.pinned);
+  persistNotificationHistory();
+  renderNotificationCenter();
+}
+
 function appendOperationLog(operation, message) {
   if (!operation || !message) return;
   operation.logs = [...(operation.logs || []), `${new Date().toLocaleTimeString()} ${redactOperationText(message)}`].slice(-24);
@@ -12217,12 +12715,14 @@ function updateOperation(id, patch = {}) {
 }
 
 function finishOperation(id, ok, message) {
-  return updateOperation(id, {
+  const operation = updateOperation(id, {
     status: ok ? "completed" : "failed",
     percent: ok ? 100 : undefined,
     step: message || (ok ? "Completed" : "Failed"),
     error: ok ? "" : message || "Operation failed.",
   });
+  if (operation) createOperationNotification(operation);
+  return operation;
 }
 
 function operationMatchesFilter(operation) {
@@ -12863,6 +13363,28 @@ function getGlobalSearchProviders() {
         return [...issueResults, ...logResults];
       },
     },
+    {
+      id: "notifications",
+      label: "Notifications",
+      type: "Notification",
+      search(query) {
+        loadNotificationHistory();
+        return notificationState.items
+          .filter((notification) => matchesSearchQuery(query, notification.title, notification.message, notification.category, notification.severity, notification.relatedDiagnosticCode))
+          .slice(0, 16)
+          .map((notification) => createGlobalSearchResult(this, {
+            id: notification.id,
+            label: notification.title,
+            description: [notification.category, notificationSeverityLabel(notification.severity), notification.read ? "Read" : "Unread"].join(" · "),
+            action: () => {
+              showPage("notifications");
+              notification.read = true;
+              persistNotificationHistory();
+              renderNotificationCenter();
+            },
+          }));
+      },
+    },
   ];
 
   if (isOwnerWorkspaceAuthorized()) {
@@ -13428,6 +13950,50 @@ function getCommandRegistry() {
       category: "Operations",
       execute: () => showPage("operations"),
     }),
+    createCommand({
+      id: "notifications.open",
+      title: "Open Notification Center",
+      description: "Open durable application notification history.",
+      category: "Notifications",
+      execute: () => { showPage("notifications"); renderNotificationCenter(); },
+    }),
+    createCommand({
+      id: "notifications.showUnread",
+      title: "Show Unread Notifications",
+      description: "Open Notification Center filtered to unread events.",
+      category: "Notifications",
+      execute: () => {
+        notificationState.filter = "unread";
+        showPage("notifications");
+        renderNotificationCenter();
+      },
+    }),
+    createCommand({
+      id: "notifications.showCritical",
+      title: "Show Critical Notifications",
+      description: "Open Notification Center filtered to critical events.",
+      category: "Notifications",
+      execute: () => {
+        notificationState.filter = "critical";
+        showPage("notifications");
+        renderNotificationCenter();
+      },
+    }),
+    createCommand({
+      id: "notifications.markAllRead",
+      title: "Mark All Notifications Read",
+      description: "Mark the current Notification Center history as read.",
+      category: "Notifications",
+      execute: () => { showPage("notifications"); markAllNotificationsRead(); },
+    }),
+    createCommand({
+      id: "notifications.clearRead",
+      title: "Clear Read Notifications",
+      description: "Clear read, noncritical notification records.",
+      category: "Notifications",
+      confirm: { title: "Clear read notifications?", message: "Read notifications will be removed. Pinned and unresolved critical records are preserved.", confirmLabel: "Clear Read" },
+      execute: () => { showPage("notifications"); clearReadNotifications(); },
+    }),
     ...["running", "failed"].map((filter) => createCommand({
       id: `operations.show.${filter}`,
       title: `Show ${filter === "running" ? "Running" : "Failed"} Operations`,
@@ -13884,6 +14450,7 @@ function resetRendererUiState() {
     LAST_INSTANCE_STORAGE_KEY,
     STALE_INSTANCE_STORAGE_KEY,
     OWNER_WORKSPACE_NAV_STORAGE_KEY,
+    NOTIFICATIONS_STORAGE_KEY,
     GLOBAL_SEARCH_RECENTS_STORAGE_KEY,
     COMMAND_PALETTE_RECENTS_STORAGE_KEY,
   ];
@@ -13892,11 +14459,14 @@ function resetRendererUiState() {
     window.sessionStorage.removeItem("anxos-settings-category");
     sidebarCollapsed = false;
     staleInstanceIds.clear();
+    notificationState.items = [];
+    notificationState.loaded = true;
     selectedInstanceId = null;
     setSidebarCollapsed(false, { persist: false });
     setFilesExplorerWidth(DEFAULT_FILES_EXPLORER_WIDTH, { persist: false });
     setFilesStorageWidth(DEFAULT_FILES_STORAGE_WIDTH, { persist: false });
     setFilesDetailsWidth(DEFAULT_FILES_DETAILS_WIDTH, { persist: false });
+    renderNotificationCenter();
     finishOperation(operationId, true, "Renderer UI state reset. Preferences, accounts, credentials, storage locations, server files, and backups were preserved.");
     setMaintenanceStatus("Renderer UI state reset. Core settings and saved credentials were preserved.", "success");
     showToast("UI state reset.", "success");
@@ -16531,6 +17101,20 @@ function inferToastTone(message, tone) {
 
 function showToast(message, tone = null) {
   const nextTone = inferToastTone(message, tone);
+  if (shouldPersistToastNotification(message, nextTone)) {
+    createNotification({
+      category: inferNotificationCategoryFromText(message),
+      severity: nextTone,
+      title: nextTone === "error" ? "Action failed" : "Action needs attention",
+      message,
+      dedupKey: `toast:${nextTone}:${inferNotificationCategoryFromText(message)}:${sanitizeNotificationText(message, 120)}`,
+      relatedDiagnosticCode: /\b[A-Z][A-Z0-9_]{3,}\b/.exec(String(message || ""))?.[0] || "",
+      relatedWorkspace: "notifications",
+      actions: nextTone === "error" ? ["openDiagnostics", "copyMessage"] : ["copyMessage"],
+      resolved: nextTone !== "error",
+    });
+  }
+  if (settings["notifications.enabled"] === false || !toast) return;
   toast.textContent = message;
   toast.dataset.tone = nextTone;
   toast.setAttribute("role", nextTone === "error" ? "alert" : "status");
@@ -22487,6 +23071,37 @@ operationActionButtons.forEach((button) => {
     persistOperationHistory();
   });
 });
+notificationFilterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    notificationState.filter = button.dataset.notificationFilter || "all";
+    renderNotificationCenter();
+  });
+});
+notificationCategorySelect?.addEventListener("change", () => {
+  notificationState.category = notificationCategorySelect.value || "all";
+  renderNotificationCenter();
+});
+notificationSeveritySelect?.addEventListener("change", () => {
+  notificationState.severity = notificationSeveritySelect.value || "all";
+  renderNotificationCenter();
+});
+notificationActionButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.notificationAction;
+    if (action === "mark-all-read") {
+      markAllNotificationsRead();
+    } else if (action === "clear-read") {
+      clearReadNotifications();
+    } else if (action === "clear-noncritical") {
+      const ok = await createSecurityConfirmation({
+        title: "Clear noncritical notifications?",
+        message: "This removes noncritical, unpinned notification records. Critical and pinned notifications are preserved.",
+        confirmLabel: "Clear Noncritical",
+      });
+      if (ok) clearNoncriticalNotifications();
+    }
+  });
+});
 globalSearchOpenButtons.forEach((button) => {
   button.addEventListener("click", () => openGlobalSearch());
 });
@@ -22950,6 +23565,7 @@ syncTitlebarWindowState();
 configurePrimaryNavigation();
 loadSettings();
 renderOperationsCenter();
+renderNotificationCenter();
 renderMaintenanceCenter();
 refreshAccountState();
 refreshSecurityState();

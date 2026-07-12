@@ -18,6 +18,7 @@ async function main() {
   assert(serviceSource.includes('targetLabel: "configured-agent"'), "Configured Agent checks must be labeled separately.");
   assert(serviceSource.includes("normalizeAgentUrlForComparison"), "Agent Control should normalize Agent URLs before deduping probes.");
   assert(serviceSource.includes("reusedConfiguredAgentProbe"), "Agent Control should reuse configured Agent probe results for matching registered nodes.");
+  assert(serviceSource.includes("REMOTE_DIAGNOSTICS_CACHE_MS") && serviceSource.includes("remoteDiagnosticsRequests"), "Remote diagnostics capture must dedupe repeated Agent diagnostics exports.");
   assert(serviceSource.includes("normalizeAgentRuntimeStatus"), "Agent Control must normalize runtime status before rendering.");
   assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");
   assert(serviceSource.includes("runtime-payload-shape"), "Development diagnostics should log sanitized runtime payload shapes.");

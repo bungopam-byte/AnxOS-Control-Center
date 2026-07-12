@@ -10,10 +10,13 @@ const diagnostics = require("./diagnosticsService");
 const agentPackage = require("../../agent/package.json");
 
 const SERVICE_NAME = "AnxOSAgent";
+const REMOTE_DIAGNOSTICS_CACHE_MS = 30000;
 let managedProcess = null;
 let operationInFlight = null;
 let lastRestartReason = null;
 let lastError = null;
+const remoteDiagnosticsRequests = new Map();
+const remoteDiagnosticsCache = new Map();
 
 function getConfigDirectory() { if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR; try { return path.join(app.getPath("userData"), "config"); } catch { return path.join(process.cwd(), "config"); } }
 function getRuntimeConfigPath() { return path.join(getConfigDirectory(), "agent-runtime.json"); }
@@ -506,13 +509,30 @@ async function listAgents() {
 async function captureRemoteDiagnostics(nodeId) {
   const node = getAllNodesSync().find((entry) => entry.id === nodeId && entry.kind === "agent");
   if (!node) throw Object.assign(new Error("Remote Agent node was not found."), { code: "NODE_NOT_FOUND" });
-  const bundle = await agentClient.getDiagnostics(getNodeAgentConfig(node.id));
-  const safeId = String(bundle.identity?.deviceId || node.id).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
-  const directory = path.join(diagnostics.getDirectory(), "remote", safeId);
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, "diagnostics.json"), `${JSON.stringify(require("../shared/redaction").sanitize(bundle), null, 2)}\n`, { mode: 0o600 });
-  diagnostics.log("info", "agent-control", "remote-diagnostics", "Remote Agent diagnostics captured", { nodeId: node.id, deviceId: safeId }, { file: "agent" });
-  return { captured: true, nodeId: node.id, deviceId: safeId };
+  const cached = remoteDiagnosticsCache.get(node.id);
+  if (cached && Date.now() - cached.capturedAt < REMOTE_DIAGNOSTICS_CACHE_MS) {
+    return { ...cached.result, cached: true };
+  }
+  if (remoteDiagnosticsRequests.has(node.id)) {
+    return remoteDiagnosticsRequests.get(node.id);
+  }
+  const request = (async () => {
+    const bundle = await agentClient.getDiagnostics(getNodeAgentConfig(node.id));
+    const safeId = String(bundle.identity?.deviceId || node.id).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 80);
+    const directory = path.join(diagnostics.getDirectory(), "remote", safeId);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, "diagnostics.json"), `${JSON.stringify(require("../shared/redaction").sanitize(bundle), null, 2)}\n`, { mode: 0o600 });
+    const result = { captured: true, nodeId: node.id, deviceId: safeId };
+    remoteDiagnosticsCache.set(node.id, { capturedAt: Date.now(), result });
+    diagnostics.log("info", "agent-control", "remote-diagnostics", "Remote Agent diagnostics captured", { nodeId: node.id, deviceId: safeId }, { file: "agent" });
+    return result;
+  })();
+  remoteDiagnosticsRequests.set(node.id, request);
+  try {
+    return await request;
+  } finally {
+    remoteDiagnosticsRequests.delete(node.id);
+  }
 }
 
 async function runDiagnostics() { const status = await getStatus(); const config = readConfig(); const portUsed = await probePort(config.port); const checks = [{ id: "process", label: "Agent process", result: status.running ? "Passed" : "Warning", explanation: status.running ? "Agent is responding." : "Agent is not currently running.", repairAction: status.running ? null : "start" }, { id: "service", label: "Service registration", result: status.service.installed ? "Passed" : status.service.supported ? "Warning" : "Not applicable", explanation: status.service.installed ? "Background startup is installed." : "Background startup is not installed.", repairAction: status.service.supported ? "install-service" : null }, { id: "port", label: "Port availability", result: status.running || !portUsed ? "Passed" : "Failed", explanation: status.running ? "Agent owns the configured port." : portUsed ? "Another process is using the configured port." : "Configured port is available.", repairAction: portUsed && !status.running ? "select-port" : null }, { id: "configuration", label: "Configuration validity", result: "Passed", explanation: `Configuration is valid for ${config.host}:${config.port}.` }, { id: "logs", label: "Log directory", result: fs.existsSync(diagnostics.getDirectory()) ? "Passed" : "Warning", explanation: "Diagnostics directory is writable." }]; return { status, checks, generatedAt: new Date().toISOString() }; }

@@ -433,6 +433,8 @@ let agentControlBusy = false;
 let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentControlLastRuntimeSnapshot = null;
+const remoteDiagnosticsInFlight = new Set();
+const remoteDiagnosticsLastCapturedAt = new Map();
 let latestDependencyResult = null;
 let latestDependencyResultAt = 0;
 let agentLogEntries = [];
@@ -25130,10 +25132,27 @@ agentLogWrap?.addEventListener("change", renderAgentLogs);
 agentRemoteList?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-remote-agent-diagnostics]");
   if (!button) return;
+  const nodeId = button.dataset.remoteAgentDiagnostics || "";
+  const lastCapturedAt = remoteDiagnosticsLastCapturedAt.get(nodeId) || 0;
+  if (!nodeId || remoteDiagnosticsInFlight.has(nodeId)) {
+    return;
+  }
+  if (Date.now() - lastCapturedAt < 30000) {
+    showToast("Remote diagnostics were just captured.", "info");
+    return;
+  }
   button.disabled = true;
-  try { await getDesktopApiState().api.agentControl.remoteDiagnostics(button.dataset.remoteAgentDiagnostics); showToast("Remote diagnostics captured.", "success"); }
+  remoteDiagnosticsInFlight.add(nodeId);
+  try {
+    const result = await getDesktopApiState().api.agentControl.remoteDiagnostics(nodeId);
+    remoteDiagnosticsLastCapturedAt.set(nodeId, Date.now());
+    showToast(result?.cached ? "Recent remote diagnostics already available." : "Remote diagnostics captured.", "success");
+  }
   catch (error) { showToast(normalizeIpcErrorMessage(error, "Remote diagnostics failed."), "error"); }
-  finally { button.disabled = false; }
+  finally {
+    remoteDiagnosticsInFlight.delete(nodeId);
+    button.disabled = false;
+  }
 });
 agentDiagnosticsList?.addEventListener("click", (event) => {
   const action = event.target.closest("[data-agent-repair]")?.dataset.agentRepair;

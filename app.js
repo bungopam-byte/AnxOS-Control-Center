@@ -265,6 +265,13 @@ const operationDetailStatus = document.querySelector("[data-operation-detail-sta
 const operationSummaryFields = document.querySelectorAll("[data-operations-summary]");
 const operationFilterButtons = document.querySelectorAll("[data-operation-filter]");
 const operationActionButtons = document.querySelectorAll("[data-operation-action]");
+const maintenanceList = document.querySelector("[data-maintenance-list]");
+const maintenanceDetail = document.querySelector("[data-maintenance-detail]");
+const maintenanceDetailStatus = document.querySelector("[data-maintenance-detail-status]");
+const maintenanceSummaryFields = document.querySelectorAll("[data-maintenance-summary]");
+const maintenanceActionButtons = document.querySelectorAll("[data-maintenance-action]");
+const maintenanceStatus = document.querySelector("[data-maintenance-status]");
+const maintenanceScanState = document.querySelector("[data-maintenance-scan-state]");
 const fileToolbar = filesPage?.querySelector(".file-toolbar");
 const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const filesStorageDivider = filesPage?.querySelector('[data-files-resizer="storage"]');
@@ -719,6 +726,14 @@ const operationsState = {
   selectedId: null,
   loaded: false,
 };
+const maintenanceState = {
+  categories: [],
+  selectedIds: new Set(),
+  activeId: null,
+  scanning: false,
+  clearing: false,
+  lastScanAt: null,
+};
 let securityRequestInFlight = false;
 const filesConnectionState = {
   connected: false,
@@ -764,6 +779,7 @@ const PRIMARY_NAVIGATION_ORDER = [
   "console",
   "backups",
   "operations",
+  "maintenance",
   "security",
   "agent-control",
   "nodes",
@@ -1061,6 +1077,9 @@ function getDesktopApiState() {
       typeof api?.developerUpdates?.update === "function" &&
       typeof api?.developerUpdates?.restart === "function" &&
       typeof api?.developerUpdates?.openChanges === "function",
+    hasMaintenance:
+      typeof api?.maintenance?.scan === "function" &&
+      typeof api?.maintenance?.clear === "function",
     hasAccount:
       typeof api?.account?.getStatus === "function" &&
       typeof api?.account?.startDeviceLogin === "function" &&
@@ -11227,6 +11246,298 @@ async function cancelOperation(id) {
   }
 }
 
+function maintenanceStatusLabel(status) {
+  return {
+    calculating: "Calculating",
+    available: "Available",
+    empty: "Empty",
+    clearing: "Clearing",
+    cleared: "Cleared",
+    failed: "Failed",
+    partial: "Partial",
+    unsupported: "Unsupported",
+  }[status] || "Unknown";
+}
+
+function maintenanceStatusTone(status) {
+  if (status === "available" || status === "cleared") return "status-pill--ok";
+  if (status === "failed" || status === "partial") return "status-pill--critical";
+  if (status === "unsupported" || status === "empty") return "status-pill--warning";
+  return "status-pill--planned";
+}
+
+function setMaintenanceStatus(message, tone = "neutral") {
+  if (maintenanceStatus) {
+    maintenanceStatus.textContent = message;
+    maintenanceStatus.dataset.tone = tone;
+  }
+}
+
+function getMaintenanceCategory(id) {
+  return maintenanceState.categories.find((category) => category.id === id) || null;
+}
+
+function renderMaintenanceDetail(category = getMaintenanceCategory(maintenanceState.activeId)) {
+  if (!maintenanceDetail) return;
+  maintenanceDetail.replaceChildren();
+  if (!category) {
+    if (maintenanceDetailStatus) {
+      maintenanceDetailStatus.textContent = "Idle";
+      maintenanceDetailStatus.className = "status-pill status-pill--planned";
+    }
+    const title = document.createElement("strong");
+    title.textContent = "No category selected";
+    const message = document.createElement("span");
+    message.textContent = "Select a maintenance category to inspect restart, sign-out, redownload, and support details.";
+    maintenanceDetail.append(title, message);
+    return;
+  }
+  if (maintenanceDetailStatus) {
+    maintenanceDetailStatus.textContent = maintenanceStatusLabel(category.status);
+    maintenanceDetailStatus.className = `status-pill ${maintenanceStatusTone(category.status)}`;
+  }
+  const title = document.createElement("strong");
+  title.textContent = category.displayName || category.id;
+  const description = document.createElement("span");
+  description.textContent = category.description || "No description available.";
+  const pathLabel = document.createElement("span");
+  pathLabel.textContent = category.pathLabel ? `Internal location: ${category.pathLabel}` : "Internal location is unavailable.";
+  maintenanceDetail.append(title, description, pathLabel);
+  const list = document.createElement("dl");
+  list.className = "maintenance-detail-list";
+  [
+    ["Measured size", formatBytes(category.sizeBytes || 0)],
+    ["Files", String(category.fileCount || 0)],
+    ["Last measured", category.measuredAt ? formatDateTime(category.measuredAt) : "Not measured"],
+    ["Last cleared", category.lastClearedAt ? formatDateTime(category.lastClearedAt) : "Never"],
+    ["Requires restart", category.restartRequired ? "Yes" : "No"],
+    ["Signs out", category.signsOut ? "Yes" : "No"],
+    ["Downloads again", category.downloadsAgain ? "Yes" : "No"],
+    ["Currently in use", category.inUse ? "Yes" : "No"],
+  ].forEach(([label, value]) => {
+    const row = document.createElement("div");
+    const dt = document.createElement("dt");
+    dt.textContent = label;
+    const dd = document.createElement("dd");
+    dd.textContent = value;
+    row.append(dt, dd);
+    list.append(row);
+  });
+  maintenanceDetail.append(list);
+  if (Array.isArray(category.errors) && category.errors.length > 0) {
+    const errors = document.createElement("pre");
+    errors.textContent = category.errors.map((error) => `${error.code || "ERROR"}: ${error.message || "Unknown error"}`).join("\n");
+    maintenanceDetail.append(errors);
+  }
+}
+
+function renderMaintenanceCenter() {
+  if (!maintenanceList && !maintenanceSummaryFields.length) return;
+  const totalBytes = maintenanceState.categories.reduce((sum, category) => sum + Number(category.sizeBytes || 0), 0);
+  const safeCount = maintenanceState.categories.filter((category) => category.supported && !category.signsOut && !category.confirmationRequired).length;
+  const warningCount = maintenanceState.categories.filter((category) => category.errorCount > 0 || category.status === "unsupported" || category.signsOut || category.restartRequired).length;
+  maintenanceSummaryFields.forEach((field) => {
+    const key = field.dataset.maintenanceSummary;
+    if (key === "total") field.textContent = maintenanceState.categories.length ? formatBytes(totalBytes) : "Not scanned";
+    if (key === "safe") field.textContent = String(safeCount);
+    if (key === "warnings") field.textContent = String(warningCount);
+    if (key === "lastScan") field.textContent = maintenanceState.lastScanAt ? formatDateTime(maintenanceState.lastScanAt) : "Never";
+  });
+  if (maintenanceScanState) {
+    maintenanceScanState.textContent = maintenanceState.scanning ? "Scanning" : maintenanceState.categories.length ? "Scanned" : "Not scanned";
+    maintenanceScanState.className = `status-pill ${maintenanceState.scanning ? "status-pill--planned" : maintenanceState.categories.length ? "status-pill--ok" : "status-pill--planned"}`;
+  }
+  maintenanceActionButtons.forEach((button) => {
+    const action = button.dataset.maintenanceAction;
+    const selected = maintenanceState.categories.filter((category) => maintenanceState.selectedIds.has(category.id));
+    if (action === "scan") button.disabled = maintenanceState.scanning || maintenanceState.clearing;
+    if (action === "clear-selected") button.disabled = maintenanceState.scanning || maintenanceState.clearing || !selected.some((category) => category.supported);
+    if (action === "clear-safe") button.disabled = maintenanceState.scanning || maintenanceState.clearing || !maintenanceState.categories.some((category) => category.supported && !category.signsOut && !category.confirmationRequired && Number(category.sizeBytes || 0) > 0);
+    if (action === "reset-ui") button.disabled = maintenanceState.scanning || maintenanceState.clearing;
+  });
+  if (!maintenanceList) {
+    renderMaintenanceDetail();
+    return;
+  }
+  maintenanceList.replaceChildren();
+  if (!maintenanceState.categories.length) {
+    const empty = document.createElement("div");
+    empty.className = "maintenance-empty-state";
+    const title = document.createElement("strong");
+    title.textContent = maintenanceState.scanning ? "Scanning storage" : "No maintenance scan yet";
+    const message = document.createElement("span");
+    message.textContent = maintenanceState.scanning ? "Measuring trusted AnxOS cache locations." : "Run Scan Storage to measure AnxOS-owned cache and diagnostic locations.";
+    empty.append(title, message);
+    maintenanceList.append(empty);
+    renderMaintenanceDetail();
+    return;
+  }
+  maintenanceState.categories.forEach((category) => {
+    const item = document.createElement("article");
+    item.className = "maintenance-item";
+    item.classList.toggle("is-selected", category.id === maintenanceState.activeId);
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = maintenanceState.selectedIds.has(category.id);
+    checkbox.disabled = !category.supported || maintenanceState.clearing;
+    checkbox.setAttribute("aria-label", `Select ${category.displayName}`);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) maintenanceState.selectedIds.add(category.id);
+      else maintenanceState.selectedIds.delete(category.id);
+      renderMaintenanceCenter();
+    });
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className = "maintenance-item__main";
+    main.addEventListener("click", () => {
+      maintenanceState.activeId = category.id;
+      renderMaintenanceCenter();
+    });
+    const header = document.createElement("span");
+    header.className = "maintenance-item__header";
+    const title = document.createElement("strong");
+    title.textContent = category.displayName || category.id;
+    const status = document.createElement("span");
+    status.className = `status-pill ${maintenanceStatusTone(category.status)}`;
+    status.textContent = maintenanceStatusLabel(category.status);
+    header.append(title, status);
+    const meta = document.createElement("small");
+    const flags = [
+      category.restartRequired ? "Restart" : "",
+      category.signsOut ? "Signs out" : "",
+      category.downloadsAgain ? "Redownloads" : "",
+      category.inUse ? "In use" : "",
+    ].filter(Boolean);
+    meta.textContent = `${formatBytes(category.sizeBytes || 0)} · ${category.fileCount || 0} files${flags.length ? ` · ${flags.join(", ")}` : ""}`;
+    main.append(header, meta);
+    item.append(checkbox, main);
+    maintenanceList.append(item);
+  });
+  renderMaintenanceDetail();
+}
+
+async function scanMaintenanceStorage({ trackOperation = false } = {}) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasMaintenance || maintenanceState.scanning) {
+    setMaintenanceStatus(desktopApiState.hasMaintenance ? "Storage scan already running." : "Maintenance service unavailable.", "warning");
+    return null;
+  }
+  maintenanceState.scanning = true;
+  setMaintenanceStatus("Scanning maintenance categories...");
+  const operationId = trackOperation ? startOperation({
+    type: "Maintenance",
+    title: "Scan maintenance storage",
+    step: "Measuring trusted cache and diagnostics locations.",
+  }) : null;
+  renderMaintenanceCenter();
+  try {
+    const result = await desktopApiState.api.maintenance.scan();
+    maintenanceState.categories = Array.isArray(result?.categories) ? result.categories : [];
+    maintenanceState.lastScanAt = result?.scannedAt || new Date().toISOString();
+    maintenanceState.selectedIds = new Set([...maintenanceState.selectedIds].filter((id) => getMaintenanceCategory(id)));
+    if (!maintenanceState.activeId && maintenanceState.categories[0]) maintenanceState.activeId = maintenanceState.categories[0].id;
+    const total = maintenanceState.categories.reduce((sum, category) => sum + Number(category.sizeBytes || 0), 0);
+    setMaintenanceStatus(`Scan complete. ${formatBytes(total)} measured.`);
+    if (operationId) finishOperation(operationId, true, `Measured ${formatBytes(total)}.`);
+    return result;
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Maintenance scan failed.");
+    setMaintenanceStatus(message, "error");
+    if (operationId) finishOperation(operationId, false, message);
+    showToast(message, "error");
+    return null;
+  } finally {
+    maintenanceState.scanning = false;
+    renderMaintenanceCenter();
+  }
+}
+
+async function clearMaintenanceCategories(categoryIds, label = "Clear selected maintenance categories") {
+  const desktopApiState = getDesktopApiState();
+  const categories = categoryIds.map(getMaintenanceCategory).filter(Boolean);
+  if (!desktopApiState.hasMaintenance || maintenanceState.clearing || !categories.length) return;
+  const risky = categories.filter((category) => category.signsOut || category.confirmationRequired || category.restartRequired);
+  if (risky.length > 0) {
+    const confirmed = await createSecurityConfirmation({
+      title: "Clear selected maintenance data?",
+      message: `This will clear ${risky.map((category) => category.displayName).join(", ")}. ${risky.some((category) => category.signsOut) ? "You may be signed out of web sessions. " : ""}${risky.some((category) => category.restartRequired) ? "Restart the app afterward for all changes to apply." : ""}`,
+      confirmLabel: "Clear Selected",
+    });
+    if (!confirmed) return;
+  }
+  maintenanceState.clearing = true;
+  const operationId = startOperation({
+    type: "Maintenance",
+    title: label,
+    target: categories.map((category) => category.displayName).join(", "),
+    step: "Measuring storage before cleanup.",
+  });
+  renderMaintenanceCenter();
+  try {
+    updateOperation(operationId, { step: "Clearing selected maintenance categories." });
+    const result = await desktopApiState.api.maintenance.clear(categoryIds);
+    const reclaimed = formatBytes(result?.reclaimedBytes || 0);
+    const message = result?.partial
+      ? `Cleanup partially completed. Verified ${reclaimed} reclaimed.`
+      : `Cleanup complete. Verified ${reclaimed} reclaimed.`;
+    updateOperation(operationId, {
+      status: result?.partial ? "failed" : "completed",
+      percent: 100,
+      step: message,
+      error: result?.partial ? "Some files could not be removed. Review Maintenance details after rescan." : "",
+    });
+    setMaintenanceStatus(result?.restartRequired ? `${message} Restart required.` : message, result?.partial ? "warning" : "success");
+    showToast(message, result?.partial ? "warning" : "success");
+    await scanMaintenanceStorage();
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Maintenance cleanup failed.");
+    finishOperation(operationId, false, message);
+    setMaintenanceStatus(message, "error");
+    showToast(message, "error");
+  } finally {
+    maintenanceState.clearing = false;
+    renderMaintenanceCenter();
+  }
+}
+
+function resetRendererUiState() {
+  const operationId = startOperation({
+    type: "Maintenance",
+    title: "Reset renderer UI state",
+    step: "Clearing noncritical workspace, panel, and dismissed-view state.",
+  });
+  const keys = [
+    SIDEBAR_STATE_STORAGE_KEY,
+    FILES_EXPLORER_WIDTH_STORAGE_KEY,
+    FILES_STORAGE_WIDTH_STORAGE_KEY,
+    FILES_DETAILS_WIDTH_STORAGE_KEY,
+    FILES_EDITOR_PREFS_STORAGE_KEY,
+    INSTANCE_TAB_STORAGE_KEY,
+    LAST_PAGE_STORAGE_KEY,
+    LAST_INSTANCE_STORAGE_KEY,
+    STALE_INSTANCE_STORAGE_KEY,
+    OWNER_WORKSPACE_NAV_STORAGE_KEY,
+  ];
+  try {
+    keys.forEach((key) => window.localStorage.removeItem(key));
+    window.sessionStorage.removeItem("anxos-settings-category");
+    sidebarCollapsed = false;
+    staleInstanceIds.clear();
+    selectedInstanceId = null;
+    setSidebarCollapsed(false, { persist: false });
+    setFilesExplorerWidth(DEFAULT_FILES_EXPLORER_WIDTH, { persist: false });
+    setFilesStorageWidth(DEFAULT_FILES_STORAGE_WIDTH, { persist: false });
+    setFilesDetailsWidth(DEFAULT_FILES_DETAILS_WIDTH, { persist: false });
+    finishOperation(operationId, true, "Renderer UI state reset. Preferences, accounts, credentials, storage locations, server files, and backups were preserved.");
+    setMaintenanceStatus("Renderer UI state reset. Core settings and saved credentials were preserved.", "success");
+    showToast("UI state reset.", "success");
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "UI state reset failed.");
+    finishOperation(operationId, false, message);
+    showToast(message, "error");
+  }
+}
+
 function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
   const selectedRemoteNode = selected ? null : getSelectedRemoteFilesNode();
@@ -19433,6 +19744,34 @@ operationActionButtons.forEach((button) => {
     persistOperationHistory();
   });
 });
+maintenanceActionButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.maintenanceAction;
+    if (action === "scan") {
+      await scanMaintenanceStorage({ trackOperation: true });
+      return;
+    }
+    if (action === "clear-selected") {
+      await clearMaintenanceCategories([...maintenanceState.selectedIds], "Clear selected maintenance data");
+      return;
+    }
+    if (action === "clear-safe") {
+      const safeIds = maintenanceState.categories
+        .filter((category) => category.supported && !category.signsOut && !category.confirmationRequired && Number(category.sizeBytes || 0) > 0)
+        .map((category) => category.id);
+      await clearMaintenanceCategories(safeIds, "Clear safe maintenance caches");
+      return;
+    }
+    if (action === "reset-ui") {
+      const confirmed = await createSecurityConfirmation({
+        title: "Reset renderer UI state?",
+        message: "This clears noncritical UI state such as the last workspace, panel sizes, expanded sections, recent file/editor layout state, and temporary page selection. It does not clear accounts, Agent tokens, Marketplace instances, server files, backups, saved storage locations, or preferences.",
+        confirmLabel: "Reset UI State",
+      });
+      if (confirmed) resetRendererUiState();
+    }
+  });
+});
 document.querySelectorAll("[data-update-action]").forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.updateAction;
@@ -19822,6 +20161,7 @@ syncTitlebarWindowState();
 configurePrimaryNavigation();
 loadSettings();
 renderOperationsCenter();
+renderMaintenanceCenter();
 refreshAccountState();
 refreshSecurityState();
 refreshNodes();

@@ -102,6 +102,10 @@ const desktopApi = {
     restart: () => ipcRenderer.invoke("developerUpdates:restart"),
     openChanges: () => ipcRenderer.invoke("developerUpdates:openChanges"),
   },
+  maintenance: {
+    scan: () => ipcRenderer.invoke("maintenance:scan"),
+    clear: (categoryIds = []) => ipcRenderer.invoke("maintenance:clear", { categoryIds }),
+  },
   account: {
     getStatus: () => invokeAccount("account:getStatus"),
     startDeviceLogin: () => invokeAccount("account:startDeviceLogin"),

@@ -2406,6 +2406,193 @@ h3 {
   word-break: break-word;
 }
 
+.maintenance-shell,
+.maintenance-list-panel,
+.maintenance-detail-panel,
+.maintenance-list,
+.maintenance-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.maintenance-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.maintenance-summary-card,
+.maintenance-list-panel,
+.maintenance-detail-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: var(--shadow-soft);
+}
+
+.maintenance-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+}
+
+.maintenance-summary-card div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.maintenance-summary-card span:not(.service-icon) {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.maintenance-summary-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maintenance-toolbar,
+.maintenance-actions,
+.maintenance-panel-header,
+.maintenance-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.maintenance-toolbar,
+.maintenance-actions {
+  flex-wrap: wrap;
+}
+
+.maintenance-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.85fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.maintenance-list-panel,
+.maintenance-detail-panel {
+  min-width: 0;
+  padding: 14px;
+}
+
+.maintenance-panel-header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.maintenance-list {
+  max-height: min(62vh, 680px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.maintenance-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.maintenance-item.is-selected {
+  border-color: rgba(182, 108, 255, 0.42);
+  background: rgba(182, 108, 255, 0.11);
+}
+
+.maintenance-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.maintenance-item__main {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.maintenance-item__main strong,
+.maintenance-item__main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.maintenance-item__main small,
+.maintenance-detail span {
+  color: var(--muted);
+}
+
+.maintenance-empty-state {
+  min-height: 160px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.maintenance-empty-state strong {
+  color: var(--text);
+}
+
+.maintenance-detail-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.maintenance-detail-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding-bottom: 7px;
+}
+
+.maintenance-detail-list dt {
+  color: var(--muted);
+}
+
+.maintenance-detail-list dd {
+  margin: 0;
+  text-align: right;
+}
+
+.maintenance-detail pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: #ff8fa3;
+  background: rgba(0, 0, 0, 0.24);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 @keyframes operationIndeterminate {
   0% {
     transform: translateX(-110%);
@@ -10808,6 +10995,8 @@ button:disabled {
   }
 
   .operations-summary-grid,
+  .maintenance-summary-grid,
+  .maintenance-workspace,
   .operations-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -10840,12 +11029,17 @@ button:disabled {
   }
 
   .operations-toolbar,
+  .maintenance-toolbar,
+  .maintenance-actions,
   .operations-panel-header,
+  .maintenance-panel-header,
+  .maintenance-item__header,
   .operation-item__header {
     align-items: flex-start;
     flex-direction: column;
   }
 
+  .maintenance-item,
   .operation-item {
     grid-template-columns: minmax(0, 1fr);
   }

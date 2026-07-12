@@ -41,6 +41,7 @@
     "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
     "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",
+    "maintenance:smoke": "node scripts/maintenance-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
     "website:smoke": "node scripts/website-production-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",

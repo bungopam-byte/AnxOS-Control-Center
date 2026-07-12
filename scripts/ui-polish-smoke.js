@@ -9,7 +9,7 @@ const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 
-const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "operations", "security", "owner-workspace", "agent-control", "nodes", "settings"];
+const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "operations", "maintenance", "security", "owner-workspace", "agent-control", "nodes", "settings"];
 expectedPages.forEach((page) => assert(index.includes(`data-page="${page}"`), `Missing workspace root: ${page}`));
 
 function pageMarkup(page) {
@@ -78,6 +78,12 @@ assert(app.includes("function startOperation") && app.includes("function updateO
 assert(app.includes("updateMarketplaceOperationFromEvent") && app.includes("activeMarketplaceOperationId"), "Marketplace installs must feed the Operations Center from real progress events.");
 assert(app.includes("operationId = startOperation") && app.includes("fileTransfers.set(id"), "File transfers and subsystem actions must create Operations Center entries.");
 assert(styles.includes(".operations-shell") && styles.includes("@keyframes operationIndeterminate"), "Operations Center CSS must include page layout and indeterminate progress styling.");
+assert(pageMarkup("maintenance").includes("data-maintenance-list") && pageMarkup("maintenance").includes('data-maintenance-action="scan"'), "Maintenance Center must expose real scan controls and category history.");
+assert(pageMarkup("maintenance").includes('data-maintenance-action="clear-selected"') && pageMarkup("maintenance").includes('data-maintenance-action="reset-ui"'), "Maintenance Center must expose supported cleanup and UI reset actions.");
+assert(app.includes("function scanMaintenanceStorage") && app.includes("function clearMaintenanceCategories") && app.includes("function resetRendererUiState"), "Renderer must wire Maintenance scan, cleanup, and safe UI state reset.");
+assert(preload.includes("maintenance:scan") && preload.includes("maintenance:clear"), "Preload must expose narrow Maintenance IPC.");
+assert(main.includes("registerMaintenanceIpc"), "Main process must register Maintenance IPC.");
+assert(styles.includes(".maintenance-shell") && styles.includes(".maintenance-detail-list"), "Maintenance Center CSS must include page and detail styling.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

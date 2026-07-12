@@ -287,6 +287,17 @@
             </span>
             <span class="nav-item__label" data-nav-label>Operations</span>
           </button>
+          <button class="nav-item" type="button" data-page-target="maintenance" data-page-label="Maintenance" data-tooltip="Maintenance" aria-label="Maintenance">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M14.5 5.5 18 2l4 4-3.5 3.5"></path>
+                <path d="M13 7 5 15l-1 5 5-1 8-8"></path>
+                <path d="M9 15h6"></path>
+                <path d="M12 12v6"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Maintenance</span>
+          </button>
           <button class="nav-item" type="button" data-page-target="security" data-page-label="Security" data-tooltip="Security" aria-label="Security">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -2400,6 +2411,68 @@
           </section>
         </section>
 
+        <section class="page" data-page="maintenance">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Storage Hygiene</p>
+              <h1>Maintenance</h1>
+              <p class="lede">Measure and clear AnxOS-owned desktop caches, logs, diagnostics state, and temporary files without touching server data, backups, saved credentials, or Marketplace instances.</p>
+            </div>
+          </header>
+
+          <section class="maintenance-shell" aria-label="Cache and maintenance center">
+            <div class="maintenance-summary-grid">
+              <article class="maintenance-summary-card">
+                <span class="service-icon">SIZE</span>
+                <div><span>Measured Storage</span><strong data-maintenance-summary="total">Not scanned</strong></div>
+              </article>
+              <article class="maintenance-summary-card">
+                <span class="service-icon">SAFE</span>
+                <div><span>Safe Categories</span><strong data-maintenance-summary="safe">0</strong></div>
+              </article>
+              <article class="maintenance-summary-card">
+                <span class="service-icon">WARN</span>
+                <div><span>Warnings</span><strong data-maintenance-summary="warnings">0</strong></div>
+              </article>
+              <article class="maintenance-summary-card">
+                <span class="service-icon">LAST</span>
+                <div><span>Last Scan</span><strong data-maintenance-summary="lastScan">Never</strong></div>
+              </article>
+            </div>
+
+            <div class="maintenance-toolbar">
+              <div class="maintenance-actions" aria-label="Maintenance actions">
+                <button class="primary-button" type="button" data-maintenance-action="scan">Scan Storage</button>
+                <button class="inline-action" type="button" data-maintenance-action="clear-selected" disabled>Clear Selected</button>
+                <button class="inline-action" type="button" data-maintenance-action="clear-safe" disabled>Clear Safe Caches</button>
+                <button class="inline-action" type="button" data-maintenance-action="reset-ui">Reset UI State</button>
+              </div>
+              <span class="settings-inline-status" data-maintenance-status>Scan storage to calculate real cache usage.</span>
+            </div>
+
+            <div class="maintenance-workspace">
+              <section class="maintenance-list-panel" aria-label="Maintenance categories">
+                <div class="maintenance-panel-header">
+                  <h3>Categories</h3>
+                  <span class="status-pill status-pill--planned" data-maintenance-scan-state>Not scanned</span>
+                </div>
+                <div class="maintenance-list" data-maintenance-list aria-live="polite"></div>
+              </section>
+
+              <aside class="maintenance-detail-panel" aria-label="Maintenance details">
+                <div class="maintenance-panel-header">
+                  <h3>Details</h3>
+                  <span class="status-pill status-pill--planned" data-maintenance-detail-status>Idle</span>
+                </div>
+                <div class="maintenance-detail" data-maintenance-detail>
+                  <strong>No category selected</strong>
+                  <span>Select a maintenance category to inspect restart, sign-out, redownload, and support details.</span>
+                </div>
+              </aside>
+            </div>
+          </section>
+        </section>
+
         <section class="page" data-page="security">
           <header class="page-header">
             <div>
@@ -3092,6 +3165,8 @@
                     <option value="files">Files</option>
                     <option value="console">Console</option>
                     <option value="backups">Backups</option>
+                    <option value="operations">Operations</option>
+                    <option value="maintenance">Maintenance</option>
                     <option value="security">Security</option>
                     <option value="nodes">Nodes</option>
                     <option value="agent-control">Agent Control</option>
@@ -3209,9 +3284,9 @@
               <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="performance">Reset Performance</button></div>
             </section>
 
-            <section class="settings-section settings-section--storage" data-settings-category="storage" data-settings-keywords="storage cache logs temporary marketplace downloads application data cleanup">
-              <div class="settings-section__header"><div><h3>Storage</h3><p>Detailed usage and destructive cleanup are not enabled until path-safe cleanup service support lands.</p></div><span class="status-pill status-pill--planned">Not available yet</span></div>
-              <div class="settings-actions"><button class="inline-action" type="button" data-diagnostics-action="open">Open logs folder</button><button class="inline-action" type="button" disabled title="Path-safe storage cleanup is not available yet.">Clear cache</button><button class="inline-action" type="button" disabled title="Path-safe storage cleanup is not available yet.">Recalculate usage</button></div>
+            <section class="settings-section settings-section--storage" data-settings-category="storage" data-settings-keywords="storage cache logs temporary marketplace downloads application data cleanup maintenance">
+              <div class="settings-section__header"><div><h3>Storage</h3><p>Cache sizes and cleanup are handled in Maintenance through trusted desktop IPC.</p></div><span class="status-pill status-pill--ok">Available</span></div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-diagnostics-action="open">Open logs folder</button><button class="inline-action" type="button" data-page-target="maintenance">Open Maintenance</button></div>
             </section>
 
             <section class="settings-section settings-section--backups" data-settings-category="backups" data-settings-keywords="backups configuration restore import export retention schedule">

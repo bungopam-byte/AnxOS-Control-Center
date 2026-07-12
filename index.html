@@ -3729,38 +3729,54 @@
 
     <div class="app-modal-backdrop app-modal-backdrop--drawer" data-node-details-modal hidden>
       <aside class="node-details-drawer" role="dialog" aria-modal="true" aria-labelledby="node-details-title" tabindex="-1">
-        <header class="modal-header">
-          <div>
+        <header class="modal-header node-details-header">
+          <div class="node-details-heading">
             <p class="eyebrow">Node Details</p>
             <h2 id="node-details-title" data-node-details-title>Node</h2>
+            <p class="node-details-summary" data-node-details-summary>Node status unavailable.</p>
+            <div class="node-details-badges" data-node-details-badges aria-label="Node status metadata"></div>
           </div>
+          <span class="status-pill status-pill--planned" data-node-health-status aria-live="polite">Unknown</span>
           <button class="icon-action" type="button" aria-label="Close node details" data-node-action="close-details">&times;</button>
         </header>
-        <div class="node-details-badges" data-node-details-badges></div>
-        <dl class="node-details-list">
-          <div><dt>Hostname</dt><dd data-node-detail="hostname">Unavailable</dd></div>
-          <div><dt>Operating System</dt><dd data-node-detail="os">Unavailable</dd></div>
-          <div><dt>Agent Version</dt><dd data-node-detail="version">Unavailable</dd></div>
-          <div><dt>Docker Status</dt><dd data-node-detail="docker">Unavailable</dd></div>
-          <div><dt>Last Seen</dt><dd data-node-detail="lastSeen">Unavailable</dd></div>
-          <div><dt>Connection Status</dt><dd data-node-detail="connection">Unavailable</dd></div>
-          <div><dt>URL</dt><dd data-node-detail="url">Unavailable</dd></div>
-          <div><dt>Token</dt><dd data-node-detail="token">Unavailable</dd></div>
-        </dl>
         <section class="settings-section settings-section--node-health" aria-labelledby="node-health-title">
           <div class="settings-section__header node-health-header">
             <div>
               <h3 id="node-health-title">Node Health</h3>
               <p>Deterministic health from loaded node, Agent, dependency, resource, storage, diagnostics, and operations data.</p>
             </div>
-            <span class="status-pill status-pill--planned" data-node-health-status aria-live="polite">Unknown</span>
           </div>
           <div class="security-summary-grid node-health-overview" data-node-health-overview aria-live="polite" aria-label="Node health overview"></div>
           <p class="settings-note" data-node-health-updated>Last checked: not checked.</p>
-          <div class="security-list node-health-categories" data-node-health-categories role="list" aria-label="Node health categories" aria-live="polite"></div>
-          <div class="security-list node-health-issues" data-node-health-issues role="list" aria-label="Detected node health issues"></div>
+          <section class="node-health-subsection" aria-labelledby="node-health-issues-title">
+            <div class="node-health-subsection__header">
+              <h4 id="node-health-issues-title">Detected Issues</h4>
+              <span class="settings-note">Critical, warning, unknown, and stale categories appear first.</span>
+            </div>
+            <div class="security-list node-health-issues" data-node-health-issues role="list" aria-label="Detected node health issues"></div>
+          </section>
+          <section class="node-health-subsection" aria-labelledby="node-health-categories-title">
+            <div class="node-health-subsection__header">
+              <h4 id="node-health-categories-title">Health Categories</h4>
+              <span class="settings-note">All deterministic checks from current loaded state.</span>
+            </div>
+            <div class="security-list node-health-categories" data-node-health-categories role="list" aria-label="Node health categories" aria-live="polite"></div>
+          </section>
           <p class="settings-note">Fix All is intentionally unavailable until every remediation can be reviewed, confirmed, ordered safely, and tracked through Operations.</p>
         </section>
+        <details class="node-technical-details">
+          <summary>Technical details</summary>
+          <dl class="node-details-list">
+            <div><dt>Hostname</dt><dd data-node-detail="hostname">Unavailable</dd></div>
+            <div><dt>Operating System</dt><dd data-node-detail="os">Unavailable</dd></div>
+            <div><dt>Agent Version</dt><dd data-node-detail="version">Unavailable</dd></div>
+            <div><dt>Docker Status</dt><dd data-node-detail="docker">Unavailable</dd></div>
+            <div><dt>Last Seen</dt><dd data-node-detail="lastSeen">Unavailable</dd></div>
+            <div><dt>Connection Status</dt><dd data-node-detail="connection">Unavailable</dd></div>
+            <div><dt>URL</dt><dd data-node-detail="url">Unavailable</dd></div>
+            <div><dt>Token</dt><dd data-node-detail="token">Unavailable</dd></div>
+          </dl>
+        </details>
         <div class="settings-actions node-details-actions">
           <button class="inline-action" type="button" data-node-details-action="select">Select</button>
           <button class="inline-action" type="button" data-node-details-action="test">Test Connection</button>

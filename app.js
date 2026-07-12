@@ -552,6 +552,7 @@ const nodeModal = document.querySelector("[data-node-modal]");
 const nodeModalTitle = document.querySelector("[data-node-modal-title]");
 const nodeDetailsModal = document.querySelector("[data-node-details-modal]");
 const nodeDetailsTitle = document.querySelector("[data-node-details-title]");
+const nodeDetailsSummary = document.querySelector("[data-node-details-summary]");
 const nodeDetailsFields = document.querySelectorAll("[data-node-detail]");
 const nodeDetailsBadges = document.querySelector("[data-node-details-badges]");
 const nodeHealthOverview = document.querySelector("[data-node-health-overview]");
@@ -21715,6 +21716,15 @@ function createNodeHealthDetails(category, evidence) {
   return wrapper;
 }
 
+function sortNodeHealthIssues(categories = []) {
+  return [...categories].sort((a, b) => {
+    const aRank = NODE_HEALTH_SEVERITY_RANK[normalizeNodeHealthState(a.state)] || 0;
+    const bRank = NODE_HEALTH_SEVERITY_RANK[normalizeNodeHealthState(b.state)] || 0;
+    if (bRank !== aRank) return bRank - aRank;
+    return (b.issueCount || 0) - (a.issueCount || 0);
+  });
+}
+
 function runNodeHealthAction(action) {
   if (action === "test-node") return testSelectedNode();
   if (action === "reconnect-agent") return refreshAgentControl({ includeConfig: true });
@@ -21794,13 +21804,13 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
   }
   if (nodeHealthIssues) {
     nodeHealthIssues.replaceChildren();
-    const issues = health.categories.filter((category) => category.issueCount > 0 || category.state !== "Healthy");
+    const issues = sortNodeHealthIssues(health.categories.filter((category) => category.issueCount > 0 || category.state !== "Healthy"));
     if (!issues.length) {
       nodeHealthIssues.append(createEmptyState("No node health issues detected from current data."));
     } else {
       issues.forEach((category) => {
         const item = document.createElement("article");
-        item.className = "security-list-item";
+        item.className = "security-list-item node-health-issue-card";
         const evidence = splitNodeHealthEvidence(category.evidence);
         const row = document.createElement("div");
         row.className = "security-card-row";
@@ -21812,9 +21822,20 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
           createTextElement("p", `Related workspace: ${category.workspace || "Unavailable"}`, "security-event-meta"),
         );
         row.append(body, createNodeHealthBadge(category.state));
+        const actions = document.createElement("div");
+        actions.className = "settings-actions node-health-actions";
+        const action = document.createElement("button");
+        action.type = "button";
+        action.className = "inline-action";
+        action.dataset.nodeHealthAction = category.action || "";
+        action.textContent = category.remediation || "Review";
+        action.disabled = !category.action;
+        action.setAttribute("aria-label", `${category.remediation || "Review"} for ${category.label}`);
+        actions.append(action);
         item.append(
           row,
           createNodeHealthDetails(category, evidence),
+          actions,
         );
         nodeHealthIssues.append(item);
       });
@@ -21910,10 +21931,12 @@ function openNodeDetails(nodeId) {
   const visualState = getNodeVisualState(node);
   const health = node.id === getSelectedNodeId() ? refreshNodeHealth({ notify: false }) : buildNodeHealthModel(node);
   if (nodeDetailsTitle) nodeDetailsTitle.textContent = node.displayName || node.id || "Node";
+  if (nodeDetailsSummary) {
+    nodeDetailsSummary.textContent = `${node.kind === "application-host" ? "Application host" : "Agent node"} · ${getNodeStatusLabel(node)} · ${health.issueCount} health issue${health.issueCount === 1 ? "" : "s"}`;
+  }
   if (nodeDetailsBadges) {
     nodeDetailsBadges.replaceChildren(
       createNodeBadge(getNodeStatusLabel(node), visualState),
-      createNodeHealthBadge(health.state),
       createNodeBadge(node.docker?.enabled === false ? "Docker Off" : "Docker Enabled", node.docker?.enabled === false ? "planned" : "online"),
       createNodeBadge(node.kind === "application-host" ? "Application Host" : "Agent", node.kind === "application-host" ? "online" : visualState),
       createNodeBadge(node.ownerMachine ? "Owner Machine" : "Standard Node", node.ownerMachine ? "online" : "planned"),

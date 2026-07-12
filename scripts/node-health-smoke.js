@@ -24,8 +24,13 @@ function requireApp(needle, message) {
   "node-health-overview",
   "node-health-categories",
   "node-health-issues",
+  "node-details-header",
+  "data-node-details-summary",
+  "node-health-subsection",
+  "node-technical-details",
   "Node Health",
-  "Health Issues",
+  "Detected Issues",
+  "Technical details",
   "Fix All is intentionally unavailable",
   'aria-label="Node health categories"',
   'aria-label="Detected node health issues"',
@@ -112,6 +117,7 @@ function requireApp(needle, message) {
   "getNodeHealthBreakdown",
   "splitNodeHealthEvidence",
   "createNodeHealthDetails",
+  "sortNodeHealthIssues",
   "node-health-summary-text",
   "node-health-long-value",
   "Copy details",
@@ -125,15 +131,24 @@ function requireApp(needle, message) {
 
 [
   ".node-health-overview",
-  "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
+  "repeat(auto-fit, minmax(min(100%, 128px), 1fr))",
+  ".node-health-categories",
+  "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
+  ".node-health-issues",
+  "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+  ".node-technical-details",
+  ".node-details-header",
+  "grid-template-columns: minmax(0, 1fr) auto auto",
+  "overflow-x: hidden",
   ".node-health-summary-text",
   "-webkit-line-clamp: 2",
   ".node-health-long-value",
   "text-overflow: ellipsis",
-  "width: min(760px, calc(100vw - 28px))",
+  "width: min(980px, calc(100vw - 28px))",
   "@media (prefers-reduced-motion: reduce)",
 ].forEach((needle) => assert(styles.includes(needle), `Node health polish CSS should include ${needle}.`));
 
+assert(!index.includes("owner-page-rail"), "Node details drawer must not introduce a permanent side rail.");
 assert(!app.includes("nodeHealthCategories.innerHTML"), "Node health categories must not use raw HTML injection.");
 assert(!app.includes("nodeHealthIssues.innerHTML"), "Node health issues must not use raw HTML injection.");
 assert(!app.includes("security score") && !app.includes("health score"), "Node health should not add fake numeric scores.");

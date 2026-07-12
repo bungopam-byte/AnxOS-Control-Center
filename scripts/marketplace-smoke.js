@@ -2576,6 +2576,28 @@ async function assertProviderInstallSupport() {
   }
 }
 
+function assertMarketplaceProductionPolishRendererContracts() {
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const indexSource = fs.readFileSync(indexPath, "utf8");
+  const styleSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+
+  assert(indexSource.includes("data-marketplace-install-summary"), "Marketplace wizard should expose a production install summary surface.");
+  assert(indexSource.includes("data-marketplace-recovery-actions"), "Marketplace wizard should expose a recovery action surface.");
+  assert(appSource.includes("function getMarketplaceTemplateInstances"), "Renderer should derive installed state from real instance template metadata.");
+  assert(appSource.includes("metadata?.templateId"), "Installed-state detection should use persisted instance metadata.");
+  assert(appSource.includes("function getMarketplaceTemplateDependencyIds"), "Renderer should present dependency requirements from template metadata.");
+  assert(appSource.includes("Compatibility unknown"), "Renderer must show unknown compatibility honestly when metadata is absent.");
+  assert(appSource.includes("Install path\", \"Managed by the selected Agent instance data root"), "Install review should avoid exposing or inventing raw filesystem paths.");
+  assert(appSource.includes("Data preservation\", \"Uninstall and backup behavior are managed"), "Install review should not imply unsupported uninstall/data-preservation choices.");
+  assert(appSource.includes("Retry Install"), "Failed Marketplace installs should expose a guarded retry action.");
+  assert(appSource.includes("Open Operations"), "Marketplace recovery should link to the existing Operations Center.");
+  assert(appSource.includes("Open Dependency Check"), "Dependency failures should route to the existing dependency preparation surface.");
+  assert(appSource.includes("templateState.action === \"Open instance\""), "Installed Marketplace cards should open the existing instance instead of showing duplicate install actions.");
+  assert(!appSource.includes("fake compatibility"), "Marketplace polish must not add fake compatibility claims.");
+  assert(styleSource.includes(".marketplace-summary-item[data-state=\"unsupported\"]"), "Requirement and compatibility summaries should use non-color-only state structure.");
+  assert(styleSource.includes("overflow-wrap: anywhere"), "Marketplace long metadata should wrap safely.");
+}
+
 async function main() {
   assertCatalogLoads();
   assertRemoteSystemMetricsNormalize();
@@ -2618,6 +2640,7 @@ async function main() {
   assertImportEcosystemSupport();
   assertMinecraftTemplatesStillPass();
   await assertProviderInstallSupport();
+  assertMarketplaceProductionPolishRendererContracts();
   console.log("Marketplace smoke checks passed.");
 }
 

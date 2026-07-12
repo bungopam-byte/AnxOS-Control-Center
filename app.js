@@ -201,6 +201,8 @@ const marketplaceInstallButton = document.querySelector("[data-marketplace-insta
 const marketplaceCancelButton = document.querySelector("[data-marketplace-cancel]");
 const marketplaceMessage = document.querySelector("[data-marketplace-message]");
 const marketplaceProgress = document.querySelector("[data-marketplace-progress]");
+const marketplaceInstallSummary = document.querySelector("[data-marketplace-install-summary]");
+const marketplaceRecoveryActions = document.querySelector("[data-marketplace-recovery-actions]");
 const downloadRefreshButton = document.querySelector("[data-download-refresh]");
 const downloadList = document.querySelector("[data-download-list]");
 const filesPage = document.querySelector('[data-page="files"]');
@@ -7186,6 +7188,10 @@ function renderInstancesSnapshot(snapshot) {
   setInstancesLoading(false);
   setInstancesEmpty(instances.length === 0);
   updateInstanceActionButtons();
+  if (getActivePageName() === "marketplace") {
+    renderMarketplaceTemplates();
+    renderMarketplaceInstallSummary(findMarketplaceTemplate());
+  }
   updateTitlebar();
 }
 
@@ -7592,10 +7598,14 @@ function renderMarketplaceTemplates() {
   renderMarketplaceEmptyState(templates.length > 0 ? { hidden: true } : marketplaceProviderError);
 
   templates.forEach((template) => {
+    const templateState = getMarketplaceStateForTemplate(template);
     const card = document.createElement("article");
     card.className = "marketplace-card";
     card.classList.toggle("is-selected", template.id === marketplaceSelectedTemplateId);
     card.classList.toggle("is-disabled", Boolean(template.comingSoon || template.disabled));
+    card.dataset.marketplaceState = templateState.label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    card.tabIndex = 0;
+    card.setAttribute("aria-label", `${template.displayName || template.id || "Marketplace template"}: ${templateState.label}`);
 
     const icon = document.createElement("span");
     icon.className = "marketplace-card__icon";
@@ -7618,6 +7628,11 @@ function renderMarketplaceTemplates() {
     meta.className = "marketplace-card__meta";
     const downloads = template.category === "Modpacks" ? ` · ${formatProviderDownloads(template.downloads)} downloads` : "";
     meta.textContent = `${template.author || "Unknown"} · v${template.version || "0.0.0"} · ${template.category || "Uncategorized"}${downloads}`;
+    const stateBadge = document.createElement("span");
+    stateBadge.className = `marketplace-card__state status-pill status-pill--${templateState.tone}`;
+    stateBadge.textContent = templateState.instances.length > 1
+      ? `${templateState.label} (${templateState.instances.length})`
+      : templateState.label;
     const badges = document.createElement("div");
     badges.className = "marketplace-card__badges";
     [
@@ -7630,19 +7645,50 @@ function renderMarketplaceTemplates() {
       badge.textContent = label;
       badges.append(badge);
     });
-    body.append(title, description, meta, badges);
+    body.append(title, description, meta, stateBadge, badges);
 
     const install = document.createElement("button");
     install.type = "button";
     install.className = "inline-action";
-    install.textContent = template.comingSoon || template.disabled ? "Coming soon" : "Install";
-    install.disabled = Boolean(template.comingSoon || template.disabled);
-    install.addEventListener("click", () => openMarketplaceWizard(template.id));
+    install.textContent = template.comingSoon || template.disabled ? "Coming soon" : templateState.action;
+    install.disabled = Boolean(template.comingSoon || template.disabled || templateState.disabled);
+    install.addEventListener("click", () => {
+      if (templateState.action === "Review recovery") {
+        reviewMarketplaceRecovery(template);
+        return;
+      }
+      if (templateState.instances.length && templateState.action === "Open instance") {
+        openMarketplaceInstance(templateState.instances[0].id);
+        return;
+      }
+      openMarketplaceWizard(template.id);
+    });
 
     card.append(icon, body, install);
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      if (templateState.action === "Review recovery") {
+        reviewMarketplaceRecovery(template);
+        return;
+      }
+      if (templateState.instances.length && templateState.action === "Open instance") {
+        openMarketplaceInstance(templateState.instances[0].id);
+        return;
+      }
+      if (!template.comingSoon && !template.disabled) openMarketplaceWizard(template.id);
+    });
     card.addEventListener("dblclick", () => {
       if (template.comingSoon || template.disabled) {
         setMarketplaceMessage(template.comingSoonMessage || "This template is not ready yet.", "warning");
+        return;
+      }
+      if (templateState.action === "Review recovery") {
+        reviewMarketplaceRecovery(template);
+        return;
+      }
+      if (templateState.instances.length && templateState.action === "Open instance") {
+        openMarketplaceInstance(templateState.instances[0].id);
         return;
       }
       openMarketplaceWizard(template.id);
@@ -7795,6 +7841,344 @@ function formatMarketplaceProviderLabel(template) {
 
 function formatMarketplaceLoaderLabel(template) {
   return String(template?.loader || template?.serverType || template?.instanceType || "").replace(/^minecraft-/i, "") || "";
+}
+
+const MARKETPLACE_DEPENDENCY_LABELS = {
+  java: "Java runtime",
+  "dotnet-runtime": ".NET runtime",
+  steamcmd: "SteamCMD",
+  docker: "Docker",
+  nodejs: "Node.js",
+  python: "Python",
+  unzip: "Unzip",
+  tar: "tar",
+  xz: "XZ tools",
+  curl: "curl",
+  wine: "Wine",
+};
+
+const MARKETPLACE_DEPENDENCY_REASONS = {
+  java: "Required by Minecraft servers, Java applications, and Java-based installers.",
+  "dotnet-runtime": "Required by .NET-based servers such as TShock.",
+  steamcmd: "Required by Steam dedicated server templates.",
+  docker: "Required by Docker-backed templates.",
+  nodejs: "Required by Node.js app and bot templates.",
+  python: "Required by Python app and bot templates.",
+  unzip: "Required to extract ZIP-based server archives.",
+  tar: "Required to extract tar archives and nested Linux server payloads.",
+  xz: "Required to extract .tar.xz archives.",
+  curl: "Required by templates that fetch external runtime assets.",
+  wine: "Required by Windows-only server runtimes running on Linux.",
+};
+
+function normalizeMarketplaceDependencyId(id) {
+  const value = String(id || "").trim().toLowerCase();
+  return /^[a-z][a-z0-9-]{1,63}$/.test(value) ? value : "";
+}
+
+function uniqueMarketplaceValues(values = []) {
+  const seen = new Set();
+  return values.filter((value) => {
+    const key = String(value || "").trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getMarketplaceTemplateDependencyIds(template = {}) {
+  const ids = [];
+  const push = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(push);
+      return;
+    }
+    if (typeof value === "object" && value !== null) {
+      push(value.id || value.dependencyId || value.command);
+      return;
+    }
+    const normalized = normalizeMarketplaceDependencyId(value);
+    if (normalized) ids.push(normalized);
+  };
+
+  push(template.hostDependencies);
+  push(template.dependencies?.host);
+  push(template.runtimeDependencies);
+  const installerType = String(template.installerType || template.installer?.type || template.downloadSource?.type || "").toLowerCase();
+  const runtime = String(template.runtime || template.startupType || template.instanceType || "").toLowerCase();
+  const category = String(template.category || "").toLowerCase();
+  if (category === "minecraft" || runtime.includes("java") || template.startupType === "java-jar") ids.push("java");
+  if (runtime.includes("steamcmd") || installerType.includes("steamcmd") || template.downloadSource?.type === "steamcmd") ids.push("steamcmd");
+  if (runtime.includes("docker") || template.startupType === "docker-image" || template.runtime === "docker") ids.push("docker");
+  if (template.instanceType === "node-app") ids.push("nodejs");
+  if (template.instanceType === "python-app") ids.push("python");
+  if (template.installer?.type === "archive" || installerType.includes("archive")) {
+    ids.push("unzip", "tar");
+    const archiveName = String(template.installer?.archive || template.downloadSource?.fileName || "").toLowerCase();
+    if (archiveName.endsWith(".xz") || archiveName.endsWith(".tar.xz")) ids.push("xz");
+  }
+  (Array.isArray(template.startup?.requiredCommands) ? template.startup.requiredCommands : []).forEach((command) => {
+    const dependencyId = {
+      java: "java",
+      dotnet: "dotnet-runtime",
+      steamcmd: "steamcmd",
+      docker: "docker",
+      node: "nodejs",
+      nodejs: "nodejs",
+      python: "python",
+      python3: "python",
+      unzip: "unzip",
+      tar: "tar",
+      xz: "xz",
+      curl: "curl",
+      wine: "wine",
+    }[String(command || "").trim().toLowerCase()];
+    if (dependencyId) ids.push(dependencyId);
+  });
+  return uniqueMarketplaceValues(ids);
+}
+
+function getMarketplaceTemplateInstances(template = {}) {
+  const templateId = template?.id || "";
+  if (!templateId) return [];
+  return getInstances().filter((instance) => {
+    const instanceTemplateId = instance?.templateId || instance?.metadata?.templateId || instance?.marketplace?.templateId;
+    return instanceTemplateId === templateId;
+  });
+}
+
+function getMarketplaceLocalInstallRecord(template = {}) {
+  const templateId = template?.id || "";
+  if (!templateId) return null;
+  return marketplaceLocalDownloadEntries.find((entry) => entry.templateId === templateId) || null;
+}
+
+function getMarketplaceStateForTemplate(template = {}) {
+  const instances = getMarketplaceTemplateInstances(template);
+  const activeOperation = activeMarketplaceOperationId ? operationsState.items.get(activeMarketplaceOperationId) : null;
+  const localRecord = getMarketplaceLocalInstallRecord(template);
+  if (template.comingSoon || template.disabled) {
+    return { label: "Unsupported", tone: "planned", action: "Unavailable", disabled: true, instances };
+  }
+  if (activeOperation && marketplaceSelectedTemplateId === template.id) {
+    if (activeOperation.status === "waiting") return { label: "Recovery available", tone: "warning", action: "Resume", instances, operation: activeOperation };
+    if (activeOperation.status === "failed") return { label: "Failed", tone: "critical", action: "Retry", instances, operation: activeOperation };
+    return { label: String(activeOperation.step || "").toLowerCase().includes("dependencies") ? "Preparing dependencies" : "Installing", tone: "planned", action: "Installing", disabled: true, instances, operation: activeOperation };
+  }
+  if (localRecord?.status === "waiting") {
+    return { label: "Recovery available", tone: "warning", action: "Review recovery", instances };
+  }
+  if (localRecord?.status === "failed") {
+    return { label: "Failed", tone: "critical", action: "Retry", instances };
+  }
+  if (instances.some((instance) => getInstanceStateClass(instance.state) === "failed")) {
+    return { label: "Failed", tone: "critical", action: "Open instance", instances };
+  }
+  if (instances.some(isInstanceRunning)) {
+    return { label: "Running", tone: "ok", action: "Open instance", instances };
+  }
+  if (instances.length > 0) {
+    return { label: "Installed", tone: "ok", action: "Open instance", instances };
+  }
+  return { label: "Available", tone: "planned", action: "Install", instances };
+}
+
+function formatMarketplaceSelectedNodeLabel() {
+  const selected = getSelectedNode();
+  return selected?.displayName || selected?.hostname || getSelectedNodeId() || "Selected node";
+}
+
+function getMarketplaceCompatibilityItems(template = {}) {
+  const compatibility = template.compatibility && typeof template.compatibility === "object" ? template.compatibility : {};
+  const items = [];
+  if (template.comingSoon || template.disabled) {
+    items.push({ label: "Availability", value: template.comingSoonMessage || template.unavailableReason || "This template is not installable yet.", state: "unsupported" });
+  } else {
+    items.push({ label: "Compatibility", value: Object.keys(compatibility).length ? "Declared by template metadata" : "Compatibility unknown", state: Object.keys(compatibility).length ? "ready" : "unknown" });
+  }
+  const platforms = uniqueMarketplaceValues([
+    ...(Array.isArray(compatibility.platforms) ? compatibility.platforms : []),
+    ...(Array.isArray(compatibility.operatingSystems) ? compatibility.operatingSystems : []),
+    ...(Array.isArray(compatibility.os) ? compatibility.os : []),
+  ]);
+  if (platforms.length) items.push({ label: "Operating systems", value: platforms.join(", "), state: "ready" });
+  const architectures = uniqueMarketplaceValues([
+    ...(Array.isArray(compatibility.architectures) ? compatibility.architectures : []),
+    ...(Array.isArray(compatibility.arch) ? compatibility.arch : []),
+  ]);
+  if (architectures.length) items.push({ label: "Architectures", value: architectures.join(", "), state: "ready" });
+  if (Array.isArray(compatibility.requires) && compatibility.requires.length) {
+    items.push({ label: "Required services", value: compatibility.requires.join(", "), state: "ready" });
+  }
+  if (template.manualStartRequired) {
+    items.push({ label: "Start behavior", value: template.manualStartMessage || "Manual configuration is required before startup.", state: "warning" });
+  }
+  if (template.installMetadata?.notes) {
+    items.push({ label: "Known limitation", value: template.installMetadata.notes, state: "warning" });
+  }
+  if (template.verified === true) items.push({ label: "Verification", value: "Verified AnxOS template metadata", state: "ready" });
+  if (template.experimental === true) items.push({ label: "Release channel", value: "Experimental", state: "warning" });
+  return items;
+}
+
+function getMarketplaceRequirementItems(template = {}) {
+  const items = getMarketplaceTemplateDependencyIds(template).map((id) => ({
+    label: MARKETPLACE_DEPENDENCY_LABELS[id] || id,
+    value: MARKETPLACE_DEPENDENCY_REASONS[id] || "Required by this Marketplace template.",
+    state: "unknown",
+    meta: id,
+  }));
+  if (template.runtime || template.startupType || template.instanceType) {
+    items.unshift({
+      label: "Runtime",
+      value: [template.runtime, template.startupType, template.instanceType].filter(Boolean).join(" · "),
+      state: "ready",
+    });
+  }
+  if (Array.isArray(template.defaultPorts) && template.defaultPorts.length > 0) {
+    items.push({ label: "Default ports", value: template.defaultPorts.join(", "), state: "ready" });
+  }
+  if (template.defaultRam) {
+    items.push({ label: "Memory default", value: template.defaultRam, state: "ready" });
+  }
+  if (template.installMetadata?.source) {
+    items.push({ label: "Install source", value: template.installMetadata.source, state: "ready" });
+  }
+  if (template.updateCheck?.type) {
+    items.push({ label: "Update metadata", value: `${template.updateCheck.type} check declared. Updates are handled by the instance workflow when supported.`, state: "unknown" });
+  }
+  if (template.installerType) {
+    items.push({ label: "Installer", value: template.installerType, state: template.installerType === "no-install" ? "unsupported" : "ready" });
+  }
+  return items;
+}
+
+function createMarketplaceSummarySection(titleText, items = []) {
+  const section = document.createElement("section");
+  section.className = "marketplace-summary-section";
+  const title = createTextElement("strong", titleText);
+  section.append(title);
+  const list = document.createElement("div");
+  list.className = "marketplace-summary-list";
+  if (!items.length) {
+    list.append(createTextElement("span", "No declared metadata.", "marketplace-summary-empty"));
+  }
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "marketplace-summary-item";
+    row.dataset.state = item.state || "unknown";
+    const label = createTextElement("span", item.label || "Item");
+    const value = createTextElement("small", item.value || "Unavailable");
+    row.append(label, value);
+    if (item.meta) {
+      const meta = createTextElement("code", item.meta);
+      row.append(meta);
+    }
+    list.append(row);
+  });
+  section.append(list);
+  return section;
+}
+
+function renderMarketplaceInstallSummary(template) {
+  if (!marketplaceInstallSummary) return;
+  marketplaceInstallSummary.replaceChildren();
+  if (!template) return;
+
+  const state = getMarketplaceStateForTemplate(template);
+  const overview = document.createElement("section");
+  overview.className = "marketplace-summary-section";
+  overview.append(createTextElement("strong", "Install review"));
+  const details = document.createElement("div");
+  details.className = "marketplace-summary-details";
+  [
+    ["Template", template.displayName || template.id || "Unknown"],
+    ["Selected node", formatMarketplaceSelectedNodeLabel()],
+    ["Version", template.version ? `Template v${template.version}` : "Version metadata unavailable"],
+    ["Instance state", state.instances.length ? `${state.instances.length} installed · ${state.label}` : state.label],
+    ["Install path", "Managed by the selected Agent instance data root"],
+    ["Data preservation", "Uninstall and backup behavior are managed from the Instances and Backups workspaces."],
+  ].forEach(([label, value]) => appendDetailPair(details, label, value, { valueTag: "small" }));
+  overview.append(details);
+  marketplaceInstallSummary.append(
+    overview,
+    createMarketplaceSummarySection("Runtime requirements", getMarketplaceRequirementItems(template)),
+    createMarketplaceSummarySection("Compatibility", getMarketplaceCompatibilityItems(template)),
+  );
+}
+
+function openMarketplaceInstance(instanceId) {
+  if (!instanceId) return;
+  showPage("instances");
+  selectInstance(instanceId, { refreshMetrics: true });
+}
+
+function reviewMarketplaceRecovery(template) {
+  marketplaceSelectedTemplateId = template?.id || marketplaceSelectedTemplateId;
+  renderMarketplaceRecoveryActions(template);
+  setMarketplaceMessage("Review the recovery actions and Download Manager entry for this Marketplace install.", "warning");
+  marketplaceManualRecovery?.scrollIntoView?.({ block: "nearest" });
+}
+
+function renderMarketplaceRecoveryActions(template, normalizedError = null) {
+  if (!marketplaceRecoveryActions) return;
+  marketplaceRecoveryActions.replaceChildren();
+  const state = template ? getMarketplaceStateForTemplate(template) : null;
+  const canShow = Boolean(template && (normalizedError || state?.instances?.length || activeMarketplaceOperationId));
+  marketplaceRecoveryActions.hidden = !canShow;
+  if (!canShow) return;
+
+  const heading = createTextElement("strong", normalizedError ? "Recovery actions" : "Related actions");
+  marketplaceRecoveryActions.append(heading);
+  const actions = document.createElement("div");
+  actions.className = "ssh-connection-actions";
+
+  const firstInstance = state.instances?.[0] || null;
+  if (firstInstance) {
+    const openInstance = document.createElement("button");
+    openInstance.type = "button";
+    openInstance.className = "inline-action";
+    openInstance.textContent = "Open Instance";
+    openInstance.addEventListener("click", () => openMarketplaceInstance(firstInstance.id));
+    actions.append(openInstance);
+  }
+
+  const relatedOperationId = activeMarketplaceOperationId || state?.operation?.id || null;
+  if (relatedOperationId) {
+    const openOperations = document.createElement("button");
+    openOperations.type = "button";
+    openOperations.className = "inline-action";
+    openOperations.textContent = "Open Operations";
+    openOperations.addEventListener("click", () => {
+      operationsState.selectedId = relatedOperationId;
+      renderOperationsCenter();
+      showPage("operations");
+    });
+    actions.append(openOperations);
+  }
+
+  if (normalizedError?.code === "DEPENDENCIES_REQUIRED" && getDesktopApiState().hasDependencies) {
+    const recheck = document.createElement("button");
+    recheck.type = "button";
+    recheck.className = "inline-action";
+    recheck.textContent = "Open Dependency Check";
+    recheck.addEventListener("click", () => showPage("agent-control"));
+    actions.append(recheck);
+  }
+
+  if (normalizedError?.details?.retryable !== false && !marketplaceInstallInFlight && template && !template.disabled && !template.comingSoon) {
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "inline-action";
+    retry.textContent = "Retry Install";
+    retry.addEventListener("click", () => openMarketplaceWizard(template.id));
+    actions.append(retry);
+  }
+
+  if (!actions.children.length) {
+    actions.append(createTextElement("span", "No safe recovery action is available for this state.", "settings-note"));
+  }
+  marketplaceRecoveryActions.append(actions);
 }
 
 const MARKETPLACE_SERVER_RUNTIME_OPTIONS = [
@@ -8286,6 +8670,8 @@ function openMarketplaceWizard(templateId) {
   if (marketplaceSelectedMeta) {
     marketplaceSelectedMeta.textContent = `${template.category || "Template"} · ${template.instanceType || "custom-command"} · ${template.startupType || "runtime"}`;
   }
+  renderMarketplaceInstallSummary(template);
+  renderMarketplaceRecoveryActions(template);
 
   const nameField = getMarketplaceField("name");
   const versionField = getMarketplaceField("version");
@@ -8358,6 +8744,10 @@ function closeMarketplaceWizard() {
   if (marketplaceWizard) {
     marketplaceWizard.hidden = true;
   }
+  if (marketplaceInstallSummary) {
+    marketplaceInstallSummary.replaceChildren();
+  }
+  renderMarketplaceRecoveryActions(null);
   if (marketplaceSelectedName) {
     marketplaceSelectedName.textContent = "Select a template";
   }
@@ -8703,6 +9093,7 @@ function setMarketplaceManualRecoveryState(state = null) {
 function rememberFailedMarketplaceDownload(template, normalizedError) {
   marketplaceLocalDownloadEntries = [{
     id: `failed-${Date.now()}`,
+    templateId: template?.id || "",
     name: template?.displayName || template?.name || template?.id || "Marketplace install",
     status: "failed",
     progress: 0,
@@ -8729,6 +9120,7 @@ function rememberWaitingMarketplaceDownload(template, manualDownload = {}, optio
   setMarketplaceManualRecoveryState(state);
   marketplaceLocalDownloadEntries = [{
     id: manualDownload.sessionId || `waiting-${Date.now()}`,
+    templateId: template?.id || "",
     name: state.templateName,
     status: "waiting",
     progress: 100,
@@ -8767,6 +9159,7 @@ function rememberImportedMarketplaceDownload(template, manualDownload = {}, opti
   setMarketplaceManualRecoveryState(state);
   marketplaceLocalDownloadEntries = [{
     id: manualDownload.sessionId || `imported-${Date.now()}`,
+    templateId: template?.id || "",
     name: state.templateName,
     status: "waiting",
     progress: 100,
@@ -9452,6 +9845,7 @@ async function completeMarketplaceInstallResult(result, template, providerInstal
   forgetStaleInstanceId(selectedInstanceId);
   setMarketplaceInstallState("Complete", "complete");
   setMarketplaceMessage("Install complete. Opening the new instance.");
+  renderMarketplaceRecoveryActions(template);
   finishOperation(activeMarketplaceOperationId, true, `Installed ${template.displayName || template.id || "template"}.`);
   showToast("Template installed.");
   showPage("instances");
@@ -9584,6 +9978,7 @@ async function installMarketplaceTemplate(event) {
     marketplaceInstallButton.disabled = true;
   }
   setMarketplaceInstallState("Installing", "running");
+  renderMarketplaceRecoveryActions(template);
   renderMarketplaceProgress([
     { label: "Validate template", status: "running", detail: `Sending install request for ${template.id}.` },
   ]);
@@ -9625,6 +10020,7 @@ async function installMarketplaceTemplate(event) {
         status: "waiting",
         step: "Waiting for a required manual download.",
       });
+      renderMarketplaceRecoveryActions(template);
       showToast("A required modpack file needs manual download.");
       return;
     }
@@ -9670,6 +10066,7 @@ async function installMarketplaceTemplate(event) {
     } else {
       rememberFailedMarketplaceDownload(template, normalizedError);
     }
+    renderMarketplaceRecoveryActions(template, normalizedError);
     renderMarketplaceProgress([
       {
         label: normalizedError.title,

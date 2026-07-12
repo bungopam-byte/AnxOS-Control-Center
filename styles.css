@@ -7848,6 +7848,11 @@ body.has-open-modal {
   font-size: 0.78rem;
 }
 
+.marketplace-card__state {
+  width: fit-content;
+  max-width: 100%;
+}
+
 .marketplace-card__badges {
   display: flex;
   flex-wrap: wrap;
@@ -7977,6 +7982,84 @@ body.has-open-modal {
   background: rgba(124, 70, 210, 0.16);
   border: 1px solid rgba(185, 148, 255, 0.16);
   font-size: 0.76rem;
+}
+
+.marketplace-install-summary,
+.marketplace-recovery-actions {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.marketplace-summary-section,
+.marketplace-recovery-actions {
+  padding: 10px;
+  border: 1px solid rgba(185, 148, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 3, 20, 0.42);
+}
+
+.marketplace-summary-section > strong,
+.marketplace-recovery-actions > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.marketplace-summary-details,
+.marketplace-summary-list {
+  display: grid;
+  gap: 7px;
+}
+
+.marketplace-summary-details > div,
+.marketplace-summary-item {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.45fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+}
+
+.marketplace-summary-details span,
+.marketplace-summary-item span {
+  color: rgba(216, 203, 238, 0.74);
+  font-size: 0.76rem;
+}
+
+.marketplace-summary-details small,
+.marketplace-summary-item small {
+  min-width: 0;
+  color: rgba(239, 232, 255, 0.9);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.marketplace-summary-item code {
+  grid-column: 2;
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: rgba(239, 232, 255, 0.82);
+  background: rgba(139, 92, 246, 0.16);
+  overflow-wrap: anywhere;
+}
+
+.marketplace-summary-item[data-state="warning"] {
+  border-left: 2px solid rgba(251, 191, 36, 0.7);
+  padding-left: 8px;
+}
+
+.marketplace-summary-item[data-state="unsupported"] {
+  border-left: 2px solid rgba(248, 113, 113, 0.72);
+  padding-left: 8px;
+}
+
+.marketplace-summary-empty {
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .marketplace-version-field {

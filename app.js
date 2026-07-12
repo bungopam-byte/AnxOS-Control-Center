@@ -272,6 +272,16 @@ const maintenanceSummaryFields = document.querySelectorAll("[data-maintenance-su
 const maintenanceActionButtons = document.querySelectorAll("[data-maintenance-action]");
 const maintenanceStatus = document.querySelector("[data-maintenance-status]");
 const maintenanceScanState = document.querySelector("[data-maintenance-scan-state]");
+const globalSearchOpenButtons = document.querySelectorAll("[data-global-search-open]");
+const globalSearchOverlay = document.querySelector("[data-global-search]");
+const globalSearchDialog = document.querySelector(".global-search-dialog");
+const globalSearchCloseButton = document.querySelector("[data-global-search-close]");
+const globalSearchInput = document.querySelector("[data-global-search-input]");
+const globalSearchStatus = document.querySelector("[data-global-search-status]");
+const globalSearchResults = document.querySelector("[data-global-search-results]");
+const globalSearchRecentsWrap = document.querySelector("[data-global-search-recents-wrap]");
+const globalSearchRecents = document.querySelector("[data-global-search-recents]");
+const globalSearchClearRecentsButton = document.querySelector("[data-global-search-clear-recents]");
 const fileToolbar = filesPage?.querySelector(".file-toolbar");
 const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const filesStorageDivider = filesPage?.querySelector('[data-files-resizer="storage"]');
@@ -734,6 +744,18 @@ const maintenanceState = {
   clearing: false,
   lastScanAt: null,
 };
+const globalSearchState = {
+  open: false,
+  query: "",
+  results: [],
+  activeIndex: 0,
+  requestId: 0,
+  recentSearches: [],
+  previousFocus: null,
+  searching: false,
+  error: null,
+};
+let globalSearchDebounceTimer = null;
 let securityRequestInFlight = false;
 const filesConnectionState = {
   connected: false,
@@ -760,12 +782,17 @@ const FILES_STORAGE_WIDTH_STORAGE_KEY = "anxos.files.storageWidth.v1";
 const FILES_DETAILS_WIDTH_STORAGE_KEY = "anxos.files.detailsWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
 const OPERATIONS_STORAGE_KEY = "anxos.operations.history.v1";
+const GLOBAL_SEARCH_RECENTS_STORAGE_KEY = "anxos.globalSearch.recents.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
 const STALE_INSTANCE_STORAGE_KEY = "anxos.instances.staleIds.v1";
 const LOCAL_SETUP_STORAGE_KEY = "anxos.localSetup.complete.v1";
 const OWNER_WORKSPACE_NAV_STORAGE_KEY = "anxos.ownerWorkspace.navExpanded.v1";
+const GLOBAL_SEARCH_DEBOUNCE_MS = 140;
+const GLOBAL_SEARCH_PROVIDER_LIMIT = 8;
+const GLOBAL_SEARCH_TOTAL_LIMIT = 48;
+const GLOBAL_SEARCH_RECENT_LIMIT = 8;
 const staleInstanceIds = new Set();
 const instanceRemovalAllowedIds = new Set();
 const PRIMARY_NAVIGATION_ORDER = [
@@ -11416,6 +11443,586 @@ function renderMaintenanceCenter() {
   renderMaintenanceDetail();
 }
 
+function normalizeSearchText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getSearchHaystack(...values) {
+  return values.flat(Infinity).filter((value) => value !== null && value !== undefined).join(" ").toLowerCase();
+}
+
+function matchesSearchQuery(query, ...values) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return true;
+  return getSearchHaystack(...values).includes(normalized);
+}
+
+function createGlobalSearchResult(provider, result = {}) {
+  return {
+    providerId: provider.id,
+    providerLabel: provider.label,
+    type: result.type || provider.type || provider.label,
+    id: String(result.id || `${provider.id}:${Math.random().toString(36).slice(2)}`),
+    label: String(result.label || "Untitled result"),
+    description: result.description ? String(result.description) : "",
+    disabled: Boolean(result.disabled),
+    disabledReason: result.disabledReason ? String(result.disabledReason) : "",
+    action: typeof result.action === "function" ? result.action : null,
+  };
+}
+
+function limitSearchResults(results, limit = GLOBAL_SEARCH_PROVIDER_LIMIT) {
+  return (Array.isArray(results) ? results : []).slice(0, limit);
+}
+
+function getWorkspaceSearchEntries() {
+  return Array.from(navItems)
+    .filter((item) => !item.hidden && item.dataset.pageTarget)
+    .map((item) => ({
+      id: item.dataset.pageTarget,
+      label: item.dataset.pageLabel || item.textContent.trim() || item.dataset.pageTarget,
+      description: item.dataset.tooltip || "Open workspace",
+    }))
+    .concat(shouldShowOwnerWorkspaceNav() ? [{
+      id: "owner-workspace",
+      label: "Owner Workspace",
+      description: isOwnerWorkspaceAuthorized() ? "Open owner-only workspace" : "Owner access required",
+      disabled: !isOwnerWorkspaceAuthorized(),
+      disabledReason: "Sign in as Owner to open this workspace.",
+    }] : [])
+    .filter((entry, index, entries) => entries.findIndex((candidate) => candidate.id === entry.id) === index);
+}
+
+function getGlobalSearchProviders() {
+  const providers = [
+    {
+      id: "workspaces",
+      label: "Workspaces",
+      type: "Workspace",
+      search(query) {
+        return getWorkspaceSearchEntries()
+          .filter((entry) => matchesSearchQuery(query, entry.label, entry.description, entry.id))
+          .map((entry) => createGlobalSearchResult(this, {
+            id: entry.id,
+            label: entry.label,
+            description: entry.description,
+            disabled: entry.disabled,
+            disabledReason: entry.disabledReason,
+            action: () => showPage(entry.id),
+          }));
+      },
+    },
+    {
+      id: "nodes",
+      label: "Nodes and Agents",
+      type: "Node",
+      search(query) {
+        const nodes = [nodesState.applicationHost, ...(Array.isArray(nodesState.nodes) ? nodesState.nodes : [])].filter(Boolean);
+        return nodes
+          .filter((node) => matchesSearchQuery(query, node.displayName, node.name, node.id, node.agentUrl, node.status, node.agentIdentity?.hostname, node.agentIdentity?.operatingSystem, node.agentIdentity?.version))
+          .map((node) => createGlobalSearchResult(this, {
+            id: node.id || node.name,
+            label: node.displayName || node.name || node.id || "Node",
+            description: [node.agentIdentity?.hostname, node.status || node.connectionStatus, node.agentIdentity?.operatingSystem].filter(Boolean).join(" · ") || "Managed node",
+            action: () => {
+              nodesState.selectedNodeId = node.id || nodesState.selectedNodeId;
+              showPage("nodes");
+              if (node.id && typeof selectNode === "function") {
+                const selection = selectNode(node.id);
+                selection?.catch?.(() => {});
+              }
+            },
+          }));
+      },
+    },
+    {
+      id: "instances",
+      label: "Marketplace Instances",
+      type: "Instance",
+      search(query) {
+        return getInstances()
+          .filter((instance) => matchesSearchQuery(query, instance.id, instance.displayName, instance.type, instance.state, instance.tags))
+          .map((instance) => createGlobalSearchResult(this, {
+            id: instance.id,
+            label: instance.displayName || instance.id,
+            description: [instance.type, instance.state, Array.isArray(instance.tags) ? instance.tags.join(", ") : ""].filter(Boolean).join(" · "),
+            action: () => {
+              if (!findInstance(instance.id)) {
+                showToast("That instance is no longer available.", "warning");
+                return;
+              }
+              showPage("instances");
+              selectInstance(instance.id);
+            },
+          }));
+      },
+    },
+    {
+      id: "marketplace",
+      label: "Marketplace",
+      type: "Template",
+      search(query) {
+        return getMarketplaceTemplates()
+          .filter((template) => matchesSearchQuery(query, template.displayName, template.name, template.description, template.author, template.category, template.tags, template.id, template.runtimeRequirements))
+          .map((template) => createGlobalSearchResult(this, {
+            id: template.id,
+            label: template.displayName || template.name || template.id,
+            description: [template.category, template.author || template.maintainer, template.disabled || template.comingSoon ? "Unavailable" : "Installable"].filter(Boolean).join(" · "),
+            disabled: Boolean(template.disabled || template.comingSoon),
+            disabledReason: template.comingSoonMessage || "This Marketplace template is not ready yet.",
+            action: () => {
+              showPage("marketplace");
+              if (!findMarketplaceTemplate(template.id)) {
+                showToast("Marketplace template is no longer loaded.", "warning");
+                return;
+              }
+              openMarketplaceWizard(template.id);
+            },
+          }));
+      },
+    },
+    {
+      id: "files",
+      label: "Files",
+      type: "File",
+      search(query) {
+        const entries = (latestFilesListing?.entries || []).map((entry) => ({
+          id: entry.path || entry.name,
+          label: entry.name || entry.path || "File item",
+          description: `${entry.isDirectory ? "Folder" : formatBytes(entry.size)} · Current directory only`,
+          entry,
+        }));
+        const storageEntries = (storageConnectionsState.connections || []).map((connection) => ({
+          id: `storage:${connection.id}`,
+          label: storageConnectionLabel(connection),
+          description: [connection.provider || connection.type || "Storage", connection.rootDirectory || connection.host].filter(Boolean).join(" · "),
+          connection,
+        }));
+        return [...entries, ...storageEntries]
+          .filter((entry) => matchesSearchQuery(query, entry.label, entry.description, entry.id))
+          .map((entry) => createGlobalSearchResult(this, {
+            id: entry.id,
+            label: entry.label,
+            description: entry.description || "Files workspace",
+            action: async () => {
+              showPage("files");
+              if (entry.entry) {
+                if (!filesConnectionState.connected) {
+                  showToast("Files are not connected.", "warning");
+                  return;
+                }
+                selectFileEntry(entry.entry);
+                if (entry.entry.isDirectory) await navigateRemoteDirectory(entry.entry.path);
+              } else if (entry.connection) {
+                selectedStorageId = entry.connection.id;
+                renderStorageConnections();
+                renderFilesView();
+              }
+            },
+          }));
+      },
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      type: "Setting",
+      search(query) {
+        return getSettingSearchEntries()
+          .filter((entry) => matchesSearchQuery(query, entry.title, entry.description, entry.haystack, entry.category))
+          .map((entry) => createGlobalSearchResult(this, {
+            id: entry.category,
+            label: entry.title,
+            description: entry.description || "Settings category",
+            action: () => {
+              showPage("settings");
+              setActiveSettingsCategory(entry.category, entry.selector);
+            },
+          }));
+      },
+    },
+    {
+      id: "operations",
+      label: "Operations",
+      type: "Task",
+      search(query) {
+        loadOperationHistory();
+        return [...operationsState.items.values()]
+          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+          .filter((operation) => matchesSearchQuery(query, operation.title, operation.target, operation.type, operation.status, operation.step, operation.error))
+          .map((operation) => createGlobalSearchResult(this, {
+            id: operation.id,
+            label: operation.title || "Operation",
+            description: [operationStatusLabel(operation.status), operation.target || operation.step].filter(Boolean).join(" · "),
+            action: () => {
+              showPage("operations");
+              operationsState.selectedId = operation.id;
+              renderOperationsCenter();
+            },
+          }));
+      },
+    },
+    {
+      id: "maintenance",
+      label: "Maintenance",
+      type: "Cache",
+      search(query) {
+        return (maintenanceState.categories || [])
+          .filter((category) => matchesSearchQuery(query, category.displayName, category.description, category.id, category.status, category.pathLabel))
+          .map((category) => createGlobalSearchResult(this, {
+            id: category.id,
+            label: category.displayName || category.id,
+            description: [maintenanceStatusLabel(category.status), formatBytes(category.sizeBytes || 0), category.restartRequired ? "Restart required" : ""].filter(Boolean).join(" · "),
+            action: () => {
+              showPage("maintenance");
+              maintenanceState.activeId = category.id;
+              renderMaintenanceCenter();
+            },
+          }));
+      },
+    },
+    {
+      id: "security",
+      label: "Security",
+      type: "Security",
+      search(query) {
+        const entries = [
+          ["status", "Security status", securityState.authenticated ? "Local owner authenticated" : "Authentication required"],
+          ["sessions", "Remembered sessions", `${securityState.persistentSessionCount || 0} remembered sessions`],
+          ["account", "Account security", accountState.authenticated ? "AnxOS account signed in" : "No account session"],
+        ];
+        return entries
+          .filter((entry) => matchesSearchQuery(query, entry[0], entry[1], entry[2]))
+          .map((entry) => createGlobalSearchResult(this, {
+            id: entry[0],
+            label: entry[1],
+            description: entry[2],
+            action: () => {
+              showPage("settings");
+              setActiveSettingsCategory("security", '[data-settings-category="security"]');
+            },
+          }));
+      },
+    },
+    {
+      id: "diagnostics",
+      label: "Diagnostics",
+      type: "Diagnostic",
+      search(query) {
+        const entries = agentLogEntries.slice(-120).reverse();
+        return entries
+          .filter((entry) => matchesSearchQuery(query, entry.severity, entry.scope, entry.message, entry.code))
+          .map((entry, index) => createGlobalSearchResult(this, {
+            id: `${entry.timestamp || "log"}:${index}`,
+            label: entry.message || entry.code || "Diagnostic entry",
+            description: [entry.severity, entry.scope, entry.timestamp ? formatDateTime(entry.timestamp) : ""].filter(Boolean).join(" · "),
+            action: () => {
+              showPage("agent-control");
+              agentLogSearch?.focus();
+            },
+          }));
+      },
+    },
+  ];
+
+  if (isOwnerWorkspaceAuthorized()) {
+    providers.push({
+      id: "owner-workspace",
+      label: "Owner Workspace",
+      type: "Owner",
+      search(query) {
+        return (ownerWorkspaceState.pages || [])
+          .filter((page) => matchesSearchQuery(query, page.title, page.id, page.builtIn ? "built-in" : "custom"))
+          .map((page) => createGlobalSearchResult(this, {
+            id: page.id,
+            label: page.title || page.id,
+            description: page.builtIn ? "Built-in owner page" : "Custom owner page",
+            action: () => selectOwnerPage(page.id),
+          }));
+      },
+    });
+  }
+
+  return providers;
+}
+
+function readGlobalSearchRecents() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(GLOBAL_SEARCH_RECENTS_STORAGE_KEY) || "[]");
+    return Array.isArray(value) ? value.filter((entry) => typeof entry === "string").slice(0, GLOBAL_SEARCH_RECENT_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGlobalSearchRecents() {
+  try {
+    window.localStorage.setItem(GLOBAL_SEARCH_RECENTS_STORAGE_KEY, JSON.stringify(globalSearchState.recentSearches.slice(0, GLOBAL_SEARCH_RECENT_LIMIT)));
+  } catch {}
+}
+
+function isSensitiveSearchQuery(query) {
+  const value = String(query || "").trim();
+  if (!value) return true;
+  if (value.length > 96) return true;
+  if (/(\bpassword\b|\bpasswd\b|\btoken\b|\bsecret\b|\bauthorization\b|\bcookie\b|\bapi[-_ ]?key\b|bearer\s+|sk-[a-z0-9_-]{12,})/i.test(value)) return true;
+  if (/^[A-Z0-9]{6,}(?:-[A-Z0-9]{4,}){1,}$/i.test(value)) return true;
+  if (/^(?:\/|[A-Za-z]:\\|~\/).{20,}/.test(value)) return true;
+  return false;
+}
+
+function rememberGlobalSearchQuery(query) {
+  const value = String(query || "").trim();
+  if (isSensitiveSearchQuery(value)) return;
+  globalSearchState.recentSearches = [value, ...globalSearchState.recentSearches.filter((entry) => entry.toLowerCase() !== value.toLowerCase())].slice(0, GLOBAL_SEARCH_RECENT_LIMIT);
+  writeGlobalSearchRecents();
+}
+
+function appendHighlightedText(target, text, query) {
+  const source = String(text || "");
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) {
+    target.append(document.createTextNode(source));
+    return;
+  }
+  const lower = source.toLowerCase();
+  const needle = normalizedQuery.toLowerCase();
+  let cursor = 0;
+  let index = lower.indexOf(needle);
+  while (index >= 0) {
+    if (index > cursor) target.append(document.createTextNode(source.slice(cursor, index)));
+    const mark = document.createElement("mark");
+    mark.className = "global-search-highlight";
+    mark.textContent = source.slice(index, index + needle.length);
+    target.append(mark);
+    cursor = index + needle.length;
+    index = lower.indexOf(needle, cursor);
+  }
+  if (cursor < source.length) target.append(document.createTextNode(source.slice(cursor)));
+}
+
+function renderGlobalSearchRecents() {
+  if (!globalSearchRecents || !globalSearchRecentsWrap) return;
+  globalSearchRecents.replaceChildren();
+  const shouldShow = globalSearchState.open && !globalSearchState.query && globalSearchState.recentSearches.length > 0;
+  globalSearchRecentsWrap.hidden = !shouldShow;
+  if (!shouldShow) return;
+  globalSearchState.recentSearches.forEach((term) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "global-search-recent";
+    button.textContent = term;
+    button.addEventListener("click", () => {
+      if (globalSearchInput) globalSearchInput.value = term;
+      scheduleGlobalSearch(term, { immediate: true });
+    });
+    globalSearchRecents.append(button);
+  });
+}
+
+function renderGlobalSearchEmpty(title, message) {
+  if (!globalSearchResults) return;
+  const empty = document.createElement("div");
+  empty.className = "global-search-empty";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const span = document.createElement("span");
+  span.textContent = message;
+  empty.append(strong, span);
+  globalSearchResults.replaceChildren(empty);
+}
+
+function renderGlobalSearchResults() {
+  if (!globalSearchResults) return;
+  renderGlobalSearchRecents();
+  const query = globalSearchState.query;
+  if (globalSearchStatus) {
+    if (globalSearchState.searching) {
+      globalSearchStatus.textContent = "Searching...";
+    } else if (globalSearchState.error) {
+      globalSearchStatus.textContent = globalSearchState.error;
+    } else {
+      globalSearchStatus.textContent = query
+        ? `${globalSearchState.results.length} result${globalSearchState.results.length === 1 ? "" : "s"}`
+        : "Type to search.";
+    }
+  }
+  if (!query) {
+    renderGlobalSearchEmpty("Start typing to search", "Global Search uses currently loaded desktop state and bounded local lists.");
+    return;
+  }
+  if (globalSearchState.error) {
+    renderGlobalSearchEmpty("Search unavailable", globalSearchState.error);
+    return;
+  }
+  if (!globalSearchState.results.length) {
+    renderGlobalSearchEmpty("No matching results", "Try a different workspace, setting, loaded file, node, or Marketplace term.");
+    return;
+  }
+  globalSearchResults.replaceChildren();
+  let flatIndex = 0;
+  const groups = new Map();
+  globalSearchState.results.forEach((result) => {
+    if (!groups.has(result.providerLabel)) groups.set(result.providerLabel, []);
+    groups.get(result.providerLabel).push(result);
+  });
+  groups.forEach((results, providerLabel) => {
+    const group = document.createElement("section");
+    group.className = "global-search-group";
+    const heading = document.createElement("div");
+    heading.className = "global-search-group-title";
+    heading.textContent = providerLabel;
+    group.append(heading);
+    results.forEach((result) => {
+      const index = flatIndex;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "global-search-result";
+      button.disabled = result.disabled;
+      button.dataset.globalSearchResultIndex = String(index);
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", index === globalSearchState.activeIndex ? "true" : "false");
+      button.classList.toggle("is-active", index === globalSearchState.activeIndex);
+      const top = document.createElement("span");
+      top.className = "global-search-result__top";
+      const title = document.createElement("strong");
+      appendHighlightedText(title, result.label, query);
+      const type = document.createElement("span");
+      type.className = "global-search-result__type";
+      type.textContent = result.type;
+      top.append(title, type);
+      const description = document.createElement("p");
+      description.textContent = result.disabled ? result.disabledReason || "Unavailable" : result.description || "Open result";
+      button.append(top, description);
+      button.addEventListener("click", () => activateGlobalSearchResult(index));
+      group.append(button);
+      flatIndex += 1;
+    });
+    globalSearchResults.append(group);
+  });
+}
+
+async function runGlobalSearch(query) {
+  const requestId = ++globalSearchState.requestId;
+  const normalized = String(query || "").trim();
+  globalSearchState.query = normalized;
+  globalSearchState.error = null;
+  if (!normalized) {
+    globalSearchState.results = [];
+    globalSearchState.activeIndex = 0;
+    globalSearchState.searching = false;
+    renderGlobalSearchResults();
+    return;
+  }
+  globalSearchState.searching = true;
+  renderGlobalSearchResults();
+  try {
+    const providerResults = await Promise.allSettled(getGlobalSearchProviders().map(async (provider) => {
+      const results = await provider.search(normalized);
+      return limitSearchResults(results, provider.limit || GLOBAL_SEARCH_PROVIDER_LIMIT);
+    }));
+    if (requestId !== globalSearchState.requestId) return;
+    const results = providerResults
+      .flatMap((result) => result.status === "fulfilled" ? result.value : [])
+      .slice(0, GLOBAL_SEARCH_TOTAL_LIMIT);
+    globalSearchState.results = results;
+    globalSearchState.activeIndex = results.findIndex((result) => !result.disabled);
+    if (globalSearchState.activeIndex < 0) globalSearchState.activeIndex = 0;
+  } catch (error) {
+    if (requestId !== globalSearchState.requestId) return;
+    globalSearchState.results = [];
+    globalSearchState.error = normalizeIpcErrorMessage(error, "Search failed.");
+  } finally {
+    if (requestId === globalSearchState.requestId) {
+      globalSearchState.searching = false;
+      renderGlobalSearchResults();
+    }
+  }
+}
+
+function scheduleGlobalSearch(query, { immediate = false } = {}) {
+  window.clearTimeout(globalSearchDebounceTimer);
+  if (immediate) {
+    runGlobalSearch(query);
+    return;
+  }
+  globalSearchDebounceTimer = window.setTimeout(() => runGlobalSearch(query), GLOBAL_SEARCH_DEBOUNCE_MS);
+}
+
+function moveGlobalSearchSelection(delta) {
+  const enabled = globalSearchState.results.map((result, index) => ({ result, index })).filter((entry) => !entry.result.disabled);
+  if (!enabled.length) return;
+  const currentEnabledIndex = Math.max(0, enabled.findIndex((entry) => entry.index === globalSearchState.activeIndex));
+  const next = enabled[(currentEnabledIndex + delta + enabled.length) % enabled.length];
+  globalSearchState.activeIndex = next.index;
+  renderGlobalSearchResults();
+  globalSearchResults?.querySelector(`[data-global-search-result-index="${globalSearchState.activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
+async function activateGlobalSearchResult(index = globalSearchState.activeIndex) {
+  const result = globalSearchState.results[index];
+  if (!result || result.disabled) {
+    if (result?.disabledReason) showToast(result.disabledReason, "warning");
+    return;
+  }
+  rememberGlobalSearchQuery(globalSearchState.query);
+  closeGlobalSearch();
+  try {
+    await result.action?.();
+  } catch (error) {
+    showToast(normalizeIpcErrorMessage(error, "Search result could not be opened."), "error");
+  }
+}
+
+function openGlobalSearch(initialQuery = "") {
+  if (!globalSearchOverlay || !globalSearchInput) return;
+  if (openModalCount > 0) return;
+  globalSearchState.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  globalSearchState.open = true;
+  globalSearchState.recentSearches = readGlobalSearchRecents();
+  globalSearchOverlay.hidden = false;
+  document.body.classList.add("has-open-modal");
+  const query = String(initialQuery || "");
+  globalSearchInput.value = query;
+  scheduleGlobalSearch(query, { immediate: true });
+  requestAnimationFrame(() => {
+    globalSearchInput.focus();
+    globalSearchInput.select();
+  });
+}
+
+function closeGlobalSearch() {
+  if (!globalSearchOverlay) return;
+  window.clearTimeout(globalSearchDebounceTimer);
+  globalSearchState.open = false;
+  globalSearchOverlay.hidden = true;
+  if (openModalCount === 0) document.body.classList.remove("has-open-modal");
+  globalSearchState.previousFocus?.focus?.();
+  globalSearchState.previousFocus = null;
+}
+
+function handleGlobalSearchKeydown(event) {
+  if (!globalSearchState.open) {
+    if (!event.defaultPrevented && !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      openGlobalSearch();
+    }
+    return;
+  }
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeGlobalSearch();
+  } else if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveGlobalSearchSelection(1);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveGlobalSearchSelection(-1);
+  } else if (event.key === "Enter") {
+    event.preventDefault();
+    activateGlobalSearchResult();
+  }
+}
+
 async function scanMaintenanceStorage({ trackOperation = false } = {}) {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasMaintenance || maintenanceState.scanning) {
@@ -11517,6 +12124,7 @@ function resetRendererUiState() {
     LAST_INSTANCE_STORAGE_KEY,
     STALE_INSTANCE_STORAGE_KEY,
     OWNER_WORKSPACE_NAV_STORAGE_KEY,
+    GLOBAL_SEARCH_RECENTS_STORAGE_KEY,
   ];
   try {
     keys.forEach((key) => window.localStorage.removeItem(key));
@@ -19322,6 +19930,9 @@ fileEditor?.addEventListener("keydown", (event) => {
   }
 });
 window.addEventListener("keydown", (event) => {
+  handleGlobalSearchKeydown(event);
+  if (event.defaultPrevented) return;
+
   if (!event.defaultPrevented && !event.altKey && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "b") {
     event.preventDefault();
     toggleSidebarCollapsed({ lockHoverExpand: Boolean(sidebar?.matches(":hover")) });
@@ -19743,6 +20354,35 @@ operationActionButtons.forEach((button) => {
     renderOperationsCenter();
     persistOperationHistory();
   });
+});
+globalSearchOpenButtons.forEach((button) => {
+  button.addEventListener("click", () => openGlobalSearch());
+});
+globalSearchCloseButton?.addEventListener("click", closeGlobalSearch);
+globalSearchOverlay?.addEventListener("mousedown", (event) => {
+  if (event.target === globalSearchOverlay) closeGlobalSearch();
+});
+globalSearchDialog?.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab") return;
+  const focusables = getModalFocusables(globalSearchDialog);
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+globalSearchInput?.addEventListener("input", () => {
+  scheduleGlobalSearch(globalSearchInput.value || "");
+});
+globalSearchClearRecentsButton?.addEventListener("click", () => {
+  globalSearchState.recentSearches = [];
+  writeGlobalSearchRecents();
+  renderGlobalSearchRecents();
 });
 maintenanceActionButtons.forEach((button) => {
   button.addEventListener("click", async () => {

@@ -98,6 +98,15 @@
             <span class="app-titlebar__label">Page</span>
             <strong data-titlebar-page>Dashboard</strong>
             <span class="app-titlebar__divider" aria-hidden="true"></span>
+            <button class="app-titlebar__search" type="button" data-global-search-open aria-label="Open global search" title="Global Search (Ctrl+K)">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="6"></circle>
+                <path d="m16 16 4 4"></path>
+              </svg>
+              <span>Search</span>
+              <kbd>Ctrl K</kbd>
+            </button>
+            <span class="app-titlebar__divider" aria-hidden="true"></span>
             <button class="app-titlebar__dev-badge" type="button" data-development-badge hidden>
               <span class="app-titlebar__dev-icon" aria-hidden="true">&gt;_</span>
               <span data-development-badge-label>Developer Mode</span>
@@ -132,6 +141,40 @@
           </button>
         </div>
       </header>
+
+      <div class="global-search-backdrop" data-global-search hidden>
+        <section class="global-search-dialog" role="dialog" aria-modal="true" aria-labelledby="global-search-title" aria-describedby="global-search-description" tabindex="-1">
+          <header class="global-search-header">
+            <div>
+              <p class="eyebrow">Desktop Search</p>
+              <h2 id="global-search-title">Global Search</h2>
+              <p id="global-search-description">Search workspaces, loaded nodes, Marketplace entries, files, settings, operations, and maintenance data.</p>
+            </div>
+            <button class="app-titlebar__control" type="button" data-global-search-close aria-label="Close global search" title="Close">
+              <svg viewBox="0 0 10 10" aria-hidden="true">
+                <path d="M2 2l6 6"></path>
+                <path d="M8 2L2 8"></path>
+              </svg>
+            </button>
+          </header>
+          <label class="global-search-input">
+            <span>Search AnxOS</span>
+            <input type="search" data-global-search-input placeholder="Search workspaces, nodes, files, Marketplace..." autocomplete="off" spellcheck="false">
+          </label>
+          <div class="global-search-meta">
+            <span data-global-search-status role="status" aria-live="polite">Type to search.</span>
+            <span>Enter opens · Esc closes</span>
+          </div>
+          <div class="global-search-recents" data-global-search-recents-wrap hidden>
+            <div class="global-search-section-heading">
+              <span>Recent searches</span>
+              <button class="inline-action" type="button" data-global-search-clear-recents>Clear</button>
+            </div>
+            <div class="global-search-recent-list" data-global-search-recents></div>
+          </div>
+          <div class="global-search-results" data-global-search-results role="listbox" aria-label="Global search results"></div>
+        </section>
+      </div>
 
       <div class="app-workspace" data-app-workspace>
         <aside class="sidebar" data-sidebar aria-label="AnxOS Control Center navigation">

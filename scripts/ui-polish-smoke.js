@@ -84,6 +84,9 @@ assert(app.includes("function scanMaintenanceStorage") && app.includes("function
 assert(preload.includes("maintenance:scan") && preload.includes("maintenance:clear"), "Preload must expose narrow Maintenance IPC.");
 assert(main.includes("registerMaintenanceIpc"), "Main process must register Maintenance IPC.");
 assert(styles.includes(".maintenance-shell") && styles.includes(".maintenance-detail-list"), "Maintenance Center CSS must include page and detail styling.");
+assert(index.includes("data-global-search-open") && index.includes("data-global-search-results") && index.includes("data-global-search-recents"), "Global Search must expose a visible trigger, results, and recent searches.");
+assert(app.includes("function getGlobalSearchProviders") && app.includes("function runGlobalSearch") && app.includes("GLOBAL_SEARCH_RECENTS_STORAGE_KEY"), "Renderer must wire provider-based Global Search and recent search storage.");
+assert(styles.includes(".global-search-dialog") && styles.includes(".global-search-result.is-active"), "Global Search CSS must include dialog and active result styling.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

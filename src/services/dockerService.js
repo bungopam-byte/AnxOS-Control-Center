@@ -4,6 +4,7 @@ const path = require("path");
 
 const COMMAND_TIMEOUT_MS = 8000;
 const LOG_TIMEOUT_MS = 12000;
+const SNAPSHOT_OPTIONAL_TIMEOUT_MS = 2500;
 const CONTAINER_TARGET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/;
 const IMAGE_TARGET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]{0,255}$/;
 
@@ -389,13 +390,17 @@ async function getDockerExecutableOrThrow() {
   return executable.executablePath;
 }
 
-async function runDockerCommand(args, options = {}) {
-  const dockerPath = await getDockerExecutableOrThrow();
+async function runDockerCommandWithExecutable(dockerPath, args, options = {}) {
   const result = await exec(dockerPath, args, options);
   if (!result.ok) {
     throw classifyDockerFailure(result);
   }
   return result;
+}
+
+async function runDockerCommand(args, options = {}) {
+  const dockerPath = await getDockerExecutableOrThrow();
+  return runDockerCommandWithExecutable(dockerPath, args, options);
 }
 
 async function probeDocker() {
@@ -436,38 +441,48 @@ async function ensureDockerAvailable() {
   return status;
 }
 
-async function listContainersRaw() {
-  await ensureDockerAvailable();
-  const result = await runDockerCommand(["ps", "-a", "--format", "json"]);
+async function listContainersRaw(options = {}) {
+  const dockerPath = options.dockerPath || await getDockerExecutableOrThrow();
+  const result = await runDockerCommandWithExecutable(dockerPath, ["ps", "-a", "--format", "json"], {
+    timeout: options.timeoutMs || COMMAND_TIMEOUT_MS,
+  });
   return parseJsonLines(result.stdout, normalizeContainer);
 }
 
-async function listStatsRaw(target = null) {
-  await ensureDockerAvailable();
+async function listStatsRaw(target = null, options = {}) {
+  const dockerPath = options.dockerPath || await getDockerExecutableOrThrow();
   const args = ["stats", "--no-stream", "--format", "json"];
   if (target) {
     args.push(validateContainerTarget(target));
   }
-  const result = await runDockerCommand(args);
+  const result = await runDockerCommandWithExecutable(dockerPath, args, {
+    timeout: options.timeoutMs || COMMAND_TIMEOUT_MS,
+  });
   const parsed = parseJsonLines(result.stdout, normalizeStats);
   return parsed.length > 0 ? parsed : parseStatsTable(result.stdout);
 }
 
-async function listImagesRaw() {
-  await ensureDockerAvailable();
-  const result = await runDockerCommand(["images", "--digests", "--format", "json"]);
+async function listImagesRaw(options = {}) {
+  const dockerPath = options.dockerPath || await getDockerExecutableOrThrow();
+  const result = await runDockerCommandWithExecutable(dockerPath, ["images", "--digests", "--format", "json"], {
+    timeout: options.timeoutMs || COMMAND_TIMEOUT_MS,
+  });
   return parseJsonLines(result.stdout, normalizeImage);
 }
 
-async function listNetworksRaw() {
-  await ensureDockerAvailable();
-  const result = await runDockerCommand(["network", "ls", "--format", "json"]);
+async function listNetworksRaw(options = {}) {
+  const dockerPath = options.dockerPath || await getDockerExecutableOrThrow();
+  const result = await runDockerCommandWithExecutable(dockerPath, ["network", "ls", "--format", "json"], {
+    timeout: options.timeoutMs || COMMAND_TIMEOUT_MS,
+  });
   return parseJsonLines(result.stdout, normalizeNetwork);
 }
 
-async function listVolumesRaw() {
-  await ensureDockerAvailable();
-  const result = await runDockerCommand(["volume", "ls", "--format", "json"]);
+async function listVolumesRaw(options = {}) {
+  const dockerPath = options.dockerPath || await getDockerExecutableOrThrow();
+  const result = await runDockerCommandWithExecutable(dockerPath, ["volume", "ls", "--format", "json"], {
+    timeout: options.timeoutMs || COMMAND_TIMEOUT_MS,
+  });
   return parseJsonLines(result.stdout, normalizeVolume);
 }
 
@@ -502,11 +517,13 @@ async function getDockerSnapshot() {
     };
   }
 
+  const dockerPath = status.executable?.executablePath || await getDockerExecutableOrThrow();
+  const optionalSnapshotOptions = { dockerPath, timeoutMs: SNAPSHOT_OPTIONAL_TIMEOUT_MS };
   const [containers, stats, images, volumes] = await Promise.all([
-    listContainersRaw(),
-    listStatsRaw().catch(() => []),
-    listImagesRaw().catch(() => []),
-    listVolumesRaw().catch(() => []),
+    listContainersRaw({ dockerPath }),
+    listStatsRaw(null, optionalSnapshotOptions).catch(() => []),
+    listImagesRaw(optionalSnapshotOptions).catch(() => []),
+    listVolumesRaw(optionalSnapshotOptions).catch(() => []),
   ]);
   const containersWithStats = attachStats(containers, stats);
   const containerSummary = summarizeContainers(containersWithStats);

@@ -13,6 +13,7 @@ const {
 const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const REQUEST_TIMEOUT_MS = 30000;
+const DOCKER_REQUEST_TIMEOUT_MS = 12000;
 const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
 let environmentLoaded = false;
@@ -477,10 +478,12 @@ async function requestJson(pathname, options = {}) {
     targetLabel = configOverride?.targetLabel || "configured-agent",
     suppressConnectionRefusedLog = configOverride?.suppressConnectionRefusedLog === true,
     logThrottleMs = configOverride?.logThrottleMs,
+    timeoutMs = REQUEST_TIMEOUT_MS,
   } = options;
   const config = getAgentConfig(configOverride);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const boundedTimeoutMs = Math.max(1000, Number(timeoutMs) || REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), boundedTimeoutMs);
 
   try {
     const headers = {
@@ -992,15 +995,15 @@ async function testConnection(configOverride = null) {
 }
 
 async function getDockerSummary() {
-  return requestJson("/api/v1/docker/summary");
+  return requestJson("/api/v1/docker/summary", { timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function getDockerContainers(configOverride = null) {
-  return requestJson("/api/v1/docker/containers", { config: configOverride });
+  return requestJson("/api/v1/docker/containers", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function getDockerSnapshot(configOverride = null) {
-  const payload = await requestJson("/api/v1/docker/snapshot", { config: configOverride });
+  const payload = await requestJson("/api/v1/docker/snapshot", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
   const containers = normalizeContainers(payload);
 
   return {
@@ -1024,7 +1027,7 @@ async function inspectDockerContainer(container, configOverride = null) {
 }
 
 async function listDockerImages(configOverride = null) {
-  return requestJson("/api/v1/docker/images", { config: configOverride });
+  return requestJson("/api/v1/docker/images", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function deleteDockerImage(image, configOverride = null) {
@@ -1035,11 +1038,11 @@ async function deleteDockerImage(image, configOverride = null) {
 }
 
 async function listDockerNetworks(configOverride = null) {
-  return requestJson("/api/v1/docker/networks", { config: configOverride });
+  return requestJson("/api/v1/docker/networks", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function listDockerVolumes(configOverride = null) {
-  return requestJson("/api/v1/docker/volumes", { config: configOverride });
+  return requestJson("/api/v1/docker/volumes", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function startDockerContainer(container, configOverride = null) {
@@ -1080,6 +1083,7 @@ async function getDockerContainerLogs(container, options = {}, configOverride = 
 async function getDockerContainerStats(container, configOverride = null) {
   return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/stats`, {
     config: configOverride,
+    timeoutMs: DOCKER_REQUEST_TIMEOUT_MS,
   });
 }
 

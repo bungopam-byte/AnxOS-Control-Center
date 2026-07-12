@@ -2804,6 +2804,18 @@
                 <div><span>CPU</span><strong data-agent-control-field="cpu">Unavailable</strong></div><div><span>RAM</span><strong data-agent-control-field="memory">Unavailable</strong></div><div><span>Latency</span><strong data-agent-control-field="latency">Unavailable</strong></div><div><span>Uptime</span><strong data-agent-control-field="uptime">Unavailable</strong></div><div><span>Version</span><strong data-agent-control-field="agentVersion">Unavailable</strong></div><div><span>Process</span><strong data-agent-control-field="pid">Stopped</strong></div>
               </div>
             </section>
+            <section class="settings-section settings-section--wide agent-dependency-panel">
+              <div class="settings-section__header">
+                <div><h2>Prepare Node</h2><p>Check and install Marketplace runtime dependencies on the selected Agent.</p></div>
+                <span class="status-pill status-pill--planned" data-dependency-status>Not checked</span>
+              </div>
+              <div class="agent-control-actions">
+                <div><span>Marketplace</span><button class="inline-action" type="button" data-dependency-action="check">Check Dependencies</button><button class="inline-action" type="button" data-dependency-action="install">Install Missing</button><button class="inline-action" type="button" data-dependency-action="retry">Retry</button></div>
+              </div>
+              <div class="download-list" data-dependency-list>
+                <div class="docker-empty-state"><strong>No dependency check yet</strong><span>Run Check Dependencies before installing Marketplace templates.</span></div>
+              </div>
+            </section>
             <section class="settings-section agent-operations-panel">
               <div class="settings-section__header"><div><h2>Diagnostics</h2><p>Health, warnings, and recovery actions.</p></div><button class="inline-action" type="button" data-agent-control-action="runDiagnostics">Run Diagnostics</button></div><div class="agent-diagnostic-list" data-agent-diagnostics><div class="security-empty-state">Run diagnostics to inspect Agent health.</div></div>
               <div class="agent-control-actions">

@@ -358,6 +358,9 @@ const agentStatusDot = document.querySelector(".agent-status-dot");
 const agentControlMessage = document.querySelector("[data-agent-control-message]");
 const agentControlFields = document.querySelectorAll("[data-agent-control-field]");
 const agentControlButtons = document.querySelectorAll("[data-agent-control-action]");
+const dependencyStatus = document.querySelector("[data-dependency-status]");
+const dependencyList = document.querySelector("[data-dependency-list]");
+const dependencyButtons = document.querySelectorAll("[data-dependency-action]");
 const agentConfigFields = document.querySelectorAll("[data-agent-config]");
 const agentConfigMessage = document.querySelector("[data-agent-config-message]");
 const agentConfigSummary = document.querySelector("[data-agent-config-summary]");
@@ -961,6 +964,10 @@ function getDesktopApiState() {
       typeof api?.marketplace?.openManualDownloadPage === "function" &&
       typeof api?.marketplace?.importManualDownloadFile === "function" &&
       typeof api?.marketplace?.resumeManualInstall === "function",
+    hasDependencies:
+      typeof api?.dependencies?.check === "function" &&
+      typeof api?.dependencies?.install === "function" &&
+      typeof api?.dependencies?.getCatalog === "function",
     hasInstances:
       typeof api?.instances?.list === "function" &&
       typeof api?.instances?.create === "function" &&
@@ -2895,6 +2902,83 @@ function renderAgentControlState(payload = agentControlState) {
   });
   renderAgentSetupSummary(payload?.local || local);
   renderRemoteAgents(payload?.remote || []);
+}
+
+function renderDependencyStatus(result = null) {
+  if (!dependencyList) return;
+  dependencyList.replaceChildren();
+  const dependencies = Array.isArray(result?.dependencies) ? result.dependencies : [];
+  const missingCount = Array.isArray(result?.missingDependencyIds) ? result.missingDependencyIds.length : dependencies.filter((dependency) => dependency.state !== "installed").length;
+  if (dependencyStatus) {
+    dependencyStatus.textContent = !result ? "Not checked" : missingCount === 0 ? "Ready" : `${missingCount} missing`;
+    dependencyStatus.className = `status-pill ${!result ? "status-pill--planned" : missingCount === 0 ? "status-pill--ok" : "status-pill--warning"}`;
+  }
+  if (!dependencies.length) {
+    dependencyList.innerHTML = '<div class="docker-empty-state"><strong>No dependency check yet</strong><span>Run Check Dependencies before installing Marketplace templates.</span></div>';
+    return;
+  }
+  dependencies.forEach((dependency) => {
+    const item = document.createElement("article");
+    item.className = "download-item";
+    const state = dependency.state || "unknown";
+    const packages = Array.isArray(dependency.packages) && dependency.packages.length > 0 ? dependency.packages.join(", ") : "No package mapping";
+    const tone = state === "installed" ? "status-pill--ok" : state === "unsupported" || state === "installation-failed" ? "status-pill--critical" : "status-pill--warning";
+    item.innerHTML = `<div class="download-item__main"><strong>${escapeHtml(dependency.displayName || dependency.id)}</strong><span>${escapeHtml(dependency.reason || packages)}</span><small>${escapeHtml(packages)}</small></div><span class="status-pill ${tone}">${escapeHtml(state)}</span>`;
+    dependencyList.append(item);
+  });
+}
+
+async function runDependencyAction(action) {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasDependencies) {
+    showToast("Dependency bridge unavailable.");
+    return;
+  }
+  const requestContext = createNodeActionContext("dependencies");
+  const payload = {
+    nodeId: requestContext.nodeId,
+    groupIds: [
+      "minecraft-hosting",
+      "steam-game-servers",
+      "dotnet-game-servers",
+      "container-workloads",
+      "archive-tools",
+      "application-runtimes",
+    ],
+  };
+  dependencyButtons.forEach((button) => { button.disabled = true; });
+  try {
+    if (action === "install") {
+      if (!(await createSecurityConfirmation({
+        title: "Install missing dependencies?",
+        message: "The Agent will use supported package-manager commands with non-interactive administrator privileges when available.",
+        confirmLabel: "Install Missing",
+      }))) {
+        return;
+      }
+      if (dependencyStatus) dependencyStatus.textContent = "Installing";
+      const installResult = await desktopApiState.api.dependencies.install(payload);
+      if (installResult?.ok === false) {
+        throw new Error(installResult.error?.message || "Dependency installation failed.");
+      }
+      renderDependencyStatus(installResult);
+      showToast("Dependency preparation complete.");
+      return;
+    }
+    const check = await desktopApiState.api.dependencies.check(payload);
+    if (check?.ok === false) {
+      throw new Error(check.error?.message || "Dependency check failed.");
+    }
+    renderDependencyStatus(check);
+  } catch (error) {
+    if (dependencyStatus) {
+      dependencyStatus.textContent = "Failed";
+      dependencyStatus.className = "status-pill status-pill--critical";
+    }
+    showToast(error?.message || "Dependency request failed.");
+  } finally {
+    dependencyButtons.forEach((button) => { button.disabled = false; });
+  }
 }
 
 function populateAgentConfig(config = {}) {
@@ -9049,6 +9133,90 @@ async function refreshMarketplace() {
   }
 }
 
+async function completeMarketplaceInstallResult(result, template, providerInstall) {
+  setMarketplaceManualRecoveryState(null);
+  renderMarketplaceProgress(result?.progress || []);
+  renderMarketplaceDownloads(result?.downloads || []);
+  if (providerInstall) {
+    await refreshMarketplaceDownloads();
+  }
+  selectedInstanceId = result?.instance?.id || selectedInstanceId;
+  forgetStaleInstanceId(selectedInstanceId);
+  setMarketplaceInstallState("Complete", "complete");
+  setMarketplaceMessage("Install complete. Opening the new instance.");
+  showToast("Template installed.");
+  showPage("instances");
+  await refreshInstances();
+}
+
+function formatMissingDependencyList(dependencies = []) {
+  return dependencies
+    .map((dependency) => {
+      const packages = Array.isArray(dependency.packages) && dependency.packages.length > 0
+        ? ` (${dependency.packages.join(", ")})`
+        : "";
+      return `${dependency.displayName || dependency.id}${packages}`;
+    })
+    .join(", ");
+}
+
+async function maybePrepareMarketplaceDependencies(normalizedError, template, options, requestContext, providerInstall = false) {
+  const desktopApiState = getDesktopApiState();
+  const details = normalizedError?.details || {};
+  const missingDependencies = Array.isArray(details.missingDependencies) ? details.missingDependencies : [];
+  const dependencyIds = missingDependencies.map((dependency) => dependency.id).filter(Boolean);
+  if (normalizedError?.code !== "DEPENDENCIES_REQUIRED" || dependencyIds.length === 0 || !desktopApiState.hasDependencies) {
+    return false;
+  }
+
+  const dependencyList = formatMissingDependencyList(missingDependencies);
+  const confirmed = window.confirm(`${template.displayName || template.id} requires missing node dependencies: ${dependencyList}.\n\nInstall them on the selected Agent and retry?`);
+  if (!confirmed) {
+    setMarketplaceMessage(`Install blocked until dependencies are ready: ${dependencyList}.`, "warning");
+    return true;
+  }
+
+  setMarketplaceInstallState("Preparing", "running");
+  setMarketplaceMessage(`Installing node dependencies: ${dependencyList}.`, "warning");
+  renderMarketplaceProgress([
+    { label: "Prepare node", status: "running", detail: `Installing ${dependencyList}.` },
+  ]);
+  const installResult = await desktopApiState.api.dependencies.install({
+    dependencyIds,
+    nodeId: requestContext.nodeId,
+  });
+  if (installResult?.ok === false || (Array.isArray(installResult?.missingDependencyIds) && installResult.missingDependencyIds.length > 0)) {
+    throw new Error(installResult?.error?.message || "Dependency installation failed.");
+  }
+  setMarketplaceMessage("Dependencies installed. Retrying template install.");
+  const retryResult = providerInstall
+    ? await desktopApiState.api.marketplace.installPack({
+      templateId: template.id,
+      template,
+      provider: getMarketplaceProvider(template),
+      providerProjectId: template.providerProjectId || template.projectId,
+      providerVersionId: options.providerVersionId || "",
+      minecraftVersion: options.version === "latest" ? template.minecraftVersion || template.gameVersion || "latest" : options.version,
+      loader: options.serverType || template.loader || "vanilla",
+      loaderVersion: options.loaderVersion || template.loaderVersion || "",
+      nodeId: requestContext.nodeId,
+      options: {
+        ...options,
+        autoInstallDependencies: true,
+      },
+    })
+    : await desktopApiState.api.marketplace.installTemplate({
+      templateId: template.id,
+      nodeId: requestContext.nodeId,
+      options: {
+        ...options,
+        autoInstallDependencies: true,
+      },
+    });
+  await completeMarketplaceInstallResult(retryResult, template, providerInstall);
+  return true;
+}
+
 async function installMarketplaceTemplate(event) {
   event?.preventDefault();
   const desktopApiState = getDesktopApiState();
@@ -9128,21 +9296,28 @@ async function installMarketplaceTemplate(event) {
       showToast("A required modpack file needs manual download.");
       return;
     }
-    setMarketplaceManualRecoveryState(null);
-    renderMarketplaceProgress(result?.progress || []);
-    renderMarketplaceDownloads(result?.downloads || []);
-    if (providerInstall) {
-      await refreshMarketplaceDownloads();
-    }
-    selectedInstanceId = result?.instance?.id || selectedInstanceId;
-    forgetStaleInstanceId(selectedInstanceId);
-    setMarketplaceInstallState("Complete", "complete");
-    setMarketplaceMessage("Install complete. Opening the new instance.");
-    showToast("Template installed.");
-    showPage("instances");
-    await refreshInstances();
+    await completeMarketplaceInstallResult(result, template, providerInstall);
   } catch (error) {
     const normalizedError = normalizeMarketplaceError(error, "Template install failed.");
+    try {
+      if (await maybePrepareMarketplaceDependencies(normalizedError, template, options, requestContext, providerInstall)) {
+        return;
+      }
+    } catch (prepareError) {
+      const preparedError = normalizeMarketplaceError(prepareError, "Dependency preparation failed.");
+      setMarketplaceInstallState("Failed", "failed");
+      renderMarketplaceProgress([
+        {
+          label: preparedError.title,
+          status: "failed",
+          detail: preparedError.body,
+          debug: preparedError.debug,
+        },
+      ]);
+      setMarketplaceMessage(preparedError.title, "error");
+      showToast(preparedError.title);
+      return;
+    }
     const failureDownloads = Array.isArray(normalizedError.details?.childTaskState)
       ? normalizedError.details.childTaskState
       : [];
@@ -18951,6 +19126,7 @@ nodeDetailsModal?.addEventListener("click", async (event) => {
   }
 });
 agentControlButtons.forEach((button) => button.addEventListener("click", () => runAgentControlAction(button.dataset.agentControlAction)));
+dependencyButtons.forEach((button) => button.addEventListener("click", () => runDependencyAction(button.dataset.dependencyAction)));
 agentLogSearch?.addEventListener("input", renderAgentLogs);
 agentLogSeverity?.addEventListener("change", renderAgentLogs);
 agentLogWrap?.addEventListener("change", renderAgentLogs);

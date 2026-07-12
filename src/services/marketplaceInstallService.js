@@ -52,6 +52,35 @@ function serializeError(error, context = {}) {
   };
 }
 
+async function ensureProviderPackDependencies(options = {}, agentConfig = null) {
+  if (agentConfig?.backendMode === "local") {
+    return;
+  }
+  const dependencyIds = ["java"];
+  emitProgress({ instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Checking node dependencies...", current: 0, total: 1 });
+  const check = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
+  if (check.ok) {
+    emitProgress({ instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies are ready.", current: 1, total: 1 });
+    return;
+  }
+  if (options.autoInstallDependencies === true) {
+    await agentClient.installDependencies({ dependencyIds: check.missingDependencyIds || dependencyIds }, agentConfig);
+    const recheck = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
+    if (recheck.ok) {
+      emitProgress({ instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies installed.", current: 1, total: 1 });
+      return;
+    }
+  }
+  throw new MarketplaceInstallError("This modpack requires node dependencies before installation can continue.", "DEPENDENCIES_REQUIRED", {
+    dependencyIds,
+    dependencies: check.dependencies,
+    missingDependencies: check.dependencies?.filter((dependency) => !dependency.installed || dependency.state === "update-required") || [],
+    provider: options.provider || null,
+    retryable: true,
+    userAction: "install-dependencies",
+  });
+}
+
 function truncateForLog(value, maxLength = 4000) {
   const text = String(value || "");
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
@@ -1748,6 +1777,7 @@ async function installPack(payload = {}) {
   }
   const executionTarget = getExecutionTarget(payload.nodeId);
   const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
+  await ensureProviderPackDependencies(options, agentConfig);
   const serverInfo = await resolveServerJar(options);
   const instancePayload = buildInstancePayload(options, serverInfo);
   const instanceId = instancePayload.id;

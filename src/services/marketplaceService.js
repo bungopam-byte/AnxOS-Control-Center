@@ -14,6 +14,7 @@ const {
   validateMarketplaceTemplate,
 } = require("./marketplaceInstallerRegistry");
 const { getExecutionTarget } = require("./nodeService");
+const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
 const CATEGORIES = ["Minecraft", "Game Servers", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
@@ -70,6 +71,71 @@ function resolveMarketplaceAgentConfig(nodeId = null) {
   }
 
   return { backendMode: "local" };
+}
+
+function summarizeUnsatisfiedDependencies(dependencies = []) {
+  return dependencies
+    .filter((dependency) => !dependency.installed || dependency.state === "update-required" || dependency.state === "unsupported")
+    .map((dependency) => ({
+      id: dependency.id,
+      displayName: dependency.displayName,
+      state: dependency.state,
+      installed: Boolean(dependency.installed),
+      supported: Boolean(dependency.supported),
+      version: dependency.version || null,
+      minVersion: dependency.minVersion || null,
+      commands: dependency.commands || [],
+      packages: dependency.packages || [],
+      packageManager: dependency.packageManager || null,
+      requiresElevation: Boolean(dependency.requiresElevation),
+      reason: dependency.reason || null,
+      notes: dependency.notes || null,
+      errorCode: dependency.errorCode || null,
+    }));
+}
+
+async function ensureTemplateDependencies(template, options = {}, agentConfig = null, progress = []) {
+  const dependencyIds = resolveTemplateDependencyIds(template);
+  if (dependencyIds.length === 0 || agentConfig?.backendMode === "local") {
+    return { ok: true, dependencyIds, dependencies: [] };
+  }
+
+  pushStep(progress, "Check dependencies", "running", "Checking node runtime dependencies.");
+  const check = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
+  if (check.ok) {
+    pushStep(progress, "Check dependencies", "complete", "Node dependencies are ready.");
+    return check;
+  }
+
+  const missing = summarizeUnsatisfiedDependencies(check.dependencies);
+  if (options.autoInstallDependencies === true) {
+    pushStep(progress, "Install dependencies", "running", `Installing ${missing.map((dependency) => dependency.displayName).join(", ")}.`);
+    const install = await agentClient.installDependencies({ dependencyIds: missing.map((dependency) => dependency.id) }, agentConfig);
+    const recheck = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
+    if (recheck.ok) {
+      pushStep(progress, "Install dependencies", "complete", "Node dependencies installed and verified.");
+      return { ...recheck, install };
+    }
+    const stillMissing = summarizeUnsatisfiedDependencies(recheck.dependencies);
+    throw createMarketplaceError("Required node dependencies are still missing after installation.", "DEPENDENCIES_REQUIRED", {
+      templateId: template.id,
+      dependencyIds,
+      dependencies: recheck.dependencies,
+      missingDependencies: stillMissing,
+      install,
+      retryable: true,
+      userAction: "install-dependencies",
+    });
+  }
+
+  throw createMarketplaceError("This template requires node dependencies before installation can continue.", "DEPENDENCIES_REQUIRED", {
+    templateId: template.id,
+    dependencyIds,
+    dependencies: check.dependencies,
+    missingDependencies: missing,
+    retryable: true,
+    userAction: "install-dependencies",
+  });
 }
 
 function sanitizeStackLocation(error) {
@@ -1980,7 +2046,7 @@ function buildInstancePayload(template, options, ports) {
   }
 
   if (template.startup && typeof template.startup === "object") {
-    const startupArgs = wrapStartupArgsWithDependencyChecks(template, resolveTemplateArgs(template.startup.args, template, options));
+    const startupArgs = resolveTemplateArgs(template.startup.args, template, options);
     return {
       id,
       displayName: name,
@@ -2101,34 +2167,11 @@ function resolveTemplateArgs(args = [], template, options = {}) {
     : [];
 }
 
-function getStartupRequiredCommands(template = {}) {
-  const commands = Array.isArray(template.startup?.requiredCommands) ? template.startup.requiredCommands : [];
-  return commands
-    .map((command) => String(command || "").trim())
-    .filter((command) => /^[a-zA-Z0-9._+-]+$/.test(command));
-}
-
-function wrapStartupArgsWithDependencyChecks(template, args) {
-  const requiredCommands = getStartupRequiredCommands(template);
-  if (requiredCommands.length === 0 || !Array.isArray(args) || args.length < 2 || args[0] !== "-lc") {
-    return args;
-  }
-  const dependencyCheck = [
-    `for required_command in ${requiredCommands.map(shellQuote).join(" ")}; do`,
-    "  if ! command -v \"$required_command\" >/dev/null 2>&1; then",
-    "    echo \"Missing required runtime dependency: $required_command\" >&2",
-    "    exit 127",
-    "  fi",
-    "done",
-  ].join(" ");
-  return [args[0], `${dependencyCheck}; ${String(args[1] || "")}`, ...args.slice(2)];
-}
-
 function buildStartupPatch(template, options, ports) {
   if (template.startup && typeof template.startup === "object") {
     return {
       executable: template.startup.executable || "java",
-      args: wrapStartupArgsWithDependencyChecks(template, resolveTemplateArgs(template.startup.args, template, options)),
+      args: resolveTemplateArgs(template.startup.args, template, options),
       workingDirectory: template.startup.workingDirectory || "data",
       memoryLimit: normalizeName(options.memory, template.defaultRam || ""),
       ports,
@@ -2796,6 +2839,20 @@ async function installTemplate(payload = {}) {
   const ports = template.category === "Minecraft"
     ? [resolveMinecraftPort(options, template.defaultPorts)]
     : parsePorts(options.ports || options.port, template.defaultPorts);
+
+  try {
+    updateDownload(parentRecord, { stage: "Check dependencies", progress: 10 });
+    await ensureTemplateDependencies(template, options, agentConfig, progress);
+  } catch (error) {
+    const message = mapMarketplaceError(error, "Marketplace dependency check failed.");
+    finalizeInstallTaskRecord(parentRecord, "failed", message, {
+      stage: "Check dependencies",
+      code: error?.code || "DEPENDENCIES_REQUIRED",
+      retryable: true,
+    });
+    error.progress = progress;
+    throw error;
+  }
 
   if (template.runtime === "docker" || template.startupType === "docker-image") {
     try {

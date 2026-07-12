@@ -503,6 +503,11 @@
     "category": "Game Servers",
     "instanceType": "custom-command",
     "startupType": "native",
+    "hostDependencies": [
+      "dotnet-runtime",
+      "unzip",
+      "tar"
+    ],
     "defaultRam": "1G",
     "defaultPorts": [
       7777
@@ -543,9 +548,6 @@
     },
     "startup": {
       "executable": "bash",
-      "requiredCommands": [
-        "dotnet"
-      ],
       "args": [
         "-lc",
         "chmod +x ./TShock.Server 2>/dev/null || true; exec ./TShock.Server -port {port} -world ./Worlds/world.wld -autocreate 2"
@@ -920,6 +922,9 @@
     "category": "Game Servers",
     "instanceType": "custom-command",
     "startupType": "steamcmd-native",
+    "hostDependencies": [
+      "steamcmd"
+    ],
     "defaultRam": "8G",
     "defaultPorts": [
       8211,
@@ -1491,6 +1496,9 @@
     "category": "Bots",
     "instanceType": "node-app",
     "startupType": "node",
+    "hostDependencies": [
+      "nodejs"
+    ],
     "defaultRam": "512M",
     "defaultPorts": [],
     "downloadSource": {
@@ -1520,6 +1528,9 @@
     "category": "Bots",
     "instanceType": "python-app",
     "startupType": "python",
+    "hostDependencies": [
+      "python"
+    ],
     "defaultRam": "512M",
     "defaultPorts": [],
     "downloadSource": {

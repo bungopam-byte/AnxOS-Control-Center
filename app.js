@@ -2914,7 +2914,14 @@ function renderDependencyStatus(result = null) {
     dependencyStatus.className = `status-pill ${!result ? "status-pill--planned" : missingCount === 0 ? "status-pill--ok" : "status-pill--warning"}`;
   }
   if (!dependencies.length) {
-    dependencyList.innerHTML = '<div class="docker-empty-state"><strong>No dependency check yet</strong><span>Run Check Dependencies before installing Marketplace templates.</span></div>';
+    const empty = document.createElement("div");
+    empty.className = "docker-empty-state";
+    const title = document.createElement("strong");
+    title.textContent = "No dependency check yet";
+    const message = document.createElement("span");
+    message.textContent = "Run Check Dependencies before installing Marketplace templates.";
+    empty.append(title, message);
+    dependencyList.append(empty);
     return;
   }
   dependencies.forEach((dependency) => {
@@ -2923,7 +2930,19 @@ function renderDependencyStatus(result = null) {
     const state = dependency.state || "unknown";
     const packages = Array.isArray(dependency.packages) && dependency.packages.length > 0 ? dependency.packages.join(", ") : "No package mapping";
     const tone = state === "installed" ? "status-pill--ok" : state === "unsupported" || state === "installation-failed" ? "status-pill--critical" : "status-pill--warning";
-    item.innerHTML = `<div class="download-item__main"><strong>${escapeHtml(dependency.displayName || dependency.id)}</strong><span>${escapeHtml(dependency.reason || packages)}</span><small>${escapeHtml(packages)}</small></div><span class="status-pill ${tone}">${escapeHtml(state)}</span>`;
+    const main = document.createElement("div");
+    main.className = "download-item__main";
+    const title = document.createElement("strong");
+    title.textContent = dependency.displayName || dependency.id || "Dependency";
+    const reason = document.createElement("span");
+    reason.textContent = dependency.reason || packages;
+    const packageText = document.createElement("small");
+    packageText.textContent = packages;
+    const status = document.createElement("span");
+    status.className = `status-pill ${tone}`;
+    status.textContent = state;
+    main.append(title, reason, packageText);
+    item.append(main, status);
     dependencyList.append(item);
   });
 }
@@ -2959,15 +2978,23 @@ async function runDependencyAction(action) {
       if (dependencyStatus) dependencyStatus.textContent = "Installing";
       const installResult = await desktopApiState.api.dependencies.install(payload);
       if (installResult?.ok === false) {
-        throw new Error(installResult.error?.message || "Dependency installation failed.");
+        throw Object.assign(new Error(installResult.error?.message || "Dependency installation failed."), {
+          code: installResult.error?.code || "DEPENDENCY_INSTALL_FAILED",
+        });
       }
       renderDependencyStatus(installResult);
       showToast("Dependency preparation complete.");
       return;
     }
+    if (dependencyStatus) {
+      dependencyStatus.textContent = "Checking";
+      dependencyStatus.className = "status-pill status-pill--planned";
+    }
     const check = await desktopApiState.api.dependencies.check(payload);
     if (check?.ok === false) {
-      throw new Error(check.error?.message || "Dependency check failed.");
+      throw Object.assign(new Error(check.error?.message || "Dependency check failed."), {
+        code: check.error?.code || "DEPENDENCY_CHECK_FAILED",
+      });
     }
     renderDependencyStatus(check);
   } catch (error) {
@@ -2976,6 +3003,24 @@ async function runDependencyAction(action) {
       dependencyStatus.className = "status-pill status-pill--critical";
     }
     showToast(error?.message || "Dependency request failed.");
+    if (dependencyList) {
+      const item = document.createElement("article");
+      item.className = "download-item";
+      const main = document.createElement("div");
+      main.className = "download-item__main";
+      const title = document.createElement("strong");
+      title.textContent = "Dependency operation failed";
+      const message = document.createElement("span");
+      message.textContent = error?.message || "The Agent could not complete the dependency request.";
+      const code = document.createElement("small");
+      code.textContent = error?.code ? `Error code: ${error.code}` : "Retry after checking Agent connectivity and package-manager access.";
+      main.append(title, message, code);
+      const badge = document.createElement("span");
+      badge.className = "status-pill status-pill--critical";
+      badge.textContent = "Failed";
+      item.append(main, badge);
+      dependencyList.replaceChildren(item);
+    }
   } finally {
     dependencyButtons.forEach((button) => { button.disabled = false; });
   }
@@ -2999,15 +3044,54 @@ function readAgentControlConfig() {
 function renderRemoteAgents(agents = []) {
   if (!agentRemoteList) return;
   agentRemoteList.replaceChildren();
-  if (!agents.length) { agentRemoteList.innerHTML = '<div class="security-empty-state">No remote Agents are registered. Add one from Nodes.</div>'; return; }
+  if (!agents.length) {
+    const empty = document.createElement("div");
+    empty.className = "security-empty-state";
+    empty.textContent = "No remote Agents are registered. Add one from Nodes.";
+    agentRemoteList.append(empty);
+    return;
+  }
   const table = document.createElement("table");
   table.className = "agent-remote-table";
-  table.innerHTML = "<thead><tr><th>Status</th><th>Name</th><th>Version</th><th>Latency</th><th>Platform</th><th>Actions</th></tr></thead><tbody></tbody>";
-  const body = table.querySelector("tbody");
+  const head = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["Status", "Name", "Version", "Latency", "Platform", "Actions"].forEach((label) => {
+    const cell = document.createElement("th");
+    cell.textContent = label;
+    headRow.append(cell);
+  });
+  head.append(headRow);
+  const body = document.createElement("tbody");
+  table.append(head, body);
   agents.forEach((agent) => {
     const row = document.createElement("tr");
     const statusClass = agent.state === "Running" ? "status-pill--ok" : agent.state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning";
-    row.innerHTML = `<td><span class="status-pill ${statusClass}">${escapeHtml(agent.state || "Unknown")}</span></td><td><strong>${escapeHtml(agent.name || agent.identity?.hostname || "Remote Agent")}</strong><small>${escapeHtml(agent.healthTargetLabel === "selected-agent" ? "Selected Agent" : "Remote Agent")}</small></td><td>${escapeHtml(agent.agentVersion || agent.identity?.agentVersion || "Unavailable")}</td><td>${Number.isFinite(agent.latencyMs) ? `${agent.latencyMs} ms` : "Unavailable"}</td><td>${escapeHtml(agent.identity?.operatingSystem || "Unknown OS")}</td><td><button class="inline-action" type="button" data-remote-agent-diagnostics="${escapeHtml(agent.nodeId || "")}" ${agent.state !== "Running" ? "disabled" : ""}>Diagnostics</button></td>`;
+    const statusCell = document.createElement("td");
+    const status = document.createElement("span");
+    status.className = `status-pill ${statusClass}`;
+    status.textContent = agent.state || "Unknown";
+    statusCell.append(status);
+    const nameCell = document.createElement("td");
+    const name = document.createElement("strong");
+    name.textContent = agent.name || agent.identity?.hostname || "Remote Agent";
+    const type = document.createElement("small");
+    type.textContent = agent.healthTargetLabel === "selected-agent" ? "Selected Agent" : "Remote Agent";
+    nameCell.append(name, type);
+    const versionCell = document.createElement("td");
+    versionCell.textContent = agent.agentVersion || agent.identity?.agentVersion || "Unavailable";
+    const latencyCell = document.createElement("td");
+    latencyCell.textContent = Number.isFinite(agent.latencyMs) ? `${agent.latencyMs} ms` : "Unavailable";
+    const platformCell = document.createElement("td");
+    platformCell.textContent = agent.identity?.operatingSystem || "Unknown OS";
+    const actionCell = document.createElement("td");
+    const diagnosticsButton = document.createElement("button");
+    diagnosticsButton.className = "inline-action";
+    diagnosticsButton.type = "button";
+    diagnosticsButton.dataset.remoteAgentDiagnostics = agent.nodeId || "";
+    diagnosticsButton.disabled = agent.state !== "Running";
+    diagnosticsButton.textContent = "Diagnostics";
+    actionCell.append(diagnosticsButton);
+    row.append(statusCell, nameCell, versionCell, latencyCell, platformCell, actionCell);
     body.append(row);
   });
   agentRemoteList.append(table);

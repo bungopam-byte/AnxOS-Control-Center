@@ -38,6 +38,9 @@ async function main() {
     assert(Number.isFinite(started.runtime.memory.usedBytes), "Started Agent should expose normalized RAM usage.");
     assert(Number.isFinite(started.runtime.memory.totalBytes), "Started Agent should expose normalized RAM total.");
     assert(started.runtime.capabilities.lifecycle, "Local Agent runtime should report lifecycle support.");
+    const connectedAgain = await control.start();
+    assert(connectedAgain.running, "Starting while a healthy local Agent is already listening should reconnect instead of spawning a duplicate process.");
+    assert.strictEqual(connectedAgain.pid, started.pid, "Starting an already managed Agent should not spawn a duplicate process.");
     const diagnostics = await control.runDiagnostics();
     assert(diagnostics.checks.some((check) => check.id === "process" && check.result === "Passed"));
     const restarted = await control.restart();

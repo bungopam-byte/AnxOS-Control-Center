@@ -26,6 +26,8 @@ async function main() {
   assert.strictEqual(clean.nested.safe, "ok");
   assert(!JSON.stringify(clean).includes(secret) && !JSON.stringify(clean).includes(jwt));
   assert(!redactString(`Bearer ${jwt}`).includes(jwt));
+  assert.strictEqual(redactString(`open /home/private-user/Projects/AnxOS-Control-Center/config/agent.json`), "open [redacted-path]");
+  assert.strictEqual(redactString(`C:\\Users\\private-user\\AppData\\Roaming\\AnxOS\\config.json`), "[redacted-path]");
   const agentControl = require("../src/services/agentControlService");
   const desktopDiagnostics = require("../src/services/diagnosticsService");
   const validatedConfig = agentControl.validateConfig({ name: "Local Test Agent", host: "127.0.0.1", port: 48131, allowedFolders: [temp] });
@@ -79,6 +81,7 @@ async function main() {
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const controlIpc = fs.readFileSync(path.join(root, "src", "ipc", "agentControlIpc.js"), "utf8");
   assert(main.includes('process.on("uncaughtException"') && main.includes('process.on("unhandledRejection"'));
+  assert(main.includes("isSafeExternalUrl") && main.includes("external-url-blocked"), "Electron external navigation must be allowlisted and logged when blocked.");
   assert(preload.includes("forwardPreloadError") && app.includes('window.addEventListener("unhandledrejection"'));
   assert(controlIpc.includes('authorize("remote-diagnostics")') && controlIpc.includes("requireOwner"), "Remote diagnostic capture must be owner-gated in the main process.");
   console.log("Diagnostics smoke checks passed.");

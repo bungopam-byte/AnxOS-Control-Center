@@ -221,6 +221,29 @@ function getCenteredChildBounds(parent, width = 520, height = 650) {
   };
 }
 
+function isSafeExternalUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return ["https:", "http:", "mailto:"].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function openExternalUrl(url, source = "navigation") {
+  if (!isSafeExternalUrl(url)) {
+    diagnostics.log("warn", "desktop", "external-url-blocked", "Blocked unsafe external URL navigation", {
+      source,
+      protocol: (() => {
+        try { return new URL(url).protocol; } catch { return "invalid"; }
+      })(),
+    }, { file: "desktop" });
+    return false;
+  }
+  shell.openExternal(url);
+  return true;
+}
+
 function openAddStorageWindow(payload = {}) {
   if (addStorageWindow && !addStorageWindow.isDestroyed()) {
     pendingAddStoragePayload = payload;
@@ -267,14 +290,14 @@ function openAddStorageWindow(payload = {}) {
   });
 
   addStorageWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalUrl(url, "add-storage-window-open");
     return { action: "deny" };
   });
 
   addStorageWindow.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("file://")) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalUrl(url, "add-storage-navigation");
     }
   });
 
@@ -375,14 +398,14 @@ function createWindow() {
   }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalUrl(url, "main-window-open");
     return { action: "deny" };
   });
 
   window.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("file://")) {
       event.preventDefault();
-      shell.openExternal(url);
+      openExternalUrl(url, "main-window-navigation");
     }
   });
 

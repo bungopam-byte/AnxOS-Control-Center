@@ -52,6 +52,23 @@ async function start() {
   try {
     const config = readConfig(); fs.mkdirSync(getAgentDataDirectory(), { recursive: true });
     const service = await getServiceState();
+    const agentUrl = getLocalAgentUrl(config);
+    const existingHealth = await agentClient.getHealth(getLocalAgentHealthConfig(config)).catch(() => null);
+    if (existingHealth?.ok) {
+      lastRestartReason = "Connected to an already running local Agent";
+      lastError = null;
+      diagnostics.log("info", "agent-control", "start-existing-agent", "Local Agent was already listening on the configured port", {
+        agentUrl,
+        pid: existingHealth?.process?.pid || null,
+      }, { file: "service-manager" });
+      return getStatus();
+    }
+    const portUsed = await probePort(config.port);
+    if (portUsed && !service.active) {
+      throw Object.assign(new Error(`Port ${config.port} is already in use by another process. Choose a different Agent port or stop the conflicting service.`), {
+        code: "AGENT_PORT_IN_USE",
+      });
+    }
     if (service.installed) {
       const result = process.platform === "linux" ? await command("systemctl", ["--user", "start", "anxos-agent.service"]) : await command("schtasks.exe", ["/Run", "/TN", SERVICE_NAME]);
       if (!result.ok) throw Object.assign(new Error(result.stderr || "Background Agent could not be started."), { code: "SERVICE_START_FAILED" });

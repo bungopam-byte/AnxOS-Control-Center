@@ -305,7 +305,16 @@ async function createBackup(payload = {}) {
 }
 
 async function deleteBackup(backupId) {
-  const metadata = await readBackupMetadata(backupId);
+  const id = validateBackupId(backupId);
+  const metadata = await readBackupMetadata(id).catch((error) => {
+    if (error?.code === "BACKUP_NOT_FOUND") {
+      return null;
+    }
+    throw error;
+  });
+  if (!metadata) {
+    return { id, deleted: false, alreadyDeleted: true };
+  }
   await fs.rm(metadata.path, { force: true });
   await fs.rm(metadataPath(metadata.id), { force: true });
   return { id: metadata.id, deleted: true };

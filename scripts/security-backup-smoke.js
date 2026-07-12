@@ -176,6 +176,8 @@ async function main() {
   await backupService.deleteBackup(created.backup.id);
   const afterDelete = await backupService.listBackups({ instanceId });
   assert.strictEqual(afterDelete.backups.length, 0, "Backup delete should remove metadata and archive.");
+  const staleDelete = await backupService.deleteBackup(created.backup.id);
+  assert.strictEqual(staleDelete.alreadyDeleted, true, "Deleting a stale backup should be idempotent.");
 
   fs.rmSync(root, { recursive: true, force: true });
   console.log("Security and backup smoke checks passed.");

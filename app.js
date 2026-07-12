@@ -10624,6 +10624,12 @@ async function deleteSelectedBackup() {
     backupsState.selectedBackupId = null;
     await refreshBackups();
   } catch (error) {
+    if (/BACKUP_NOT_FOUND|already.*deleted|not found/i.test(String(error?.message || error || ""))) {
+      showToast("Backup was already removed. Refreshed backup list.", "info");
+      backupsState.selectedBackupId = null;
+      await refreshBackups();
+      return;
+    }
     showToast(error?.message || "Backup delete failed.");
   }
 }

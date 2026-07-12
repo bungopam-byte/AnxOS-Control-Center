@@ -60,7 +60,10 @@ assert(styles.includes('data-dev-state="available"') && styles.includes("devBadg
 assert(app.includes("setupDeveloperUpdates") && app.includes("openDeveloperUpdateModal") && app.includes("renderDevelopmentBadge"), "Developer update badge must be wired in the renderer.");
 assert(preload.includes("developerUpdates") && preload.includes("developerUpdates:check") && preload.includes("developerUpdates:restart"), "Preload must expose developer update IPC.");
 assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc") && main.includes("developerUpdates:restart"), "Main process must own developer update detection and restart.");
+assert(main.includes("requestSingleInstanceLock") && main.includes("second-instance"), "Main process must prevent duplicate desktop instances from fighting over Electron cache paths.");
 assert(index.includes('data-agent-control-action="start"') && index.includes('data-agent-control-action="installService"'), "Agent Control must expose real lifecycle and service actions.");
+assert(app.includes("Backup was already removed. Refreshed backup list."), "Backup UI must recover cleanly from stale already-deleted backup IDs.");
+assert(fs.readFileSync(path.join(root, "src", "services", "agentControlService.js"), "utf8").includes("Run AnxOS Control Center as Administrator"), "Windows Agent service install failures must explain elevation requirements.");
 assert(pageMarkup("agent-control").includes("Agent Connection") && pageMarkup("agent-control").includes('data-agent-setting="backendMode"'), "Agent configuration controls must render in Agent Control.");
 assert(pageMarkup("agent-control").indexOf("Diagnostics") < pageMarkup("agent-control").indexOf("Agent Connection"), "Agent Connection should sit below Diagnostics in Agent Control.");
 assert(!pageMarkup("settings").includes("data-agent-setting"), "Settings must not render the Agent configuration form.");

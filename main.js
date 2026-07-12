@@ -36,6 +36,7 @@ const developerGitUpdater = new DeveloperGitUpdater({ app, appRoot: __dirname })
 let mainWindow = null;
 let addStorageWindow = null;
 let pendingAddStoragePayload = null;
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -409,6 +410,18 @@ function createWindow() {
   });
 }
 
+if (gotSingleInstanceLock) {
+app.on("second-instance", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
   instrumentIpcHandlers();
   registerDiagnosticsIpc();
@@ -464,6 +477,9 @@ app.on("before-quit", () => {
   disposeFilesIpc();
   disposeSshIpc();
 });
+} else {
+  app.quit();
+}
 
 process.on("uncaughtException", (error) => diagnostics.logError("desktop", "uncaught-exception", error, {}, { file: "desktop" }));
 process.on("unhandledRejection", (reason) => diagnostics.logError("desktop", "unhandled-rejection", reason instanceof Error ? reason : new Error(String(reason)), {}, { file: "desktop" }));

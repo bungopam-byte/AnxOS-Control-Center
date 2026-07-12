@@ -166,6 +166,11 @@ const desktopApi = {
     cancelDownload: (downloadId) => invokeMarketplace("marketplace:cancelDownload", { downloadId }),
     retryDownload: (downloadId) => invokeMarketplace("marketplace:retryDownload", { downloadId }),
   },
+  dependencies: {
+    getCatalog: (payload = {}) => ipcRenderer.invoke("dependencies:getCatalog", payload),
+    check: (payload = {}) => ipcRenderer.invoke("dependencies:check", payload),
+    install: (payload = {}) => ipcRenderer.invoke("dependencies:install", payload),
+  },
   instances: {
     list: (payload = {}) => ipcRenderer.invoke("instances:list", payload),
     create: (payload) => ipcRenderer.invoke("instances:create", payload),

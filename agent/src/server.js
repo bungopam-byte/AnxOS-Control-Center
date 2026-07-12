@@ -11,6 +11,7 @@ const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDocker, handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
 const { handleDiagnostics } = require("./routes/diagnostics");
+const { handleDependencies } = require("./routes/dependencies");
 const { handleFilesDownload, handleFilesList, handleFilesMutate, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
@@ -192,6 +193,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/docker/containers" || pathname.startsWith("/api/v1/docker/containers/")) {
     return handleDocker(request, url);
+  }
+
+  if (pathname === "/api/v1/dependencies/catalog" || pathname.startsWith("/api/v1/dependencies/")) {
+    return handleDependencies(request, url);
   }
 
   if (pathname === "/api/v1/files/mutate" && request.method === "POST") {

@@ -2223,8 +2223,29 @@ async function deleteBackupSchedule(instanceId, configOverride = null) {
   });
 }
 
+async function getDependencyCatalog(configOverride = null) {
+  return requestJson("/api/v1/dependencies/catalog", { config: configOverride });
+}
+
+async function checkDependencies(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/dependencies/check", {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function installDependencies(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/dependencies/install", {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
 module.exports = {
   AgentClientError,
+  checkDependencies,
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
@@ -2257,6 +2278,7 @@ module.exports = {
   getFileList,
   getFileListing,
   getHealth,
+  getDependencyCatalog,
   getSystemStats,
   getInstanceLogs,
   getInstanceMetrics,
@@ -2267,6 +2289,7 @@ module.exports = {
   getPlayitStatus,
   isHealthy,
   importBackup,
+  installDependencies,
   listBackupSchedules,
   listBackups,
   listDockerImages,

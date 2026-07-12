@@ -4,6 +4,12 @@ const localPlayitService = require("./playitService");
 const localInstanceService = require("./localInstanceService");
 const agentClient = require("./agentClient");
 const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
+const fs = require("fs");
+const path = require("path");
+const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
+
+const MARKETPLACE_TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
+let marketplaceTemplateCache = null;
 
 class AgentUnavailableError extends Error {
   constructor() {
@@ -87,6 +93,58 @@ function assertDockerEnabledForNode(options = {}) {
     error.statusCode = 503;
     throw error;
   }
+}
+
+function loadMarketplaceTemplatesForDependencies() {
+  if (marketplaceTemplateCache) {
+    return marketplaceTemplateCache;
+  }
+  try {
+    marketplaceTemplateCache = JSON.parse(fs.readFileSync(MARKETPLACE_TEMPLATE_PATH, "utf8"));
+  } catch {
+    marketplaceTemplateCache = [];
+  }
+  return marketplaceTemplateCache;
+}
+
+function findMarketplaceTemplateById(templateId) {
+  const id = String(templateId || "").trim();
+  if (!id) return null;
+  return loadMarketplaceTemplatesForDependencies().find((template) => template?.id === id) || null;
+}
+
+async function ensureInstanceDependenciesBeforeStart(instanceId, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return;
+  }
+  const status = await agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options)).catch(() => null);
+  const instance = status?.instance || status;
+  const template = findMarketplaceTemplateById(instance?.templateId);
+  const dependencyIds = template ? resolveTemplateDependencyIds(template) : [];
+  if (dependencyIds.length === 0) {
+    return;
+  }
+  const check = await agentClient.checkDependencies({ dependencyIds }, getOptionalNodeConfig(options));
+  if (check.ok) {
+    return;
+  }
+  if (options.autoInstallDependencies === true) {
+    await agentClient.installDependencies({ dependencyIds: check.missingDependencyIds || dependencyIds }, getOptionalNodeConfig(options));
+    const recheck = await agentClient.checkDependencies({ dependencyIds }, getOptionalNodeConfig(options));
+    if (recheck.ok) {
+      return;
+    }
+  }
+  const error = new Error("This instance requires node dependencies before it can start.");
+  error.code = "DEPENDENCIES_REQUIRED";
+  error.details = {
+    instanceId,
+    templateId: instance?.templateId || null,
+    dependencyIds,
+    dependencies: check.dependencies,
+    missingDependencies: check.dependencies?.filter((dependency) => !dependency.installed || dependency.state === "update-required") || [],
+  };
+  throw error;
 }
 
 async function getDockerSnapshot(options = {}) {
@@ -388,10 +446,51 @@ async function saveMinecraftProperties(instanceId, properties, options = {}) {
   return agentClient.saveMinecraftProperties(instanceId, properties, getOptionalNodeConfig(options));
 }
 
+async function getDependencyCatalog(options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return {
+      dependencies: [],
+      groups: [],
+      distribution: {
+        id: process.platform,
+        name: process.platform,
+        packageManager: null,
+      },
+    };
+  }
+  return agentClient.getDependencyCatalog(getOptionalNodeConfig(options));
+}
+
+async function checkDependencies(payload = {}) {
+  if (shouldUseLocalInstances(payload)) {
+    return {
+      ok: true,
+      dependencies: [],
+      missingDependencyIds: [],
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  return agentClient.checkDependencies(payload, getOptionalNodeConfig(payload));
+}
+
+async function installDependencies(payload = {}) {
+  if (shouldUseLocalInstances(payload)) {
+    return {
+      ok: true,
+      results: [],
+      dependencies: [],
+      missingDependencyIds: [],
+      completedAt: new Date().toISOString(),
+    };
+  }
+  return agentClient.installDependencies(payload, getOptionalNodeConfig(payload));
+}
+
 async function startInstance(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.startInstance(instanceId);
   }
+  await ensureInstanceDependenciesBeforeStart(instanceId, options);
   return agentClient.startInstance(instanceId, getOptionalNodeConfig(options));
 }
 
@@ -453,6 +552,7 @@ async function deleteBackupSchedule(instanceId, options = {}) {
 }
 
 module.exports = {
+  checkDependencies,
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
@@ -467,6 +567,7 @@ module.exports = {
   downloadBackup,
   forceKillInstance,
   getAmpSnapshot,
+  getDependencyCatalog,
   getDockerSnapshot,
   getDockerContainerLogs,
   getDockerContainerStats,
@@ -478,6 +579,7 @@ module.exports = {
   getMinecraftProperties,
   getPlayitSnapshot,
   importBackup,
+  installDependencies,
   listDockerContainers,
   listDockerImages,
   listDockerNetworks,

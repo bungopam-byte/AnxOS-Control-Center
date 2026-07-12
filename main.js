@@ -41,6 +41,7 @@ configureElectronPaths(app);
 const diagnostics = require("./src/services/diagnosticsService");
 const { registerDiagnosticsIpc } = require("./src/ipc/diagnosticsIpc");
 const { registerAgentControlIpc } = require("./src/ipc/agentControlIpc");
+const { registerDependenciesIpc } = require("./src/ipc/dependenciesIpc");
 const originalConsoleError = console.error.bind(console);
 console.error = (...args) => {
   originalConsoleError(...args);
@@ -410,6 +411,7 @@ app.whenReady().then(() => {
   instrumentIpcHandlers();
   registerDiagnosticsIpc();
   registerAgentControlIpc();
+  registerDependenciesIpc();
   ipcMain.on("diagnostics:log", (_, payload = {}) => diagnostics.log(payload.severity || "info", payload.source || "preload", payload.operation || "event", payload.message || "Runtime event", payload.context || {}, { file: payload.file || payload.source || "desktop" }));
   diagnostics.captureSnapshot({ applicationRunning: true, providerMode: "initializing" });
   updateManager.on("status", (payload = {}) => {

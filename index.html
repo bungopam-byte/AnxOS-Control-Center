@@ -3044,6 +3044,30 @@
                     <div><dt>Ready</dt><dd data-owner-overview="ready">Loading</dd></div>
                   </dl>
                 </article>
+                <article class="status-card owner-overview-wide" aria-labelledby="owner-overview-status-title">
+                  <h3 id="owner-overview-status-title">Operational Overview</h3>
+                  <div class="security-summary-grid" data-owner-overview-summary aria-live="polite" aria-label="Owner operational overview"></div>
+                  <div class="settings-actions">
+                    <button class="inline-action" type="button" data-owner-overview-action="refresh">Refresh Owner State</button>
+                    <button class="inline-action" type="button" data-owner-overview-action="node-health">Open Node Health</button>
+                    <button class="inline-action" type="button" data-owner-overview-action="operations">Open Operations</button>
+                    <button class="inline-action" type="button" data-owner-overview-action="diagnostics">Open Diagnostics</button>
+                  </div>
+                </article>
+                <article class="status-card owner-overview-wide" aria-labelledby="owner-overview-agents-title">
+                  <h3 id="owner-overview-agents-title">Agents and Runtime</h3>
+                  <div class="security-list" data-owner-overview-agents role="list" aria-label="Owner connected Agents and runtime summary"></div>
+                </article>
+                <article class="status-card owner-overview-wide" aria-labelledby="owner-overview-admin-title">
+                  <h3 id="owner-overview-admin-title">Administrative State</h3>
+                  <div class="security-list" data-owner-overview-admin role="list" aria-label="Owner administrative summaries"></div>
+                  <div class="settings-actions">
+                    <button class="inline-action" type="button" data-owner-overview-action="maintenance">Open Maintenance</button>
+                    <button class="inline-action" type="button" data-owner-overview-action="security">Open Security</button>
+                    <button class="inline-action" type="button" data-owner-overview-action="dependencies">Recheck Dependencies</button>
+                    <button class="inline-action" type="button" data-owner-overview-action="developer-update">Open Developer Update</button>
+                  </div>
+                </article>
               </div>
 
               <div class="owner-editor-shell" data-owner-tool="editor" hidden>

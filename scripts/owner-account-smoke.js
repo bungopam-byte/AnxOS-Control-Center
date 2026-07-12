@@ -71,6 +71,8 @@ function assertFrontendCannotGrantOwner() {
   assert(appJs.includes("securityState?.ownerWorkspaceAvailable"), "Renderer should use trusted security status for owner workspace visibility.");
   assert(appJs.includes("renderOwnerSidebarPages"), "Renderer should populate owner workspace pages in the sidebar.");
   assert(appJs.includes("refreshOwnerWorkspace().catch"), "Owner auth refresh should load workspace pages after sign-in.");
+  assert(appJs.includes("function renderOwnerLockedState"), "Renderer should render locked Owner Workspace content without exposing owner data.");
+  assert(appJs.includes("Administrative data locked"), "Locked Owner Workspace content should show an explicit administrative lock state.");
   assert(workspaceService.includes("requireOwner"), "Owner Workspace service must enforce owner authorization.");
   assert(securityService.includes("isOwnerAccount"), "Security service must resolve account owner authorization in the main process.");
 }

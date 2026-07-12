@@ -17,6 +17,9 @@ const ownerWorkspaceNavPages = document.querySelector("[data-owner-workspace-nav
 const ownerWorkspacePage = document.querySelector("[data-owner-workspace-page]");
 const ownerStatusFields = document.querySelectorAll("[data-owner-status]");
 const ownerOverviewFields = document.querySelectorAll("[data-owner-overview]");
+const ownerOverviewSummary = document.querySelector("[data-owner-overview-summary]");
+const ownerOverviewAgents = document.querySelector("[data-owner-overview-agents]");
+const ownerOverviewAdmin = document.querySelector("[data-owner-overview-admin]");
 const ownerPageList = document.querySelector("[data-owner-page-list]");
 const ownerSearchInput = document.querySelector("[data-owner-search]");
 const ownerPageTitle = document.querySelector("[data-owner-page-title]");
@@ -608,6 +611,7 @@ let ownerLogEntries = [];
 let nodesState = { selectedNodeId: "application-host", nodes: [], applicationHost: null };
 let nodeHealthState = null;
 let previousNodeHealthState = null;
+let previousOwnerOverviewState = null;
 let runtimeInfoState = null;
 let selectedNodeContextVersion = 0;
 let nodeSwitchInProgress = false;
@@ -3937,6 +3941,348 @@ function renderOwnerStatus(status = {}) {
   });
 }
 
+function ownerStateTone(state = "Unknown") {
+  if (String(state || "").toLowerCase() === "unavailable") return "planned";
+  const normalized = normalizeNodeHealthState(state);
+  if (normalized === "Healthy") return "ok";
+  if (normalized === "Needs attention" || normalized === "Unknown" || normalized === "Not configured") return "warning";
+  if (normalized === "Degraded" || normalized === "Critical" || normalized === "Offline") return "critical";
+  return "planned";
+}
+
+function createOwnerOverviewBadge(state) {
+  const label = String(state || "").toLowerCase() === "unavailable" ? "Unavailable" : normalizeNodeHealthState(state);
+  return createTextElement("span", label, `status-pill status-pill--${ownerStateTone(state)}`);
+}
+
+function getOwnerDependencySummary() {
+  const result = latestDependencyResult;
+  if (!result) {
+    return {
+      state: "Unknown",
+      label: "Runtime dependencies",
+      evidence: "Dependency state is limited to the selected node and has not been checked in this session.",
+      action: "dependencies",
+    };
+  }
+  const dependencies = Array.isArray(result.dependencies) ? result.dependencies : [];
+  const unhealthy = dependencies.filter((dependency) => dependency.state !== "installed");
+  const critical = unhealthy.some((dependency) => ["unsupported", "verification-failed", "installation-failed"].includes(String(dependency.state || "")));
+  return {
+    state: critical ? "Degraded" : unhealthy.length ? "Needs attention" : "Healthy",
+    label: "Runtime dependencies",
+    evidence: dependencies.length
+      ? `${dependencies.length - unhealthy.length}/${dependencies.length} selected-node dependencies installed or verified.`
+      : "Dependency check returned no dependency rows.",
+    action: unhealthy.length ? "dependencies" : "node-health",
+  };
+}
+
+function getOwnerMarketplaceSummary() {
+  const instances = getInstances();
+  if (!latestInstancesSnapshot) {
+    return { state: getDesktopApiState().hasInstances ? "Unknown" : "Not configured", label: "Marketplace instances", evidence: "Instance state has not loaded for the selected node.", action: "marketplace" };
+  }
+  const failed = instances.filter((instance) => /fail|error|crash/i.test(String(instance.state || instance.status || ""))).length;
+  const running = instances.filter(isInstanceRunning).length;
+  const recovery = instances.filter((instance) => instance.recoveryAvailable || instance.requiresRecovery || instance.installRecovery).length;
+  return {
+    state: failed || recovery ? "Degraded" : "Healthy",
+    label: "Marketplace instances",
+    evidence: `${running}/${instances.length} running; ${failed} failed; ${recovery} recovery-required.`,
+    action: failed || recovery ? "operations" : "marketplace",
+  };
+}
+
+function getOwnerSecuritySummary() {
+  const dashboard = securityDashboardState || {};
+  const overview = dashboard.overview || {};
+  const recommendations = Array.isArray(dashboard.recommendations) ? dashboard.recommendations : [];
+  const criticalEvents = (dashboard.events || []).filter((event) => /critical|denied|failed/i.test(`${event.severity || ""} ${event.result || ""}`));
+  const ownerAuthorized = securityState?.ownerWorkspaceAvailable === true;
+  return {
+    state: !securityState?.authenticated ? "Critical" : ownerAuthorized ? recommendations.length || criticalEvents.length ? "Needs attention" : "Healthy" : "Degraded",
+    label: "Security",
+    evidence: [
+      ownerAuthorized ? "Owner authorized" : "Owner authorization locked",
+      `${overview.rememberedSessionCount ?? securityState?.persistentSessionCount ?? 0} remembered sessions`,
+      `${overview.trustedDeviceCount ?? "unknown"} trusted devices`,
+      `${recommendations.length} recommendations`,
+    ].join(" · "),
+    action: "security",
+  };
+}
+
+function getOwnerMaintenanceSummary() {
+  const warningCategories = maintenanceState.categories.filter((category) => category.status === "warning" || category.status === "partial" || category.restartRequired || Number(category.errorCount || 0) > 0);
+  const reclaimed = maintenanceState.categories.reduce((sum, category) => sum + Number(category.lastReclaimedBytes || category.reclaimedBytes || 0), 0);
+  return {
+    state: warningCategories.length ? "Needs attention" : maintenanceState.lastScanAt ? "Healthy" : "Unknown",
+    label: "Maintenance",
+    evidence: maintenanceState.lastScanAt
+      ? `${warningCategories.length} categories need attention; reclaimed ${formatBytes(reclaimed)} in loaded maintenance data.`
+      : "No maintenance scan has run in this session.",
+    action: maintenanceState.lastScanAt ? "maintenance" : "scan-maintenance",
+  };
+}
+
+function getOwnerDiagnosticsSummary() {
+  const groups = diagnosticsIssueGroups.length ? diagnosticsIssueGroups : groupDiagnosticIssues(agentLogEntries);
+  const critical = groups.filter((group) => getDiagnosticSeverityRank(group.severity) >= 3);
+  return {
+    state: critical.length ? "Degraded" : groups.length ? "Needs attention" : agentLogEntries.length ? "Healthy" : "Unknown",
+    label: "Diagnostics",
+    evidence: `${groups.length} grouped issues; ${critical.length} critical groups from ${agentLogEntries.length} sanitized entries.`,
+    action: "diagnostics",
+  };
+}
+
+function getOwnerOperationsSummary() {
+  const operations = [...operationsState.items.values()];
+  const active = operations.filter((operation) => ["running", "queued"].includes(operation.status));
+  const failed = operations.filter((operation) => operation.status === "failed");
+  return {
+    state: failed.length ? "Needs attention" : active.length ? "Healthy" : operationsState.loaded ? "Healthy" : "Unknown",
+    label: "Operations",
+    evidence: `${active.length} active; ${failed.length} failed; ${operations.length} loaded operation records.`,
+    action: failed.length ? "operations-failed" : "operations",
+  };
+}
+
+function getOwnerUpdateSummary() {
+  const update = updateUiState || {};
+  const hasUpdate = Boolean(update.latest?.hasUpdate || latestUpdateInfo?.hasUpdate);
+  const failed = Boolean(update.error);
+  return {
+    state: !getDesktopApiState().hasUpdates ? "Unavailable" : failed ? "Needs attention" : hasUpdate ? "Needs attention" : update.lastCheckedAt ? "Healthy" : "Unknown",
+    label: "Updates",
+    evidence: failed ? update.error : hasUpdate ? `Update ${update.latest?.latestVersion || latestUpdateInfo?.latestVersion || "available"} is available.` : update.lastCheckedAt ? `Last checked ${formatDateTime(update.lastCheckedAt)}.` : "Update state is available from Settings.",
+    action: "updates",
+  };
+}
+
+function getOwnerBuildSummary() {
+  const dev = developerUpdateState || {};
+  const branch = dev.branch || "Unavailable";
+  const commit = dev.localCommit || runtimeInfoState?.gitCommit || "Unavailable";
+  const mode = runtimeInfoState?.isPackaged === true ? "Packaged" : runtimeInfoState?.trustedDevelopmentMode ? "Trusted development" : "Unpackaged";
+  return {
+    state: dev.status === "error" ? "Needs attention" : runtimeInfoState ? "Healthy" : "Unknown",
+    label: "Build and environment",
+    evidence: `${mode} · version ${runtimeInfoState?.version || runtimeInfoState?.appVersion || "unavailable"} · branch ${branch} · commit ${commit} · Electron ${runtimeInfoState?.electron || "unavailable"} · Node ${runtimeInfoState?.node || "unavailable"}.`,
+    action: "developer-update",
+  };
+}
+
+function getOwnerAgentSummaries() {
+  const target = getAgentControlOverviewTarget(agentControlState);
+  const remote = Array.isArray(agentControlState?.remote) ? agentControlState.remote : [];
+  const nodes = getNodePickerNodes();
+  const selected = getSelectedNode();
+  const health = nodeHealthState || buildNodeHealthModel();
+  const summaries = [
+    {
+      state: health.state,
+      label: "Selected node health",
+      evidence: `${health.nodeName} · ${health.summary}`,
+      action: "node-health",
+    },
+    {
+      state: target ? (isAgentTargetRunning(target) || target.runtime?.serviceState === "running" ? "Healthy" : target.state === "Authentication failed" ? "Critical" : "Offline") : "Unknown",
+      label: "Local Agent",
+      evidence: target ? `${getAgentTargetLabel(target)} · ${target.runtime?.version || target.agentVersion || "version unavailable"} · ${target.state || "state unavailable"}` : "Agent Control has not loaded Agent runtime state.",
+      action: "agent-control",
+    },
+    {
+      state: nodes.some((node) => getNodeVisualState(node) === "offline" || getNodeVisualState(node) === "error") ? "Needs attention" : nodes.length ? "Healthy" : "Not configured",
+      label: "Connected Agents",
+      evidence: `${nodes.filter((node) => node.kind === "agent" && getNodeVisualState(node) === "online").length} online remote Agents; ${nodes.filter((node) => node.kind === "agent" && getNodeVisualState(node) !== "online").length} offline or warning; selected ${selected?.displayName || "Application Host"}.`,
+      action: "node-health",
+    },
+    {
+      state: remote.some((agent) => agent.state === "Authentication failed") ? "Critical" : remote.length ? "Healthy" : "Unknown",
+      label: "Remote Agent inventory",
+      evidence: remote.length ? `${remote.length} remote Agent records loaded from Agent Control.` : "No remote Agent inventory has loaded.",
+      action: "agent-control",
+    },
+    getOwnerDependencySummary(),
+    getOwnerMarketplaceSummary(),
+  ];
+  return summaries;
+}
+
+function buildOwnerOverviewModel() {
+  const agentSummaries = getOwnerAgentSummaries();
+  const adminSummaries = [
+    getOwnerOperationsSummary(),
+    getOwnerDiagnosticsSummary(),
+    getOwnerMaintenanceSummary(),
+    getOwnerSecuritySummary(),
+    getOwnerUpdateSummary(),
+    getOwnerBuildSummary(),
+  ];
+  const all = [...agentSummaries, ...adminSummaries];
+  const rank = { Healthy: 0, "Needs attention": 1, Degraded: 2, Critical: 3, Offline: 3, Unknown: 1, "Not configured": 1, Unavailable: 1 };
+  const state = all.reduce((current, item) => {
+    const normalized = normalizeNodeHealthState(item.state === "Unavailable" ? "Unknown" : item.state);
+    return (rank[normalized] || 0) > (rank[current] || 0) ? normalized : current;
+  }, "Healthy");
+  return {
+    state,
+    issueCount: all.filter((item) => normalizeNodeHealthState(item.state) !== "Healthy").length,
+    agentSummaries,
+    adminSummaries,
+    updatedAt: Date.now(),
+  };
+}
+
+function syncOwnerOverviewNotifications(model) {
+  if (!model || !previousOwnerOverviewState) {
+    previousOwnerOverviewState = model;
+    return;
+  }
+  const rank = { Healthy: 0, "Needs attention": 1, Degraded: 2, Critical: 3, Offline: 3, Unknown: 1, "Not configured": 1 };
+  const previousRank = rank[normalizeNodeHealthState(previousOwnerOverviewState.state)] || 0;
+  const nextRank = rank[normalizeNodeHealthState(model.state)] || 0;
+  if (nextRank >= 2 && nextRank > previousRank) {
+    createNotification({
+      category: "Owner",
+      severity: model.state === "Critical" ? "critical" : "warning",
+      title: `Owner overview ${model.state.toLowerCase()}`,
+      message: `${model.issueCount} owner summaries need attention.`,
+      dedupKey: `owner-overview:${model.state}`,
+      relatedWorkspace: "owner-workspace",
+      actions: ["openDiagnostics", "openOperations"],
+      resolved: false,
+    });
+  } else if (previousRank >= 2 && nextRank <= 1) {
+    createNotification({
+      category: "Owner",
+      severity: "success",
+      title: "Owner overview recovered",
+      message: `${model.issueCount} owner summaries need attention.`,
+      dedupKey: "owner-overview:recovered",
+      relatedWorkspace: "owner-workspace",
+      actions: ["openDiagnostics"],
+      resolved: true,
+    });
+  }
+  previousOwnerOverviewState = model;
+}
+
+function renderOwnerOverviewList(container, items) {
+  if (!container) return;
+  container.replaceChildren();
+  if (!items.length) {
+    container.append(createEmptyState("No owner overview data is available yet."));
+    return;
+  }
+  items.forEach((item) => {
+    const row = document.createElement("article");
+    row.className = "security-list-item";
+    row.dataset.ownerOverviewItem = item.action || item.label || "summary";
+    const top = document.createElement("div");
+    top.className = "security-card-row";
+    const body = document.createElement("div");
+    body.append(createTextElement("strong", item.label || "Owner summary"), createTextElement("p", item.evidence || "No evidence available."));
+    top.append(body, createOwnerOverviewBadge(item.state));
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "inline-action";
+    action.dataset.ownerOverviewAction = item.action || "";
+    action.textContent = item.action ? "Open" : "Unavailable";
+    action.disabled = !item.action;
+    action.setAttribute("aria-label", `Open related workspace for ${item.label || "owner summary"}`);
+    actions.append(action);
+    row.append(top, actions);
+    container.append(row);
+  });
+}
+
+function renderOwnerOverviewPolish() {
+  if (!ownerOverviewSummary && !ownerOverviewAgents && !ownerOverviewAdmin) return;
+  const model = buildOwnerOverviewModel();
+  syncOwnerOverviewNotifications(model);
+  if (ownerOverviewSummary) {
+    renderSecuritySummaryGrid(ownerOverviewSummary, [
+      ["Overall", model.state],
+      ["Needs attention", model.issueCount],
+      ["Owner", securityState?.user?.username || "Unavailable"],
+      ["Role", securityState?.user?.role || "Unavailable"],
+      ["Selected node", getSelectedNode()?.displayName || "Application Host"],
+      ["Updated", formatHealthCheckedAt(model.updatedAt)],
+    ]);
+  }
+  renderOwnerOverviewList(ownerOverviewAgents, model.agentSummaries);
+  renderOwnerOverviewList(ownerOverviewAdmin, model.adminSummaries);
+}
+
+function renderOwnerLockedState() {
+  ownerTools.forEach((node) => {
+    node.hidden = node.dataset.ownerTool !== "overview";
+  });
+  if (ownerPageTitle) ownerPageTitle.textContent = "Owner Workspace Locked";
+  if (ownerPageKicker) ownerPageKicker.textContent = "Locked";
+  setOwnerSaveState("Owner access required");
+  if (ownerOverviewSummary) {
+    renderSecuritySummaryGrid(ownerOverviewSummary, [
+      ["Overall", "Unavailable"],
+      ["Owner", securityState?.user?.username || "Signed out"],
+      ["Role", securityState?.user?.role || "Unavailable"],
+      ["Authorization", "Owner access required"],
+      ["Workspace", "Locked"],
+      ["Next action", securityState?.authenticated ? "Sign in as Owner" : "Sign in"],
+    ]);
+  }
+  renderOwnerOverviewList(ownerOverviewAgents, [{
+    state: "Unavailable",
+    label: "Owner data locked",
+    evidence: "Connected Agents, node health, dependencies, and runtime state are hidden until Owner authorization is verified.",
+    action: null,
+  }]);
+  renderOwnerOverviewList(ownerOverviewAdmin, [{
+    state: "Unavailable",
+    label: "Administrative data locked",
+    evidence: "Operations, Diagnostics, Maintenance, Security, and build summaries require Owner authorization.",
+    action: null,
+  }]);
+}
+
+async function runOwnerOverviewAction(action) {
+  if (action === "refresh") return refreshOwnerWorkspace();
+  if (action === "node-health") {
+    showPage("nodes");
+    const health = refreshNodeHealth({ notify: false });
+    openNodeDetails(health.nodeId);
+    return null;
+  }
+  if (action === "agent-control") return showPage("agent-control");
+  if (action === "operations") return showPage("operations");
+  if (action === "operations-failed") {
+    operationsState.filter = "failed";
+    showPage("operations");
+    renderOperationsCenter();
+    return null;
+  }
+  if (action === "diagnostics") return showPage("agent-control");
+  if (action === "maintenance") return showPage("maintenance");
+  if (action === "scan-maintenance") {
+    showPage("maintenance");
+    return scanMaintenanceStorage({ trackOperation: true });
+  }
+  if (action === "security") return showPage("security");
+  if (action === "dependencies") {
+    showPage("agent-control");
+    return runDependencyAction("check");
+  }
+  if (action === "marketplace") return showPage("marketplace");
+  if (action === "updates") return checkForUpdates({ silent: false });
+  if (action === "developer-update") return openDeveloperUpdateModal();
+  return null;
+}
+
 function setOwnerSaveState(message) {
   if (ownerSaveState) ownerSaveState.textContent = message;
 }
@@ -4072,6 +4418,7 @@ function renderOwnerTool(page) {
     ownerJsonEditor.value = content.json || content.markdown || "{}";
     if (ownerJsonMessage) ownerJsonMessage.textContent = "JSON ready.";
   }
+  if (tool === "overview") renderOwnerOverviewPolish();
   if (tool === "feature-flags") renderOwnerFlags();
   if (tool === "command-center") renderOwnerCommands();
   if (tool === "api-tester") renderOwnerApiHistory(ownerWorkspaceState.apiHistory || []);
@@ -4081,6 +4428,13 @@ function renderOwnerTool(page) {
 
 function renderOwnerWorkspace() {
   setOwnerWorkspaceNavVisible(shouldShowOwnerWorkspaceNav());
+  if (!isOwnerWorkspaceAuthorized()) {
+    renderOwnerSidebarPages();
+    renderOwnerStatus(ownerWorkspaceState.status || {});
+    renderOwnerPageList();
+    renderOwnerLockedState();
+    return;
+  }
   const selected = ownerWorkspaceState.pages.find((page) => page.id === ownerWorkspaceState.selectedPageId)
     || ownerWorkspaceState.pages[0]
     || null;
@@ -13468,7 +13822,13 @@ function getGlobalSearchProviders() {
       label: "Owner Workspace",
       type: "Owner",
       search(query) {
-        return (ownerWorkspaceState.pages || [])
+        const overview = buildOwnerOverviewModel();
+        const ownerEntries = [
+          { id: "owner-overview-state", label: `Owner Overview: ${overview.state}`, description: `${overview.issueCount} owner summaries need attention`, action: () => selectOwnerPage("overview") },
+          ...overview.agentSummaries.map((item) => ({ id: `owner-agent:${item.label}`, label: item.label, description: item.evidence, action: () => selectOwnerPage("overview") })),
+          ...overview.adminSummaries.map((item) => ({ id: `owner-admin:${item.label}`, label: item.label, description: item.evidence, action: () => selectOwnerPage("overview") })),
+        ];
+        const pageEntries = (ownerWorkspaceState.pages || [])
           .filter((page) => matchesSearchQuery(query, page.title, page.id, page.builtIn ? "built-in" : "custom"))
           .map((page) => createGlobalSearchResult(this, {
             id: page.id,
@@ -13476,6 +13836,15 @@ function getGlobalSearchProviders() {
             description: page.builtIn ? "Built-in owner page" : "Custom owner page",
             action: () => selectOwnerPage(page.id),
           }));
+        const summaryEntries = ownerEntries
+          .filter((entry) => matchesSearchQuery(query, entry.label, entry.description, "owner workspace diagnostics agents dependencies build security maintenance operations"))
+          .map((entry) => createGlobalSearchResult(this, {
+            id: entry.id,
+            label: entry.label,
+            description: entry.description,
+            action: entry.action,
+          }));
+        return [...summaryEntries, ...pageEntries];
       },
     });
   }
@@ -14293,13 +14662,52 @@ function getCommandRegistry() {
   ];
 
   if (isOwnerWorkspaceAuthorized()) {
-    commands.push(createCommand({
-      id: "owner.refresh",
-      title: "Refresh Owner Workspace",
-      description: "Reload authorized Owner Workspace data.",
-      category: "Owner",
-      execute: () => { showPage("owner-workspace"); return refreshOwnerWorkspace(); },
-    }));
+    commands.push(
+      createCommand({
+        id: "owner.refresh",
+        title: "Refresh Owner Workspace",
+        description: "Reload authorized Owner Workspace data.",
+        category: "Owner",
+        execute: () => { showPage("owner-workspace"); return refreshOwnerWorkspace(); },
+      }),
+      createCommand({
+        id: "owner.open",
+        title: "Open Owner Workspace",
+        description: "Open the authorized Owner Workspace.",
+        category: "Owner",
+        execute: () => { showPage("owner-workspace"); return selectOwnerPage("overview"); },
+      }),
+      createCommand({
+        id: "owner.overview",
+        title: "Open Owner Overview",
+        description: "Open the Owner operational overview.",
+        category: "Owner",
+        execute: () => { showPage("owner-workspace"); return selectOwnerPage("overview"); },
+      }),
+      createCommand({
+        id: "owner.offlineAgents",
+        title: "Show Offline Agents",
+        description: "Open Node Health for offline or warning Agent state.",
+        category: "Owner",
+        execute: () => runOwnerOverviewAction("node-health"),
+      }),
+      createCommand({
+        id: "owner.diagnostics",
+        title: "Show Owner Diagnostics",
+        description: "Open the diagnostics context used by the Owner Overview.",
+        category: "Owner",
+        execute: () => runOwnerOverviewAction("diagnostics"),
+      }),
+      createCommand({
+        id: "owner.developerUpdate",
+        title: "Open Developer Update",
+        description: "Open developer Git update status when available.",
+        category: "Owner",
+        enabled: () => Boolean(desktopApiState.hasDeveloperUpdates),
+        disabledReason: () => "Developer update status is unavailable in this build.",
+        execute: () => runOwnerOverviewAction("developer-update"),
+      }),
+    );
   }
 
   return commands.filter((command, index, source) => command.visible() && source.findIndex((candidate) => candidate.id === command.id) === index);
@@ -23251,6 +23659,24 @@ ownerLogSearch?.addEventListener("input", debounce(() => renderOwnerLogs(), 120)
 ownerLogLevel?.addEventListener("change", () => renderOwnerLogs());
 ownerActionButtons.forEach((button) => {
   button.addEventListener("click", () => handleOwnerAction(button.dataset.ownerAction));
+});
+ownerWorkspacePage?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-owner-overview-action]");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!isOwnerWorkspaceAuthorized()) {
+    showToast("Owner access is required.");
+    return;
+  }
+  button.disabled = true;
+  try {
+    await runOwnerOverviewAction(button.dataset.ownerOverviewAction);
+  } catch (error) {
+    showToast(normalizeIpcErrorMessage(error, "Owner action failed."), "error");
+  } finally {
+    button.disabled = false;
+  }
 });
 sidebarToggleButton?.addEventListener("click", () => {
   toggleSidebarCollapsed({ lockHoverExpand: true });

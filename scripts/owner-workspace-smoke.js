@@ -48,6 +48,45 @@ async function main() {
   assert(appJs.includes('selectedPageId: ownerWorkspaceState.selectedPageId || workspace.selectedPageId || "overview"'), "Owner Workspace should default to Overview on first renderer mount.");
   assert(appJs.includes("saveOwnerJson"), "JSON Editor should validate and save JSON content.");
   assert(appJs.includes("renderOwnerLogs"), "Log Viewer should support rendering and filtering logs.");
+  assert(appJs.includes("function renderOwnerLockedState"), "Owner Workspace should render a clear locked content state.");
+  assert(appJs.includes("Connected Agents, node health, dependencies, and runtime state are hidden until Owner authorization is verified."), "Locked Owner Workspace content must not expose owner data.");
+  assert(indexHtml.includes("data-owner-overview-summary"), "Owner Overview should include an operational summary region.");
+  assert(indexHtml.includes("data-owner-overview-agents"), "Owner Overview should include connected Agent and runtime summaries.");
+  assert(indexHtml.includes("data-owner-overview-admin"), "Owner Overview should include administrative summaries.");
+  assert(indexHtml.includes('aria-label="Owner operational overview"'), "Owner Overview should expose an accessible overview label.");
+  assert(indexHtml.includes('data-owner-overview-action="node-health"'), "Owner Overview should link to Node Health.");
+  assert(indexHtml.includes('data-owner-overview-action="developer-update"'), "Owner Overview should link to Developer Update.");
+  [
+    "function buildOwnerOverviewModel",
+    "function getOwnerAgentSummaries",
+    "function getOwnerDependencySummary",
+    "function getOwnerMarketplaceSummary",
+    "function getOwnerOperationsSummary",
+    "function getOwnerDiagnosticsSummary",
+    "function getOwnerMaintenanceSummary",
+    "function getOwnerSecuritySummary",
+    "function getOwnerBuildSummary",
+    "function renderOwnerOverviewPolish",
+    "function runOwnerOverviewAction",
+  ].forEach((needle) => assert(appJs.includes(needle), `Owner Overview renderer should implement ${needle}.`));
+  assert(appJs.includes("nodeHealthState || buildNodeHealthModel()"), "Owner Overview should reuse Node Health state.");
+  assert(appJs.includes("latestDependencyResult"), "Owner Overview should reuse selected-node dependency state.");
+  assert(appJs.includes("operationsState.items.values()"), "Owner Overview should summarize Operations state.");
+  assert(appJs.includes("diagnosticsIssueGroups.length ? diagnosticsIssueGroups : groupDiagnosticIssues(agentLogEntries)"), "Owner Overview should reuse grouped Diagnostics issues.");
+  assert(appJs.includes("maintenanceState.categories.filter"), "Owner Overview should reuse Maintenance state.");
+  assert(appJs.includes("securityDashboardState || {}"), "Owner Overview should reuse Security dashboard state.");
+  assert(appJs.includes("developerUpdateState || {}"), "Owner Overview should reuse Developer Git update state.");
+  assert(appJs.includes("runtimeInfoState?.gitCommit"), "Owner Overview should display real build metadata.");
+  assert(appJs.includes("ownerWorkspacePage?.addEventListener(\"click\""), "Owner Overview actions should use one delegated listener.");
+  assert(!appJs.includes("ownerOverviewAgents.innerHTML"), "Owner Overview must not render Agent summaries with raw HTML.");
+  assert(!appJs.includes("ownerOverviewAdmin.innerHTML"), "Owner Overview must not render admin summaries with raw HTML.");
+  assert(appJs.includes("dedupKey: `owner-overview:${model.state}`"), "Owner Overview notifications should be deduplicated.");
+  assert(appJs.includes('id: "owner.overview"'), "Command Palette should include Open Owner Overview.");
+  assert(appJs.includes('id: "owner.offlineAgents"'), "Command Palette should include Show Offline Agents.");
+  assert(appJs.includes('id: "owner.diagnostics"'), "Command Palette should include Show Owner Diagnostics.");
+  assert(appJs.includes('id: "owner.developerUpdate"'), "Command Palette should include Open Developer Update.");
+  assert(appJs.includes("Owner Overview: ${overview.state}"), "Global Search should expose Owner overview state.");
+  assert(!indexHtml.includes("data-owner-fix-all"), "Owner Workspace should not expose unsupported bulk remediation.");
 
   const securityPath = "../src/services/securityService";
   const workspacePath = "../src/services/ownerWorkspaceService";

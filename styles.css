@@ -11396,6 +11396,22 @@ button:disabled {
   gap: 16px;
 }
 
+.owner-overview-wide {
+  grid-column: 1 / -1;
+}
+
+.owner-overview-wide .security-summary-grid {
+  margin-top: 12px;
+}
+
+.owner-overview-wide .security-list {
+  margin-top: 12px;
+}
+
+.owner-overview-wide .settings-actions {
+  margin-top: 12px;
+}
+
 .owner-editor-shell textarea,
 .owner-api-tester textarea,
 .owner-json-editor textarea {

@@ -85,12 +85,12 @@ const remainingInnerHtml = [...app.matchAll(/innerHTML\s*=/g)].map((match) => {
 });
 assert.deepStrictEqual(
   remainingInnerHtml,
-  ["createSecurityConfirmation", "createSecurityTextPrompt", "renderUpdateModal"],
+  ["renderUpdateModal"],
   `Unexpected innerHTML assignments remain: ${remainingInnerHtml.join(", ")}`,
 );
 
-assert(sourceBetween("function createSecurityConfirmation", "function createSecurityTextPrompt").includes("escapeHtml("), "Security confirmation HTML compatibility surface must escape dynamic content.");
-assert(sourceBetween("function createSecurityTextPrompt", "async function runSecurityAction").includes("escapeHtml("), "Security text prompt HTML compatibility surface must escape dynamic content.");
+assert(sourceBetween("function createSecurityConfirmation", "function createSecurityTextPrompt").includes("document.createElement(\"section\")"), "Security confirmation should use safe DOM construction.");
+assert(sourceBetween("function createSecurityTextPrompt", "const SECURITY_OPERATION_ACTIONS").includes("document.createElement(\"section\")"), "Security text prompt should use safe DOM construction.");
 assert(functionBody("sanitizeMarkdownText").includes("replace(/[<>&]/g"), "Markdown sanitizer must escape HTML-sensitive characters.");
 assert(sourceBetween("function renderMarkdownLite", "function formatUpdateDate").includes("sanitizeMarkdownText("), "Release note markdown renderer must sanitize input before allowlisted formatting.");
 

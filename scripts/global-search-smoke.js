@@ -80,6 +80,13 @@ assert(
   "Operations and Maintenance providers must reuse existing state labels.",
 );
 assert(
+  app.includes("dashboard.sessions || []") &&
+    app.includes("dashboard.trustedDevices || []") &&
+    app.includes("dashboard.events || []") &&
+    app.includes("openSecuritySection(entry.section"),
+  "Security provider must search loaded sessions, trusted devices, events, and real Security sections.",
+);
+assert(
   app.includes("window.localStorage.setItem(GLOBAL_SEARCH_RECENTS_STORAGE_KEY") &&
     app.includes("window.localStorage.removeItem(key)") &&
     app.includes("GLOBAL_SEARCH_RECENTS_STORAGE_KEY,"),

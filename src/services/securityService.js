@@ -753,6 +753,10 @@ function getSecurityDashboard(options = {}) {
   const remoteAccess = getRemoteAccessSummary(state, options);
   const recommendations = buildRecommendations({ status, sessions, trustedDevices, remoteAccess, token, events, state });
   const unresolvedWarnings = recommendations.filter((item) => item.severity !== "info" && item.severity !== "low").length;
+  const rememberedSessionCount = sessions.filter((session) => !session.runtimeOnly).length;
+  const trustedDeviceCount = trustedDevices.filter((device) => device.trusted).length;
+  const recentSessionRevocations = events.filter((event) => /session.*revoke|logoutAll/i.test(event.type)).length;
+  const recentDeviceActivations = events.filter((event) => /trustedDevice|device/i.test(event.type)).length;
   const overall = unresolvedWarnings >= 2 || recommendations.some((item) => item.severity === "critical")
     ? "Critical"
     : unresolvedWarnings > 0 || recommendations.length > 0
@@ -769,7 +773,55 @@ function getSecurityDashboard(options = {}) {
       agentTokenStatus: token.configured ? "Configured" : "Missing",
       lastSecurityEvent: events[0] || null,
       unresolvedWarnings,
+      rememberedSessionCount,
+      trustedDeviceCount,
+      recentSessionRevocations,
+      recentDeviceActivations,
     },
+    accountProtection: {
+      provider: status.accountAuthenticated ? "AnxOS Account" : status.authenticated ? "Local owner" : "Not signed in",
+      emailVerification: status.accountAuthenticated ? "Unavailable" : "Not connected",
+      sessionExpiration: state.settings.inactiveSessionExpirationMs
+        ? `${Math.round(state.settings.inactiveSessionExpirationMs / 86400000)} day${Math.round(state.settings.inactiveSessionExpirationMs / 86400000) === 1 ? "" : "s"}`
+        : "Not configured",
+      requireReauthForSensitiveActions: Boolean(state.settings.requireReauthForSensitiveActions),
+      rememberedSessionCount,
+      trustedDeviceCount,
+    },
+    permissions: [
+      {
+        id: "account",
+        name: status.user?.account ? "AnxOS account" : "Local owner session",
+        state: status.user?.account ? "Connected" : status.authenticated ? "Active" : "Unavailable",
+        detail: status.user?.username || "No signed-in account reported.",
+      },
+      {
+        id: "role",
+        name: "Current role",
+        state: status.user?.role || "Local",
+        detail: status.ownerWorkspaceAvailable ? "Owner Workspace access is authorized." : "Owner-only tools remain locked unless authorization is granted.",
+      },
+      {
+        id: "security",
+        name: "Security controls",
+        state: status.authenticated ? "Allowed" : "Locked",
+        detail: "Session, trusted-device, and token actions are validated by the main process.",
+      },
+      {
+        id: "remote-agent",
+        name: "Remote Agent access",
+        state: remoteAccess.enabled ? remoteAccess.scope : "Disabled",
+        detail: remoteAccess.enabled
+          ? "Remote access follows the authenticated-account and trusted-device requirements shown above."
+          : "Remote Agent routes are not enabled for this target.",
+      },
+      {
+        id: "marketplace-files",
+        name: "Marketplace and Files",
+        state: status.authenticated || !status.setupRequired ? "Available" : "Locked",
+        detail: "Marketplace, Files, and node actions still validate node and Agent boundaries before running.",
+      },
+    ],
     recommendations,
     sessions,
     trustedDevices,

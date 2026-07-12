@@ -62,6 +62,7 @@ function requireStyle(needle, message) {
   "openDiagnostics",
   "reconnectAgent",
   "recheckDependencies",
+  "openSecurity",
   "checkUpdates",
   "copyMessage",
 ].forEach((needle) => requireApp(needle, `Notification action allowlist missing ${needle}.`));

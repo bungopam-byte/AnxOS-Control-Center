@@ -19,6 +19,8 @@ async function main() {
   [
     "data-security-overview",
     "data-security-recommendations",
+    "data-security-account-protection",
+    "data-security-permissions",
     "data-security-sessions",
     "data-security-trusted-devices",
     "data-security-remote-status",
@@ -42,6 +44,12 @@ async function main() {
   });
 
   assert(appJs.includes("createSecurityConfirmation"), "Security page should use app-native confirmation modals.");
+  assert(appJs.includes("dialog.setAttribute(\"aria-modal\", \"true\")"), "Security confirmations should be built with safe DOM APIs.");
+  assert(!appJs.includes("Rotate the Agent token? Restart the agent and desktop app after rotation."), "Security page should not use browser confirm for token rotation.");
+  assert(appJs.includes("SECURITY_OPERATION_ACTIONS"), "Consequential security actions should be tracked in Operations.");
+  assert(appJs.includes("createSecurityActionNotification"), "Consequential security actions should create durable notifications.");
+  assert(appJs.includes("renderSecurityPermissions"), "Security page should render role and permission boundaries.");
+  assert(appJs.includes("renderSecurityAccountProtection"), "Security page should render account-protection state.");
   assert(appJs.includes("function escapeHtml"), "Security/account render paths should define the HTML escaping helper they use.");
   assert(appJs.includes("data-security-event-filter"), "Security event filtering should be wired.");
   assert(appJs.includes("handleSecurityRecommendation"), "Security recommendation action buttons should be wired.");
@@ -57,11 +65,14 @@ async function main() {
   await security.setupAdmin({ username: "owner", password: "correct horse battery staple", passwordConfirm: "correct horse battery staple", staySignedIn: true });
   const dashboard = security.getSecurityDashboard();
   assert(dashboard.overview, "Security dashboard should return overview data.");
+  assert(dashboard.accountProtection, "Security dashboard should return account-protection data.");
+  assert(Array.isArray(dashboard.permissions), "Security dashboard should return permission boundary data.");
   assert(Array.isArray(dashboard.sessions), "Security dashboard should return sessions.");
   assert(Array.isArray(dashboard.trustedDevices), "Security dashboard should return trusted devices.");
   assert(Array.isArray(dashboard.recommendations), "Security dashboard should return recommendations.");
   assert(Array.isArray(dashboard.events), "Security dashboard should return events.");
   assert(dashboard.agentToken && !JSON.stringify(dashboard.agentToken).includes("correct horse"), "Dashboard must not expose passwords.");
+  assert(dashboard.permissions.some((permission) => permission.id === "security"), "Permission summary should explain security control enforcement.");
 
   const rotated = security.rotateAgentToken();
   assert(rotated.fingerprint && !rotated.token, "Token rotation should return a fingerprint but no raw token.");

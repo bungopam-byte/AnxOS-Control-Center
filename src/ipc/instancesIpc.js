@@ -39,7 +39,11 @@ async function invokeInstanceOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    throw new Error(getInstanceErrorMessage(error));
+    const code = error?.payload?.error?.code || error?.code || null;
+    const wrapped = new Error(getInstanceErrorMessage(error));
+    wrapped.code = code;
+    wrapped.statusCode = error?.statusCode || error?.status || null;
+    throw wrapped;
   }
 }
 

@@ -8539,6 +8539,10 @@ function isInstanceNotFoundError(error) {
   return code === "INSTANCE_NOT_FOUND" || code === "NOT_FOUND";
 }
 
+function isInstanceRunningError(error) {
+  return getAgentErrorCode(error) === "INSTANCE_RUNNING";
+}
+
 function notifyMissingSelectedInstance(error = null) {
   if (error) {
     console.warn("[Instances] Selected instance no longer exists.", error);
@@ -11850,13 +11854,41 @@ async function runInstanceAction(actionName) {
       }
     } else {
       console.warn(`[Instances] ${actionName} failed.`, error);
+      if (actionName === "delete" && isInstanceRunningError(error)) {
+        const stopThenDelete = window.confirm(`${label} is still running. Stop it and delete it after it stops? This cannot be undone.`);
+        if (stopThenDelete && isNodeActionStillCurrent(requestContext)) {
+          try {
+            showToast(`Stopping ${label} before delete...`);
+            await desktopApiState.api.instances.stop(targetInstanceId, getNodeScopedPayload(requestContext));
+            if (!isNodeActionStillCurrent(requestContext)) return;
+            showToast(`Deleting ${label}...`);
+            await desktopApiState.api.instances.delete(targetInstanceId, getNodeScopedPayload(requestContext));
+            instanceRemovalAllowedIds.add(targetInstanceId);
+            selectedInstanceId = null;
+            latestInstanceMetrics = null;
+            storeLastInstanceId(null);
+            clearInstanceLogs();
+            setInstanceDetails(null);
+            removeInstanceFromSnapshot(targetInstanceId);
+            showToast("Instance stopped and deleted.");
+            await refreshInstances();
+            return;
+          } catch (retryError) {
+            console.warn("[Instances] stop-then-delete failed.", retryError);
+            showToast(getAgentErrorMessage(retryError, "Instance could not be stopped and deleted."));
+          }
+        } else {
+          showToast("Delete canceled. Stop the instance before deleting it.", "warning");
+        }
+      } else {
+        showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
+      }
       if (actionName === "start" || actionName === "restart") {
         updateInstanceSnapshot(targetInstanceId, {
           state: "Failed",
           failureReason: getAgentErrorMessage(error, `Instance ${actionName} failed.`),
         });
       }
-      showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
       const refreshedInstances = await refreshInstances();
       if (actionName === "start") {
         logInstanceLifecycle("list result after failed start", {

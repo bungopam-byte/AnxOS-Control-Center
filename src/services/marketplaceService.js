@@ -29,6 +29,7 @@ const INSTANCE_VERSION_CACHE_VERSION = 2;
 const HTTP_USER_AGENT = "AnxOS-Control-Center/Marketplace";
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const DOWNLOAD_RETRY_DELAYS_MS = [0, 750, 2000];
+const STEAMCMD_INSTALL_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const INSTALLER_RESULT_STAGES = new Set([
   "validating",
   "dependency-check",
@@ -2100,6 +2101,10 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
+  if (Array.isArray(context.timeoutArtifactPaths) && await hasInstalledArtifacts(instanceId, context.timeoutArtifactPaths, agentConfig)) {
+    return last || agentClient.getInstanceStatus(instanceId, agentConfig);
+  }
+
   try {
     await agentClient.forceKillInstance(instanceId, agentConfig);
   } catch {}
@@ -2108,6 +2113,14 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
     message: `Installer exceeded ${timeoutMs}ms timeout.`,
     body: last ? JSON.stringify(last) : "",
   });
+}
+
+function getEffectiveInstallerTimeoutMs(template, fallbackMs = 600000) {
+  const declared = Number.parseInt(template?.installer?.timeoutMs, 10) || fallbackMs;
+  if (getTemplateInstallerType(template) === "steamcmd-native") {
+    return Math.max(declared, STEAMCMD_INSTALL_TIMEOUT_MS);
+  }
+  return declared;
 }
 
 async function startAndWaitForInstanceInstaller(instanceId, timeoutMs, agentConfig = null, context = {}) {
@@ -2219,15 +2232,16 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
         args: steamcmdArgs,
         workingDirectory: "data",
         restartPolicy: "never",
-        startupTimeoutMs: template.installer.timeoutMs || 600000,
+        startupTimeoutMs: getEffectiveInstallerTimeoutMs(template),
       }, agentConfig);
       try {
-        await startAndWaitForInstanceInstaller(instanceId, template.installer.timeoutMs || 600000, agentConfig, {
+        await startAndWaitForInstanceInstaller(instanceId, getEffectiveInstallerTimeoutMs(template), agentConfig, {
           templateId: template.id,
           step: "Extract files",
           installerType: "steamcmd-native",
           handlerName: "runTemplateInstaller",
           command: steamcmdCommand,
+          timeoutArtifactPaths: artifactPaths,
         });
       } catch (error) {
         if (!(await hasInstalledArtifacts(instanceId, artifactPaths, agentConfig))) {
@@ -2947,6 +2961,7 @@ module.exports = {
     assertInstallerResult,
     createInstallerResultError,
     createInstallerResultOk,
+    getEffectiveInstallerTimeoutMs,
     getTemplateInstallerType,
     getTemplateInstallPlan,
     normalizeTemplateDownloads,

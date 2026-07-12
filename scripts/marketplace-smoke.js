@@ -215,6 +215,10 @@ function assertMarketplaceInstallerRegistry() {
   const palworldPlan = marketplaceService._test.getTemplateInstallPlan("palworld");
   assert.strictEqual(palworldPlan.workflow, "steamcmd-native", "SteamCMD-native templates must not be reported as generic downloads.");
   assert.strictEqual(palworldPlan.installerType, "steamcmd-native", "Install plans should expose normalized installer type.");
+  assert(
+    marketplaceService._test.getEffectiveInstallerTimeoutMs(findTemplate("palworld")) > findTemplate("palworld").installer.timeoutMs,
+    "SteamCMD-native templates should use the shared long-running install timeout instead of the short manifest timeout."
+  );
   const palworldDownloads = marketplaceService._test.normalizeTemplateDownloads(findTemplate("palworld"));
   assert.strictEqual(palworldDownloads[0]?.type, "steamcmd", "Palworld should keep a SteamCMD download handoff record.");
   assert.match(palworldDownloads[0]?.fileName || "", /SteamCMD app 2394010/, "SteamCMD-native Download Manager records should not be mislabeled as server.jar.");

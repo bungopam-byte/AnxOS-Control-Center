@@ -52,15 +52,15 @@
           <h1 id="hero-title" data-config="brandName">AnxOS</h1>
           <p class="lede" data-config="subtitle">A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.</p>
           <div class="hero-actions">
-            <a class="button button-primary" data-download="windows" href="#">
+            <a class="button button-primary" data-download="windows" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases">
               <svg><use href="#icon-download"></use></svg>
               <span>Download for Windows</span>
             </a>
-            <a class="button button-secondary" data-download="linuxDeb" href="#">
+            <a class="button button-secondary" data-download="linuxDeb" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases">
               <svg><use href="#icon-download"></use></svg>
               <span>Download for Linux</span>
             </a>
-            <a class="button button-ghost" data-config-href="repositoryUrl" href="#">
+            <a class="button button-ghost" data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">
               <svg><use href="#icon-github"></use></svg>
               <span>View GitHub</span>
             </a>
@@ -428,7 +428,7 @@
             <p>Includes the latest Marketplace manual-download recovery, provider metadata links, auto-update support, and console UI polish.</p>
             <div class="release-actions">
               <a class="button button-secondary" href="release-notes.html"><svg><use href="#icon-file"></use></svg><span>View release notes</span></a>
-              <a class="button button-ghost" data-config-href="releaseUrl" href="#"><svg><use href="#icon-github"></use></svg><span>GitHub release</span></a>
+              <a class="button button-ghost" data-config-href="releaseUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases"><svg><use href="#icon-github"></use></svg><span>GitHub release</span></a>
             </div>
           </div>
           <dl class="release-meta">
@@ -464,19 +464,19 @@
         <div class="download-grid">
           <article class="download-card">
             <div><h3>Windows installer</h3><p data-file="windows">Setup executable</p><small>Recommended for normal Windows installs.</small></div>
-            <a class="button button-primary" data-download="windows" href="#"><svg><use href="#icon-download"></use></svg><span>Download for Windows</span></a>
+            <a class="button button-primary" data-download="windows" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases"><svg><use href="#icon-download"></use></svg><span>Download for Windows</span></a>
           </article>
           <article class="download-card">
             <div><h3>Linux Debian package</h3><p data-file="linuxDeb">Debian package</p><small>Recommended for Debian and Ubuntu-based systems.</small></div>
-            <a class="button button-secondary" data-download="linuxDeb" href="#"><svg><use href="#icon-download"></use></svg><span>Download .deb</span></a>
+            <a class="button button-secondary" data-download="linuxDeb" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases"><svg><use href="#icon-download"></use></svg><span>Download .deb</span></a>
           </article>
           <article class="download-card">
             <div><h3>Linux AppImage</h3><p data-file="linuxAppImage">Portable AppImage</p><small>Use when you do not want to install a package.</small></div>
-            <a class="button button-secondary" data-download="linuxAppImage" href="#"><svg><use href="#icon-download"></use></svg><span>Download AppImage</span></a>
+            <a class="button button-secondary" data-download="linuxAppImage" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases"><svg><use href="#icon-download"></use></svg><span>Download AppImage</span></a>
           </article>
         </div>
         <div class="download-help">
-          <a data-config-href="releaseUrl" href="#">Open the GitHub release</a>
+          <a data-config-href="releaseUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases">Open the GitHub release</a>
           <a href="release-notes.html">Read release notes</a>
         </div>
       </section>
@@ -499,7 +499,7 @@
           <h2>About first-run warnings</h2>
           <p>Windows SmartScreen may warn on new releases because AnxOS is distributed directly through GitHub. Download only from the official repository release page and verify the file name matches the release shown here.</p>
         </div>
-        <a class="button button-ghost" data-config-href="releaseUrl" href="#"><svg><use href="#icon-shield"></use></svg><span>Open release page</span></a>
+        <a class="button button-ghost" data-config-href="releaseUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases"><svg><use href="#icon-shield"></use></svg><span>Open release page</span></a>
       </section>
 
       <section id="not-found" class="section-shell account-route" data-account-route="not-found">
@@ -524,18 +524,18 @@
       <span>AnxOS</span>
       <span data-config="appName">AnxOS-Control-Center</span>
       <a href="release-notes.html">Release Notes</a>
-      <a data-config-href="repositoryUrl" href="#">GitHub</a>
+      <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a>
     </footer>
     <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
-    <div class="confirm-modal" data-cleanup-modal hidden>
-      <div class="confirm-modal__backdrop" data-cleanup-modal-cancel></div>
-      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="cleanup-modal-title" aria-describedby="cleanup-modal-message">
-        <p class="eyebrow">Account cleanup</p>
-        <h2 id="cleanup-modal-title" data-cleanup-modal-title>Confirm cleanup</h2>
-        <p id="cleanup-modal-message" data-cleanup-modal-message>This will remove inactive account records.</p>
+    <div class="confirm-modal" data-confirm-modal data-cleanup-modal hidden>
+      <div class="confirm-modal__backdrop" data-confirm-modal-cancel data-cleanup-modal-cancel></div>
+      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+        <p class="eyebrow" data-confirm-modal-eyebrow>Account safety</p>
+        <h2 id="confirm-modal-title" data-confirm-modal-title data-cleanup-modal-title>Confirm action</h2>
+        <p id="confirm-modal-message" data-confirm-modal-message data-cleanup-modal-message>This action needs confirmation.</p>
         <div class="confirm-modal__actions">
-          <button class="button button-ghost" type="button" data-cleanup-modal-cancel>Cancel</button>
-          <button class="button button-primary" type="button" data-cleanup-modal-confirm>Confirm Cleanup</button>
+          <button class="button button-ghost" type="button" data-confirm-modal-cancel data-cleanup-modal-cancel>Cancel</button>
+          <button class="button button-primary" type="button" data-confirm-modal-confirm data-cleanup-modal-confirm>Confirm</button>
         </div>
       </section>
     </div>

@@ -14,6 +14,7 @@ const activate = read("activate.html");
 const forgot = read("forgot-password.html");
 const reset = read("reset-password.html");
 const releaseNotes = read("release-notes.html");
+const accountRedirect = read("account.html");
 const site = read("site.js");
 const styles = read("styles.css");
 
@@ -31,10 +32,17 @@ assert(index.includes("Runtime Dependencies") && index.includes("Prepare Node"),
 assert(index.includes("data-download-status"), "Downloads page should expose release metadata status.");
 assert(site.includes("Release metadata is unavailable"), "Downloads should handle missing release metadata.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
+["index.html", "activate.html", "forgot-password.html", "reset-password.html", "release-notes.html"].forEach((file) => {
+  assert(!read(file).includes('href="#"'), `${file} must not ship dead # fallback links.`);
+});
 
 assert(index.includes('id="not-found"') && site.includes('window.location.hash = "not-found"'), "Website must route unsupported hashes to a not-found state.");
+assert(accountRedirect.includes("index.html${query}#account"), "Account redirect shim must preserve query parameters before the hash route.");
 assert(site.includes('selectedState = "loading"'), "Sign-in route should show loading state instead of flashing signed-out UI while auth initializes.");
 assert(site.includes("WEBSITE_DEBUG") && site.includes("if (!WEBSITE_DEBUG) return;"), "Verbose website auth logging must be opt-in.");
+assert(index.includes("data-confirm-modal") && activate.includes("data-confirm-modal"), "Account and activation pages should expose the shared confirmation modal.");
+assert(site.includes("function confirmUserAction") && site.includes("Approve this desktop app?") && site.includes("Sign out all desktop sessions?"), "Security-sensitive website actions should use branded confirmation copy.");
+assert(!site.includes('confirm("Approve this AnxOS desktop app') && !site.includes('confirm("Sign out all desktop sessions'), "Website should not use raw browser confirmations for account/device actions.");
 
 assert(index.includes('name="passwordConfirm"'), "Create account and reset forms should include password confirmation.");
 assert(site.includes('setMessage("signup", "Passwords do not match.", "error")'), "Sign-up should validate password confirmation before network calls.");

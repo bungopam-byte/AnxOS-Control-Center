@@ -807,7 +807,15 @@ function createDeviceListItem(device) {
     button.type = "button";
     button.textContent = "Revoke";
     button.addEventListener("click", async () => {
-      if (!confirm("Revoke this desktop device? It will need to sign in again.")) return;
+      const confirmed = await confirmUserAction({
+        eyebrow: "Account security",
+        title: "Revoke this desktop device?",
+        message: "This device will need to sign in again before it can access your AnxOS account.",
+        confirmLabel: "Revoke Device",
+        confirmTone: "danger",
+        fallback: "Revoke this desktop device? It will need to sign in again.",
+      });
+      if (!confirmed) return;
       await apiFetch("/api/account/devices/revoke", { body: { deviceId: device.id } });
       showToast("Device revoked.", "ok");
       await refreshAccountLists();
@@ -957,39 +965,14 @@ async function runAccountCleanup(action, endpoint, counts, successLabel) {
 }
 
 function confirmCleanup(action, counts) {
-  const modal = document.querySelector("[data-cleanup-modal]");
-  if (!modal) return Promise.resolve(window.confirm("Confirm account cleanup?"));
-  const title = modal.querySelector("[data-cleanup-modal-title]");
-  const message = modal.querySelector("[data-cleanup-modal-message]");
-  const confirmButton = modal.querySelector("[data-cleanup-modal-confirm]");
-  const cancelButtons = modal.querySelectorAll("[data-cleanup-modal-cancel]");
-  const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const copy = getCleanupModalCopy(action, counts);
-  title.textContent = copy.title;
-  message.textContent = copy.message;
-  confirmButton.textContent = copy.confirmLabel;
-  modal.hidden = false;
-  confirmButton.focus();
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      modal.hidden = true;
-      confirmButton.removeEventListener("click", onConfirm);
-      cancelButtons.forEach((button) => button.removeEventListener("click", onCancel));
-      window.removeEventListener("keydown", onKeydown);
-      focusTarget?.focus?.();
-      resolve(value);
-    };
-    const onConfirm = () => finish(true);
-    const onCancel = () => finish(false);
-    const onKeydown = (event) => {
-      if (event.key === "Escape") finish(false);
-    };
-    confirmButton.addEventListener("click", onConfirm);
-    cancelButtons.forEach((button) => button.addEventListener("click", onCancel));
-    window.addEventListener("keydown", onKeydown);
+  return confirmUserAction({
+    eyebrow: "Account cleanup",
+    title: copy.title,
+    message: copy.message,
+    confirmLabel: copy.confirmLabel,
+    confirmTone: action === "inactive-records" ? "danger" : "primary",
+    fallback: "Confirm account cleanup?",
   });
 }
 
@@ -1062,6 +1045,54 @@ function showToast(message, tone = "muted") {
   window.setTimeout(() => toast.remove(), 4200);
 }
 
+function confirmUserAction({
+  eyebrow = "Confirm action",
+  title = "Confirm action",
+  message = "This action needs confirmation.",
+  confirmLabel = "Confirm",
+  confirmTone = "primary",
+  fallback = "Confirm this action?",
+} = {}) {
+  const modal = document.querySelector("[data-confirm-modal], [data-cleanup-modal]");
+  if (!modal) return Promise.resolve(window.confirm(fallback));
+  const eyebrowNode = modal.querySelector("[data-confirm-modal-eyebrow]");
+  const titleNode = modal.querySelector("[data-confirm-modal-title], [data-cleanup-modal-title]");
+  const messageNode = modal.querySelector("[data-confirm-modal-message], [data-cleanup-modal-message]");
+  const confirmButton = modal.querySelector("[data-confirm-modal-confirm], [data-cleanup-modal-confirm]");
+  const cancelButtons = modal.querySelectorAll("[data-confirm-modal-cancel], [data-cleanup-modal-cancel]");
+  const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  if (eyebrowNode) eyebrowNode.textContent = eyebrow;
+  if (titleNode) titleNode.textContent = title;
+  if (messageNode) messageNode.textContent = message;
+  if (confirmButton) {
+    confirmButton.textContent = confirmLabel;
+    confirmButton.classList.toggle("button-danger", confirmTone === "danger");
+  }
+  modal.hidden = false;
+  confirmButton?.focus?.();
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      modal.hidden = true;
+      confirmButton?.removeEventListener("click", onConfirm);
+      cancelButtons.forEach((button) => button.removeEventListener("click", onCancel));
+      window.removeEventListener("keydown", onKeydown);
+      focusTarget?.focus?.();
+      resolve(value);
+    };
+    const onConfirm = () => finish(true);
+    const onCancel = () => finish(false);
+    const onKeydown = (event) => {
+      if (event.key === "Escape") finish(false);
+    };
+    confirmButton?.addEventListener("click", onConfirm);
+    cancelButtons.forEach((button) => button.addEventListener("click", onCancel));
+    window.addEventListener("keydown", onKeydown);
+  });
+}
+
 function applyDeviceLoginPage() {
   const params = getRouteParams();
   const code = normalizeDeviceCode(params.get("code")) || currentDeviceCode;
@@ -1120,9 +1151,20 @@ async function approveOrDenyDevice(action) {
     await lookupDevice();
     if (!currentDeviceRequest) return;
   }
-  const confirmed = action === "approve"
-    ? confirm("Approve this AnxOS desktop app for your account?")
-    : confirm("Deny this AnxOS desktop sign-in request?");
+  const confirmed = await confirmUserAction(action === "approve" ? {
+    eyebrow: "Device activation",
+    title: "Approve this desktop app?",
+    message: "This allows the requesting AnxOS Control Center desktop app to connect to your account. Approve only devices you recognize.",
+    confirmLabel: "Approve Device",
+    fallback: "Approve this AnxOS desktop app for your account?",
+  } : {
+    eyebrow: "Device activation",
+    title: "Deny this sign-in request?",
+    message: "This denies the current desktop sign-in request. The desktop app will need to start activation again to request a new code.",
+    confirmLabel: "Deny Request",
+    confirmTone: "danger",
+    fallback: "Deny this AnxOS desktop sign-in request?",
+  });
   if (!confirmed) return;
   setDeviceActions(false);
   setDeviceMessage(action === "approve" ? "Approving device..." : "Denying device...");
@@ -1192,7 +1234,15 @@ function bindAccountForms() {
   });
   document.querySelectorAll('[data-auth-action="revoke-sessions"]').forEach((button) => {
     button.addEventListener("click", async () => {
-      if (!confirm("Sign out all desktop sessions for this account?")) return;
+      const confirmed = await confirmUserAction({
+        eyebrow: "Account security",
+        title: "Sign out all desktop sessions?",
+        message: "All registered desktop sessions for this account will be revoked. The website session you are using stays active.",
+        confirmLabel: "Sign Out Sessions",
+        confirmTone: "danger",
+        fallback: "Sign out all desktop sessions for this account?",
+      });
+      if (!confirmed) return;
       await apiFetch("/api/account/sessions/revoke-all", { body: {} });
       showToast("All desktop sessions were signed out.", "ok");
       await refreshAccountLists();
@@ -1280,14 +1330,21 @@ function bindSiteNavigation() {
   });
 }
 
-function applyHashRoute() {
+async function applyHashRoute() {
   const hash = window.location.hash || "";
   const standaloneRoute = document.body?.dataset?.standaloneRoute || "";
   const route = getCurrentRoute();
   const accountAnchorRoutes = new Set(["account-devices", "account-security"]);
   const activeRoute = accountAnchorRoutes.has(route) ? "account" : route;
   if (profileDirty && lastAppliedRoute === "profile" && activeRoute !== "profile") {
-    const leave = confirm("You have unsaved profile changes. Leave without saving?");
+    const leave = await confirmUserAction({
+      eyebrow: "Unsaved profile changes",
+      title: "Leave without saving?",
+      message: "Your profile edits have not been saved. Stay on this page to keep editing, or leave and discard the changes.",
+      confirmLabel: "Leave Page",
+      confirmTone: "danger",
+      fallback: "You have unsaved profile changes. Leave without saving?",
+    });
     if (!leave) {
       window.location.hash = "profile";
       return;
@@ -1344,13 +1401,15 @@ applyDeviceLoginPage();
 initializeAccount().catch((error) => {
   disableAccountForms(friendlyAuthError(error));
 });
-window.addEventListener("hashchange", applyHashRoute);
+window.addEventListener("hashchange", () => {
+  applyHashRoute().catch((error) => logWebsiteDiagnostic("error", "route-change", error));
+});
 window.addEventListener("beforeunload", (event) => {
   if (!profileDirty) return;
   event.preventDefault();
   event.returnValue = "";
 });
-applyHashRoute();
+applyHashRoute().catch((error) => logWebsiteDiagnostic("error", "initial-route", error));
 
 function logWebsiteDiagnostic(severity, operation, error) {
   const message = redactSecret(error?.message || String(error || "Website account error"));

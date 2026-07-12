@@ -46,7 +46,7 @@ function assertWebsiteAccountUi() {
   assert(index.includes("Account Data Cleanup") && index.includes('data-auth-action="cleanup-inactive-records"'), "Account page should include compact account data cleanup controls.");
   assert(index.includes('data-security-filter="device"') && index.includes('data-security-filter="cleanup"'), "Security history should include compact audit filters.");
   assert(index.includes("data-security-hide-old"), "Security history should support hiding older audit records.");
-  assert(index.includes("data-cleanup-modal") && index.includes("Confirm Cleanup"), "Cleanup actions should use a confirmation modal.");
+  assert(index.includes("data-confirm-modal") && index.includes("data-cleanup-modal"), "Cleanup and security actions should use the shared confirmation modal.");
   assert(index.includes("data-toast-region"), "Cleanup actions should have a toast notification region.");
   assert(!index.includes("Account service unavailable"), "Placeholder unavailable panel should be removed.");
   assert(!index.includes("Sign up is not live yet"), "Placeholder signup panel should be removed.");
@@ -64,7 +64,7 @@ function assertWebsiteAccountUi() {
   assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");
   assert(site.includes('authState = "loading"') && site.includes("applyAuthVisibility"), "Website auth rendering should have an explicit loading state and scoped visibility.");
   assert(site.includes("fallbackState") && site.includes("selectedState"), "Scoped auth rendering should avoid hiding every auth state.");
-  assert(site.includes("signinDisplays") && site.includes("logAuthVisibility"), "Website should log sanitized auth visibility transitions for diagnosis.");
+  assert(site.includes("signinDisplays") && site.includes("logAuthVisibility") && site.includes("WEBSITE_DEBUG"), "Website should support opt-in sanitized auth visibility diagnostics.");
   assert(site.includes('window.location.hash = "signin?return=profile"'), "Unauthenticated profile route should preserve return destination through sign-in.");
   assert(site.includes("profileSnapshotFromForm") && site.includes("beforeunload"), "Profile page should detect dirty edits and warn before navigation.");
   assert(site.includes("validateProfileData"), "Profile saves should validate username and URL fields.");

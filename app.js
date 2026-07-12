@@ -8289,6 +8289,35 @@ function getMarketplaceField(name) {
   return document.querySelector(`[data-marketplace-field="${name}"]`);
 }
 
+function getMarketplacePortHelpText() {
+  const template = findMarketplaceTemplate();
+  if (template?.id === "palworld") {
+    return "Port must be a number from 1 to 65535. For Palworld, use 8211. Do not include commas, /udp, hostnames, or URLs.";
+  }
+  return "Port must be a number from 1 to 65535. Do not include commas, /tcp, /udp, hostnames, or URLs.";
+}
+
+function syncMarketplacePortValidity({ report = false } = {}) {
+  const portField = getMarketplaceField("port");
+  if (!portField) return true;
+  portField.setCustomValidity("");
+  const value = String(portField.value || "").trim();
+  const numericValue = Number(value);
+  const invalid = portField.validity.badInput
+    || portField.validity.rangeUnderflow
+    || portField.validity.rangeOverflow
+    || (value && (!Number.isInteger(numericValue) || numericValue < 1 || numericValue > 65535));
+  if (invalid) {
+    portField.setCustomValidity(getMarketplacePortHelpText());
+    if (marketplaceSelectedTemplateId) {
+      setMarketplaceMessage(getMarketplacePortHelpText(), "error");
+    }
+    if (report) portField.reportValidity();
+    return false;
+  }
+  return true;
+}
+
 function setMarketplaceMessage(message, tone = "neutral") {
   if (!marketplaceMessage) {
     return;
@@ -9557,6 +9586,9 @@ function openMarketplaceWizard(templateId) {
   }
   if (portField) {
     portField.value = Array.isArray(template.defaultPorts) && template.defaultPorts.length > 0 ? String(template.defaultPorts[0]) : "";
+    portField.title = getMarketplacePortHelpText();
+    portField.setAttribute("aria-label", `${template.displayName || "Template"} primary port`);
+    syncMarketplacePortValidity();
   }
   if (acceptEulaField) {
     acceptEulaField.checked = false;
@@ -10789,6 +10821,10 @@ async function installMarketplaceTemplate(event) {
   const template = findMarketplaceTemplate();
 
   if (!desktopApiState.hasMarketplace || !template || marketplaceInstallInFlight) {
+    return;
+  }
+  if (!syncMarketplacePortValidity({ report: true })) {
+    getMarketplaceField("port")?.focus();
     return;
   }
 
@@ -24372,6 +24408,16 @@ document.querySelectorAll('[data-instance-form="memoryLimit"], [data-instance-co
       syncInstanceConfigDirtyState();
     }
   });
+});
+getMarketplaceField("port")?.addEventListener("input", () => {
+  const portField = getMarketplaceField("port");
+  portField?.setCustomValidity("");
+  if (marketplaceSelectedTemplateId) {
+    setMarketplaceMessage("Review the generated settings, then install.");
+  }
+});
+getMarketplaceField("port")?.addEventListener("invalid", () => {
+  syncMarketplacePortValidity();
 });
 instanceNetworkAddButton?.addEventListener("click", () => {
   const selectedInstance = findInstance();

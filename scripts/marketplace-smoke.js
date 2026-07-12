@@ -2583,6 +2583,10 @@ function assertMarketplaceProductionPolishRendererContracts() {
 
   assert(indexSource.includes("data-marketplace-install-summary"), "Marketplace wizard should expose a production install summary surface.");
   assert(indexSource.includes("data-marketplace-recovery-actions"), "Marketplace wizard should expose a recovery action surface.");
+  assert(appSource.includes("getMarketplacePortHelpText"), "Marketplace should provide contextual port validation help.");
+  assert(appSource.includes("For Palworld, use 8211"), "Palworld installs should explain the valid numeric primary port.");
+  assert(appSource.includes("syncMarketplacePortValidity({ report: true })"), "Marketplace install should report invalid port fields before install.");
+  assert(appSource.includes('getMarketplaceField("port")?.addEventListener("invalid"'), "Marketplace port field should override generic browser validation.");
   assert(appSource.includes("function getMarketplaceTemplateInstances"), "Renderer should derive installed state from real instance template metadata.");
   assert(appSource.includes("metadata?.templateId"), "Installed-state detection should use persisted instance metadata.");
   assert(appSource.includes("function getMarketplaceTemplateDependencyIds"), "Renderer should present dependency requirements from template metadata.");

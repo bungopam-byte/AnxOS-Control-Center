@@ -235,6 +235,7 @@ function assertMarketplaceInstallerRegistry() {
   assert(ipcSource.includes("validation?.field"), "Marketplace IPC should expose agent validation field details.");
   const agentClientSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
   assert(agentClientSource.includes("logAgentRequestPayload"), "Agent client should log sanitized instance request payloads for validation failures.");
+  assert(agentClientSource.includes("[content omitted,"), "Agent client request logging should omit large file payload content.");
   const agentRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "instances.js"), "utf8");
   assert(agentRouteSource.includes("getValidationErrorDetails"), "Agent instance routes should return structured validation details for HTTP 400.");
   assert(agentRouteSource.includes("INVALID_NUMBER") && agentRouteSource.includes("error?.field"), "Agent numeric validation errors should include the rejected field.");
@@ -1616,6 +1617,9 @@ async function assertSharedTemplateInstallFlowMatrix() {
       }
       assert(!JSON.stringify(result).includes("validation is not defined"), `${label} should not surface validation ReferenceError.`);
     }
+    const terrariaInstance = instances.get("terraria-flow-smoke");
+    assert(terrariaInstance?.args?.[1]?.includes("required_command in 'dotnet'"), "Terraria startup should preflight the declared dotnet runtime dependency.");
+    assert(terrariaInstance?.args?.[1]?.includes("Missing required runtime dependency"), "Missing startup dependencies should produce a clear runtime message.");
 
     const steamcmdStartsBeforeIdempotentInstall = started.length;
     files.set("palworld-idempotent-smoke:server/steamapps/appmanifest_2394010.acf", '"AppState" { "appid" "2394010" "buildid" "123" }');

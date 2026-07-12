@@ -2614,9 +2614,6 @@ function shouldShowOwnerWorkspaceNav() {
   if (securityState?.setupRequired === true) {
     return false;
   }
-  if (securityState?.authenticated === true) {
-    return false;
-  }
   return securityState?.remoteControlEnabled === true || securityState?.setupRequired === false;
 }
 

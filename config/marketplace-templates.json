@@ -543,6 +543,9 @@
     },
     "startup": {
       "executable": "bash",
+      "requiredCommands": [
+        "dotnet"
+      ],
       "args": [
         "-lc",
         "chmod +x ./TShock.Server 2>/dev/null || true; exec ./TShock.Server -port {port} -world ./Worlds/world.wld -autocreate 2"

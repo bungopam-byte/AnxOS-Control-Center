@@ -422,11 +422,17 @@ function redactForAgentLog(value, depth = 0) {
     if (typeof value === "string" && /bearer\s+[a-z0-9._-]+|eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/i.test(value)) {
       return "[redacted]";
     }
+    if (typeof value === "string" && value.length > 4096) {
+      return `[string omitted, ${value.length} chars]`;
+    }
     return value;
   }
   return Object.fromEntries(Object.entries(value).map(([key, entry]) => {
     if (/password|passphrase|token|secret|api[-_]?key|authorization|cookie|session|refresh/i.test(key)) {
       return [key, "[redacted]"];
+    }
+    if (key === "content" && typeof entry === "string" && entry.length > 4096) {
+      return [key, `[content omitted, ${entry.length} chars]`];
     }
     return [key, redactForAgentLog(entry, depth + 1)];
   }));

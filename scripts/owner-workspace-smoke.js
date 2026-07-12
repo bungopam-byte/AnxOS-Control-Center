@@ -39,6 +39,7 @@ async function main() {
   assert(appJs.includes("ownerWorkspaceAvailable"), "Renderer should use the trusted owner workspace availability state.");
   assert(appJs.includes("function shouldShowOwnerWorkspaceNav()"), "Renderer should keep the Owner Workspace entry visible when owner auth is locked.");
   assert(appJs.includes("Sign in as Owner to open Owner Workspace."), "Locked Owner Workspace navigation should direct the user to sign in.");
+  assert(!appJs.includes("if (securityState?.authenticated === true) {\n    return false;\n  }"), "Authenticated non-owner state must not remove the locked Owner Workspace navigation entry.");
   assert(!appJs.includes('if (!isOwnerWorkspaceAuthorized() && getActivePageName() === "owner-workspace") {\n    ownerWorkspaceState = { authorized: false'), "Security refresh must not wipe Owner Workspace state just because auth is locked.");
   assert(appJs.includes("ownerPageTool(page?.id"), "Renderer should route built-in pages to their own tools.");
   assert(appJs.includes("toggleOwnerNavExpanded"), "Renderer should support collapsible Owner Workspace navigation.");

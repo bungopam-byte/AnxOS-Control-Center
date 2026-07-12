@@ -48,6 +48,7 @@ async function main() {
   assert(!appJs.includes("Rotate the Agent token? Restart the agent and desktop app after rotation."), "Security page should not use browser confirm for token rotation.");
   assert(appJs.includes("SECURITY_OPERATION_ACTIONS"), "Consequential security actions should be tracked in Operations.");
   assert(appJs.includes("createSecurityActionNotification"), "Consequential security actions should create durable notifications.");
+  assert(appJs.includes("syncSecurityEventNotifications"), "Security audit events should create durable deduplicated notifications.");
   assert(appJs.includes("renderSecurityPermissions"), "Security page should render role and permission boundaries.");
   assert(appJs.includes("renderSecurityAccountProtection"), "Security page should render account-protection state.");
   assert(appJs.includes("function escapeHtml"), "Security/account render paths should define the HTML escaping helper they use.");
@@ -73,15 +74,27 @@ async function main() {
   assert(Array.isArray(dashboard.events), "Security dashboard should return events.");
   assert(dashboard.agentToken && !JSON.stringify(dashboard.agentToken).includes("correct horse"), "Dashboard must not expose passwords.");
   assert(dashboard.permissions.some((permission) => permission.id === "security"), "Permission summary should explain security control enforcement.");
+  assert(dashboard.permissions.some((permission) => permission.id === "owner-workspace"), "Permission summary should explain Owner Workspace boundaries.");
+  assert(["Secure", "Needs Attention", "Warning", "Critical", "Unknown", "Not configured", "Unavailable"].includes(dashboard.overview.status), "Overview should use honest status labels.");
+  assert("accountProviderConfiguration" in dashboard.overview, "Overview should report account provider configuration.");
+  assert(dashboard.accountProtection.ownerAuthorization, "Account protection should report owner authorization.");
+  assert(dashboard.recommendations.every((item) => item.evidence && item.risk && Object.prototype.hasOwnProperty.call(item, "destructive")), "Recommendations should include deterministic evidence, risk, and destructive markers.");
 
   const rotated = security.rotateAgentToken();
   assert(rotated.fingerprint && !rotated.token, "Token rotation should return a fingerprint but no raw token.");
   const afterRotation = security.getSecurityDashboard();
   assert.strictEqual(afterRotation.overview.agentTokenStatus, "Configured", "Token overview should show configured after token rotation.");
   assert(afterRotation.agentToken.fingerprint, "Token dashboard should expose only a fingerprint.");
+  assert("connectedAgents" in afterRotation.agentToken && "recentFailures" in afterRotation.agentToken, "Token dashboard should include real connection and failure summaries.");
   assert(!afterRotation.recommendations.some((item) => item.id === "agent-token-missing"), "Configured token should clear missing-token recommendation.");
   const serializedDashboard = JSON.stringify(afterRotation);
   assert(!/agentToken"\s*:\s*"[A-Za-z0-9_-]{24,}"/.test(serializedDashboard), "Dashboard should not expose raw agent tokens.");
+  const securityFile = path.join(process.env.ANXHUB_CONFIG_DIR, "security.json");
+  const persistedState = JSON.parse(fs.readFileSync(securityFile, "utf8"));
+  const rawSessionIds = persistedState.persistentSessions.map((entry) => entry.id);
+  rawSessionIds.forEach((rawId) => {
+    assert(!serializedDashboard.includes(rawId), "Dashboard should not expose raw session identifiers.");
+  });
 
   const session = afterRotation.sessions.find((entry) => !entry.runtimeOnly && !entry.current);
   if (session) {
@@ -91,10 +104,22 @@ async function main() {
 
   const currentDevice = afterRotation.trustedDevices.find((device) => device.current);
   assert(currentDevice, "Current trusted device should be present.");
+  const rawDeviceId = persistedState.trustedDevices.find((device) => device.name === currentDevice.name)?.id;
+  assert(rawDeviceId && rawDeviceId !== currentDevice.id, "Trusted devices should expose public action IDs instead of raw persisted IDs.");
+  assert.throws(
+    () => security.renameTrustedDevice(rawDeviceId, "Raw Device ID"),
+    /Device was not found/,
+    "Trusted-device actions should reject raw persisted device IDs.",
+  );
   const renamed = security.renameTrustedDevice(currentDevice.id, "Security Smoke Device");
   assert(renamed.trustedDevices.some((device) => device.name === "Security Smoke Device"), "Trusted device rename should persist.");
   const removed = security.removeTrustedDevice(currentDevice.id);
   assert(removed.trustedDevices.some((device) => device.id === currentDevice.id && device.trusted === false), "Trusted device removal should persist.");
+  assert.throws(
+    () => security.removeTrustedDevice(currentDevice.id),
+    /already removed|not found/,
+    "Trusted device removal should reject already-removed devices.",
+  );
 
   const settings = security.updateSessionSecuritySettings({
     inactiveSessionExpirationMs: 604800000,
@@ -111,6 +136,7 @@ async function main() {
 
   const emergency = security.emergencySecurityAction("remove-trusted-devices", "SECURE ANXOS");
   assert(emergency.trustedDevices.every((device) => device.trusted === false), "Emergency trusted-device removal should be enforced.");
+  assert(emergency.events.some((event) => event.severity && event.source && Object.prototype.hasOwnProperty.call(event, "diagnosticIssue")), "Security events should include severity, source, and diagnostic linkage fields.");
 
   security.logout();
   assert.throws(

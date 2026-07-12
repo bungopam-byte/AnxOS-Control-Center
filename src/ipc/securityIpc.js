@@ -1,4 +1,5 @@
 const { ipcMain, shell } = require("electron");
+const diagnostics = require("../services/diagnosticsService");
 const {
   getStatus,
   getSecurityDashboard,
@@ -34,6 +35,10 @@ async function invokeSecurityOperation(operation, operationName = "security") {
     console.info("[Security][IPC] Operation completed.", { operation: operationName });
     return result;
   } catch (error) {
+    diagnostics.log("warn", "security", operationName, "Security IPC operation failed", {
+      code: error?.code || null,
+      message: getSecurityErrorMessage(error),
+    }, { file: "auth", errorCode: error?.code || "SECURITY_IPC_FAILED" });
     console.warn("[Security][IPC] Operation failed.", {
       operation: operationName,
       code: error?.code || null,

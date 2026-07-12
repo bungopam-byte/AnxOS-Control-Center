@@ -19584,7 +19584,7 @@ function securityPillClass(value = "") {
   const normalized = String(value).toLowerCase();
   if (/critical|missing|untrusted|exposed|failed|locked/.test(normalized)) return "status-pill status-pill--critical";
   if (/attention|warning|remote|medium|high|stale|expired/.test(normalized)) return "status-pill status-pill--warning";
-  if (/good|trusted|configured|active|disabled|ok/.test(normalized)) return "status-pill status-pill--ok";
+  if (/secure|good|trusted|configured|active|disabled|ok|success/.test(normalized)) return "status-pill status-pill--ok";
   return "status-pill status-pill--planned";
 }
 
@@ -19597,6 +19597,14 @@ function formatSecurityValue(value, fallback = "Unavailable") {
 
 function formatSecurityTime(value) {
   return value ? formatDateTime(value) : "Not reported";
+}
+
+function securityEventTitle(type = "") {
+  return String(type || "security.event")
+    .replace(/^security\./, "")
+    .replace(/^agent\./, "agent.")
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function createSecurityBadgeElement(text, tone = text) {
@@ -19638,8 +19646,13 @@ function renderSecurityDashboard() {
       ["Account", dashboard?.overview?.signedInAccount],
       ["Device trust", dashboard?.overview?.deviceTrustState],
       ["Sessions", dashboard?.overview?.activeSessionCount],
+      ["Remembered", dashboard?.overview?.rememberedSessionCount],
+      ["Trusted devices", dashboard?.overview?.trustedDeviceCount],
       ["Remote access", dashboard?.overview?.remoteAccessStatus],
       ["Agent token", dashboard?.overview?.agentTokenStatus],
+      ["Provider", dashboard?.overview?.accountProviderConfiguration],
+      ["Revocations", dashboard?.overview?.recentSessionRevocations],
+      ["Device activations", dashboard?.overview?.recentDeviceActivations],
       ["Warnings", dashboard?.overview?.unresolvedWarnings],
     ];
     renderSecuritySummaryGrid(overview, fields);
@@ -19664,6 +19677,7 @@ function renderSecurityAccountProtection(protection) {
   renderSecuritySummaryGrid(container, [
     ["Provider", protection?.provider],
     ["Email verification", protection?.emailVerification],
+    ["Owner authorization", protection?.ownerAuthorization],
     ["Session expiration", protection?.sessionExpiration],
     ["Sensitive actions", protection?.requireReauthForSensitiveActions ? "Reauthentication required" : "Not required"],
     ["Remembered sessions", protection?.rememberedSessionCount],
@@ -19709,9 +19723,13 @@ function renderSecurityRecommendations(items) {
     const row = document.createElement("div");
     row.className = "security-card-row";
     const body = document.createElement("div");
+    const evidence = item.evidence ? `Evidence: ${item.evidence}` : "";
+    const risk = item.risk ? `Risk: ${item.risk}${item.destructive ? " · Destructive action" : ""}` : "";
     body.append(
       createTextElement("strong", item.title || "Recommendation"),
       createTextElement("p", item.explanation || "Review this security item."),
+      ...(evidence ? [createTextElement("p", evidence, "security-event-meta")] : []),
+      ...(risk ? [createTextElement("p", risk, "security-event-meta")] : []),
     );
     row.append(body, createSecurityBadgeElement(item.severity || "info", item.severity || "info"));
     const actions = document.createElement("div");
@@ -19762,8 +19780,12 @@ async function handleSecurityRecommendation(id) {
     await openAnxOsAccountPage();
     return;
   }
-  if (id === "review-active-sessions") {
+  if (id === "review-active-sessions" || id === "revoke-stale-sessions") {
     scrollSecuritySection(".settings-section--security-sessions");
+    return;
+  }
+  if (id === "remove-unused-trusted-devices") {
+    scrollSecuritySection(".settings-section--security-devices");
     return;
   }
   if (id === "remote-access-exposed") {
@@ -19814,7 +19836,9 @@ function renderSecuritySessions(sessions) {
     const deviceCell = document.createElement("td");
     const meta = [
       session.operatingSystem || "Platform unavailable",
+      session.remembered ? "Remembered" : "Runtime only",
       session.ipAddress && session.ipAddress !== "Unavailable" ? "Network reported" : "Network unavailable",
+      session.location && session.location !== "Unavailable" ? `Location ${session.location}` : "Location unavailable",
       session.expiresAt ? `Expires ${formatSecurityTime(session.expiresAt)}` : "Expiration not reported",
     ];
     deviceCell.append(
@@ -19833,13 +19857,14 @@ function renderSecuritySessions(sessions) {
       status.appendChild(createSecurityBadgeElement(session.current ? "Current" : session.trusted ? "Trusted" : "Untrusted", session.current || session.trusted ? "trusted" : "untrusted"));
     }
     const action = document.createElement("td");
-    if (session.current || session.runtimeOnly) {
+    if (session.current || session.runtimeOnly || session.revocationAvailable === false) {
       action.appendChild(createTextElement("span", "Current session", "security-event-meta"));
     } else {
       const revoke = document.createElement("button");
       revoke.className = "inline-action";
       revoke.type = "button";
       revoke.dataset.securityRevokeSession = String(session.id || "");
+      revoke.setAttribute("aria-label", `Revoke session for ${session.deviceName || "unknown device"}`);
       revoke.textContent = "Revoke";
       action.appendChild(revoke);
     }
@@ -19866,7 +19891,8 @@ function renderSecurityTrustedDevices(devices) {
     body.append(
       createTextElement("strong", device.name || "Unnamed device"),
       createTextElement("p", `${device.platform || "Unavailable"} · First seen ${formatSecurityTime(device.firstSeen)} · Last seen ${formatSecurityTime(device.lastSeen)}`),
-      createTextElement("p", `Trust expiration: ${formatSecurityTime(device.trustExpiresAt)}${stale ? " · Stale device" : ""}`),
+      createTextElement("p", `Trust expiration: ${formatSecurityTime(device.trustExpiresAt)}${stale || device.stale ? " · Stale device" : ""}`),
+      createTextElement("p", `Activation: ${device.activationMethod || "Unknown"} · Related sessions: ${device.relatedSessionCount ?? "Unavailable"}`, "security-event-meta"),
     );
     row.append(body, createSecurityBadgeElement(device.current ? "Current" : stale ? "Stale" : device.trusted ? "Trusted" : "Untrusted", device.current || device.trusted ? "trusted" : stale ? "warning" : "untrusted"));
     const actions = document.createElement("div");
@@ -19875,11 +19901,14 @@ function renderSecurityTrustedDevices(devices) {
     rename.className = "inline-action";
     rename.type = "button";
     rename.dataset.securityRenameDevice = String(device.id || "");
+    rename.setAttribute("aria-label", `Rename trusted device ${device.name || "unnamed device"}`);
     rename.textContent = "Rename";
     const remove = document.createElement("button");
     remove.className = "inline-action";
     remove.type = "button";
     remove.dataset.securityRemoveDevice = String(device.id || "");
+    remove.disabled = device.trusted === false;
+    remove.setAttribute("aria-label", `Remove trust for ${device.name || "unnamed device"}`);
     remove.textContent = "Remove Trust";
     actions.append(rename, remove);
     article.append(row, actions);
@@ -19924,6 +19953,9 @@ function renderSecurityToken(token) {
       ["Created", formatSecurityTime(token?.createdAt)],
       ["Last rotated", formatSecurityTime(token?.lastRotatedAt)],
       ["Last used", formatSecurityTime(token?.lastUsedAt)],
+      ["Last authentication", formatSecurityTime(token?.lastAuthenticationAt)],
+      ["Connected agents", token?.connectedAgents ?? "Unavailable"],
+      ["Recent failures", token?.recentFailures ?? "Unavailable"],
       ["Scope", token?.scope],
       ["Associated agent", token?.associatedDevice],
       ["Expiration", token?.expirationState],
@@ -19969,13 +20001,42 @@ function renderSecurityEvents() {
     summary.className = "security-card-row";
     const body = document.createElement("div");
     body.append(
-      createTextElement("strong", event.type || "security.event"),
-      createTextElement("p", `${formatSecurityTime(event.timestamp)} · ${event.category || "security"} · ${event.actor?.username || "System"} · ${event.device || "This device"}`),
+      createTextElement("strong", securityEventTitle(event.type)),
+      createTextElement("p", event.message || "Security event recorded."),
+      createTextElement("p", `${formatSecurityTime(event.timestamp)} · ${event.category || "security"} · ${event.source || "security"} · ${event.actor?.username || "System"} · ${event.device || "This device"}`, "security-event-meta"),
     );
-    summary.append(body, createSecurityBadgeElement(event.result || "ok", event.result || "ok"));
+    summary.append(body, createSecurityBadgeElement(event.severity || event.result || "ok", event.severity || event.result || "ok"));
     const pre = createTextElement("pre", JSON.stringify(event.details || {}, null, 2), "security-event-meta");
     details.append(summary, pre);
+    if (event.diagnosticIssue) {
+      const actions = document.createElement("div");
+      actions.className = "settings-actions";
+      const diagnosticsButton = document.createElement("button");
+      diagnosticsButton.className = "inline-action";
+      diagnosticsButton.type = "button";
+      diagnosticsButton.textContent = "Open Diagnostics";
+      diagnosticsButton.addEventListener("click", () => showPage("diagnostics"));
+      actions.appendChild(diagnosticsButton);
+      details.appendChild(actions);
+    }
     container.appendChild(details);
+  });
+}
+
+function syncSecurityEventNotifications(events = []) {
+  events.slice(0, 20).forEach((event) => {
+    if (!event?.notificationKey || !["warning", "critical"].includes(String(event.severity || "").toLowerCase())) return;
+    createNotification({
+      category: "Security",
+      severity: event.severity === "critical" ? "critical" : "warning",
+      title: securityEventTitle(event.type),
+      message: event.message || "Security-sensitive event recorded.",
+      dedupKey: event.notificationKey,
+      relatedDiagnosticCode: event.diagnosticIssue || "",
+      relatedWorkspace: "security",
+      actions: event.diagnosticIssue ? ["openSecurity", "openDiagnostics"] : ["openSecurity"],
+      resolved: event.result === "ok",
+    });
   });
 }
 
@@ -20000,6 +20061,7 @@ async function refreshSecurityState() {
         return;
       }
       securityDashboardState = dashboard;
+      syncSecurityEventNotifications(dashboard?.events || []);
     } else {
       securityDashboardState = null;
     }
@@ -23556,7 +23618,7 @@ document.querySelector('[data-security-action="logout"]')?.addEventListener("cli
   event.preventDefault();
   const ok = await createSecurityConfirmation({
     title: "Sign Out",
-    message: "Owner Workspace access will close for this desktop session.",
+    message: "Owner Workspace access will close for this desktop session. You can sign in again on this device.",
     confirmLabel: "Sign Out",
   });
   if (ok) await logoutSecuritySession();
@@ -23565,7 +23627,7 @@ document.querySelector('[data-security-action="logout-all-sessions"]')?.addEvent
   event.preventDefault();
   const ok = await createSecurityConfirmation({
     title: "Sign Out All Local Sessions",
-    message: "Remembered local owner sessions will be revoked and Owner Workspace access will close.",
+    message: "Remembered local owner sessions will be revoked and Owner Workspace access will close. Other remembered devices may need to sign in again. This cannot be undone.",
     confirmLabel: "Sign Out All",
   });
   if (ok) await logoutAllSecuritySessions();
@@ -23586,7 +23648,7 @@ document.querySelector('[data-page="security"]')?.addEventListener("click", asyn
   if (revokeSessionButton) {
     const ok = await createSecurityConfirmation({
       title: "Revoke Session",
-      message: "This will revoke the selected remembered session.",
+      message: "This will revoke the selected remembered session. That device may need to sign in again. This cannot be undone from the desktop app.",
       confirmLabel: "Revoke",
     });
     if (ok) await runSecurityAction("revoke-session", { sessionId: revokeSessionButton.dataset.securityRevokeSession });
@@ -23596,7 +23658,7 @@ document.querySelector('[data-page="security"]')?.addEventListener("click", asyn
   if (removeDeviceButton) {
     const ok = await createSecurityConfirmation({
       title: "Remove Trusted Device",
-      message: "This device will no longer be trusted for security decisions.",
+      message: "This device will no longer be trusted for security decisions. Existing remembered sessions may remain visible until revoked separately.",
       confirmLabel: "Remove Trust",
     });
     if (ok) await runSecurityAction("remove-device", { deviceId: removeDeviceButton.dataset.securityRemoveDevice });
@@ -23636,16 +23698,16 @@ document.querySelector('[data-page="security"]')?.addEventListener("click", asyn
   const action = actionButton.dataset.securityAction;
   if (action === "logout" || action === "logout-all-sessions" || action === "enable-remote-control") return;
   if (action === "rotate-agent-token") {
-    const ok = await createSecurityConfirmation({ title: "Rotate Agent Token", message: "Restart the agent and desktop app after rotation.", confirmLabel: "Rotate" });
+    const ok = await createSecurityConfirmation({ title: "Rotate Agent Token", message: "The shared Agent token will be replaced. Existing Agents may reject requests until they are restarted or reconfigured. The new token is never displayed or copied automatically.", confirmLabel: "Rotate" });
     if (ok) await runSecurityAction("rotate-agent-token");
   } else if (action === "generate-agent-token") {
-    const ok = await createSecurityConfirmation({ title: "Generate Replacement Token", message: "The existing token will be replaced. Restart the agent and desktop app afterward.", confirmLabel: "Generate" });
+    const ok = await createSecurityConfirmation({ title: "Generate Replacement Token", message: "The existing token will be replaced. Restart or reconnect Agents after generation. The token will remain redacted.", confirmLabel: "Generate" });
     if (ok) await runSecurityAction("generate-agent-token");
   } else if (action === "revoke-agent-token") {
-    const ok = await createSecurityConfirmation({ title: "Revoke Agent Token", message: "Protected remote-agent routes will stop working until a replacement token is configured.", confirmLabel: "Revoke" });
+    const ok = await createSecurityConfirmation({ title: "Revoke Agent Token", message: "Protected remote-agent routes will stop working until a replacement token is configured. Reconnect or reconfigure Agents afterward.", confirmLabel: "Revoke" });
     if (ok) await runSecurityAction("revoke-agent-token");
   } else if (action === "revoke-other-sessions") {
-    const ok = await createSecurityConfirmation({ title: "Revoke Other Sessions", message: "Other remembered sessions will be signed out.", confirmLabel: "Revoke" });
+    const ok = await createSecurityConfirmation({ title: "Revoke Other Sessions", message: "Other remembered sessions will be signed out. Your current session remains active when supported. This cannot be undone.", confirmLabel: "Revoke" });
     if (ok) await runSecurityAction("revoke-other-sessions");
   } else if (action === "save-remote-access") {
     await runSecurityAction("save-remote-access", {

@@ -2704,7 +2704,7 @@
                 </div>
                 <span class="status-pill status-pill--planned" data-security-overview-status>Loading</span>
               </div>
-              <div class="security-summary-grid" data-security-overview>
+              <div class="security-summary-grid" data-security-overview aria-live="polite">
                 <div><span>Account</span><strong>Loading</strong></div>
                 <div><span>Device trust</span><strong>Loading</strong></div>
                 <div><span>Sessions</span><strong>Loading</strong></div>
@@ -2722,7 +2722,7 @@
                   <p>Only supported recommendations are shown. Unsupported data is labeled clearly.</p>
                 </div>
               </div>
-              <div class="security-list" data-security-recommendations>
+              <div class="security-list" data-security-recommendations role="list" aria-live="polite">
                 <div class="security-empty-state">Loading recommendations...</div>
               </div>
             </section>
@@ -2734,7 +2734,7 @@
                   <p>Current account and session protection state from trusted security services.</p>
                 </div>
               </div>
-              <div class="security-summary-grid" data-security-account-protection>
+              <div class="security-summary-grid" data-security-account-protection aria-live="polite">
                 <div><span>Provider</span><strong>Loading</strong></div>
                 <div><span>Email verification</span><strong>Loading</strong></div>
                 <div><span>Session expiration</span><strong>Loading</strong></div>
@@ -2751,7 +2751,7 @@
                   <p>Effective access for this desktop session. Enforcement remains in trusted process boundaries.</p>
                 </div>
               </div>
-              <div class="security-list" data-security-permissions>
+              <div class="security-list" data-security-permissions role="list" aria-live="polite">
                 <div class="security-empty-state">Loading permissions...</div>
               </div>
             </section>
@@ -2795,14 +2795,14 @@
                 <table class="security-table">
                   <thead>
                     <tr>
-                      <th>Device</th>
-                      <th>Last active</th>
-                      <th>Created</th>
-                      <th>Trust</th>
-                      <th>Action</th>
+                      <th scope="col">Device</th>
+                      <th scope="col">Last active</th>
+                      <th scope="col">Created</th>
+                      <th scope="col">Trust</th>
+                      <th scope="col">Action</th>
                     </tr>
                   </thead>
-                  <tbody data-security-sessions>
+                  <tbody data-security-sessions aria-live="polite">
                     <tr><td colspan="5">Loading sessions...</td></tr>
                   </tbody>
                 </table>
@@ -2816,7 +2816,7 @@
                   <p>Device trust is persisted by the main process, not renderer storage.</p>
                 </div>
               </div>
-              <div class="security-list" data-security-trusted-devices>
+              <div class="security-list" data-security-trusted-devices role="list" aria-live="polite">
                 <div class="security-empty-state">Loading trusted devices...</div>
               </div>
             </section>
@@ -2868,8 +2868,12 @@
                 <div><span>Created</span><strong>Loading</strong></div>
                 <div><span>Last rotated</span><strong>Loading</strong></div>
                 <div><span>Last used</span><strong>Loading</strong></div>
+                <div><span>Last authentication</span><strong>Loading</strong></div>
+                <div><span>Connected agents</span><strong>Loading</strong></div>
+                <div><span>Recent failures</span><strong>Loading</strong></div>
                 <div><span>Scope</span><strong>Loading</strong></div>
                 <div><span>Associated agent</span><strong>Loading</strong></div>
+                <div><span>Expiration</span><strong>Loading</strong></div>
               </div>
               <div class="settings-actions">
                 <button class="inline-action" type="button" data-security-action="rotate-agent-token">Rotate Token</button>
@@ -2958,7 +2962,7 @@
                 <button class="inline-action" type="button" data-security-event-filter="owner">Owner actions</button>
                 <button class="inline-action" type="button" data-security-event-filter="warnings">Warnings</button>
               </div>
-              <div class="security-list security-list--events" data-security-events>
+              <div class="security-list security-list--events" data-security-events role="list" aria-live="polite">
                 <div class="security-empty-state">Loading security events...</div>
               </div>
               <div class="settings-actions">

@@ -48,6 +48,27 @@ const ROLE_PERMISSIONS = {
   ],
   User: ["instance:lifecycle"],
 };
+const SECURITY_EVENT_DEFINITIONS = {
+  "security.setup": { category: "authentication", severity: "info", message: "Local Owner security was configured." },
+  "security.login": { category: "authentication", severity: "info", message: "A local Owner sign-in was recorded." },
+  "security.logout": { category: "authentication", severity: "info", message: "A local security session signed out." },
+  "security.session.restore": { category: "authentication", severity: "info", message: "A remembered local session was restored." },
+  "security.session.revoke": { category: "sessions", severity: "warning", message: "A remembered local session was revoked." },
+  "security.sessions.revokeOther": { category: "sessions", severity: "warning", message: "Other remembered local sessions were revoked." },
+  "security.sessions.logoutAll": { category: "sessions", severity: "warning", message: "All remembered local sessions were revoked." },
+  "security.trustedDevice.remove": { category: "sessions", severity: "warning", message: "Trusted-device access was removed." },
+  "security.trustedDevice.rename": { category: "sessions", severity: "info", message: "A trusted-device name was changed." },
+  "security.trustedDevices.removeAll": { category: "sessions", severity: "critical", message: "All trusted devices were removed." },
+  "agent.token.rotate": { category: "tokens", severity: "warning", message: "The Agent token was rotated." },
+  "agent.token.revoke": { category: "tokens", severity: "critical", message: "The Agent token was revoked." },
+  "security.remoteAccess.settings": { category: "remote", severity: "info", message: "Remote access security settings changed." },
+  "security.remoteAccess.disable": { category: "remote", severity: "warning", message: "Remote access was disabled." },
+  "security.ownerWorkspace.lock": { category: "owner", severity: "warning", message: "Owner Workspace was locked." },
+  "security.ownerWorkspace": { category: "owner", severity: "warning", message: "Owner authorization was denied." },
+  "security.permission": { category: "warnings", severity: "warning", message: "A protected security action was denied." },
+  "security.settings.update": { category: "sessions", severity: "info", message: "Session security settings changed." },
+  "security.localState.reset": { category: "sessions", severity: "critical", message: "Local security state was reset." },
+};
 
 let currentSession = null;
 const rateBuckets = new Map();
@@ -373,11 +394,15 @@ function getCurrentUser() {
 
 async function createPersistentSession(state, user) {
   const rawToken = crypto.randomBytes(48).toString("base64url");
+  const device = getCurrentDeviceInfo();
   const session = {
     id: crypto.randomUUID(),
     userId: user.id,
     tokenHash: await bcrypt.hash(rawToken, BCRYPT_ROUNDS),
     passwordHashDigest: getPasswordHashDigest(user),
+    deviceId: device.id,
+    deviceName: device.name,
+    platform: device.platform,
     createdAt: new Date().toISOString(),
     lastUsedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + (state.settings.persistentSessionTtlMs || PERSISTENT_SESSION_TTL_MS)).toISOString(),
@@ -472,6 +497,31 @@ function redactSensitive(value) {
     .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "[redacted]");
 }
 
+function sanitizeSecurityText(value, fallback = "Unavailable", maxLength = 120) {
+  const text = redactSensitive(String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim());
+  return (text || fallback).slice(0, maxLength);
+}
+
+function publicTargetId(type, rawId) {
+  return crypto
+    .createHash("sha256")
+    .update(`${type}:${String(rawId || "")}:${getSecurityPath()}`)
+    .digest("base64url")
+    .slice(0, 24);
+}
+
+function resolvePersistentSessionId(state, target) {
+  const publicId = String(target || "");
+  const match = state.persistentSessions.find((entry) => publicTargetId("session", entry.id) === publicId);
+  return match?.id || null;
+}
+
+function resolveTrustedDeviceId(state, target) {
+  const publicId = String(target || "");
+  const match = state.trustedDevices.find((entry) => publicTargetId("device", entry.id) === publicId);
+  return match?.id || null;
+}
+
 function getCurrentDeviceId() {
   return crypto
     .createHash("sha256")
@@ -529,17 +579,29 @@ function getAuditEvents(limit = 80) {
       .map((line) => {
         try {
           const entry = JSON.parse(line);
+          const definition = SECURITY_EVENT_DEFINITIONS[entry.action] || {};
+          const failed = entry.outcome === "failed" || entry.outcome === "denied";
           return {
             timestamp: safeIso(entry.at) || new Date().toISOString(),
             type: String(entry.action || "security.event"),
-            category: categorizeSecurityEvent(entry.action),
-            device: os.hostname(),
+            category: definition.category || categorizeSecurityEvent(entry.action),
+            severity: failed ? "warning" : definition.severity || "info",
+            source: "desktop-security-service",
+            device: sanitizeSecurityText(os.hostname(), "This device", 80),
             actor: entry.actor ? {
-              id: entry.actor.id || null,
-              username: entry.actor.username || null,
-              role: entry.actor.role || null,
+              id: entry.actor.id ? publicTargetId("actor", entry.actor.id) : null,
+              username: sanitizeSecurityText(entry.actor.username, "Unknown user", 80),
+              role: sanitizeSecurityText(entry.actor.role, "Unknown", 40),
             } : null,
             result: entry.outcome || "ok",
+            message: failed
+              ? sanitizeSecurityText(entry.reason, definition.message || "Security action failed.", 180)
+              : definition.message || "Security event recorded.",
+            diagnosticIssue: failed ? `security:${entry.action || "event"}:${entry.outcome || "failed"}` : null,
+            notificationKey: /session\.revoke|sessions\.revokeOther|sessions\.logoutAll|trustedDevice\.remove|agent\.token|ownerWorkspace|permission/i.test(entry.action || "")
+              ? `security-event:${entry.action}:${entry.outcome || "ok"}`
+              : null,
+            action: failed ? "open-diagnostics" : "review",
             details: {
               target: redactSensitive(entry.target || ""),
               reason: redactSensitive(entry.reason || ""),
@@ -570,23 +632,26 @@ function getSessionRows(state, status) {
   const now = Date.now();
   const currentDevice = getCurrentDeviceInfo();
   const rows = state.persistentSessions.map((session) => ({
-    id: session.id,
-    deviceName: session.deviceName || currentDevice.name,
-    operatingSystem: session.platform || currentDevice.platform,
-    location: session.location || "Unavailable",
-    ipAddress: session.ipAddress || "Unavailable",
+    id: publicTargetId("session", session.id),
+    deviceId: session.deviceId ? publicTargetId("device", session.deviceId) : publicTargetId("device", currentDevice.id),
+    deviceName: sanitizeSecurityText(session.deviceName || currentDevice.name, "Unknown device", 100),
+    operatingSystem: sanitizeSecurityText(session.platform || currentDevice.platform, "Platform unavailable", 100),
+    location: session.location ? sanitizeSecurityText(session.location, "Unavailable", 80) : "Unavailable",
+    ipAddress: session.ipAddress ? "Available to trusted backend" : "Unavailable",
     lastActiveAt: safeIso(session.lastUsedAt),
     createdAt: safeIso(session.createdAt),
     expiresAt: safeIso(session.expiresAt),
     current: currentSession?.persistentSessionId === session.id,
     trusted: state.trustedDevices.some((device) => device.id === currentDevice.id && device.trusted !== false),
     expired: Date.parse(session.expiresAt || "") <= now,
+    remembered: true,
+    revocationAvailable: true,
   }));
   if (status.authenticated && !rows.some((row) => row.current)) {
     rows.unshift({
       id: "runtime-current",
-      deviceName: currentDevice.name,
-      operatingSystem: currentDevice.platform,
+      deviceName: sanitizeSecurityText(currentDevice.name, "This device", 100),
+      operatingSystem: sanitizeSecurityText(currentDevice.platform, "Platform unavailable", 100),
       location: "Unavailable",
       ipAddress: "Unavailable",
       lastActiveAt: new Date().toISOString(),
@@ -596,6 +661,8 @@ function getSessionRows(state, status) {
       trusted: true,
       runtimeOnly: true,
       expired: false,
+      remembered: false,
+      revocationAvailable: false,
     });
   }
   return rows;
@@ -620,7 +687,7 @@ function getAgentTokenSummary(state, options = {}) {
   const tokenRecord = state.agentTokens?.[fingerprint] || {};
   return {
     configured: Boolean(agentToken),
-    fingerprint,
+    fingerprint: fingerprint || (agentToken ? "Configured" : "Unavailable"),
     createdAt: safeIso(tokenRecord.createdAt) || (stat ? stat.birthtime.toISOString() : null),
     lastRotatedAt: safeIso(tokenRecord.lastRotatedAt) || (stat ? stat.mtime.toISOString() : null),
     lastUsedAt: safeIso(tokenRecord.lastUsedAt),
@@ -628,6 +695,9 @@ function getAgentTokenSummary(state, options = {}) {
     expirationState: "No expiration",
     associatedDevice: getNode(options?.nodeId)?.displayName || (target.type === "agent" ? agentUrl : "Application Host"),
     configPath: getAgentConfigPath(),
+    connectedAgents: target.type === "agent" && agentUrl ? 1 : 0,
+    lastAuthenticationAt: safeIso(tokenRecord.lastAuthenticationAt) || safeIso(tokenRecord.lastUsedAt),
+    recentFailures: getAuditEvents(40).filter((event) => event.category === "tokens" && event.result !== "ok").length,
   };
 }
 
@@ -661,18 +731,52 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
       severity: "info",
       title: "Email verification status unavailable",
       explanation: "Supabase email verification details are not reported to this desktop build.",
+      evidence: "Current account session does not include emailConfirmedAt.",
+      risk: "Unknown",
       action: "Open Account Page",
       dismissible: true,
+      destructive: false,
     });
   }
-  if (sessions.length > 1) {
+  const staleSessions = sessions.filter((session) => !session.current && (session.expired || isOlderThan(session.lastActiveAt, 30 * 24 * 60 * 60 * 1000)));
+  if (staleSessions.length > 0) {
+    recommendations.push({
+      id: "revoke-stale-sessions",
+      severity: "medium",
+      title: "Review stale remembered sessions",
+      explanation: "Remembered sessions with old or expired activity can be revoked from this device.",
+      evidence: `${staleSessions.length} stale or expired remembered session${staleSessions.length === 1 ? "" : "s"} found.`,
+      risk: "Medium",
+      action: "Review Sessions",
+      dismissible: true,
+      destructive: true,
+    });
+  }
+  if (sessions.length > 1 && staleSessions.length === 0) {
     recommendations.push({
       id: "review-active-sessions",
-      severity: "medium",
-      title: "Review active sessions",
+      severity: "low",
+      title: "Review remembered sessions",
       explanation: `${sessions.length} sessions are known on this device.`,
+      evidence: `${sessions.filter((session) => session.remembered).length} remembered session${sessions.filter((session) => session.remembered).length === 1 ? "" : "s"} reported by the local security store.`,
+      risk: "Low",
       action: "Review",
       dismissible: true,
+      destructive: false,
+    });
+  }
+  const staleTrustedDevices = trustedDevices.filter((device) => device.trusted && !device.current && isOlderThan(device.lastSeen, 90 * 24 * 60 * 60 * 1000));
+  if (staleTrustedDevices.length > 0) {
+    recommendations.push({
+      id: "remove-unused-trusted-devices",
+      severity: "medium",
+      title: "Remove unused trusted devices",
+      explanation: "Trusted devices with old activity should be reviewed before they keep trusted status.",
+      evidence: `${staleTrustedDevices.length} non-current trusted device${staleTrustedDevices.length === 1 ? "" : "s"} have not been active for more than 90 days.`,
+      risk: "Medium",
+      action: "Review Devices",
+      dismissible: true,
+      destructive: true,
     });
   }
   if (remoteAccess.exposedBeyondLocalNetwork) {
@@ -681,8 +785,11 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
       severity: "high",
       title: "Remote access is exposed beyond the local network",
       explanation: "Review the listening address and disable remote access when you do not need it.",
+      evidence: `Reported scope: ${remoteAccess.scope}.`,
+      risk: "High",
       action: "Disable Remote Access",
       dismissible: false,
+      destructive: true,
     });
   }
   if (!token.configured && remoteAccess.enabled) {
@@ -691,8 +798,11 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
       severity: "critical",
       title: "Agent token is not configured",
       explanation: "Protected remote-agent routes require a shared token.",
+      evidence: "Remote access is enabled and no Agent token is configured.",
+      risk: "Critical",
       action: "Generate Token",
       dismissible: false,
+      destructive: true,
     });
   }
   const lastRotation = Date.parse(token.lastRotatedAt || token.createdAt || "");
@@ -702,8 +812,11 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
       severity: "medium",
       title: "Rotate an old agent token",
       explanation: "The current agent token appears older than 90 days.",
+      evidence: `Last rotation: ${token.lastRotatedAt || token.createdAt || "not reported"}.`,
+      risk: "Medium",
       action: "Rotate Token",
       dismissible: true,
+      destructive: true,
     });
   }
   const failedLogins = events.filter((event) => /login/i.test(event.type) && event.result === "failed");
@@ -713,8 +826,11 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
       severity: "medium",
       title: "Review recent failed sign-in attempts",
       explanation: `${failedLogins.length} failed sign-in event${failedLogins.length === 1 ? "" : "s"} found in the recent audit log.`,
+      evidence: "Failed local Owner sign-in events are present in the redacted audit log.",
+      risk: "Medium",
       action: "Review Events",
       dismissible: true,
+      destructive: false,
     });
   }
   if (!state.settings.inactiveSessionExpirationMs) {
@@ -723,11 +839,19 @@ function buildRecommendations({ status, sessions, trustedDevices, remoteAccess, 
       severity: "low",
       title: "Configure automatic session expiration",
       explanation: "Inactive sessions are currently not set to expire automatically beyond normal token lifetime.",
+      evidence: "Inactive session expiration is set to Never.",
+      risk: "Low",
       action: "Configure",
       dismissible: true,
+      destructive: false,
     });
   }
   return recommendations;
+}
+
+function isOlderThan(value, ageMs) {
+  const timestamp = Date.parse(value || "");
+  return Number.isFinite(timestamp) && Date.now() - timestamp > ageMs;
 }
 
 function getSecurityDashboard(options = {}) {
@@ -740,14 +864,17 @@ function getSecurityDashboard(options = {}) {
   const events = getAuditEvents();
   const sessions = getSessionRows(state, status);
   const trustedDevices = state.trustedDevices.map((device) => ({
-    id: device.id,
-    name: device.name || "Unnamed device",
-    platform: device.platform || "Unavailable",
+    id: publicTargetId("device", device.id),
+    name: sanitizeSecurityText(device.name, "Unnamed device", 100),
+    platform: sanitizeSecurityText(device.platform, "Unavailable", 100),
     firstSeen: safeIso(device.firstSeen),
     lastSeen: safeIso(device.lastSeen),
     trustExpiresAt: safeIso(device.trustExpiresAt),
     current: device.id === getCurrentDeviceId(),
     trusted: device.trusted !== false,
+    activationMethod: sanitizeSecurityText(device.activationMethod || "Local desktop security store", "Unknown", 80),
+    relatedSessionCount: sessions.filter((session) => session.deviceId === publicTargetId("device", device.id)).length,
+    stale: isOlderThan(device.lastSeen, 90 * 24 * 60 * 60 * 1000),
   }));
   const token = getAgentTokenSummary(state, options);
   const remoteAccess = getRemoteAccessSummary(state, options);
@@ -758,10 +885,10 @@ function getSecurityDashboard(options = {}) {
   const recentSessionRevocations = events.filter((event) => /session.*revoke|logoutAll/i.test(event.type)).length;
   const recentDeviceActivations = events.filter((event) => /trustedDevice|device/i.test(event.type)).length;
   const overall = unresolvedWarnings >= 2 || recommendations.some((item) => item.severity === "critical")
-    ? "Critical"
-    : unresolvedWarnings > 0 || recommendations.length > 0
-      ? "Needs Attention"
-      : "Good";
+      ? "Critical"
+      : unresolvedWarnings > 0 || recommendations.length > 0
+        ? "Needs Attention"
+      : "Secure";
   return {
     actor: publicUser(actor),
     overview: {
@@ -777,6 +904,9 @@ function getSecurityDashboard(options = {}) {
       trustedDeviceCount,
       recentSessionRevocations,
       recentDeviceActivations,
+      accountProviderConfiguration: status.accountAuthenticated ? "Configured" : status.ownerAccountConfigured ? "Owner allowlist configured" : "Local-only",
+      securitySensitiveOperations: ["Agent token rotation", "Session revocation", "Trusted-device removal"],
+      diagnosticsIssues: events.filter((event) => event.diagnosticIssue).slice(0, 5).map((event) => event.diagnosticIssue),
     },
     accountProtection: {
       provider: status.accountAuthenticated ? "AnxOS Account" : status.authenticated ? "Local owner" : "Not signed in",
@@ -787,6 +917,7 @@ function getSecurityDashboard(options = {}) {
       requireReauthForSensitiveActions: Boolean(state.settings.requireReauthForSensitiveActions),
       rememberedSessionCount,
       trustedDeviceCount,
+      ownerAuthorization: status.ownerWorkspaceAvailable ? "Authorized" : status.ownerAccountConfigured ? "Configured, not authorized" : "Not configured",
     },
     permissions: [
       {
@@ -820,6 +951,12 @@ function getSecurityDashboard(options = {}) {
         name: "Marketplace and Files",
         state: status.authenticated || !status.setupRequired ? "Available" : "Locked",
         detail: "Marketplace, Files, and node actions still validate node and Agent boundaries before running.",
+      },
+      {
+        id: "owner-workspace",
+        name: "Owner Workspace",
+        state: status.ownerWorkspaceAvailable ? "Allowed" : "Locked",
+        detail: "Owner-only workspace commands are checked again by main-process authorization.",
       },
     ],
     recommendations,
@@ -1272,19 +1409,25 @@ function revokePersistentSession(sessionId) {
     throw error;
   }
   const state = readSecurityState();
+  const resolvedTarget = resolvePersistentSessionId(state, target);
+  if (!resolvedTarget) {
+    const error = new Error("Session was not found or has already been revoked.");
+    error.code = "SESSION_NOT_FOUND";
+    throw error;
+  }
   const before = state.persistentSessions.length;
-  state.persistentSessions = state.persistentSessions.filter((entry) => entry.id !== target);
+  state.persistentSessions = state.persistentSessions.filter((entry) => entry.id !== resolvedTarget);
   if (state.persistentSessions.length === before) {
     const error = new Error("Session was not found.");
     error.code = "SESSION_NOT_FOUND";
     throw error;
   }
   writeSecurityState(state);
-  if (currentSession?.persistentSessionId === target) {
+  if (currentSession?.persistentSessionId === resolvedTarget) {
     currentSession = null;
     removePersistentSessionFile();
   }
-  audit({ action: "security.session.revoke", outcome: "ok", actor, target });
+  audit({ action: "security.session.revoke", outcome: "ok", actor, target: publicTargetId("session", resolvedTarget) });
   return getSecurityDashboard();
 }
 
@@ -1310,11 +1453,23 @@ function removeTrustedDevice(deviceId) {
   }
   const state = readSecurityState();
   normalizeTrustedDevices(state);
+  const resolvedTarget = resolveTrustedDeviceId(state, target);
+  if (!resolvedTarget) {
+    const error = new Error("Trusted device was not found or has already been removed.");
+    error.code = "DEVICE_NOT_FOUND";
+    throw error;
+  }
+  const existing = state.trustedDevices.find((device) => device.id === resolvedTarget);
+  if (existing?.trusted === false) {
+    const error = new Error("Trusted device was already removed.");
+    error.code = "DEVICE_ALREADY_REMOVED";
+    throw error;
+  }
   state.trustedDevices = state.trustedDevices.map((device) => (
-    device.id === target ? { ...device, trusted: false, removedAt: new Date().toISOString() } : device
+    device.id === resolvedTarget ? { ...device, trusted: false, removedAt: new Date().toISOString() } : device
   ));
   writeSecurityState(state);
-  audit({ action: "security.trustedDevice.remove", outcome: "ok", actor, target });
+  audit({ action: "security.trustedDevice.remove", outcome: "ok", actor, target: publicTargetId("device", resolvedTarget) });
   return getSecurityDashboard();
 }
 
@@ -1329,7 +1484,8 @@ function renameTrustedDevice(deviceId, name) {
   }
   const state = readSecurityState();
   normalizeTrustedDevices(state);
-  const device = state.trustedDevices.find((entry) => entry.id === target);
+  const resolvedTarget = resolveTrustedDeviceId(state, target);
+  const device = state.trustedDevices.find((entry) => entry.id === resolvedTarget);
   if (!device) {
     const error = new Error("Device was not found.");
     error.code = "DEVICE_NOT_FOUND";
@@ -1338,7 +1494,7 @@ function renameTrustedDevice(deviceId, name) {
   device.name = nextName;
   device.updatedAt = new Date().toISOString();
   writeSecurityState(state);
-  audit({ action: "security.trustedDevice.rename", outcome: "ok", actor, target });
+  audit({ action: "security.trustedDevice.rename", outcome: "ok", actor, target: publicTargetId("device", resolvedTarget) });
   return getSecurityDashboard();
 }
 

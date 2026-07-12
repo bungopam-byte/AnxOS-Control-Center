@@ -3286,6 +3286,8 @@
               <div class="nodes-summary-card"><span>Offline Nodes</span><strong data-node-summary="offline">0</strong></div>
               <div class="nodes-summary-card"><span>Docker Enabled</span><strong data-node-summary="docker">0</strong></div>
               <div class="nodes-summary-card"><span>Connected Agent</span><strong data-node-summary="connected">None</strong></div>
+              <div class="nodes-summary-card"><span>Node Health</span><strong data-node-summary="health">Unknown</strong></div>
+              <div class="nodes-summary-card"><span>Health Issues</span><strong data-node-summary="healthIssues">0</strong></div>
             </section>
 
             <section class="settings-section settings-section--nodes nodes-panel">
@@ -3721,6 +3723,20 @@
           <div><dt>URL</dt><dd data-node-detail="url">Unavailable</dd></div>
           <div><dt>Token</dt><dd data-node-detail="token">Unavailable</dd></div>
         </dl>
+        <section class="settings-section settings-section--node-health" aria-labelledby="node-health-title">
+          <div class="settings-section__header">
+            <div>
+              <h3 id="node-health-title">Node Health</h3>
+              <p>Deterministic status from current node, Agent, dependency, resource, file, operation, diagnostics, maintenance, update, and Marketplace data.</p>
+            </div>
+            <span class="status-pill status-pill--planned" data-node-health-status aria-live="polite">Unknown</span>
+          </div>
+          <div class="security-summary-grid" data-node-health-overview aria-live="polite" aria-label="Node health overview"></div>
+          <p class="settings-note" data-node-health-updated>Last checked: not checked.</p>
+          <div class="security-list" data-node-health-categories role="list" aria-label="Node health categories" aria-live="polite"></div>
+          <div class="security-list" data-node-health-issues role="list" aria-label="Detected node health issues"></div>
+          <p class="settings-note">Fix All is intentionally unavailable until every remediation can be reviewed, confirmed, ordered safely, and tracked through Operations.</p>
+        </section>
         <div class="settings-actions node-details-actions">
           <button class="inline-action" type="button" data-node-details-action="select">Select</button>
           <button class="inline-action" type="button" data-node-details-action="test">Test Connection</button>

@@ -32,6 +32,7 @@
     "agent:pair": "node scripts/agent-pair-export.js",
     "agent:token:smoke": "node scripts/agent-token-smoke.js",
     "node:switch:smoke": "node scripts/node-switch-smoke.js",
+    "node-health:smoke": "node scripts/node-health-smoke.js",
     "security:page:smoke": "node scripts/security-page-smoke.js",
     "owner:smoke": "node scripts/owner-workspace-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",

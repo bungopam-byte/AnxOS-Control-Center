@@ -90,6 +90,8 @@ assert(styles.includes(".global-search-dialog") && styles.includes(".global-sear
 assert(index.includes("data-command-palette-open") && index.includes("data-command-palette-results") && index.includes("data-command-palette-recents"), "Command Palette must expose a visible trigger, command results, and recent commands.");
 assert(app.includes("function getCommandRegistry") && app.includes("function runCommandPaletteCommand") && app.includes("COMMAND_PALETTE_RECENTS_STORAGE_KEY"), "Renderer must wire a registry-backed Command Palette and recent command storage.");
 assert(styles.includes(".command-palette-dialog") && styles.includes(".command-palette-result.is-active"), "Command Palette CSS must include dialog and active command styling.");
+assert(app.includes("function createTextElement") && app.includes("function createSecurityBadgeElement"), "Renderer must keep safe DOM helper coverage for dynamic desktop surfaces.");
+assert(app.includes("pre = createTextElement(\"pre\", JSON.stringify(event.details || {}, null, 2)") && app.includes("createSvgElement(\"path\""), "High-risk diagnostics/security/icon surfaces must render through DOM APIs.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

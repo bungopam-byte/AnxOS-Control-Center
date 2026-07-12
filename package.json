@@ -44,6 +44,7 @@
     "maintenance:smoke": "node scripts/maintenance-smoke.js",
     "global-search:smoke": "node scripts/global-search-smoke.js",
     "command-palette:smoke": "node scripts/command-palette-smoke.js",
+    "renderer-safety:smoke": "node scripts/renderer-safety-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
     "website:smoke": "node scripts/website-production-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",

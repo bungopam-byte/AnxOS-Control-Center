@@ -1192,6 +1192,32 @@ function escapeHtml(value = "") {
     .replaceAll("'", "&#39;");
 }
 
+function createTextElement(tagName, text = "", className = "") {
+  const element = document.createElement(tagName);
+  if (className) element.className = className;
+  element.textContent = text ?? "";
+  return element;
+}
+
+function createSvgElement(tagName, attributes = {}) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+  Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value)));
+  return element;
+}
+
+function appendDetailPair(container, label, value, { valueTag = "strong" } = {}) {
+  const row = document.createElement("div");
+  const labelElement = createTextElement("span", label);
+  const valueElement = createTextElement(valueTag, value);
+  row.append(labelElement, valueElement);
+  container.append(row);
+  return row;
+}
+
+function createEmptyState(message, className = "security-empty-state") {
+  return createTextElement("div", message, className);
+}
+
 function updateFieldAttributes(name, updater) {
   (fieldMap.get(name) || []).forEach((field) => {
     updater(field);
@@ -3203,7 +3229,27 @@ function renderRemoteAgents(agents = []) {
 function renderAgentDiagnostics(result = {}) {
   if (!agentDiagnosticsList) return;
   agentDiagnosticsList.replaceChildren();
-  (result.checks || []).forEach((check) => { const item = document.createElement("article"); item.className = "agent-diagnostic-item"; item.innerHTML = `<div><strong>${escapeHtml(check.label)}</strong><p>${escapeHtml(check.explanation)}</p></div><div><span class="status-pill">${escapeHtml(check.result)}</span>${check.repairAction ? ` <button class="inline-action" type="button" data-agent-repair="${escapeHtml(check.repairAction)}">Repair</button>` : ""}</div>`; agentDiagnosticsList.append(item); });
+  (result.checks || []).forEach((check) => {
+    const item = document.createElement("article");
+    item.className = "agent-diagnostic-item";
+    const body = document.createElement("div");
+    body.append(
+      createTextElement("strong", check.label || "Diagnostic check"),
+      createTextElement("p", check.explanation || "No explanation available."),
+    );
+    const actions = document.createElement("div");
+    actions.append(createTextElement("span", check.result || "Unknown", "status-pill"));
+    if (check.repairAction) {
+      const repair = document.createElement("button");
+      repair.type = "button";
+      repair.className = "inline-action";
+      repair.dataset.agentRepair = String(check.repairAction);
+      repair.textContent = "Repair";
+      actions.append(repair);
+    }
+    item.append(body, actions);
+    agentDiagnosticsList.append(item);
+  });
 }
 
 function renderAgentLogs() {
@@ -3392,13 +3438,16 @@ function renderOwnerPageList() {
   if (!ownerPageList) return;
   const query = String(ownerSearchInput?.value || "").trim().toLowerCase();
   const pagesToRender = ownerWorkspaceState.pages.filter((page) => !query || page.title.toLowerCase().includes(query));
-  ownerPageList.innerHTML = "";
+  ownerPageList.replaceChildren();
   pagesToRender.forEach((page) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `owner-page-button${page.id === ownerWorkspaceState.selectedPageId ? " is-active" : ""}`;
     button.dataset.ownerPageId = page.id;
-    button.innerHTML = `<span>${escapeHtml(page.title)}</span><small>${page.builtIn ? "Built-in" : page.pinned ? "Pinned" : "Custom"}</small>`;
+    button.append(
+      createTextElement("span", page.title || "Workspace Page"),
+      createTextElement("small", page.builtIn ? "Built-in" : page.pinned ? "Pinned" : "Custom"),
+    );
     button.style.borderLeftColor = page.accent || "var(--accent)";
     button.addEventListener("click", () => selectOwnerPage(page.id));
     ownerPageList.appendChild(button);
@@ -3607,19 +3656,26 @@ function scheduleOwnerAutosave() {
 
 function renderOwnerFlags(flags = ownerWorkspaceState.flags || []) {
   if (!ownerFlags) return;
-  ownerFlags.innerHTML = "";
+  ownerFlags.replaceChildren();
   flags.forEach((flag) => {
     const row = document.createElement("div");
     row.className = "owner-row";
-    row.innerHTML = `
-      <div class="owner-row__top">
-        <strong>${escapeHtml(flag.name)}</strong>
-        <label class="security-option"><input type="checkbox" ${flag.value ? "checked" : ""}> <span>${flag.value ? "On" : "Off"}</span></label>
-      </div>
-      <p>${escapeHtml(flag.description || "")}</p>
-      <small>${escapeHtml(flag.environment || "local")} · ${flag.productionSafe ? "Production-safe" : "Development-only"}${flag.requiresRestart ? " · Restart required" : ""}</small>
-    `;
-    row.querySelector("input")?.addEventListener("change", async (event) => {
+    const top = document.createElement("div");
+    top.className = "owner-row__top";
+    top.appendChild(createTextElement("strong", flag.name || "Feature flag"));
+    const label = document.createElement("label");
+    label.className = "security-option";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = Boolean(flag.value);
+    label.append(input, createTextElement("span", flag.value ? "On" : "Off"));
+    top.appendChild(label);
+    row.append(
+      top,
+      createTextElement("p", flag.description || ""),
+      createTextElement("small", `${flag.environment || "local"} · ${flag.productionSafe ? "Production-safe" : "Development-only"}${flag.requiresRestart ? " · Restart required" : ""}`),
+    );
+    input.addEventListener("change", async (event) => {
       if (flag.requiresRestart && !window.confirm("Changing this flag requires restart. Continue?")) {
         event.target.checked = !event.target.checked;
         return;
@@ -3642,18 +3698,21 @@ async function renderOwnerCommands() {
   if (!ownerCommandList) return;
   const desktopApiState = getDesktopApiState();
   const commands = await desktopApiState.api.ownerWorkspace.getCommands().catch(() => []);
-  ownerCommandList.innerHTML = "";
+  ownerCommandList.replaceChildren();
   commands.forEach((command) => {
     const row = document.createElement("div");
     row.className = "owner-row";
-    row.innerHTML = `
-      <div class="owner-row__top">
-        <strong>${escapeHtml(command.label)}</strong>
-        <button class="inline-action" type="button" ${command.available ? "" : "disabled"}>${command.available ? "Run" : "Unavailable"}</button>
-      </div>
-      <p>${escapeHtml(command.reason || (command.disruptive ? "Confirmation required." : "Ready."))}</p>
-    `;
-    row.querySelector("button")?.addEventListener("click", async () => {
+    const top = document.createElement("div");
+    top.className = "owner-row__top";
+    top.appendChild(createTextElement("strong", command.label || "Owner command"));
+    const action = document.createElement("button");
+    action.className = "inline-action";
+    action.type = "button";
+    action.disabled = !command.available;
+    action.textContent = command.available ? "Run" : "Unavailable";
+    top.appendChild(action);
+    row.append(top, createTextElement("p", command.reason || (command.disruptive ? "Confirmation required." : "Ready.")));
+    action.addEventListener("click", async () => {
       if (command.disruptive && !window.confirm(`${command.label}?`)) return;
       const result = await desktopApiState.api.ownerWorkspace.runCommand({ commandId: command.id, confirmed: command.disruptive }).catch((error) => ({
         ok: false,
@@ -3667,7 +3726,11 @@ async function renderOwnerCommands() {
 
 function renderOwnerApiHistory(history = []) {
   if (!ownerApiHistory) return;
-  ownerApiHistory.innerHTML = history.length ? "" : "<p>No API history.</p>";
+  ownerApiHistory.replaceChildren();
+  if (!history.length) {
+    ownerApiHistory.appendChild(createTextElement("p", "No API history."));
+    return;
+  }
   history.forEach((entry) => {
     const pre = document.createElement("pre");
     pre.textContent = `${entry.method} ${entry.url}\nStatus: ${entry.status || "Unavailable"} · ${entry.durationMs || 0}ms\n${entry.responseText || ""}`;
@@ -3745,7 +3808,7 @@ function renderOwnerLogs(logs = ownerLogEntries) {
   if (!ownerLogViewer) return;
   const query = String(ownerLogSearch?.value || "").trim().toLowerCase();
   const level = String(ownerLogLevel?.value || "all").toLowerCase();
-  ownerLogViewer.innerHTML = "";
+  ownerLogViewer.replaceChildren();
   const filtered = logs.filter((entry) => {
     const haystack = `${entry.path || ""}\n${entry.content || ""}`.toLowerCase();
     const matchesQuery = !query || haystack.includes(query);
@@ -3753,7 +3816,7 @@ function renderOwnerLogs(logs = ownerLogEntries) {
     return matchesQuery && matchesLevel;
   });
   if (filtered.length === 0) {
-    ownerLogViewer.innerHTML = "<p>No matching logs.</p>";
+    ownerLogViewer.appendChild(createTextElement("p", "No matching logs."));
     return;
   }
   filtered.forEach((entry) => {
@@ -12820,17 +12883,14 @@ function renderStorageConnections() {
     item.type = "button";
     item.className = "storage-connection-item";
     item.classList.toggle("is-active", connection.provider === "agent-native" ? !selectedStorageId : connection.id === selectedStorageId);
-    item.innerHTML = `
-      <span>${connection.badge || (connection.provider === "sftp" ? "SFTP" : "Local")}</span>
-      <strong></strong>
-      <small></small>
-    `;
-    item.querySelector("strong").textContent = `${storageConnectionLabel(connection)}${connection.default ? " · Default" : ""}`;
-    item.querySelector("small").textContent = connection.provider === "agent-native"
+    const badge = createTextElement("span", connection.badge || (connection.provider === "sftp" ? "SFTP" : "Local"));
+    const name = createTextElement("strong", `${storageConnectionLabel(connection)}${connection.default ? " · Default" : ""}`);
+    const detail = createTextElement("small", connection.provider === "agent-native"
       ? `${agentNode.agentIdentity?.operatingSystem || "Agent node"} · ${agentNode.agentUrl || "Agent API"}`
       : connection.provider === "sftp" || connection.type === "sftp"
       ? `${connection.username || "user"}@${connection.host || "host"}:${connection.port || 22} ${connection.rootDirectory || "/"}`
-      : "Local filesystem on the application host";
+      : "Local filesystem on the application host");
+    item.append(badge, name, detail);
     item.addEventListener("click", () => {
       selectedStorageId = connection.provider === "agent-native" ? "" : connection.id;
       filesSelectedProfileId = null;
@@ -16646,7 +16706,10 @@ function renderSshSessionTabs() {
     draftTab.type = "button";
     draftTab.role = "tab";
     draftTab.setAttribute("aria-selected", "true");
-    draftTab.innerHTML = "<strong>New Session</strong><span>Select a profile and connect.</span>";
+    draftTab.append(
+      createTextElement("strong", "New Session"),
+      createTextElement("span", "Select a profile and connect."),
+    );
     sshSessionTabs.appendChild(draftTab);
   } else {
     sessions.forEach((session) => {
@@ -16689,7 +16752,10 @@ function renderSshSessionTabs() {
   addTab.type = "button";
   addTab.role = "tab";
   addTab.setAttribute("aria-selected", activeSshSessionId === null ? "true" : "false");
-  addTab.innerHTML = "<strong>New Session</strong><span>Open another connection</span>";
+  addTab.append(
+    createTextElement("strong", "New Session"),
+    createTextElement("span", "Open another connection"),
+  );
   addTab.disabled = sshProfilesState.profiles.length === 0;
   addTab.addEventListener("click", () => {
     activeSshSessionId = null;
@@ -17592,8 +17658,11 @@ function formatSecurityTime(value) {
   return value ? formatDateTime(value) : "Not reported";
 }
 
-function createSecurityBadge(text, tone = text) {
-  return `<span class="${securityPillClass(tone)}">${escapeHtml(formatSecurityValue(text))}</span>`;
+function createSecurityBadgeElement(text, tone = text) {
+  const badge = document.createElement("span");
+  badge.className = securityPillClass(tone);
+  badge.textContent = formatSecurityValue(text);
+  return badge;
 }
 
 function renderSecurityDashboard() {
@@ -17614,7 +17683,10 @@ function renderSecurityDashboard() {
       ["Agent token", dashboard?.overview?.agentTokenStatus],
       ["Warnings", dashboard?.overview?.unresolvedWarnings],
     ];
-    overview.innerHTML = fields.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatSecurityValue(value, "Loading"))}</strong></div>`).join("");
+    overview.replaceChildren();
+    fields.forEach(([label, value]) => {
+      appendDetailPair(overview, label, formatSecurityValue(value, "Loading"));
+    });
   }
   if (lastEvent) {
     const event = dashboard?.overview?.lastSecurityEvent;
@@ -17632,25 +17704,41 @@ function renderSecurityDashboard() {
 function renderSecurityRecommendations(items) {
   const container = document.querySelector("[data-security-recommendations]");
   if (!container) return;
+  container.replaceChildren();
   if (!items.length) {
-    container.innerHTML = '<div class="security-empty-state">No supported security recommendations right now.</div>';
+    container.appendChild(createEmptyState("No supported security recommendations right now."));
     return;
   }
-  container.innerHTML = items.map((item) => `
-    <article class="security-list-item">
-      <div class="security-card-row">
-        <div>
-          <strong>${escapeHtml(item.title || "Recommendation")}</strong>
-          <p>${escapeHtml(item.explanation || "Review this security item.")}</p>
-        </div>
-        ${createSecurityBadge(item.severity || "info", item.severity || "info")}
-      </div>
-      <div class="settings-actions">
-        <button class="inline-action" type="button" data-security-recommendation="${escapeHtml(item.id || "")}">${escapeHtml(item.action || "Review")}</button>
-        ${item.dismissible ? `<button class="inline-action" type="button" data-security-dismiss-recommendation="${escapeHtml(item.id || "")}">Dismiss</button>` : ""}
-      </div>
-    </article>
-  `).join("");
+  items.forEach((item) => {
+    const article = document.createElement("article");
+    article.className = "security-list-item";
+    const row = document.createElement("div");
+    row.className = "security-card-row";
+    const body = document.createElement("div");
+    body.append(
+      createTextElement("strong", item.title || "Recommendation"),
+      createTextElement("p", item.explanation || "Review this security item."),
+    );
+    row.append(body, createSecurityBadgeElement(item.severity || "info", item.severity || "info"));
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    const review = document.createElement("button");
+    review.className = "inline-action";
+    review.type = "button";
+    review.dataset.securityRecommendation = String(item.id || "");
+    review.textContent = item.action || "Review";
+    actions.appendChild(review);
+    if (item.dismissible) {
+      const dismiss = document.createElement("button");
+      dismiss.className = "inline-action";
+      dismiss.type = "button";
+      dismiss.dataset.securityDismissRecommendation = String(item.id || "");
+      dismiss.textContent = "Dismiss";
+      actions.appendChild(dismiss);
+    }
+    article.append(row, actions);
+    container.appendChild(article);
+  });
 }
 
 function scrollSecuritySection(selector, focusSelector = null) {
@@ -17669,7 +17757,7 @@ function dismissSecurityRecommendation(id) {
   button?.closest(".security-list-item")?.remove();
   const container = document.querySelector("[data-security-recommendations]");
   if (container && !container.querySelector(".security-list-item")) {
-    container.innerHTML = '<div class="security-empty-state">No supported security recommendations right now.</div>';
+    container.replaceChildren(createEmptyState("No supported security recommendations right now."));
   }
   showToast("Recommendation dismissed.");
 }
@@ -17718,44 +17806,79 @@ async function handleSecurityRecommendation(id) {
 function renderSecuritySessions(sessions) {
   const tbody = document.querySelector("[data-security-sessions]");
   if (!tbody) return;
+  tbody.replaceChildren();
   if (!sessions.length) {
-    tbody.innerHTML = '<tr><td colspan="5">No active sessions reported.</td></tr>';
+    const row = document.createElement("tr");
+    const cell = createTextElement("td", "No active sessions reported.");
+    cell.colSpan = 5;
+    row.appendChild(cell);
+    tbody.appendChild(row);
     return;
   }
-  tbody.innerHTML = sessions.map((session) => `
-    <tr>
-      <td><strong>${escapeHtml(session.deviceName || "Unknown device")}</strong><br><span class="security-event-meta">${escapeHtml(session.operatingSystem || "Unavailable")} · ${escapeHtml(session.ipAddress || "Unavailable")}</span></td>
-      <td>${escapeHtml(formatSecurityTime(session.lastActiveAt))}</td>
-      <td>${escapeHtml(formatSecurityTime(session.createdAt))}</td>
-      <td>${createSecurityBadge(session.current ? "Current" : session.trusted ? "Trusted" : "Untrusted", session.current || session.trusted ? "trusted" : "untrusted")}</td>
-      <td>${session.current || session.runtimeOnly ? '<span class="security-event-meta">Current session</span>' : `<button class="inline-action" type="button" data-security-revoke-session="${escapeHtml(session.id)}">Revoke</button>`}</td>
-    </tr>
-  `).join("");
+  sessions.forEach((session) => {
+    const row = document.createElement("tr");
+    const deviceCell = document.createElement("td");
+    deviceCell.append(
+      createTextElement("strong", session.deviceName || "Unknown device"),
+      document.createElement("br"),
+      createTextElement("span", `${session.operatingSystem || "Unavailable"} · ${session.ipAddress || "Unavailable"}`, "security-event-meta"),
+    );
+    const lastActive = createTextElement("td", formatSecurityTime(session.lastActiveAt));
+    const created = createTextElement("td", formatSecurityTime(session.createdAt));
+    const status = document.createElement("td");
+    status.appendChild(createSecurityBadgeElement(session.current ? "Current" : session.trusted ? "Trusted" : "Untrusted", session.current || session.trusted ? "trusted" : "untrusted"));
+    const action = document.createElement("td");
+    if (session.current || session.runtimeOnly) {
+      action.appendChild(createTextElement("span", "Current session", "security-event-meta"));
+    } else {
+      const revoke = document.createElement("button");
+      revoke.className = "inline-action";
+      revoke.type = "button";
+      revoke.dataset.securityRevokeSession = String(session.id || "");
+      revoke.textContent = "Revoke";
+      action.appendChild(revoke);
+    }
+    row.append(deviceCell, lastActive, created, status, action);
+    tbody.appendChild(row);
+  });
 }
 
 function renderSecurityTrustedDevices(devices) {
   const container = document.querySelector("[data-security-trusted-devices]");
   if (!container) return;
+  container.replaceChildren();
   if (!devices.length) {
-    container.innerHTML = '<div class="security-empty-state">No trusted devices reported.</div>';
+    container.appendChild(createEmptyState("No trusted devices reported."));
     return;
   }
-  container.innerHTML = devices.map((device) => `
-    <article class="security-list-item">
-      <div class="security-card-row">
-        <div>
-          <strong>${escapeHtml(device.name || "Unnamed device")}</strong>
-          <p>${escapeHtml(device.platform || "Unavailable")} · First seen ${escapeHtml(formatSecurityTime(device.firstSeen))} · Last seen ${escapeHtml(formatSecurityTime(device.lastSeen))}</p>
-          <p>Trust expiration: ${escapeHtml(formatSecurityTime(device.trustExpiresAt))}</p>
-        </div>
-        ${createSecurityBadge(device.current ? "Current" : device.trusted ? "Trusted" : "Untrusted", device.current || device.trusted ? "trusted" : "untrusted")}
-      </div>
-      <div class="settings-actions">
-        <button class="inline-action" type="button" data-security-rename-device="${escapeHtml(device.id)}">Rename</button>
-        <button class="inline-action" type="button" data-security-remove-device="${escapeHtml(device.id)}">Remove Trust</button>
-      </div>
-    </article>
-  `).join("");
+  devices.forEach((device) => {
+    const article = document.createElement("article");
+    article.className = "security-list-item";
+    const row = document.createElement("div");
+    row.className = "security-card-row";
+    const body = document.createElement("div");
+    body.append(
+      createTextElement("strong", device.name || "Unnamed device"),
+      createTextElement("p", `${device.platform || "Unavailable"} · First seen ${formatSecurityTime(device.firstSeen)} · Last seen ${formatSecurityTime(device.lastSeen)}`),
+      createTextElement("p", `Trust expiration: ${formatSecurityTime(device.trustExpiresAt)}`),
+    );
+    row.append(body, createSecurityBadgeElement(device.current ? "Current" : device.trusted ? "Trusted" : "Untrusted", device.current || device.trusted ? "trusted" : "untrusted"));
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    const rename = document.createElement("button");
+    rename.className = "inline-action";
+    rename.type = "button";
+    rename.dataset.securityRenameDevice = String(device.id || "");
+    rename.textContent = "Rename";
+    const remove = document.createElement("button");
+    remove.className = "inline-action";
+    remove.type = "button";
+    remove.dataset.securityRemoveDevice = String(device.id || "");
+    remove.textContent = "Remove Trust";
+    actions.append(rename, remove);
+    article.append(row, actions);
+    container.appendChild(article);
+  });
 }
 
 function renderSecurityRemoteAccess(remote) {
@@ -17798,7 +17921,10 @@ function renderSecurityToken(token) {
       ["Scope", token?.scope],
       ["Associated agent", token?.associatedDevice],
     ];
-    details.innerHTML = fields.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(formatSecurityValue(value))}</strong></div>`).join("");
+    details.replaceChildren();
+    fields.forEach(([label, value]) => {
+      appendDetailPair(details, label, formatSecurityValue(value));
+    });
   }
 }
 
@@ -17822,27 +17948,31 @@ function renderSecurityAuthentication(auth) {
 function renderSecurityEvents() {
   const container = document.querySelector("[data-security-events]");
   if (!container) return;
+  container.replaceChildren();
   if (securityEventsCleared) {
-    container.innerHTML = '<div class="security-empty-state">Local event display cleared. Refresh to reload from the audit log.</div>';
+    container.appendChild(createEmptyState("Local event display cleared. Refresh to reload from the audit log."));
     return;
   }
   const events = (securityDashboardState?.events || []).filter((event) => securityEventFilter === "all" || event.category === securityEventFilter);
   if (!events.length) {
-    container.innerHTML = '<div class="security-empty-state">No matching security events reported.</div>';
+    container.appendChild(createEmptyState("No matching security events reported."));
     return;
   }
-  container.innerHTML = events.map((event) => `
-    <details class="security-list-item">
-      <summary class="security-card-row">
-        <div>
-          <strong>${escapeHtml(event.type || "security.event")}</strong>
-          <p>${escapeHtml(formatSecurityTime(event.timestamp))} · ${escapeHtml(event.actor?.username || "System")} · ${escapeHtml(event.device || "This device")}</p>
-        </div>
-        ${createSecurityBadge(event.result || "ok", event.result || "ok")}
-      </summary>
-      <pre class="security-event-meta">${escapeHtml(JSON.stringify(event.details || {}, null, 2))}</pre>
-    </details>
-  `).join("");
+  events.forEach((event) => {
+    const details = document.createElement("details");
+    details.className = "security-list-item";
+    const summary = document.createElement("summary");
+    summary.className = "security-card-row";
+    const body = document.createElement("div");
+    body.append(
+      createTextElement("strong", event.type || "security.event"),
+      createTextElement("p", `${formatSecurityTime(event.timestamp)} · ${event.actor?.username || "System"} · ${event.device || "This device"}`),
+    );
+    summary.append(body, createSecurityBadgeElement(event.result || "ok", event.result || "ok"));
+    const pre = createTextElement("pre", JSON.stringify(event.details || {}, null, 2), "security-event-meta");
+    details.append(summary, pre);
+    container.appendChild(details);
+  });
 }
 
 async function refreshSecurityState() {
@@ -18263,16 +18393,17 @@ function createAgentRobotIcon(state = "offline") {
   const icon = document.createElement("span");
   icon.className = `agent-robot-icon agent-robot-icon--${state}`;
   icon.setAttribute("aria-hidden", "true");
-  icon.innerHTML = `
-    <svg viewBox="0 0 24 24" focusable="false">
-      <rect x="6" y="8" width="12" height="10" rx="3"></rect>
-      <path d="M12 5v3"></path>
-      <path d="M8 13h.01"></path>
-      <path d="M16 13h.01"></path>
-      <path d="M10 16h4"></path>
-      <path d="M4 12h2"></path>
-      <path d="M18 12h2"></path>
-    </svg>`;
+  const svg = createSvgElement("svg", { viewBox: "0 0 24 24", focusable: "false" });
+  svg.append(
+    createSvgElement("rect", { x: 6, y: 8, width: 12, height: 10, rx: 3 }),
+    createSvgElement("path", { d: "M12 5v3" }),
+    createSvgElement("path", { d: "M8 13h.01" }),
+    createSvgElement("path", { d: "M16 13h.01" }),
+    createSvgElement("path", { d: "M10 16h4" }),
+    createSvgElement("path", { d: "M4 12h2" }),
+    createSvgElement("path", { d: "M18 12h2" }),
+  );
+  icon.appendChild(svg);
   return icon;
 }
 

@@ -9,7 +9,7 @@ const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
 const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 
-const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "security", "owner-workspace", "agent-control", "nodes", "settings"];
+const expectedPages = ["dashboard", "amp", "playit", "coolpals", "docker", "marketplace", "instances", "ssh", "files", "console", "backups", "operations", "security", "owner-workspace", "agent-control", "nodes", "settings"];
 expectedPages.forEach((page) => assert(index.includes(`data-page="${page}"`), `Missing workspace root: ${page}`));
 
 function pageMarkup(page) {
@@ -72,6 +72,12 @@ assert(app.includes("agentControlLastRuntimeSnapshot"), "Agent Control must pres
 assert(!app.includes('"Service managed"'), "Agent Control must not render Service managed as the primary process value.");
 assert(styles.includes(".agent-overview-actions .primary-button:disabled"), "Disabled lifecycle buttons must not keep the active primary styling.");
 assert(styles.includes(".node-card__actions") && styles.includes(".node-details-drawer") && styles.includes("@keyframes nodeDrawerIn"), "Nodes polish CSS must include compact cards, drawer, and subtle animation.");
+assert(pageMarkup("operations").includes("data-operation-list") && pageMarkup("operations").includes('data-operation-filter="running"'), "Operations Center must expose filterable operation history.");
+assert(pageMarkup("operations").includes('data-operation-action="clear-completed"') && pageMarkup("operations").includes("data-operation-detail"), "Operations Center must expose history cleanup and details.");
+assert(app.includes("function startOperation") && app.includes("function updateOperation") && app.includes("function renderOperationsCenter"), "Renderer must own centralized operation tracking.");
+assert(app.includes("updateMarketplaceOperationFromEvent") && app.includes("activeMarketplaceOperationId"), "Marketplace installs must feed the Operations Center from real progress events.");
+assert(app.includes("operationId = startOperation") && app.includes("fileTransfers.set(id"), "File transfers and subsystem actions must create Operations Center entries.");
+assert(styles.includes(".operations-shell") && styles.includes("@keyframes operationIndeterminate"), "Operations Center CSS must include page layout and indeterminate progress styling.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

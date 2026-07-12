@@ -2201,6 +2201,12 @@ h3 {
   background: linear-gradient(90deg, var(--accent), #62e0ff);
 }
 
+.transfer-progress.is-indeterminate span,
+.operation-progress.is-indeterminate span {
+  width: 42%;
+  animation: operationIndeterminate 1.1s ease-in-out infinite;
+}
+
 .transfer-item .inline-action {
   justify-self: start;
   min-height: 28px;
@@ -2214,6 +2220,199 @@ h3 {
 
 .transfer-item.is-failed .transfer-progress span {
   background: linear-gradient(90deg, #ff5c7a, #ff9b6a);
+}
+
+.operations-shell,
+.operations-list-panel,
+.operations-detail-panel,
+.operation-list,
+.operation-detail {
+  display: grid;
+  gap: 12px;
+}
+
+.operations-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.operations-summary-card,
+.operations-list-panel,
+.operations-detail-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: var(--shadow-soft);
+}
+
+.operations-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+}
+
+.operations-summary-card div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.operations-summary-card span:not(.service-icon) {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.operations-summary-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-toolbar,
+.operations-panel-header,
+.operation-item__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.operations-toolbar {
+  flex-wrap: wrap;
+}
+
+.operations-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.operations-list-panel,
+.operations-detail-panel {
+  padding: 14px;
+  min-width: 0;
+}
+
+.operations-panel-header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.operation-list {
+  max-height: min(62vh, 680px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.operation-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.operation-item.is-selected {
+  border-color: rgba(182, 108, 255, 0.42);
+  background: rgba(182, 108, 255, 0.11);
+}
+
+.operation-item__main {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.operation-item__main strong,
+.operation-item__main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-item__main small,
+.operation-detail span {
+  color: var(--muted);
+}
+
+.operation-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.operation-progress span {
+  display: block;
+  height: 100%;
+  width: var(--operation-progress, 0%);
+  background: linear-gradient(90deg, var(--accent), #62e0ff);
+}
+
+.operation-item[data-status="completed"] .operation-progress span {
+  background: linear-gradient(90deg, #38d996, #62e0ff);
+}
+
+.operation-item[data-status="failed"] .operation-progress span,
+.operation-detail__error {
+  color: #ff8fa3;
+}
+
+.operation-item[data-status="failed"] .operation-progress span {
+  background: linear-gradient(90deg, #ff5c7a, #ff9b6a);
+}
+
+.operation-empty-state {
+  min-height: 160px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.operation-empty-state strong {
+  color: var(--text);
+}
+
+.operation-detail pre {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.24);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@keyframes operationIndeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
 }
 
 .storage-provider-picker {
@@ -10608,6 +10807,11 @@ button:disabled {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .operations-summary-grid,
+  .operations-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .settings-shell > .settings-section {
     grid-column: auto;
     grid-row: auto;
@@ -10632,6 +10836,17 @@ button:disabled {
   }
 
   .owner-log-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .operations-toolbar,
+  .operations-panel-header,
+  .operation-item__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .operation-item {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -259,6 +259,12 @@ const storageActiveName = document.querySelector("[data-storage-active-name]");
 const storageActivePath = document.querySelector("[data-storage-active-path]");
 const transferList = document.querySelector("[data-transfer-list]");
 const transferStatus = document.querySelector("[data-transfer-status]");
+const operationList = document.querySelector("[data-operation-list]");
+const operationDetail = document.querySelector("[data-operation-detail]");
+const operationDetailStatus = document.querySelector("[data-operation-detail-status]");
+const operationSummaryFields = document.querySelectorAll("[data-operations-summary]");
+const operationFilterButtons = document.querySelectorAll("[data-operation-filter]");
+const operationActionButtons = document.querySelectorAll("[data-operation-action]");
 const fileToolbar = filesPage?.querySelector(".file-toolbar");
 const filesDivider = filesPage?.querySelector("[data-files-divider]");
 const filesStorageDivider = filesPage?.querySelector('[data-files-resizer="storage"]');
@@ -534,6 +540,7 @@ let updateDownloadInFlight = false;
 let latestUpdateInfo = null;
 let downloadedUpdatePath = null;
 let updateUiState = null;
+let activeUpdateOperationId = null;
 let developerUpdateState = null;
 let developerUpdateBusy = false;
 let activeSettingsCategory = "general";
@@ -589,6 +596,7 @@ let marketplaceInstallProgressEvents = [];
 let marketplaceProgressRenderTimer = null;
 let marketplacePendingProgressSteps = null;
 let unsubscribeMarketplaceInstallProgress = null;
+let activeMarketplaceOperationId = null;
 let marketplaceLocalDownloadEntries = [];
 let marketplaceManualRecoveryState = null;
 let marketplaceProviderActive = "modrinth";
@@ -705,6 +713,12 @@ let selectedStorageId = "local";
 let filesAutoSelectedNodeId = null;
 let filesConnectPromise = null;
 const fileTransfers = new Map();
+const operationsState = {
+  items: new Map(),
+  filter: "all",
+  selectedId: null,
+  loaded: false,
+};
 let securityRequestInFlight = false;
 const filesConnectionState = {
   connected: false,
@@ -730,6 +744,7 @@ const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
 const FILES_STORAGE_WIDTH_STORAGE_KEY = "anxos.files.storageWidth.v1";
 const FILES_DETAILS_WIDTH_STORAGE_KEY = "anxos.files.detailsWidth.v1";
 const FILES_EDITOR_PREFS_STORAGE_KEY = "anxos.files.editorPrefs.v1";
+const OPERATIONS_STORAGE_KEY = "anxos.operations.history.v1";
 const INSTANCE_TAB_STORAGE_KEY = "anxos.instances.activeTab.v1";
 const LAST_PAGE_STORAGE_KEY = "anxos.navigation.lastPage.v1";
 const LAST_INSTANCE_STORAGE_KEY = "anxos.instances.lastSelected.v1";
@@ -748,6 +763,7 @@ const PRIMARY_NAVIGATION_ORDER = [
   "playit",
   "console",
   "backups",
+  "operations",
   "security",
   "agent-control",
   "nodes",
@@ -2966,6 +2982,7 @@ async function runDependencyAction(action) {
     ],
   };
   dependencyButtons.forEach((button) => { button.disabled = true; });
+  let operationId = null;
   try {
     if (action === "install") {
       if (!(await createSecurityConfirmation({
@@ -2975,6 +2992,12 @@ async function runDependencyAction(action) {
       }))) {
         return;
       }
+      operationId = startOperation({
+        type: "Dependencies",
+        title: "Install missing dependencies",
+        target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
+        step: "Preparing trusted dependency installation.",
+      });
       if (dependencyStatus) dependencyStatus.textContent = "Installing";
       const installResult = await desktopApiState.api.dependencies.install(payload);
       if (installResult?.ok === false) {
@@ -2983,9 +3006,16 @@ async function runDependencyAction(action) {
         });
       }
       renderDependencyStatus(installResult);
+      finishOperation(operationId, true, "Dependency preparation complete.");
       showToast("Dependency preparation complete.");
       return;
     }
+    operationId = startOperation({
+      type: "Dependencies",
+      title: "Check host dependencies",
+      target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
+      step: "Checking installed runtimes and tools.",
+    });
     if (dependencyStatus) {
       dependencyStatus.textContent = "Checking";
       dependencyStatus.className = "status-pill status-pill--planned";
@@ -2997,12 +3027,14 @@ async function runDependencyAction(action) {
       });
     }
     renderDependencyStatus(check);
+    finishOperation(operationId, true, "Dependency check complete.");
   } catch (error) {
     if (dependencyStatus) {
       dependencyStatus.textContent = "Failed";
       dependencyStatus.className = "status-pill status-pill--critical";
     }
     showToast(error?.message || "Dependency request failed.");
+    finishOperation(operationId, false, error?.message || "Dependency request failed.");
     if (dependencyList) {
       const item = document.createElement("article");
       item.className = "download-item";
@@ -3162,6 +3194,32 @@ async function runAgentControlAction(action) {
     return;
   }
   agentControlBusy = true; renderAgentControlState();
+  const agentOperationLabels = {
+    reconnect: "Reconnect Agent",
+    repairAgent: "Repair local Agent",
+    checkUpdates: "Check Agent updates",
+    updateAgent: "Download Agent update",
+    rotateToken: "Rotate Agent token",
+    completeSetup: "Complete Agent setup",
+    saveConfig: "Save Agent configuration",
+    reloadConfig: "Reload Agent configuration",
+    restoreConfig: "Restore Agent configuration",
+    resetConfig: "Reset Agent configuration",
+    runDiagnostics: "Run Agent diagnostics",
+    refreshLogs: "Refresh Agent logs",
+    start: "Start local Agent",
+    stop: "Stop local Agent",
+    restart: "Restart local Agent",
+    forceRestart: "Force restart local Agent",
+    installService: "Install Agent service",
+    uninstallService: "Uninstall Agent service",
+  };
+  const operationId = startOperation({
+    type: "Agent",
+    title: agentOperationLabels[action] || `Agent ${action}`,
+    target: getAgentControlOverviewTarget()?.identity?.hostname || "Local Agent",
+    step: "Request sent to Agent Control.",
+  });
   try {
     if (action === "reconnect") await testAgentConnection({ silent: false });
     else if (action === "repairAgent") { try { await api.uninstallService(); } catch {} await api.installService(); if (!(await api.status())?.running) await api.start(); }
@@ -3192,8 +3250,9 @@ async function runAgentControlAction(action) {
     else if (action === "runDiagnostics") renderAgentDiagnostics(await api.diagnostics());
     else if (action === "refreshLogs") await refreshAgentLogs();
     else if (typeof api[action] === "function") await api[action]();
+    finishOperation(operationId, true, "Agent operation completed.");
     showToast("Agent operation completed.", "success");
-  } catch (error) { const message = normalizeIpcErrorMessage(error, "Agent operation failed."); showToast(message, "error"); if (agentControlMessage) agentControlMessage.textContent = message; }
+  } catch (error) { const message = normalizeIpcErrorMessage(error, "Agent operation failed."); finishOperation(operationId, false, message); showToast(message, "error"); if (agentControlMessage) agentControlMessage.textContent = message; }
   finally { agentControlBusy = false; await refreshAgentControl(); }
 }
 
@@ -8267,6 +8326,23 @@ function marketplaceProgressEventToStep(event = {}) {
   };
 }
 
+function updateMarketplaceOperationFromEvent(event = {}) {
+  if (!activeMarketplaceOperationId) return;
+  const status = event.stage === "done"
+    ? "completed"
+    : event.stage === "error"
+      ? "failed"
+      : event.stage === "waiting"
+        ? "waiting"
+        : "running";
+  updateOperation(activeMarketplaceOperationId, {
+    status,
+    percent: clampPercent(event.percent),
+    step: event.message || event.stage || "Installing",
+    error: status === "failed" ? event.message || "Marketplace install failed." : "",
+  });
+}
+
 function collapseMarketplaceProgressSteps(steps = []) {
   const collapsed = [];
   const indexes = new Map();
@@ -8290,6 +8366,7 @@ function startMarketplaceInstallProgressListener() {
   marketplaceInstallProgressEvents = [];
   unsubscribeMarketplaceInstallProgress = desktopApiState.api.marketplace.onInstallProgress((event) => {
     marketplaceInstallProgressEvents = [...marketplaceInstallProgressEvents, event].slice(-8);
+    updateMarketplaceOperationFromEvent(event);
     scheduleMarketplaceProgressRender();
   });
 }
@@ -9228,6 +9305,7 @@ async function completeMarketplaceInstallResult(result, template, providerInstal
   forgetStaleInstanceId(selectedInstanceId);
   setMarketplaceInstallState("Complete", "complete");
   setMarketplaceMessage("Install complete. Opening the new instance.");
+  finishOperation(activeMarketplaceOperationId, true, `Installed ${template.displayName || template.id || "template"}.`);
   showToast("Template installed.");
   showPage("instances");
   await refreshInstances();
@@ -9266,6 +9344,11 @@ async function maybePrepareMarketplaceDependencies(normalizedError, template, op
 
   setMarketplaceInstallState("Preparing", "running");
   setMarketplaceMessage(`Installing node dependencies: ${dependencyList}.`, "warning");
+  updateOperation(activeMarketplaceOperationId, {
+    type: "Marketplace",
+    status: "running",
+    step: `Preparing dependencies: ${dependencyList}.`,
+  });
   renderMarketplaceProgress([
     { label: "Prepare node", status: "running", detail: `Installing ${dependencyList}.` },
   ]);
@@ -9277,6 +9360,10 @@ async function maybePrepareMarketplaceDependencies(normalizedError, template, op
     throw new Error(installResult?.error?.message || "Dependency installation failed.");
   }
   setMarketplaceMessage("Dependencies installed. Retrying template install.");
+  updateOperation(activeMarketplaceOperationId, {
+    status: "running",
+    step: "Dependencies installed. Retrying install.",
+  });
   const retryResult = providerInstall
     ? await desktopApiState.api.marketplace.installPack({
       templateId: template.id,
@@ -9336,8 +9423,14 @@ async function installMarketplaceTemplate(event) {
     return;
   }
 
-  marketplaceInstallInFlight = true;
   const requestContext = createNodeActionContext("marketplace-install");
+  marketplaceInstallInFlight = true;
+  activeMarketplaceOperationId = startOperation({
+    type: "Marketplace",
+    title: `Install ${template.displayName || template.id || "template"}`,
+    target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
+    step: `Sending install request for ${template.id}.`,
+  });
   marketplaceLocalDownloadEntries = [];
   setMarketplaceManualRecoveryState(null);
   if (marketplaceInstallButton) {
@@ -9381,6 +9474,10 @@ async function installMarketplaceTemplate(event) {
       forgetStaleInstanceId(selectedInstanceId);
       setMarketplaceInstallState("Paused", "waiting");
       setMarketplaceMessage("Install paused. See Download Manager.", "warning");
+      updateOperation(activeMarketplaceOperationId, {
+        status: "waiting",
+        step: "Waiting for a required manual download.",
+      });
       showToast("A required modpack file needs manual download.");
       return;
     }
@@ -9394,6 +9491,11 @@ async function installMarketplaceTemplate(event) {
     } catch (prepareError) {
       const preparedError = normalizeMarketplaceError(prepareError, "Dependency preparation failed.");
       setMarketplaceInstallState("Failed", "failed");
+      updateOperation(activeMarketplaceOperationId, {
+        status: "failed",
+        step: preparedError.title,
+        error: preparedError.body,
+      });
       renderMarketplaceProgress([
         {
           label: preparedError.title,
@@ -9410,6 +9512,11 @@ async function installMarketplaceTemplate(event) {
       ? normalizedError.details.childTaskState
       : [];
     setMarketplaceInstallState("Failed", "failed");
+    updateOperation(activeMarketplaceOperationId, {
+      status: "failed",
+      step: normalizedError.title,
+      error: normalizedError.body,
+    });
     setMarketplaceManualRecoveryState(null);
     if (failureDownloads.length > 0) {
       marketplaceLocalDownloadEntries = [];
@@ -9435,6 +9542,7 @@ async function installMarketplaceTemplate(event) {
     }
     stopMarketplaceInstallProgressListener();
     marketplaceInstallInFlight = false;
+    activeMarketplaceOperationId = null;
     if (marketplaceInstallButton) {
       marketplaceInstallButton.disabled = false;
     }
@@ -10793,6 +10901,332 @@ function storageConnectionLabel(connection) {
   return connection?.name || connection?.displayName || connection?.id || "Storage";
 }
 
+function clampPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : null;
+}
+
+function redactOperationText(value) {
+  return String(value ?? "")
+    .replace(/(Bearer|token|password|api[_-]?key|secret)=?\s*[^\s,;]+/gi, "$1=[redacted]")
+    .replace(/(Authorization:\s*)[^\n]+/gi, "$1[redacted]")
+    .replace(/([A-Za-z]:\\Users\\)[^\\\n]+/g, "$1[redacted]")
+    .replace(/\/home\/[^/\n]+/g, "/home/[redacted]")
+    .slice(0, 1200);
+}
+
+function operationStatusLabel(status) {
+  return {
+    queued: "Queued",
+    running: "Running",
+    waiting: "Waiting",
+    completed: "Completed",
+    failed: "Failed",
+    canceled: "Canceled",
+  }[status] || "Running";
+}
+
+function normalizeOperationStatus(status) {
+  if (["queued", "running", "waiting", "completed", "failed", "canceled"].includes(status)) {
+    return status;
+  }
+  if (status === "complete" || status === "done" || status === "success") return "completed";
+  if (status === "cancelled") return "canceled";
+  if (status === "error") return "failed";
+  return "running";
+}
+
+function operationStatusTone(status) {
+  if (status === "completed") return "status-pill--ok";
+  if (status === "failed") return "status-pill--critical";
+  if (status === "canceled" || status === "waiting") return "status-pill--warning";
+  return "status-pill--planned";
+}
+
+function createOperationId(type = "operation") {
+  return `${type}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+}
+
+function serializeOperation(operation) {
+  return {
+    id: operation.id,
+    type: operation.type,
+    title: operation.title,
+    target: operation.target,
+    status: operation.status,
+    step: operation.step,
+    percent: operation.percent,
+    startedAt: operation.startedAt,
+    updatedAt: operation.updatedAt,
+    completedAt: operation.completedAt,
+    error: operation.error,
+    logs: Array.isArray(operation.logs) ? operation.logs.slice(-12) : [],
+  };
+}
+
+function persistOperationHistory() {
+  if (!operationsState.loaded) return;
+  try {
+    const history = [...operationsState.items.values()]
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .slice(0, 80)
+      .map(serializeOperation);
+    window.localStorage.setItem(OPERATIONS_STORAGE_KEY, JSON.stringify(history));
+  } catch {
+    // Operation history is non-critical and should never block runtime actions.
+  }
+}
+
+function loadOperationHistory() {
+  if (operationsState.loaded) return;
+  operationsState.loaded = true;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(OPERATIONS_STORAGE_KEY) || "[]");
+    if (!Array.isArray(parsed)) return;
+    parsed.slice(0, 80).forEach((entry) => {
+      if (!entry?.id || !entry?.title) return;
+      operationsState.items.set(entry.id, {
+        id: String(entry.id),
+        type: redactOperationText(entry.type || "Operation"),
+        title: redactOperationText(entry.title),
+        target: redactOperationText(entry.target || ""),
+        status: normalizeOperationStatus(entry.status),
+        step: redactOperationText(entry.step || ""),
+        percent: clampPercent(entry.percent),
+        startedAt: Number(entry.startedAt) || Date.now(),
+        updatedAt: Number(entry.updatedAt) || Date.now(),
+        completedAt: Number(entry.completedAt) || null,
+        error: entry.error ? redactOperationText(entry.error) : "",
+        logs: Array.isArray(entry.logs) ? entry.logs.slice(-12).map(redactOperationText) : [],
+      });
+    });
+  } catch {
+    window.localStorage.removeItem(OPERATIONS_STORAGE_KEY);
+  }
+}
+
+function appendOperationLog(operation, message) {
+  if (!operation || !message) return;
+  operation.logs = [...(operation.logs || []), `${new Date().toLocaleTimeString()} ${redactOperationText(message)}`].slice(-24);
+}
+
+function startOperation({ id, type = "Operation", title = "Operation", target = "", step = "Starting", percent = null, cancel = null } = {}) {
+  loadOperationHistory();
+  const operationId = id || createOperationId(type.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "operation");
+  const now = Date.now();
+  const existing = operationsState.items.get(operationId);
+  const operation = {
+    ...(existing || {}),
+    id: operationId,
+    type: redactOperationText(type),
+    title: redactOperationText(title),
+    target: redactOperationText(target),
+    status: "running",
+    step: redactOperationText(step),
+    percent: clampPercent(percent),
+    startedAt: existing?.startedAt || now,
+    updatedAt: now,
+    completedAt: null,
+    error: "",
+    cancel,
+    logs: existing?.logs || [],
+  };
+  appendOperationLog(operation, step);
+  operationsState.items.set(operationId, operation);
+  operationsState.selectedId = operationId;
+  renderOperationsCenter();
+  persistOperationHistory();
+  return operationId;
+}
+
+function updateOperation(id, patch = {}) {
+  loadOperationHistory();
+  const operation = operationsState.items.get(id);
+  if (!operation) return null;
+  if (patch.type) operation.type = redactOperationText(patch.type);
+  if (patch.title) operation.title = redactOperationText(patch.title);
+  if (patch.target !== undefined) operation.target = redactOperationText(patch.target);
+  if (patch.status) operation.status = normalizeOperationStatus(patch.status);
+  if (patch.step !== undefined) operation.step = redactOperationText(patch.step);
+  if (patch.percent !== undefined) operation.percent = clampPercent(patch.percent);
+  if (patch.error !== undefined) operation.error = redactOperationText(patch.error);
+  if (patch.cancel !== undefined) operation.cancel = patch.cancel;
+  operation.updatedAt = Date.now();
+  if (["completed", "failed", "canceled"].includes(operation.status)) {
+    operation.completedAt = operation.completedAt || operation.updatedAt;
+    operation.percent = operation.percent ?? (operation.status === "completed" ? 100 : null);
+    operation.cancel = null;
+  }
+  if (patch.log || patch.step || patch.error) {
+    appendOperationLog(operation, patch.log || patch.error || patch.step);
+  }
+  renderOperationsCenter();
+  persistOperationHistory();
+  return operation;
+}
+
+function finishOperation(id, ok, message) {
+  return updateOperation(id, {
+    status: ok ? "completed" : "failed",
+    percent: ok ? 100 : undefined,
+    step: message || (ok ? "Completed" : "Failed"),
+    error: ok ? "" : message || "Operation failed.",
+  });
+}
+
+function operationMatchesFilter(operation) {
+  const filter = operationsState.filter;
+  if (filter === "all") return true;
+  if (filter === "running") return ["queued", "running", "waiting"].includes(operation.status);
+  return operation.status === filter;
+}
+
+function createProgressBar(percent, status) {
+  const progress = document.createElement("div");
+  progress.className = "operation-progress";
+  if (percent === null && ["queued", "running", "waiting"].includes(status)) {
+    progress.classList.add("is-indeterminate");
+  }
+  const bar = document.createElement("span");
+  if (percent !== null) {
+    progress.style.setProperty("--operation-progress", `${percent}%`);
+  }
+  progress.append(bar);
+  return progress;
+}
+
+function renderOperationDetail(operation) {
+  if (!operationDetail) return;
+  operationDetail.replaceChildren();
+  if (!operation) {
+    if (operationDetailStatus) {
+      operationDetailStatus.textContent = "Idle";
+      operationDetailStatus.className = "status-pill status-pill--planned";
+    }
+    const title = document.createElement("strong");
+    title.textContent = "No operation selected";
+    const message = document.createElement("span");
+    message.textContent = "Select an operation to inspect its last known step, error reason, and sanitized log history.";
+    operationDetail.append(title, message);
+    return;
+  }
+  if (operationDetailStatus) {
+    operationDetailStatus.textContent = operationStatusLabel(operation.status);
+    operationDetailStatus.className = `status-pill ${operationStatusTone(operation.status)}`;
+  }
+  const title = document.createElement("strong");
+  title.textContent = operation.title;
+  const meta = document.createElement("span");
+  meta.textContent = `${operation.type}${operation.target ? ` · ${operation.target}` : ""}`;
+  const step = document.createElement("span");
+  step.textContent = operation.step || operationStatusLabel(operation.status);
+  operationDetail.append(title, meta, step);
+  if (operation.error) {
+    const error = document.createElement("span");
+    error.className = "operation-detail__error";
+    error.textContent = operation.error;
+    operationDetail.append(error);
+  }
+  const logs = document.createElement("pre");
+  logs.textContent = operation.logs?.length ? operation.logs.join("\n") : "No operation logs captured yet.";
+  operationDetail.append(logs);
+}
+
+function renderOperationsCenter() {
+  if (!operationList && !operationSummaryFields.length) return;
+  loadOperationHistory();
+  const operations = [...operationsState.items.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const runningCount = operations.filter((operation) => ["queued", "running", "waiting"].includes(operation.status)).length;
+  const completedCount = operations.filter((operation) => operation.status === "completed").length;
+  const failedCount = operations.filter((operation) => operation.status === "failed").length;
+  const lastOperation = operations[0] || null;
+  operationSummaryFields.forEach((field) => {
+    const key = field.dataset.operationsSummary;
+    if (key === "running") field.textContent = String(runningCount);
+    if (key === "completed") field.textContent = String(completedCount);
+    if (key === "failed") field.textContent = String(failedCount);
+    if (key === "total") field.textContent = `${operations.length} total`;
+    if (key === "last") field.textContent = lastOperation ? operationStatusLabel(lastOperation.status) : "No activity";
+  });
+  operationFilterButtons.forEach((button) => {
+    const active = button.dataset.operationFilter === operationsState.filter;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  if (!operationList) {
+    renderOperationDetail(operationsState.items.get(operationsState.selectedId));
+    return;
+  }
+  operationList.replaceChildren();
+  const visible = operations.filter(operationMatchesFilter);
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "operation-empty-state";
+    const title = document.createElement("strong");
+    title.textContent = operations.length ? "No operations match this filter" : "No operations recorded";
+    const message = document.createElement("span");
+    message.textContent = operations.length
+      ? "Change the filter to inspect other recent activity."
+      : "Marketplace installs, file transfers, Agent actions, diagnostics, updates, and backups will appear here when they run.";
+    empty.append(title, message);
+    operationList.append(empty);
+  } else {
+    visible.forEach((operation) => {
+      const item = document.createElement("article");
+      item.className = "operation-item";
+      item.classList.toggle("is-selected", operation.id === operationsState.selectedId);
+      item.dataset.status = operation.status;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "operation-item__main";
+      button.addEventListener("click", () => {
+        operationsState.selectedId = operation.id;
+        renderOperationsCenter();
+      });
+      const header = document.createElement("span");
+      header.className = "operation-item__header";
+      const title = document.createElement("strong");
+      title.textContent = operation.title;
+      const status = document.createElement("span");
+      status.className = `status-pill ${operationStatusTone(operation.status)}`;
+      status.textContent = operationStatusLabel(operation.status);
+      header.append(title, status);
+      const step = document.createElement("small");
+      step.textContent = operation.step || operation.target || operation.type;
+      button.append(header, step, createProgressBar(operation.percent, operation.status));
+      item.append(button);
+      if (operation.cancel && ["running", "queued", "waiting"].includes(operation.status)) {
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.className = "inline-action";
+        cancelButton.textContent = "Cancel";
+        cancelButton.addEventListener("click", () => cancelOperation(operation.id));
+        item.append(cancelButton);
+      }
+      operationList.append(item);
+    });
+  }
+  const selected = visible.find((operation) => operation.id === operationsState.selectedId) || visible[0] || null;
+  if (selected && selected.id !== operationsState.selectedId) operationsState.selectedId = selected.id;
+  renderOperationDetail(selected);
+}
+
+async function cancelOperation(id) {
+  const operation = operationsState.items.get(id);
+  if (!operation?.cancel) return;
+  updateOperation(id, { step: "Canceling", log: "Cancel requested by user." });
+  try {
+    if (operation.cancel.type === "file-transfer") {
+      await cancelFileTransfer(operation.cancel.transferId);
+    }
+  } catch (error) {
+    updateOperation(id, {
+      status: "failed",
+      error: normalizeIpcErrorMessage(error, "Cancel request failed."),
+    });
+  }
+}
+
 function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
   const selectedRemoteNode = selected ? null : getSelectedRemoteFilesNode();
@@ -10855,31 +11289,49 @@ function renderTransfers() {
     item.className = "transfer-item";
     item.classList.toggle("is-complete", transfer.status === "complete");
     item.classList.toggle("is-failed", transfer.status === "failed");
-    const percent = transfer.status === "complete" ? 100 : transfer.status === "failed" ? 100 : transfer.progress || 40;
-    item.innerHTML = `
-      <strong></strong>
-      <small></small>
-      <div class="transfer-progress"><span></span></div>
-      <button class="inline-action" type="button">Cancel</button>
-    `;
-    item.querySelector("strong").textContent = transfer.title;
-    item.querySelector("small").textContent = transfer.message;
-    item.querySelector(".transfer-progress").style.setProperty("--transfer-progress", `${percent}%`);
-    const cancelButton = item.querySelector("button");
+    const percent = transfer.status === "complete" ? 100 : clampPercent(transfer.progress);
+    const title = document.createElement("strong");
+    title.textContent = transfer.title;
+    const message = document.createElement("small");
+    message.textContent = transfer.message;
+    const progress = document.createElement("div");
+    progress.className = "transfer-progress";
+    if (percent === null && transfer.status === "running") {
+      progress.classList.add("is-indeterminate");
+    }
+    if (percent !== null) {
+      progress.style.setProperty("--transfer-progress", `${percent}%`);
+    }
+    progress.append(document.createElement("span"));
+    const cancelButton = document.createElement("button");
+    cancelButton.className = "inline-action";
+    cancelButton.type = "button";
+    cancelButton.textContent = "Cancel";
     cancelButton.hidden = transfer.status !== "running";
     cancelButton.addEventListener("click", () => cancelFileTransfer(transfer.id));
+    item.append(title, message, progress, cancelButton);
     transferList.append(item);
   });
 }
 
 function startFileTransfer(actionName, target) {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const title = `${actionName[0].toUpperCase()}${actionName.slice(1)}`;
+  const operationId = startOperation({
+    id: `file:${id}`,
+    type: "Files",
+    title,
+    target,
+    step: target || "Transfer started",
+    cancel: { type: "file-transfer", transferId: id },
+  });
   fileTransfers.set(id, {
     id,
     actionName,
+    operationId,
     status: "running",
-    progress: 35,
-    title: `${actionName[0].toUpperCase()}${actionName.slice(1)}`,
+    progress: null,
+    title,
     message: target || "Working...",
   });
   renderTransfers();
@@ -10892,6 +11344,7 @@ function finishFileTransfer(id, ok, message) {
   transfer.status = ok ? "complete" : "failed";
   transfer.progress = 100;
   transfer.message = message || (ok ? "Complete" : "Failed");
+  finishOperation(transfer.operationId, ok, transfer.message);
   renderTransfers();
 }
 
@@ -10901,12 +11354,17 @@ async function cancelFileTransfer(id) {
     return;
   }
   transfer.message = "Canceling...";
+  updateOperation(transfer.operationId, { step: "Canceling transfer", log: "Cancel requested." });
   renderTransfers();
   try {
     await getDesktopApiState().api.files.cancelTransfer(id);
   } catch (error) {
     transfer.status = "failed";
     transfer.message = error?.message || "Cancel failed";
+    updateOperation(transfer.operationId, {
+      status: "failed",
+      error: transfer.message,
+    });
     renderTransfers();
   }
 }
@@ -10932,6 +11390,12 @@ function updateFileTransferProgress(event = {}) {
     transfer.progress = 100;
     transfer.message = transfer.message || "Complete";
   }
+  updateOperation(transfer.operationId, {
+    status: event.status === "complete" ? "completed" : event.status === "failed" ? "failed" : transfer.status,
+    percent: transfer.progress,
+    step: transfer.message,
+    error: event.status === "failed" ? transfer.message : "",
+  });
   renderTransfers();
 }
 
@@ -17854,6 +18318,13 @@ function handleUpdateStatus(payload = {}) {
   if (payload.type === "download-started") {
     updateDownloadInFlight = true;
     latestUpdateInfo = payload.update || latestUpdateInfo;
+    activeUpdateOperationId = activeUpdateOperationId || startOperation({
+      type: "Updates",
+      title: "Download application update",
+      target: latestUpdateInfo?.latestVersion || "Latest release",
+      step: "Download started.",
+      percent: 0,
+    });
     setUpdateStatusMessage("Downloading update...");
     renderUpdateSurfaces(updateUiState);
     renderUpdateModal("downloading");
@@ -17863,6 +18334,12 @@ function handleUpdateStatus(payload = {}) {
 
   if (payload.type === "download-progress") {
     if (updateUiState) updateUiState.progress = payload.progress || updateUiState.progress;
+    updateOperation(activeUpdateOperationId, {
+      percent: payload.progress?.percent,
+      step: Number.isFinite(payload.progress?.receivedBytes) && Number.isFinite(payload.progress?.totalBytes)
+        ? `${formatBytes(payload.progress.receivedBytes)} of ${formatBytes(payload.progress.totalBytes)}`
+        : "Downloading update.",
+    });
     renderUpdateSurfaces(updateUiState);
     renderUpdateProgress(payload.progress || null);
     return;
@@ -17871,6 +18348,8 @@ function handleUpdateStatus(payload = {}) {
   if (payload.type === "downloaded") {
     updateDownloadInFlight = false;
     downloadedUpdatePath = payload.path || null;
+    finishOperation(activeUpdateOperationId, true, "Update downloaded.");
+    activeUpdateOperationId = null;
     setUpdateStatusMessage("Update downloaded. Open it when you are ready.");
     renderUpdateSurfaces(updateUiState);
     renderUpdateModal("downloaded");
@@ -17879,6 +18358,8 @@ function handleUpdateStatus(payload = {}) {
 
   if (payload.type === "download-error") {
     updateDownloadInFlight = false;
+    finishOperation(activeUpdateOperationId, false, payload.error || "Update download failed.");
+    activeUpdateOperationId = null;
     setUpdateStatusMessage("Update download failed.");
     renderUpdateSurfaces(updateUiState);
     renderUpdateModal("error");
@@ -17907,6 +18388,12 @@ async function checkForUpdates(options = {}) {
   }
 
   updateCheckInFlight = true;
+  const operationId = options.silent ? null : startOperation({
+    type: "Updates",
+    title: "Check for application updates",
+    step: "Contacting update service.",
+  });
+  let operationError = "";
   setUpdateStatusMessage("Checking for updates...");
 
   try {
@@ -17924,6 +18411,7 @@ async function checkForUpdates(options = {}) {
         showToast(result.message || "No update release is published yet.", "warning");
       }
     } else if (result?.error) {
+      operationError = result.error;
       updateUiState = {
         ...(updateUiState || {}),
         status: "error",
@@ -17957,6 +18445,7 @@ async function checkForUpdates(options = {}) {
     return result;
   } catch (error) {
     console.error("[Updates] Renderer check failed.", error);
+    operationError = error?.message || "Update check failed.";
     setUpdateStatusMessage("Update check failed.");
 
     if (!options.silent) {
@@ -17965,6 +18454,9 @@ async function checkForUpdates(options = {}) {
 
     return null;
   } finally {
+    if (operationId) {
+      finishOperation(operationId, !operationError, operationError || "Update check finished.");
+    }
     updateCheckInFlight = false;
   }
 }
@@ -17982,6 +18474,12 @@ async function downloadUpdate() {
   }
 
   updateDownloadInFlight = true;
+  activeUpdateOperationId = startOperation({
+    type: "Updates",
+    title: "Download application update",
+    target: latestUpdateInfo?.latestVersion || "Latest release",
+    step: "Starting download.",
+  });
   renderUpdateModal("downloading");
 
   try {
@@ -17990,6 +18488,8 @@ async function downloadUpdate() {
     if (result?.downloaded) {
       downloadedUpdatePath = result.path || null;
       updateUiState = result.state || updateUiState;
+      finishOperation(activeUpdateOperationId, true, "Update downloaded.");
+      activeUpdateOperationId = null;
       renderUpdateSurfaces(updateUiState);
       renderUpdateModal("downloaded");
     } else if (!result?.downloading) {
@@ -18000,6 +18500,8 @@ async function downloadUpdate() {
         latest: result?.state?.latest || latestUpdateInfo,
       };
       setUpdateStatusMessage(updateUiState.error);
+      finishOperation(activeUpdateOperationId, false, updateUiState.error);
+      activeUpdateOperationId = null;
       renderUpdateSurfaces(updateUiState);
       renderUpdateModal("error");
     }
@@ -18012,6 +18514,8 @@ async function downloadUpdate() {
       latest: latestUpdateInfo,
     };
     setUpdateStatusMessage(updateUiState.error);
+    finishOperation(activeUpdateOperationId, false, updateUiState.error);
+    activeUpdateOperationId = null;
     renderUpdateSurfaces(updateUiState);
     renderUpdateModal("error");
   } finally {
@@ -18907,6 +19411,28 @@ agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 agentSettingsPairButton?.addEventListener("click", pairAgentFromSettings);
 agentSettingsRepairButton?.addEventListener("click", focusAgentPairingRepair);
 marketplaceConfigSaveButton?.addEventListener("click", saveMarketplaceConfiguration);
+operationFilterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    operationsState.filter = button.dataset.operationFilter || "all";
+    renderOperationsCenter();
+  });
+});
+operationActionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    if (button.dataset.operationAction !== "clear-completed") return;
+    loadOperationHistory();
+    [...operationsState.items.entries()].forEach(([id, operation]) => {
+      if (["completed", "failed", "canceled"].includes(operation.status)) {
+        operationsState.items.delete(id);
+      }
+    });
+    if (!operationsState.items.has(operationsState.selectedId)) {
+      operationsState.selectedId = null;
+    }
+    renderOperationsCenter();
+    persistOperationHistory();
+  });
+});
 document.querySelectorAll("[data-update-action]").forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.updateAction;
@@ -19236,25 +19762,56 @@ document.querySelectorAll("[data-diagnostics-action]").forEach((button) => butto
   const api = getDesktopApiState().api?.diagnostics;
   if (!api) return;
   button.disabled = true;
-  try { const action = button.dataset.diagnosticsAction; if (action === "capture") await api.capture({ currentWorkspace: getActivePageName() }); if (action === "open") await api.openFolder(); if (action === "copy") await api.copySummary(); if (action === "export") await api.exportBundle(); showToast("Diagnostic action completed.", "success"); }
-  catch (error) { showToast(normalizeIpcErrorMessage(error, "Diagnostic action failed."), "error"); }
+  const action = button.dataset.diagnosticsAction;
+  const operationId = startOperation({
+    type: "Diagnostics",
+    title: {
+      capture: "Capture diagnostics snapshot",
+      open: "Open logs folder",
+      copy: "Copy diagnostics summary",
+      export: "Export diagnostics bundle",
+    }[action] || "Run diagnostics action",
+    target: getActivePageName(),
+    step: "Running diagnostics action.",
+  });
+  try { if (action === "capture") await api.capture({ currentWorkspace: getActivePageName() }); if (action === "open") await api.openFolder(); if (action === "copy") await api.copySummary(); if (action === "export") await api.exportBundle(); finishOperation(operationId, true, "Diagnostic action completed."); showToast("Diagnostic action completed.", "success"); }
+  catch (error) { const message = normalizeIpcErrorMessage(error, "Diagnostic action failed."); finishOperation(operationId, false, message); showToast(message, "error"); }
   finally { button.disabled = false; }
 }));
 backupActionButtons.forEach((button) => {
-  button.addEventListener("click", () => {
+  button.addEventListener("click", async () => {
     const action = button.dataset.backupAction;
-    if (action === "refresh") {
-      refreshBackups();
-    } else if (action === "create") {
-      createBackupForInstance();
-    } else if (action === "restore") {
-      restoreSelectedBackup();
-    } else if (action === "delete") {
-      deleteSelectedBackup();
-    } else if (action === "download") {
-      downloadSelectedBackup();
-    } else if (action === "import") {
-      importBackupForInstance();
+    const operationId = action === "refresh" ? null : startOperation({
+      type: "Backups",
+      title: {
+        create: "Create backup",
+        restore: "Restore backup",
+        delete: "Delete backup",
+        download: "Download backup",
+        import: "Import backup",
+      }[action] || "Run backup action",
+      target: selectedInstanceId || "Selected instance",
+      step: "Backup request started.",
+    });
+    try {
+      if (action === "refresh") {
+        await refreshBackups();
+      } else if (action === "create") {
+        await createBackupForInstance();
+      } else if (action === "restore") {
+        await restoreSelectedBackup();
+      } else if (action === "delete") {
+        await deleteSelectedBackup();
+      } else if (action === "download") {
+        await downloadSelectedBackup();
+      } else if (action === "import") {
+        await importBackupForInstance();
+      }
+      if (operationId) finishOperation(operationId, true, "Backup action completed.");
+    } catch (error) {
+      const message = normalizeIpcErrorMessage(error, "Backup action failed.");
+      if (operationId) finishOperation(operationId, false, message);
+      showToast(message, "error");
     }
   });
 });
@@ -19264,6 +19821,7 @@ windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaxi
 syncTitlebarWindowState();
 configurePrimaryNavigation();
 loadSettings();
+renderOperationsCenter();
 refreshAccountState();
 refreshSecurityState();
 refreshNodes();

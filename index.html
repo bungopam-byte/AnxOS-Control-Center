@@ -275,6 +275,18 @@
             </span>
             <span class="nav-item__label" data-nav-label>Backups</span>
           </button>
+          <button class="nav-item" type="button" data-page-target="operations" data-page-label="Operations" data-tooltip="Operations" aria-label="Operations">
+            <span class="nav-item__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="4" y="5" width="16" height="14" rx="2"></rect>
+                <path d="M8 9h8"></path>
+                <path d="M8 13h5"></path>
+                <path d="M8 17h3"></path>
+                <path d="M16 15.5 18 17.5 21 14"></path>
+              </svg>
+            </span>
+            <span class="nav-item__label" data-nav-label>Operations</span>
+          </button>
           <button class="nav-item" type="button" data-page-target="security" data-page-label="Security" data-tooltip="Security" aria-label="Security">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -2309,6 +2321,80 @@
                   <button class="inline-action" type="button" data-backup-action="restore" disabled>Restore Selected</button>
                   </div>
                 </section>
+              </aside>
+            </div>
+          </section>
+        </section>
+
+        <section class="page" data-page="operations">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Runtime Work</p>
+              <h1>Operations</h1>
+              <p class="lede">Live and recent desktop work from Marketplace installs, runtime preparation, file transfers, Agent actions, diagnostics, updates, and backups.</p>
+            </div>
+          </header>
+
+          <section class="operations-shell" aria-label="Operations center">
+            <div class="operations-summary-grid">
+              <article class="operations-summary-card">
+                <span class="service-icon">RUN</span>
+                <div>
+                  <span>Running</span>
+                  <strong data-operations-summary="running">0</strong>
+                </div>
+              </article>
+              <article class="operations-summary-card">
+                <span class="service-icon">DONE</span>
+                <div>
+                  <span>Completed</span>
+                  <strong data-operations-summary="completed">0</strong>
+                </div>
+              </article>
+              <article class="operations-summary-card">
+                <span class="service-icon">ERR</span>
+                <div>
+                  <span>Needs Attention</span>
+                  <strong data-operations-summary="failed">0</strong>
+                </div>
+              </article>
+              <article class="operations-summary-card">
+                <span class="service-icon">LAST</span>
+                <div>
+                  <span>Last Activity</span>
+                  <strong data-operations-summary="last">No activity</strong>
+                </div>
+              </article>
+            </div>
+
+            <div class="operations-toolbar">
+              <div class="segmented-control" aria-label="Filter operations">
+                <button class="inline-action is-active" type="button" data-operation-filter="all" aria-pressed="true">All</button>
+                <button class="inline-action" type="button" data-operation-filter="running" aria-pressed="false">Running</button>
+                <button class="inline-action" type="button" data-operation-filter="failed" aria-pressed="false">Failed</button>
+                <button class="inline-action" type="button" data-operation-filter="completed" aria-pressed="false">Completed</button>
+              </div>
+              <button class="inline-action" type="button" data-operation-action="clear-completed">Clear Completed</button>
+            </div>
+
+            <div class="operations-workspace">
+              <section class="operations-list-panel" aria-label="Operation history">
+                <div class="operations-panel-header">
+                  <h3>History</h3>
+                  <span class="status-pill status-pill--external" data-operations-summary="total">0 total</span>
+                </div>
+                <div class="operation-list" data-operation-list aria-live="polite"></div>
+              </section>
+
+              <aside class="operations-detail-panel" aria-label="Operation details">
+                <div class="operations-panel-header">
+                  <h3>Details</h3>
+                  <span class="status-pill status-pill--planned" data-operation-detail-status>Idle</span>
+                </div>
+                <div class="operation-detail" data-operation-detail>
+                  <strong>No operation selected</strong>
+                  <span>Select an operation to inspect its last known step, error reason, and sanitized log history.</span>
+                </div>
               </aside>
             </div>
           </section>

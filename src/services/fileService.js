@@ -27,6 +27,15 @@ class FileServiceError extends Error {
   }
 }
 
+async function pathExists(targetPath) {
+  try {
+    await fsPromises.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1054,6 +1063,15 @@ class FileService extends EventEmitter {
       if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
       const localPath = selection.filePaths[0];
       const remotePath = posixPath.join(options.directoryPath || "/", path.basename(localPath));
+      if (options.conflictPolicy !== "replace") {
+        const listing = await getFileListing(options.directoryPath || "/", getFileNodeConfig(options));
+        if (Array.isArray(listing?.entries) && listing.entries.some((entry) => entry.name === path.basename(localPath))) {
+          throw new FileServiceError("An item with that name already exists. Choose a different destination name or confirm replacement first.", {
+            code: "FILES_CONFLICT",
+            status: 409,
+          });
+        }
+      }
       const buffer = await fsPromises.readFile(localPath);
       this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: buffer.length, percent: 0 });
       const result = await mutateFile({ action: "upload", path: remotePath, content: buffer.toString("base64") }, getFileNodeConfig(options));
@@ -1071,6 +1089,12 @@ class FileService extends EventEmitter {
       }
       const localPath = selection.filePaths[0];
       const destinationPath = path.join(targetDirectory, path.basename(localPath));
+      if (options.conflictPolicy !== "replace" && await pathExists(destinationPath)) {
+        throw new FileServiceError("An item with that name already exists. Choose a different destination name or confirm replacement first.", {
+          code: "FILES_CONFLICT",
+          status: 409,
+        });
+      }
       this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: destinationPath, percent: 20 });
       await fsPromises.copyFile(localPath, destinationPath);
       this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: destinationPath, percent: 100 });
@@ -1099,6 +1123,19 @@ class FileService extends EventEmitter {
 
       const localPath = selection.filePaths[0];
       const remotePath = normalizeRemotePath(posixPath.join(targetDirectory, path.basename(localPath)));
+      if (options.conflictPolicy !== "replace") {
+        try {
+          await this.statRemotePath(session, remotePath);
+          throw new FileServiceError("An item with that name already exists. Choose a different destination name or confirm replacement first.", {
+            code: "FILES_CONFLICT",
+            status: 409,
+          });
+        } catch (error) {
+          if (error instanceof FileServiceError && error.code === "FILES_CONFLICT") {
+            throw error;
+          }
+        }
+      }
       const localSize = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
       const controller = this.createTransferController(options.transferId);
       let transferredBytes = 0;

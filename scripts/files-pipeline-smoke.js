@@ -94,6 +94,15 @@ async function main() {
     assert(appSource.includes("if (filesConnectPromise)"), "Renderer should deduplicate Connect requests.");
     assert(appSource.includes("filesConnectionState.targetKey === target.key"), "Renderer should compare complete connection targets.");
     assert(appSource.includes("getSafeFilesConnectionError"), "Renderer should sanitize connection failures.");
+    assert(appSource.includes("openFilesContextMenu") && appSource.includes('role = "menu"'), "Files workspace should expose an accessible context menu.");
+    assert(appSource.includes("stageFilesCopy") && appSource.includes("pasteFilesClipboard"), "Files workspace should support staged copy and paste keyboard behavior without a second transfer system.");
+    assert(appSource.includes("resolveNameConflict") && appSource.includes("getFileConflictSummary"), "Files workspace should preflight visible rename/copy/create conflicts.");
+    assert(appSource.includes("FILE_INLINE_EDIT_LIMIT_BYTES") && appSource.includes("Large file preview disabled"), "Files workspace should avoid loading large files into the renderer editor.");
+    assert(appSource.includes("Operations") && appSource.includes("transfer.retry"), "Transfer history should link to Operations and expose real retry actions when available.");
+
+    const serviceSource = await fs.readFile(path.join(rootDir, "src", "services", "fileService.js"), "utf8");
+    assert(serviceSource.includes("FILES_CONFLICT"), "File service should reject upload conflicts instead of silently overwriting.");
+    assert(serviceSource.includes("options.conflictPolicy !== \"replace\""), "File service should require explicit replace policy for upload conflicts.");
 
     console.log("Files pipeline smoke checks passed.");
   } finally {

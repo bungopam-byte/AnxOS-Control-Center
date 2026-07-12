@@ -740,6 +740,17 @@ let selectedStorageId = "local";
 let filesAutoSelectedNodeId = null;
 let filesConnectPromise = null;
 const fileTransfers = new Map();
+const filesClipboardState = {
+  action: null,
+  entry: null,
+  sourceDirectory: null,
+  targetKey: null,
+  providerType: null,
+};
+const filesContextMenuState = {
+  element: null,
+  previousFocus: null,
+};
 const operationsState = {
   items: new Map(),
   filter: "all",
@@ -794,6 +805,8 @@ const sshSessions = new Map();
 const AMP_REFRESH_INTERVAL_MS = 2000;
 const DOCKER_STATS_REFRESH_INTERVAL_MS = 5000;
 const CONSOLE_LOG_REFRESH_INTERVAL_MS = 2000;
+const FILE_INLINE_EDIT_LIMIT_BYTES = 1024 * 1024;
+const FILE_LARGE_TRANSFER_WARN_BYTES = 512 * 1024 * 1024;
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
@@ -10275,6 +10288,7 @@ function setFileDetail(name, value) {
   fileDetailFields.forEach((field) => {
     if (field.dataset.fileDetail === name) {
       field.textContent = value;
+      field.title = value;
     }
   });
 }
@@ -10747,6 +10761,76 @@ function isProtectedRemotePathForConfirm(remotePath) {
   return normalizedPath === "/" || ["/etc", "/usr", "/bin"].some((candidate) => normalizedPath === candidate || normalizedPath.startsWith(`${candidate}/`));
 }
 
+function normalizeFileNameInput(value) {
+  const name = String(value || "").trim();
+  if (!name) return "";
+  if (name.includes("\0") || name.includes("/") || name.includes("\\")) return "";
+  if (name === "." || name === "..") return "";
+  return name;
+}
+
+function findFileEntryByName(name, entries = latestFilesListing?.entries || []) {
+  const normalized = String(name || "");
+  return entries.find((entry) => String(entry.name || "") === normalized) || null;
+}
+
+function getFileConflictSummary(existing, incomingName, destinationPath) {
+  const existingSize = existing?.isDirectory ? "Folder" : formatBytes(existing?.size);
+  const modified = existing?.modifiedAt ? formatDateTime(existing.modifiedAt) : "Modified time unavailable";
+  return [
+    `Existing: ${existing?.name || incomingName} (${formatFileType(existing)}, ${existingSize}, ${modified})`,
+    `Incoming: ${incomingName}`,
+    `Destination: ${destinationPath}`,
+    "Replacing is permanent for this location unless the backing filesystem provides its own recovery.",
+  ].join("\n");
+}
+
+function resolveNameConflict({ incomingName, destinationPath, existing, allowReplace = true, allowRename = true } = {}) {
+  if (!existing) return { action: "none", name: incomingName, path: destinationPath, replace: false };
+  const choices = [];
+  if (allowReplace) choices.push("Replace");
+  if (allowRename) choices.push("Rename");
+  choices.push("Cancel");
+  const choice = window.prompt(
+    `An item named "${incomingName}" already exists.\n\n${getFileConflictSummary(existing, incomingName, destinationPath)}\n\nChoose: ${choices.join(", ")}`,
+    allowRename ? "Rename" : allowReplace ? "Replace" : "Cancel",
+  );
+  const normalizedChoice = String(choice || "").trim().toLowerCase();
+  if (allowReplace && normalizedChoice === "replace") {
+    return { action: "replace", name: incomingName, path: destinationPath, replace: true };
+  }
+  if (allowRename && normalizedChoice === "rename") {
+    const renamed = normalizeFileNameInput(window.prompt("New destination name", `${incomingName}.copy`));
+    if (!renamed) return { action: "cancel" };
+    const renamedConflict = findFileEntryByName(renamed);
+    if (renamedConflict) {
+      showToast("That destination name already exists. Operation canceled.", "warning");
+      return { action: "cancel" };
+    }
+    return {
+      action: "rename",
+      name: renamed,
+      path: joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", renamed),
+      replace: false,
+    };
+  }
+  return { action: "cancel" };
+}
+
+function shouldWarnLargeFile(entry, actionLabel) {
+  return !entry?.isDirectory && Number(entry?.size || 0) >= FILE_LARGE_TRANSFER_WARN_BYTES
+    ? window.confirm(`${actionLabel} ${entry.name}? This file is ${formatBytes(entry.size)}. Progress is shown only when the provider reports real bytes.`)
+    : true;
+}
+
+function supportsFilesDirectoryCopy() {
+  return Boolean(latestFilesListing?.local || getFilesConnectionTarget()?.providerType === "agent-native");
+}
+
+function canCopyFileEntry(entry) {
+  return Boolean(entry && (!entry.isDirectory || supportsFilesDirectoryCopy()));
+}
+
 function compareFileEntries(left, right) {
   if (left.isDirectory !== right.isDirectory) {
     return left.isDirectory ? -1 : 1;
@@ -10788,6 +10872,7 @@ function selectFileEntry(entry) {
 
   [...filesList.querySelectorAll("tr")].forEach((row) => {
     row.classList.toggle("is-selected", row.dataset.filePath === selectedFileEntryPath);
+    row.setAttribute("aria-selected", row.dataset.filePath === selectedFileEntryPath ? "true" : "false");
   });
 
   syncFileEditorButtons();
@@ -10800,6 +10885,7 @@ function getFileEntryBadge(entry) {
 function buildFileNameCell(entry) {
   const wrapper = document.createElement("div");
   wrapper.className = "file-entry-name";
+  wrapper.title = entry.path || entry.name || "";
 
   const icon = document.createElement("span");
   icon.className = "file-entry-icon";
@@ -10811,6 +10897,7 @@ function buildFileNameCell(entry) {
 
   const title = document.createElement("strong");
   title.textContent = formatFileValue(entry.name);
+  title.title = formatFileValue(entry.name);
   text.appendChild(title);
 
   const meta = document.createElement("span");
@@ -10856,9 +10943,17 @@ function renderFileRows(entries) {
     const row = document.createElement("tr");
     row.dataset.filePath = entry.path || entry.name || "";
     row.tabIndex = 0;
+    row.setAttribute("role", "row");
+    row.setAttribute("aria-selected", entry.path === selectedFileEntryPath ? "true" : "false");
+    row.title = entry.path || entry.name || "";
     row.addEventListener("click", () => selectFileEntry(entry));
     row.addEventListener("dblclick", () => {
       handleFileEntryActivation(entry);
+    });
+    row.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      selectFileEntry(entry);
+      openFilesContextMenu(event.clientX, event.clientY, entry);
     });
     row.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -10869,6 +10964,13 @@ function renderFileRows(entries) {
       if (event.key === " ") {
         event.preventDefault();
         selectFileEntry(entry);
+      }
+
+      if ((event.shiftKey && event.key === "F10") || event.key === "ContextMenu") {
+        event.preventDefault();
+        const rect = row.getBoundingClientRect();
+        selectFileEntry(entry);
+        openFilesContextMenu(rect.left + 18, rect.top + 18, entry);
       }
     });
     addFileCell(row, buildFileNameCell(entry));
@@ -10904,6 +11006,79 @@ function moveFileSelection(delta) {
   const nextIndex = Math.min(Math.max(currentIndex + delta, 0), entries.length - 1);
   selectFileEntry(entries[nextIndex]);
   focusSelectedFileRow();
+}
+
+function closeFilesContextMenu({ restoreFocus = false } = {}) {
+  if (filesContextMenuState.element) {
+    filesContextMenuState.element.remove();
+    filesContextMenuState.element = null;
+  }
+  if (restoreFocus) {
+    filesContextMenuState.previousFocus?.focus?.();
+  }
+  filesContextMenuState.previousFocus = null;
+}
+
+function createFilesContextMenuItem({ label, action, disabled = false, reason = "" }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "files-context-menu__item";
+  button.role = "menuitem";
+  button.disabled = disabled;
+  button.textContent = label;
+  if (disabled && reason) {
+    button.title = reason;
+    button.setAttribute("aria-label", `${label}. ${reason}`);
+  }
+  button.addEventListener("click", async () => {
+    if (disabled) {
+      if (reason) showToast(reason, "warning");
+      return;
+    }
+    closeFilesContextMenu();
+    await action?.();
+  });
+  return button;
+}
+
+function openFilesContextMenu(x, y, entry = getSelectedFileEntry(latestFilesListing?.entries || [])) {
+  closeFilesContextMenu();
+  if (!filesConnectionState.connected) return;
+  filesContextMenuState.previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const menu = document.createElement("div");
+  menu.className = "files-context-menu";
+  menu.role = "menu";
+  menu.tabIndex = -1;
+  menu.setAttribute("aria-label", entry ? `Actions for ${entry.name}` : "Files actions");
+  const hasEntry = Boolean(entry);
+  const isFile = hasEntry && !entry.isDirectory;
+  const canMutate = filesConnectionState.connected && !filesActionRequestInFlight && !filesRequestInFlight;
+  const canCopy = hasEntry && canCopyFileEntry(entry);
+  const canPaste = filesClipboardState.action === "copy"
+    && filesClipboardState.entry
+    && (!filesClipboardState.targetKey || filesClipboardState.targetKey === (filesConnectionState.targetKey || getFilesConnectionTarget()?.key));
+  const items = [
+    { label: entry?.isDirectory ? "Open Folder" : "Open Text", action: () => handleFileEntryActivation(entry), disabled: !hasEntry, reason: "Select an item first." },
+    { label: "Download", action: () => downloadRemoteFile(), disabled: !isFile, reason: entry?.isDirectory ? "Folders cannot be downloaded from this view." : "Select a file first." },
+    { label: "Rename", action: () => renameRemoteEntry(), disabled: !hasEntry || !canMutate, reason: canMutate ? "Select an item first." : "A file operation is already running." },
+    { label: "Copy", action: () => copyRemoteEntry(), disabled: !canCopy || !canMutate, reason: canCopy ? "A file operation is already running." : "Folder copy is not supported for this storage provider." },
+    { label: "Paste", action: () => pasteFilesClipboard(), disabled: !canPaste || !canMutate, reason: canPaste ? "A file operation is already running." : "No compatible copied item is staged." },
+    { label: "Copy Path", action: () => copyActiveFilePath(), disabled: !hasEntry, reason: "Select an item first." },
+    { label: "Delete", action: () => deleteRemoteEntry(), disabled: !hasEntry || !canMutate, reason: canMutate ? "Select an item first." : "A file operation is already running." },
+    { label: "Upload Here", action: () => uploadRemoteFile(), disabled: !canMutate, reason: "Connect a writable filesystem first." },
+    { label: "New Folder", action: () => createRemoteFolder(), disabled: !canMutate, reason: "Connect a writable filesystem first." },
+    { label: "New File", action: () => createRemoteFile(), disabled: !canMutate, reason: "Connect a writable filesystem first." },
+    { label: "Refresh", action: () => refreshCurrentFilesDirectory(), disabled: filesRequestInFlight, reason: "Files are already refreshing." },
+  ];
+  items.forEach((item) => menu.appendChild(createFilesContextMenuItem(item)));
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
+  const top = Math.max(8, Math.min(y, window.innerHeight - rect.height - 8));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  filesContextMenuState.element = menu;
+  menu.focus();
 }
 
 function navigateFilesParentDirectory() {
@@ -12902,16 +13077,28 @@ function renderStorageConnections() {
   });
 }
 
+function transferStatusLabel(status) {
+  return {
+    running: "Running",
+    queued: "Queued",
+    complete: "Completed",
+    completed: "Completed",
+    failed: "Failed",
+    canceled: "Canceled",
+  }[status] || "Running";
+}
+
 function renderTransfers() {
   if (!transferList) return;
-  const transfers = [...fileTransfers.values()].slice(-6).reverse();
+  const transfers = [...fileTransfers.values()].slice(-8).reverse();
   transferList.replaceChildren();
   const activeCount = transfers.filter((transfer) => transfer.status === "running").length;
-  if (transferStatus) transferStatus.textContent = activeCount > 0 ? `${activeCount} active` : "Idle";
+  const failedCount = transfers.filter((transfer) => transfer.status === "failed").length;
+  if (transferStatus) transferStatus.textContent = activeCount > 0 ? `${activeCount} active` : failedCount > 0 ? `${failedCount} failed` : "Idle";
   if (transfers.length === 0) {
     const empty = document.createElement("p");
     empty.className = "settings-note";
-    empty.textContent = "No transfers running.";
+    empty.textContent = "No transfer history yet. Uploads, downloads, copies, and file mutations will appear here.";
     transferList.append(empty);
     return;
   }
@@ -12920,11 +13107,21 @@ function renderTransfers() {
     item.className = "transfer-item";
     item.classList.toggle("is-complete", transfer.status === "complete");
     item.classList.toggle("is-failed", transfer.status === "failed");
+    item.classList.toggle("is-canceled", transfer.status === "canceled");
     const percent = transfer.status === "complete" ? 100 : clampPercent(transfer.progress);
     const title = document.createElement("strong");
     title.textContent = transfer.title;
+    title.title = transfer.title;
+    const meta = document.createElement("small");
+    const byteText = Number.isFinite(transfer.receivedBytes) && Number.isFinite(transfer.totalBytes) && transfer.totalBytes > 0
+      ? `${formatBytes(transfer.receivedBytes)} of ${formatBytes(transfer.totalBytes)}`
+      : Number.isFinite(transfer.receivedBytes) && transfer.receivedBytes > 0
+        ? formatBytes(transfer.receivedBytes)
+        : "Size unavailable";
+    meta.textContent = `${transferStatusLabel(transfer.status)} · ${byteText}`;
     const message = document.createElement("small");
-    message.textContent = transfer.message;
+    message.textContent = transfer.message || transfer.target || "Working...";
+    message.title = message.textContent;
     const progress = document.createElement("div");
     progress.className = "transfer-progress";
     if (percent === null && transfer.status === "running") {
@@ -12940,12 +13137,33 @@ function renderTransfers() {
     cancelButton.textContent = "Cancel";
     cancelButton.hidden = transfer.status !== "running";
     cancelButton.addEventListener("click", () => cancelFileTransfer(transfer.id));
-    item.append(title, message, progress, cancelButton);
+    const actions = document.createElement("div");
+    actions.className = "transfer-actions";
+    const openOperation = document.createElement("button");
+    openOperation.className = "inline-action";
+    openOperation.type = "button";
+    openOperation.textContent = "Operations";
+    openOperation.addEventListener("click", () => {
+      operationsState.selectedId = transfer.operationId;
+      showPage("operations");
+      renderOperationsCenter();
+    });
+    actions.appendChild(openOperation);
+    if (transfer.status === "failed" && typeof transfer.retry === "function") {
+      const retry = document.createElement("button");
+      retry.className = "inline-action";
+      retry.type = "button";
+      retry.textContent = "Retry";
+      retry.addEventListener("click", () => transfer.retry());
+      actions.appendChild(retry);
+    }
+    actions.appendChild(cancelButton);
+    item.append(title, meta, message, progress, actions);
     transferList.append(item);
   });
 }
 
-function startFileTransfer(actionName, target) {
+function startFileTransfer(actionName, target, metadata = {}) {
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const title = `${actionName[0].toUpperCase()}${actionName.slice(1)}`;
   const operationId = startOperation({
@@ -12963,6 +13181,16 @@ function startFileTransfer(actionName, target) {
     status: "running",
     progress: null,
     title,
+    target,
+    source: metadata.source || "",
+    destination: metadata.destination || target || "",
+    node: getFilesConnectionTarget()?.label || "",
+    filename: metadata.filename || getFileNameFromPath(target),
+    startedAt: Date.now(),
+    completedAt: null,
+    receivedBytes: null,
+    totalBytes: null,
+    retry: metadata.retry || null,
     message: target || "Working...",
   });
   renderTransfers();
@@ -12975,6 +13203,7 @@ function finishFileTransfer(id, ok, message) {
   transfer.status = ok ? "complete" : "failed";
   transfer.progress = 100;
   transfer.message = message || (ok ? "Complete" : "Failed");
+  transfer.completedAt = Date.now();
   finishOperation(transfer.operationId, ok, transfer.message);
   renderTransfers();
 }
@@ -13013,6 +13242,8 @@ function updateFileTransferProgress(event = {}) {
     transfer.status = event.status;
   }
   if (Number.isFinite(event.receivedBytes) && Number.isFinite(event.totalBytes) && event.totalBytes > 0) {
+    transfer.receivedBytes = event.receivedBytes;
+    transfer.totalBytes = event.totalBytes;
     transfer.message = `${formatBytes(event.receivedBytes)} of ${formatBytes(event.totalBytes)}`;
   } else if (event.path) {
     transfer.message = event.path;
@@ -13020,6 +13251,10 @@ function updateFileTransferProgress(event = {}) {
   if (event.status === "complete") {
     transfer.progress = 100;
     transfer.message = transfer.message || "Complete";
+    transfer.completedAt = Date.now();
+  }
+  if (event.status === "failed" || event.status === "canceled") {
+    transfer.completedAt = Date.now();
   }
   updateOperation(transfer.operationId, {
     status: event.status === "complete" ? "completed" : event.status === "failed" ? "failed" : transfer.status,
@@ -14819,7 +15054,7 @@ async function navigateRemoteDirectory(remotePath) {
 
 function getUnsupportedFileMessage(reason) {
   if (reason === "file_too_large") {
-    return "This file is larger than 1 MB and is not opened in the inline editor.";
+    return `This file is larger than ${formatBytes(FILE_INLINE_EDIT_LIMIT_BYTES)} and is not opened in the inline editor. Use Download for large files.`;
   }
 
   if (reason === "binary_unsupported") {
@@ -14841,6 +15076,21 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
   }
 
   if (!confirmOpenSensitiveFile(entry)) {
+    return;
+  }
+
+  if (Number(entry.size || 0) > FILE_INLINE_EDIT_LIMIT_BYTES) {
+    applyFileEditorDocument({
+      path: entry.path,
+      supported: false,
+      content: "",
+      savedContent: "",
+      dirty: false,
+      message: `Large file preview disabled for ${formatBytes(entry.size)}. Download the file to inspect or edit it safely.`,
+    });
+    filesViewMode = "edit";
+    renderFilesView();
+    showToast("Large file preview is disabled to keep the renderer responsive.", "warning");
     return;
   }
 
@@ -14976,7 +15226,7 @@ async function handleFileEntryActivation(entry) {
   await openRemoteTextFile(entry);
 }
 
-async function runFileMutation(actionName, payload, successMessage, refreshPath) {
+async function runFileMutation(actionName, payload, successMessage, refreshPath, options = {}) {
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasFiles) {
@@ -14987,7 +15237,13 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath)
   payload.nodeId = getSelectedNodeId();
   payload.providerType = getFilesConnectionTarget()?.providerType;
   updateFileActionButtons();
-  const transferId = startFileTransfer(actionName, payload.path || payload.sourcePath || payload.directoryPath || refreshPath || "Storage operation");
+  const target = payload.path || payload.destinationPath || payload.sourcePath || payload.directoryPath || refreshPath || "Storage operation";
+  const transferId = startFileTransfer(actionName, target, {
+    source: payload.sourcePath || payload.path || "",
+    destination: payload.destinationPath || payload.newPath || payload.path || payload.directoryPath || "",
+    filename: options.filename || getFileNameFromPath(target),
+    retry: options.retryable === false ? null : () => runFileMutation(actionName, { ...payload }, successMessage, refreshPath, { ...options, retryable: false }),
+  });
   payload.transferId = transferId;
 
   try {
@@ -15014,8 +15270,27 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath)
 
     return result;
   } catch (error) {
-    finishFileTransfer(transferId, false, error?.message || "Failed");
-    showToast(error?.message || "Remote file action failed.");
+    const message = normalizeIpcErrorMessage(error, "Remote file action failed.");
+    if (actionName === "upload" && (error?.code === "FILES_CONFLICT" || /already exists|conflict/i.test(message))) {
+      finishFileTransfer(transferId, false, message);
+      if (window.confirm(`${message}\n\nSelect the file again and replace the existing item?`)) {
+        return runFileMutation(actionName, { ...payload, conflictPolicy: "replace" }, successMessage, refreshPath, { ...options, retryable: false });
+      }
+      showToast("Upload canceled to avoid overwriting an existing item.", "warning");
+      return null;
+    }
+    finishFileTransfer(transferId, false, message);
+    if (/agent unavailable|unreachable|ECONNREFUSED|timed out|connection/i.test(message)) {
+      updateFilesConnectionState({
+        ...filesConnectionState,
+        connected: filesConnectionState.connected,
+        status: "degraded",
+        message: `${message} Reconnect or refresh before retrying.`,
+      });
+      setFilesEmpty(false, null, null);
+      renderFilesView();
+    }
+    showToast(message, "error");
     return null;
   } finally {
     filesActionRequestInFlight = false;
@@ -15028,13 +15303,20 @@ async function createRemoteFolder() {
     return;
   }
 
-  const folderName = window.prompt("New folder name");
+  const folderName = normalizeFileNameInput(window.prompt("New folder name"));
 
   if (!folderName) {
+    showToast("Folder name is invalid or empty.", "warning");
     return;
   }
 
-  selectedFileEntryPath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", folderName);
+  const destinationPath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", folderName);
+  const existing = findFileEntryByName(folderName);
+  if (existing) {
+    showToast("A file or folder with that name already exists.", "warning");
+    return;
+  }
+  selectedFileEntryPath = destinationPath;
 
   await runFileMutation(
     "mkdir",
@@ -15052,11 +15334,34 @@ async function createRemoteFile() {
   if (!filesConnectionState.connected) {
     return;
   }
-  const fileName = window.prompt("New file name");
+  const fileName = normalizeFileNameInput(window.prompt("New file name"));
   if (!fileName) {
+    showToast("File name is invalid or empty.", "warning");
     return;
   }
   const filePath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", fileName);
+  const existing = findFileEntryByName(fileName);
+  if (existing) {
+    const conflict = resolveNameConflict({ incomingName: fileName, destinationPath: filePath, existing, allowReplace: true, allowRename: true });
+    if (conflict.action === "cancel") return;
+    if (conflict.action === "rename") {
+      return runFileMutation(
+        "newFile",
+        {
+          profileId: getFilesRequestProfileId(),
+          storageId: getFilesRequestStorageId(),
+          path: conflict.path,
+        },
+        latestFilesListing?.local ? "Local file created." : "Remote file created.",
+        filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+        { filename: conflict.name },
+      );
+    }
+    if (conflict.action === "replace" && existing.isDirectory) {
+      showToast("Cannot replace a folder with a new file.", "warning");
+      return;
+    }
+  }
   selectedFileEntryPath = filePath;
   await runFileMutation(
     "newFile",
@@ -15077,13 +15382,26 @@ async function renameRemoteEntry() {
     return;
   }
 
-  const nextName = window.prompt(`Rename ${entry.name} to`, entry.name);
+  const nextName = normalizeFileNameInput(window.prompt(`Rename ${entry.name} to`, entry.name));
 
   if (!nextName || nextName === entry.name) {
+    if (!nextName) showToast("Name is invalid or empty.", "warning");
     return;
   }
 
   const nextPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
+  const existing = findFileEntryByName(nextName);
+  if (existing && existing.path !== entry.path) {
+    const conflict = resolveNameConflict({ incomingName: nextName, destinationPath: nextPath, existing, allowReplace: true, allowRename: true });
+    if (conflict.action === "cancel") return;
+    if (conflict.action === "rename") {
+      return renameRemoteEntryTo(entry, conflict.name);
+    }
+    if (conflict.action === "replace" && existing.isDirectory !== entry.isDirectory) {
+      showToast("Cannot replace a different item type with rename.", "warning");
+      return;
+    }
+  }
   selectedFileEntryPath = nextPath;
 
   await runFileMutation(
@@ -15105,16 +15423,50 @@ async function renameRemoteEntry() {
   }
 }
 
+async function renameRemoteEntryTo(entry, nextName) {
+  const nextPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
+  selectedFileEntryPath = nextPath;
+  await runFileMutation(
+    "rename",
+    {
+      profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
+      oldPath: entry.path,
+      newPath: nextPath,
+    },
+    latestFilesListing?.local ? "Local item renamed." : "Remote item renamed.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+    { filename: nextName },
+  );
+}
+
 async function copyRemoteEntry() {
   const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
   if (!entry) {
     return;
   }
-  const nextName = window.prompt(`Copy ${entry.name} to`, `${entry.name}.copy`);
-  if (!nextName) {
+  if (!canCopyFileEntry(entry)) {
+    showToast("Folder copy is not supported for this storage provider.", "warning");
     return;
   }
-  const destinationPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
+  const nextName = normalizeFileNameInput(window.prompt(`Copy ${entry.name} to`, `${entry.name}.copy`));
+  if (!nextName) {
+    showToast("Destination name is invalid or empty.", "warning");
+    return;
+  }
+  let destinationPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
+  const existing = findFileEntryByName(nextName);
+  if (existing) {
+    const conflict = resolveNameConflict({ incomingName: nextName, destinationPath, existing, allowReplace: true, allowRename: true });
+    if (conflict.action === "cancel") return;
+    if (conflict.action === "rename") {
+      destinationPath = conflict.path;
+    }
+    if (conflict.action === "replace" && existing.isDirectory !== entry.isDirectory) {
+      showToast("Cannot replace a different item type with copy.", "warning");
+      return;
+    }
+  }
   await runFileMutation(
     "copy",
     {
@@ -15125,6 +15477,67 @@ async function copyRemoteEntry() {
     },
     latestFilesListing?.local ? "Local item copied." : "Remote item copied.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+    { filename: getFileNameFromPath(destinationPath) },
+  );
+}
+
+function stageFilesCopy(entry = getSelectedFileEntry(latestFilesListing?.entries || [])) {
+  if (!entry) {
+    showToast("Select a file or folder to copy.", "warning");
+    return;
+  }
+  if (!canCopyFileEntry(entry)) {
+    showToast("Folder copy is not supported for this storage provider.", "warning");
+    return;
+  }
+  filesClipboardState.action = "copy";
+  filesClipboardState.entry = { ...entry };
+  filesClipboardState.sourceDirectory = filesConnectionState.currentPath || filesConnectionState.homePath || "/";
+  filesClipboardState.targetKey = filesConnectionState.targetKey || getFilesConnectionTarget()?.key || null;
+  filesClipboardState.providerType = getFilesConnectionTarget()?.providerType || null;
+  showToast(`Ready to paste ${entry.name}.`, "success");
+}
+
+async function pasteFilesClipboard() {
+  if (filesClipboardState.action !== "copy" || !filesClipboardState.entry || !filesConnectionState.connected) {
+    showToast("No file copy is staged.", "warning");
+    return;
+  }
+  if (filesClipboardState.targetKey && filesClipboardState.targetKey !== (filesConnectionState.targetKey || getFilesConnectionTarget()?.key)) {
+    showToast("Paste is limited to the same storage connection in this release.", "warning");
+    return;
+  }
+  const entry = filesClipboardState.entry;
+  if (!canCopyFileEntry(entry)) {
+    showToast("Folder paste is not supported for this storage provider.", "warning");
+    return;
+  }
+  let destinationName = entry.name;
+  let destinationPath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", destinationName);
+  const existing = findFileEntryByName(destinationName);
+  if (existing) {
+    const conflict = resolveNameConflict({ incomingName: destinationName, destinationPath, existing, allowReplace: true, allowRename: true });
+    if (conflict.action === "cancel") return;
+    if (conflict.action === "rename") {
+      destinationName = conflict.name;
+      destinationPath = conflict.path;
+    }
+    if (conflict.action === "replace" && existing.isDirectory !== entry.isDirectory) {
+      showToast("Cannot replace a different item type with paste.", "warning");
+      return;
+    }
+  }
+  await runFileMutation(
+    "copy",
+    {
+      profileId: getFilesRequestProfileId(),
+      storageId: getFilesRequestStorageId(),
+      sourcePath: entry.path,
+      destinationPath,
+    },
+    latestFilesListing?.local ? "Local item pasted." : "Remote item pasted.",
+    filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+    { filename: destinationName },
   );
 }
 
@@ -15150,7 +15563,7 @@ async function deleteRemoteEntry() {
     }
 
     confirmDangerous = true;
-  } else if (!window.confirm(`Delete ${entry.name}? This cannot be undone.`)) {
+  } else if (!window.confirm(`Delete ${entry.name}?\n\nType: ${formatFileType(entry)}\nSize: ${entry.isDirectory ? "Folder size not measured" : formatBytes(entry.size)}\nPath: ${entry.path}\n\nThis is permanent in AnxOS unless the backing filesystem provides its own recovery.`)) {
     return;
   }
 
@@ -15198,6 +15611,10 @@ async function downloadRemoteFile() {
   const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
 
   if (!entry || entry.isDirectory) {
+    return;
+  }
+
+  if (!shouldWarnLargeFile(entry, "Download")) {
     return;
   }
 
@@ -20668,6 +21085,11 @@ filesList?.addEventListener("keydown", (event) => {
     navigateFilesParentDirectory();
   }
 });
+filesList?.closest(".file-table-wrap")?.addEventListener("contextmenu", (event) => {
+  if (event.target.closest("tr")) return;
+  event.preventDefault();
+  openFilesContextMenu(event.clientX, event.clientY, null);
+});
 filesRefreshButton?.addEventListener("click", () => {
   refreshCurrentFilesDirectory();
 });
@@ -20730,6 +21152,63 @@ window.addEventListener("keydown", (event) => {
   ) {
     event.preventDefault();
     saveRemoteTextFile();
+    return;
+  }
+
+  if (!event.defaultPrevented && getActivePageName() === "files") {
+    const target = event.target;
+    const isEditableTarget = target instanceof HTMLElement && (
+      target.matches("input, textarea, select, [contenteditable='true']") ||
+      target.closest(".monaco-editor")
+    );
+    if (filesContextMenuState.element && event.key === "Escape") {
+      event.preventDefault();
+      closeFilesContextMenu({ restoreFocus: true });
+      return;
+    }
+    if (isEditableTarget) return;
+    const selectedEntry = getSelectedFileEntry(latestFilesListing?.entries || []);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      selectedFileEntryPath = null;
+      setFileDetails(null);
+      renderFileRows(latestFilesListing?.entries || []);
+      updateFileActionButtons();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      handleFileEntryActivation(selectedEntry);
+    } else if (event.key === "Backspace") {
+      event.preventDefault();
+      navigateFilesParentDirectory();
+    } else if (event.key === "Delete") {
+      event.preventDefault();
+      deleteRemoteEntry();
+    } else if (event.key === "F2") {
+      event.preventDefault();
+      renameRemoteEntry();
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      stageFilesCopy(selectedEntry);
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "x") {
+      event.preventDefault();
+      showToast("Cut and move are not supported by the current Files backend.", "warning");
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      pasteFilesClipboard();
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      const entries = getVisibleFileEntries();
+      selectFileEntry(entries[0] || null);
+      showToast("Bulk selection is not supported yet; selected the first visible item.", "warning");
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r") {
+      event.preventDefault();
+      refreshCurrentFilesDirectory();
+    }
+  }
+});
+document.addEventListener("pointerdown", (event) => {
+  if (filesContextMenuState.element && !filesContextMenuState.element.contains(event.target)) {
+    closeFilesContextMenu();
   }
 });
 sidebarCollapsed = readSidebarCollapsed();

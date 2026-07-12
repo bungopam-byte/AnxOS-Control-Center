@@ -26,6 +26,7 @@ async function main() {
   const mainJs = readRepoFile("main.js");
 
   assert(indexHtml.includes("data-owner-workspace-nav"), "Owner Workspace sidebar section should be present.");
+  assert(!indexHtml.includes("data-owner-workspace-nav hidden"), "Owner Workspace sidebar scaffold must not start hard-hidden after developer restart.");
   assert(indexHtml.includes("data-owner-workspace-toggle"), "Owner Workspace sidebar group should be collapsible.");
   assert(indexHtml.includes('data-owner-nav-section="workspace"'), "Owner Workspace group should include Workspace section.");
   assert(indexHtml.includes('data-owner-nav-section="development"'), "Owner Workspace group should include Development section.");
@@ -38,6 +39,8 @@ async function main() {
   assert(mainJs.includes("registerOwnerWorkspaceIpc()"), "Owner Workspace IPC should be registered by the main process.");
   assert(appJs.includes("ownerWorkspaceAvailable"), "Renderer should use the trusted owner workspace availability state.");
   assert(appJs.includes("function shouldShowOwnerWorkspaceNav()"), "Renderer should keep the Owner Workspace entry visible when owner auth is locked.");
+  assert(appJs.includes("!desktopApiState.hasOwnerWorkspace") && appJs.includes("securityState?.setupRequired === undefined"), "Owner Workspace nav should remain visible while IPC/security state is unavailable or loading.");
+  assert(appJs.includes('workspace: "unavailable"'), "Owner Workspace should render an unavailable state instead of disappearing when IPC is missing.");
   assert(appJs.includes("Sign in as Owner to open Owner Workspace."), "Locked Owner Workspace navigation should direct the user to sign in.");
   assert(!appJs.includes("if (securityState?.authenticated === true) {\n    return false;\n  }"), "Authenticated non-owner state must not remove the locked Owner Workspace navigation entry.");
   assert(!appJs.includes('if (!isOwnerWorkspaceAuthorized() && getActivePageName() === "owner-workspace") {\n    ownerWorkspaceState = { authorized: false'), "Security refresh must not wipe Owner Workspace state just because auth is locked.");

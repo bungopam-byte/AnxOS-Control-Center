@@ -2787,13 +2787,13 @@ function isOwnerWorkspaceAuthorized() {
 
 function shouldShowOwnerWorkspaceNav() {
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasOwnerWorkspace) {
-    return false;
-  }
   if (isOwnerWorkspaceAuthorized()) {
     return true;
   }
-  if (!desktopApiState.hasSecurity) {
+  if (!desktopApiState.hasOwnerWorkspace) {
+    return true;
+  }
+  if (!desktopApiState.hasSecurity || securityState?.setupRequired === undefined) {
     return true;
   }
   if (securityState?.setupRequired === true) {
@@ -4449,6 +4449,21 @@ function renderOwnerWorkspace() {
 }
 
 async function refreshOwnerWorkspace() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasOwnerWorkspace) {
+    ownerWorkspaceState = {
+      ...ownerWorkspaceState,
+      authorized: false,
+      status: {
+        authentication: isOwnerWorkspaceAuthorized() ? "authorized" : "locked",
+        workspace: "unavailable",
+        agents: "unavailable",
+        ready: "unavailable",
+      },
+    };
+    renderOwnerWorkspace();
+    return;
+  }
   if (!isOwnerWorkspaceAuthorized()) {
     ownerWorkspaceState = {
       ...ownerWorkspaceState,
@@ -4461,11 +4476,6 @@ async function refreshOwnerWorkspace() {
       },
     };
     renderOwnerWorkspace();
-    return;
-  }
-  const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasOwnerWorkspace) {
-    showToast("Owner Workspace IPC is unavailable.");
     return;
   }
   try {

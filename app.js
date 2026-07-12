@@ -404,8 +404,14 @@ const agentRemoteList = document.querySelector("[data-agent-remote-list]");
 const agentLogViewer = document.querySelector("[data-agent-log-viewer]");
 const agentLogSearch = document.querySelector("[data-agent-log-search]");
 const agentLogSeverity = document.querySelector("[data-agent-log-severity]");
+const agentLogSource = document.querySelector("[data-agent-log-source]");
 const agentLogPause = document.querySelector("[data-agent-log-pause]");
 const agentLogWrap = document.querySelector("[data-agent-log-wrap]");
+const diagnosticsOverview = document.querySelector("[data-diagnostics-overview]");
+const diagnosticsHealthList = document.querySelector("[data-diagnostics-health-list]");
+const diagnosticsIssueList = document.querySelector("[data-diagnostics-issue-list]");
+const diagnosticsIssueCount = document.querySelector("[data-diagnostics-issue-count]");
+const diagnosticsSupportCategories = document.querySelector("[data-diagnostics-support-categories]");
 const agentSetupPanel = document.querySelector("[data-agent-setup-panel]");
 const agentSetupMode = document.querySelector('[data-agent-setup="mode"]');
 const agentSetupAutoStart = document.querySelector('[data-agent-setup="autoStart"]');
@@ -3267,20 +3273,459 @@ function renderAgentDiagnostics(result = {}) {
   });
 }
 
-function renderAgentLogs() {
-  if (!agentLogViewer) return;
+const DIAGNOSTIC_LOG_LIMIT = 400;
+const DIAGNOSTIC_VISIBLE_LINE_LIMIT = 220;
+const DIAGNOSTIC_OCCURRENCE_LIMIT = 8;
+const DIAGNOSTIC_LONG_TEXT_LIMIT = 900;
+const DIAGNOSTIC_BASE64_PATTERN = /\b[A-Za-z0-9+/]{180,}={0,2}\b/g;
+const DIAGNOSTIC_SECRET_PATTERN = /\b(Bearer\s+)[A-Za-z0-9._~+/-]+=*|\b(?:password|token|secret|api[_-]?key|authorization|cookie|session)\b\s*[:=]\s*(?!\[redacted\])(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi;
+
+const KNOWN_DIAGNOSTIC_EXPLANATIONS = {
+  AGENT_PORT_IN_USE: {
+    title: "Agent port is already in use",
+    cause: "Another process is listening on the configured Agent port.",
+    impact: "The local Agent may not start or may reconnect to an existing Agent.",
+    action: "Open Agent Control and inspect the local Agent status.",
+    workspace: "agent-control",
+  },
+  DEPENDENCIES_REQUIRED: {
+    title: "Runtime dependencies are missing",
+    cause: "The selected Marketplace template requires host tools that are not installed or verified.",
+    impact: "Install or start is blocked until dependencies pass preflight.",
+    action: "Open Agent Control and run dependency preparation.",
+    workspace: "agent-control",
+  },
+  DEPENDENCY_UNSUPPORTED: {
+    title: "Unsupported dependency request",
+    cause: "A dependency identifier is not registered in the trusted dependency registry.",
+    impact: "Automatic preparation is blocked for that requirement.",
+    action: "Review Marketplace requirements and dependency registry metadata.",
+    workspace: "marketplace",
+  },
+  FILES_CONFLICT: {
+    title: "File conflict",
+    cause: "A file operation would overwrite or collide with an existing item.",
+    impact: "The file operation needs explicit conflict handling.",
+    action: "Open Files and retry with a supported conflict choice.",
+    workspace: "files",
+  },
+  PERMISSION_DENIED: {
+    title: "Permission denied",
+    cause: "The current process or Agent user lacks permission for the requested action.",
+    impact: "The operation did not complete.",
+    action: "Check node permissions, storage roots, and Agent configuration.",
+    workspace: "agent-control",
+  },
+  ECONNREFUSED: {
+    title: "Agent unavailable",
+    cause: "The configured Agent endpoint refused the connection.",
+    impact: "Remote operations that require the Agent are unavailable.",
+    action: "Reconnect or restart the Agent from Agent Control.",
+    workspace: "agent-control",
+  },
+  PACKAGE_MANAGER_LOCKED: {
+    title: "Package manager is locked",
+    cause: "Another package manager process is active on the node.",
+    impact: "Dependency installation cannot safely continue yet.",
+    action: "Wait for the package manager to finish, then retry dependency preparation.",
+    workspace: "agent-control",
+  },
+  UPDATE_UNAVAILABLE: {
+    title: "Update unavailable",
+    cause: "No reachable update source reported a newer release.",
+    impact: "The current app remains installed.",
+    action: "Open Settings and check updates again later.",
+    workspace: "settings",
+  },
+  AUTH_NOT_CONFIGURED: {
+    title: "Authentication is not configured",
+    cause: "Account or owner authentication settings are incomplete.",
+    impact: "Protected actions may be unavailable.",
+    action: "Open Account or Security settings.",
+    workspace: "settings",
+  },
+  EXTERNAL_URL_BLOCKED: {
+    title: "External URL blocked",
+    cause: "A URL did not pass the centralized external navigation allowlist.",
+    impact: "The app refused to open an unsafe or unsupported external destination.",
+    action: "Use a trusted project, documentation, or provider URL.",
+    workspace: "settings",
+  },
+  MAINTENANCE_PARTIAL_CLEANUP: {
+    title: "Maintenance cleanup partially completed",
+    cause: "Some cache or log entries could not be removed or verified.",
+    impact: "Some storage may remain in use.",
+    action: "Open Maintenance and review category details.",
+    workspace: "maintenance",
+  },
+};
+
+let diagnosticsIssueGroups = [];
+
+function redactDiagnosticText(value = "") {
+  return String(value ?? "")
+    .replace(DIAGNOSTIC_BASE64_PATTERN, "[redacted-base64]")
+    .replace(DIAGNOSTIC_SECRET_PATTERN, (match, bearerPrefix) => bearerPrefix ? `${bearerPrefix}[redacted]` : `${match.split(/[:=]/)[0]}=[redacted]`);
+}
+
+function boundDiagnosticText(value = "", limit = DIAGNOSTIC_LONG_TEXT_LIMIT) {
+  const text = redactDiagnosticText(value).replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit)}... [truncated]` : text;
+}
+
+function getDiagnosticEntryCode(entry = {}) {
+  return String(entry.errorCode || entry.code || entry.context?.code || "").trim().toUpperCase();
+}
+
+function getDiagnosticSeverityRank(severity = "info") {
+  return { fatal: 4, error: 3, warn: 2, warning: 2, info: 1, debug: 0 }[String(severity || "info").toLowerCase()] ?? 1;
+}
+
+function getDiagnosticSeverityLabel(severity = "info") {
+  const normalized = String(severity || "info").toLowerCase();
+  if (normalized === "fatal") return "Critical";
+  if (normalized === "error") return "Error";
+  if (normalized === "warn" || normalized === "warning") return "Warning";
+  if (normalized === "debug") return "Debug";
+  return "Info";
+}
+
+function getDiagnosticExplanation(code, entry = {}) {
+  const normalizedCode = String(code || "").toUpperCase();
+  const known = KNOWN_DIAGNOSTIC_EXPLANATIONS[normalizedCode];
+  if (known) return known;
+  const message = boundDiagnosticText(entry.message || "No sanitized message was available.", 360);
+  return {
+    title: normalizedCode ? `Unhandled diagnostic ${normalizedCode}` : "Unclassified diagnostic event",
+    cause: "Cause not yet determined.",
+    impact: message,
+    action: "Review the sanitized technical message and related workspace.",
+    workspace: null,
+  };
+}
+
+function buildDiagnosticGroupKey(entry = {}) {
+  const code = getDiagnosticEntryCode(entry);
+  if (code) return `code:${code}`;
+  return [
+    "event",
+    entry.source || "unknown",
+    entry.operation || "event",
+    boundDiagnosticText(entry.message || "", 120),
+  ].join(":");
+}
+
+function findRelatedOperationForDiagnostic(group = {}) {
+  const code = group.code;
+  const latestMessage = group.latest?.message || "";
+  return [...operationsState.items.values()].find((operation) => (
+    (code && String(operation.error || operation.step || "").includes(code)) ||
+    (latestMessage && String(operation.error || operation.step || operation.title || "").includes(latestMessage.slice(0, 80)))
+  )) || null;
+}
+
+function groupDiagnosticIssues(entries = []) {
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const severityRank = getDiagnosticSeverityRank(entry.severity);
+    const include = severityRank >= 2 || getDiagnosticEntryCode(entry);
+    if (!include) return;
+    const key = buildDiagnosticGroupKey(entry);
+    const existing = groups.get(key) || {
+      id: key,
+      code: getDiagnosticEntryCode(entry),
+      source: entry.source || "unknown",
+      operation: entry.operation || "event",
+      severity: entry.severity || "info",
+      severityRank,
+      firstSeen: entry.timestamp || null,
+      lastSeen: entry.timestamp || null,
+      count: 0,
+      latest: entry,
+      occurrences: [],
+    };
+    existing.count += 1;
+    existing.severityRank = Math.max(existing.severityRank, severityRank);
+    if (severityRank >= getDiagnosticSeverityRank(existing.severity)) existing.severity = entry.severity || existing.severity;
+    if (entry.timestamp && (!existing.firstSeen || String(entry.timestamp) < String(existing.firstSeen))) existing.firstSeen = entry.timestamp;
+    if (entry.timestamp && (!existing.lastSeen || String(entry.timestamp) >= String(existing.lastSeen))) {
+      existing.lastSeen = entry.timestamp;
+      existing.latest = entry;
+    }
+    existing.occurrences = [...existing.occurrences, entry].slice(-DIAGNOSTIC_OCCURRENCE_LIMIT);
+    groups.set(key, existing);
+  });
+  return [...groups.values()].sort((left, right) => (
+    right.severityRank - left.severityRank ||
+    String(right.lastSeen || "").localeCompare(String(left.lastSeen || ""))
+  ));
+}
+
+function getFilteredDiagnosticEntries() {
   const search = String(agentLogSearch?.value || "").toLowerCase();
   const severity = agentLogSeverity?.value || "all";
-  const visible = agentLogEntries.filter((entry) => (severity === "all" || entry.severity === severity) && (!search || JSON.stringify(entry).toLowerCase().includes(search)));
-  agentLogViewer.textContent = visible.length ? visible.map((entry) => `${entry.timestamp} ${String(entry.severity || "info").toUpperCase().padEnd(5)} [${entry.source}:${entry.operation}] ${entry.message}${entry.errorCode ? ` (${entry.errorCode})` : ""}`).join("\n") : "No matching sanitized logs.";
+  const source = agentLogSource?.value || "all";
+  return agentLogEntries.filter((entry) => {
+    const normalizedSeverity = String(entry.severity || "").toLowerCase();
+    const matchesSeverity = severity === "all" || normalizedSeverity === severity || (severity === "warn" && normalizedSeverity === "warning");
+    const matchesSource = source === "all" || String(entry.source || "unknown") === source;
+    const haystack = JSON.stringify(entry).toLowerCase();
+    return matchesSeverity && matchesSource && (!search || haystack.includes(search));
+  });
+}
+
+function renderAgentLogSourceOptions() {
+  if (!agentLogSource) return;
+  const current = agentLogSource.value || "all";
+  const sources = [...new Set(agentLogEntries.map((entry) => String(entry.source || "unknown")))].sort();
+  agentLogSource.replaceChildren();
+  const all = document.createElement("option");
+  all.value = "all";
+  all.textContent = "All sources";
+  agentLogSource.append(all);
+  sources.forEach((source) => {
+    const option = document.createElement("option");
+    option.value = source;
+    option.textContent = source;
+    agentLogSource.append(option);
+  });
+  agentLogSource.value = sources.includes(current) ? current : "all";
+}
+
+function getDiagnosticStatusTone(status) {
+  return {
+    healthy: "ok",
+    warning: "warning",
+    failed: "critical",
+    unknown: "planned",
+    unavailable: "planned",
+    "not-configured": "planned",
+  }[status] || "planned";
+}
+
+function createDiagnosticStatusCard(check) {
+  const card = document.createElement("article");
+  card.className = "diagnostics-status-card";
+  card.dataset.status = check.status || "unknown";
+  const header = document.createElement("div");
+  const title = createTextElement("strong", check.label || "Check");
+  const badge = createTextElement("span", check.statusLabel || check.status || "Unknown", `status-pill status-pill--${getDiagnosticStatusTone(check.status)}`);
+  header.append(title, badge);
+  const evidence = createTextElement("p", check.evidence || "No evidence available.");
+  const checked = createTextElement("small", check.checkedAt ? `Checked ${formatDateTime(check.checkedAt)}` : "Checked from current renderer state");
+  card.append(header, evidence, checked);
+  return card;
+}
+
+function buildDiagnosticsHealthChecks() {
+  const now = new Date().toISOString();
+  const failedOperations = [...operationsState.items.values()].filter((operation) => operation.status === "failed").length;
+  const recentErrors = agentLogEntries.filter((entry) => getDiagnosticSeverityRank(entry.severity) >= 3).length;
+  return [
+    { label: "Desktop application", status: desktopApiState.hasBridge ? "healthy" : "failed", statusLabel: desktopApiState.hasBridge ? "Healthy" : "Failed", evidence: desktopApiState.hasBridge ? "Desktop preload bridge is available." : "Desktop preload bridge is unavailable.", checkedAt: now },
+    { label: "Local Agent", status: agentConnectionState === "connected" ? "healthy" : agentConnectionState === "testing" ? "warning" : "unavailable", statusLabel: agentConnectionState === "connected" ? "Healthy" : agentConnectionState === "testing" ? "Checking" : "Unavailable", evidence: agentControlMessage?.textContent || `Agent state: ${agentConnectionState}.`, checkedAt: now },
+    { label: "Selected node", status: getSelectedNodeId() ? "unknown" : "not-configured", statusLabel: getSelectedNodeId() ? "Unknown" : "Not configured", evidence: `${formatMarketplaceSelectedNodeLabel()} · live heartbeat evidence is not currently loaded in Diagnostics.`, checkedAt: now },
+    { label: "Marketplace", status: desktopApiState.hasMarketplace ? "healthy" : "unavailable", statusLabel: desktopApiState.hasMarketplace ? "Available" : "Unavailable", evidence: desktopApiState.hasMarketplace ? `${getStaticMarketplaceTemplates().length} catalog templates currently loaded.` : "Marketplace IPC bridge is unavailable.", checkedAt: now },
+    { label: "Runtime dependencies", status: desktopApiState.hasDependencies ? "unknown" : "unavailable", statusLabel: desktopApiState.hasDependencies ? "Check available" : "Unavailable", evidence: dependencyStatus?.textContent || "No dependency check has run in this session.", checkedAt: now },
+    { label: "Files and storage", status: filesConnectionState.connected ? "healthy" : desktopApiState.hasFiles ? "warning" : "unavailable", statusLabel: filesConnectionState.connected ? "Connected" : desktopApiState.hasFiles ? "Not connected" : "Unavailable", evidence: filesConnectionState.connected ? `${latestFilesListing?.entries?.length || 0} visible entries in current location.` : "No active Files connection in this renderer state.", checkedAt: now },
+    { label: "Account authentication", status: accountState.authenticated ? "healthy" : accountState.configured ? "warning" : "not-configured", statusLabel: accountState.authenticated ? "Signed in" : accountState.configured ? "Configured" : "Not configured", evidence: accountState.authenticated ? "Account session is active." : "No active account session.", checkedAt: now },
+    { label: "Updates", status: desktopApiState.hasUpdates ? (updateUiState?.error ? "warning" : "unknown") : "unavailable", statusLabel: desktopApiState.hasUpdates ? (updateUiState?.error ? "Warning" : "Available") : "Unavailable", evidence: updateUiState?.error || updateUiState?.message || "Update service can be queried from Settings.", checkedAt: now },
+    { label: "Maintenance", status: desktopApiState.hasMaintenance ? "unknown" : "unavailable", statusLabel: desktopApiState.hasMaintenance ? "Available" : "Unavailable", evidence: maintenanceState.lastScanAt ? `Last scan ${formatDateTime(maintenanceState.lastScanAt)}.` : "No maintenance scan has run in this session.", checkedAt: now },
+    { label: "Recent operations", status: failedOperations ? "warning" : "healthy", statusLabel: failedOperations ? `${failedOperations} failed` : "Healthy", evidence: `${operationsState.items.size} operation records loaded.`, checkedAt: now },
+    { label: "Structured logs", status: recentErrors ? "warning" : agentLogEntries.length ? "healthy" : "unknown", statusLabel: recentErrors ? `${recentErrors} errors` : agentLogEntries.length ? "Available" : "Unknown", evidence: `${agentLogEntries.length} sanitized log entries loaded.`, checkedAt: now },
+    { label: "Diagnostics redaction", status: "healthy", statusLabel: "Active", evidence: "Display, copy, and export paths use structured redaction and renderer-side defensive masking.", checkedAt: now },
+  ];
+}
+
+function renderDiagnosticsOverview() {
+  if (!diagnosticsOverview || !diagnosticsHealthList) return;
+  const checks = buildDiagnosticsHealthChecks();
+  diagnosticsOverview.replaceChildren();
+  checks.slice(0, 8).forEach((check) => diagnosticsOverview.append(createDiagnosticStatusCard(check)));
+  diagnosticsHealthList.replaceChildren();
+  checks.forEach((check) => diagnosticsHealthList.append(createDiagnosticStatusCard(check)));
+}
+
+function navigateDiagnosticWorkspace(workspace) {
+  if (!workspace) return;
+  if (workspace === "settings") {
+    showPage("settings");
+    return;
+  }
+  showPage(workspace);
+}
+
+function copyDiagnosticIssue(group) {
+  const explanation = getDiagnosticExplanation(group.code, group.latest);
+  const text = [
+    `Issue: ${explanation.title}`,
+    `Code: ${group.code || "none"}`,
+    `Severity: ${getDiagnosticSeverityLabel(group.severity)}`,
+    `Source: ${group.source}`,
+    `Operation: ${group.operation}`,
+    `First seen: ${group.firstSeen ? formatDateTime(group.firstSeen) : "Unknown"}`,
+    `Last seen: ${group.lastSeen ? formatDateTime(group.lastSeen) : "Unknown"}`,
+    `Count: ${group.count}`,
+    `Latest: ${boundDiagnosticText(group.latest?.message || "", 600)}`,
+    `Recommendation: ${explanation.action}`,
+  ].join("\n");
+  return navigator.clipboard.writeText(text).then(
+    () => showToast("Diagnostic issue copied.", "success"),
+    () => showToast("Diagnostic issue could not be copied.", "warning"),
+  );
+}
+
+function renderDiagnosticIssues(visibleEntries = getFilteredDiagnosticEntries()) {
+  if (!diagnosticsIssueList) return;
+  diagnosticsIssueGroups = groupDiagnosticIssues(visibleEntries);
+  if (diagnosticsIssueCount) {
+    diagnosticsIssueCount.textContent = diagnosticsIssueGroups.length
+      ? `${diagnosticsIssueGroups.length} grouped issue${diagnosticsIssueGroups.length === 1 ? "" : "s"} from ${visibleEntries.length} visible entries.`
+      : "No grouped issues in the current filter.";
+  }
+  diagnosticsIssueList.replaceChildren();
+  if (!diagnosticsIssueGroups.length) {
+    const empty = createEmptyState("No warning or error issues match the current Diagnostics filters.", "security-empty-state");
+    diagnosticsIssueList.append(empty);
+    return;
+  }
+  diagnosticsIssueGroups.slice(0, 30).forEach((group) => {
+    const explanation = getDiagnosticExplanation(group.code, group.latest);
+    const relatedOperation = findRelatedOperationForDiagnostic(group);
+    const item = document.createElement("details");
+    item.className = "diagnostics-issue";
+    item.dataset.severity = String(group.severity || "info").toLowerCase();
+    const summary = document.createElement("summary");
+    const title = document.createElement("span");
+    title.append(
+      createTextElement("strong", explanation.title),
+      createTextElement("small", [group.code || "NO_CODE", group.source, `${group.count} occurrence${group.count === 1 ? "" : "s"}`].filter(Boolean).join(" · ")),
+    );
+    const badge = createTextElement("span", getDiagnosticSeverityLabel(group.severity), `status-pill status-pill--${getDiagnosticStatusTone(group.severityRank >= 3 ? "failed" : "warning")}`);
+    summary.append(title, badge);
+
+    const body = document.createElement("div");
+    body.className = "diagnostics-issue__body";
+    [
+      ["Cause", explanation.cause],
+      ["Impact", explanation.impact],
+      ["Recommendation", explanation.action],
+      ["First seen", group.firstSeen ? formatDateTime(group.firstSeen) : "Unknown"],
+      ["Last seen", group.lastSeen ? formatDateTime(group.lastSeen) : "Unknown"],
+      ["Latest message", boundDiagnosticText(group.latest?.message || "No sanitized message.", 700)],
+      ["Related operation", relatedOperation ? relatedOperation.title || relatedOperation.id : "No linked operation found"],
+    ].forEach(([label, value]) => appendDetailPair(body, label, value, { valueTag: "small" }));
+
+    const occurrences = document.createElement("ol");
+    occurrences.className = "diagnostics-occurrences";
+    group.occurrences.forEach((entry) => {
+      const row = document.createElement("li");
+      row.textContent = `${entry.timestamp || "unknown"} ${String(entry.severity || "info").toUpperCase()} ${entry.operation || "event"}: ${boundDiagnosticText(entry.message || "", 360)}`;
+      occurrences.append(row);
+    });
+    body.append(createTextElement("strong", "Recent occurrences"), occurrences);
+
+    const actions = document.createElement("div");
+    actions.className = "diagnostics-issue-actions";
+    if (relatedOperation) {
+      const openOperation = document.createElement("button");
+      openOperation.type = "button";
+      openOperation.className = "inline-action";
+      openOperation.textContent = "Open Operations";
+      openOperation.addEventListener("click", () => {
+        operationsState.selectedId = relatedOperation.id;
+        renderOperationsCenter();
+        showPage("operations");
+      });
+      actions.append(openOperation);
+    }
+    if (explanation.workspace) {
+      const openWorkspace = document.createElement("button");
+      openWorkspace.type = "button";
+      openWorkspace.className = "inline-action";
+      openWorkspace.textContent = `Open ${explanation.workspace.replace(/-/g, " ")}`;
+      openWorkspace.addEventListener("click", () => navigateDiagnosticWorkspace(explanation.workspace));
+      actions.append(openWorkspace);
+    }
+    if (group.code === "ECONNREFUSED" || /agent/i.test(explanation.title)) {
+      const reconnect = document.createElement("button");
+      reconnect.type = "button";
+      reconnect.className = "inline-action";
+      reconnect.textContent = "Reconnect Agent";
+      reconnect.addEventListener("click", () => refreshAgentControl({ includeConfig: true }));
+      actions.append(reconnect);
+    }
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "inline-action";
+    copy.textContent = "Copy Issue";
+    copy.addEventListener("click", () => copyDiagnosticIssue(group));
+    actions.append(copy);
+    body.append(actions);
+    item.append(summary, body);
+    diagnosticsIssueList.append(item);
+  });
+}
+
+function renderDiagnosticsSupportPreview() {
+  if (!diagnosticsSupportCategories) return;
+  diagnosticsSupportCategories.replaceChildren();
+  getDiagnosticsSupportBundleCategories().forEach(([label, value]) => appendDetailPair(diagnosticsSupportCategories, label, value, { valueTag: "small" }));
+}
+
+function getDiagnosticsSupportBundleCategories() {
+  return [
+    ["Application", `${runtimeInfoState?.appVersion || "Current build"} · ${navigator.platform || "platform unavailable"}`],
+    ["Selected node", formatMarketplaceSelectedNodeLabel()],
+    ["Recent issues", `${diagnosticsIssueGroups.length} grouped issue(s), bounded to recent sanitized log entries`],
+    ["Operations", `${operationsState.items.size} bounded operation records loaded`],
+    ["Dependencies", dependencyStatus?.textContent || "No dependency check loaded"],
+    ["Maintenance", maintenanceState.lastScanAt ? `Last scan ${formatDateTime(maintenanceState.lastScanAt)}` : "No maintenance scan loaded"],
+    ["Logs", `${Math.min(agentLogEntries.length, DIAGNOSTIC_LOG_LIMIT)} sanitized entries; long lines and base64 payloads are suppressed in the renderer`],
+  ];
+}
+
+function confirmDiagnosticsSupportBundleExport() {
+  renderDiagnosticsSupportPreview();
+  const preview = getDiagnosticsSupportBundleCategories()
+    .map(([label, value]) => `- ${label}: ${value}`)
+    .join("\n");
+  return window.confirm(`Export a redacted diagnostics support bundle?\n\nIncluded categories:\n${preview}\n\nThe export uses the trusted main-process diagnostics service and excludes tokens, cookies, API keys, and raw secrets.`);
+}
+
+function formatDiagnosticLogLine(entry = {}) {
+  const message = boundDiagnosticText(entry.message || "", DIAGNOSTIC_LONG_TEXT_LIMIT);
+  const code = getDiagnosticEntryCode(entry);
+  return `${entry.timestamp || "unknown"} ${String(entry.severity || "info").toUpperCase().padEnd(5)} [${entry.source || "unknown"}:${entry.operation || "event"}] ${message}${code ? ` (${code})` : ""}`;
+}
+
+function runDiagnosticsHealthChecks() {
+  renderDiagnosticsOverview();
+  renderDiagnosticIssues();
+  renderDiagnosticsSupportPreview();
+  showToast("Diagnostics health checks refreshed.", "success");
+}
+
+function renderAgentLogs() {
+  if (!agentLogViewer) return;
+  renderAgentLogSourceOptions();
+  const visible = getFilteredDiagnosticEntries();
+  const bounded = visible.slice(-DIAGNOSTIC_VISIBLE_LINE_LIMIT);
+  agentLogViewer.textContent = bounded.length
+    ? bounded.map(formatDiagnosticLogLine).join("\n")
+    : "No matching sanitized logs.";
+  agentLogViewer.setAttribute("aria-label", `${bounded.length} of ${visible.length} matching sanitized diagnostic log lines shown.`);
   agentLogViewer.classList.toggle("is-nowrap", agentLogWrap?.checked === false);
+  renderDiagnosticsOverview();
+  renderDiagnosticIssues(visible);
+  renderDiagnosticsSupportPreview();
 }
 
 async function refreshAgentLogs() {
   if (agentLogPause?.checked) return;
   const api = getDesktopApiState().api?.diagnostics;
   if (!api) return;
-  try { agentLogEntries = (await api.read({ limit: 400 }))?.entries || []; renderAgentLogs(); } catch (error) { if (agentLogViewer) agentLogViewer.textContent = normalizeIpcErrorMessage(error, "Logs unavailable."); }
+  try { agentLogEntries = (await api.read({ limit: DIAGNOSTIC_LOG_LIMIT }))?.entries || []; renderAgentLogs(); } catch (error) { if (agentLogViewer) agentLogViewer.textContent = normalizeIpcErrorMessage(error, "Logs unavailable."); }
 }
 
 async function refreshAgentControl({ includeConfig = false } = {}) {
@@ -12383,18 +12828,39 @@ function getGlobalSearchProviders() {
       label: "Diagnostics",
       type: "Diagnostic",
       search(query) {
-        const entries = agentLogEntries.slice(-120).reverse();
-        return entries
-          .filter((entry) => matchesSearchQuery(query, entry.severity, entry.scope, entry.message, entry.code))
+        const issueResults = (diagnosticsIssueGroups.length ? diagnosticsIssueGroups : groupDiagnosticIssues(agentLogEntries))
+          .filter((group) => matchesSearchQuery(query, group.code, group.source, group.operation, group.latest?.message, getDiagnosticExplanation(group.code, group.latest).title))
+          .slice(0, 12)
+          .map((group) => {
+            const explanation = getDiagnosticExplanation(group.code, group.latest);
+            return createGlobalSearchResult(this, {
+              id: `issue:${group.id}`,
+              label: explanation.title,
+              description: [group.code || "No code", getDiagnosticSeverityLabel(group.severity), `${group.count} occurrence${group.count === 1 ? "" : "s"}`].join(" · "),
+              action: () => {
+                showPage("agent-control");
+                if (agentLogSearch) {
+                  agentLogSearch.value = group.code || group.source || explanation.title;
+                  renderAgentLogs();
+                  agentLogSearch.focus();
+                }
+              },
+            });
+          });
+        const entries = agentLogEntries.slice(-80).reverse();
+        const logResults = entries
+          .filter((entry) => matchesSearchQuery(query, entry.severity, entry.source, entry.operation, entry.message, entry.code))
+          .slice(0, 10)
           .map((entry, index) => createGlobalSearchResult(this, {
             id: `${entry.timestamp || "log"}:${index}`,
             label: entry.message || entry.code || "Diagnostic entry",
-            description: [entry.severity, entry.scope, entry.timestamp ? formatDateTime(entry.timestamp) : ""].filter(Boolean).join(" · "),
+            description: [entry.severity, entry.source, entry.operation, entry.timestamp ? formatDateTime(entry.timestamp) : ""].filter(Boolean).join(" · "),
             action: () => {
               showPage("agent-control");
               agentLogSearch?.focus();
             },
           }));
+        return [...issueResults, ...logResults];
       },
     },
   ];
@@ -12585,11 +13051,16 @@ async function refreshCurrentFilesDirectory() {
 }
 
 async function runDiagnosticsAction(action) {
+  if (action === "health") {
+    runDiagnosticsHealthChecks();
+    return;
+  }
   const api = getDesktopApiState().api?.diagnostics;
   if (!api) {
     showToast("Diagnostics are unavailable in this build.", "warning");
     return;
   }
+  if (action === "export" && !confirmDiagnosticsSupportBundleExport()) return;
   const operationId = startOperation({
     type: "Diagnostics",
     title: {
@@ -12597,6 +13068,7 @@ async function runDiagnosticsAction(action) {
       open: "Open logs folder",
       copy: "Copy diagnostics summary",
       export: "Export diagnostics bundle",
+      health: "Run diagnostics health checks",
     }[action] || "Run diagnostics action",
     target: getActivePageName(),
     step: "Running diagnostics action.",
@@ -12886,22 +13358,24 @@ function getCommandRegistry() {
       disabledReason: () => filesConnectionState.connected ? "A file operation is already running." : "Connect a filesystem first.",
       execute: () => { showPage("files"); return createRemoteFolder(); },
     }),
-    ...["capture", "copy", "export", "open"].map((action) => createCommand({
+    ...["capture", "health", "copy", "export", "open"].map((action) => createCommand({
       id: `diagnostics.${action}`,
       title: {
         capture: "Run Diagnostics",
+        health: "Run Health Checks",
         copy: "Copy Diagnostics Summary",
         export: "Export Diagnostics Bundle",
         open: "Open Diagnostics Folder",
       }[action],
       description: {
         capture: "Capture a diagnostics snapshot for the current workspace.",
+        health: "Refresh deterministic Diagnostics health checks from current desktop state.",
         copy: "Copy the existing redacted diagnostics summary.",
         export: "Export a redacted support bundle.",
         open: "Open the local diagnostics folder.",
       }[action],
       category: "Diagnostics",
-      enabled: () => Boolean(desktopApiState.api?.diagnostics),
+      enabled: () => action === "health" || Boolean(desktopApiState.api?.diagnostics),
       disabledReason: () => "Diagnostics are unavailable in this build.",
       execute: () => runDiagnosticsAction(action),
     })),
@@ -22409,6 +22883,7 @@ agentControlButtons.forEach((button) => button.addEventListener("click", () => r
 dependencyButtons.forEach((button) => button.addEventListener("click", () => runDependencyAction(button.dataset.dependencyAction)));
 agentLogSearch?.addEventListener("input", renderAgentLogs);
 agentLogSeverity?.addEventListener("change", renderAgentLogs);
+agentLogSource?.addEventListener("change", renderAgentLogs);
 agentLogWrap?.addEventListener("change", renderAgentLogs);
 agentRemoteList?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-remote-agent-diagnostics]");

@@ -78,7 +78,9 @@ async function main() {
 
   const main = fs.readFileSync(path.join(root, "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
+  const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
   const controlIpc = fs.readFileSync(path.join(root, "src", "ipc", "agentControlIpc.js"), "utf8");
   const externalUrlService = fs.readFileSync(path.join(root, "src", "services", "externalUrlService.js"), "utf8");
   const desktopSources = [
@@ -93,6 +95,15 @@ async function main() {
   assert(!desktopSources.includes("shell.openExternal"), "Desktop code must route browser handoff through externalUrlService instead of direct shell.openExternal calls.");
   assert(preload.includes("forwardPreloadError") && app.includes('window.addEventListener("unhandledrejection"'));
   assert(controlIpc.includes('authorize("remote-diagnostics")') && controlIpc.includes("requireOwner"), "Remote diagnostic capture must be owner-gated in the main process.");
+  assert(index.includes("data-diagnostics-overview") && index.includes("data-diagnostics-issue-list") && index.includes("data-agent-log-source"), "Diagnostics workspace must expose overview, grouped issues, and source filtering controls.");
+  assert(styles.includes(".diagnostics-overview") && styles.includes(".diagnostics-issue") && styles.includes(".diagnostics-support-preview"), "Diagnostics production UI styles must be present.");
+  assert(app.includes("KNOWN_DIAGNOSTIC_EXPLANATIONS") && app.includes("AGENT_PORT_IN_USE") && app.includes("MAINTENANCE_PARTIAL_CLEANUP"), "Known deterministic diagnostics must have controlled explanations.");
+  assert(app.includes("groupDiagnosticIssues") && app.includes("DIAGNOSTIC_OCCURRENCE_LIMIT"), "Diagnostics must group repeated issues with bounded occurrences.");
+  assert(app.includes("DIAGNOSTIC_BASE64_PATTERN") && app.includes("[redacted-base64]") && app.includes("boundDiagnosticText"), "Diagnostics renderer must defensively redact and bound long log content.");
+  assert(app.includes("confirmDiagnosticsSupportBundleExport") && app.includes("getDiagnosticsSupportBundleCategories"), "Support bundle export must preview included categories before export.");
+  assert(app.includes('id: `diagnostics.${action}`') && app.includes('health: "Run Health Checks"'), "Command Palette must expose real Diagnostics health-check action.");
+  assert(app.includes("diagnosticsIssueGroups") && app.includes("issueResults"), "Global Search must include grouped diagnostic issues without duplicating diagnostics logic.");
+  assert(app.includes('agentLogSource?.addEventListener("change", renderAgentLogs)'), "Diagnostics source filter must rerender logs and issue groups.");
   console.log("Diagnostics smoke checks passed.");
 }
 

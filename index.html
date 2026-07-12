@@ -3118,8 +3118,8 @@
             <section class="settings-section agent-log-section">
               <div class="settings-section__header agent-log-header">
                 <div>
-                  <h2>Developer Logs</h2>
-                  <p>Sanitized structured events from desktop, renderer, Agent, authentication, IPC, services, and updater.</p>
+                  <h2>Diagnostics</h2>
+                  <p>Sanitized structured events, grouped issues, health checks, and redacted support-bundle evidence.</p>
                 </div>
                 <div class="agent-log-actions" aria-label="Developer log actions">
                   <button class="inline-action" type="button" data-diagnostics-action="capture">Capture Snapshot</button>
@@ -3136,12 +3136,31 @@
                   <option value="warn">Warnings</option>
                   <option value="info">Information</option>
                 </select>
+                <select data-agent-log-source>
+                  <option value="all">All sources</option>
+                </select>
                 <div class="agent-log-toolbar__controls">
                   <label class="settings-check agent-log-toggle"><input type="checkbox" data-agent-log-pause><span>Pause</span></label>
                   <label class="settings-check agent-log-toggle"><input type="checkbox" data-agent-log-wrap checked><span>Wrap</span></label>
                   <button class="inline-action agent-log-refresh" type="button" data-agent-control-action="refreshLogs">Refresh</button>
                 </div>
               </div>
+              <div class="diagnostics-overview" data-diagnostics-overview aria-label="Diagnostics overview"></div>
+              <div class="diagnostics-health-list" data-diagnostics-health-list aria-label="Health checks"></div>
+              <section class="diagnostics-issues" aria-label="Grouped diagnostic issues">
+                <div class="panel-heading">
+                  <div>
+                    <h3>Grouped Issues</h3>
+                    <span data-diagnostics-issue-count>No grouped issues yet.</span>
+                  </div>
+                  <button class="inline-action" type="button" data-diagnostics-action="health">Run Health Checks</button>
+                </div>
+                <div class="diagnostics-issue-list" data-diagnostics-issue-list></div>
+              </section>
+              <details class="diagnostics-support-preview" data-diagnostics-support-preview>
+                <summary>Support Bundle Preview</summary>
+                <div data-diagnostics-support-categories></div>
+              </details>
               <pre class="agent-log-viewer" data-agent-log-viewer aria-live="polite">Logs will appear here.</pre>
             </section>
             <details class="settings-section settings-section--wide agent-config-details">

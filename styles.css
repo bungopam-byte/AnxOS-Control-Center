@@ -9326,6 +9326,119 @@ button:disabled {
   justify-content: center;
   white-space: nowrap;
 }
+.diagnostics-overview,
+.diagnostics-health-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+.diagnostics-health-list {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.diagnostics-status-card,
+.diagnostics-issue,
+.diagnostics-support-preview {
+  border: 1px solid rgba(190, 170, 220, .12);
+  border-radius: 8px;
+  background: rgba(7, 9, 14, .34);
+}
+.diagnostics-status-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px;
+}
+.diagnostics-status-card > div {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+}
+.diagnostics-status-card strong,
+.diagnostics-issue strong {
+  overflow-wrap: anywhere;
+}
+.diagnostics-status-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.diagnostics-status-card small,
+.diagnostics-issue small,
+.diagnostics-support-preview small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.diagnostics-issues {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+.diagnostics-issue-list {
+  display: grid;
+  gap: 8px;
+}
+.diagnostics-issue {
+  overflow: hidden;
+}
+.diagnostics-issue summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  cursor: pointer;
+}
+.diagnostics-issue summary > span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.diagnostics-issue__body {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(190, 170, 220, .1);
+}
+.diagnostics-occurrences {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  margin: 0;
+  padding-left: 18px;
+  overflow: auto;
+  color: rgba(220, 244, 255, .84);
+  font: .78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+.diagnostics-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.diagnostics-support-preview {
+  margin: 10px 0;
+  padding: 0;
+}
+.diagnostics-support-preview summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  color: rgba(238, 234, 246, .9);
+  font-weight: 800;
+}
+.diagnostics-support-preview > div {
+  display: grid;
+  gap: 7px;
+  padding: 0 12px 12px;
+}
 .agent-log-viewer { min-height: clamp(420px, 48vh, 760px); max-height: 760px; overflow: auto; margin: 0; padding: 14px; border: 1px solid rgba(115,220,202,.18); border-radius: var(--radius); background: #05070b; color: rgba(220,244,255,.9); font: .8rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
 .agent-log-viewer.is-nowrap { white-space: pre; }
 .agent-config-details { padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: rgba(12, 10, 18, .62); }

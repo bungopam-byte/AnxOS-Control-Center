@@ -80,8 +80,17 @@ async function main() {
   const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
   const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
   const controlIpc = fs.readFileSync(path.join(root, "src", "ipc", "agentControlIpc.js"), "utf8");
+  const externalUrlService = fs.readFileSync(path.join(root, "src", "services", "externalUrlService.js"), "utf8");
+  const desktopSources = [
+    "main.js",
+    "src/ipc/marketplaceIpc.js",
+    "src/services/accountAuthService.js",
+    "src/services/updateManager.js",
+    "src/services/developerGitUpdater.js",
+  ].map((relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8")).join("\n");
   assert(main.includes('process.on("uncaughtException"') && main.includes('process.on("unhandledRejection"'));
-  assert(main.includes("isSafeExternalUrl") && main.includes("external-url-blocked"), "Electron external navigation must be allowlisted and logged when blocked.");
+  assert(externalUrlService.includes("isSafeExternalUrl") && externalUrlService.includes("external-url-blocked"), "Electron external navigation must be allowlisted and logged when blocked.");
+  assert(!desktopSources.includes("shell.openExternal"), "Desktop code must route browser handoff through externalUrlService instead of direct shell.openExternal calls.");
   assert(preload.includes("forwardPreloadError") && app.includes('window.addEventListener("unhandledrejection"'));
   assert(controlIpc.includes('authorize("remote-diagnostics")') && controlIpc.includes("requireOwner"), "Remote diagnostic capture must be owner-gated in the main process.");
   console.log("Diagnostics smoke checks passed.");

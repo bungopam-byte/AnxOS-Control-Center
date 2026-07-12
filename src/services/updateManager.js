@@ -4,6 +4,7 @@ const fs = require("fs");
 const http = require("http");
 const https = require("https");
 const path = require("path");
+const { openExternalUrl } = require("./externalUrlService");
 
 const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
 const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
@@ -480,13 +481,13 @@ class UpdateManager extends EventEmitter {
 
   async openRelease() {
     const releaseUrl = this.state.latest?.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
-    await shell.openExternal(releaseUrl);
+    await openExternalUrl(releaseUrl, { source: "updates-release" });
     return { opened: true };
   }
 
   async openDownload() {
     const downloadUrl = this.state.latest?.asset?.downloadUrl || this.state.latest?.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
-    await shell.openExternal(downloadUrl);
+    await openExternalUrl(downloadUrl, { source: "updates-download" });
     return { opened: true };
   }
 

@@ -1,4 +1,4 @@
-const { BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { BrowserWindow, dialog, ipcMain } = require("electron");
 const {
   cancelDownload,
   getDownloads,
@@ -20,6 +20,7 @@ const {
   searchProviderPacks,
 } = require("../services/marketplaceInstallService");
 const { audit, requirePermission } = require("../services/securityService");
+const { openExternalUrl } = require("../services/externalUrlService");
 
 let progressForwarderRegistered = false;
 
@@ -275,7 +276,7 @@ function registerMarketplaceIpc() {
   }));
   ipcMain.handle("marketplace:openManualDownloadPage", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
     const result = getManualInstallProviderPage(payload.sessionId);
-    await shell.openExternal(result.url);
+    await openExternalUrl(result.url, { source: "marketplace-manual-download" });
     return { opened: true, ...result };
   }));
   ipcMain.handle("marketplace:importManualDownloadFile", async (_, payload = {}) => invokeMarketplaceOperation(async () => {

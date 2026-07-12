@@ -1,5 +1,5 @@
 const { execFileSync } = require("child_process");
-const { shell } = require("electron");
+const { openExternalUrl } = require("./externalUrlService");
 
 function runGit(args, options = {}) {
   return execFileSync("git", args, {
@@ -166,7 +166,7 @@ class DeveloperGitUpdater {
     if (!origin || !state.localCommit || !state.remoteCommit) return { opened: false };
 
     const url = `${origin}/compare/${encodeURIComponent(state.localCommit)}...${encodeURIComponent(state.remoteCommit)}`;
-    await shell.openExternal(url);
+    await openExternalUrl(url, { source: "developer-update-changes" });
     return { opened: true, url };
   }
 }

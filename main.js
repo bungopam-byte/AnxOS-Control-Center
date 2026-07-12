@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, ipcMain, screen } = require("electron");
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
@@ -21,6 +21,7 @@ const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services
 const { UpdateManager } = require("./src/services/updateManager");
 const { configureElectronPaths } = require("./src/services/electronPaths");
 const { DeveloperGitUpdater } = require("./src/services/developerGitUpdater");
+const { openExternalUrl } = require("./src/services/externalUrlService");
 
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
@@ -221,29 +222,6 @@ function getCenteredChildBounds(parent, width = 520, height = 650) {
   };
 }
 
-function isSafeExternalUrl(url) {
-  try {
-    const parsed = new URL(url);
-    return ["https:", "http:", "mailto:"].includes(parsed.protocol);
-  } catch {
-    return false;
-  }
-}
-
-function openExternalUrl(url, source = "navigation") {
-  if (!isSafeExternalUrl(url)) {
-    diagnostics.log("warn", "desktop", "external-url-blocked", "Blocked unsafe external URL navigation", {
-      source,
-      protocol: (() => {
-        try { return new URL(url).protocol; } catch { return "invalid"; }
-      })(),
-    }, { file: "desktop" });
-    return false;
-  }
-  shell.openExternal(url);
-  return true;
-}
-
 function openAddStorageWindow(payload = {}) {
   if (addStorageWindow && !addStorageWindow.isDestroyed()) {
     pendingAddStoragePayload = payload;
@@ -290,14 +268,14 @@ function openAddStorageWindow(payload = {}) {
   });
 
   addStorageWindow.webContents.setWindowOpenHandler(({ url }) => {
-    openExternalUrl(url, "add-storage-window-open");
+    openExternalUrl(url, { source: "add-storage-window-open" }).catch(() => {});
     return { action: "deny" };
   });
 
   addStorageWindow.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("file://")) {
       event.preventDefault();
-      openExternalUrl(url, "add-storage-navigation");
+      openExternalUrl(url, { source: "add-storage-navigation" }).catch(() => {});
     }
   });
 
@@ -398,14 +376,14 @@ function createWindow() {
   }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
-    openExternalUrl(url, "main-window-open");
+    openExternalUrl(url, { source: "main-window-open" }).catch(() => {});
     return { action: "deny" };
   });
 
   window.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith("file://")) {
       event.preventDefault();
-      openExternalUrl(url, "main-window-navigation");
+      openExternalUrl(url, { source: "main-window-navigation" }).catch(() => {});
     }
   });
 

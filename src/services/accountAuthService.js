@@ -2,8 +2,9 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { app, shell } = require("electron");
+const { app } = require("electron");
 const { SecureSessionStore, getDefaultConfigDirectory } = require("./secureSessionStore");
+const { openExternalUrl } = require("./externalUrlService");
 
 const WEBSITE_BASE_URL = "https://anxos-control-center.pages.dev";
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -626,7 +627,7 @@ async function startDeviceLogin() {
       pendingDeviceLogin = createLocalPendingDeviceLogin();
     }
     const verificationUrl = assertApprovedExternalUrl(pendingDeviceLogin.verificationUrl, "verification");
-    await shell.openExternal(verificationUrl);
+    await openExternalUrl(verificationUrl, { source: "account-device-login" });
     audit({
       action: "account.deviceLogin.start",
       outcome: "ok",
@@ -722,7 +723,7 @@ async function refreshSession() {
 async function openAccountPage() {
   const targetUrl = pendingDeviceLogin?.verificationUrl || buildWebsiteUrl(getCurrentSession() ? "account" : "signin");
   const url = assertApprovedExternalUrl(targetUrl, "account");
-  await shell.openExternal(url);
+  await openExternalUrl(url, { source: "account-page" });
   return { ok: true, url };
 }
 

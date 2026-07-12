@@ -18,6 +18,17 @@ let accountCleanupBusy = false;
 let securityHistoryFilter = "all";
 let securityHistoryHideOld = true;
 
+function readLocalStorageFlag(key) {
+  try {
+    return window.localStorage?.getItem?.(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+const WEBSITE_DEBUG = new URLSearchParams(window.location.search).has("debug")
+  || readLocalStorageFlag("anxos.websiteDebug");
+
 function redirectToCanonicalSiteOrigin() {
   const configuredOrigin = String(accountConfig.siteUrl || "").replace(/\/+$/, "");
   if (!configuredOrigin) return;
@@ -52,24 +63,56 @@ function applyConfigText() {
   });
   document.querySelectorAll("[data-config-href]").forEach((node) => {
     const key = node.dataset.configHref;
-    if (config[key]) node.href = config[key];
+    if (config[key]) {
+      node.href = config[key];
+      node.removeAttribute("aria-disabled");
+      node.classList.remove("is-disabled");
+      return;
+    }
+    node.removeAttribute("href");
+    node.setAttribute("aria-disabled", "true");
+    node.classList.add("is-disabled");
   });
   setText("[data-release-title]", `Version ${config.latestVersion || ""}`.trim());
 }
 
 function applyDownloads() {
   const downloads = config.downloads || {};
+  let availableDownloads = 0;
   document.querySelectorAll("[data-download]").forEach((node) => {
     const item = downloads[node.dataset.download];
-    if (!item) return;
+    if (!item?.url) {
+      node.removeAttribute("href");
+      node.removeAttribute("download");
+      node.setAttribute("aria-disabled", "true");
+      node.classList.add("is-disabled");
+      const label = node.querySelector("span") || node;
+      label.textContent = "Unavailable";
+      return;
+    }
+    availableDownloads += 1;
     node.href = item.url;
     node.setAttribute("download", item.fileName);
     node.setAttribute("aria-label", `${item.label}: ${item.fileName}`);
+    node.removeAttribute("aria-disabled");
+    node.classList.remove("is-disabled");
   });
   document.querySelectorAll("[data-file]").forEach((node) => {
     const item = downloads[node.dataset.file];
-    if (!item) return;
+    if (!item) {
+      node.textContent = "Release metadata unavailable";
+      return;
+    }
     node.textContent = `${item.fileName} · ${item.size}`;
+  });
+  document.querySelectorAll("[data-download-status]").forEach((node) => {
+    if (availableDownloads > 0) {
+      node.textContent = `Release metadata loaded for ${availableDownloads} package${availableDownloads === 1 ? "" : "s"}.`;
+      node.dataset.tone = "ok";
+    } else {
+      node.textContent = "Release metadata is unavailable. Use the GitHub release page or try again later.";
+      node.dataset.tone = "warn";
+    }
   });
 }
 
@@ -263,6 +306,7 @@ function setDeviceMessage(message, tone = "muted") {
 }
 
 function logAuthVisibility(operation, context = {}) {
+  if (!WEBSITE_DEBUG) return;
   const snapshot = {
     authState,
     hasSession: Boolean(currentSession?.user),
@@ -352,6 +396,9 @@ async function initializeAccount() {
 function disableAccountForms(message) {
   authState = "signed-out";
   document.querySelectorAll("[data-device-login-form]").forEach((form) => setFormDisabled(form, true));
+  document.querySelectorAll("[data-account-unavailable]").forEach((node) => {
+    node.hidden = false;
+  });
   document.querySelectorAll("[data-auth-message], [data-device-login-message]").forEach((node) => {
     node.textContent = message;
     node.dataset.tone = "warn";
@@ -393,7 +440,7 @@ function setScopedAuthView(container, selectedState) {
 function applyAuthVisibility(operation = "apply") {
   document.querySelectorAll("[data-account-route]").forEach((section) => {
     let selectedState = authState;
-    if (section.dataset.accountRoute === "signin" && authState === "loading") selectedState = "signed-out";
+    if (section.dataset.accountRoute === "signin" && authState === "loading") selectedState = "loading";
     if (section.dataset.accountRoute === "profile" && authState === "signed-out") selectedState = "signed-out";
     setScopedAuthView(section, selectedState);
   });
@@ -519,6 +566,10 @@ async function handleSignIn(form) {
 }
 
 async function handleSignUp(form) {
+  if (form.elements.passwordConfirm && form.elements.password.value !== form.elements.passwordConfirm.value) {
+    setMessage("signup", "Passwords do not match.", "error");
+    return;
+  }
   setFormDisabled(form, true);
   setMessage("signup", "Creating account...");
   try {
@@ -1205,6 +1256,30 @@ function bindAccountForms() {
   });
 }
 
+function closeSiteMenu() {
+  const nav = document.querySelector("[data-site-nav]");
+  const toggle = document.querySelector("[data-site-menu-toggle]");
+  nav?.classList.remove("is-open");
+  toggle?.setAttribute("aria-expanded", "false");
+}
+
+function bindSiteNavigation() {
+  const nav = document.querySelector("[data-site-nav]");
+  const toggle = document.querySelector("[data-site-menu-toggle]");
+  if (!nav || !toggle) return;
+  toggle.addEventListener("click", () => {
+    const nextOpen = !nav.classList.contains("is-open");
+    nav.classList.toggle("is-open", nextOpen);
+    toggle.setAttribute("aria-expanded", String(nextOpen));
+  });
+  nav.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeSiteMenu();
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSiteMenu();
+  });
+}
+
 function applyHashRoute() {
   const hash = window.location.hash || "";
   const standaloneRoute = document.body?.dataset?.standaloneRoute || "";
@@ -1243,8 +1318,12 @@ function applyHashRoute() {
     "install",
     "downloads",
     "top",
+    "not-found",
   ]);
-  if (!supportedRoutes.has(activeRoute)) return;
+  if (!supportedRoutes.has(activeRoute)) {
+    window.location.hash = "not-found";
+    return;
+  }
   applyDeviceLoginPage();
   document.querySelectorAll("[data-account-route]").forEach((section) => {
     section.classList.toggle("account-route--active", section.dataset.accountRoute === activeRoute);
@@ -1259,6 +1338,7 @@ redirectToCanonicalSiteOrigin();
 applyConfigText();
 applyDownloads();
 applyReleaseNotes();
+bindSiteNavigation();
 bindAccountForms();
 applyDeviceLoginPage();
 initializeAccount().catch((error) => {

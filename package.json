@@ -42,6 +42,7 @@
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
     "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
+    "website:smoke": "node scripts/website-production-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
     "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",

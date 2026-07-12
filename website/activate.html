@@ -21,7 +21,8 @@
           <span>Device Activation</span>
         </span>
       </a>
-      <nav class="site-nav" aria-label="Primary">
+      <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
         <a href="index.html#signin">Sign In</a>
         <a href="index.html#signup">Sign Up</a>
         <a href="release-notes.html">Release Notes</a>
@@ -35,14 +36,14 @@
             <div class="auth-card__header">
               <p class="eyebrow">Device Activation</p>
               <h2>Approve desktop sign-in</h2>
-              <p>Review the device code from AnxOS Control Center, then approve or deny access.</p>
+              <p>Review the device code from AnxOS Control Center, then approve or deny access. Opening this page never approves a device automatically.</p>
             </div>
             <div class="device-code-card">
               <span>Device code</span>
               <strong data-activation-code>Enter the code shown in AnxOS</strong>
             </div>
             <form class="account-form auth-form" data-device-login-form>
-              <label>Device code<input type="text" autocomplete="one-time-code" name="userCode" data-device-code-input placeholder="ABCD1234" required></label>
+              <label>Device code<input type="text" autocomplete="one-time-code" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="16" name="userCode" data-device-code-input placeholder="ABCD1234" required></label>
               <button class="button button-secondary" type="button" data-device-action="lookup">Review Device</button>
             </form>
             <div class="account-device-summary" data-device-summary>

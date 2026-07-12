@@ -9170,7 +9170,11 @@ async function maybePrepareMarketplaceDependencies(normalizedError, template, op
   }
 
   const dependencyList = formatMissingDependencyList(missingDependencies);
-  const confirmed = window.confirm(`${template.displayName || template.id} requires missing node dependencies: ${dependencyList}.\n\nInstall them on the selected Agent and retry?`);
+  const confirmed = await createSecurityConfirmation({
+    title: "Prepare Node Dependencies",
+    message: `${template.displayName || template.id} requires missing node dependencies: ${dependencyList}. AnxOS can install supported dependencies on the selected Agent, verify them, then retry the install.`,
+    confirmLabel: "Install Missing",
+  });
   if (!confirmed) {
     setMarketplaceMessage(`Install blocked until dependencies are ready: ${dependencyList}.`, "warning");
     return true;

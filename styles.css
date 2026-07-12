@@ -10347,7 +10347,7 @@ button:disabled {
   display: grid;
   align-content: start;
   gap: 14px;
-  width: min(430px, calc(100vw - 28px));
+  width: min(760px, calc(100vw - 28px));
   max-height: calc(100dvh - var(--titlebar-height) - 28px);
   overflow: auto;
   padding: 16px;
@@ -10360,8 +10360,203 @@ button:disabled {
 
 .node-details-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: 8px;
   margin: 0;
+}
+
+.settings-section--node-health {
+  display: grid;
+  gap: 14px;
+}
+
+.node-health-header {
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.node-health-header p {
+  max-width: 64ch;
+}
+
+.node-health-overview {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 12px;
+}
+
+.node-health-overview > div {
+  min-height: 74px;
+  padding: 12px;
+}
+
+.node-health-overview > div:first-child {
+  border-color: rgba(168, 128, 255, 0.22);
+  background:
+    linear-gradient(180deg, rgba(126, 86, 255, 0.12), rgba(7, 9, 14, 0.28)),
+    rgba(7, 9, 14, 0.34);
+}
+
+.node-health-overview strong {
+  font-size: 1rem;
+  line-height: 1.25;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.node-health-categories,
+.node-health-issues {
+  gap: 12px;
+}
+
+.node-health-categories .security-list-item,
+.node-health-issues .security-list-item {
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.node-health-categories .security-card-row,
+.node-health-issues .security-card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.node-health-card-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-health-card-body > strong {
+  color: rgba(248, 245, 255, 0.96);
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+
+.node-health-summary-text {
+  display: -webkit-box;
+  max-width: 78ch;
+  overflow: hidden;
+  color: rgba(226, 216, 240, 0.76);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.node-health-long-value {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-health-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.node-health-meta-item {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: baseline;
+  max-width: 100%;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid rgba(190, 170, 220, 0.1);
+  border-radius: 8px;
+  background: rgba(7, 9, 14, 0.24);
+}
+
+.node-health-meta-item span {
+  color: rgba(226, 216, 240, 0.56);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.node-health-meta-item strong {
+  min-width: 0;
+  color: rgba(248, 245, 255, 0.88);
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-health-details-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.node-health-details {
+  flex: 1 1 280px;
+  min-width: min(100%, 220px);
+  color: rgba(226, 216, 240, 0.7);
+  font-size: 0.8rem;
+}
+
+.node-health-details summary {
+  width: fit-content;
+  cursor: pointer;
+  color: rgba(238, 234, 246, 0.88);
+  font-weight: 800;
+}
+
+.node-health-details summary:focus-visible {
+  outline: 2px solid rgba(206, 150, 255, 0.88);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.node-health-details ul {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.node-health-copy,
+.node-health-actions .inline-action {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.node-health-categories .status-pill,
+.node-health-issues .status-pill {
+  max-width: 180px;
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .node-details-drawer {
+    padding: 14px;
+  }
+
+  .node-health-categories .security-card-row,
+  .node-health-issues .security-card-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .node-health-categories .status-pill,
+  .node-health-issues .status-pill {
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-details-drawer {
+    animation: none;
+  }
 }
 
 @keyframes nodeDrawerIn {

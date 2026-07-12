@@ -21612,6 +21612,73 @@ function createNodeHealthBadge(state) {
   return createTextElement("span", normalizeNodeHealthState(state), `status-pill status-pill--${nodeHealthTone(state)}`);
 }
 
+function getNodeHealthBreakdown(health) {
+  const breakdown = {
+    critical: 0,
+    warnings: 0,
+    healthy: 0,
+    unknown: 0,
+  };
+  (health?.categories || []).forEach((category) => {
+    const state = normalizeNodeHealthState(category.state);
+    if (state === "Critical" || state === "Offline") breakdown.critical += 1;
+    else if (state === "Degraded" || state === "Needs attention") breakdown.warnings += 1;
+    else if (state === "Healthy") breakdown.healthy += 1;
+    else breakdown.unknown += 1;
+  });
+  return breakdown;
+}
+
+function splitNodeHealthEvidence(evidence = "") {
+  const parts = String(evidence || "No evidence available.")
+    .split(" · ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return {
+    summary: parts.slice(0, 2).join(" · ") || "No evidence available.",
+    details: parts.slice(2),
+    all: parts.length ? parts.join(" · ") : "No evidence available.",
+  };
+}
+
+function createNodeHealthMeta(label, value) {
+  const item = document.createElement("span");
+  item.className = "node-health-meta-item";
+  item.append(createTextElement("span", label), createTextElement("strong", value));
+  return item;
+}
+
+function createNodeHealthDetails(category, evidence) {
+  const details = document.createElement("details");
+  details.className = "node-health-details";
+  const summary = createTextElement("summary", "Evidence");
+  const list = document.createElement("ul");
+  const entries = evidence.details.length ? evidence.details : [evidence.summary];
+  entries.forEach((entry) => {
+    const row = document.createElement("li");
+    row.append(createTextElement("span", entry, "node-health-long-value"));
+    list.append(row);
+  });
+  details.append(summary, list);
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "inline-action node-health-copy";
+  copy.textContent = "Copy details";
+  copy.setAttribute("aria-label", `Copy health details for ${category.label}`);
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(`${category.label}: ${evidence.all}`);
+      showToast("Node health details copied.", "success");
+    } catch {
+      showToast("Could not copy node health details.", "warning");
+    }
+  });
+  const wrapper = document.createElement("div");
+  wrapper.className = "node-health-details-wrap";
+  wrapper.append(details, copy);
+  return wrapper;
+}
+
 function runNodeHealthAction(action) {
   if (action === "test-node") return testSelectedNode();
   if (action === "reconnect-agent") return refreshAgentControl({ includeConfig: true });
@@ -21637,13 +21704,16 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
     nodeHealthUpdated.textContent = `Last checked ${formatHealthCheckedAt(health.updatedAt)} · ${health.staleCount} stale categor${health.staleCount === 1 ? "y" : "ies"}.`;
   }
   if (nodeHealthOverview) {
+    const breakdown = getNodeHealthBreakdown(health);
     renderSecuritySummaryGrid(nodeHealthOverview, [
       ["Overall", health.state],
       ["Issues", health.issueCount],
-      ["Categories", health.categories.length],
-      ["Stale data", health.staleCount],
+      ["Critical", breakdown.critical],
+      ["Warnings", breakdown.warnings],
+      ["Healthy", breakdown.healthy],
+      ["Unknown", breakdown.unknown],
       ["Node", health.nodeName],
-      ["Summary", health.summary],
+      ["Stale data", health.staleCount],
     ]);
   }
   if (nodeHealthCategories) {
@@ -21655,14 +21725,25 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
       const row = document.createElement("div");
       row.className = "security-card-row";
       const body = document.createElement("div");
+      body.className = "node-health-card-body";
+      const evidence = splitNodeHealthEvidence(category.evidence);
+      const meta = document.createElement("div");
+      meta.className = "node-health-meta";
+      meta.append(
+        createNodeHealthMeta("Checked", formatHealthCheckedAt(category.checkedAt)),
+        createNodeHealthMeta("Issues", String(category.issueCount || 0)),
+        createNodeHealthMeta("Workspace", category.workspace || "Unavailable"),
+      );
       body.append(
         createTextElement("strong", category.label),
-        createTextElement("p", category.evidence),
-        createTextElement("p", `Checked ${formatHealthCheckedAt(category.checkedAt)}${category.stale ? " · Stale or unavailable data" : ""} · ${category.issueCount} issue${category.issueCount === 1 ? "" : "s"}`, "security-event-meta"),
+        createTextElement("p", evidence.summary, "node-health-summary-text"),
+        meta,
       );
+      if (category.stale) body.append(createTextElement("p", "Stale or unavailable data", "security-event-meta"));
+      body.append(createNodeHealthDetails(category, evidence));
       row.append(body, createNodeHealthBadge(category.state));
       const actions = document.createElement("div");
-      actions.className = "settings-actions";
+      actions.className = "settings-actions node-health-actions";
       const action = document.createElement("button");
       action.type = "button";
       action.className = "inline-action";
@@ -21684,10 +21765,20 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
       issues.forEach((category) => {
         const item = document.createElement("article");
         item.className = "security-list-item";
-        item.append(
+        const evidence = splitNodeHealthEvidence(category.evidence);
+        const row = document.createElement("div");
+        row.className = "security-card-row";
+        const body = document.createElement("div");
+        body.className = "node-health-card-body";
+        body.append(
           createTextElement("strong", category.label),
-          createTextElement("p", category.evidence),
-          createTextElement("p", `State: ${category.state} · Related workspace: ${category.workspace}`, "security-event-meta"),
+          createTextElement("p", evidence.summary, "node-health-summary-text"),
+          createTextElement("p", `Related workspace: ${category.workspace || "Unavailable"}`, "security-event-meta"),
+        );
+        row.append(body, createNodeHealthBadge(category.state));
+        item.append(
+          row,
+          createNodeHealthDetails(category, evidence),
         );
         nodeHealthIssues.append(item);
       });

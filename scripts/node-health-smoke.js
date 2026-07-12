@@ -5,6 +5,7 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
 function requireIndex(needle, message) {
   assert(index.includes(needle), message || `index.html is missing ${needle}`);
@@ -20,6 +21,9 @@ function requireApp(needle, message) {
   "data-node-health-updated",
   "data-node-health-categories",
   "data-node-health-issues",
+  "node-health-overview",
+  "node-health-categories",
+  "node-health-issues",
   "Node Health",
   "Health Issues",
   "Fix All is intentionally unavailable",
@@ -105,6 +109,12 @@ function requireApp(needle, message) {
 ].forEach((needle) => requireApp(needle, `Node health remediation should reuse ${needle}.`));
 
 [
+  "getNodeHealthBreakdown",
+  "splitNodeHealthEvidence",
+  "createNodeHealthDetails",
+  "node-health-summary-text",
+  "node-health-long-value",
+  "Copy details",
   "document.createElement(\"article\")",
   "nodeHealthCategories.replaceChildren()",
   "nodeHealthIssues.replaceChildren()",
@@ -112,6 +122,17 @@ function requireApp(needle, message) {
   "action.setAttribute(\"aria-label\"",
   "event.target.closest(\"[data-node-health-action]\")",
 ].forEach((needle) => requireApp(needle, `Node health rendering should be safe and accessible with ${needle}.`));
+
+[
+  ".node-health-overview",
+  "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
+  ".node-health-summary-text",
+  "-webkit-line-clamp: 2",
+  ".node-health-long-value",
+  "text-overflow: ellipsis",
+  "width: min(760px, calc(100vw - 28px))",
+  "@media (prefers-reduced-motion: reduce)",
+].forEach((needle) => assert(styles.includes(needle), `Node health polish CSS should include ${needle}.`));
 
 assert(!app.includes("nodeHealthCategories.innerHTML"), "Node health categories must not use raw HTML injection.");
 assert(!app.includes("nodeHealthIssues.innerHTML"), "Node health issues must not use raw HTML injection.");

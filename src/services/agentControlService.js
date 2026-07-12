@@ -145,6 +145,18 @@ function getUrlHostname(url) {
   }
 }
 
+function normalizeAgentUrlForComparison(url) {
+  try {
+    const parsed = new URL(url);
+    const protocol = parsed.protocol.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+    const port = parsed.port || (protocol === "https:" ? "443" : protocol === "http:" ? "80" : "");
+    return `${protocol}//${hostname}:${port}`;
+  } catch {
+    return null;
+  }
+}
+
 function getConfiguredAgentHealthConfig(effective) {
   return {
     backendMode: "agent",
@@ -421,9 +433,27 @@ async function listAgents() {
   const configured = await getConfiguredAgentStatus();
   const selectedNodeId = getSelectedNodeId();
   const effective = agentClient.getEffectiveAgentSettings();
+  const configuredUrlKey = effective.backendMode === "agent" ? normalizeAgentUrlForComparison(effective.agentUrl) : null;
   const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => {
     const started = Date.now();
     const healthConfig = getRemoteHealthConfig(node, selectedNodeId);
+    if (configuredUrlKey && normalizeAgentUrlForComparison(node.agentUrl) === configuredUrlKey) {
+      return {
+        local: false,
+        targetType: healthConfig.targetLabel,
+        healthTargetLabel: healthConfig.targetLabel,
+        nodeId: node.id,
+        state: configured.state,
+        name: node.displayName,
+        agentUrl: node.agentUrl,
+        identity: configured.identity || node.agentIdentity,
+        agentVersion: configured.agentVersion || node.agentIdentity?.agentVersion,
+        latencyMs: configured.latencyMs || null,
+        lastHeartbeat: configured.lastHeartbeat || null,
+        mostRecentError: configured.mostRecentError || null,
+        reusedConfiguredAgentProbe: true,
+      };
+    }
     try {
       const health = await agentClient.getHealth(healthConfig);
       return {

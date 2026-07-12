@@ -16,6 +16,8 @@ async function main() {
   const htmlSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(serviceSource.includes("getConfiguredAgentStatus"), "Agent Control must expose configured Agent status separately from local status.");
   assert(serviceSource.includes('targetLabel: "configured-agent"'), "Configured Agent checks must be labeled separately.");
+  assert(serviceSource.includes("normalizeAgentUrlForComparison"), "Agent Control should normalize Agent URLs before deduping probes.");
+  assert(serviceSource.includes("reusedConfiguredAgentProbe"), "Agent Control should reuse configured Agent probe results for matching registered nodes.");
   assert(serviceSource.includes("normalizeAgentRuntimeStatus"), "Agent Control must normalize runtime status before rendering.");
   assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");
   assert(serviceSource.includes("runtime-payload-shape"), "Development diagnostics should log sanitized runtime payload shapes.");

@@ -89,6 +89,10 @@ async function main() {
     assert.strictEqual(consoleErrors[0][1].originalMessage, "connect ECONNREFUSED 127.0.0.1:47131");
     assert.strictEqual(consoleErrors[0][1].causeCode, "ECONNREFUSED");
 
+    const agentControlSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentControlService.js"), "utf8");
+    assert(agentControlSource.includes("normalizeAgentUrlForComparison"), "Agent Control must normalize URLs before duplicate remote probe checks.");
+    assert(agentControlSource.includes("reusedConfiguredAgentProbe"), "Agent Control must mark matching registered nodes that reuse the configured Agent probe.");
+
     const paths = resolveElectronPaths({
       platform: "win32",
       env: {
@@ -105,7 +109,6 @@ async function main() {
     assert(!/Program Files/i.test(paths.cache), "cache must not resolve inside Program Files");
 
     const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
-    const agentControlSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentControlService.js"), "utf8");
     assert(appSource.includes("assertAccountResultOk"), "renderer should reject account IPC ok:false results");
     assert(appSource.includes("accountStartInFlight"), "renderer should prevent duplicate account sign-in starts");
     assert(appSource.includes("accountStartRetryAfter"), "renderer should cool down failed account sign-in starts");

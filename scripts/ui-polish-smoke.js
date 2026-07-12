@@ -71,10 +71,13 @@ assert(index.includes("data-agent-log-viewer") && index.includes("data-agent-dia
 assert(app.includes("runAgentControlAction") && app.includes("refreshAgentControl"), "Agent Control actions must be wired in the renderer.");
 assert(app.includes("startAgentControlPolling") && app.includes("agentControlRefreshInFlight"), "Agent Control polling must prevent duplicate overlapping refreshes.");
 assert(app.includes("remoteDiagnosticsInFlight") && app.includes("Remote diagnostics were just captured."), "Remote Agent diagnostics capture must be guarded against repeated exports.");
+assert(app.includes("function summarizeDependencyStatus") && app.includes("dependencyOperationState") && app.includes("latestDependencyNodeId"), "Prepare Node status must aggregate from current dependency snapshot and node scope.");
+assert(app.includes("summary.state === \"ready\" ? \"Healthy\"") && app.includes("optional === true"), "Dependency health must treat installed required dependencies as ready and skip optional dependencies.");
 assert(app.includes("formatAgentCpu") && app.includes("formatAgentMemory") && app.includes("formatAgentProcess"), "Agent Control must format normalized runtime metrics.");
 assert(app.includes("agentControlLastRuntimeSnapshot"), "Agent Control must preserve brief stale metrics during transient failures.");
 assert(!app.includes('"Service managed"'), "Agent Control must not render Service managed as the primary process value.");
 assert(styles.includes(".agent-overview-actions .primary-button:disabled"), "Disabled lifecycle buttons must not keep the active primary styling.");
+assert(styles.includes(".docker-empty-actions") && styles.includes(".docker-empty-state > *"), "Docker empty states must use non-overlapping content and action layout.");
 assert(styles.includes(".node-card__actions") && styles.includes(".node-details-drawer") && styles.includes("@keyframes nodeDrawerIn"), "Nodes polish CSS must include compact cards, drawer, and subtle animation.");
 assert(pageMarkup("operations").includes("data-operation-list") && pageMarkup("operations").includes('data-operation-filter="running"'), "Operations Center must expose filterable operation history.");
 assert(pageMarkup("operations").includes('data-operation-action="clear-completed"') && pageMarkup("operations").includes("data-operation-detail"), "Operations Center must expose history cleanup and details.");

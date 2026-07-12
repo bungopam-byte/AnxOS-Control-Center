@@ -95,6 +95,8 @@ const dockerLogsPauseInput = document.querySelector("[data-docker-logs-pause]");
 const dockerLogActionButtons = document.querySelectorAll("[data-docker-log-action]");
 const dockerStatsFields = document.querySelectorAll("[data-docker-stat]");
 const dockerInspectViewer = document.querySelector("[data-docker-inspect]");
+const dockerDetailsList = document.querySelector(".docker-details-list");
+const dockerInspectorTabs = document.querySelectorAll("[data-docker-tab]");
 const instancesDetailsPanel = document.querySelector(".instances-details-panel");
 const instanceWorkspaceCard = document.querySelector(".instance-workspace-card");
 const instancesList = document.querySelector("[data-instances-list]");
@@ -437,6 +439,10 @@ const remoteDiagnosticsInFlight = new Set();
 const remoteDiagnosticsLastCapturedAt = new Map();
 let latestDependencyResult = null;
 let latestDependencyResultAt = 0;
+let latestDependencyNodeId = null;
+let dependencyOperationState = "idle";
+let dependencyRequestSerial = 0;
+let dependencyLastError = null;
 let agentLogEntries = [];
 let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
@@ -643,6 +649,8 @@ let ampRendererReceiveCount = 0;
 let latestAmpSnapshot = null;
 let latestPlayitSnapshot = null;
 let latestDockerSnapshot = null;
+let dockerWorkspaceState = null;
+let dockerRequestSerial = 0;
 let latestSystemSnapshot = null;
 let latestSystemSnapshotAt = 0;
 let lastLoggedAmpUrlSource = null;
@@ -3087,24 +3095,87 @@ function renderAgentControlState(payload = agentControlState) {
   }
 }
 
-function renderDependencyStatus(result = null) {
+const DEPENDENCY_ATTENTION_STATES = new Set([
+  "missing",
+  "update-required",
+  "outdated",
+  "unsupported",
+  "admin-required",
+  "administrator-required",
+  "restart-required",
+  "verification-failed",
+  "installation-failed",
+  "failed",
+]);
+
+function isDependencyRequired(dependency = {}) {
+  if (dependency.optional === true) return false;
+  if (dependency.required === false) return false;
+  return dependency.dependencyType !== "optional";
+}
+
+function isDependencySatisfied(dependency = {}) {
+  const state = String(dependency.state || "").toLowerCase();
+  return state === "installed" || state === "healthy" || state === "ready";
+}
+
+function summarizeDependencyStatus(result = latestDependencyResult, options = {}) {
+  const operationState = options.operationState || dependencyOperationState;
+  if (operationState === "installing") {
+    return { label: "Installing", tone: "status-pill--planned", state: "installing", message: "Installing required dependencies.", attention: [] };
+  }
+  if (operationState === "checking") {
+    return { label: "Checking", tone: "status-pill--planned", state: "checking", message: "Checking required dependencies.", attention: [] };
+  }
+  if (!result) {
+    return { label: "Unknown", tone: "status-pill--planned", state: "unknown", message: "No valid dependency scan has completed.", attention: [] };
+  }
+
+  const dependencies = Array.isArray(result.dependencies) ? result.dependencies.filter(isDependencyRequired) : [];
+  const missingIds = new Set((Array.isArray(result.missingDependencyIds) ? result.missingDependencyIds : []).map((id) => String(id || "")));
+  const attention = dependencies.filter((dependency) => {
+    const state = String(dependency.state || "").toLowerCase();
+    if (missingIds.has(String(dependency.id || ""))) return true;
+    if (DEPENDENCY_ATTENTION_STATES.has(state)) return true;
+    return !isDependencySatisfied(dependency);
+  });
+
+  if (options.failed === true && attention.length > 0) {
+    return { label: "Failed", tone: "status-pill--critical", state: "failed", message: options.message || "Dependency operation failed and requirements are unresolved.", attention };
+  }
+  if (attention.length > 0) {
+    return { label: "Needs attention", tone: "status-pill--warning", state: "needs-attention", message: `${attention.length} required dependenc${attention.length === 1 ? "y needs" : "ies need"} attention.`, attention };
+  }
+  return {
+    label: "Ready",
+    tone: "status-pill--ok",
+    state: "ready",
+    message: dependencies.length ? "All required dependencies are installed." : "No required dependencies are pending.",
+    attention: [],
+  };
+}
+
+function renderDependencyStatus(result = null, options = {}) {
   if (!dependencyList) return;
-  latestDependencyResult = result;
-  latestDependencyResultAt = result ? Date.now() : 0;
+  if (options.updateSnapshot !== false) {
+    latestDependencyResult = result;
+    latestDependencyResultAt = result ? Date.now() : 0;
+    latestDependencyNodeId = result ? getSelectedNodeId() : null;
+  }
   dependencyList.replaceChildren();
+  const summary = summarizeDependencyStatus(result, options);
   const dependencies = Array.isArray(result?.dependencies) ? result.dependencies : [];
-  const missingCount = Array.isArray(result?.missingDependencyIds) ? result.missingDependencyIds.length : dependencies.filter((dependency) => dependency.state !== "installed").length;
   if (dependencyStatus) {
-    dependencyStatus.textContent = !result ? "Not checked" : missingCount === 0 ? "Ready" : `${missingCount} missing`;
-    dependencyStatus.className = `status-pill ${!result ? "status-pill--planned" : missingCount === 0 ? "status-pill--ok" : "status-pill--warning"}`;
+    dependencyStatus.textContent = summary.label;
+    dependencyStatus.className = `status-pill ${summary.tone}`;
   }
   if (!dependencies.length) {
     const empty = document.createElement("div");
     empty.className = "docker-empty-state";
     const title = document.createElement("strong");
-    title.textContent = "No dependency check yet";
+    title.textContent = result ? summary.label : "No dependency check yet";
     const message = document.createElement("span");
-    message.textContent = "Run Check Dependencies before installing Marketplace templates.";
+    message.textContent = result ? summary.message : "Run Check Dependencies before installing Marketplace templates.";
     empty.append(title, message);
     dependencyList.append(empty);
     return;
@@ -3139,6 +3210,7 @@ async function runDependencyAction(action) {
     return;
   }
   const requestContext = createNodeActionContext("dependencies");
+  const requestId = ++dependencyRequestSerial;
   const payload = {
     nodeId: requestContext.nodeId,
     groupIds: [
@@ -3167,13 +3239,20 @@ async function runDependencyAction(action) {
         target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
         step: "Preparing trusted dependency installation.",
       });
-      if (dependencyStatus) dependencyStatus.textContent = "Installing";
+      dependencyOperationState = "installing";
+      dependencyLastError = null;
+      renderDependencyStatus(latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null, { updateSnapshot: false });
       const installResult = await desktopApiState.api.dependencies.install(payload);
+      if (!isNodeRequestCurrent(requestContext) || requestId !== dependencyRequestSerial) {
+        return;
+      }
       if (installResult?.ok === false) {
         throw Object.assign(new Error(installResult.error?.message || "Dependency installation failed."), {
           code: installResult.error?.code || "DEPENDENCY_INSTALL_FAILED",
         });
       }
+      dependencyOperationState = "idle";
+      dependencyLastError = null;
       renderDependencyStatus(installResult);
       finishOperation(operationId, true, "Dependency preparation complete.");
       showToast("Dependency preparation complete.");
@@ -3185,26 +3264,42 @@ async function runDependencyAction(action) {
       target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
       step: "Checking installed runtimes and tools.",
     });
-    if (dependencyStatus) {
-      dependencyStatus.textContent = "Checking";
-      dependencyStatus.className = "status-pill status-pill--planned";
-    }
+    dependencyOperationState = "checking";
+    dependencyLastError = null;
+    renderDependencyStatus(latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null, { updateSnapshot: false });
     const check = await desktopApiState.api.dependencies.check(payload);
+    if (!isNodeRequestCurrent(requestContext) || requestId !== dependencyRequestSerial) {
+      return;
+    }
     if (check?.ok === false) {
       throw Object.assign(new Error(check.error?.message || "Dependency check failed."), {
         code: check.error?.code || "DEPENDENCY_CHECK_FAILED",
       });
     }
+    dependencyOperationState = "idle";
+    dependencyLastError = null;
     renderDependencyStatus(check);
     finishOperation(operationId, true, "Dependency check complete.");
   } catch (error) {
-    if (dependencyStatus) {
-      dependencyStatus.textContent = "Failed";
-      dependencyStatus.className = "status-pill status-pill--critical";
+    if (!isNodeRequestCurrent(requestContext) || requestId !== dependencyRequestSerial) {
+      return;
     }
+    dependencyOperationState = "failed";
+    dependencyLastError = error;
+    const currentResult = latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null;
+    const failedSummary = summarizeDependencyStatus(currentResult, {
+      operationState: "failed",
+      failed: true,
+      message: error?.message || "Dependency request failed.",
+    });
+    renderDependencyStatus(currentResult, {
+      updateSnapshot: false,
+      failed: true,
+      message: error?.message || "Dependency request failed.",
+    });
     showToast(error?.message || "Dependency request failed.");
     finishOperation(operationId, false, error?.message || "Dependency request failed.");
-    if (dependencyList) {
+    if (dependencyList && failedSummary.state === "failed") {
       const item = document.createElement("article");
       item.className = "download-item";
       const main = document.createElement("div");
@@ -3223,7 +3318,13 @@ async function runDependencyAction(action) {
       dependencyList.replaceChildren(item);
     }
   } finally {
-    dependencyButtons.forEach((button) => { button.disabled = false; });
+    if (isNodeRequestCurrent(requestContext) && requestId === dependencyRequestSerial) {
+      if (dependencyOperationState === "checking" || dependencyOperationState === "installing") {
+        dependencyOperationState = "idle";
+        renderDependencyStatus(latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null, { updateSnapshot: false });
+      }
+      dependencyButtons.forEach((button) => { button.disabled = false; });
+    }
   }
 }
 
@@ -5270,6 +5371,168 @@ function formatDockerValue(value) {
   return value === null || value === undefined || value === "" ? "Unavailable" : String(value);
 }
 
+function createTimeoutError(message, code = "DOCKER_REQUEST_TIMEOUT") {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function withTimeout(promise, ms, message, code) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(createTimeoutError(message, code)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) window.clearTimeout(timer);
+  });
+}
+
+function getDockerUnavailableReason(input = {}) {
+  const code = String(input.code || input.errorCode || "").toUpperCase();
+  const message = String(input.message || "");
+  if (/TIMEOUT|ABORT/.test(code) || /timed? out|timeout/i.test(message)) return "timeout";
+  if (/PERMISSION|EACCES|ACCESS/.test(code) || /permission denied|access is denied/i.test(message)) return "permission-denied";
+  if (/NOT_INSTALLED|not installed|not available on PATH/i.test(`${code} ${message}`)) return "not-installed";
+  if (/DAEMON|daemon.*not.*running|stopped/i.test(`${code} ${message}`)) return "daemon-stopped";
+  if (/AGENT|ECONNREFUSED|UNAVAILABLE|disconnected|unreachable/i.test(`${code} ${message}`)) return "agent-unavailable";
+  return "error";
+}
+
+function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) {
+  if (dockerRequestInFlight && !snapshot) {
+    return {
+      key: "loading",
+      title: "Loading Docker",
+      message: "Checking Docker availability on the selected node.",
+      badge: "Checking",
+      tone: "status-pill--planned",
+      ready: false,
+      countsAvailable: false,
+    };
+  }
+  if (!getSelectedNodeId()) {
+    return {
+      key: "no-node",
+      title: "No node selected",
+      message: "Select a node before loading Docker data.",
+      badge: "Unknown",
+      tone: "status-pill--planned",
+      ready: false,
+      countsAvailable: false,
+    };
+  }
+  if (error) {
+    const reason = getDockerUnavailableReason(error);
+    const copy = {
+      "agent-unavailable": ["Docker unavailable", "The selected node is disconnected, so Docker data cannot be loaded.", "Agent disconnected"],
+      "not-installed": ["Docker not installed", "Docker is not installed on this node.", "Missing"],
+      "daemon-stopped": ["Docker daemon stopped", "Docker is installed, but the daemon is not running.", "Stopped"],
+      "permission-denied": ["Docker permission denied", "AnxOS cannot access Docker on this node. Check Docker group or administrator permissions.", "Permission denied"],
+      timeout: ["Docker request timed out", "Docker did not respond before the request timed out.", "Timed out"],
+      error: ["Docker unavailable", error.message || "Docker data could not be loaded.", "Unavailable"],
+    }[reason];
+    return {
+      key: reason,
+      title: copy[0],
+      message: copy[1],
+      badge: copy[2],
+      tone: reason === "permission-denied" || reason === "error" ? "status-pill--critical" : "status-pill--warning",
+      ready: false,
+      countsAvailable: false,
+      errorCode: error.code || null,
+    };
+  }
+  if (!snapshot) {
+    return {
+      key: "unknown",
+      title: "Docker status unknown",
+      message: "Refresh Docker to check the selected node.",
+      badge: "Unknown",
+      tone: "status-pill--planned",
+      ready: false,
+      countsAvailable: false,
+    };
+  }
+  if (!snapshot.installed) {
+    return {
+      key: "not-installed",
+      title: "Docker not installed",
+      message: snapshot.message || "Docker is not installed on this node.",
+      badge: "Missing",
+      tone: "status-pill--warning",
+      ready: false,
+      countsAvailable: false,
+    };
+  }
+  if (!snapshot.daemonRunning) {
+    const reason = getDockerUnavailableReason(snapshot);
+    return {
+      key: reason === "permission-denied" ? "permission-denied" : "daemon-stopped",
+      title: reason === "permission-denied" ? "Docker permission denied" : "Docker daemon stopped",
+      message: snapshot.message || "Docker is installed, but the daemon is not running.",
+      badge: reason === "permission-denied" ? "Permission denied" : "Stopped",
+      tone: reason === "permission-denied" ? "status-pill--critical" : "status-pill--warning",
+      ready: false,
+      countsAvailable: false,
+      errorCode: snapshot.errorCode || null,
+    };
+  }
+  const containers = Array.isArray(snapshot.containers) ? snapshot.containers : [];
+  if (!containers.length) {
+    return {
+      key: "empty",
+      title: "No containers",
+      message: "Docker is connected and healthy, but no containers exist.",
+      badge: "Ready",
+      tone: "status-pill--ok",
+      ready: true,
+      countsAvailable: true,
+    };
+  }
+  return {
+    key: "ready",
+    title: "Docker ready",
+    message: "Docker containers loaded.",
+    badge: "Ready",
+    tone: "status-pill--ok",
+    ready: true,
+    countsAvailable: true,
+  };
+}
+
+function renderDockerEmptyState(state = dockerWorkspaceState) {
+  if (!dockerEmpty || !state) return;
+  dockerEmpty.replaceChildren();
+  const icon = document.createElement("span");
+  icon.className = "docker-icon";
+  icon.setAttribute("aria-hidden", "true");
+  const title = document.createElement("strong");
+  title.textContent = state.title || "Docker unavailable";
+  const message = document.createElement("span");
+  message.dataset.field = "dockerEmptyMessage";
+  message.textContent = state.message || "Docker data is unavailable.";
+  const actions = document.createElement("div");
+  actions.className = "docker-empty-actions";
+  const actionDefs = state.key === "agent-unavailable" || state.key === "timeout"
+    ? [["agent-control", "Reconnect Agent"], ["refresh", "Retry"], ["diagnostics", "Open Diagnostics"]]
+    : state.key === "not-installed"
+      ? [["dependencies", "Prepare Node"], ["agent-control", "Open Agent Control"]]
+      : state.key === "daemon-stopped" || state.key === "permission-denied"
+        ? [["diagnostics", "Open Diagnostics"], ["agent-control", "Open Agent Control"]]
+        : state.key === "empty"
+          ? [["marketplace", "Create or Install Container"], ["refresh", "Refresh"]]
+          : [["refresh", "Retry"], ["node-health", "Open Node Health"]];
+  actionDefs.slice(0, 3).forEach(([action, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "inline-action";
+    button.dataset.dockerRecoveryAction = action;
+    button.textContent = label;
+    actions.append(button);
+  });
+  dockerEmpty.append(icon, title, message, actions);
+}
+
 function parseDockerSizeToBytes(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -5492,6 +5755,13 @@ function updateDockerActionButtons() {
   });
 }
 
+function updateDockerInspectorTabs(enabled) {
+  dockerInspectorTabs.forEach((button) => {
+    button.disabled = !enabled;
+    button.setAttribute("aria-disabled", enabled ? "false" : "true");
+  });
+}
+
 function getDockerStateLabel(snapshot) {
   if (!snapshot?.installed) {
     return {
@@ -5517,18 +5787,30 @@ function getDockerStateLabel(snapshot) {
 }
 
 function setDockerDetails(container = null) {
+  const state = dockerWorkspaceState || getDockerWorkspaceState(latestDockerSnapshot);
+  const unavailable = state && state.ready === false && state.key !== "loading";
   if (!container) {
-    setField("dockerDetailState", "None");
-    setDockerDetail("name", "None selected");
-    setDockerDetail("status", "Unavailable");
-    setDockerDetail("image", "Unavailable");
-    setDockerDetail("resources", "Unavailable");
-    setDockerDetail("ports", "Unavailable");
-    setDockerDetail("uptime", "Unavailable");
-    setField("dockerInspectorTitle", "Container Details");
+    setField("dockerInspectorTitle", unavailable ? "Container details unavailable" : "No container selected");
+    setField("dockerDetailState", unavailable ? state.badge || "Unavailable" : "None");
+    if (dockerDetailsList) {
+      dockerDetailsList.hidden = true;
+    }
+    updateDockerInspectorTabs(false);
+    setDockerLogsText(unavailable
+      ? "Docker data must be available before container logs can be loaded."
+      : "Select a container to view logs.");
+    if (dockerInspectViewer) {
+      dockerInspectViewer.textContent = unavailable
+        ? "Docker data must be available before inspect data can be loaded."
+        : "Select a container to inspect.";
+    }
+    ["cpu", "memory", "rx", "tx", "status", "uptime"].forEach((name) => setDockerStat(name, unavailable ? "Unavailable" : "Select a container"));
     return;
   }
-
+  if (dockerDetailsList) {
+    dockerDetailsList.hidden = false;
+  }
+  updateDockerInspectorTabs(true);
   setField("dockerInspectorTitle", getDockerContainerLabel(container));
   setField("dockerDetailState", formatDockerValue(container.state || container.status));
   setDockerDetail("name", formatDockerValue(container.name));
@@ -5540,6 +5822,9 @@ function setDockerDetails(container = null) {
 }
 
 function setDockerTab(tabName) {
+  if (!selectedDockerContainerId && tabName !== "overview") {
+    return;
+  }
   dockerActiveTab = tabName || "overview";
   dockerTabButtons.forEach((button) => {
     button.classList.toggle("is-active", button.dataset.dockerTab === dockerActiveTab);
@@ -5713,29 +5998,29 @@ function renderDockerSnapshot(snapshot) {
   const containers = Array.isArray(snapshot?.containers) ? snapshot.containers : [];
   const visibleContainers = getFilteredDockerContainers(snapshot);
   const state = getDockerStateLabel(snapshot);
-  const nextSelectedContainer =
-    findDockerContainer(selectedDockerContainerId, snapshot) ||
-    containers[0] ||
-    null;
+  dockerWorkspaceState = getDockerWorkspaceState(snapshot);
+  const nextSelectedContainer = dockerWorkspaceState.ready
+    ? findDockerContainer(selectedDockerContainerId, snapshot) || containers[0] || null
+    : null;
 
   latestDockerSnapshot = snapshot;
   selectedDockerContainerId = nextSelectedContainer?.id || null;
 
   setField("dockerInstalled", state.installed);
   setField("dockerDaemon", state.daemon);
-  setField("dockerRunningContainers", Number.isFinite(snapshot?.summary?.runningContainers) ? snapshot.summary.runningContainers : "Unavailable");
-  setField("dockerStoppedContainers", Number.isFinite(snapshot?.summary?.stoppedContainers) ? snapshot.summary.stoppedContainers : "Unavailable");
-  setField("dockerTotalContainers", Number.isFinite(snapshot?.summary?.totalContainers) ? snapshot.summary.totalContainers : "Unavailable");
-  setField("dockerImages", Number.isFinite(snapshot?.summary?.images) ? snapshot.summary.images : Number.isFinite(snapshot?.images) ? snapshot.images : "Unavailable");
-  setField("dockerVolumes", Number.isFinite(snapshot?.summary?.volumes) ? snapshot.summary.volumes : Number.isFinite(snapshot?.volumeCount) ? snapshot.volumeCount : "Unavailable");
-  setField("dockerSummaryContainers", Number.isFinite(snapshot?.summary?.totalContainers) ? `${snapshot.summary.runningContainers || 0} / ${snapshot.summary.totalContainers}` : "Unavailable");
-  setField("dockerSummaryStatus", state.message);
-  setField("dockerEmptyMessage", state.message);
+  setField("dockerRunningContainers", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.runningContainers) ? snapshot.summary.runningContainers : "—");
+  setField("dockerStoppedContainers", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.stoppedContainers) ? snapshot.summary.stoppedContainers : "—");
+  setField("dockerTotalContainers", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.totalContainers) ? snapshot.summary.totalContainers : "—");
+  setField("dockerImages", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.images) ? snapshot.summary.images : dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.images) ? snapshot.images : "—");
+  setField("dockerVolumes", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.volumes) ? snapshot.summary.volumes : dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.volumeCount) ? snapshot.volumeCount : "—");
+  setField("dockerSummaryContainers", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.totalContainers) ? `${snapshot.summary.runningContainers || 0} / ${snapshot.summary.totalContainers}` : "—");
+  setField("dockerSummaryStatus", dockerWorkspaceState.message || state.message);
   setField("dockerLoadingMessage", "Checking Docker daemon status...");
   renderDockerRows(visibleContainers);
+  renderDockerEmptyState(dockerWorkspaceState);
   selectDockerContainer(selectedDockerContainerId);
   setDockerLoading(false);
-  setDockerEmpty(visibleContainers.length === 0);
+  setDockerEmpty(visibleContainers.length === 0 || !dockerWorkspaceState.ready);
   if (dockerSearchInput) {
     dockerSearchInput.disabled = !snapshot?.installed || !snapshot?.daemonRunning;
   }
@@ -5748,19 +6033,20 @@ function renderDockerSnapshot(snapshot) {
 function renderDockerUnavailable(message = "Docker status unavailable.") {
   latestDockerSnapshot = null;
   selectedDockerContainerId = null;
+  dockerWorkspaceState = getDockerWorkspaceState(null, typeof message === "object" ? message : { message });
   setField("dockerInstalled", "Unavailable");
   setField("dockerDaemon", "Unavailable");
-  setField("dockerRunningContainers", "Unavailable");
-  setField("dockerStoppedContainers", "Unavailable");
-  setField("dockerTotalContainers", "Unavailable");
-  setField("dockerImages", "Unavailable");
-  setField("dockerVolumes", "Unavailable");
-  setField("dockerSummaryContainers", "Unavailable");
-  setField("dockerSummaryStatus", message);
-  setField("dockerEmptyMessage", message);
+  setField("dockerRunningContainers", "—");
+  setField("dockerStoppedContainers", "—");
+  setField("dockerTotalContainers", "—");
+  setField("dockerImages", "—");
+  setField("dockerVolumes", "—");
+  setField("dockerSummaryContainers", "—");
+  setField("dockerSummaryStatus", dockerWorkspaceState.message);
   clearDockerRows();
-  setDockerDetails(null);
+  renderDockerEmptyState(dockerWorkspaceState);
   resetDockerInspectorData();
+  setDockerDetails(null);
   if (dockerSearchInput) {
     dockerSearchInput.disabled = true;
   }
@@ -16553,6 +16839,44 @@ function getDockerActionErrorMessage(error) {
   return "Docker action failed.";
 }
 
+function getDockerFastFailure() {
+  const selectedNode = getSelectedNode();
+  if (!selectedNode) {
+    return createTimeoutError("Select a node before loading Docker data.", "NODE_NOT_SELECTED");
+  }
+  if (selectedNode.docker?.enabled === false) {
+    return createTimeoutError("Docker is disabled for this node.", "DOCKER_UNAVAILABLE");
+  }
+  if (selectedNode.kind === "agent") {
+    const target = getCurrentAgentHealthTarget();
+    const selectedTarget = target?.nodeId === selectedNode.id || target?.healthTargetLabel === "selected-agent" ? target : null;
+    const stateText = String(selectedTarget?.state || selectedNode.connection?.status || "").toLowerCase();
+    const connected = selectedTarget ? isAgentTargetRunning(selectedTarget) : getNodeVisualState(selectedNode) === "online";
+    if (!connected || /auth|unreachable|offline|disconnect/.test(stateText)) {
+      const error = createTimeoutError("The selected node is disconnected, so Docker data cannot be loaded.", /auth/.test(stateText) ? "AGENT_AUTH_FAILED" : "AGENT_UNAVAILABLE");
+      error.nodeId = selectedNode.id;
+      return error;
+    }
+  }
+  return null;
+}
+
+function notifyDockerFailure(state) {
+  if (!state || state.ready || state.key === "loading" || state.key === "empty") return;
+  const nodeId = getSelectedNodeId() || "unknown";
+  const severity = state.key === "permission-denied" || state.key === "error" ? "error" : "warning";
+  createNotification({
+    category: "Docker",
+    severity,
+    title: state.title,
+    message: state.message,
+    dedupKey: `docker:${state.key}:${nodeId}`,
+    relatedWorkspace: "docker",
+    relatedDiagnosticCode: state.errorCode || state.key,
+    actions: ["openDiagnostics", "reconnectAgent"],
+  });
+}
+
 async function refreshDockerStatus() {
   if (dockerRequestInFlight) {
     return;
@@ -16566,26 +16890,46 @@ async function refreshDockerStatus() {
   }
 
   dockerRequestInFlight = true;
+  const requestId = ++dockerRequestSerial;
   const requestContext = getNodeRequestContext("docker");
+  const fastFailure = getDockerFastFailure();
+  if (fastFailure) {
+    dockerRequestInFlight = false;
+    renderDockerUnavailable(fastFailure);
+    notifyDockerFailure(dockerWorkspaceState);
+    updateDockerActionButtons();
+    return;
+  }
+  dockerWorkspaceState = getDockerWorkspaceState(latestDockerSnapshot);
+  renderDockerEmptyState(dockerWorkspaceState);
   setDockerLoading(!latestDockerSnapshot);
 
   try {
-    const snapshot = await desktopApiState.api.docker.getSnapshot(getNodeScopedPayload(requestContext));
-    if (!isNodeRequestCurrent(requestContext)) {
+    const snapshot = await withTimeout(
+      desktopApiState.api.docker.getSnapshot(getNodeScopedPayload(requestContext)),
+      14000,
+      "Docker did not respond before the request timed out.",
+      "DOCKER_REQUEST_TIMEOUT",
+    );
+    if (!isNodeRequestCurrent(requestContext) || requestId !== dockerRequestSerial) {
       return;
     }
     dockerRequestInFlight = false;
     renderDockerSnapshot(snapshot);
   } catch (error) {
-    if (!isNodeRequestCurrent(requestContext)) {
+    if (!isNodeRequestCurrent(requestContext) || requestId !== dockerRequestSerial) {
       return;
     }
     dockerRequestInFlight = false;
-    renderDockerUnavailable(`Docker status request failed: ${error?.message || "Unknown error"}`);
+    renderDockerUnavailable(error);
+    notifyDockerFailure(dockerWorkspaceState);
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
       dockerRequestInFlight = false;
-      updateDockerActionButtons();
+      if (requestId === dockerRequestSerial) {
+        setDockerLoading(false);
+        updateDockerActionButtons();
+      }
     }
   }
 }
@@ -16594,17 +16938,22 @@ async function refreshDockerLogs() {
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
   const desktopApiState = getDesktopApiState();
 
-  if (!selectedContainer || !desktopApiState.hasDocker || dockerLogsRequestInFlight) {
+  if (!dockerWorkspaceState?.ready || !selectedContainer || !desktopApiState.hasDocker || dockerLogsRequestInFlight) {
     return;
   }
 
   dockerLogsRequestInFlight = true;
   const requestContext = getNodeRequestContext("docker-logs");
   try {
-    const logs = await desktopApiState.api.docker.getLogs(getDockerContainerTarget(selectedContainer), {
-      nodeId: requestContext.nodeId,
-      tail: 500,
-    });
+    const logs = await withTimeout(
+      desktopApiState.api.docker.getLogs(getDockerContainerTarget(selectedContainer), {
+        nodeId: requestContext.nodeId,
+        tail: 500,
+      }),
+      12000,
+      "Docker logs did not respond before the request timed out.",
+      "DOCKER_REQUEST_TIMEOUT",
+    );
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
@@ -16625,7 +16974,7 @@ async function refreshDockerSelectedStats() {
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
   const desktopApiState = getDesktopApiState();
 
-  if (!selectedContainer || !desktopApiState.hasDocker || dockerStatsRequestInFlight) {
+  if (!dockerWorkspaceState?.ready || !selectedContainer || !desktopApiState.hasDocker || dockerStatsRequestInFlight) {
     return;
   }
 
@@ -16636,9 +16985,14 @@ async function refreshDockerSelectedStats() {
     setDockerStat("memory", "Loading...");
   }
   try {
-    const payload = await desktopApiState.api.docker.getStats(getDockerContainerTarget(selectedContainer), {
-      nodeId: requestContext.nodeId,
-    });
+    const payload = await withTimeout(
+      desktopApiState.api.docker.getStats(getDockerContainerTarget(selectedContainer), {
+        nodeId: requestContext.nodeId,
+      }),
+      12000,
+      "Docker stats did not respond before the request timed out.",
+      "DOCKER_REQUEST_TIMEOUT",
+    );
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
@@ -16667,7 +17021,7 @@ async function refreshDockerInspect() {
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
   const desktopApiState = getDesktopApiState();
 
-  if (!selectedContainer || !desktopApiState.hasDocker || dockerInspectRequestInFlight) {
+  if (!dockerWorkspaceState?.ready || !selectedContainer || !desktopApiState.hasDocker || dockerInspectRequestInFlight) {
     return;
   }
 
@@ -16677,9 +17031,14 @@ async function refreshDockerInspect() {
     dockerInspectViewer.textContent = "Loading inspect data...";
   }
   try {
-    const payload = await desktopApiState.api.docker.inspectContainer(getDockerContainerTarget(selectedContainer), {
-      nodeId: requestContext.nodeId,
-    });
+    const payload = await withTimeout(
+      desktopApiState.api.docker.inspectContainer(getDockerContainerTarget(selectedContainer), {
+        nodeId: requestContext.nodeId,
+      }),
+      12000,
+      "Docker inspect did not respond before the request timed out.",
+      "DOCKER_REQUEST_TIMEOUT",
+    );
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
@@ -16709,8 +17068,11 @@ function startDockerPagePolling() {
       stopDockerPagePolling();
       return;
     }
+    if (document.hidden || !dockerWorkspaceState?.ready) {
+      return;
+    }
     refreshDockerStatus();
-    if (dockerActiveTab === "stats") {
+    if (dockerActiveTab === "stats" && selectedDockerContainerId) {
       refreshDockerSelectedStats();
     }
   }, DOCKER_STATS_REFRESH_INTERVAL_MS);
@@ -21112,13 +21474,21 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
   dockerLogsRequestInFlight = false;
   dockerStatsRequestInFlight = false;
   dockerInspectRequestInFlight = false;
+  dockerRequestSerial += 1;
   instancesRequestInFlight = false;
   instanceLogsRequestInFlight = false;
   backupRequestInFlight = false;
+  dependencyRequestSerial += 1;
+  dependencyOperationState = "idle";
+  dependencyLastError = null;
 
   latestAmpSnapshot = null;
   latestPlayitSnapshot = null;
   latestDockerSnapshot = null;
+  dockerWorkspaceState = null;
+  latestDependencyResult = null;
+  latestDependencyResultAt = 0;
+  latestDependencyNodeId = null;
   latestInstancesSnapshot = null;
   latestInstanceMetrics = null;
   selectedDockerContainerId = null;
@@ -21146,6 +21516,7 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
   setMinecraftPageUnavailable("Loading", message);
   renderPlayitUnavailable(message);
   renderDockerUnavailable(message);
+  renderDependencyStatus(null);
   renderInstancesUnavailable(message);
   renderBackups();
   renderConsoleWorkspace();
@@ -21306,15 +21677,15 @@ function getHealthRuntime() {
 function getDependencyHealthState(result = latestDependencyResult) {
   if (!result) return { state: "Unknown", unhealthy: [], total: 0, evidence: "No dependency check has run in this session." };
   const dependencies = Array.isArray(result.dependencies) ? result.dependencies : [];
-  const unhealthy = dependencies.filter((dependency) => dependency.state !== "installed");
-  const critical = unhealthy.some((dependency) => ["unsupported", "verification-failed", "installation-failed"].includes(String(dependency.state || "")));
+  const summary = summarizeDependencyStatus(result, { operationState: "idle" });
+  const unhealthy = summary.attention || [];
   return {
-    state: critical ? "Degraded" : unhealthy.length ? "Needs attention" : "Healthy",
+    state: summary.state === "ready" ? "Healthy" : summary.state === "needs-attention" ? "Needs attention" : summary.state === "failed" ? "Degraded" : "Unknown",
     unhealthy,
     total: dependencies.length,
     evidence: dependencies.length
       ? `${dependencies.length - unhealthy.length}/${dependencies.length} dependencies installed or verified.`
-      : "Dependency result did not include dependency rows.",
+      : summary.message || "Dependency result did not include dependency rows.",
   };
 }
 
@@ -24267,6 +24638,16 @@ dockerRefreshButton?.addEventListener("click", refreshDockerStatus);
 dockerStartButton?.addEventListener("click", () => handleDockerAction("start"));
 dockerStopButton?.addEventListener("click", () => handleDockerAction("stop"));
 dockerRestartButton?.addEventListener("click", () => handleDockerAction("restart"));
+dockerEmpty?.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-docker-recovery-action]")?.dataset.dockerRecoveryAction;
+  if (!action) return;
+  if (action === "refresh") refreshDockerStatus();
+  else if (action === "agent-control") showPage("agent-control");
+  else if (action === "diagnostics") showPage("diagnostics");
+  else if (action === "node-health") openNodeDetails(getSelectedNodeId());
+  else if (action === "dependencies") { showPage("agent-control"); runDependencyAction("check"); }
+  else if (action === "marketplace") showPage("marketplace");
+});
 dockerActionButtons.forEach((button) => {
   const action = button.dataset.dockerAction;
   if (["remove", "logs"].includes(action)) {

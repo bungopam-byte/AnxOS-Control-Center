@@ -1,5 +1,7 @@
 const dockerService = require("../src/services/dockerService");
 const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
 
 function runNormalizationChecks() {
   const container = dockerService.normalizeContainer({
@@ -29,6 +31,19 @@ function runNormalizationChecks() {
 
 async function main() {
   runNormalizationChecks();
+  const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  const styleSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+  [
+    "function getDockerWorkspaceState",
+    "function getDockerFastFailure",
+    "DOCKER_REQUEST_TIMEOUT",
+    "dockerRequestSerial",
+    "withTimeout(",
+    "data-docker-recovery-action",
+    "updateDockerInspectorTabs(false)",
+    "document.hidden || !dockerWorkspaceState?.ready",
+  ].forEach((needle) => assert(appSource.includes(needle), `Docker workspace regression guard missing: ${needle}`));
+  assert(styleSource.includes(".docker-empty-actions"), "Docker empty state actions must have stable layout.");
 
   const snapshot = await dockerService.getDockerSnapshot();
 

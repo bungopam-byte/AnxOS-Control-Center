@@ -4053,12 +4053,29 @@ body.is-resizing-files * {
 .docker-loading-state {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 24px;
   color: var(--muted);
   text-align: center;
+  overflow: auto;
+  min-width: 0;
+}
+
+.docker-empty-state > *,
+.docker-loading-state > * {
+  max-width: min(560px, 100%);
+}
+
+.docker-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .docker-loading-state,

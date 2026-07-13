@@ -3,16 +3,172 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS Control Center | Account</title>
+    <meta name="description" content="Review your AnxOS account devices, sessions, and security state.">
     <meta name="robots" content="noindex,nofollow">
+    <meta name="theme-color" content="#b66cff">
     <link rel="canonical" href="https://anxoscontrolcenter.org/account">
-    <title>AnxOS Account</title>
-    <script>
-      const query = window.location.search || "";
-      const hash = window.location.hash || "";
-      window.location.replace("/account" + query + hash);
-    </script>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/account-config.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/site.js" defer></script>
   </head>
-  <body>
-    <a href="/account">Continue to AnxOS account</a>
+  <body data-standalone-route="account">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="AnxOS home">
+        <span class="brand-mark"><img data-logo src="/assets/anxos-logo.jpg" alt=""></span>
+        <span class="brand-copy"><strong data-config="brandName">AnxOS</strong><span>Account</span></span>
+      </a>
+      <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
+        <a href="/release-notes.html">Release</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/features">Features</a>
+        <a href="/getting-started">Getting Started</a>
+        <a href="/download">Download</a>
+        <a href="/signin">Sign In</a>
+        <a href="/profile">Profile</a>
+        <a class="site-nav__cta" href="/signup">Sign Up</a>
+      </nav>
+    </header>
+    <main id="account-page">
+      <section id="account" class="section-shell account-route account-route--active" data-account-route="account">
+        <div class="account-route__copy">
+          <p class="eyebrow">Account</p>
+          <h2>AnxOS Account</h2>
+          <p>Review devices, sessions, account security, password recovery, and signed-in account status.</p>
+        </div>
+        <div class="account-panel account-dashboard">
+          <nav class="account-nav" aria-label="Account navigation">
+            <a class="account-nav__item is-active" href="/account">Overview</a>
+            <a class="account-nav__item" href="/profile">Profile</a>
+            <a class="account-nav__item" href="/account?section=devices">Devices & Sessions</a>
+            <a class="account-nav__item" href="/account?section=security">Security</a>
+          </nav>
+          <div data-auth-view="loading" class="profile-loading"><div class="profile-skeleton"></div><p class="form-message">Validating your session...</p></div>
+          <div data-auth-view="signed-out" hidden>
+            <h3>Using local device mode</h3>
+            <p>Sign in to sync settings and use remote account services. The desktop app still works locally while signed out.</p>
+            <div class="route-actions">
+              <a class="button button-primary" href="/signin">Sign In</a>
+              <a class="button button-secondary" href="/signup">Sign Up</a>
+              <a class="button button-ghost" href="/forgot-password">Reset Password</a>
+            </div>
+          </div>
+          <div data-auth-view="signed-in" hidden>
+            <div class="account-dashboard__header">
+              <div>
+                <span class="badge">Signed in</span>
+                <h3 data-account-display-name>AnxOS Account</h3>
+                <p data-account-email></p>
+              </div>
+              <div class="route-actions">
+                <a class="button button-primary" href="/profile">Edit Profile</a>
+                <a class="button button-secondary" href="/forgot-password">Change Password</a>
+                <button class="button button-ghost" type="button" data-auth-action="signout">Sign Out</button>
+              </div>
+            </div>
+            <div class="profile-summary-card">
+              <div class="profile-avatar" data-profile-avatar aria-hidden="true">A</div>
+              <div>
+                <strong data-profile-summary-name>AnxOS Account</strong>
+                <small data-profile-summary-meta>Profile details load after sign-in.</small>
+              </div>
+              <a class="button button-ghost" href="/profile">Edit Profile</a>
+            </div>
+            <div class="account-dashboard-grid">
+              <section class="account-subpanel" id="account-devices">
+                <div class="account-subpanel__heading">
+                  <h4>My Devices</h4>
+                  <div class="account-subpanel__actions">
+                    <button class="button button-ghost" type="button" data-auth-action="clear-revoked-devices" disabled>Clear Revoked (0)</button>
+                    <button class="button button-ghost" type="button" data-auth-action="refresh-devices">Refresh</button>
+                  </div>
+                </div>
+                <div data-account-devices class="account-list"></div>
+              </section>
+              <section class="account-subpanel">
+                <div class="account-subpanel__heading">
+                  <h4>Active Sessions</h4>
+                  <div class="account-subpanel__actions">
+                    <button class="button button-ghost" type="button" data-auth-action="clear-expired-sessions" disabled>Clear Expired (0)</button>
+                    <button class="button button-ghost" type="button" data-auth-action="revoke-sessions">Sign Out All</button>
+                  </div>
+                </div>
+                <div data-account-sessions class="account-list"></div>
+              </section>
+              <section class="account-subpanel" id="account-security">
+                <div class="account-subpanel__heading">
+                  <div>
+                    <h4>Security History</h4>
+                    <p>Audit records are preserved; use filters to reduce clutter.</p>
+                  </div>
+                  <div class="account-subpanel__actions account-history-actions">
+                    <button class="account-filter-chip is-active" type="button" data-security-filter="all">All</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="device">Device</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="session">Session</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="cleanup">Cleanup</button>
+                    <button class="account-filter-chip" type="button" data-security-filter="error">Errors</button>
+                    <label class="account-history-toggle"><input type="checkbox" data-security-hide-old checked><span>Hide older than 30 days</span></label>
+                  </div>
+                </div>
+                <div data-account-events class="account-list"></div>
+              </section>
+              <section class="account-subpanel account-cleanup-panel">
+                <div class="account-subpanel__heading">
+                  <div>
+                    <h4>Account Data Cleanup</h4>
+                    <p>Remove inactive device and session clutter without deleting your account.</p>
+                  </div>
+                </div>
+                <div class="account-cleanup-actions">
+                  <button class="button button-ghost" type="button" data-auth-action="cleanup-revoked-devices" disabled>Clear revoked devices</button>
+                  <button class="button button-ghost" type="button" data-auth-action="cleanup-expired-sessions" disabled>Clear expired sessions</button>
+                  <button class="button button-ghost" type="button" data-auth-action="clear-local-cache">Clear local website cache</button>
+                  <button class="button button-ghost button-danger" type="button" data-auth-action="cleanup-inactive-records" disabled>Clear all inactive records</button>
+                </div>
+                <p class="form-message" role="status" data-auth-message="cleanup"></p>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+    </main>
+    <footer class="site-footer">
+      <div><strong>AnxOS Control Center</strong><span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span></div>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/download">Download</a>
+        <a href="/features">Features</a>
+        <a href="/getting-started">Getting Started</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/signin">Sign In</a>
+        <a href="/profile">Profile</a>
+        <a href="/account?section=security">Security</a>
+        <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a>
+      </nav>
+    </footer>
+    <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
+    <div class="confirm-modal" data-confirm-modal data-cleanup-modal hidden>
+      <div class="confirm-modal__backdrop" data-confirm-modal-cancel data-cleanup-modal-cancel></div>
+      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+        <p class="eyebrow" data-confirm-modal-eyebrow>Account safety</p>
+        <h2 id="confirm-modal-title" data-confirm-modal-title data-cleanup-modal-title>Confirm action</h2>
+        <p id="confirm-modal-message" data-confirm-modal-message data-cleanup-modal-message>This action needs confirmation.</p>
+        <div class="confirm-modal__actions">
+          <button class="button button-ghost" type="button" data-confirm-modal-cancel data-cleanup-modal-cancel>Cancel</button>
+          <button class="button button-primary" type="button" data-confirm-modal-confirm data-cleanup-modal-confirm>Confirm</button>
+        </div>
+      </section>
+    </div>
   </body>
 </html>

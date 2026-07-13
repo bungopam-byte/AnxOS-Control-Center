@@ -24,8 +24,8 @@ const downloadRoute = read("download/index.html");
 const featuresRoute = read("features/index.html");
 const gettingStartedRoute = read("getting-started/index.html");
 const releaseNotes = read("release-notes.html");
-const accountRedirect = read("account.html");
-const profileRedirect = read("profile.html");
+const accountHtml = read("account.html");
+const profileHtml = read("profile.html");
 const robots = read("robots.txt");
 const sitemap = read("sitemap.xml");
 const manifest = read("site.webmanifest");
@@ -60,7 +60,9 @@ assert(manifest.includes("AnxOS Control Center") && manifest.includes("/assets/i
 assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate") && robots.includes("Disallow: /signin") && robots.includes("Disallow: /reset-password"), "Robots rules must expose sitemap and exclude account routes.");
 assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && sitemap.includes(`<loc>${officialOrigin}/download</loc>`) && sitemap.includes(`<loc>${officialOrigin}/features</loc>`) && sitemap.includes(`<loc>${officialOrigin}/getting-started</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
 assert([signin, signup, account, profile, activateRoute, forgotRoute, resetRoute, activate, forgot, reset].every((html) => html.includes('name="robots" content="noindex,nofollow"')), "Account and activation pages must be excluded from indexing.");
-assert(accountRedirect.includes('name="robots" content="noindex,nofollow"') && profileRedirect.includes('name="robots" content="noindex,nofollow"'), "Account redirect shims must be excluded from indexing.");
+assert(accountHtml.includes('name="robots" content="noindex,nofollow"') && profileHtml.includes('name="robots" content="noindex,nofollow"'), "Account clean URL HTML files must be excluded from indexing.");
+assert(accountHtml.includes('data-account-route="account"') && profileHtml.includes('data-account-route="profile"'), "Cloudflare clean URL HTML files must serve the real account/profile pages.");
+assert(!accountHtml.includes('window.location.replace("/account"') && !profileHtml.includes('window.location.replace("/profile"'), "Cloudflare clean URL HTML files must not self-redirect.");
 assert(index.includes("© 2026 AnxOS Control Center") && index.includes("anxoscontrolcenter.org") && index.includes("/getting-started"), "Homepage footer must include copyright, official domain, and Getting Started links.");
 assert(index.includes("First server workflow") && index.includes("Prepare Node") && index.includes("Node Health"), "Homepage must include honest Getting Started workflow copy.");
 assert(downloadRoute.includes(`<link rel="canonical" href="${officialOrigin}/download">`) && downloadRoute.includes("data-download-status"), "Download must be a clean direct route.");
@@ -104,7 +106,7 @@ assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org
 });
 
 assert(index.includes('id="not-found"') && site.includes('window.location.hash = "not-found"'), "Website must route unsupported hashes to a not-found state.");
-assert(accountRedirect.includes('window.location.replace("/account" + query + hash)'), "Account redirect shim must preserve query parameters for the clean route.");
+assert(activate.includes('data-standalone-route="activate"') && forgot.includes('data-auth-form="forgot"') && reset.includes('data-auth-form="reset"'), "Cloudflare clean URL HTML files must serve real activation and recovery pages.");
 assert(site.includes('selectedState = "loading"'), "Sign-in route should show loading state instead of flashing signed-out UI while auth initializes.");
 assert(site.includes("normalizeReturnTarget") && site.includes("parsed.origin !== window.location.origin"), "Return destinations must be same-origin validated.");
 assert(site.includes("redirectToSignInForCurrentRoute") && site.includes("/signin?"), "Authenticated routes must redirect signed-out users to clean sign-in routes.");

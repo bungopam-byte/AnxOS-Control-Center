@@ -360,6 +360,61 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
   }
 }
 
+function assertMarketplaceRuntimeSettingsReferencesAreScoped() {
+  const appSource = fs.readFileSync(appPath, "utf8");
+  const forbiddenBareSettingsReads = [
+    'settings["notifications.persistHistory"]',
+    'settings["notifications.enabled"]',
+  ];
+  forbiddenBareSettingsReads.forEach((snippet) => {
+    assert(!appSource.includes(snippet), `Shared Marketplace notification/error path must not read an undefined renderer settings identifier: ${snippet}`);
+  });
+  assert(appSource.includes("let currentSettings = { ...DEFAULT_SETTINGS }"), "Renderer should maintain explicit current settings state.");
+  assert(appSource.includes('getCurrentSettings()["notifications.enabled"] === false'), "Toast rendering should read notification settings from scoped currentSettings.");
+  assert(appSource.includes('getCurrentSettings()["notifications.persistHistory"] === false'), "Notification persistence should read settings from scoped currentSettings.");
+}
+
+function assertMarketplaceInstallContextValidation() {
+  const templateFamilies = ["minecraft-vanilla", "minecraft-forge", "palworld", "terraria-tshock", "fivem", "velocity"];
+  templateFamilies.forEach((templateId) => {
+    const template = findTemplate(templateId);
+    const payload = { templateId, nodeId: "application-host" };
+    const options = { id: `${templateId}-context-smoke`, name: `${template.displayName} Context Smoke`, version: template.minecraftVersion || template.gameVersion || "latest" };
+    const instancePayload = marketplaceService._test.buildInstancePayload(template, options, template.defaultPorts || []);
+    const installContext = marketplaceService._test.validateInstallContext(
+      marketplaceService._test.buildInstallContext(payload, template, options, instancePayload)
+    );
+    assert.strictEqual(installContext.nodeId, "application-host", `${templateId} context should preserve nodeId.`);
+    assert.strictEqual(installContext.instanceId, instancePayload.id, `${templateId} context should preserve instanceId.`);
+    assert(installContext.installPath, `${templateId} context should include installPath.`);
+  });
+
+  assert.throws(
+    () => marketplaceService._test.validateInstallContext({ nodeId: "", instanceId: "", installPath: "" }),
+    (error) => error?.code === "INVALID_INSTALL_CONTEXT" &&
+      error.message === "Required install configuration is missing." &&
+      Array.isArray(error.details?.missingFields) &&
+      error.details.missingFields.includes("nodeId") &&
+      error.details.missingFields.includes("instanceId") &&
+      error.details.missingFields.includes("installPath"),
+    "Template installs should reject incomplete shared install context with structured details."
+  );
+
+  const providerContext = marketplaceInstallService._test.validateInstallContext(
+    marketplaceInstallService._test.buildInstallContext(
+      { nodeId: "application-host", provider: "modrinth" },
+      { id: "provider-context-smoke", provider: "modrinth", minecraftVersion: "1.21.1", loader: "fabric" },
+      { id: "provider-context-smoke", workingDirectory: "data" }
+    )
+  );
+  assert.strictEqual(providerContext.source, "modrinth", "Provider install context should preserve provider source.");
+  assert.throws(
+    () => marketplaceInstallService._test.validateInstallContext({ nodeId: "", instanceId: "", installPath: "" }),
+    (error) => error?.code === "INVALID_INSTALL_CONTEXT" && error.details?.missingFields?.includes("nodeId"),
+    "Provider installs should reject incomplete shared install context with structured details."
+  );
+}
+
 function assertInstanceProcessStateGuards() {
   const source = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
   assert(source.includes("getActiveRunningProcess(config.id)"), "Instance starts must block duplicate starts using the active in-memory child process.");
@@ -2655,6 +2710,8 @@ async function main() {
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
   assertMarketplaceInstallerRegistry();
+  assertMarketplaceRuntimeSettingsReferencesAreScoped();
+  assertMarketplaceInstallContextValidation();
   assertNestedArchiveInstallerExtraction();
   assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent();
   await assertMarketplaceDependencyPreflightBlocksAndResumes();

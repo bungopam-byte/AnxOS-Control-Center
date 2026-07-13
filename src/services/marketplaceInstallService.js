@@ -8,7 +8,7 @@ const {
   applyMinecraftServerProperties,
   resolveMinecraftPort,
 } = require("./minecraftServerConfig");
-const { getExecutionTarget } = require("./nodeService");
+const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 
@@ -27,6 +27,37 @@ class MarketplaceInstallError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+function buildInstallContext(payload = {}, options = {}, instancePayload = {}) {
+  return {
+    nodeId: payload.nodeId || getSelectedNodeId(),
+    instanceId: instancePayload.id || options.id || null,
+    installPath: instancePayload.workingDirectory || "data",
+    source: options.provider || payload.provider || "marketplace-provider",
+    version: options.version || options.minecraftVersion || "latest",
+    loader: options.loader || options.serverType || null,
+    dependencyState: null,
+    options: { ...options },
+  };
+}
+
+function validateInstallContext(installContext = {}) {
+  const missingFields = ["nodeId", "instanceId", "installPath"].filter((field) => !String(installContext[field] || "").trim());
+  if (missingFields.length > 0) {
+    throw new MarketplaceInstallError("Required install configuration is missing.", "INVALID_INSTALL_CONTEXT", {
+      missingFields,
+      installContext: {
+        nodeId: installContext.nodeId || null,
+        instanceId: installContext.instanceId || null,
+        installPath: installContext.installPath || null,
+        source: installContext.source || null,
+        version: installContext.version || null,
+        loader: installContext.loader || null,
+      },
+    });
+  }
+  return installContext;
 }
 
 function titleCaseProvider(provider) {
@@ -1780,6 +1811,7 @@ async function installPack(payload = {}) {
   await ensureProviderPackDependencies(options, agentConfig);
   const serverInfo = await resolveServerJar(options);
   const instancePayload = buildInstancePayload(options, serverInfo);
+  const installContext = validateInstallContext(buildInstallContext(payload, options, instancePayload));
   const instanceId = instancePayload.id;
   let created = false;
   let createResult = null;
@@ -1820,6 +1852,7 @@ async function installPack(payload = {}) {
       providerVersionId: options.providerVersionId || options.versionId || null,
       minecraftVersion: options.minecraftVersion || options.version || null,
       loader: options.loader || options.serverType || null,
+      installContext,
     });
     const detailedMessage = buildDetailedErrorMessage(error, friendlyError(error));
     if (isManualDownloadRequiredError(error) && created) {
@@ -2028,6 +2061,7 @@ async function getProviderPackDetails(payload = {}) {
 
 module.exports = {
   _test: {
+    buildInstallContext,
     buildInstallMetadata,
     buildInstancePayload,
     createManualDownloadRequiredError,
@@ -2046,6 +2080,7 @@ module.exports = {
     safeArchivePath,
     stripArchiveRoot,
     withRetry,
+    validateInstallContext,
   },
   getManualInstallProviderPage,
   getManualInstallRecovery,

@@ -175,6 +175,7 @@ function getMarketplaceUiError(error) {
 function getMarketplaceRecoverySuggestion(code) {
   const suggestions = {
     INSTALLER_TYPE_UNSUPPORTED: "Choose another server version or update the Marketplace definition.",
+    INVALID_INSTALL_CONTEXT: "Reopen the Marketplace install dialog and retry with a valid target node and instance name.",
     MARKETPLACE_MANIFEST_INVALID: "This Marketplace entry needs to be fixed before it can be installed.",
     MINECRAFT_PORT_INVALID: "Enter a whole-number port between 1 and 65535.",
     MINECRAFT_PORT_IN_USE: "Choose a different local server port.",

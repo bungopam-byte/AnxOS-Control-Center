@@ -13,7 +13,7 @@ const {
   validateMarketplaceCatalog,
   validateMarketplaceTemplate,
 } = require("./marketplaceInstallerRegistry");
-const { getExecutionTarget } = require("./nodeService");
+const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
@@ -54,6 +54,37 @@ function createMarketplaceError(message, code = "MARKETPLACE_ERROR", details = {
   error.code = code;
   error.details = details;
   return error;
+}
+
+function buildInstallContext(payload = {}, template = {}, options = {}, instancePayload = {}) {
+  return {
+    nodeId: payload.nodeId || getSelectedNodeId(),
+    instanceId: instancePayload.id || options.id || null,
+    installPath: instancePayload.workingDirectory || template.installPath || template.installer?.installDir || "data",
+    source: template.id || payload.templateId || payload.provider || "marketplace",
+    version: options.version || options.minecraftVersion || template.version || template.minecraftVersion || template.gameVersion || "latest",
+    loader: options.serverType || options.loader || template.loader || null,
+    dependencyState: null,
+    options: { ...options },
+  };
+}
+
+function validateInstallContext(installContext = {}) {
+  const missingFields = ["nodeId", "instanceId", "installPath"].filter((field) => !String(installContext[field] || "").trim());
+  if (missingFields.length > 0) {
+    throw createMarketplaceError("Required install configuration is missing.", "INVALID_INSTALL_CONTEXT", {
+      missingFields,
+      installContext: {
+        nodeId: installContext.nodeId || null,
+        instanceId: installContext.instanceId || null,
+        installPath: installContext.installPath || null,
+        source: installContext.source || null,
+        version: installContext.version || null,
+        loader: installContext.loader || null,
+      },
+    });
+  }
+  return installContext;
 }
 
 function resolveMarketplaceAgentConfig(nodeId = null) {
@@ -349,6 +380,7 @@ function mapMarketplaceError(error, fallback = "Template install failed.") {
   const code = getAgentErrorCode(error);
   const friendlyMessages = {
     INSTALL_VALIDATION_FAILED: "Marketplace install validation failed.",
+    INVALID_INSTALL_CONTEXT: "Required install configuration is missing.",
     HANDLER_RESULT_INVALID: "Marketplace installer returned an invalid internal result.",
     DEPENDENCY_MISSING: "A required runtime dependency is missing.",
     EXTRACTION_FAILED: "The server files could not be extracted.",
@@ -2839,6 +2871,8 @@ async function installTemplate(payload = {}) {
   const ports = template.category === "Minecraft"
     ? [resolveMinecraftPort(options, template.defaultPorts)]
     : parsePorts(options.ports || options.port, template.defaultPorts);
+  const instancePayload = buildInstancePayload(template, options, ports);
+  const installContext = validateInstallContext(buildInstallContext(payload, template, options, instancePayload));
 
   try {
     updateDownload(parentRecord, { stage: "Check dependencies", progress: 10 });
@@ -2898,7 +2932,6 @@ async function installTemplate(payload = {}) {
     }
   }
 
-  const instancePayload = buildInstancePayload(template, options, ports);
   const isMinecraft = template.category === "Minecraft";
   let createdInstanceId = null;
 
@@ -3083,6 +3116,7 @@ async function installTemplate(payload = {}) {
       templateId: template.id,
       installerType: manifestValidation.installerType,
       runtimeType: template.startupType || template.runtime || template.instanceType || null,
+      installContext,
       stage: failureStage,
       childTaskState: sanitizeDownloads({ downloads: getInstallSessionRecords(parentRecord) }).downloads,
       timestamp: new Date().toISOString(),
@@ -3096,6 +3130,7 @@ async function installTemplate(payload = {}) {
 module.exports = {
   _test: {
     buildInstancePayload,
+    buildInstallContext,
     buildMinecraftProperties,
     buildSteamCmdInstallerArgs,
     buildResolvedVersionMetadata,
@@ -3115,6 +3150,7 @@ module.exports = {
     uniqueVersionEntries,
     validateMarketplaceCatalog,
     validateMarketplaceTemplate,
+    validateInstallContext,
   },
   cancelDownload,
   getDownloads: () => sanitizeDownloads(getDownloads()),

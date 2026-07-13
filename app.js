@@ -1051,6 +1051,12 @@ const DEFAULT_SETTINGS = {
   "playit.address": "",
   "developer.debugMode": false,
 };
+let currentSettings = { ...DEFAULT_SETTINGS };
+
+function getCurrentSettings() {
+  return currentSettings || DEFAULT_SETTINGS;
+}
+
 const DEFAULT_AGENT_SETTINGS = {
   backendMode: "local",
   agentUrl: DEFAULT_AGENT_URL,
@@ -2466,6 +2472,7 @@ function updateTitlebar(pageName = getActivePageName()) {
 }
 
 function applySettings(settings, options = {}) {
+  currentSettings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   const displayName = String(settings["app.displayName"] || DEFAULT_APP_NAME).trim() || DEFAULT_APP_NAME;
   const accentColor = /^#[0-9a-f]{6}$/i.test(settings["appearance.accentColor"])
     ? settings["appearance.accentColor"]
@@ -13453,7 +13460,7 @@ function serializeNotification(notification) {
 }
 
 function persistNotificationHistory() {
-  if (!notificationState.loaded || settings["notifications.persistHistory"] === false) return;
+  if (!notificationState.loaded || getCurrentSettings()["notifications.persistHistory"] === false) return;
   try {
     const history = notificationState.items
       .filter((item) => !isNotificationExpired(item))
@@ -13517,7 +13524,7 @@ function getOperationNotificationCategory(operation = {}) {
 }
 
 function shouldPersistToastNotification(message, severity) {
-  if (settings["notifications.persistHistory"] === false) return false;
+  if (getCurrentSettings()["notifications.persistHistory"] === false) return false;
   const text = String(message || "");
   if (!text.trim()) return false;
   if (/\b(copied|copy|opened|selected|filter|search cleared|toast test|test notification)\b/i.test(text)) return false;
@@ -13526,7 +13533,7 @@ function shouldPersistToastNotification(message, severity) {
 
 function createNotification(input = {}) {
   loadNotificationHistory();
-  if (settings["notifications.persistHistory"] === false) return null;
+  if (getCurrentSettings()["notifications.persistHistory"] === false) return null;
   const now = Date.now();
   const severity = normalizeNotificationSeverity(input.severity);
   const category = normalizeNotificationCategory(input.category || inferNotificationCategoryFromText(`${input.title || ""} ${input.message || ""}`));
@@ -19005,7 +19012,7 @@ function showToast(message, tone = null) {
       resolved: nextTone !== "error",
     });
   }
-  if (settings["notifications.enabled"] === false || !toast) return;
+  if (getCurrentSettings()["notifications.enabled"] === false || !toast) return;
   toast.textContent = message;
   toast.dataset.tone = nextTone;
   toast.setAttribute("role", nextTone === "error" ? "alert" : "status");

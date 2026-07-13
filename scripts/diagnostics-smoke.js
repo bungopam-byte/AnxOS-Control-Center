@@ -6,6 +6,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { sanitize, redactString } = require("../src/shared/redaction");
 const { StructuredLogger } = require("../src/shared/structuredLogger");
+const readiness = require("../src/services/readinessService");
 
 const root = path.resolve(__dirname, "..");
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-diagnostics-"));
@@ -26,6 +27,7 @@ async function main() {
   assert.strictEqual(clean.nested.safe, "ok");
   assert(!JSON.stringify(clean).includes(secret) && !JSON.stringify(clean).includes(jwt));
   assert(!redactString(`Bearer ${jwt}`).includes(jwt));
+  assert.strictEqual(redactString(`payload=${"A".repeat(180)}`), "payload=[redacted-base64]");
   assert.strictEqual(redactString(`open /home/private-user/Projects/AnxOS-Control-Center/config/agent.json`), "open [redacted-path]");
   assert.strictEqual(redactString(`C:\\Users\\private-user\\AppData\\Roaming\\AnxOS\\config.json`), "[redacted-path]");
   const agentControl = require("../src/services/agentControlService");
@@ -34,10 +36,30 @@ async function main() {
   assert.strictEqual(validatedConfig.port, 48131);
   assert.throws(() => agentControl.validateConfig({ name: "Agent", host: "example.com", port: 80 }), /listening address|Port/i, "Agent configuration must reject unsafe host/port values.");
   desktopDiagnostics.updateRuntimeState({ currentWorkspace: "agent-control", ownerAuthorized: true });
+  const untestedReadiness = desktopDiagnostics.captureSnapshot({ dependencyCheck: null, dependencyPlan: null });
+  assert.strictEqual(untestedReadiness.readinessSummary.items.find((item) => item.id === "dependencies").state, "not-tested", "Diagnostics must not mark dependencies ready before a real check runs.");
+  const dependencySummary = readiness.summarizeDependencyReadiness({
+    ok: false,
+    dependencies: [{ id: "steamcmd", state: "unsupported", supported: false, errorCode: "DEPENDENCY_OS_UNSUPPORTED" }],
+  }, {
+    manualActions: [{ dependencyId: "steamcmd", reason: "Manual install required." }],
+    installableActions: [],
+  });
+  assert.strictEqual(dependencySummary.state, "blocked", "Unsupported/manual dependencies must block readiness.");
+  assert(dependencySummary.context.errorCodes.includes("DEPENDENCY_OS_UNSUPPORTED"), "Dependency readiness must preserve stable error codes.");
+  const tailnetOnly = readiness.summarizePublicAccessReadiness({
+    providers: [{ id: "tailscale", name: "Tailscale", connected: true, installed: true, exposureScope: "tailnet-only", tailnetAddress: "100.64.0.1", capabilities: {} }],
+    services: [],
+    activeTunnels: 0,
+    exposureScope: "tailnet-only",
+  });
+  assert.strictEqual(tailnetOnly.state, "degraded", "Tailnet-only Tailscale must not be marked public-ready.");
+  assert.strictEqual(tailnetOnly.context.providerCapabilities[0].publicInternet, false, "Tailnet-only provider capability summary must not claim public internet exposure.");
   desktopDiagnostics.log("error", "renderer", "smoke-error", `Failed password=${secret}`, { providerMode: "agent", accessToken: "hidden" }, { file: "renderer" });
   const latestSnapshot = JSON.parse(fs.readFileSync(path.join(process.env.ANXOS_LOG_DIR, "latest-error.json"), "utf8"));
   assert.strictEqual(latestSnapshot.runtimeState.currentWorkspace, "agent-control");
   assert(Array.isArray(latestSnapshot.recentRelatedEntries) && Array.isArray(latestSnapshot.suggestedDiagnosticChecks));
+  assert(latestSnapshot.runtimeState.readinessSummary?.items?.some((item) => item.id === "desktop"), "Latest error snapshot must include readiness context.");
   assert(!JSON.stringify(latestSnapshot).includes(secret), "Latest error snapshot must redact secrets before writing.");
 
   const logDir = path.join(temp, "logs");
@@ -100,6 +122,8 @@ async function main() {
   assert(app.includes("KNOWN_DIAGNOSTIC_EXPLANATIONS") && app.includes("AGENT_PORT_IN_USE") && app.includes("MAINTENANCE_PARTIAL_CLEANUP"), "Known deterministic diagnostics must have controlled explanations.");
   assert(app.includes("groupDiagnosticIssues") && app.includes("DIAGNOSTIC_OCCURRENCE_LIMIT"), "Diagnostics must group repeated issues with bounded occurrences.");
   assert(app.includes("DIAGNOSTIC_BASE64_PATTERN") && app.includes("[redacted-base64]") && app.includes("boundDiagnosticText"), "Diagnostics renderer must defensively redact and bound long log content.");
+  assert(app.includes("publicAccessSnapshot") && app.includes("snapshot.readiness"), "Public Access refresh should feed sanitized readiness into diagnostics snapshots.");
+  assert(fs.readFileSync(path.join(root, "src", "services", "diagnosticsService.js"), "utf8").includes("buildReadinessFromRuntime"), "Diagnostics summaries must include environment readiness.");
   assert(app.includes("confirmDiagnosticsSupportBundleExport") && app.includes("getDiagnosticsSupportBundleCategories"), "Support bundle export must preview included categories before export.");
   assert(app.includes('id: `diagnostics.${action}`') && app.includes('health: "Run Health Checks"'), "Command Palette must expose real Diagnostics health-check action.");
   assert(app.includes("diagnosticsIssueGroups") && app.includes("issueResults"), "Global Search must include grouped diagnostic issues without duplicating diagnostics logic.");

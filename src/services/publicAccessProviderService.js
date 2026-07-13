@@ -1,5 +1,6 @@
 const { getPlayitSnapshot } = require("./serviceRouter");
 const { execFile } = require("child_process");
+const { summarizePublicAccessReadiness } = require("./readinessService");
 
 const COMMAND_TIMEOUT_MS = 2200;
 
@@ -260,7 +261,7 @@ async function getPublicAccessSnapshot(options = {}) {
   const provider = providerStates[0];
   const service = buildServiceFromPlayitSnapshot(snapshot);
 
-  return {
+  const result = {
     provider,
     providers: providerStates,
     services: [service],
@@ -278,6 +279,7 @@ async function getPublicAccessSnapshot(options = {}) {
     ],
     playit: snapshot,
   };
+  return { ...result, readiness: summarizePublicAccessReadiness(result) };
 }
 
 module.exports = {
@@ -291,5 +293,6 @@ module.exports = {
     buildPlayitProviderState,
     buildServiceFromPlayitSnapshot,
     createProviderState,
+    summarizePublicAccessReadiness,
   },
 };

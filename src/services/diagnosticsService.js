@@ -7,6 +7,7 @@ const packageJson = require("../../package.json");
 const agentPackage = require("../../agent/package.json");
 const { sanitize } = require("../shared/redaction");
 const { StructuredLogger, safeWriteJson } = require("../shared/structuredLogger");
+const { buildEnvironmentReadinessSummary } = require("./readinessService");
 
 function isDevelopment() { return app?.isPackaged === false || process.env.NODE_ENV === "development"; }
 function getDirectory() {
@@ -18,8 +19,20 @@ function getDirectory() {
 const logger = new StructuredLogger({ directory: getDirectory(), source: "desktop", processName: "main", appVersion: packageJson.version, agentVersion: agentPackage.version });
 let runtimeState = { applicationRunning: true, appVersion: packageJson.version, agentVersion: agentPackage.version, platform: process.platform, architecture: process.arch, currentWorkspace: "startup" };
 
+function buildReadinessFromRuntime(state = runtimeState) {
+  const base = { ...state };
+  delete base.readinessSummary;
+  return buildEnvironmentReadinessSummary({
+    runtimeState: base,
+    publicAccessSnapshot: base.publicAccessSnapshot || null,
+    dependencyCheck: base.dependencyCheck || null,
+    dependencyPlan: base.dependencyPlan || null,
+  });
+}
+
 function updateRuntimeState(patch = {}) {
-  runtimeState = sanitize({ ...runtimeState, ...patch, updatedAt: new Date().toISOString() });
+  const next = sanitize({ ...runtimeState, ...patch, updatedAt: new Date().toISOString() });
+  runtimeState = sanitize({ ...next, readinessSummary: buildReadinessFromRuntime(next) });
   logger.snapshot("runtime-state.json", runtimeState);
   return runtimeState;
 }
@@ -57,13 +70,13 @@ function readLogs(options = {}) {
 async function openFolder() { await shell.openPath(getDirectory()); return { opened: true }; }
 async function copySummary() {
   const latest = (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })();
-  return JSON.stringify(sanitize({ runtimeState, latestError: latest, recent: readLogs({ sources: ["live"], limit: 30 }).entries }), null, 2);
+  return JSON.stringify(sanitize({ runtimeState, readinessSummary: buildReadinessFromRuntime(), latestError: latest, recent: readLogs({ sources: ["live"], limit: 30 }).entries }), null, 2);
 }
 
 async function exportBundle(parentWindow = null) {
   const result = await dialog.showSaveDialog(parentWindow || undefined, { title: "Export AnxOS Diagnostic Bundle", defaultPath: `anxos-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
   if (result.canceled || !result.filePath) return { canceled: true };
-  const bundle = sanitize({ generatedAt: new Date().toISOString(), application: { version: packageJson.version, platform: os.platform(), release: os.release(), architecture: os.arch() }, agentVersion: agentPackage.version, runtimeState, latestError: (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })(), logs: readLogs({ limit: 500 }).entries });
+  const bundle = sanitize({ generatedAt: new Date().toISOString(), application: { version: packageJson.version, platform: os.platform(), release: os.release(), architecture: os.arch() }, agentVersion: agentPackage.version, readinessSummary: buildReadinessFromRuntime(), runtimeState, latestError: (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })(), logs: readLogs({ limit: 500 }).entries });
   fs.writeFileSync(result.filePath, `${JSON.stringify(bundle, null, 2)}\n`, { mode: 0o600 });
   log("info", "diagnostics", "export", "Sanitized diagnostic bundle exported", { destinationType: "user-selected-json" });
   return { canceled: false, exported: true };
@@ -72,9 +85,9 @@ async function exportBundle(parentWindow = null) {
 function captureSnapshot(extra = {}) {
   updateRuntimeState(extra);
   logger.cleanup();
-  return { runtimeState, latestErrorExists: fs.existsSync(path.join(getDirectory(), "latest-error.json")), logDirectory: getDirectory() };
+  return { runtimeState, readinessSummary: buildReadinessFromRuntime(), latestErrorExists: fs.existsSync(path.join(getDirectory(), "latest-error.json")), logDirectory: getDirectory() };
 }
 
 function correlationId(prefix = "diag") { return `${prefix}-${crypto.randomUUID()}`; }
 
-module.exports = { captureSnapshot, correlationId, exportBundle, getDirectory, log, logError, logger, openFolder, readLogs, copySummary, updateRuntimeState };
+module.exports = { buildReadinessFromRuntime, captureSnapshot, correlationId, exportBundle, getDirectory, log, logError, logger, openFolder, readLogs, copySummary, updateRuntimeState };

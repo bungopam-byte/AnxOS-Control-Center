@@ -42,10 +42,28 @@ const playitProvider = publicAccess._test.buildPlayitProviderState({
 assert.strictEqual(playitProvider.health, "healthy");
 assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
 
+const readiness = publicAccess._test.summarizePublicAccessReadiness({
+  providers: [
+    publicAccess._test.createProviderState(publicAccess.TailscaleProvider, {
+      available: true,
+      installed: true,
+      connected: true,
+      health: "healthy",
+      tailnetAddress: "100.64.0.1",
+    }),
+  ],
+  services: [],
+  activeTunnels: 0,
+  exposureScope: "tailnet-only",
+});
+assert.strictEqual(readiness.state, "degraded", "Tailnet-only connectivity should be degraded for public access validation.");
+assert.strictEqual(readiness.context.providerCapabilities[0].publicInternet, false, "Tailscale tailnet-only capability must not be reported as public internet.");
+
 assert(serviceSource.includes('execFile(command, args') && !serviceSource.includes("exec("), "Provider detection must use execFile with argument arrays.");
 assert(serviceSource.includes('runCommand("tailscale", ["status", "--json"])'), "Tailscale foundation must inspect real CLI status.");
 assert(serviceSource.includes('runCommand("cloudflared", ["--version"])'), "Cloudflare foundation must inspect real cloudflared availability.");
 assert(serviceSource.includes("redactOutput"), "Provider diagnostics must redact token-like output.");
+assert(serviceSource.includes("summarizePublicAccessReadiness"), "Public Access snapshots must include readiness summaries.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");

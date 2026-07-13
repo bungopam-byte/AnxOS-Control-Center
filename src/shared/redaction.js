@@ -4,6 +4,7 @@ const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
 const SECRET_ASSIGNMENT = /\b(password|passphrase|token|secret|api[_-]?key|apikey|authorization|cookie|session|refresh[_-]?token|access[_-]?token|agent[_-]?token|supabase[_-]?anon[_-]?key)\b\s*[:=]\s*(?!\[redacted\])(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi;
 const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi;
 const PRIVATE_PATH = /(^|[\s"'=(,:[{])((?:[A-Za-z]:\\Users\\|\/(?:home|Users|root)\/)[^\s"',)}\]]+)/g;
+const LARGE_BASE64 = /\b[A-Za-z0-9+/]{160,}={0,2}\b/g;
 
 function redactString(value) {
   return String(value)
@@ -11,7 +12,8 @@ function redactString(value) {
     .replace(JWT, "[redacted-jwt]")
     .replace(SECRET_ASSIGNMENT, "$1=[redacted]")
     .replace(URL_CREDENTIALS, "$1[redacted]@")
-    .replace(PRIVATE_PATH, "$1[redacted-path]");
+    .replace(PRIVATE_PATH, "$1[redacted-path]")
+    .replace(LARGE_BASE64, "[redacted-base64]");
 }
 
 function sanitize(value, options = {}, seen = new WeakSet()) {

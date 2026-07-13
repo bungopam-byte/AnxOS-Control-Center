@@ -5389,6 +5389,15 @@ function renderPublicAccessSnapshot(snapshot = {}) {
   const playitSnapshot = snapshot.playit || snapshot;
   renderPlayitSnapshot(playitSnapshot);
   renderPublicAccessProviders(snapshot.providers);
+  getDesktopApiState().api?.diagnostics?.capture?.({
+    publicAccessSnapshot: {
+      providers: Array.isArray(snapshot.providers) ? snapshot.providers : [],
+      services: Array.isArray(snapshot.services) ? snapshot.services : [],
+      activeTunnels: Number(snapshot.activeTunnels || 0),
+      exposureScope: snapshot.exposureScope || "unavailable",
+      readiness: snapshot.readiness || null,
+    },
+  }).catch(() => {});
   const service = Array.isArray(snapshot.services) ? snapshot.services[0] : null;
   if (service) {
     setField("publicAccessServiceName", service.name || "Public service");

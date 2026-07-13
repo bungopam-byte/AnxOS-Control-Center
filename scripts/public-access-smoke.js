@@ -66,6 +66,31 @@ assert(serviceSource.includes("redactOutput"), "Provider diagnostics must redact
 assert(serviceSource.includes("summarizePublicAccessReadiness"), "Public Access snapshots must include readiness summaries.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");
+assert(indexSource.includes('data-public-access-service-card="playit-primary"') && indexSource.includes('role="button"') && indexSource.includes("data-public-access-service-actions"), "Public Access service cards must be clickable and render live actions.");
+assert(indexSource.includes("data-public-access-provider-detail-pill") && indexSource.includes("data-public-access-provider-actions") && indexSource.includes("data-public-access-provider-unsupported"), "Provider Details must expose dynamic actions and unsupported reasons.");
+[
+  "publicAccessConnectionHealth",
+  "publicAccessReachability",
+  "publicAccessProviderCapabilities",
+  "playitLastSuccessfulRefresh",
+  "playitLatency",
+].forEach((needle) => assert(indexSource.includes(needle) || appSource.includes(needle), `Public Access details should display ${needle}.`));
+[
+  "function renderPublicAccessProviderDetails",
+  "function getPublicAccessActionDefinitions",
+  "function renderPublicAccessActionButtons",
+  "function runPublicAccessAction",
+  "copy-public-address",
+  "copy-local-endpoint",
+  "tunnel-config",
+  "provider-diagnostics",
+  "open-logs",
+  "entry.reason || \"Unsupported by this provider.\"",
+  "article.addEventListener(\"click\"",
+  "selectedPublicAccessProviderId",
+  "selectedPublicAccessServiceId",
+].forEach((needle) => assert(appSource.includes(needle), `Public Access UX should include ${needle}.`));
+assert(!indexSource.includes('data-public-access-action="disable" disabled') && !indexSource.includes('data-public-access-action="restart" disabled'), "Public Access must not render dead disabled action buttons.");
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");
 
 console.log("Public Access smoke checks passed.");

@@ -333,6 +333,11 @@ const startupDetail = document.querySelector("[data-startup-detail]");
 const playitStatusCard = document.querySelector("[data-playit-status-card]");
 const playitStatusPill = document.querySelector("[data-playit-status-pill]");
 const publicAccessProviderList = document.querySelector("[data-public-access-providers]");
+const publicAccessServiceActions = document.querySelector("[data-public-access-service-actions]");
+const publicAccessProviderDetailPill = document.querySelector("[data-public-access-provider-detail-pill]");
+const publicAccessProviderDetailSummary = document.querySelector("[data-public-access-provider-detail-summary]");
+const publicAccessProviderActions = document.querySelector("[data-public-access-provider-actions]");
+const publicAccessProviderUnsupported = document.querySelector("[data-public-access-provider-unsupported]");
 const ampPanelLink = document.querySelector("[data-amp-panel-link]");
 const startupSteps = {
   app: document.querySelector('[data-startup-step="app"]'),
@@ -592,6 +597,9 @@ const fieldMap = new Map();
 let systemRequestInFlight = false;
 let ampRequestInFlight = false;
 let playitRequestInFlight = false;
+let latestPublicAccessSnapshot = null;
+let selectedPublicAccessProviderId = "playit";
+let selectedPublicAccessServiceId = "playit-primary";
 let dockerRequestInFlight = false;
 let dockerActionRequestInFlight = false;
 let instancesRequestInFlight = false;
@@ -5409,6 +5417,142 @@ function formatPlayitTraffic(snapshot) {
   ].filter(Boolean).join(" · ");
 }
 
+function formatPublicAccessHealth(value) {
+  const normalized = String(value || "unavailable").replace(/[-_]/g, " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatPublicAccessReachability(service = {}, provider = {}) {
+  if (service.publicAddress && service.exposureScope === "public-internet") return "Public internet";
+  if (provider.tailnetAddress || service.exposureScope === "tailnet-only") return "Tailnet only";
+  if (provider.connected) return "Provider connected; public address unavailable";
+  return provider.recoveryAction || "No public endpoint is available.";
+}
+
+function formatPublicAccessCapabilities(provider = {}) {
+  const capabilities = provider.capabilities || {};
+  const enabled = Object.entries(capabilities)
+    .filter(([, supported]) => supported === true)
+    .map(([key]) => key.replace(/([A-Z])/g, " $1").toLowerCase());
+  return enabled.length ? enabled.join(", ") : "No runtime capabilities are available.";
+}
+
+function getSelectedPublicAccessProvider(snapshot = latestPublicAccessSnapshot) {
+  const providers = Array.isArray(snapshot?.providers) ? snapshot.providers : [];
+  return providers.find((provider) => provider.id === selectedPublicAccessProviderId) || providers[0] || null;
+}
+
+function getSelectedPublicAccessService(snapshot = latestPublicAccessSnapshot) {
+  const services = Array.isArray(snapshot?.services) ? snapshot.services : [];
+  return services.find((service) => service.id === selectedPublicAccessServiceId) || services[0] || null;
+}
+
+function getPublicAccessActionDefinitions(provider = {}, service = {}) {
+  const capabilities = provider.capabilities || {};
+  const hasPublicAddress = Boolean(service.publicAddress || provider.publicAddress || latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || getConfiguredPlayitAddress());
+  const hasLocalEndpoint = Boolean(service.localPort || latestPlayitSnapshot?.localPort);
+  return [
+    { action: "open-logs", label: "Open logs", supported: true },
+    { action: "refresh", label: "Refresh", supported: true },
+    { action: "copy-public-address", label: "Copy public address", supported: capabilities.publicAddress === true && hasPublicAddress, reason: capabilities.publicAddress === true ? "No public address has been detected yet." : "This provider does not expose a public address through AnxOS." },
+    { action: "copy-local-endpoint", label: "Copy local endpoint", supported: hasLocalEndpoint, reason: "No local endpoint has been detected for this provider." },
+    { action: "tunnel-config", label: "Open tunnel configuration", supported: provider.id === "playit" || capabilities.createTunnel === true || capabilities.listTunnels === true, reason: provider.recoveryAction || "Tunnel configuration is not supported for this provider yet." },
+    { action: "provider-diagnostics", label: "Open provider diagnostics", supported: capabilities.diagnostics === true, reason: "Provider diagnostics are not available for this provider." },
+  ];
+}
+
+function renderPublicAccessActionButtons(container, actions = [], provider = {}) {
+  if (!container) return;
+  container.replaceChildren();
+  actions.filter((entry) => entry.supported).forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = entry.action === "refresh" ? "inline-action inline-action--primary" : "inline-action";
+    button.dataset.publicAccessAction = entry.action;
+    button.textContent = entry.label;
+    button.setAttribute("aria-label", `${entry.label} for ${provider.name || provider.id || "Public Access provider"}`);
+    container.append(button);
+  });
+}
+
+function renderPublicAccessProviderDetails(snapshot = latestPublicAccessSnapshot) {
+  const provider = getSelectedPublicAccessProvider(snapshot);
+  const service = getSelectedPublicAccessService(snapshot);
+  if (!provider) {
+    if (publicAccessServiceActions) publicAccessServiceActions.replaceChildren();
+    if (publicAccessProviderActions) publicAccessProviderActions.replaceChildren();
+    if (publicAccessProviderUnsupported) publicAccessProviderUnsupported.replaceChildren(createTextElement("p", "Provider details are unavailable."));
+    return;
+  }
+  const statusLabel = getPublicAccessProviderLabel(provider);
+  if (publicAccessProviderDetailPill) {
+    publicAccessProviderDetailPill.className = `status-pill ${getPublicAccessProviderTone(provider)}`;
+    publicAccessProviderDetailPill.textContent = statusLabel;
+  }
+  if (publicAccessProviderDetailSummary) {
+    publicAccessProviderDetailSummary.textContent = provider.recoveryAction || provider.description || "Provider details are available.";
+  }
+  setField("publicAccessConnectionHealth", formatPublicAccessHealth(provider.health));
+  setField("publicAccessReachability", formatPublicAccessReachability(service || {}, provider));
+  setField("publicAccessProviderCapabilities", formatPublicAccessCapabilities(provider));
+
+  const actions = getPublicAccessActionDefinitions(provider, service || {});
+  renderPublicAccessActionButtons(publicAccessServiceActions, actions, provider);
+  renderPublicAccessActionButtons(publicAccessProviderActions, actions, provider);
+
+  if (publicAccessProviderUnsupported) {
+    publicAccessProviderUnsupported.replaceChildren();
+    actions.filter((entry) => !entry.supported).forEach((entry) => {
+      publicAccessProviderUnsupported.append(createTextElement("p", `${entry.label}: ${entry.reason || "Unsupported by this provider."}`));
+    });
+  }
+}
+
+function getPublicAccessPublicAddress() {
+  const service = getSelectedPublicAccessService();
+  const provider = getSelectedPublicAccessProvider();
+  return service?.publicAddress || provider?.publicAddress || latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || getConfiguredPlayitAddress() || "";
+}
+
+function getPublicAccessLocalEndpoint() {
+  const service = getSelectedPublicAccessService();
+  const host = latestPlayitSnapshot?.localIp || "127.0.0.1";
+  const port = service?.localPort || latestPlayitSnapshot?.localPort || "";
+  return port ? `${host}:${port}` : "";
+}
+
+async function copyPublicAccessValue(value, successMessage, unavailableMessage) {
+  if (!value) {
+    showToast(unavailableMessage, "warning");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast(successMessage, "success");
+  } catch {
+    showToast("Clipboard is unavailable.", "warning");
+  }
+}
+
+function openPublicAccessTunnelConfiguration() {
+  showPage("settings");
+  setActiveSettingsCategory("integrations", '[data-settings-category="integrations"]');
+  document.querySelector('[data-setting="playit.address"]')?.focus();
+}
+
+async function runPublicAccessAction(action) {
+  if (action === "refresh") return refreshPlayitStatus();
+  if (action === "open-logs") return runDiagnosticsAction("open");
+  if (action === "copy-public-address") return copyPublicAccessValue(getPublicAccessPublicAddress(), "Public address copied.", "No public address is available to copy.");
+  if (action === "copy-local-endpoint") return copyPublicAccessValue(getPublicAccessLocalEndpoint(), "Local endpoint copied.", "No local endpoint is available to copy.");
+  if (action === "tunnel-config") return openPublicAccessTunnelConfiguration();
+  if (action === "provider-diagnostics") {
+    showPage("agent-control");
+    return runAgentControlAction("runDiagnostics");
+  }
+  return null;
+}
+
 function renderPlayitSnapshot(snapshot) {
   latestPlayitSnapshot = snapshot;
   const configuredAddress = getConfiguredPlayitAddress();
@@ -5439,6 +5583,9 @@ function renderPlayitSnapshot(snapshot) {
   setField("publicAccessProvider", "Playit.gg");
   setField("publicAccessServiceName", tunnelAddress !== "Unavailable" ? "Public service" : "Unconfigured service");
   setField("publicAccessActivity", snapshot?.lastSuccessfulRefreshAt ? `Checked ${formatDateTime(snapshot.lastSuccessfulRefreshAt)}` : "Status checked");
+  setField("publicAccessConnectionHealth", playitState.label);
+  setField("publicAccessReachability", tunnelAddress !== "Unavailable" ? "Public internet" : "No public endpoint is available.");
+  setField("publicAccessProviderCapabilities", "detection, connection status, service exposure, list tunnels, public address, health check, diagnostics");
   renderInstanceNetwork(findInstance());
   updateTitlebar();
 }
@@ -5465,7 +5612,8 @@ function renderPublicAccessProviders(providers = []) {
   const providerRows = Array.isArray(providers) && providers.length ? providers : [];
   publicAccessProviderList.replaceChildren();
   providerRows.forEach((provider) => {
-    const article = document.createElement("article");
+    const article = document.createElement("button");
+    article.type = "button";
     article.className = "public-access-provider";
     article.dataset.providerId = provider.id || "";
     if (provider.dependencyId) {
@@ -5473,9 +5621,8 @@ function renderPublicAccessProviders(providers = []) {
     }
     article.classList.toggle("is-supported", provider.id === "playit");
     article.classList.toggle("is-disabled", provider.id !== "playit" || provider.status === "disabled");
-    if (provider.id !== "playit" || provider.status === "disabled") {
-      article.setAttribute("aria-disabled", "true");
-    }
+    article.classList.toggle("is-selected", provider.id === selectedPublicAccessProviderId);
+    article.setAttribute("aria-pressed", provider.id === selectedPublicAccessProviderId ? "true" : "false");
 
     const title = document.createElement("strong");
     title.textContent = provider.name || provider.id || "Provider";
@@ -5491,11 +5638,17 @@ function renderPublicAccessProviders(providers = []) {
     description.textContent = `${scope}. ${provider.recoveryAction || provider.description || "Provider is unavailable."}`;
 
     article.append(title, status, description);
+    article.addEventListener("click", () => {
+      selectedPublicAccessProviderId = provider.id || selectedPublicAccessProviderId;
+      renderPublicAccessProviders(providerRows);
+      renderPublicAccessProviderDetails(latestPublicAccessSnapshot);
+    });
     publicAccessProviderList.append(article);
   });
 }
 
 function renderPublicAccessSnapshot(snapshot = {}) {
+  latestPublicAccessSnapshot = snapshot;
   const playitSnapshot = snapshot.playit || snapshot;
   renderPlayitSnapshot(playitSnapshot);
   renderPublicAccessProviders(snapshot.providers);
@@ -5510,15 +5663,18 @@ function renderPublicAccessSnapshot(snapshot = {}) {
   }).catch(() => {});
   const service = Array.isArray(snapshot.services) ? snapshot.services[0] : null;
   if (service) {
+    selectedPublicAccessServiceId = service.id || selectedPublicAccessServiceId;
     setField("publicAccessServiceName", service.name || "Public service");
     setField("publicAccessProvider", service.providerName || snapshot.connectedProvider || "Playit.gg");
     setField("publicAccessServices", `${snapshot.services.length} service${snapshot.services.length === 1 ? "" : "s"}`);
     setField("publicAccessActiveTunnels", `${Number(snapshot.activeTunnels || 0)} active`);
     setField("publicAccessActivity", snapshot.recentActivity?.[0]?.label || "Status checked");
   }
+  renderPublicAccessProviderDetails(snapshot);
 }
 
 function renderPlayitUnavailable(message = "Public Access status unavailable.") {
+  latestPublicAccessSnapshot = null;
   latestPlayitSnapshot = null;
   setPlayitVisualState("missing");
   setField("playitInstalled", "Unavailable");
@@ -5538,6 +5694,10 @@ function renderPlayitUnavailable(message = "Public Access status unavailable.") 
   setField("publicAccessProvider", "Playit.gg");
   setField("publicAccessServiceName", "Unavailable");
   setField("publicAccessActivity", "No recent activity");
+  setField("publicAccessConnectionHealth", "Unavailable");
+  setField("publicAccessReachability", message);
+  setField("publicAccessProviderCapabilities", "Unavailable");
+  renderPublicAccessProviderDetails(null);
   renderInstanceNetwork(findInstance());
   updateTitlebar();
 }
@@ -27073,23 +27233,31 @@ document.querySelectorAll("[data-diagnostics-action]").forEach((button) => butto
   catch {}
   finally { button.disabled = false; }
 }));
-document.querySelectorAll("[data-public-access-action]").forEach((button) => button.addEventListener("click", () => {
-  const action = button.dataset.publicAccessAction;
-  if (action === "enable" || action === "settings") {
-    showPage("settings");
-    document.querySelector('[data-setting="playit.address"]')?.focus();
-    showToast("Public Access currently uses Playit.gg provider settings.", "info");
+document.querySelector('[data-page="playit"]')?.addEventListener("click", async (event) => {
+  const serviceCard = event.target.closest("[data-public-access-service-card]");
+  if (serviceCard && !event.target.closest("[data-public-access-action]")) {
+    selectedPublicAccessServiceId = serviceCard.dataset.publicAccessServiceCard || selectedPublicAccessServiceId;
+    renderPublicAccessProviderDetails(latestPublicAccessSnapshot);
     return;
   }
-  if (action === "logs") {
-    showPage("console");
-    showToast("Open the Playit service log source from Console when available.", "info");
-    return;
+  const button = event.target.closest("[data-public-access-action]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    await runPublicAccessAction(button.dataset.publicAccessAction);
+  } catch (error) {
+    showToast(normalizeIpcErrorMessage(error, "Public Access action failed."), "error");
+  } finally {
+    button.disabled = false;
   }
-  if (action === "disable" || action === "restart") {
-    showToast("This Public Access action needs a supported provider control handler before it can run.", "info");
-  }
-}));
+});
+document.querySelector('[data-page="playit"]')?.addEventListener("keydown", (event) => {
+  const serviceCard = event.target.closest("[data-public-access-service-card]");
+  if (!serviceCard || !["Enter", " "].includes(event.key)) return;
+  event.preventDefault();
+  selectedPublicAccessServiceId = serviceCard.dataset.publicAccessServiceCard || selectedPublicAccessServiceId;
+  renderPublicAccessProviderDetails(latestPublicAccessSnapshot);
+});
 backupActionButtons.forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.backupAction;

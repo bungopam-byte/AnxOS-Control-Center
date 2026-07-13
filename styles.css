@@ -7262,12 +7262,32 @@ dd {
   margin-top: 14px;
 }
 
+.public-access-provider-actions {
+  margin-top: 14px;
+}
+
+.public-access-unsupported {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.public-access-unsupported p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .public-access-provider-list {
   display: grid;
   gap: 10px;
 }
 
 .public-access-provider {
+  appearance: none;
+  width: 100%;
+  color: inherit;
+  text-align: left;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 4px 10px;
@@ -7275,6 +7295,21 @@ dd {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(17, 21, 31, 0.58);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.public-access-provider:hover,
+.public-access-provider:focus-visible,
+.public-access-provider.is-selected {
+  border-color: rgba(0, 229, 255, 0.42);
+  background: rgba(0, 229, 255, 0.08);
+}
+
+.public-access-provider:focus-visible,
+.playit-status-card[role="button"]:focus-visible {
+  outline: 2px solid rgba(0, 229, 255, 0.56);
+  outline-offset: 3px;
 }
 
 .public-access-provider small {
@@ -7293,6 +7328,15 @@ dd {
 .playit-status-card {
   border-color: var(--line);
   transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.playit-status-card[role="button"] {
+  cursor: pointer;
+}
+
+.playit-status-card[role="button"]:hover {
+  border-color: rgba(0, 229, 255, 0.38);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
 }
 
 .playit-status-card.is-connected {

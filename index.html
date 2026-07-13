@@ -805,7 +805,7 @@
             </div>
 
             <div class="public-access-grid">
-              <article class="status-card status-card--wide playit-status-card" data-playit-status-card>
+              <article class="status-card status-card--wide playit-status-card" data-playit-status-card data-public-access-service-card="playit-primary" role="button" tabindex="0">
                 <div class="status-card__top">
                   <span class="service-icon">PA</span>
                   <span class="status-pill status-pill--planned" data-playit-status-pill data-field="playitConnected">Checking...</span>
@@ -833,14 +833,16 @@
                     <dt>Status</dt>
                     <dd data-field="playitConnected">Checking...</dd>
                   </div>
+                  <div>
+                    <dt>Reachability</dt>
+                    <dd data-field="publicAccessReachability">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Last Refresh</dt>
+                    <dd data-field="playitLastSuccessfulRefresh">Checking...</dd>
+                  </div>
                 </dl>
-                <div class="settings-actions public-access-actions" aria-label="Public service actions">
-                  <button class="inline-action inline-action--primary" type="button" data-public-access-action="enable">Enable Public Access</button>
-                  <button class="inline-action" type="button" data-public-access-action="disable" disabled>Disable</button>
-                  <button class="inline-action" type="button" data-public-access-action="restart" disabled>Restart</button>
-                  <button class="inline-action" type="button" data-public-access-action="logs">View Logs</button>
-                  <button class="inline-action" type="button" data-public-access-action="settings">Settings</button>
-                </div>
+                <div class="settings-actions public-access-actions" data-public-access-service-actions aria-label="Public service actions"></div>
               </article>
 
               <article class="status-card public-access-providers">
@@ -877,10 +879,10 @@
               <article class="status-card public-access-details">
                 <div class="status-card__top">
                   <span class="service-icon">PG</span>
-                  <span class="status-pill status-pill--planned">Playit.gg</span>
+                  <span class="status-pill status-pill--planned" data-public-access-provider-detail-pill>Playit.gg</span>
                 </div>
                 <h3>Provider Details</h3>
-                <p>Technical status from the Playit.gg provider.</p>
+                <p data-public-access-provider-detail-summary>Technical status from the Playit.gg provider.</p>
                 <dl>
                   <div>
                     <dt>Installed</dt>
@@ -911,10 +913,24 @@
                     <dd data-field="playitLatency">Not measured</dd>
                   </div>
                   <div>
+                    <dt>Connection Health</dt>
+                    <dd data-field="publicAccessConnectionHealth">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Public Reachability</dt>
+                    <dd data-field="publicAccessReachability">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Capabilities</dt>
+                    <dd data-field="publicAccessProviderCapabilities">Checking...</dd>
+                  </div>
+                  <div>
                     <dt>Traffic</dt>
                     <dd data-field="playitTraffic">Not reported</dd>
                   </div>
                 </dl>
+                <div class="settings-actions public-access-provider-actions" data-public-access-provider-actions aria-label="Provider detail actions"></div>
+                <div class="public-access-unsupported" data-public-access-provider-unsupported aria-live="polite"></div>
               </article>
             </div>
           </section>

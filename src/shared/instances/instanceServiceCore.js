@@ -2049,7 +2049,9 @@ async function deleteInstance(instanceId) {
   let config;
   const basePath = instancePath(id);
   const result = {
+    success: false,
     id,
+    instanceId: id,
     deleted: false,
     filesDeleted: false,
     metadataRemoved: false,
@@ -2075,7 +2077,9 @@ async function deleteInstance(instanceId) {
 
       return {
         ...result,
+        success: true,
         id,
+        instanceId: id,
         deleted: true,
         filesDeleted: existed,
         metadataRemoved: true,
@@ -2099,7 +2103,9 @@ async function deleteInstance(instanceId) {
 
     return {
       ...result,
+      success: true,
       id: config.id,
+      instanceId: config.id,
       deleted: true,
       filesDeleted: existed,
       metadataRemoved: true,
@@ -2129,7 +2135,9 @@ async function forgetInstance(instanceId) {
   const id = validateInstanceId(instanceId);
   const processEntry = runningProcesses.get(id);
   const result = {
+    success: false,
     id,
+    instanceId: id,
     deleted: false,
     filesDeleted: false,
     metadataRemoved: false,
@@ -2154,10 +2162,11 @@ async function forgetInstance(instanceId) {
     metricsSamples.delete(id);
     return {
       ...result,
+      success: true,
       deleted: true,
       filesDeleted: false,
       metadataRemoved: recordExisted,
-      alreadyMissing: !recordExisted && !baseExisted,
+      alreadyMissing: !recordExisted,
       stale: true,
     };
   } catch (error) {

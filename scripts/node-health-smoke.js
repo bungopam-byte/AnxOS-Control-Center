@@ -137,15 +137,45 @@ function requireApp(needle, message) {
 
 [
   "runNodeHealthAction",
+  "renderNodeHealthActions",
   "testSelectedNode()",
+  "testAgentConnection({ silent: false })",
   "refreshAgentControl({ includeConfig: true })",
   "runDependencyAction(\"check\")",
+  "runDependencyAction(\"install\")",
+  "runAgentControlAction(\"runDiagnostics\")",
+  "refreshDashboard()",
+  "selectInstanceStatusFilter(\"running\")",
+  "selectOperationFilter(\"failed\")",
+  "runDiagnosticsAction(\"export\")",
+  "setActiveSettingsCategory(category, selector)",
+  "refreshCurrentFilesDirectory()",
   "showPage(\"operations\")",
   "showPage(\"agent-control\")",
   "showPage(\"files\")",
   "showPage(\"maintenance\")",
   "checkForUpdates({ silent: false })",
 ].forEach((needle) => requireApp(needle, `Node health remediation should reuse ${needle}.`));
+
+[
+  "Test connection",
+  "Ping Agent",
+  "Open Agent Control",
+  "Open Dashboard",
+  "Live Metrics",
+  "Open Files",
+  "Storage usage",
+  "Open Marketplace",
+  "View running instances",
+  "Check dependencies",
+  "Prepare node",
+  "Open Operations",
+  "Failed operations",
+  "Open Diagnostics",
+  "Export bundle",
+  "Open Maintenance",
+  "Open Updates",
+].forEach((needle) => requireApp(needle, `Node health cards should expose ${needle}.`));
 
 [
   "getNodeHealthBreakdown",
@@ -160,6 +190,7 @@ function requireApp(needle, message) {
   "nodeHealthIssues.replaceChildren()",
   "createTextElement(\"strong\", category.label)",
   "action.setAttribute(\"aria-label\"",
+  "actions.forEach((entry)",
   "event.target.closest(\"[data-node-health-action]\")",
 ].forEach((needle) => requireApp(needle, `Node health rendering should be safe and accessible with ${needle}.`));
 

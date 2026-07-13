@@ -22961,7 +22961,7 @@ function getMarketplaceInstanceHealthState() {
   };
 }
 
-function buildNodeHealthCategory({ id, label, state, evidence, checkedAt = Date.now(), issueCount = 0, workspace = "nodes", remediation = "Review", action = null, stale = false, required = false, applicable = true, current = true, historicalIssueCount = 0 }) {
+function buildNodeHealthCategory({ id, label, state, evidence, checkedAt = Date.now(), issueCount = 0, workspace = "nodes", remediation = "Review", action = null, actions = null, stale = false, required = false, applicable = true, current = true, historicalIssueCount = 0 }) {
   const applicableState = applicable !== false;
   const currentState = current !== false;
   const normalizedState = normalizeNodeHealthState(state);
@@ -22986,6 +22986,7 @@ function buildNodeHealthCategory({ id, label, state, evidence, checkedAt = Date.
     workspace,
     remediation,
     action,
+    actions: Array.isArray(actions) ? actions.filter((entry) => entry?.action && entry?.label) : action ? [{ label: remediation || "Review", action }] : [],
   };
 }
 
@@ -23058,6 +23059,11 @@ function buildConnectivityHealth(node) {
     workspace: "nodes",
     remediation: "Test connection",
     action: "test-node",
+    actions: [
+      { label: "Test connection", action: "test-node" },
+      { label: "Ping Agent", action: "ping-agent" },
+      { label: "Open Agent Control", action: "open-agent-control" },
+    ],
   });
 }
 
@@ -23071,6 +23077,7 @@ function buildAgentHealth(node) {
       workspace: "agent-control",
       remediation: "Open Agent Control",
       action: "open-agent-control",
+      actions: [{ label: "Open Agent Control", action: "open-agent-control" }],
       required: false,
       applicable: false,
     });
@@ -23099,6 +23106,11 @@ function buildAgentHealth(node) {
     workspace: "agent-control",
     remediation: running ? "Open Agent Control" : "Reconnect Agent",
     action: running ? "open-agent-control" : "reconnect-agent",
+    actions: [
+      { label: "Open Agent Control", action: "open-agent-control" },
+      { label: "Reconnect Agent", action: "reconnect-agent" },
+      { label: "Run diagnostics", action: "agent-diagnostics" },
+    ],
   });
 }
 
@@ -23129,6 +23141,10 @@ function buildResourceHealth() {
     workspace: "dashboard",
     remediation: "Open Dashboard",
     action: "open-dashboard",
+    actions: [
+      { label: "Open Dashboard", action: "open-dashboard" },
+      { label: "Live Metrics", action: "live-metrics" },
+    ],
   });
 }
 
@@ -23159,9 +23175,13 @@ function buildStorageHealth() {
     issueCount: issues.length,
     required: true,
     current: Boolean(disk),
-    workspace: "dashboard",
-    remediation: "Open Maintenance",
-    action: "open-maintenance",
+    workspace: "files",
+    remediation: "Open Files",
+    action: "open-files",
+    actions: [
+      { label: "Open Files", action: "open-files" },
+      { label: "Storage usage", action: "storage-usage" },
+    ],
   });
 }
 
@@ -23179,6 +23199,10 @@ function buildDependencyHealth() {
     workspace: "agent-control",
     remediation: health.unhealthy.length ? "Recheck dependencies" : "Open Agent Control",
     action: health.unhealthy.length ? "recheck-dependencies" : "open-agent-control",
+    actions: [
+      { label: "Check dependencies", action: "check-dependencies" },
+      { label: "Prepare node", action: "prepare-node" },
+    ],
   });
 }
 
@@ -23196,6 +23220,10 @@ function buildMarketplaceHealth() {
     workspace: "instances",
     remediation: health.failed?.length ? "Open Instances" : "Open Marketplace",
     action: health.failed?.length ? "open-instances" : "open-marketplace",
+    actions: [
+      { label: "Open Marketplace", action: "open-marketplace" },
+      { label: "View running instances", action: "view-running-instances" },
+    ],
   });
 }
 
@@ -23216,6 +23244,7 @@ function buildFilesHealth() {
     workspace: "files",
     remediation: "Open Files",
     action: "open-files",
+    actions: [{ label: "Open Files", action: "open-files" }],
   });
 }
 
@@ -23236,6 +23265,10 @@ function buildOperationsHealth() {
     workspace: "operations",
     remediation: activeFailed.length ? "Open failed operations" : "Open Operations",
     action: "open-operations",
+    actions: [
+      { label: "Open Operations", action: "open-operations" },
+      { label: "Failed operations", action: "failed-operations" },
+    ],
   });
 }
 
@@ -23254,6 +23287,10 @@ function buildDiagnosticsHealth() {
     workspace: "diagnostics",
     remediation: "Open Diagnostics",
     action: "open-diagnostics",
+    actions: [
+      { label: "Open Diagnostics", action: "open-diagnostics" },
+      { label: "Export bundle", action: "export-diagnostics-bundle" },
+    ],
   });
 }
 
@@ -23274,6 +23311,7 @@ function buildUpdatesHealth() {
     workspace: "settings",
     remediation: "Check updates",
     action: "check-updates",
+    actions: [{ label: "Open Updates", action: "open-updates" }],
   });
 }
 
@@ -23292,6 +23330,7 @@ function buildMaintenanceHealth() {
     workspace: "maintenance",
     remediation: "Open Maintenance",
     action: "open-maintenance",
+    actions: [{ label: "Open Maintenance", action: "open-maintenance" }],
   });
 }
 
@@ -23491,20 +23530,66 @@ function sortNodeHealthIssues(categories = []) {
   });
 }
 
+function selectOperationFilter(filter = "all") {
+  operationsState.filter = filter;
+  renderOperationsCenter();
+}
+
+function selectInstanceStatusFilter(filter = "all") {
+  if (instancesFilterSelect) {
+    instancesFilterSelect.value = filter;
+  }
+  filterInstanceRows();
+}
+
+function openNodeHealthSettingsCategory(category, selector) {
+  showPage("settings");
+  setActiveSettingsCategory(category, selector);
+}
+
+function exportDiagnosticsSupportBundleFromHealth() {
+  showPage("agent-control");
+  return runDiagnosticsAction("export");
+}
+
 function runNodeHealthAction(action) {
   if (action === "test-node") return testSelectedNode();
-  if (action === "reconnect-agent") return refreshAgentControl({ includeConfig: true });
-  if (action === "recheck-dependencies") return runDependencyAction("check");
+  if (action === "ping-agent") return testAgentConnection({ silent: false });
+  if (action === "reconnect-agent") { showPage("agent-control"); return refreshAgentControl({ includeConfig: true }); }
+  if (action === "check-dependencies" || action === "recheck-dependencies") { showPage("agent-control"); return runDependencyAction("check"); }
+  if (action === "prepare-node") { showPage("agent-control"); return runDependencyAction("install"); }
+  if (action === "agent-diagnostics") { showPage("agent-control"); return runAgentControlAction("runDiagnostics"); }
   if (action === "open-agent-control") return showPage("agent-control");
   if (action === "open-dashboard") return showPage("dashboard");
+  if (action === "live-metrics") { showPage("dashboard"); return refreshDashboard(); }
   if (action === "open-maintenance") return showPage("maintenance");
   if (action === "open-instances") return showPage("instances");
+  if (action === "view-running-instances") { showPage("instances"); selectInstanceStatusFilter("running"); return refreshInstances({ refreshMetrics: false }); }
   if (action === "open-marketplace") return showPage("marketplace");
-  if (action === "open-files") return showPage("files");
+  if (action === "open-files") { showPage("files"); return refreshCurrentFilesDirectory(); }
+  if (action === "storage-usage") return openNodeHealthSettingsCategory("storage", '[data-settings-category="storage"]');
   if (action === "open-operations") return showPage("operations");
+  if (action === "failed-operations") { showPage("operations"); return selectOperationFilter("failed"); }
   if (action === "open-diagnostics") return showPage("agent-control");
+  if (action === "export-diagnostics-bundle") return exportDiagnosticsSupportBundleFromHealth();
   if (action === "check-updates") return checkForUpdates({ silent: false });
+  if (action === "open-updates") return openNodeHealthSettingsCategory("updates", '[data-settings-category="updates"]');
   return null;
+}
+
+function renderNodeHealthActions(container, category) {
+  if (!container) return;
+  const actions = Array.isArray(category.actions) ? category.actions : [];
+  actions.forEach((entry) => {
+    if (!entry?.action || !entry?.label) return;
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "inline-action";
+    action.dataset.nodeHealthAction = entry.action;
+    action.textContent = entry.label;
+    action.setAttribute("aria-label", `${entry.label} for ${category.label}`);
+    container.append(action);
+  });
 }
 
 function renderNodeHealth(health = getSharedNodeHealthModel()) {
@@ -23559,14 +23644,7 @@ function renderNodeHealth(health = getSharedNodeHealthModel()) {
       row.append(body, createNodeHealthBadge(category.state));
       const actions = document.createElement("div");
       actions.className = "settings-actions node-health-actions";
-      const action = document.createElement("button");
-      action.type = "button";
-      action.className = "inline-action";
-      action.dataset.nodeHealthAction = category.action || "";
-      action.textContent = category.remediation || "Review";
-      action.disabled = !category.action;
-      action.setAttribute("aria-label", `${category.remediation || "Review"} for ${category.label}`);
-      actions.append(action);
+      renderNodeHealthActions(actions, category);
       item.append(row, actions);
       nodeHealthCategories.append(item);
     });
@@ -23593,14 +23671,7 @@ function renderNodeHealth(health = getSharedNodeHealthModel()) {
         row.append(body, createNodeHealthBadge(category.state));
         const actions = document.createElement("div");
         actions.className = "settings-actions node-health-actions";
-        const action = document.createElement("button");
-        action.type = "button";
-        action.className = "inline-action";
-        action.dataset.nodeHealthAction = category.action || "";
-        action.textContent = category.remediation || "Review";
-        action.disabled = !category.action;
-        action.setAttribute("aria-label", `${category.remediation || "Review"} for ${category.label}`);
-        actions.append(action);
+        renderNodeHealthActions(actions, category);
         item.append(
           row,
           createNodeHealthDetails(category, evidence),

@@ -52,7 +52,17 @@ function createUnavailableFileListing(message = "File service unavailable.") {
 
 async function getAgentDockerSnapshot(options = {}) {
   try {
-    return await agentClient.getDockerSnapshot(getOptionalNodeConfig(options));
+    const nodeConfig = getOptionalNodeConfig(options);
+    const snapshot = await agentClient.getDockerSnapshot(nodeConfig);
+    const capabilities = await agentClient.getDockerCapabilities(nodeConfig).catch((error) => ({
+      available: false,
+      code: error?.code || error?.payload?.error?.code || null,
+      message: error?.message || "Docker capability manifest is unavailable on this Agent.",
+    }));
+    return {
+      ...snapshot,
+      agentDockerCapabilities: capabilities,
+    };
   } catch (error) {
     diagnostics.log("warn", "docker", "agent-snapshot-failed", "Remote Docker snapshot request failed", {
       nodeId: options?.nodeId || getSelectedNodeId(),

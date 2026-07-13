@@ -412,6 +412,55 @@ function getAgentHttpErrorMessage(status, code, payload) {
   return `Agent request failed with HTTP ${status}.`;
 }
 
+function getDockerApiExpectation(pathname, method = "GET") {
+  if (!String(pathname || "").startsWith("/api/v1/docker/")) {
+    return null;
+  }
+  const normalizedMethod = String(method || "GET").toUpperCase();
+  const expectations = [
+    ["GET", /^\/api\/v1\/docker\/capabilities$/, "Agent Docker capability manifest"],
+    ["GET", /^\/api\/v1\/docker\/snapshot$/, "Docker workspace snapshot"],
+    ["GET", /^\/api\/v1\/docker\/summary$/, "Docker summary"],
+    ["GET", /^\/api\/v1\/docker\/containers$/, "container list"],
+    ["POST", /^\/api\/v1\/docker\/containers$/, "container create"],
+    ["GET", /^\/api\/v1\/docker\/containers\/[^/]+\/inspect$/, "container inspect"],
+    ["GET", /^\/api\/v1\/docker\/containers\/[^/]+\/logs(?:\?|$)/, "container logs"],
+    ["GET", /^\/api\/v1\/docker\/containers\/[^/]+\/stats$/, "container stats"],
+    ["POST", /^\/api\/v1\/docker\/containers\/[^/]+\/(?:start|stop|restart|pause|unpause|kill|rename|exec)$/, "container lifecycle/action"],
+    ["DELETE", /^\/api\/v1\/docker\/containers\/[^/]+$/, "container delete"],
+    ["GET", /^\/api\/v1\/docker\/images$/, "image list"],
+    ["POST", /^\/api\/v1\/docker\/images\/(?:pull|prune)$/, "image pull/prune"],
+    ["GET", /^\/api\/v1\/docker\/images\/[^/]+$/, "image inspect"],
+    ["DELETE", /^\/api\/v1\/docker\/images\/[^/]+$/, "image delete"],
+    ["GET", /^\/api\/v1\/docker\/networks$/, "network list"],
+    ["POST", /^\/api\/v1\/docker\/networks(?:\/prune)?$/, "network create/prune"],
+    ["GET", /^\/api\/v1\/docker\/networks\/[^/]+\/inspect$/, "network inspect"],
+    ["POST", /^\/api\/v1\/docker\/networks\/[^/]+\/(?:connect|disconnect)$/, "network connect/disconnect"],
+    ["DELETE", /^\/api\/v1\/docker\/networks\/[^/]+$/, "network delete"],
+    ["GET", /^\/api\/v1\/docker\/volumes$/, "volume list"],
+    ["POST", /^\/api\/v1\/docker\/volumes\/prune$/, "volume prune"],
+    ["GET", /^\/api\/v1\/docker\/volumes\/[^/]+\/inspect$/, "volume inspect"],
+    ["DELETE", /^\/api\/v1\/docker\/volumes\/[^/]+$/, "volume delete"],
+    ["GET", /^\/api\/v1\/docker\/compose\/projects$/, "Compose project discovery"],
+    ["POST", /^\/api\/v1\/docker\/compose\/(?:config|up|stop|restart|pull|build|recreate|logs|status|down)$/, "Compose operation"],
+    ["GET", /^\/api\/v1\/docker\/cleanup\/preview$/, "Docker cleanup preview"],
+    ["POST", /^\/api\/v1\/docker\/cleanup$/, "Docker cleanup execution"],
+  ];
+  const match = expectations.find(([expectedMethod, pattern]) => expectedMethod === normalizedMethod && pattern.test(pathname));
+  return match?.[2] || "Docker API route";
+}
+
+function createDockerNotFoundDetails({ method, pathname, requestUrl, expectation }) {
+  return {
+    method,
+    requestedAgentPath: pathname,
+    activeAgentUrl: requestUrl,
+    desktopApiExpectation: expectation,
+    likelyCause: "Desktop and Agent Docker API versions do not match, or the running Agent was not restarted after a Docker route update.",
+    compatibilityEndpoint: "/api/v1/docker/capabilities",
+  };
+}
+
 function redactForAgentLog(value, depth = 0) {
   if (depth > 6) {
     return "[truncated]";
@@ -519,11 +568,28 @@ async function requestJson(pathname, options = {}) {
         payload && typeof payload === "object" && !Array.isArray(payload)
           ? payload.error?.code || "AGENT_HTTP_ERROR"
           : "AGENT_HTTP_ERROR";
-      const message = getAgentHttpErrorMessage(response.status, responseErrorCode, payload);
+      const dockerExpectation = response.status === 404 ? getDockerApiExpectation(pathname, method) : null;
+      const dockerNotFoundDetails = dockerExpectation
+        ? createDockerNotFoundDetails({ method, pathname, requestUrl, expectation: dockerExpectation })
+        : null;
+      const message = dockerNotFoundDetails
+        ? `Agent Docker endpoint was not found for ${method} ${pathname}. Expected ${dockerExpectation}. This usually means the Desktop and Agent builds are out of sync or the Agent needs a restart.`
+        : getAgentHttpErrorMessage(response.status, responseErrorCode, payload);
       const error = new AgentClientError(message, {
         status: response.status,
         code: responseErrorCode,
-        payload,
+        payload: dockerNotFoundDetails && payload && typeof payload === "object" && !Array.isArray(payload)
+          ? {
+              ...payload,
+              error: {
+                ...(payload.error || {}),
+                details: {
+                  ...(payload.error?.details || {}),
+                  ...dockerNotFoundDetails,
+                },
+              },
+            }
+          : payload,
       });
       logAgentRequestFailure(pathname, response.status, responseErrorCode, {
         url: requestUrl,
@@ -532,6 +598,7 @@ async function requestJson(pathname, options = {}) {
         logThrottleMs,
         responseBody: typeof payload === "string" ? payload : JSON.stringify(payload),
         message: error.message,
+        originalMessage: dockerNotFoundDetails?.likelyCause || null,
         stack: error.stack,
       });
       throw error;
@@ -996,6 +1063,10 @@ async function testConnection(configOverride = null) {
 
 async function getDockerSummary() {
   return requestJson("/api/v1/docker/summary", { timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
+}
+
+async function getDockerCapabilities(configOverride = null) {
+  return requestJson("/api/v1/docker/capabilities", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function getDockerContainers(configOverride = null) {
@@ -2393,6 +2464,7 @@ module.exports = {
   getAmpStatus,
   getAgentConfig,
   getDockerContainers,
+  getDockerCapabilities,
   getDockerContainerLogs,
   getDockerContainerStats,
   getDockerCleanupPreview,

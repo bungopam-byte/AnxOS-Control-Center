@@ -191,7 +191,7 @@ async function routeRequest(request, url) {
     return handleBackups(request, url);
   }
 
-  if (pathname === "/api/v1/docker/containers" || pathname.startsWith("/api/v1/docker/containers/")) {
+  if (pathname === "/api/v1/docker" || pathname.startsWith("/api/v1/docker/")) {
     return handleDocker(request, url);
   }
 
@@ -224,18 +224,6 @@ async function routeRequest(request, url) {
       return handleStats();
     }
     return handleSystemSummary();
-  }
-
-  if (pathname === "/api/v1/docker/containers") {
-    return handleDockerContainers();
-  }
-
-  if (pathname === "/api/v1/docker/snapshot") {
-    return handleDockerSnapshot();
-  }
-
-  if (pathname === "/api/v1/docker/summary") {
-    return handleDockerSummary();
   }
 
   if (pathname === "/api/v1/playit/snapshot") {

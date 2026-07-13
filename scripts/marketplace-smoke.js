@@ -243,6 +243,13 @@ function assertPalworldNumericValidation() {
       error.details?.received === "4 GB",
     "Palworld formatted memory strings should fail with structured field details."
   );
+  assert.throws(
+    () => marketplaceService._test.getEffectiveInstallerTimeoutMs({ ...template, installer: { ...template.installer, timeoutMs: "900000.5" } }),
+    (error) => error?.code === "MARKETPLACE_VALIDATION_FAILED" &&
+      error.details?.field === "startupTimeoutMs" &&
+      error.details?.received === "900000.5",
+    "Palworld installer timeout should reject decimal strings instead of truncating them."
+  );
 }
 
 function assertMarketplaceInstallerRegistry() {
@@ -273,6 +280,11 @@ function assertMarketplaceInstallerRegistry() {
   assert(
     marketplaceService._test.getEffectiveInstallerTimeoutMs(findTemplate("palworld")) > findTemplate("palworld").installer.timeoutMs,
     "SteamCMD-native templates should use the shared long-running install timeout instead of the short manifest timeout."
+  );
+  assert.strictEqual(
+    marketplaceService._test.getEffectiveInstallerTimeoutMs(findTemplate("palworld")),
+    2 * 60 * 60 * 1000,
+    "Palworld timeout and Agent startup timeout limit should agree at two hours."
   );
   const palworldDownloads = marketplaceService._test.normalizeTemplateDownloads(findTemplate("palworld"));
   assert.strictEqual(palworldDownloads[0]?.type, "steamcmd", "Palworld should keep a SteamCMD download handoff record.");
@@ -332,6 +344,7 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
     "createInstanceFolder",
     "writeInstanceFile",
     "deleteInstance",
+    "getInstanceStatus",
   ];
   patchedAgentMethods.forEach((name) => {
     originalAgent[name] = agentClient[name];
@@ -379,6 +392,16 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
     agentClient.deleteInstance = async (instanceId) => {
       instances.delete(instanceId);
       return { deleted: true };
+    };
+    agentClient.getInstanceStatus = async (instanceId) => {
+      const instance = instances.get(instanceId);
+      if (!instance) {
+        const error = new Error("INSTANCE_NOT_FOUND");
+        error.code = "INSTANCE_NOT_FOUND";
+        error.status = 404;
+        throw error;
+      }
+      return { instance };
     };
 
     await assert.rejects(
@@ -545,7 +568,7 @@ function assertMarketplaceIpcErrorSerialization() {
           message: "Use a valid numeric value.",
           details: {
             field: "startupTimeoutMs",
-            expected: "positive integer up to 1800000",
+            expected: "positive integer up to 7200000",
             received: 2000000,
             code: "INVALID_NUMBER",
             userMessage: "Use a valid numeric value.",
@@ -925,7 +948,14 @@ function assertStorageManagerArchitecture() {
   assert(fileSource.includes("getProviderProfile") && fileSource.includes("storageId") && fileSource.includes("providerBadge") && fileSource.includes("async copy(") && fileSource.includes("createTransferController"), "FileService should route operations through provider-style storage IDs with cancellable transfers.");
   assert(appSource.includes("renderStorageConnections") && appSource.includes("handleStorageConnectionSaved") && appSource.includes("startFileTransfer") && appSource.includes("cancelFileTransfer") && appSource.includes("storageId: getFilesRequestStorageId()"), "Renderer should manage provider connections and transfer entries.");
   assert(appSource.includes("if (!selectedStorageId) {\n    return null;\n  }"), "Renderer should not fall back to local storage when an SSH file profile is selected.");
-  assert(appSource.includes("if (filesSelectedProfileId) {\n    selectedStorageId = \"\";\n  }\n  renderStorageConnections();"), "Server/profile selection should clear local storage routing before connecting files.");
+  assert(
+    appSource.includes('selectedStorageId = "";') &&
+      appSource.includes('selectedStorageId = "local";') &&
+      appSource.includes("getFilesProfileOptionById(filesSelectedProfileId)") &&
+      appSource.includes('selectedProfile?.providerType === "agent-native"') &&
+      appSource.includes("activateFilesTargetState({ loading: false"),
+    "Server/profile selection should clear local storage routing before connecting Agent files."
+  );
   assert(addStorageWindowSource.includes("api.files.saveConnection") && addStorageWindowSource.includes("api.files.testConnection") && addStorageWindowSource.includes("storageWindow?.saved"), "Add Storage window should reuse secure files IPC and notify the Files page after save.");
 }
 

@@ -137,13 +137,20 @@ function validateBoolean(value, fallback) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function parseStrictPositiveInteger(value) {
+  const raw = typeof value === "string" ? value.trim() : value;
+  if (typeof raw === "number") {
+    return Number.isInteger(raw) ? raw : NaN;
+  }
+  return /^[0-9]+$/.test(String(raw)) ? Number(raw) : NaN;
+}
+
 function validatePositiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER, field = "number") {
   if (value === undefined || value === null || value === "") {
     return fallback;
   }
 
-  const raw = typeof value === "string" ? value.trim() : value;
-  const parsed = typeof raw === "number" ? raw : (/^[0-9]+$/.test(String(raw)) ? Number(raw) : NaN);
+  const parsed = parseStrictPositiveInteger(value);
 
   if (!Number.isInteger(parsed) || parsed <= 0 || parsed > max) {
     throw createInstanceError("INVALID_NUMBER", 400, { field, expected: `positive integer up to ${max}`, received: value });
@@ -202,9 +209,9 @@ function normalizePorts(value) {
   }
 
   return value.map((port) => {
-    const parsed = Number.parseInt(port, 10);
+    const parsed = parseStrictPositiveInteger(port);
 
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 65535) {
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
       throw createInstanceError("INVALID_PORTS");
     }
 
@@ -544,7 +551,7 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
   const id = existingConfig?.id || validateInstanceId(payload.id);
   const type = validateInstanceType(payload.type || existingConfig?.type);
   const command = buildTypeCommand(type, payload);
-  const primaryPort = Number.parseInt(payload.primaryPort, 10);
+  const primaryPort = parseStrictPositiveInteger(payload.primaryPort);
 
   assertExecutableAllowed(command.executable);
   assertSafeArguments(command.args);

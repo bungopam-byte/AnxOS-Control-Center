@@ -696,6 +696,17 @@ function normalizeWholeNumberField(value, {
   });
 }
 
+function normalizeInstallerTimeoutMs(value, fallbackMs) {
+  return normalizeWholeNumberField(value, {
+    field: "startupTimeoutMs",
+    label: "Startup timeout",
+    min: 1,
+    max: STEAMCMD_INSTALL_TIMEOUT_MS,
+    defaultValue: fallbackMs,
+    suggestion: `Startup timeout must be a whole number from 1 to ${STEAMCMD_INSTALL_TIMEOUT_MS}.`,
+  });
+}
+
 function normalizePortField(value, { field, label, defaultValue, optional = false } = {}) {
   return normalizeWholeNumberField(value, {
     field,
@@ -2453,7 +2464,7 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
 }
 
 function getEffectiveInstallerTimeoutMs(template, fallbackMs = 600000) {
-  const declared = Number.parseInt(template?.installer?.timeoutMs, 10) || fallbackMs;
+  const declared = normalizeInstallerTimeoutMs(template?.installer?.timeoutMs, fallbackMs);
   if (getTemplateInstallerType(template) === "steamcmd-native") {
     return Math.max(declared, STEAMCMD_INSTALL_TIMEOUT_MS);
   }

@@ -2253,6 +2253,16 @@ async function deleteInstance(instanceId, configOverride = null) {
   });
 }
 
+async function forgetInstance(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().forgetInstance(instanceId);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/record`, {
+    config: configOverride,
+    method: "DELETE",
+  });
+}
+
 async function listBackups(options = {}, configOverride = null) {
   const query = new URLSearchParams();
   if (options.instanceId) {
@@ -2367,6 +2377,7 @@ module.exports = {
   disconnectDockerNetwork,
   execDockerContainer,
   deleteInstance,
+  forgetInstance,
   deleteInstanceFile,
   forceKillInstance,
   getAgentConfigPath,

@@ -115,6 +115,8 @@ const instancesStartButtons = document.querySelectorAll('[data-instance-action="
 const instancesStopButtons = document.querySelectorAll('[data-instance-action="stop"]');
 const instancesRestartButtons = document.querySelectorAll('[data-instance-action="restart"]');
 const instancesDeleteButtons = document.querySelectorAll('[data-instance-action="delete"]');
+const instancesForgetButtons = document.querySelectorAll('[data-instance-action="forget"]');
+const instancesForceKillButtons = document.querySelectorAll('[data-instance-action="force-kill"]');
 const instancesDownloadLogButtons = document.querySelectorAll('[data-instance-action="download-logs"]');
 const instanceCreateForm = document.querySelector("[data-instance-create-form]");
 const instanceCreateSubmitButton = document.querySelector("[data-instance-create-submit]");
@@ -1144,6 +1146,7 @@ function getDesktopApiState() {
       typeof api?.instances?.restart === "function" &&
       typeof api?.instances?.forceKill === "function" &&
       typeof api?.instances?.delete === "function" &&
+      typeof api?.instances?.forget === "function" &&
       typeof api?.instances?.listFiles === "function" &&
       typeof api?.instances?.readFile === "function" &&
       typeof api?.instances?.writeFile === "function" &&
@@ -8101,6 +8104,14 @@ function updateInstanceActionButtons() {
     button.disabled = busy || !hasInstancesBridge || !canRestartInstance(selectedInstance);
   });
 
+  instancesForceKillButtons.forEach((button) => {
+    if (!button.dataset.defaultLabel) {
+      button.dataset.defaultLabel = button.textContent || "Force Kill";
+    }
+    button.disabled = busy || !hasInstancesBridge || !canStopInstance(selectedInstance);
+    button.textContent = instanceActionRequestInFlight ? "Working..." : button.dataset.defaultLabel;
+  });
+
   instancesDownloadLogButtons.forEach((button) => {
     button.disabled = busy || !hasInstancesBridge || !selectedInstance;
   });
@@ -8108,6 +8119,14 @@ function updateInstanceActionButtons() {
   instancesDeleteButtons.forEach((button) => {
     if (!button.dataset.defaultLabel) {
       button.dataset.defaultLabel = button.textContent || "Delete";
+    }
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance;
+    button.textContent = instanceActionRequestInFlight ? "Working..." : button.dataset.defaultLabel;
+  });
+
+  instancesForgetButtons.forEach((button) => {
+    if (!button.dataset.defaultLabel) {
+      button.dataset.defaultLabel = button.textContent || "Forget";
     }
     button.disabled = busy || !hasInstancesBridge || !selectedInstance;
     button.textContent = instanceActionRequestInFlight ? "Working..." : button.dataset.defaultLabel;
@@ -8656,6 +8675,8 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     UNAUTHORIZED: "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.",
     NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_RUNNING: "Stop the instance before deleting it.",
+    INSTANCE_DELETE_FAILED: "Instance files could not be deleted.",
+    INSTANCE_FORGET_FAILED: "Instance record could not be removed.",
     INSTANCE_ALREADY_RUNNING: "This instance is already running.",
     INSTANCE_NOT_RUNNING: "This instance is not running.",
     EXECUTABLE_NOT_ALLOWED: "This executable is not allowed by the agent.",
@@ -8720,6 +8741,19 @@ function isInstanceNotFoundError(error) {
 
 function isInstanceRunningError(error) {
   return getAgentErrorCode(error) === "INSTANCE_RUNNING";
+}
+
+function formatInstanceDeletionResult(result, fallback) {
+  if (!result || typeof result !== "object") {
+    return fallback;
+  }
+  const parts = [];
+  if (result.filesDeleted) parts.push("files deleted");
+  if (result.metadataRemoved) parts.push("metadata removed");
+  if (result.alreadyMissing) parts.push("already missing");
+  if (result.tombstoneAdded && !result.metadataRemoved) parts.push("hidden from this list");
+  if (result.partiallyFailed) parts.push("partial cleanup");
+  return parts.length ? `${fallback} (${parts.join(", ")}).` : fallback;
 }
 
 function notifyMissingSelectedInstance(error = null) {
@@ -12009,9 +12043,20 @@ async function runInstanceAction(actionName) {
   const label = selectedInstance.displayName || selectedInstance.id;
   const targetInstanceId = selectedInstance.id;
 
+  if (actionName === "forceKill" && !canStopInstance(selectedInstance)) {
+    showToast("Instance is already stopped. Use Delete or Forget to remove it.", "warning");
+    updateInstanceActionButtons();
+    return;
+  }
+
   if (actionName === "delete") {
     if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
       showToast("Delete canceled.");
+      return;
+    }
+  } else if (actionName === "forget") {
+    if (!window.confirm(`Forget ${label}? This only removes the saved instance record from AnxOS Control Center. Server files may remain on disk.`)) {
+      showToast("Forget canceled.");
       return;
     }
   } else if (!window.confirm(`${actionName[0].toUpperCase()}${actionName.slice(1)} ${label}?`)) {
@@ -12029,6 +12074,8 @@ async function runInstanceAction(actionName) {
   try {
     if (actionName === "delete") {
       showToast(`Deleting ${label}...`);
+    } else if (actionName === "forget") {
+      showToast(`Removing ${label} from the instance list...`);
     } else if (actionName === "start") {
       logInstanceLifecycle("start requested", { instanceId: targetInstanceId });
     }
@@ -12043,9 +12090,9 @@ async function runInstanceAction(actionName) {
       });
     }
     forgetStaleInstanceId(targetInstanceId);
-    showToast(actionName === "delete" ? "Instance deleted." : `Instance ${actionName} request completed.`);
+    showToast(actionName === "delete" ? formatInstanceDeletionResult(actionResult, "Instance deleted.") : actionName === "forget" ? formatInstanceDeletionResult(actionResult, "Instance removed from list.") : `Instance ${actionName} request completed.`);
 
-    if (actionName === "delete") {
+    if (actionName === "delete" || actionName === "forget") {
       selectedInstanceId = null;
       latestInstanceMetrics = null;
       clearInstanceLogs();
@@ -12064,7 +12111,7 @@ async function runInstanceAction(actionName) {
     }
   } catch (error) {
     if (isInstanceNotFoundError(error)) {
-      if (actionName === "delete") {
+      if (actionName === "delete" || actionName === "forget") {
         instanceRemovalAllowedIds.add(targetInstanceId);
         selectedInstanceId = null;
         latestInstanceMetrics = null;
@@ -12104,6 +12151,23 @@ async function runInstanceAction(actionName) {
           }
         } else {
           showToast("Delete canceled. Stop the instance before deleting it.", "warning");
+        }
+      } else if (actionName === "delete" && desktopApiState.api.instances.forget && window.confirm(`Could not delete all files for ${label}. Remove the saved instance record from AnxOS Control Center anyway? Files may remain on disk.`)) {
+        try {
+          const forgetResult = await desktopApiState.api.instances.forget(targetInstanceId, getNodeScopedPayload(requestContext));
+          instanceRemovalAllowedIds.add(targetInstanceId);
+          selectedInstanceId = null;
+          latestInstanceMetrics = null;
+          storeLastInstanceId(null);
+          clearInstanceLogs();
+          setInstanceDetails(null);
+          removeInstanceFromSnapshot(targetInstanceId);
+          showToast(formatInstanceDeletionResult(forgetResult, "Instance removed from list."));
+          await refreshInstances();
+          return;
+        } catch (forgetError) {
+          console.warn("[Instances] forget after delete failure failed.", forgetError);
+          showToast(getAgentErrorMessage(forgetError, "Instance record could not be removed."));
         }
       } else {
         showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
@@ -25432,7 +25496,12 @@ instancesRestartButtons.forEach((button) => {
 instancesDeleteButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("delete"));
 });
-document.querySelector('[data-instance-action="force-kill"]')?.addEventListener("click", () => runInstanceAction("forceKill"));
+instancesForgetButtons.forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("forget"));
+});
+instancesForceKillButtons.forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("forceKill"));
+});
 document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);
 document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);
 instancesDownloadLogButtons.forEach((button) => {

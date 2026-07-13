@@ -5,6 +5,7 @@ const {
   createInstanceFolder,
   deleteInstance,
   deleteInstanceFile,
+  forgetInstance,
   forceKillInstance,
   getInstanceLogs,
   getInstanceMetrics,
@@ -84,6 +85,11 @@ function registerInstancesIpc() {
     requirePermission("instance:delete", payload.instanceId);
     audit({ action: "instance.delete", target: payload.instanceId });
     return deleteInstance(payload.instanceId, payload);
+  }));
+  ipcMain.handle("instances:forget", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("instance:delete", payload.instanceId);
+    audit({ action: "instance.forget", target: payload.instanceId });
+    return forgetInstance(payload.instanceId, payload);
   }));
   ipcMain.handle("instances:listFiles", async (_, payload = {}) => invokeInstanceOperation(() => listInstanceFiles(payload.instanceId, payload.path, payload)));
   ipcMain.handle("instances:readFile", async (_, payload = {}) => invokeInstanceOperation(() => readInstanceFile(payload.instanceId, payload.path, payload)));

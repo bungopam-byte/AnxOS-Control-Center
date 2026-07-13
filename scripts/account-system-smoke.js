@@ -70,6 +70,7 @@ function assertWebsiteAccountUi() {
   assert(site.includes("resetPasswordForEmail"), "Website should implement forgot-password.");
   assert(site.includes("/reset-password"), "Recovery emails should redirect to the standalone reset page.");
   assert(site.includes("updateUser({ password"), "Website should implement password reset.");
+  assert(site.includes("PASSWORD_RECOVERY_SESSION_REQUIRED") && site.includes("Open the latest password reset link from your email"), "Password reset should require a restored recovery session before updating the password.");
   assert(site.includes("loadProfile().catch") && site.includes("currentProfile = null"), "Website profile loading should not block signed-in account state.");
   assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");
   assert(site.includes('authState = "loading"') && site.includes("applyAuthVisibility"), "Website auth rendering should have an explicit loading state and scoped visibility.");

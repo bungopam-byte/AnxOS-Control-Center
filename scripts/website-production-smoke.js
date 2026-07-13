@@ -183,6 +183,7 @@ assert(resetRoute.includes('data-auth-form="reset"') && resetRoute.includes(`<li
 assert(!index.includes("window.location.hash") && !index.includes("location.hash"), "Homepage must not include inline hash routing.");
 assert(!index.includes('href="#signin"') && !index.includes('href="#signup"') && !index.includes('href="#account"') && !index.includes('href="#profile"'), "Homepage must not link to hash-based account routes.");
 assert(site.includes("function redirectLegacyHashRoutes") && site.includes('"account-security": "/account?section=security"') && site.includes('download: "/download"') && site.includes('changelog: "/release-notes.html"'), "Shared legacy normalizer must convert old hash URLs on every website page.");
+assert(site.includes('legacyPagesHost = "anxos-control-center.pages.dev"') && site.includes("window.location.replace(next.toString())"), "Website should canonicalize stale Pages host links to the official domain.");
 assert(!site.includes("if (document.body?.dataset?.standaloneRoute) return false;"), "Legacy hash cleanup must run on standalone clean routes.");
 assert(!site.includes("window.location.hash =") && !site.includes('addEventListener("hashchange"') && site.includes("async function applyRouteState()"), "Website must use pathname route state instead of hash routing.");
 assert(!site.includes("hashParams") && !site.includes("hash.indexOf"), "Website query parsing must use clean route query strings.");

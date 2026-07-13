@@ -214,6 +214,7 @@ const desktopApi = {
     restart: (instanceId, payload = {}) => ipcRenderer.invoke("instances:restart", { ...payload, instanceId }),
     forceKill: (instanceId, payload = {}) => ipcRenderer.invoke("instances:forceKill", { ...payload, instanceId }),
     delete: (instanceId, payload = {}) => ipcRenderer.invoke("instances:delete", { ...payload, instanceId }),
+    forget: (instanceId, payload = {}) => ipcRenderer.invoke("instances:forget", { ...payload, instanceId }),
     listFiles: (instanceId, path = ".", options = {}) => ipcRenderer.invoke("instances:listFiles", { ...options, instanceId, path }),
     readFile: (instanceId, path, options = {}) => ipcRenderer.invoke("instances:readFile", { ...options, instanceId, path }),
     writeFile: (instanceId, path, content, options = {}) => ipcRenderer.invoke("instances:writeFile", { instanceId, path, content, ...options }),

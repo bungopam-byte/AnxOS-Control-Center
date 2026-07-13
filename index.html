@@ -1898,7 +1898,7 @@
                     <label class="ssh-field"><span>Startup Timeout</span><input data-instance-advanced="startupTimeoutMs"></label>
                     <label class="ssh-field"><span>Shutdown Timeout</span><input data-instance-advanced="shutdownTimeoutMs"></label>
                     <textarea class="instance-raw-json" data-instance-raw-json readonly></textarea>
-                    <div class="instance-danger-zone"><strong>Danger Zone</strong><button class="inline-action" type="button" data-instance-action="delete">Delete Instance</button><button class="inline-action" type="button" data-instance-action="reset-runtime" disabled>Reset Runtime</button><button class="inline-action" type="button" data-instance-action="force-kill">Force Kill</button></div>
+                    <div class="instance-danger-zone"><strong>Danger Zone</strong><button class="inline-action" type="button" data-instance-action="delete">Delete Instance</button><button class="inline-action" type="button" data-instance-action="forget">Forget Instance</button><button class="inline-action" type="button" data-instance-action="reset-runtime" disabled>Reset Runtime</button><button class="inline-action" type="button" data-instance-action="force-kill">Force Kill</button></div>
                   </section>
                 </div>
               </section>
@@ -1923,7 +1923,8 @@
                 <button class="inline-action" type="button" data-instance-action="start" disabled>Start</button>
                 <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
-                <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Remove</button>
+                <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Delete</button>
+                <button class="inline-action instance-danger-action" type="button" data-instance-action="forget" disabled>Forget</button>
               </div>
               <div class="instance-tabs" role="tablist" aria-label="Instance workspace tabs">
                 <button class="instance-tab is-active" type="button" data-instance-tab="overview">Overview</button>

@@ -44,6 +44,7 @@
     "marketplace:smoke": "node scripts/marketplace-smoke.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",
     "files:smoke": "node scripts/files-pipeline-smoke.js",
+    "instances:deletion:smoke": "node scripts/instance-deletion-smoke.js",
     "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
     "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",

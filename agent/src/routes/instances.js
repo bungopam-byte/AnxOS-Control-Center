@@ -4,6 +4,7 @@ const {
   createInstanceFolder,
   deleteInstance,
   deleteInstanceFile,
+  forgetInstance,
   forceKillInstance,
   getMetrics,
   getStatus,
@@ -53,7 +54,7 @@ function errorResult(error) {
       message: error.message && error.message !== error.code
         ? error.message
         : validation?.userMessage || "Request failed.",
-      details: validation || undefined,
+      details: validation || (error.result ? { result: error.result } : undefined),
     },
   });
 }
@@ -265,6 +266,11 @@ async function handleInstances(request, url) {
     const deleteId = getDirectInstanceId(url.pathname);
     if (request.method === "DELETE" && deleteId) {
       return result(200, await deleteInstance(deleteId));
+    }
+
+    const forgetId = getInstanceIdFromPath(url.pathname, "/record");
+    if (request.method === "DELETE" && forgetId) {
+      return result(200, await forgetInstance(forgetId));
     }
 
     return result(404, {

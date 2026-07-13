@@ -64,7 +64,8 @@ function redirectToCanonicalSiteOrigin() {
   }
   if (window.location.origin === target.origin) return;
   const pagesPreviewHost = `.${target.hostname}`;
-  if (!window.location.hostname.endsWith(pagesPreviewHost)) return;
+  const legacyPagesHost = "anxos-control-center.pages.dev";
+  if (window.location.hostname !== legacyPagesHost && !window.location.hostname.endsWith(pagesPreviewHost)) return;
   const next = new URL(window.location.href);
   next.protocol = target.protocol;
   next.host = target.host;
@@ -966,6 +967,12 @@ async function handleReset(form) {
   setFormDisabled(form, true);
   setMessage("reset", "Updating password...");
   try {
+    await waitForAuthRestoration();
+    if (!currentSession?.access_token) {
+      const error = new Error("Open the latest password reset link from your email, then choose a new password.");
+      error.code = "PASSWORD_RECOVERY_SESSION_REQUIRED";
+      throw error;
+    }
     const { error } = await getSupabase().auth.updateUser({ password: form.elements.password.value });
     if (error) throw error;
     setMessage("reset", "Password updated.", "ok");

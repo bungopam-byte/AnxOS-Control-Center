@@ -31,7 +31,7 @@ async function runAudited(operation, actor, handler) {
 function registerAgentControlIpc() {
   ipcMain.handle("agentControl:list", () => control.listAgents());
   ipcMain.handle("agentControl:status", () => control.getStatus());
-  ipcMain.handle("agentControl:diagnostics", () => runAuthorized("diagnostics", () => control.runDiagnostics()));
+  ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null, () => control.runDiagnostics()));
   ipcMain.handle("agentControl:remoteDiagnostics", (_, payload = {}) => {
     const actor = authorize("remote-diagnostics");
     return runAudited("remote-diagnostics", actor, () => control.captureRemoteDiagnostics(payload.nodeId));

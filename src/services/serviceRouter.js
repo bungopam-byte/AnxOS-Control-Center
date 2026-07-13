@@ -5,6 +5,11 @@ const localInstanceService = require("./localInstanceService");
 const agentClient = require("./agentClient");
 const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
+const {
+  clearForgottenInstance,
+  filterForgottenInstances,
+  rememberForgottenInstance,
+} = require("./instanceForgetService");
 const fs = require("fs");
 const path = require("path");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
@@ -16,6 +21,8 @@ class AgentUnavailableError extends Error {
   constructor() {
     super("Agent unavailable. Check Agent settings.");
     this.name = "AgentUnavailableError";
+    this.code = "AGENT_UNAVAILABLE";
+    this.statusCode = 503;
   }
 }
 
@@ -380,21 +387,28 @@ function isApplicationHostTarget(options = {}) {
 }
 
 async function listInstances(options = {}) {
+  const nodeId = options?.nodeId || getSelectedNodeId();
   if (shouldUseLocalInstances(options)) {
-    return localInstanceService.listInstances();
+    return filterForgottenInstances(await localInstanceService.listInstances(), nodeId);
   }
   try {
-    return await agentClient.listInstances(getOptionalNodeConfig(options));
-  } catch {
+    return filterForgottenInstances(await agentClient.listInstances(getOptionalNodeConfig(options)), nodeId);
+  } catch (error) {
+    diagnostics.log("warn", "instances", "list-failed", "Instance list request failed.", {
+      nodeId,
+      errorCode: error?.code || error?.payload?.error?.code || "INSTANCE_LIST_FAILED",
+    }, { file: "instances" });
     throw new AgentUnavailableError();
   }
 }
 
 async function createInstance(payload) {
-  if (shouldUseLocalInstances(payload)) {
-    return localInstanceService.createInstance(payload);
-  }
-  return agentClient.createInstance(payload, getOptionalNodeConfig(payload));
+  const nodeId = payload?.nodeId || getSelectedNodeId();
+  const result = shouldUseLocalInstances(payload)
+    ? await localInstanceService.createInstance(payload)
+    : await agentClient.createInstance(payload, getOptionalNodeConfig(payload));
+  clearForgottenInstance(nodeId, result?.id || result?.instance?.id || payload?.id);
+  return result;
 }
 
 async function updateInstance(instanceId, payload, options = {}) {
@@ -586,10 +600,102 @@ async function restartInstance(instanceId, options = {}) {
 }
 
 async function deleteInstance(instanceId, options = {}) {
+  const nodeId = options?.nodeId || getSelectedNodeId();
   if (shouldUseLocalInstances(options)) {
-    return localInstanceService.deleteInstance(instanceId);
+    const result = await localInstanceService.deleteInstance(instanceId);
+    clearForgottenInstance(nodeId, instanceId);
+    diagnostics.log("info", "instances", "delete", "Local instance delete completed.", {
+      nodeId,
+      instanceId,
+      filesDeleted: result?.filesDeleted,
+      metadataRemoved: result?.metadataRemoved,
+      alreadyMissing: result?.alreadyMissing,
+      partiallyFailed: result?.partiallyFailed,
+    }, { file: "instances" });
+    return result;
   }
-  return agentClient.deleteInstance(instanceId, getOptionalNodeConfig(options));
+  try {
+    const result = await agentClient.deleteInstance(instanceId, getOptionalNodeConfig(options));
+    clearForgottenInstance(nodeId, instanceId);
+    diagnostics.log("info", "instances", "delete", "Agent instance delete completed.", {
+      nodeId,
+      instanceId,
+      filesDeleted: result?.filesDeleted,
+      metadataRemoved: result?.metadataRemoved,
+      alreadyMissing: result?.alreadyMissing,
+      partiallyFailed: result?.partiallyFailed,
+    }, { file: "instances" });
+    return result;
+  } catch (error) {
+    diagnostics.logError("instances", "delete-failed", error, {
+      nodeId,
+      instanceId,
+      errorCode: error?.code || error?.payload?.error?.code || "INSTANCE_DELETE_FAILED",
+      result: error?.payload?.error?.details?.result || error?.result || null,
+    }, { file: "instances" });
+    throw error;
+  }
+}
+
+async function forgetInstance(instanceId, options = {}) {
+  const nodeId = options?.nodeId || getSelectedNodeId();
+  const baseResult = {
+    id: instanceId,
+    deleted: false,
+    filesDeleted: false,
+    metadataRemoved: false,
+    alreadyMissing: false,
+    partiallyFailed: false,
+    stale: true,
+    tombstoneAdded: false,
+    nodeUnavailable: false,
+    errors: [],
+  };
+  if (shouldUseLocalInstances(options)) {
+    const result = await localInstanceService.forgetInstance(instanceId);
+    rememberForgottenInstance(nodeId, instanceId, { reason: "local-forget" });
+    diagnostics.log("info", "instances", "forget", "Local instance record removed.", {
+      nodeId,
+      instanceId,
+      metadataRemoved: result?.metadataRemoved,
+      alreadyMissing: result?.alreadyMissing,
+    }, { file: "instances" });
+    return { ...baseResult, ...result, tombstoneAdded: true };
+  }
+  try {
+    const result = await agentClient.forgetInstance(instanceId, getOptionalNodeConfig(options));
+    rememberForgottenInstance(nodeId, instanceId, { reason: "agent-forget" });
+    diagnostics.log("info", "instances", "forget", "Agent instance record removed.", {
+      nodeId,
+      instanceId,
+      metadataRemoved: result?.metadataRemoved,
+      alreadyMissing: result?.alreadyMissing,
+    }, { file: "instances" });
+    return { ...baseResult, ...result, tombstoneAdded: true };
+  } catch (error) {
+    if (error?.code === "AGENT_UNAVAILABLE" || error?.code === "AGENT_TIMEOUT" || error?.status === 503 || error?.statusCode === 503) {
+      rememberForgottenInstance(nodeId, instanceId, { reason: "node-unavailable" });
+      diagnostics.log("warn", "instances", "forget-offline", "Instance hidden because selected Agent is unavailable.", {
+        nodeId,
+        instanceId,
+        errorCode: error?.code || "AGENT_UNAVAILABLE",
+      }, { file: "instances" });
+      return {
+        ...baseResult,
+        deleted: true,
+        partiallyFailed: true,
+        tombstoneAdded: true,
+        nodeUnavailable: true,
+        errors: [{ code: "AGENT_UNAVAILABLE", message: "Agent was unavailable; instance was removed from this Control Center list only." }],
+      };
+    }
+    diagnostics.logError("instances", "forget-failed", error, {
+      nodeId,
+      instanceId,
+      errorCode: error?.code || error?.payload?.error?.code || "INSTANCE_FORGET_FAILED",
+    }, { file: "instances" });
+    throw error;
+  }
 }
 
 async function listBackups(options = {}) {
@@ -647,6 +753,7 @@ module.exports = {
   deleteInstanceFile,
   downloadBackup,
   forceKillInstance,
+  forgetInstance,
   getAmpSnapshot,
   getDependencyCatalog,
   getDockerSnapshot,

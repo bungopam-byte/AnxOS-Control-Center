@@ -75,6 +75,8 @@ assert(app.includes("remoteDiagnosticsInFlight") && app.includes("Remote diagnos
 assert(app.includes("function summarizeDependencyStatus") && app.includes("dependencyOperationState") && app.includes("latestDependencyNodeId"), "Prepare Node status must aggregate from current dependency snapshot and node scope.");
 assert(app.includes("summary.state === \"ready\" ? \"Healthy\"") && app.includes("optional === true"), "Dependency health must treat installed required dependencies as ready and skip optional dependencies.");
 assert(app.includes("function isInstanceRunningError") && app.includes("Stop it and delete it after it stops?") && app.includes("Instance stopped and deleted."), "Instance delete must offer a guarded stop-then-delete retry for running instances.");
+assert(app.includes("instancesForceKillButtons") && app.includes('actionName === "forceKill" && !canStopInstance(selectedInstance)') && app.includes("Instance is already stopped. Use Delete or Forget to remove it."), "Instance force-kill controls must be disabled and guarded for stopped instances.");
+assert(app.includes("instancesForgetButtons") && app.includes('actionName === "forget"') && app.includes("Files may remain on disk."), "Instance UI must expose a separate metadata-only Forget fallback.");
 assert(app.includes("formatAgentCpu") && app.includes("formatAgentMemory") && app.includes("formatAgentProcess"), "Agent Control must format normalized runtime metrics.");
 assert(app.includes("agentControlLastRuntimeSnapshot"), "Agent Control must preserve brief stale metrics during transient failures.");
 assert(!app.includes('"Service managed"'), "Agent Control must not render Service managed as the primary process value.");

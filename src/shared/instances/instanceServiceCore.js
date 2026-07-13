@@ -2047,6 +2047,17 @@ async function updateInstance(instanceId, payload = {}) {
 async function deleteInstance(instanceId) {
   const id = validateInstanceId(instanceId);
   let config;
+  const basePath = instancePath(id);
+  const result = {
+    id,
+    deleted: false,
+    filesDeleted: false,
+    metadataRemoved: false,
+    alreadyMissing: false,
+    partiallyFailed: false,
+    stale: false,
+    errors: [],
+  };
 
   try {
     config = await reconcileConfigState(await loadInstanceConfig(id));
@@ -2057,13 +2068,18 @@ async function deleteInstance(instanceId) {
         throw createInstanceError("INSTANCE_RUNNING", 409);
       }
 
-      await fs.rm(instancePath(id), { recursive: true, force: true });
+      const existed = await pathExists(basePath);
+      await fs.rm(basePath, { recursive: true, force: true });
       runningProcesses.delete(id);
       metricsSamples.delete(id);
 
       return {
+        ...result,
         id,
         deleted: true,
+        filesDeleted: existed,
+        metadataRemoved: true,
+        alreadyMissing: !existed,
         stale: true,
       };
     }
@@ -2075,14 +2091,89 @@ async function deleteInstance(instanceId) {
     throw createInstanceError("INSTANCE_RUNNING", 409);
   }
 
-  await fs.rm(instancePath(config.id), { recursive: true, force: true });
-  runningProcesses.delete(config.id);
-  metricsSamples.delete(config.id);
+  try {
+    const existed = await pathExists(instancePath(config.id));
+    await fs.rm(instancePath(config.id), { recursive: true, force: true });
+    runningProcesses.delete(config.id);
+    metricsSamples.delete(config.id);
 
-  return {
-    id: config.id,
-    deleted: true,
+    return {
+      ...result,
+      id: config.id,
+      deleted: true,
+      filesDeleted: existed,
+      metadataRemoved: true,
+      alreadyMissing: !existed,
+    };
+  } catch (error) {
+    const deleteError = createInstanceError("INSTANCE_DELETE_FAILED", 500, {
+      result: {
+        ...result,
+        id: config.id,
+        filesDeleted: false,
+        metadataRemoved: false,
+        alreadyMissing: false,
+        partiallyFailed: true,
+        errors: [{
+          code: error?.code || "FILES_DELETE_FAILED",
+          message: error?.message || "Instance files could not be deleted.",
+        }],
+      },
+    });
+    deleteError.message = "Instance files could not be deleted. You can remove the instance record without deleting files.";
+    throw deleteError;
+  }
+}
+
+async function forgetInstance(instanceId) {
+  const id = validateInstanceId(instanceId);
+  const processEntry = runningProcesses.get(id);
+  const result = {
+    id,
+    deleted: false,
+    filesDeleted: false,
+    metadataRemoved: false,
+    alreadyMissing: false,
+    partiallyFailed: false,
+    stale: true,
+    errors: [],
   };
+
+  if (processEntry?.child?.pid && isProcessAlive(processEntry.child.pid)) {
+    throw createInstanceError("INSTANCE_RUNNING", 409);
+  }
+
+  const record = configPath(id);
+  const basePath = instancePath(id);
+  const recordExisted = await pathExists(record);
+  const baseExisted = await pathExists(basePath);
+
+  try {
+    await fs.rm(record, { force: true });
+    runningProcesses.delete(id);
+    metricsSamples.delete(id);
+    return {
+      ...result,
+      deleted: true,
+      filesDeleted: false,
+      metadataRemoved: recordExisted,
+      alreadyMissing: !recordExisted && !baseExisted,
+      stale: true,
+    };
+  } catch (error) {
+    const forgetError = createInstanceError("INSTANCE_FORGET_FAILED", 500, {
+      result: {
+        ...result,
+        partiallyFailed: true,
+        errors: [{
+          code: error?.code || "METADATA_REMOVE_FAILED",
+          message: error?.message || "Instance metadata could not be removed.",
+        }],
+      },
+    });
+    forgetError.message = "Instance metadata could not be removed.";
+    throw forgetError;
+  }
 }
 
 async function updateRuntimeState(instanceId, patch) {
@@ -3014,6 +3105,7 @@ module.exports = {
   INSTANCE_TYPES: [...INSTANCE_TYPES],
   createInstance,
   deleteInstance,
+  forgetInstance,
   clearLogs,
   createInstanceFolder,
   deleteInstanceFile,

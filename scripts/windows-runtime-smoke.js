@@ -115,6 +115,10 @@ async function main() {
     assert(agentControlSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "configured remote Agent status should use the configured URL for metrics.");
     assert(agentControlSource.includes('targetLabel: "local-agent"') && agentControlSource.includes("suppressConnectionRefusedLog: true"), "local-agent detection should stay separate and suppress expected localhost failures.");
     assert(agentControlSource.includes("runtime-metrics-partial"), "partial metrics failures should not mark the configured Agent offline.");
+    assert(agentControlSource.includes("getWindowsElevationState") && agentControlSource.includes("ELEVATION_REQUIRED"), "Windows Agent service changes must detect and report elevation requirements before modification.");
+    assert(agentControlSource.includes("registrationStatus") && agentControlSource.includes("unverifiable") && agentControlSource.includes("invalid"), "Windows Agent service registration must distinguish valid, invalid, missing, and unverifiable states.");
+    assert(agentControlSource.includes("SERVICE_VERIFICATION_FAILED"), "Windows Agent service registration must be verified after install or repair.");
+    assert(appSource.includes("serviceNeedsElevation") && appSource.includes("Administrator required"), "Agent Control UI must disable or relabel service actions when elevation is required.");
 
     const devUpdaterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "developerGitUpdater.js"), "utf8");
     assert(devUpdaterSource.includes("app?.isPackaged !== false"), "Developer Mode must be disabled in packaged builds.");

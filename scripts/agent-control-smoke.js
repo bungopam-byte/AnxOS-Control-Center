@@ -23,15 +23,26 @@ async function main() {
   assert(serviceSource.includes("normalizeAgentRuntimeStatus"), "Agent Control must normalize runtime status before rendering.");
   assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");
   assert(serviceSource.includes("runtime-payload-shape"), "Development diagnostics should log sanitized runtime payload shapes.");
+  assert(serviceSource.includes("getWindowsElevationState"), "Agent Control must detect Windows elevation before privileged registration changes.");
+  assert(serviceSource.includes("validateWindowsTaskRegistration"), "Agent Control must validate Windows startup registration before reporting it as passed.");
+  assert(serviceSource.includes("SERVICE_VERIFICATION_FAILED"), "Agent Control service install must verify registration after modification.");
   assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
   assert(ipcSource.includes('ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null'), "Local Agent diagnostics must remain read-only and available without owner authorization.");
   assert(ipcSource.includes('authorize("remote-diagnostics")'), "Remote Agent diagnostic capture must remain owner-authorized.");
   assert(rendererSource.includes("getAgentControlOverviewTarget"), "Renderer must select the configured Agent state for the overview when applicable.");
   assert(rendererSource.includes("agentControlRefreshInFlight"), "Renderer must avoid overlapping Agent Control refreshes.");
   assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");
+  assert(rendererSource.includes("serviceNeedsElevation") && rendererSource.includes("Administrator required"), "Renderer must block or relabel Agent service actions that require elevation.");
+  assert(!rendererSource.includes("try { await api.uninstallService(); } catch {} await api.installService()"), "Agent repair must not blindly uninstall and reinstall service registration.");
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
   assert(htmlSource.includes("Agent Connection") && htmlSource.includes('data-agent-setting="agentUrl"'), "Agent Connection must render in Agent Control.");
   const control = require("../src/services/agentControlService");
+  const validTask = control._test.validateWindowsTaskRegistration(`Task To Run: ${control._test.expectedWindowsTaskCommand(control.readConfig())}\nStatus: Ready`, control.readConfig());
+  assert.strictEqual(validTask.valid, true, "Matching Windows scheduled task command should validate.");
+  const invalidTask = control._test.validateWindowsTaskRegistration("Task To Run: C:\\\\old\\\\agent.exe\nStatus: Ready", control.readConfig());
+  assert.strictEqual(invalidTask.valid, false, "Mismatched Windows scheduled task command should not validate.");
+  assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: true, valid: false }), "invalid", "Invalid registration must not be reported as passed.");
+  assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: false, verification: { state: "unverifiable" } }), "unverifiable", "Unverifiable registration must remain distinct from missing.");
   try {
     const saved = control.saveConfig({ name: "Control Smoke Agent", host: "127.0.0.1", port, allowedFolders: [root], restartPolicy: "never" });
     assert.strictEqual(saved.port, port);

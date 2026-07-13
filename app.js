@@ -3069,6 +3069,8 @@ function renderAgentControlState(payload = agentControlState) {
   const repairSupported = capabilities.repair === true || lifecycleSupported;
   const state = local.state || "Unavailable";
   const targetLabel = getAgentTargetLabel(local);
+  const service = local.service || {};
+  const serviceNeedsElevation = Boolean(service.requiresElevation && service.privilege?.elevated !== true);
   if (agentControlStatus) {
     agentControlStatus.textContent = runtime?.reachable || running ? "Connected" : state;
     agentControlStatus.className = `status-pill ${running ? "status-pill--ok" : state === "Offline" || state === "Unreachable" ? "status-pill--planned" : state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning"}`;
@@ -3084,7 +3086,7 @@ function renderAgentControlState(payload = agentControlState) {
   setAgentControlField("hostname", local.name || runtime?.hostname || local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", runtime?.version || local.agentVersion || local.identity?.agentVersion);
   setAgentControlField("pid", formatAgentProcess(runtime, state));
-  setAgentControlField("service", local.service?.supported ? `${local.service.type} · ${local.service.state}` : "Unsupported");
+  setAgentControlField("service", service.supported ? `${service.type} · ${service.registrationStatus || service.state}${serviceNeedsElevation ? " · Administrator required" : ""}` : "Unsupported");
   setAgentControlField("url", local.agentUrl);
   setAgentControlField("latency", Number.isFinite(runtime?.latencyMs ?? local.latencyMs) ? `${runtime?.latencyMs ?? local.latencyMs} ms` : "Unavailable");
   setAgentControlField("uptime", Number.isFinite(runtime?.uptimeSeconds ?? local.uptime) ? formatDuration(runtime?.uptimeSeconds ?? local.uptime) : "Unavailable");
@@ -3096,20 +3098,24 @@ function renderAgentControlState(payload = agentControlState) {
   setAgentControlField("heartbeat", local.lastHeartbeat ? formatDateTime(local.lastHeartbeat) : "Unavailable");
   agentControlButtons.forEach((button) => {
     const action = button.dataset.agentControlAction;
-    const service = local.service || {};
     const disabled = busy
       || (action === "start" && (!lifecycleSupported || running))
       || (["stop", "restart", "forceRestart"].includes(action) && (!lifecycleSupported || !running))
-      || (action === "repairAgent" && !repairSupported)
-      || (action === "installService" && (!lifecycleSupported || service.installed))
-      || (action === "uninstallService" && (!lifecycleSupported || !service.installed))
-      || (action === "enableAutoStart" && (!lifecycleSupported || service.enabled))
-      || (action === "disableAutoStart" && (!lifecycleSupported || !service.enabled))
+      || (action === "repairAgent" && (!repairSupported || serviceNeedsElevation))
+      || (action === "installService" && (!lifecycleSupported || service.installed || serviceNeedsElevation))
+      || (action === "uninstallService" && (!lifecycleSupported || !service.installed || serviceNeedsElevation))
+      || (action === "enableAutoStart" && (!lifecycleSupported || service.enabled || serviceNeedsElevation))
+      || (action === "disableAutoStart" && (!lifecycleSupported || !service.enabled || serviceNeedsElevation))
       || (action === "rotateToken" && !isLocalTarget)
       || (action === "openDataFolder" && !isLocalTarget)
       || (action === "copyUrl" && !local.agentUrl)
       || (action === "copyId" && !local.identity?.deviceId);
     button.disabled = disabled;
+    if (["repairAgent", "installService", "uninstallService", "enableAutoStart", "disableAutoStart"].includes(action) && serviceNeedsElevation) {
+      button.title = "Run AnxOS Control Center as Administrator, then retry this Agent service action.";
+    } else {
+      button.removeAttribute("title");
+    }
   });
   renderAgentSetupSummary(payload?.local || local);
   renderRemoteAgents(payload?.remote || []);
@@ -3475,7 +3481,11 @@ function renderAgentDiagnostics(result = {}) {
       repair.type = "button";
       repair.className = "inline-action";
       repair.dataset.agentRepair = String(check.repairAction);
-      repair.textContent = "Repair";
+      repair.textContent = check.requiresElevation ? "Administrator required" : "Repair";
+      repair.disabled = Boolean(check.requiresElevation);
+      if (check.recoverySuggestion) {
+        repair.title = check.recoverySuggestion;
+      }
       actions.append(repair);
     }
     item.append(body, actions);
@@ -4013,7 +4023,7 @@ async function runAgentControlAction(action) {
   });
   try {
     if (action === "reconnect") await testAgentConnection({ silent: false });
-    else if (action === "repairAgent") { try { await api.uninstallService(); } catch {} await api.installService(); if (!(await api.status())?.running) await api.start(); }
+    else if (action === "repairAgent") { await api.installService(); if (!(await api.status())?.running) await api.start(); }
     else if (action === "checkUpdates") await getDesktopApiState().api.updates.check({ silent: false });
     else if (action === "updateAgent") await getDesktopApiState().api.updates.download();
     else if (action === "rotateToken") { await getDesktopApiState().api.security.rotateAgentToken(); await api.restart(); }

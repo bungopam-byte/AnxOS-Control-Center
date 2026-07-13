@@ -7,6 +7,7 @@ const COMMAND_TIMEOUT_MS = 2200;
 const PUBLIC_ACCESS_PROVIDERS = [
   {
     id: "playit",
+    dependencyId: "playit",
     className: "PlayitProvider",
     name: "Playit.gg",
     status: "supported",
@@ -29,6 +30,7 @@ const PUBLIC_ACCESS_PROVIDERS = [
   },
   {
     id: "cloudflare-tunnel",
+    dependencyId: "cloudflared",
     className: "CloudflareTunnelProvider",
     name: "Cloudflare Tunnel",
     status: "foundation",
@@ -51,6 +53,7 @@ const PUBLIC_ACCESS_PROVIDERS = [
   },
   {
     id: "tailscale",
+    dependencyId: "tailscale",
     className: "TailscaleProvider",
     name: "Tailscale",
     status: "foundation",
@@ -73,6 +76,7 @@ const PUBLIC_ACCESS_PROVIDERS = [
   },
   {
     id: "anxos-relay",
+    dependencyId: null,
     className: "AnxOSRelayProvider",
     name: "AnxOS Relay",
     status: "disabled",
@@ -137,6 +141,7 @@ async function detectTailscaleProvider() {
   if (!version.ok) {
     return createProviderState(provider, {
       recoveryAction: "Install Tailscale and sign in with the Tailscale CLI before AnxOS can inspect tailnet status.",
+      dependencyId: provider.dependencyId,
       diagnostics: [{ command: "tailscale version", ok: false, errorCode: version.errorCode }],
     });
   }
@@ -152,6 +157,7 @@ async function detectTailscaleProvider() {
   return createProviderState(provider, {
     available: true,
     installed: true,
+    dependencyId: provider.dependencyId,
     authenticated,
     connected: Boolean(authenticated && tailnetAddress),
     health: authenticated && tailnetAddress ? "healthy" : "auth-required",
@@ -159,7 +165,7 @@ async function detectTailscaleProvider() {
     version: redactOutput(version.stdout || version.stderr).split(/\r?\n/)[0] || null,
     recoveryAction: authenticated
       ? "Tailscale is detected. AnxOS does not yet create Serve or Funnel routes."
-      : "Run tailscale up from a trusted terminal, then refresh Public Access.",
+      : "Install Tailscale through Dependency Manager if needed, run tailscale up from a trusted terminal, then refresh Public Access.",
     diagnostics: [
       { command: "tailscale version", ok: version.ok, errorCode: version.errorCode, hasOutput: Boolean(version.stdout || version.stderr) },
       { command: "tailscale status --json", ok: status.ok, errorCode: status.errorCode, hasOutput: Boolean(status.stdout || status.stderr) },
@@ -173,12 +179,14 @@ async function detectCloudflareProvider() {
   if (!version.ok) {
     return createProviderState(provider, {
       recoveryAction: "Install cloudflared and authenticate with Cloudflare before AnxOS can validate tunnel configuration.",
+      dependencyId: provider.dependencyId,
       diagnostics: [{ command: "cloudflared --version", ok: false, errorCode: version.errorCode }],
     });
   }
   return createProviderState(provider, {
     available: true,
     installed: true,
+    dependencyId: provider.dependencyId,
     authenticated: null,
     connected: false,
     health: "setup-required",
@@ -192,6 +200,7 @@ function buildPlayitProviderState(snapshot = {}) {
   const provider = PUBLIC_ACCESS_PROVIDERS.find((entry) => entry.id === "playit");
   return createProviderState(provider, {
     available: true,
+    dependencyId: provider.dependencyId,
     installed: snapshot.installed === true,
     authenticated: snapshot.installed === true ? null : false,
     connected: snapshot.connected === true,
@@ -207,7 +216,7 @@ function buildPlayitProviderState(snapshot = {}) {
     diagnostics: snapshot.diagnostics ? [{ provider: "playit", ...snapshot.diagnostics }] : [],
     recoveryAction: snapshot.installed
       ? "Use the Playit service or CLI to manage tunnel lifecycle, then refresh AnxOS."
-      : "Install and configure Playit.gg on the selected node.",
+      : "Install and configure Playit.gg on the selected node. Dependency Manager can detect whether the CLI is available.",
   });
 }
 

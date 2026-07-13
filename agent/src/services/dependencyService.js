@@ -148,6 +148,93 @@ async function detectVersion(definition, commandPath) {
   };
 }
 
+async function runVerificationCommands(definition, commandResults) {
+  const commandPathByName = new Map(commandResults.map((result) => [result.command, result.path]));
+  const checks = [];
+  const verificationCommands = Array.isArray(definition.verificationCommands) && definition.verificationCommands.length > 0
+    ? definition.verificationCommands
+    : definition.versionCommand
+      ? [{ ...definition.versionCommand, description: "Version command executes successfully." }]
+      : definition.commands.map((command) => ({ command, args: ["--help"], allowFailure: true, description: `${command} is available on PATH.` }));
+
+  for (const check of verificationCommands) {
+    const commandPath = commandPathByName.get(check.command) || findCommand(check.command);
+    if (!commandPath) {
+      checks.push({
+        command: check.command,
+        args: check.args || [],
+        ok: false,
+        allowFailure: Boolean(check.allowFailure),
+        exitCode: null,
+        description: check.description || null,
+        errorCode: "COMMAND_NOT_FOUND",
+      });
+      continue;
+    }
+    const result = await commandRunner(commandPath, check.args || [], { timeoutMs: check.timeoutMs || DEFAULT_TIMEOUT_MS });
+    checks.push({
+      command: check.command,
+      args: check.args || [],
+      ok: result.ok,
+      allowFailure: Boolean(check.allowFailure),
+      exitCode: result.exitCode,
+      signal: result.signal,
+      timedOut: result.timedOut,
+      description: check.description || null,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      errorMessage: result.errorMessage,
+    });
+  }
+
+  return checks;
+}
+
+async function checkAvailableUpdate(definition, distribution, installedVersion) {
+  if (!installedVersion || !distribution.packageManager) {
+    return { updateAvailable: null, latestVersion: null, source: null, reason: "No installed version or package manager metadata is available." };
+  }
+  const packages = definition.packages?.[distribution.packageManager] || [];
+  const packageName = packages[0];
+  if (!packageName) {
+    return { updateAvailable: null, latestVersion: null, source: null, reason: "No package mapping exists for update checks." };
+  }
+
+  if (distribution.packageManager === "apt") {
+    const aptCache = findCommand("apt-cache");
+    if (!aptCache) {
+      return { updateAvailable: null, latestVersion: null, source: "apt", reason: "apt-cache is not available." };
+    }
+    const result = await commandRunner(aptCache, ["policy", packageName], { timeoutMs: 15000 });
+    const candidate = String(result.stdout || "").match(/Candidate:\s*([^\s]+)/)?.[1] || null;
+    const updateAvailable = Boolean(candidate && candidate !== "(none)" && compareVersions(candidate, installedVersion) > 0);
+    return {
+      updateAvailable,
+      latestVersion: candidate && candidate !== "(none)" ? candidate : null,
+      source: "apt-cache policy",
+      reason: result.ok ? null : result.stderr || result.errorMessage || "apt-cache policy failed.",
+    };
+  }
+
+  if (distribution.packageManager === "dnf") {
+    const dnf = findCommand("dnf");
+    if (!dnf) {
+      return { updateAvailable: null, latestVersion: null, source: "dnf", reason: "dnf is not available." };
+    }
+    const result = await commandRunner(dnf, ["check-update", packageName], { timeoutMs: 30000 });
+    const line = String(result.stdout || "").split(/\r?\n/).find((entry) => entry.trim().startsWith(`${packageName}.`) || entry.trim().startsWith(`${packageName} `));
+    const latestVersion = line ? line.trim().split(/\s+/)[1] || null : null;
+    return {
+      updateAvailable: Boolean(latestVersion),
+      latestVersion,
+      source: "dnf check-update",
+      reason: result.exitCode === 0 || result.exitCode === 100 ? null : result.stderr || result.errorMessage || "dnf check-update failed.",
+    };
+  }
+
+  return { updateAvailable: null, latestVersion: null, source: null, reason: "Unsupported package manager for update checks." };
+}
+
 async function canElevate() {
   if (typeof process.getuid === "function" && process.getuid() === 0) {
     return { available: true, method: "root" };
@@ -178,19 +265,22 @@ async function checkDependency(dependencyId) {
   const id = assertKnownDependencyId(dependencyId);
   const definition = DEPENDENCY_REGISTRY[id];
   const distribution = detectDistribution();
-  const supported = process.platform === "linux" && definition.supportedDistributions.includes(distribution.id);
+  const supportedByDistribution = process.platform === "linux" && definition.supportedDistributions.includes(distribution.id);
   const commandResults = [];
   for (const command of definition.commands) {
     const resolvedPath = findCommand(command);
     commandResults.push({ command, path: resolvedPath, installed: Boolean(resolvedPath) });
   }
   const installed = commandResults.every((result) => result.installed);
+  const supported = installed || supportedByDistribution;
   let version = null;
   let versionRaw = null;
+  let verification = [];
+  let update = { updateAvailable: null, latestVersion: null, source: null, reason: "Dependency is not installed." };
   let state = installed ? "installed" : "missing";
   let errorCode = installed ? null : "DEPENDENCY_MISSING";
 
-  if (!supported && !installed) {
+  if (!supportedByDistribution && !installed) {
     state = "unsupported";
     errorCode = "UNSUPPORTED_DISTRIBUTION";
   }
@@ -199,10 +289,17 @@ async function checkDependency(dependencyId) {
     const versionResult = await detectVersion(definition, commandResults[0].path);
     version = versionResult.version;
     versionRaw = versionResult.raw;
+    verification = await runVerificationCommands(definition, commandResults);
+    const failedVerification = verification.find((check) => !check.ok && !check.allowFailure);
+    if (failedVerification) {
+      state = "verification-failed";
+      errorCode = "DEPENDENCY_EXECUTION_FAILED";
+    }
     if (definition.minVersion && version && compareVersions(version, definition.minVersion) < 0) {
       state = "update-required";
       errorCode = "DEPENDENCY_VERSION_TOO_OLD";
     }
+    update = await checkAvailableUpdate(definition, distribution, version);
   }
 
   return {
@@ -214,6 +311,12 @@ async function checkDependency(dependencyId) {
     version,
     minVersion: definition.minVersion || null,
     versionRaw,
+    verification,
+    executable: installed && verification.every((check) => check.ok || check.allowFailure),
+    updateAvailable: update.updateAvailable,
+    latestVersion: update.latestVersion,
+    updateSource: update.source,
+    updateReason: update.reason,
     commands: commandResults,
     packageManager: distribution.packageManager,
     packages: definition.packages?.[distribution.packageManager] || [],
@@ -233,7 +336,7 @@ async function checkDependencies(payload = {}) {
   for (const dependencyId of dependencyIds) {
     dependencies.push(await checkDependency(dependencyId));
   }
-  const missing = dependencies.filter((dependency) => !dependency.installed || dependency.state === "update-required");
+  const missing = dependencies.filter((dependency) => !dependency.installed || dependency.state !== "installed");
   return {
     ok: missing.length === 0,
     distribution: detectDistribution(),
@@ -425,8 +528,8 @@ async function doInstallDependency(dependencyId) {
         }, 500);
       }
     }
-    if (dependencyId === "docker") {
-      await tryEnableService("docker", sudoPath, log);
+    if (before.service) {
+      await tryEnableService(before.service, sudoPath, log);
     }
     const after = await checkDependency(dependencyId);
     if (!after.installed || after.state === "update-required") {

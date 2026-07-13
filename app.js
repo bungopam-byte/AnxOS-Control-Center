@@ -3188,7 +3188,7 @@ function renderDependencyStatus(result = null, options = {}) {
     item.className = "download-item";
     const state = dependency.state || "unknown";
     const packages = Array.isArray(dependency.packages) && dependency.packages.length > 0 ? dependency.packages.join(", ") : "No package mapping";
-    const tone = state === "installed" ? "status-pill--ok" : state === "unsupported" || state === "installation-failed" ? "status-pill--critical" : "status-pill--warning";
+    const tone = state === "installed" ? "status-pill--ok" : state === "unsupported" || state === "installation-failed" || state === "verification-failed" ? "status-pill--critical" : "status-pill--warning";
     const main = document.createElement("div");
     main.className = "download-item__main";
     const title = document.createElement("strong");
@@ -3196,7 +3196,23 @@ function renderDependencyStatus(result = null, options = {}) {
     const reason = document.createElement("span");
     reason.textContent = dependency.reason || packages;
     const packageText = document.createElement("small");
-    packageText.textContent = packages;
+    const commandPaths = Array.isArray(dependency.commands)
+      ? dependency.commands.map((command) => command.path || `${command.command}: missing`).filter(Boolean)
+      : [];
+    const versionText = dependency.version ? `Version ${dependency.version}` : "Version unavailable";
+    const updateText = dependency.updateAvailable === true
+      ? `Update available${dependency.latestVersion ? `: ${dependency.latestVersion}` : ""}`
+      : dependency.updateAvailable === false
+        ? "No package update reported"
+        : dependency.updateReason || "Update status unavailable";
+    const verification = Array.isArray(dependency.verification) ? dependency.verification : [];
+    const verificationFailures = verification.filter((check) => !check.ok && !check.allowFailure);
+    const verificationText = verification.length
+      ? verificationFailures.length
+        ? `${verificationFailures.length} execution check${verificationFailures.length === 1 ? "" : "s"} failed`
+        : "Execution verified"
+      : dependency.installed ? "Execution check unavailable" : "Not executable from PATH";
+    packageText.textContent = [packages, versionText, verificationText, updateText, commandPaths.join(", ")].filter(Boolean).join(" • ");
     const status = document.createElement("span");
     status.className = `status-pill ${tone}`;
     status.textContent = state;
@@ -3223,6 +3239,9 @@ async function runDependencyAction(action) {
       "container-workloads",
       "archive-tools",
       "application-runtimes",
+      "development-tools",
+      "shell-runtimes",
+      "public-access",
     ],
   };
   dependencyButtons.forEach((button) => { button.disabled = true; });
@@ -5361,6 +5380,9 @@ function renderPublicAccessProviders(providers = []) {
     const article = document.createElement("article");
     article.className = "public-access-provider";
     article.dataset.providerId = provider.id || "";
+    if (provider.dependencyId) {
+      article.dataset.dependencyId = provider.dependencyId;
+    }
     article.classList.toggle("is-supported", provider.id === "playit");
     article.classList.toggle("is-disabled", provider.id !== "playit" || provider.status === "disabled");
     if (provider.id !== "playit" || provider.status === "disabled") {

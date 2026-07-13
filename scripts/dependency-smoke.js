@@ -80,6 +80,9 @@ async function run() {
   assert(resolveTemplateDependencyIds(template("minecraft-paper")).includes("java"), "Minecraft should require Java.");
   assert(resolveTemplateDependencyIds(template("discord-js")).includes("nodejs"), "Discord.js should require Node.js.");
   assert(resolveTemplateDependencyIds(template("python-discord-bot")).includes("python"), "Python bot should require Python.");
+  assert(resolveTemplateDependencyIds(template("immich")).includes("docker-compose"), "Docker Compose templates should require Docker Compose.");
+  assert.deepStrictEqual(dependencyIdsForGroups(["public-access"]), ["playit", "cloudflared", "tailscale"]);
+  assert(dependencyIdsForGroups(["development-tools"]).includes("git"), "Development tools should include Git.");
 
   const parsed = dependencyService.parseOsRelease("ID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu\"\n");
   assert.strictEqual(parsed.packageManager, "apt");

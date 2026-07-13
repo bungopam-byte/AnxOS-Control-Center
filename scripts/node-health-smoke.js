@@ -46,6 +46,11 @@ function requireApp(needle, message) {
   "diskCriticalFreeBytes: 2 * 1024 * 1024 * 1024",
   "latencyWarningMs: 1000",
   "NODE_HEALTH_SEVERITY_RANK",
+  "function aggregateNodeHealthCategories",
+  "function getNodeHealthApplicability",
+  "function getNodeHealthCacheKey",
+  "nodeHealthGeneration",
+  "nodeHealthSnapshotCache",
   "function buildNodeHealthModel",
   "function buildConnectivityHealth",
   "function buildAgentHealth",
@@ -59,6 +64,24 @@ function requireApp(needle, message) {
   "function buildUpdatesHealth",
   "function buildMaintenanceHealth",
 ].forEach((needle) => requireApp(needle, `Node health model should include ${needle}.`));
+
+[
+  'state: warnings ? "Needs attention" : scanned ? "Healthy" : "Not tested"',
+  "historicalIssueCount: failed.length",
+  "activeFailed.length",
+  "applicability.agentNode && [\"updates\", \"maintenance\"].includes(category.id)",
+  "aggregateNodeHealthCategories(categories)",
+  "category.applicable !== false",
+  "category.current !== false",
+  "!category.stale",
+  "No current health issues detected",
+  "historicalIssueCount",
+  "notTestedCount",
+  "unavailableCount",
+  "generation !== nodeHealthGeneration",
+  "nodeHealthSnapshotCache.set(health.cacheKey, health)",
+  "`${kind}:${id}`",
+].forEach((needle) => requireApp(needle, `Deterministic node health rules should include ${needle}.`));
 
 [
   "latestSystemSnapshot",

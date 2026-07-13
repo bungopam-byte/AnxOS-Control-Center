@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const crypto = require("crypto");
 const { spawnSync } = require("child_process");
 
 const REPO_ROOT = path.join(__dirname, "..");
@@ -109,6 +110,113 @@ function applyMask(pixels, size, mask) {
   return output;
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function mix(a, b, amount) {
+  return Math.round(a + ((b - a) * amount));
+}
+
+function blendPixel(pixels, width, x, y, color) {
+  if (x < 0 || y < 0 || x >= width) return;
+  const offset = (y * width + x) * 4;
+  const alpha = color[3] / 255;
+  pixels[offset] = mix(pixels[offset], color[0], alpha);
+  pixels[offset + 1] = mix(pixels[offset + 1], color[1], alpha);
+  pixels[offset + 2] = mix(pixels[offset + 2], color[2], alpha);
+  pixels[offset + 3] = 255;
+}
+
+function roundedRectCoverage(x, y, rect, radius, feather) {
+  const px = x + 0.5;
+  const py = y + 0.5;
+  const cx = clamp(px, rect.x + radius, rect.x + rect.width - radius);
+  const cy = clamp(py, rect.y + radius, rect.y + rect.height - radius);
+  const outside = Math.hypot(px - cx, py - cy) - radius;
+  if (outside <= -feather) return 1;
+  if (outside >= feather) return 0;
+  return 1 - ((outside + feather) / (feather * 2));
+}
+
+function drawRoundedRect(pixels, width, height, rect, radius, fill, stroke, strokeWidth) {
+  const minX = Math.max(0, Math.floor(rect.x - strokeWidth - 2));
+  const minY = Math.max(0, Math.floor(rect.y - strokeWidth - 2));
+  const maxX = Math.min(width - 1, Math.ceil(rect.x + rect.width + strokeWidth + 2));
+  const maxY = Math.min(height - 1, Math.ceil(rect.y + rect.height + strokeWidth + 2));
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      const outer = roundedRectCoverage(x, y, rect, radius, 1.5);
+      if (!outer) continue;
+      const innerRect = {
+        x: rect.x + strokeWidth,
+        y: rect.y + strokeWidth,
+        width: rect.width - (strokeWidth * 2),
+        height: rect.height - (strokeWidth * 2),
+      };
+      const inner = roundedRectCoverage(x, y, innerRect, Math.max(0, radius - strokeWidth), 1.5);
+      if (outer > inner) blendPixel(pixels, width, x, y, [...stroke.slice(0, 3), Math.round(stroke[3] * (outer - inner))]);
+      if (inner) blendPixel(pixels, width, x, y, [...fill.slice(0, 3), Math.round(fill[3] * inner)]);
+    }
+  }
+}
+
+function drawRadialGlow(pixels, width, height, centerX, centerY, radius, color, opacity) {
+  const minX = Math.max(0, Math.floor(centerX - radius));
+  const minY = Math.max(0, Math.floor(centerY - radius));
+  const maxX = Math.min(width - 1, Math.ceil(centerX + radius));
+  const maxY = Math.min(height - 1, Math.ceil(centerY + radius));
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      const distance = Math.hypot(x - centerX, y - centerY) / radius;
+      if (distance >= 1) continue;
+      const alpha = Math.round(opacity * ((1 - distance) ** 2) * 255);
+      blendPixel(pixels, width, x, y, [...color, alpha]);
+    }
+  }
+}
+
+function createSocialBackground(width, height) {
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const vignette = Math.hypot((x - width / 2) / width, (y - height / 2) / height);
+      pixels[offset] = clamp(Math.round(3 + (10 * (1 - y / height)) - (vignette * 6)), 0, 255);
+      pixels[offset + 1] = clamp(Math.round(3 + (5 * (1 - y / height)) - (vignette * 4)), 0, 255);
+      pixels[offset + 2] = clamp(Math.round(13 + (20 * (1 - y / height)) - (vignette * 10)), 0, 255);
+      pixels[offset + 3] = 255;
+    }
+  }
+
+  drawRadialGlow(pixels, width, height, 160, 80, 520, [182, 108, 255], 0.32);
+  drawRadialGlow(pixels, width, height, 940, 520, 540, [124, 60, 255], 0.24);
+  drawRadialGlow(pixels, width, height, 415, 250, 250, [165, 80, 255], 0.2);
+
+  drawRoundedRect(
+    pixels,
+    width,
+    height,
+    { x: 64, y: 58, width: 1072, height: 514 },
+    42,
+    [15, 8, 30, 210],
+    [132, 74, 190, 120],
+    2,
+  );
+  drawRoundedRect(
+    pixels,
+    width,
+    height,
+    { x: 88, y: 82, width: 300, height: 466 },
+    34,
+    [8, 5, 18, 130],
+    [182, 108, 255, 90],
+    1,
+  );
+
+  return createPng(width, height, pixels);
+}
+
 function makeAppPng(size) {
   const raw = cropRaw(APP_CROP, size);
   const radius = size * 0.155;
@@ -150,22 +258,43 @@ function pngToIco(entries) {
 }
 
 function createOpenGraphImage(appIconPath, outputPath) {
+  const backgroundPath = path.join(WEBSITE_ASSET_DIR, ".social-preview-background.png");
+  fs.writeFileSync(backgroundPath, createSocialBackground(1200, 630));
   runFfmpeg([
     "-v", "error",
-    "-f", "lavfi",
-    "-i", "color=c=0x02030b:s=1200x630",
+    "-i", backgroundPath,
     "-i", appIconPath,
     "-filter_complex",
     [
-      "[1:v]scale=390:390:flags=lanczos[icon]",
-      "[0:v][icon]overlay=405:55",
-      "drawtext=text='ANXOS':fontcolor=white:fontsize=82:x=(w-text_w)/2:y=468",
-      "drawtext=text='CONTROL CENTER':fontcolor=0xb66cff:fontsize=30:x=(w-text_w)/2:y=552",
+      "[1:v]scale=228:228:flags=lanczos[logo]",
+      "[0:v][logo]overlay=124:140",
+      "drawtext=text='OFFICIAL DESKTOP APP':font='DejaVu Sans':fontcolor=0xb66cff:fontsize=29:x=430:y=126",
+      "drawtext=text='AnxOS Control Center':font='DejaVu Sans':fontcolor=white:fontsize=58:x=430:y=174",
+      "drawtext=text='Manage game servers, remote nodes, files,':font='DejaVu Sans':fontcolor=0xe7dcf4:fontsize=29:x=430:y=282",
+      "drawtext=text='dependencies, diagnostics, and operations':font='DejaVu Sans':fontcolor=0xe7dcf4:fontsize=29:x=430:y=326",
+      "drawtext=text='from one desktop application.':font='DejaVu Sans':fontcolor=0xe7dcf4:fontsize=29:x=430:y=370",
+      "drawtext=text='anxoscontrolcenter.org':font='DejaVu Sans':fontcolor=0xb9abc8:fontsize=28:x=430:y=484",
     ].join(","),
     "-frames:v", "1",
     "-y",
     outputPath,
   ], "Open Graph image");
+  fs.rmSync(backgroundPath, { force: true });
+}
+
+function updateSocialPreviewMetadata(outputPath) {
+  const hash = crypto.createHash("sha256").update(fs.readFileSync(outputPath)).digest("hex").slice(0, 12);
+  const versionedPath = `assets/social-preview.png?v=${hash}`;
+  const files = [
+    path.join(REPO_ROOT, "website", "index.html"),
+    path.join(REPO_ROOT, "website", "release-notes.html"),
+  ];
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+    const updated = source.replace(/assets\/social-preview\.png(?:\?v=[a-f0-9]+)?/g, versionedPath);
+    fs.writeFileSync(file, updated);
+  }
+  return versionedPath;
 }
 
 function writeSvgFromPng(pngPath, svgPath) {
@@ -209,6 +338,9 @@ fs.writeFileSync(path.join(REPO_ROOT, "website", "favicon.ico"), pngToIco(
   [16, 32, 48].map((size) => ({ size, png: faviconPngs.get(size) })),
 ));
 writeSvgFromPng(path.join(WEBSITE_ASSET_DIR, "icon-512.png"), path.join(WEBSITE_ASSET_DIR, "favicon.svg"));
-createOpenGraphImage(path.join(APP_ICON_DIR, "512x512.png"), path.join(WEBSITE_ASSET_DIR, "social-preview.png"));
+const socialPreviewPath = path.join(WEBSITE_ASSET_DIR, "social-preview.png");
+createOpenGraphImage(path.join(APP_ICON_DIR, "512x512.png"), socialPreviewPath);
+const socialPreviewMetadataPath = updateSocialPreviewMetadata(socialPreviewPath);
 
 console.log(`Generated Neon Core assets from ${REFERENCE_PATH}`);
+console.log(`Updated social preview metadata to ${socialPreviewMetadataPath}`);

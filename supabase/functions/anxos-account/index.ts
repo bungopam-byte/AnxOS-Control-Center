@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEFAULT_ALLOWED_ORIGINS = [
-  "https://anxos-control-center.pages.dev",
+  "https://anxoscontrolcenter.org",
   "http://localhost:4173",
   "http://127.0.0.1:4173",
 ];
@@ -12,7 +12,7 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const desktopTokenSecret = Deno.env.get("ANXOS_DESKTOP_TOKEN_SECRET") || "";
 const deviceCodeSecret = Deno.env.get("ANXOS_DEVICE_CODE_SECRET") || desktopTokenSecret;
-const websiteBaseUrl = trimSlash(Deno.env.get("ANXOS_WEBSITE_BASE_URL") || "https://anxos-control-center.pages.dev");
+const websiteBaseUrl = trimSlash(Deno.env.get("ANXOS_WEBSITE_BASE_URL") || "https://anxoscontrolcenter.org");
 const allowedOrigins = (Deno.env.get("ANXOS_ALLOWED_ORIGINS") || DEFAULT_ALLOWED_ORIGINS.join(","))
   .split(",")
   .map((origin) => origin.trim())

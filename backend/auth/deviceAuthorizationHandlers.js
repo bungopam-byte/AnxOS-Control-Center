@@ -2,7 +2,7 @@ const crypto = require("crypto");
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_SECONDS = 3;
-const DEFAULT_WEBSITE_BASE_URL = "https://anxos-control-center.pages.dev";
+const DEFAULT_WEBSITE_BASE_URL = "https://anxoscontrolcenter.org";
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function createUserCode(length = 8) {

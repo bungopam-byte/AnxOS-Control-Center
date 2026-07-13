@@ -5,12 +5,13 @@ const http = require("http");
 const https = require("https");
 const path = require("path");
 const { openExternalUrl } = require("./externalUrlService");
+const { OFFICIAL_SITE_ORIGIN } = require("../shared/officialSite");
 
 const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
 const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
 const WEBSITE_CONFIG_URLS = [
   process.env.ANXOS_WEBSITE_CONFIG_URL,
-  "https://anxos-control-center.pages.dev/config.js",
+  `${OFFICIAL_SITE_ORIGIN}/config.js`,
 ].filter(Boolean);
 const UPDATE_MANIFEST_URLS = [
   process.env.ANXHUB_UPDATE_MANIFEST_URL,

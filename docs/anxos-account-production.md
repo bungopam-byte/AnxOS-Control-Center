@@ -18,10 +18,10 @@ Single-Device Mode, Use This Device, and Local Owner Login remain separate from 
 2. In Auth settings, enable email/password authentication.
 3. Enable email confirmation for production.
 4. Configure Site URL:
-   - `https://anxos-control-center.pages.dev`
+   - `https://anxoscontrolcenter.org`
 5. Configure redirect URLs:
-   - `https://anxos-control-center.pages.dev/#verify-email`
-   - `https://anxos-control-center.pages.dev/#reset-password`
+   - `https://anxoscontrolcenter.org/#verify-email`
+   - `https://anxoscontrolcenter.org/#reset-password`
    - `http://localhost:4173/#verify-email`
    - `http://localhost:4173/#reset-password`
 6. Apply migrations:
@@ -47,8 +47,8 @@ Set server-only secrets:
 
 ```bash
 supabase secrets set \
-  ANXOS_WEBSITE_BASE_URL=https://anxos-control-center.pages.dev \
-  ANXOS_ALLOWED_ORIGINS=https://anxos-control-center.pages.dev,http://localhost:4173 \
+  ANXOS_WEBSITE_BASE_URL=https://anxoscontrolcenter.org \
+  ANXOS_ALLOWED_ORIGINS=https://anxoscontrolcenter.org,http://localhost:4173 \
   ANXOS_DESKTOP_TOKEN_SECRET=<32+ random bytes> \
   ANXOS_DEVICE_CODE_SECRET=<different 32+ random bytes>
 ```
@@ -69,7 +69,7 @@ window.ANXOS_ACCOUNT_CONFIG = {
   supabaseUrl: "https://<project-ref>.supabase.co",
   supabaseAnonKey: "<public anon key>",
   accountApiUrl: "https://<project-ref>.functions.supabase.co/anxos-account",
-  siteUrl: "https://anxos-control-center.pages.dev",
+  siteUrl: "https://anxoscontrolcenter.org",
 };
 ```
 
@@ -88,7 +88,7 @@ Open `http://localhost:4173`.
 The desktop app reads:
 
 ```bash
-ANXOS_WEBSITE_BASE_URL=https://anxos-control-center.pages.dev
+ANXOS_WEBSITE_BASE_URL=https://anxoscontrolcenter.org
 ANXOS_ACCOUNT_API_URL=https://<project-ref>.functions.supabase.co/anxos-account
 ```
 

@@ -5,13 +5,14 @@ const path = require("path");
 const { app } = require("electron");
 const { SecureSessionStore, getDefaultConfigDirectory } = require("./secureSessionStore");
 const { openExternalUrl } = require("./externalUrlService");
+const { OFFICIAL_SITE_HOSTNAME, OFFICIAL_SITE_ORIGIN } = require("../shared/officialSite");
 
-const WEBSITE_BASE_URL = "https://anxos-control-center.pages.dev";
+const WEBSITE_BASE_URL = OFFICIAL_SITE_ORIGIN;
 const DEFAULT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_DEVICE_LOGIN_TTL_MS = 10 * 60 * 1000;
 const MAX_POLL_MS = 10 * 60 * 1000;
 const APPROVED_AUTH_HOSTS = new Set([
-  "anxos-control-center.pages.dev",
+  OFFICIAL_SITE_HOSTNAME,
   "localhost",
   "127.0.0.1",
 ]);

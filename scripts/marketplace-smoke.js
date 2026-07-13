@@ -775,7 +775,7 @@ function assertSingleDeviceModeExperience() {
   assert(ownerWorkspaceIpcSource.includes("ownerWorkspace:getWorkspace") && ownerWorkspaceIpcSource.includes("[OwnerWorkspace][IPC]"), "Owner Workspace IPC should expose logged owner-only operations.");
   assert(ownerWorkspaceSource.includes("requireOwner") && ownerWorkspaceSource.includes("atomicWriteJson"), "Owner Workspace storage should enforce owner auth and atomic writes.");
   assert(ownerWorkspaceSource.includes("assertApprovedApiUrl") && ownerWorkspaceSource.includes("redactSecrets"), "Owner API Tester should restrict URLs and redact secrets.");
-  assert(accountSource.includes("WEBSITE_BASE_URL") && accountSource.includes("https://anxos-control-center.pages.dev"), "Account service should centralize the Cloudflare Pages website base URL.");
+  assert(accountSource.includes("WEBSITE_BASE_URL") && accountSource.includes("OFFICIAL_SITE_ORIGIN"), "Account service should centralize the official website base URL.");
   assert(accountSource.includes("buildWebsiteUrl") && accountSource.includes('"activate"'), "Account service should build website account/device URLs from one helper.");
   assert(!accountSource.includes(["bungopam-byte", "github.io"].join(".")), "Desktop account flow must not open the old GitHub Pages site.");
   assert(accountSource.includes("ANXOS_ACCOUNT_API_URL") && accountSource.includes("/api/auth/device/start") && accountSource.includes("/api/auth/device/poll"), "Account service should implement configurable device-code API integration.");

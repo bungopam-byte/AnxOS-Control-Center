@@ -7,7 +7,7 @@ AnxOS desktop account sign-in is optional. Single-Device Mode and Local Owner Lo
 Set these only when an auth backend is deployed:
 
 ```bash
-ANXOS_WEBSITE_BASE_URL=https://anxos-control-center.pages.dev
+ANXOS_WEBSITE_BASE_URL=https://anxoscontrolcenter.org
 ANXOS_ACCOUNT_API_URL=https://your-anxos-auth-api.example
 ANXOS_SUPABASE_URL=https://your-project-ref.supabase.co
 ANXOS_SUPABASE_ANON_KEY=your-public-anon-key
@@ -89,7 +89,7 @@ Response:
 {
   "deviceCode": "secret-long-random-value",
   "userCode": "ABCD1234",
-  "verificationUrl": "https://anxos-control-center.pages.dev/activate/?code=ABCD1234",
+  "verificationUrl": "https://anxoscontrolcenter.org/activate/?code=ABCD1234",
   "expiresIn": 600,
   "pollInterval": 3
 }

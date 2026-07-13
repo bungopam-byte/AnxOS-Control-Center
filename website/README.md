@@ -60,11 +60,43 @@ Required files:
 - `site.js`
 - `config.js`
 - `account-config.js`
+- `robots.txt`
+- `sitemap.xml`
+- `site.webmanifest`
+- `favicon.ico`
 - `assets/anxos-logo.jpg`
+- `assets/favicon.svg`
+- `assets/favicon-16.png`
+- `assets/favicon-32.png`
+- `assets/apple-touch-icon.png`
+- `assets/icon-192.png`
+- `assets/icon-512.png`
+- `assets/social-preview.png`
 
 For GitHub Pages, publish the `website/` directory as the site root or copy its contents into the configured Pages branch/folder.
 
 For Cloudflare Pages, deploy the contents of `website/` as the output directory and configure Supabase Auth redirect URLs to the deployed domain.
+
+### Official Domain
+
+The canonical public origin is:
+
+```text
+https://anxoscontrolcenter.org
+```
+
+Recommended Cloudflare setup for `www`:
+
+- DNS record: `www`
+- Type: `CNAME`
+- Target: `anxos-control-center.pages.dev`
+- Proxy status: Proxied
+- Redirect Rule: permanent `301`
+- Source: `https://www.anxoscontrolcenter.org/*`
+- Target: `https://anxoscontrolcenter.org/$1`
+- Preserve the query string so activation and reset links keep their parameters.
+
+Do not implement this as an application-level JavaScript redirect. The root domain remains canonical.
 
 ## Account Configuration
 
@@ -75,7 +107,7 @@ window.ANXOS_ACCOUNT_CONFIG = {
   supabaseUrl: "https://<project-ref>.supabase.co",
   supabaseAnonKey: "<public anon key>",
   accountApiUrl: "https://<project-ref>.functions.supabase.co/anxos-account",
-  siteUrl: "https://anxos-control-center.pages.dev",
+  siteUrl: "https://anxoscontrolcenter.org",
 };
 ```
 

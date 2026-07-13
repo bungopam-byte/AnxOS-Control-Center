@@ -3,9 +3,29 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AnxOS | Desktop Control Center</title>
-    <meta name="description" content="Download AnxOS-Control-Center, a desktop control center for Minecraft servers, modpacks, remote nodes, and automation.">
-    <link rel="icon" type="image/jpeg" href="assets/anxos-logo.jpg">
+    <title>AnxOS Control Center | Official Desktop App</title>
+    <meta name="description" content="Download AnxOS Control Center to manage game servers, remote nodes, files, dependencies, diagnostics, operations, and Node Health from one desktop application.">
+    <meta name="robots" content="index,follow">
+    <meta name="theme-color" content="#b66cff">
+    <link rel="canonical" href="https://anxoscontrolcenter.org/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="AnxOS Control Center">
+    <meta property="og:title" content="AnxOS Control Center">
+    <meta property="og:description" content="Manage game servers, remote nodes, files, dependencies, diagnostics, and operations from one desktop application.">
+    <meta property="og:url" content="https://anxoscontrolcenter.org/">
+    <meta property="og:image" content="https://anxoscontrolcenter.org/assets/social-preview.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AnxOS Control Center">
+    <meta name="twitter:description" content="Manage game servers, remote nodes, files, dependencies, diagnostics, and operations from one desktop application.">
+    <meta name="twitter:image" content="https://anxoscontrolcenter.org/assets/social-preview.png">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+    <link rel="manifest" href="site.webmanifest">
     <link rel="stylesheet" href="styles.css">
     <script src="config.js" defer></script>
     <script src="account-config.js" defer></script>
@@ -38,6 +58,7 @@
         <a href="#release">Release</a>
         <a href="release-notes.html">Release Notes</a>
         <a href="#features">Features</a>
+        <a href="#getting-started">Getting Started</a>
         <a href="#install">Install</a>
         <a href="#signin">Sign In</a>
         <a href="#profile">Profile</a>
@@ -481,6 +502,28 @@
         </div>
       </section>
 
+      <section id="getting-started" class="section-shell install-layout">
+        <div>
+          <p class="eyebrow">Getting Started</p>
+          <h2>First server workflow</h2>
+          <p class="section-copy">These steps match the current desktop workflow. AnxOS does not install unsupported runtimes or approve remote access without your action.</p>
+        </div>
+        <div class="steps steps--detailed">
+          <article><span>1</span><p>Download AnxOS Control Center for Windows or Linux.</p></article>
+          <article><span>2</span><p>Install and launch the desktop application.</p></article>
+          <article><span>3</span><p>Start the local AnxOS Agent or connect a remote Agent.</p></article>
+          <article><span>4</span><p>Add or select the Node you want to manage.</p></article>
+          <article><span>5</span><p>Open Prepare Node to verify Java, Docker, SteamCMD, Node.js, Python, and other required runtimes.</p></article>
+          <article><span>6</span><p>Install your first Marketplace server after dependency checks pass.</p></article>
+          <article><span>7</span><p>Monitor the server through Operations, Diagnostics, Files, and Node Health.</p></article>
+        </div>
+        <div class="download-help">
+          <a data-download="windows" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases">Windows download</a>
+          <a data-download="linuxDeb" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases">Linux download</a>
+          <a data-config-href="releaseUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center/releases">GitHub releases</a>
+        </div>
+      </section>
+
       <section id="install" class="section-shell install-layout">
         <div>
           <p class="eyebrow">Install Guide</p>
@@ -521,10 +564,21 @@
     </main>
 
     <footer class="site-footer">
-      <span>AnxOS</span>
-      <span data-config="appName">AnxOS-Control-Center</span>
-      <a href="release-notes.html">Release Notes</a>
-      <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a>
+      <div>
+        <strong>AnxOS Control Center</strong>
+        <span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span>
+      </div>
+      <nav aria-label="Footer">
+        <a href="#top">Home</a>
+        <a href="#downloads">Download</a>
+        <a href="#features">Features</a>
+        <a href="#getting-started">Getting Started</a>
+        <a href="release-notes.html">Release Notes</a>
+        <a href="#signin">Sign In</a>
+        <a href="#profile">Profile</a>
+        <a href="#account-security">Security</a>
+        <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a>
+      </nav>
     </footer>
     <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
     <div class="confirm-modal" data-confirm-modal data-cleanup-modal hidden>

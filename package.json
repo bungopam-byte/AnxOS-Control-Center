@@ -3,6 +3,7 @@
   "productName": "AnxOS Control Center",
   "version": "1.0.48",
   "description": "Private local desktop control center for a Debian server.",
+  "homepage": "https://anxoscontrolcenter.org",
   "author": "Anx",
   "license": "UNLICENSED",
   "desktopName": "anxos-control-center.desktop",

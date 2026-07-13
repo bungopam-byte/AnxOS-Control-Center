@@ -2,6 +2,8 @@
 
 AnxOS Control Center is a private, lightweight local desktop dashboard for a homelab server. It uses Electron to open the existing static HTML/CSS/JS interface in a desktop window and reads local system metrics through a narrow Electron IPC service.
 
+Official website: https://anxoscontrolcenter.org
+
 This project intentionally does not include secrets, tokens, API keys, credentials, or backend service controls.
 
 ## Files

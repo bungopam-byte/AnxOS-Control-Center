@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /account.html
+Disallow: /profile.html
+Disallow: /profile/
+Disallow: /activate.html
+Disallow: /activate/
+Disallow: /device.html
+Disallow: /device-login.html
+Disallow: /forgot-password.html
+Disallow: /reset-password.html
+
+Sitemap: https://anxoscontrolcenter.org/sitemap.xml

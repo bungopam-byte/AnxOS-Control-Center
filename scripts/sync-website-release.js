@@ -4,6 +4,7 @@ const path = require("path");
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
 const packageJson = require(path.join(rootDir, "package.json"));
+const { OFFICIAL_SITE_ORIGIN } = require(path.join(rootDir, "src", "shared", "officialSite"));
 const websiteConfigPath = path.join(rootDir, "website", "config.js");
 const releaseNotesPath = path.join(rootDir, "website", "release-notes.json");
 const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
@@ -95,6 +96,7 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   brandName: "AnxOS",
   appName: "AnxOS-Control-Center",
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
+  siteUrl: "${OFFICIAL_SITE_ORIGIN}",
   logoPath: "assets/anxos-logo.jpg",
   latestVersion: "${packageJson.version}",
   releaseDate: "${formatReleaseDate()}",

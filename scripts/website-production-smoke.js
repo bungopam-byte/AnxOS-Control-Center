@@ -13,6 +13,13 @@ const index = read("index.html");
 const activate = read("activate.html");
 const forgot = read("forgot-password.html");
 const reset = read("reset-password.html");
+const signin = read("signin/index.html");
+const signup = read("signup/index.html");
+const account = read("account/index.html");
+const profile = read("profile/index.html");
+const activateRoute = read("activate/index.html");
+const forgotRoute = read("forgot-password/index.html");
+const resetRoute = read("reset-password/index.html");
 const releaseNotes = read("release-notes.html");
 const accountRedirect = read("account.html");
 const profileRedirect = read("profile.html");
@@ -29,7 +36,7 @@ const rootPackage = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const officialOrigin = "https://anxoscontrolcenter.org";
 const oldPagesOrigin = "https://anxos-control-center.pages.dev";
 
-["index.html", "activate.html", "forgot-password.html", "reset-password.html", "release-notes.html"].forEach((file) => {
+["index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
   const html = read(file);
   assert(html.includes("data-site-menu-toggle"), `${file} must expose the mobile navigation toggle.`);
   assert(html.includes("data-site-nav"), `${file} must expose the mobile navigation target.`);
@@ -47,12 +54,21 @@ assert(fs.existsSync(path.join(websiteRoot, "favicon.ico")), "Website must inclu
   assert(fs.existsSync(path.join(websiteRoot, "assets", file)), `Website asset ${file} must exist.`);
 });
 assert(manifest.includes("AnxOS Control Center") && manifest.includes("/assets/icon-192.png"), "Web manifest must include app icon metadata.");
-assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate/") && robots.includes("Disallow: /reset-password.html"), "Robots rules must expose sitemap and exclude account routes.");
+assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate") && robots.includes("Disallow: /signin") && robots.includes("Disallow: /reset-password"), "Robots rules must expose sitemap and exclude account routes.");
 assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
-assert(activate.includes('name="robots" content="noindex,nofollow"') && forgot.includes('name="robots" content="noindex,nofollow"') && reset.includes('name="robots" content="noindex,nofollow"'), "Account and activation pages must be excluded from indexing.");
+assert([signin, signup, account, profile, activateRoute, forgotRoute, resetRoute, activate, forgot, reset].every((html) => html.includes('name="robots" content="noindex,nofollow"')), "Account and activation pages must be excluded from indexing.");
 assert(accountRedirect.includes('name="robots" content="noindex,nofollow"') && profileRedirect.includes('name="robots" content="noindex,nofollow"'), "Account redirect shims must be excluded from indexing.");
-assert(index.includes("© 2026 AnxOS Control Center") && index.includes("anxoscontrolcenter.org") && index.includes("#getting-started"), "Homepage footer must include copyright, official domain, and Getting Started links.");
+assert(index.includes("© 2026 AnxOS Control Center") && index.includes("anxoscontrolcenter.org") && index.includes("/#getting-started"), "Homepage footer must include copyright, official domain, and Getting Started links.");
 assert(index.includes("First server workflow") && index.includes("Prepare Node") && index.includes("Node Health"), "Homepage must include honest Getting Started workflow copy.");
+assert(signin.includes('data-auth-form="signin"') && signin.includes(`<link rel="canonical" href="${officialOrigin}/signin">`), "Sign-in must be a clean direct route.");
+assert(signup.includes('data-auth-form="signup"') && signup.includes(`<link rel="canonical" href="${officialOrigin}/signup">`), "Sign-up must be a clean direct route.");
+assert(account.includes('data-account-route="account"') && account.includes(`<link rel="canonical" href="${officialOrigin}/account">`), "Account must be a clean direct route.");
+assert(profile.includes('data-account-route="profile"') && profile.includes(`<link rel="canonical" href="${officialOrigin}/profile">`), "Profile must be a clean direct route.");
+assert(activateRoute.includes('data-standalone-route="activate"') && activateRoute.includes(`<link rel="canonical" href="${officialOrigin}/activate">`), "Activation must be a clean direct route.");
+assert(forgotRoute.includes('data-auth-form="forgot"') && forgotRoute.includes(`<link rel="canonical" href="${officialOrigin}/forgot-password">`), "Forgot-password must be a clean direct route.");
+assert(resetRoute.includes('data-auth-form="reset"') && resetRoute.includes(`<link rel="canonical" href="${officialOrigin}/reset-password">`), "Reset-password must be a clean direct route.");
+assert(index.includes('routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" }'), "Homepage must redirect legacy hash auth routes to clean paths.");
+assert(!index.includes('href="#signin"') && !index.includes('href="#signup"') && !index.includes('href="#account"') && !index.includes('href="#profile"'), "Homepage must not link to hash-based account routes.");
 
 const deployedWebsiteText = fs.readdirSync(websiteRoot)
   .filter((file) => fs.statSync(path.join(websiteRoot, file)).isFile() && file !== "README.md")
@@ -70,22 +86,24 @@ assert(index.includes("data-download-status"), "Downloads page should expose rel
 assert(site.includes("Release metadata is unavailable"), "Downloads should handle missing release metadata.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
 assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org\""), "www redirects should be handled by Cloudflare, not application JavaScript.");
-["index.html", "activate.html", "forgot-password.html", "reset-password.html", "release-notes.html"].forEach((file) => {
+["index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
   assert(!read(file).includes('href="#"'), `${file} must not ship dead # fallback links.`);
 });
 
 assert(index.includes('id="not-found"') && site.includes('window.location.hash = "not-found"'), "Website must route unsupported hashes to a not-found state.");
-assert(accountRedirect.includes("index.html${query}#account"), "Account redirect shim must preserve query parameters before the hash route.");
+assert(accountRedirect.includes('window.location.replace("/account" + query + hash)'), "Account redirect shim must preserve query parameters for the clean route.");
 assert(site.includes('selectedState = "loading"'), "Sign-in route should show loading state instead of flashing signed-out UI while auth initializes.");
+assert(site.includes("normalizeReturnTarget") && site.includes("parsed.origin !== window.location.origin"), "Return destinations must be same-origin validated.");
+assert(site.includes("redirectToSignInForCurrentRoute") && site.includes("/signin?"), "Authenticated routes must redirect signed-out users to clean sign-in routes.");
 assert(site.includes("WEBSITE_DEBUG") && site.includes("if (!WEBSITE_DEBUG) return;"), "Verbose website auth logging must be opt-in.");
-assert(index.includes("data-confirm-modal") && activate.includes("data-confirm-modal"), "Account and activation pages should expose the shared confirmation modal.");
+assert(account.includes("data-confirm-modal") && activateRoute.includes("data-confirm-modal"), "Account and activation pages should expose the shared confirmation modal.");
 assert(site.includes("function confirmUserAction") && site.includes("Approve this desktop app?") && site.includes("Sign out all desktop sessions?"), "Security-sensitive website actions should use branded confirmation copy.");
 assert(!site.includes('confirm("Approve this AnxOS desktop app') && !site.includes('confirm("Sign out all desktop sessions'), "Website should not use raw browser confirmations for account/device actions.");
 
-assert(index.includes('name="passwordConfirm"'), "Create account and reset forms should include password confirmation.");
+assert(signup.includes('name="passwordConfirm"') && resetRoute.includes('name="passwordConfirm"'), "Create account and reset forms should include password confirmation.");
 assert(site.includes('setMessage("signup", "Passwords do not match.", "error")'), "Sign-up should validate password confirmation before network calls.");
-assert(activate.includes("Opening this page never approves a device automatically."), "Activation page must explicitly avoid auto-approval ambiguity.");
-assert(activate.includes('autocomplete="one-time-code"') && activate.includes('autocapitalize="characters"') && activate.includes('spellcheck="false"'), "Activation code input must support mobile/paste ergonomics.");
+assert(activateRoute.includes("Opening this page never approves a device automatically."), "Activation page must explicitly avoid auto-approval ambiguity.");
+assert(activateRoute.includes('autocomplete="one-time-code"') && activateRoute.includes('autocapitalize="characters"') && activateRoute.includes('spellcheck="false"'), "Activation code input must support mobile/paste ergonomics.");
 
 assert(styles.includes(".site-menu-button") && styles.includes(".site-nav.is-open"), "Website CSS must include mobile menu states.");
 assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "Website must respect reduced-motion preference.");

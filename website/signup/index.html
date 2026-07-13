@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS Control Center | Sign Up</title>
+    <meta name="description" content="Create an AnxOS account.">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="theme-color" content="#b66cff">
+    <link rel="canonical" href="https://anxoscontrolcenter.org/signup">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/account-config.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/site.js" defer></script>
+  </head>
+  <body data-standalone-route="signup">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="AnxOS home">
+        <span class="brand-mark"><img data-logo src="/assets/anxos-logo.jpg" alt=""></span>
+        <span class="brand-copy"><strong data-config="brandName">AnxOS</strong><span>Create Account</span></span>
+      </a>
+      <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
+        <a href="/#release">Release</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/#features">Features</a>
+        <a href="/#getting-started">Getting Started</a>
+        <a href="/#downloads">Download</a>
+        <a href="/signin">Sign In</a>
+        <a href="/profile">Profile</a>
+        <a class="site-nav__cta" href="/signup">Sign Up</a>
+      </nav>
+    </header>
+    <main id="signup-page">
+      <section id="signup" class="section-shell account-route account-route--active" data-account-route="signup">
+        <div class="auth-shell">
+          <div class="auth-card" data-auth-view="signed-out">
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Create your account</h2>
+              <p>Set up online access for cloud, synchronization, licensing, and remote account features.</p>
+            </div>
+            <nav class="auth-tabs" aria-label="Account actions">
+              <a class="auth-tab" href="/signin">Sign In</a>
+              <a class="auth-tab is-active" href="/signup">Create Account</a>
+            </nav>
+            <form class="account-form auth-form" data-auth-form="signup">
+              <label>Email<input type="email" name="email" autocomplete="email" required></label>
+              <label>Username<input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>
+              <label>Display name<input type="text" name="displayName" autocomplete="name" maxlength="80" required></label>
+              <label>Password<input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+              <label>Confirm password<input type="password" name="passwordConfirm" autocomplete="new-password" minlength="10" required></label>
+              <button class="button button-primary auth-primary" type="submit">Create Account</button>
+              <p class="form-message" role="status" data-auth-message="signup"></p>
+            </form>
+          </div>
+          <ul class="auth-feature-list" aria-label="AnxOS account features">
+            <li>Email verification protects your account before device approvals.</li>
+            <li>Normal users cannot assign themselves owner or admin roles.</li>
+            <li>Your local owner password is never uploaded or synchronized.</li>
+          </ul>
+        </div>
+      </section>
+
+
+    </main>
+    <footer class="site-footer">
+      <div><strong>AnxOS Control Center</strong><span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span></div>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/#downloads">Download</a>
+        <a href="/#features">Features</a>
+        <a href="/#getting-started">Getting Started</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/signin">Sign In</a>
+        <a href="/profile">Profile</a>
+        <a href="/account#account-security">Security</a>
+        <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a>
+      </nav>
+    </footer>
+    <div class="confirm-modal" data-confirm-modal hidden>
+      <div class="confirm-modal__backdrop" data-confirm-modal-cancel></div>
+      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+        <p class="eyebrow" data-confirm-modal-eyebrow>Account safety</p>
+        <h2 id="confirm-modal-title" data-confirm-modal-title>Confirm action</h2>
+        <p id="confirm-modal-message" data-confirm-modal-message>This action needs confirmation.</p>
+        <div class="confirm-modal__actions">
+          <button class="button button-ghost" type="button" data-confirm-modal-cancel>Cancel</button>
+          <button class="button button-primary" type="button" data-confirm-modal-confirm>Confirm</button>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

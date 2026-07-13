@@ -214,9 +214,80 @@ function getRouteParams() {
   return hashParams;
 }
 
+function routeFromPathname() {
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  const route = pathname.split("/").filter(Boolean)[0] || "top";
+  if (route === "index.html") return "top";
+  if (route === "forgot-password.html") return "forgot-password";
+  if (route === "reset-password.html") return "reset-password";
+  if (route === "activate.html") return "activate";
+  if (route === "account.html") return "account";
+  if (route === "profile.html") return "profile";
+  return route;
+}
+
 function getCurrentRoute() {
+  const standaloneRoute = document.body?.dataset?.standaloneRoute;
+  if (standaloneRoute) return standaloneRoute;
   const hash = window.location.hash || "";
-  return hash.replace(/^#/, "").split("?")[0] || document.body?.dataset?.standaloneRoute || "top";
+  return hash.replace(/^#/, "").split("?")[0] || routeFromPathname();
+}
+
+function normalizeReturnTarget(value, fallback = "/account") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  const aliases = {
+    account: "/account",
+    profile: "/profile",
+    activate: "/activate",
+    signin: "/signin",
+    signup: "/signup",
+    "forgot-password": "/forgot-password",
+    "reset-password": "/reset-password",
+  };
+  if (aliases[raw]) return aliases[raw];
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (parsed.origin !== window.location.origin) return fallback;
+    if (!parsed.pathname.startsWith("/")) return fallback;
+    if (parsed.pathname.startsWith("//")) return fallback;
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
+function buildSignInUrl(returnTarget) {
+  const params = new URLSearchParams({ returnTo: normalizeReturnTarget(returnTarget) });
+  return `/signin?${params.toString()}`;
+}
+
+function getReturnTargetFromParams(fallback = "/account") {
+  const params = getRouteParams();
+  return normalizeReturnTarget(params.get("returnTo") || params.get("return"), fallback);
+}
+
+function redirectToSignInForCurrentRoute() {
+  const target = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.replace(buildSignInUrl(target));
+}
+
+function redirectLegacyHashRoutes() {
+  if (document.body?.dataset?.standaloneRoute) return false;
+  const hash = window.location.hash || "";
+  const [route, hashQuery = ""] = hash.replace(/^#/, "").split("?");
+  const routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" };
+  if (!routes[route]) return false;
+  const params = new URLSearchParams(window.location.search);
+  if (hashQuery) {
+    const legacyParams = new URLSearchParams(hashQuery);
+    legacyParams.forEach((value, key) => {
+      if (!params.has(key)) params.set(key, value);
+    });
+  }
+  const query = params.toString();
+  window.location.replace(`${routes[route]}${query ? `?${query}` : ""}`);
+  return true;
 }
 
 function getInitials(value) {
@@ -415,7 +486,7 @@ async function renderAuthState() {
     updateCleanupControls();
     authState = "signed-out";
     applyAuthVisibility("render-signed-out");
-    if (getCurrentRoute() === "profile") window.location.hash = "signin?return=profile";
+    if (["account", "profile"].includes(getCurrentRoute())) redirectToSignInForCurrentRoute();
     return;
   }
   await loadProfile().catch((error) => {
@@ -441,6 +512,7 @@ function applyAuthVisibility(operation = "apply") {
   document.querySelectorAll("[data-account-route]").forEach((section) => {
     let selectedState = authState;
     if (section.dataset.accountRoute === "signin" && authState === "loading") selectedState = "loading";
+    if (["account", "profile"].includes(section.dataset.accountRoute) && authState === "loading") selectedState = "loading";
     if (section.dataset.accountRoute === "profile" && authState === "signed-out") selectedState = "signed-out";
     setScopedAuthView(section, selectedState);
   });
@@ -554,10 +626,10 @@ async function handleSignIn(form) {
     const params = getRouteParams();
     if (params.get("return") === "activate") {
       const code = normalizeDeviceCode(params.get("code"));
-      window.location.href = `activate.html${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+      window.location.href = `/activate${code ? `?code=${encodeURIComponent(code)}` : ""}`;
       return;
     }
-    window.location.hash = params.get("return") === "profile" ? "profile" : "account";
+    window.location.assign(getReturnTargetFromParams("/account"));
   } catch (error) {
     setMessage("signin", friendlyAuthError(error), "error");
   } finally {
@@ -579,13 +651,13 @@ async function handleSignUp(form) {
       email: form.elements.email.value.trim(),
       password: form.elements.password.value,
       options: {
-        emailRedirectTo: `${accountConfig.siteUrl || window.location.origin}/#verify-email`,
+        emailRedirectTo: `${accountConfig.siteUrl || window.location.origin}/signin?verified=1`,
         data: { username, display_name: displayName },
       },
     });
     if (error) throw error;
     setMessage("signup", "Account created. Check your email to verify your address.", "ok");
-    window.location.hash = "verify-email";
+    window.location.assign("/signin?created=1");
   } catch (error) {
     setMessage("signup", friendlyAuthError(error), "error");
   } finally {
@@ -598,7 +670,7 @@ async function handleForgot(form) {
   setMessage("forgot", "Sending reset link...");
   try {
     const { error } = await getSupabase().auth.resetPasswordForEmail(form.elements.email.value.trim(), {
-      redirectTo: `${accountConfig.siteUrl || window.location.origin}/reset-password.html`,
+      redirectTo: `${accountConfig.siteUrl || window.location.origin}/reset-password`,
     });
     if (error) throw error;
     setMessage("forgot", "If an account exists, a reset email has been sent.", "ok");
@@ -620,7 +692,7 @@ async function handleReset(form) {
     const { error } = await getSupabase().auth.updateUser({ password: form.elements.password.value });
     if (error) throw error;
     setMessage("reset", "Password updated.", "ok");
-    window.location.assign("account.html");
+    window.location.assign("/account");
   } catch (error) {
     setMessage("reset", friendlyAuthError(error), "error");
   } finally {
@@ -1101,9 +1173,9 @@ function applyDeviceLoginPage() {
 
 function getSignInUrlForActivation() {
   const code = normalizeDeviceCode(document.querySelector("[data-device-code-input]")?.value || currentDeviceCode);
-  const params = new URLSearchParams({ return: "activate" });
-  if (code) params.set("code", code);
-  return `index.html?${params.toString()}#signin`;
+  const returnTo = `/activate${code ? `?code=${encodeURIComponent(code)}` : ""}`;
+  const params = new URLSearchParams({ returnTo });
+  return `/signin?${params.toString()}`;
 }
 
 function setDeviceCode(code) {
@@ -1118,7 +1190,7 @@ async function lookupDevice() {
     if (document.body?.dataset?.standaloneRoute === "activate") {
       window.location.href = getSignInUrlForActivation();
     } else {
-      window.location.hash = "signin";
+      window.location.href = "/signin";
     }
     return;
   }
@@ -1226,7 +1298,7 @@ function bindAccountForms() {
       currentProfile = null;
       authState = "signed-out";
       applyAuthVisibility("signout");
-      window.location.hash = "signin";
+      window.location.assign("/signin");
     });
   });
   document.querySelectorAll('[data-auth-action="refresh-devices"]').forEach((button) => {
@@ -1331,6 +1403,7 @@ function bindSiteNavigation() {
 }
 
 async function applyHashRoute() {
+  if (redirectLegacyHashRoutes()) return;
   const hash = window.location.hash || "";
   const standaloneRoute = document.body?.dataset?.standaloneRoute || "";
   const route = getCurrentRoute();
@@ -1346,7 +1419,7 @@ async function applyHashRoute() {
       fallback: "You have unsaved profile changes. Leave without saving?",
     });
     if (!leave) {
-      window.location.hash = "profile";
+      window.location.assign("/profile");
       return;
     }
     setProfileDirty(false);
@@ -1354,11 +1427,11 @@ async function applyHashRoute() {
   if (!standaloneRoute && route === "activate") {
     const hashQuery = hash.includes("?") ? `?${hash.split("?").slice(1).join("?")}` : "";
     const query = window.location.search || hashQuery;
-    window.location.replace(`activate.html${query}`);
+    window.location.replace(`/activate${query}`);
     return;
   }
   if (activeRoute === "profile" && authState === "signed-out") {
-    window.location.hash = "signin?return=profile";
+    redirectToSignInForCurrentRoute();
     return;
   }
   const supportedRoutes = new Set([
@@ -1378,7 +1451,7 @@ async function applyHashRoute() {
     "not-found",
   ]);
   if (!supportedRoutes.has(activeRoute)) {
-    window.location.hash = "not-found";
+    if (!standaloneRoute) window.location.hash = "not-found";
     return;
   }
   applyDeviceLoginPage();

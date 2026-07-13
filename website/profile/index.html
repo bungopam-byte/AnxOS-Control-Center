@@ -3,16 +3,147 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS Control Center | Profile</title>
+    <meta name="description" content="Review your AnxOS profile and account details.">
     <meta name="robots" content="noindex,nofollow">
-    <link rel="canonical" href="https://anxoscontrolcenter.org/">
-    <meta http-equiv="refresh" content="0; url=../index.html#profile">
-    <title>AnxOS Profile</title>
-    <script>
-      const query = window.location.search || "";
-      window.location.replace(`../index.html${query}#profile`);
-    </script>
+    <meta name="theme-color" content="#b66cff">
+    <link rel="canonical" href="https://anxoscontrolcenter.org/profile">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/account-config.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/site.js" defer></script>
   </head>
-  <body>
-    <a href="../index.html#profile">Continue to AnxOS profile</a>
+  <body data-standalone-route="profile">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="AnxOS home">
+        <span class="brand-mark"><img data-logo src="/assets/anxos-logo.jpg" alt=""></span>
+        <span class="brand-copy"><strong data-config="brandName">AnxOS</strong><span>Profile</span></span>
+      </a>
+      <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
+        <a href="/#release">Release</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/#features">Features</a>
+        <a href="/#getting-started">Getting Started</a>
+        <a href="/#downloads">Download</a>
+        <a href="/signin">Sign In</a>
+        <a href="/profile">Profile</a>
+        <a class="site-nav__cta" href="/signup">Sign Up</a>
+      </nav>
+    </header>
+    <main id="profile-page">
+      <section id="profile" class="section-shell account-route account-route--active" data-account-route="profile">
+        <div class="account-route__copy">
+          <p class="eyebrow">Profile</p>
+          <h2>Identity and preferences</h2>
+          <p>Manage account identity fields separately from devices, sessions, and security controls.</p>
+        </div>
+        <div class="account-panel profile-panel">
+          <nav class="account-nav" aria-label="Account navigation">
+            <a class="account-nav__item" href="/account">Overview</a>
+            <a class="account-nav__item is-active" href="/profile">Profile</a>
+            <a class="account-nav__item" href="/account#account-devices">Devices & Sessions</a>
+            <a class="account-nav__item" href="/account#account-security">Security</a>
+          </nav>
+          <div data-auth-view="loading" class="profile-loading">
+            <div class="profile-skeleton"></div>
+            <p class="form-message">Validating your session...</p>
+          </div>
+          <div data-auth-view="signed-out" hidden>
+            <h3>Sign in to view your profile</h3>
+            <p>Profile details are private to your authenticated AnxOS account.</p>
+            <div class="route-actions">
+              <a class="button button-primary" href="/signin?returnTo=/profile">Sign In</a>
+            </div>
+          </div>
+          <div data-auth-view="signed-in" hidden>
+            <div class="profile-header-card">
+              <div class="profile-avatar profile-avatar--large" data-profile-avatar aria-hidden="true">A</div>
+              <div>
+                <span class="badge" data-profile-role>Account</span>
+                <h3 data-profile-display-name>AnxOS Account</h3>
+                <p><span data-profile-username>@account</span> · <span data-account-email></span></p>
+                <small data-profile-member-since>Member since unavailable</small>
+              </div>
+              <div class="profile-completion">
+                <span>Profile completion</span>
+                <strong data-profile-completion>0%</strong>
+              </div>
+            </div>
+            <form class="account-form profile-form" data-auth-form="profile">
+              <div class="profile-form-grid">
+                <label>Display name<input type="text" name="displayName" autocomplete="name" maxlength="80" required></label>
+                <label>Username<input type="text" name="username" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9_-]{3,32}" required></label>
+                <label>Avatar URL<input type="url" name="avatarUrl" placeholder="https://..."></label>
+                <label>Time zone<input type="text" name="timeZone" autocomplete="off" placeholder="America/Edmonton"></label>
+                <label>Preferred platform<select name="preferredPlatform"><option value="">No preference</option><option value="windows">Windows</option><option value="linux">Linux</option><option value="macos">macOS</option><option value="server">Server/NAS</option></select></label>
+                <label>Website<input type="url" name="websiteUrl" placeholder="https://example.com"></label>
+                <label>GitHub<input type="url" name="githubUrl" placeholder="https://github.com/username"></label>
+                <label class="profile-form-wide">Short bio<textarea name="bio" maxlength="280" rows="4" placeholder="Briefly describe how you use AnxOS."></textarea></label>
+              </div>
+              <div class="profile-avatar-preview">
+                <div class="profile-avatar" data-profile-avatar-preview aria-hidden="true">A</div>
+                <button class="button button-ghost" type="button" data-profile-action="remove-avatar">Remove Avatar</button>
+                <p class="form-message" data-auth-message="avatar">Avatar upload is not enabled yet. Use an image URL for now.</p>
+              </div>
+              <div class="profile-form-actions">
+                <button class="button button-primary" type="submit" data-profile-save disabled>Save Profile</button>
+                <button class="button button-secondary" type="button" data-profile-action="cancel" disabled>Cancel</button>
+                <span class="form-message" role="status" data-auth-message="profile"></span>
+              </div>
+            </form>
+            <section class="account-subpanel profile-details">
+              <div class="account-subpanel__heading"><h4>Account Details</h4></div>
+              <dl class="profile-detail-grid">
+                <div><dt>Email</dt><dd data-account-email></dd></div>
+                <div><dt>Account ID</dt><dd data-profile-account-id>Unavailable</dd></div>
+                <div><dt>Created</dt><dd data-profile-created>Unavailable</dd></div>
+                <div><dt>Updated</dt><dd data-profile-updated>Unavailable</dd></div>
+                <div><dt>Status</dt><dd data-profile-status>Active</dd></div>
+              </dl>
+            </section>
+            <section class="account-subpanel">
+              <div class="account-subpanel__heading"><h4>Connected AnxOS Apps</h4><a class="button button-ghost" href="/account#account-devices">Manage Devices</a></div>
+              <div data-profile-devices class="account-list"></div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+
+    </main>
+    <footer class="site-footer">
+      <div><strong>AnxOS Control Center</strong><span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span></div>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/#downloads">Download</a>
+        <a href="/#features">Features</a>
+        <a href="/#getting-started">Getting Started</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/signin">Sign In</a>
+        <a href="/profile">Profile</a>
+        <a href="/account#account-security">Security</a>
+        <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a>
+      </nav>
+    </footer>
+    <div class="confirm-modal" data-confirm-modal hidden>
+      <div class="confirm-modal__backdrop" data-confirm-modal-cancel></div>
+      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+        <p class="eyebrow" data-confirm-modal-eyebrow>Account safety</p>
+        <h2 id="confirm-modal-title" data-confirm-modal-title>Confirm action</h2>
+        <p id="confirm-modal-message" data-confirm-modal-message>This action needs confirmation.</p>
+        <div class="confirm-modal__actions">
+          <button class="button button-ghost" type="button" data-confirm-modal-cancel>Cancel</button>
+          <button class="button button-primary" type="button" data-confirm-modal-confirm>Confirm</button>
+        </div>
+      </section>
+    </div>
   </body>
 </html>

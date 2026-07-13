@@ -4,13 +4,13 @@ Static download page for `AnxOS-Control-Center`.
 
 The page also contains the optional AnxOS account entry points:
 
-- `#signin`
-- `#signup`
-- `forgot-password.html`
-- `reset-password.html`
-- `#verify-email`
-- `#account`
-- `activate.html`
+- `/signin`
+- `/signup`
+- `/account`
+- `/profile`
+- `/forgot-password`
+- `/reset-password`
+- `/activate`
 
 Account features require Supabase configuration in `account-config.js`. Without that public config, the page disables account forms and shows a setup error instead of pretending authentication works.
 
@@ -72,6 +72,13 @@ Required files:
 - `assets/icon-192.png`
 - `assets/icon-512.png`
 - `assets/social-preview.png`
+- `signin/index.html`
+- `signup/index.html`
+- `account/index.html`
+- `profile/index.html`
+- `forgot-password/index.html`
+- `reset-password/index.html`
+- `activate/index.html`
 
 For GitHub Pages, publish the `website/` directory as the site root or copy its contents into the configured Pages branch/folder.
 

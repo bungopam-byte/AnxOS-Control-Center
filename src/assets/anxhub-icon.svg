@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">AnxOS Control Center</title>
-  <rect width="128" height="128" rx="28" fill="#10141f"/>
-  <path d="M32 96 62 30h12l30 66H88l-6-14H54l-6 14H32Z" fill="#f8fafc"/>
-  <path d="M59 68h18L68 46l-9 22Z" fill="#10141f"/>
-  <path d="M24 24h80v12H24V24Zm0 68h80v12H24V92Z" fill="#38bdf8"/>
-</svg>

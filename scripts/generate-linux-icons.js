@@ -1,10 +1,20 @@
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
+const { spawnSync } = require("child_process");
 
-const OUTPUT_DIR = path.join(__dirname, "..", "assets", "icons", "png");
-const SIZES = [16, 24, 32, 48, 64, 128, 256, 512];
-const SCALE = 4;
+const REPO_ROOT = path.join(__dirname, "..");
+const REFERENCE_PATH = process.argv[2]
+  ? path.resolve(process.argv[2])
+  : path.join(REPO_ROOT, "assets", "branding", "neon-core-reference.jpg");
+const APP_ICON_DIR = path.join(REPO_ROOT, "assets", "icons", "png");
+const WEBSITE_ASSET_DIR = path.join(REPO_ROOT, "website", "assets");
+const SRC_ASSET_DIR = path.join(REPO_ROOT, "src", "assets");
+const APP_ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
+const FAVICON_SIZES = [16, 32, 48, 192, 512];
+
+const APP_CROP = { x: 66, y: 86, size: 638 };
+const CIRCLE_CROP = { x: 747, y: 913, size: 320 };
 
 function crc32(buffer) {
   let crc = 0xffffffff;
@@ -43,121 +53,162 @@ function createPng(width, height, pixels) {
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     chunk("IHDR", header),
-    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IDAT", zlib.deflateSync(raw, { level: 9 })),
     chunk("IEND"),
   ]);
 }
 
-function isInsideRoundedRect(x, y, size, radius) {
-  const innerX = x >= radius && x <= size - radius;
-  const innerY = y >= radius && y <= size - radius;
-  if (innerX || innerY) {
-    return true;
+function runFfmpeg(args, label) {
+  const result = spawnSync("ffmpeg", args, { encoding: null, maxBuffer: 64 * 1024 * 1024 });
+  if (result.status !== 0) {
+    const stderr = result.stderr ? result.stderr.toString("utf8") : "";
+    throw new Error(`ffmpeg failed while generating ${label}: ${stderr}`);
   }
-
-  const cx = x < radius ? radius : size - radius;
-  const cy = y < radius ? radius : size - radius;
-  return ((x - cx) ** 2) + ((y - cy) ** 2) <= radius ** 2;
+  return result.stdout;
 }
 
-function isInsidePolygon(x, y, points) {
-  let inside = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
-    const xi = points[i][0];
-    const yi = points[i][1];
-    const xj = points[j][0];
-    const yj = points[j][1];
-    const intersects = ((yi > y) !== (yj > y)) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-    if (intersects) {
-      inside = !inside;
-    }
-  }
-  return inside;
+function cropRaw(crop, size) {
+  return runFfmpeg([
+    "-v", "error",
+    "-i", REFERENCE_PATH,
+    "-vf", `crop=${crop.size}:${crop.size}:${crop.x}:${crop.y},scale=${size}:${size}:flags=lanczos`,
+    "-f", "rawvideo",
+    "-pix_fmt", "rgba",
+    "pipe:1",
+  ], `${size}x${size} crop`);
 }
 
-function setPixel(pixels, size, x, y, color) {
-  const offset = (y * size + x) * 4;
-  pixels[offset] = color[0];
-  pixels[offset + 1] = color[1];
-  pixels[offset + 2] = color[2];
-  pixels[offset + 3] = color[3];
+function alphaForRoundedRect(x, y, size, radius, feather) {
+  const px = x + 0.5;
+  const py = y + 0.5;
+  const cx = Math.max(radius, Math.min(size - radius, px));
+  const cy = Math.max(radius, Math.min(size - radius, py));
+  const distance = Math.hypot(px - cx, py - cy) - radius;
+  if (distance <= -feather) return 255;
+  if (distance >= feather) return 0;
+  return Math.round((1 - ((distance + feather) / (feather * 2))) * 255);
 }
 
-function renderLarge(size) {
-  const pixels = Buffer.alloc(size * size * 4);
-  const background = [16, 20, 31, 255];
-  const transparent = [0, 0, 0, 0];
-  const white = [248, 250, 252, 255];
-  const cyan = [56, 189, 248, 255];
-  const radius = size * (28 / 128);
-  const aShape = [
-    [32, 96], [62, 30], [74, 30], [104, 96],
-    [88, 96], [82, 82], [54, 82], [48, 96],
-  ].map(([x, y]) => [x * size / 128, y * size / 128]);
-  const aCutout = [
-    [59, 68], [77, 68], [68, 46],
-  ].map(([x, y]) => [x * size / 128, y * size / 128]);
+function alphaForCircle(x, y, size, feather) {
+  const center = size / 2;
+  const radius = (size / 2) - feather;
+  const distance = Math.hypot((x + 0.5) - center, (y + 0.5) - center) - radius;
+  if (distance <= -feather) return 255;
+  if (distance >= feather) return 0;
+  return Math.round((1 - (distance / feather)) * 255);
+}
 
+function applyMask(pixels, size, mask) {
+  const output = Buffer.from(pixels);
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
-      const cx = x + 0.5;
-      const cy = y + 0.5;
-      if (!isInsideRoundedRect(cx, cy, size, radius)) {
-        setPixel(pixels, size, x, y, transparent);
-        continue;
-      }
-
-      let color = background;
-      const topBar = cy >= size * (24 / 128) && cy <= size * (36 / 128) && cx >= size * (24 / 128) && cx <= size * (104 / 128);
-      const bottomBar = cy >= size * (92 / 128) && cy <= size * (104 / 128) && cx >= size * (24 / 128) && cx <= size * (104 / 128);
-
-      if (isInsidePolygon(cx, cy, aShape)) {
-        color = white;
-      }
-      if (isInsidePolygon(cx, cy, aCutout)) {
-        color = background;
-      }
-      if (topBar || bottomBar) {
-        color = cyan;
-      }
-
-      setPixel(pixels, size, x, y, color);
+      const offset = (y * size + x) * 4;
+      output[offset + 3] = Math.round((output[offset + 3] * mask(x, y)) / 255);
     }
   }
-
-  return pixels;
+  return output;
 }
 
-function downsample(source, sourceSize, size) {
-  const pixels = Buffer.alloc(size * size * 4);
-  const ratio = sourceSize / size;
-  const samples = ratio * ratio;
+function makeAppPng(size) {
+  const raw = cropRaw(APP_CROP, size);
+  const radius = size * 0.155;
+  const feather = Math.max(1, size * 0.006);
+  const masked = applyMask(raw, size, (x, y) => alphaForRoundedRect(x, y, size, radius, feather));
+  return createPng(size, size, masked);
+}
 
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const rgba = [0, 0, 0, 0];
-      for (let sy = 0; sy < ratio; sy += 1) {
-        for (let sx = 0; sx < ratio; sx += 1) {
-          const offset = (((y * ratio + sy) * sourceSize) + (x * ratio + sx)) * 4;
-          rgba[0] += source[offset];
-          rgba[1] += source[offset + 1];
-          rgba[2] += source[offset + 2];
-          rgba[3] += source[offset + 3];
-        }
-      }
-      setPixel(pixels, size, x, y, rgba.map((value) => Math.round(value / samples)));
-    }
+function makeCirclePng(size) {
+  const raw = cropRaw(CIRCLE_CROP, size);
+  const feather = Math.max(1, size * 0.008);
+  const masked = applyMask(raw, size, (x, y) => alphaForCircle(x, y, size, feather));
+  return createPng(size, size, masked);
+}
+
+function pngToIco(entries) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(entries.length, 4);
+
+  let offset = 6 + (entries.length * 16);
+  const directories = [];
+  for (const entry of entries) {
+    const dir = Buffer.alloc(16);
+    dir[0] = entry.size >= 256 ? 0 : entry.size;
+    dir[1] = entry.size >= 256 ? 0 : entry.size;
+    dir[2] = 0;
+    dir[3] = 0;
+    dir.writeUInt16LE(1, 4);
+    dir.writeUInt16LE(32, 6);
+    dir.writeUInt32LE(entry.png.length, 8);
+    dir.writeUInt32LE(offset, 12);
+    directories.push(dir);
+    offset += entry.png.length;
   }
 
-  return pixels;
+  return Buffer.concat([header, ...directories, ...entries.map((entry) => entry.png)]);
 }
 
-fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-
-for (const size of SIZES) {
-  const sourceSize = size * SCALE;
-  const pixels = downsample(renderLarge(sourceSize), sourceSize, size);
-  fs.writeFileSync(path.join(OUTPUT_DIR, `${size}x${size}.png`), createPng(size, size, pixels));
+function createOpenGraphImage(appIconPath, outputPath) {
+  runFfmpeg([
+    "-v", "error",
+    "-f", "lavfi",
+    "-i", "color=c=0x02030b:s=1200x630",
+    "-i", appIconPath,
+    "-filter_complex",
+    [
+      "[1:v]scale=390:390:flags=lanczos[icon]",
+      "[0:v][icon]overlay=405:55",
+      "drawtext=text='ANXOS':fontcolor=white:fontsize=82:x=(w-text_w)/2:y=468",
+      "drawtext=text='CONTROL CENTER':fontcolor=0xb66cff:fontsize=30:x=(w-text_w)/2:y=552",
+    ].join(","),
+    "-frames:v", "1",
+    "-y",
+    outputPath,
+  ], "Open Graph image");
 }
 
-console.log(`Generated Linux icons in ${OUTPUT_DIR}`);
+function writeSvgFromPng(pngPath, svgPath) {
+  const data = fs.readFileSync(pngPath).toString("base64");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AnxOS"><image width="512" height="512" href="data:image/png;base64,${data}"/></svg>\n`;
+  fs.writeFileSync(svgPath, svg);
+}
+
+if (!fs.existsSync(REFERENCE_PATH)) {
+  throw new Error(`Branding reference image not found: ${REFERENCE_PATH}`);
+}
+
+fs.mkdirSync(APP_ICON_DIR, { recursive: true });
+fs.mkdirSync(WEBSITE_ASSET_DIR, { recursive: true });
+fs.mkdirSync(SRC_ASSET_DIR, { recursive: true });
+
+const appPngs = new Map();
+for (const size of APP_ICON_SIZES) {
+  const png = makeAppPng(size);
+  appPngs.set(size, png);
+  fs.writeFileSync(path.join(APP_ICON_DIR, `${size}x${size}.png`), png);
+}
+
+fs.writeFileSync(path.join(REPO_ROOT, "assets", "icon.ico"), pngToIco(
+  [16, 24, 32, 48, 64, 128, 256].map((size) => ({ size, png: appPngs.get(size) })),
+));
+fs.writeFileSync(path.join(SRC_ASSET_DIR, "anxos-logo.png"), appPngs.get(512));
+fs.writeFileSync(path.join(WEBSITE_ASSET_DIR, "anxos-logo.png"), appPngs.get(512));
+
+const faviconPngs = new Map();
+for (const size of FAVICON_SIZES) {
+  faviconPngs.set(size, makeCirclePng(size));
+}
+
+fs.writeFileSync(path.join(WEBSITE_ASSET_DIR, "favicon-16.png"), faviconPngs.get(16));
+fs.writeFileSync(path.join(WEBSITE_ASSET_DIR, "favicon-32.png"), faviconPngs.get(32));
+fs.writeFileSync(path.join(WEBSITE_ASSET_DIR, "icon-192.png"), faviconPngs.get(192));
+fs.writeFileSync(path.join(WEBSITE_ASSET_DIR, "icon-512.png"), faviconPngs.get(512));
+fs.writeFileSync(path.join(WEBSITE_ASSET_DIR, "apple-touch-icon.png"), appPngs.get(256));
+fs.writeFileSync(path.join(REPO_ROOT, "website", "favicon.ico"), pngToIco(
+  [16, 32, 48].map((size) => ({ size, png: faviconPngs.get(size) })),
+));
+writeSvgFromPng(path.join(WEBSITE_ASSET_DIR, "icon-512.png"), path.join(WEBSITE_ASSET_DIR, "favicon.svg"));
+createOpenGraphImage(path.join(APP_ICON_DIR, "512x512.png"), path.join(WEBSITE_ASSET_DIR, "social-preview.png"));
+
+console.log(`Generated Neon Core assets from ${REFERENCE_PATH}`);

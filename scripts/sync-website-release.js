@@ -97,7 +97,7 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   appName: "AnxOS-Control-Center",
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
   siteUrl: "${OFFICIAL_SITE_ORIGIN}",
-  logoPath: "assets/anxos-logo.jpg",
+  logoPath: "assets/anxos-logo.png",
   latestVersion: "${packageJson.version}",
   releaseDate: "${formatReleaseDate()}",
   releaseTag: "v${packageJson.version}",

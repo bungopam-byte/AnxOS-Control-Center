@@ -25,7 +25,9 @@ const { configureElectronPaths } = require("./src/services/electronPaths");
 const { DeveloperGitUpdater } = require("./src/services/developerGitUpdater");
 const { openExternalUrl } = require("./src/services/externalUrlService");
 
-const APP_ICON_PATH = path.join(__dirname, "assets", "icon.ico");
+const APP_ICON_PATH = process.platform === "win32"
+  ? path.join(__dirname, "assets", "icon.ico")
+  : path.join(__dirname, "assets", "icons", "png", "512x512.png");
 const WINDOW_MAXIMIZED_CHANGED_CHANNEL = "window:maximized-changed";
 const ADD_STORAGE_SAVED_CHANNEL = "files:storageConnectionSaved";
 const DEFAULT_WINDOW_BOUNDS = {

@@ -3,7 +3,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   appName: "AnxOS-Control-Center",
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
   siteUrl: "https://anxoscontrolcenter.org",
-  logoPath: "assets/anxos-logo.jpg",
+  logoPath: "assets/anxos-logo.png",
   latestVersion: "1.0.48",
   releaseDate: "July 11, 2026",
   releaseTag: "v1.0.48",

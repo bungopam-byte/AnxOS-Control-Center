@@ -72,7 +72,7 @@ async function main() {
     "function renderOwnerOverviewPolish",
     "function runOwnerOverviewAction",
   ].forEach((needle) => assert(appJs.includes(needle), `Owner Overview renderer should implement ${needle}.`));
-  assert(appJs.includes("nodeHealthState || buildNodeHealthModel()"), "Owner Overview should reuse Node Health state.");
+  assert(appJs.includes("getSharedNodeHealthModel()"), "Owner Overview should reuse the shared Node Health model.");
   assert(appJs.includes("latestDependencyResult"), "Owner Overview should reuse selected-node dependency state.");
   assert(appJs.includes("operationsState.items.values()"), "Owner Overview should summarize Operations state.");
   assert(appJs.includes("diagnosticsIssueGroups.length ? diagnosticsIssueGroups : groupDiagnosticIssues(agentLogEntries)"), "Owner Overview should reuse grouped Diagnostics issues.");

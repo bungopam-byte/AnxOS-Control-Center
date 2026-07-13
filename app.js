@@ -3194,6 +3194,7 @@ function renderDependencyStatus(result = null, options = {}) {
     latestDependencyResult = result;
     latestDependencyResultAt = result ? Date.now() : 0;
     latestDependencyNodeId = result ? getSelectedNodeId() : null;
+    refreshNodeHealth({ notify: false });
   }
   dependencyList.replaceChildren();
   const summary = summarizeDependencyStatus(result, options);
@@ -4174,8 +4175,8 @@ function ownerStateTone(state = "Unknown") {
   if (String(state || "").toLowerCase() === "unavailable") return "planned";
   const normalized = normalizeNodeHealthState(state);
   if (normalized === "Healthy") return "ok";
-  if (normalized === "Needs attention" || normalized === "Unknown" || normalized === "Not configured") return "warning";
-  if (normalized === "Degraded" || normalized === "Critical" || normalized === "Offline") return "critical";
+  if (normalized === "Warning" || normalized === "Unknown" || normalized === "Not Tested" || normalized === "Unavailable") return "warning";
+  if (normalized === "Degraded") return "critical";
   return "planned";
 }
 
@@ -4308,7 +4309,7 @@ function getOwnerAgentSummaries() {
   const remote = Array.isArray(agentControlState?.remote) ? agentControlState.remote : [];
   const nodes = getNodePickerNodes();
   const selected = getSelectedNode();
-  const health = nodeHealthState || buildNodeHealthModel();
+  const health = getSharedNodeHealthModel();
   const summaries = [
     {
       state: health.state,
@@ -4351,7 +4352,7 @@ function buildOwnerOverviewModel() {
     getOwnerBuildSummary(),
   ];
   const all = [...agentSummaries, ...adminSummaries];
-  const rank = { Healthy: 0, "Needs attention": 1, Degraded: 2, Critical: 3, Offline: 3, Unknown: 1, "Not configured": 1, Unavailable: 1 };
+  const rank = NODE_HEALTH_SEVERITY_RANK;
   const state = all.reduce((current, item) => {
     const normalized = normalizeNodeHealthState(item.state === "Unavailable" ? "Unknown" : item.state);
     return (rank[normalized] || 0) > (rank[current] || 0) ? normalized : current;
@@ -4370,13 +4371,12 @@ function syncOwnerOverviewNotifications(model) {
     previousOwnerOverviewState = model;
     return;
   }
-  const rank = { Healthy: 0, "Needs attention": 1, Degraded: 2, Critical: 3, Offline: 3, Unknown: 1, "Not configured": 1 };
-  const previousRank = rank[normalizeNodeHealthState(previousOwnerOverviewState.state)] || 0;
-  const nextRank = rank[normalizeNodeHealthState(model.state)] || 0;
+  const previousRank = NODE_HEALTH_SEVERITY_RANK[normalizeNodeHealthState(previousOwnerOverviewState.state)] || 0;
+  const nextRank = NODE_HEALTH_SEVERITY_RANK[normalizeNodeHealthState(model.state)] || 0;
   if (nextRank >= 2 && nextRank > previousRank) {
     createNotification({
       category: "Owner",
-      severity: model.state === "Critical" ? "critical" : "warning",
+      severity: model.state === "Degraded" ? "critical" : "warning",
       title: `Owner overview ${model.state.toLowerCase()}`,
       message: `${model.issueCount} owner summaries need attention.`,
       dedupKey: `owner-overview:${model.state}`,
@@ -5282,6 +5282,7 @@ function renderSnapshot(snapshot) {
 
   setField("uptime", formatDuration(safeSnapshot.uptimeSeconds));
   renderCpuTemperature(safeSnapshot);
+  refreshNodeHealth({ notify: false });
 }
 
 function getConfiguredPlayitAddress() {
@@ -8623,6 +8624,7 @@ function renderInstancesSnapshot(snapshot) {
     renderMarketplaceTemplates();
     renderMarketplaceInstallSummary(findMarketplaceTemplate());
   }
+  refreshNodeHealth({ notify: false });
   updateTitlebar();
 }
 
@@ -8649,6 +8651,7 @@ function renderInstancesUnavailable(message = "Instance manager unavailable.") {
   consoleBufferedEntries = [];
   renderConsoleWorkspace();
   updateInstanceActionButtons();
+  refreshNodeHealth({ notify: false });
   updateTitlebar();
 }
 
@@ -14449,7 +14452,7 @@ function getGlobalSearchProviders() {
               }
             },
           }));
-        const health = nodeHealthState || buildNodeHealthModel();
+        const health = getSharedNodeHealthModel();
         const healthResults = [
           {
             id: "node-health-overall",
@@ -16770,6 +16773,7 @@ function renderFileListing(listing) {
   });
   latestFilesListing = normalized;
   latestFilesListingAt = Date.now();
+  refreshNodeHealth({ notify: false });
   state.currentPath = normalized.currentPath || null;
   state.homePath = normalized.homePath || state.homePath || null;
   state.breadcrumbs = normalized.breadcrumbs || [];
@@ -16845,6 +16849,7 @@ function renderFileListingUnavailable(message = "File listing unavailable.") {
   setFilesEmpty(true, "File service unavailable", message);
   renderStorageConnections();
   updateFileActionButtons();
+  refreshNodeHealth({ notify: false });
 }
 
 function renderFilesView() {
@@ -22871,38 +22876,29 @@ const NODE_HEALTH_RESOURCE_THRESHOLDS = {
 };
 const NODE_HEALTH_SEVERITY_RANK = {
   Healthy: 0,
-  "Needs attention": 1,
+  Warning: 1,
   Degraded: 2,
-  Blocked: 3,
-  Critical: 3,
-  Offline: 3,
   Unknown: 1,
-  "Not tested": 0,
+  "Not Tested": 0,
   Unavailable: 0,
-  Stale: 0,
-  "Not configured": 1,
 };
+const NODE_HEALTH_CATEGORY_STATES = new Set(["Healthy", "Warning", "Degraded", "Unknown", "Unavailable", "Not Tested"]);
 
 function normalizeNodeHealthState(value = "Unknown") {
   const text = String(value || "Unknown").toLowerCase();
   if (text === "healthy" || text === "ok" || text === "ready" || text === "connected") return "Healthy";
-  if (text === "warning" || text === "needs attention") return "Needs attention";
-  if (text === "stale") return "Stale";
-  if (text === "degraded" || text === "failed" || text === "error") return "Degraded";
-  if (text === "blocked") return "Blocked";
-  if (text === "critical") return "Critical";
-  if (text === "offline" || text === "disconnected") return "Offline";
-  if (text === "not tested" || text === "not-tested") return "Not tested";
-  if (text === "unavailable" || text === "unsupported" || text === "not applicable" || text === "not-applicable") return "Unavailable";
-  if (text === "not configured" || text === "not-configured") return "Not configured";
+  if (text === "warning" || text === "needs attention") return "Warning";
+  if (text === "degraded" || text === "failed" || text === "error" || text === "blocked" || text === "critical" || text === "offline" || text === "disconnected") return "Degraded";
+  if (text === "not tested" || text === "not-tested") return "Not Tested";
+  if (text === "unavailable" || text === "unsupported" || text === "not applicable" || text === "not-applicable" || text === "not configured" || text === "not-configured") return "Unavailable";
   return "Unknown";
 }
 
 function nodeHealthTone(state = "Unknown") {
   const normalized = normalizeNodeHealthState(state);
   if (normalized === "Healthy") return "ok";
-  if (normalized === "Needs attention" || normalized === "Unknown" || normalized === "Not configured" || normalized === "Not tested" || normalized === "Unavailable" || normalized === "Stale") return "warning";
-  if (normalized === "Degraded" || normalized === "Blocked" || normalized === "Critical" || normalized === "Offline") return "critical";
+  if (normalized === "Warning" || normalized === "Unknown" || normalized === "Not Tested" || normalized === "Unavailable") return "warning";
+  if (normalized === "Degraded") return "critical";
   return "planned";
 }
 
@@ -22938,7 +22934,7 @@ function getDependencyHealthState(result = latestDependencyResult) {
   const summary = summarizeDependencyStatus(result, { operationState: "idle" });
   const unhealthy = summary.attention || [];
   return {
-    state: summary.state === "ready" ? "Healthy" : summary.state === "needs-attention" ? "Needs attention" : summary.state === "failed" ? "Degraded" : "Unknown",
+    state: summary.state === "ready" ? "Healthy" : summary.state === "needs-attention" ? "Warning" : summary.state === "failed" ? "Degraded" : "Unknown",
     unhealthy,
     total: dependencies.length,
     evidence: dependencies.length
@@ -22950,7 +22946,7 @@ function getDependencyHealthState(result = latestDependencyResult) {
 function getMarketplaceInstanceHealthState() {
   const instances = getInstances();
   if (!latestInstancesSnapshot) {
-    return { state: getDesktopApiState().hasInstances ? "Unknown" : "Not configured", failed: [], running: 0, total: 0, evidence: "Instance state has not loaded for this node." };
+    return { state: getDesktopApiState().hasInstances ? "Unknown" : "Unavailable", failed: [], running: 0, total: 0, evidence: "Instance state has not loaded for this node." };
   }
   const failed = instances.filter((instance) => /fail|error|crash/i.test(String(instance.state || instance.status || "")));
   const running = instances.filter(isInstanceRunning).length;
@@ -22966,20 +22962,27 @@ function getMarketplaceInstanceHealthState() {
 }
 
 function buildNodeHealthCategory({ id, label, state, evidence, checkedAt = Date.now(), issueCount = 0, workspace = "nodes", remediation = "Review", action = null, stale = false, required = false, applicable = true, current = true, historicalIssueCount = 0 }) {
+  const applicableState = applicable !== false;
+  const currentState = current !== false;
   const normalizedState = normalizeNodeHealthState(state);
   const staleState = stale || (checkedAt ? isNodeHealthStale(checkedAt) : false);
+  const countableState = currentState && applicableState && !staleState && !["Not Tested", "Unavailable"].includes(normalizedState);
+  const currentIssueCount = countableState ? Math.max(0, Number(issueCount) || 0) : 0;
+  const finalState = currentIssueCount <= 0 && ["Warning", "Degraded"].includes(normalizedState)
+    ? "Unknown"
+    : normalizedState;
   return {
     id,
     label,
-    state: normalizedState,
+    state: NODE_HEALTH_CATEGORY_STATES.has(finalState) ? finalState : "Unknown",
     evidence: evidence || "No evidence reported.",
     checkedAt,
     stale: staleState,
-    issueCount: current && applicable && !["Not tested", "Unavailable", "Stale"].includes(normalizedState) ? Math.max(0, Number(issueCount) || 0) : 0,
+    issueCount: currentIssueCount,
     historicalIssueCount: Math.max(0, Number(historicalIssueCount) || 0),
     required: Boolean(required),
-    applicable: applicable !== false,
-    current: current !== false,
+    applicable: applicableState,
+    current: currentState,
     workspace,
     remediation,
     action,
@@ -23002,15 +23005,15 @@ function aggregateNodeHealthCategories(categories = []) {
   const current = applicable.filter((category) => category.current !== false && !category.stale);
   const requiredCurrent = current.filter((category) => category.required);
   const hasHealthyRequiredEvidence = requiredCurrent.some((category) => category.state === "Healthy");
-  const blocked = current.find((category) => category.required && ["Blocked", "Critical", "Offline"].includes(category.state));
-  if (blocked) {
-    return { state: "Blocked", reason: `${blocked.label} is blocking required node capability.` };
-  }
-  const degraded = current.find((category) => ["Degraded", "Needs attention"].includes(category.state));
+  const degraded = current.find((category) => category.state === "Degraded");
   if (degraded) {
-    return { state: "Degraded", reason: `${degraded.label} has a current warning.` };
+    return { state: "Degraded", reason: `${degraded.label} has a current degraded condition.` };
   }
-  const requiredUnknown = requiredCurrent.find((category) => ["Unknown", "Not configured"].includes(category.state));
+  const warning = current.find((category) => category.state === "Warning");
+  if (warning) {
+    return { state: "Warning", reason: `${warning.label} has a current warning.` };
+  }
+  const requiredUnknown = requiredCurrent.find((category) => category.state === "Unknown");
   if (requiredUnknown && !hasHealthyRequiredEvidence) {
     return { state: "Unknown", reason: `${requiredUnknown.label} does not have enough current evidence.` };
   }
@@ -23020,16 +23023,25 @@ function aggregateNodeHealthCategories(categories = []) {
   return { state: "Healthy", reason: "All current applicable required checks are healthy." };
 }
 
+function getNodeHealthIssueCategories(categories = []) {
+  return categories.filter((category) => (
+    category.applicable !== false &&
+    category.current !== false &&
+    !category.stale &&
+    category.issueCount > 0
+  ));
+}
+
 function buildConnectivityHealth(node) {
   const visual = getNodeVisualState(node);
   const target = getCurrentAgentHealthTarget();
   const runtime = getHealthRuntime();
   const latency = runtime?.latencyMs ?? target?.latencyMs;
   const lastHeartbeat = node?.connection?.lastSeen || node?.updatedAt || target?.lastHeartbeat || null;
-  let state = visual === "online" ? "Healthy" : visual === "warning" ? "Needs attention" : visual === "offline" ? "Offline" : "Unknown";
-  if (target?.state === "Authentication failed") state = "Critical";
-  else if (Number.isFinite(latency) && latency > NODE_HEALTH_RESOURCE_THRESHOLDS.latencyWarningMs) state = "Needs attention";
-  else if (node?.kind === "agent" && isNodeHealthStale(lastHeartbeat, 2 * NODE_HEALTH_STALE_MS) && visual === "online") state = "Needs attention";
+  let state = visual === "online" ? "Healthy" : visual === "warning" ? "Warning" : visual === "offline" ? "Degraded" : "Unknown";
+  if (target?.state === "Authentication failed") state = "Degraded";
+  else if (Number.isFinite(latency) && latency > NODE_HEALTH_RESOURCE_THRESHOLDS.latencyWarningMs) state = "Warning";
+  else if (node?.kind === "agent" && isNodeHealthStale(lastHeartbeat, 2 * NODE_HEALTH_STALE_MS) && visual === "online") state = "Warning";
   return buildNodeHealthCategory({
     id: "connectivity",
     label: "Connectivity",
@@ -23054,7 +23066,7 @@ function buildAgentHealth(node) {
     return buildNodeHealthCategory({
       id: "agent",
       label: "Agent",
-      state: "Not configured",
+      state: "Unavailable",
       evidence: "Application host mode can run without a local Agent.",
       workspace: "agent-control",
       remediation: "Open Agent Control",
@@ -23069,7 +23081,7 @@ function buildAgentHealth(node) {
   const running = runtime?.serviceState === "running" || isAgentTargetRunning(target || {});
   const authFailed = /auth/i.test(stateText);
   const portConflict = /AGENT_PORT_IN_USE|port .*in use/i.test(String(target?.mostRecentError?.code || target?.mostRecentError?.message || agentControlMessage?.textContent || ""));
-  const state = authFailed || portConflict ? "Critical" : running ? "Healthy" : target ? "Offline" : "Unknown";
+  const state = authFailed || portConflict ? "Degraded" : running ? "Healthy" : target ? "Degraded" : "Unknown";
   return buildNodeHealthCategory({
     id: "agent",
     label: "Agent",
@@ -23102,7 +23114,7 @@ function buildResourceHealth() {
   }
   if (Number.isFinite(cpu) && cpu >= NODE_HEALTH_RESOURCE_THRESHOLDS.cpuWarningPercent) stateIssues.push(`CPU ${cpu.toFixed(1)}%`);
   if (Number.isFinite(memory) && memory >= NODE_HEALTH_RESOURCE_THRESHOLDS.memoryWarningPercent) stateIssues.push(`Memory ${memory.toFixed(1)}%`);
-  if (stateIssues.length && state !== "Unknown") state = "Needs attention";
+  if (stateIssues.length && state !== "Unknown") state = "Warning";
   return buildNodeHealthCategory({
     id: "resources",
     label: "Resources",
@@ -23131,11 +23143,11 @@ function buildStorageHealth() {
     issues.push("Disk metrics unavailable");
   }
   if (Number.isFinite(percent) && percent >= NODE_HEALTH_RESOURCE_THRESHOLDS.diskWarningPercent) {
-    state = "Needs attention";
+    state = "Warning";
     issues.push(`Disk ${percent.toFixed(1)}% used`);
   }
   if ((Number.isFinite(percent) && percent >= NODE_HEALTH_RESOURCE_THRESHOLDS.diskCriticalPercent) || (Number.isFinite(free) && free <= NODE_HEALTH_RESOURCE_THRESHOLDS.diskCriticalFreeBytes)) {
-    state = "Critical";
+    state = "Degraded";
     issues.push(`Disk free ${formatBytes(free)}`);
   }
   return buildNodeHealthCategory({
@@ -23193,14 +23205,14 @@ function buildFilesHealth() {
   return buildNodeHealthCategory({
     id: "files",
     label: "Files/storage provider",
-    state: unavailable ? "Not configured" : connected ? "Healthy" : "Needs attention",
+    state: unavailable ? "Unavailable" : connected ? "Healthy" : "Warning",
     evidence: connected
       ? `${latestFilesListing?.entries?.length || 0} entries visible at ${filesConnectionState.currentPath || filesConnectionState.homePath || "current path"}.`
       : unavailable ? "Files IPC bridge is unavailable." : filesConnectionState.message || "No storage provider is connected.",
     checkedAt: latestFilesListingAt || Date.now(),
     issueCount: connected ? 0 : 1,
     required: false,
-    current: connected,
+    current: !unavailable,
     workspace: "files",
     remediation: "Open Files",
     action: "open-files",
@@ -23215,7 +23227,7 @@ function buildOperationsHealth() {
   return buildNodeHealthCategory({
     id: "operations",
     label: "Operations",
-    state: activeFailed.length ? "Needs attention" : "Healthy",
+    state: activeFailed.length ? "Warning" : "Healthy",
     evidence: `${active.length} active; ${failed.length} historical failed operation${failed.length === 1 ? "" : "s"}.`,
     checkedAt: Date.now(),
     issueCount: activeFailed.length,
@@ -23233,7 +23245,7 @@ function buildDiagnosticsHealth() {
   return buildNodeHealthCategory({
     id: "diagnostics",
     label: "Diagnostics",
-    state: critical.length ? "Degraded" : groups.length ? "Needs attention" : agentLogEntries.length ? "Healthy" : "Unknown",
+    state: critical.length ? "Degraded" : groups.length ? "Warning" : agentLogEntries.length ? "Healthy" : "Unknown",
     evidence: `${groups.length} grouped issue${groups.length === 1 ? "" : "s"} from ${agentLogEntries.length} sanitized log entries.`,
     checkedAt: Date.now(),
     issueCount: groups.length,
@@ -23252,7 +23264,7 @@ function buildUpdatesHealth() {
   return buildNodeHealthCategory({
     id: "updates",
     label: "Updates",
-    state: !getDesktopApiState().hasUpdates ? "Not configured" : failed ? "Needs attention" : hasUpdate ? "Needs attention" : update.lastCheckedAt ? "Healthy" : "Unknown",
+    state: !getDesktopApiState().hasUpdates ? "Unavailable" : failed ? "Warning" : hasUpdate ? "Warning" : update.lastCheckedAt ? "Healthy" : "Unknown",
     evidence: failed ? update.error : hasUpdate ? `Update ${update.latest?.latestVersion || latestUpdateInfo?.latestVersion || "available"} is available.` : "Update state is available from Settings.",
     checkedAt: update.lastCheckedAt || Date.now(),
     issueCount: failed || hasUpdate ? 1 : 0,
@@ -23271,7 +23283,7 @@ function buildMaintenanceHealth() {
   return buildNodeHealthCategory({
     id: "maintenance",
     label: "Maintenance",
-    state: warnings ? "Needs attention" : scanned ? "Healthy" : "Not tested",
+    state: warnings ? "Warning" : scanned ? "Healthy" : "Not Tested",
     evidence: scanned ? `${warnings} warning categories after last scan.` : "No maintenance scan has run in this session.",
     checkedAt: maintenanceState.lastScanAt || null,
     issueCount: warnings,
@@ -23307,10 +23319,11 @@ function buildNodeHealthModel(node = getSelectedNode()) {
     return category;
   });
   const aggregate = aggregateNodeHealthCategories(categories);
-  const issueCount = categories.reduce((sum, category) => sum + (category.issueCount || 0), 0);
+  const currentIssueCategories = getNodeHealthIssueCategories(categories);
+  const issueCount = currentIssueCategories.reduce((sum, category) => sum + (category.issueCount || 0), 0);
   const historicalIssueCount = categories.reduce((sum, category) => sum + (category.historicalIssueCount || 0), 0);
   const staleCount = categories.filter((category) => category.stale).length;
-  const notTestedCount = categories.filter((category) => category.state === "Not tested").length;
+  const notTestedCount = categories.filter((category) => category.state === "Not Tested").length;
   const unavailableCount = categories.filter((category) => category.applicable === false || category.state === "Unavailable").length;
   return {
     nodeId: selectedNode.id || "application-host",
@@ -23324,11 +23337,27 @@ function buildNodeHealthModel(node = getSelectedNode()) {
     notTestedCount,
     unavailableCount,
     categories,
+    currentIssueCategories,
     updatedAt: Date.now(),
     summary: issueCount
       ? `${issueCount} current issue${issueCount === 1 ? "" : "s"} across ${categories.length} health categories. ${aggregate.reason}`
       : `No current health issues detected across ${categories.length} health categories. ${aggregate.reason}`,
   };
+}
+
+function getSharedNodeHealthModel(node = getSelectedNode()) {
+  const selectedNode = node || getSelectedNode() || { id: "application-host", kind: "application-host", displayName: "Application Host" };
+  const cacheKey = getNodeHealthCacheKey(selectedNode);
+  if (nodeHealthState?.cacheKey === cacheKey) {
+    return nodeHealthState;
+  }
+  const cached = nodeHealthSnapshotCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const health = buildNodeHealthModel(selectedNode);
+  nodeHealthSnapshotCache.set(cacheKey, health);
+  return health;
 }
 
 function syncNodeHealthNotifications(health) {
@@ -23341,7 +23370,7 @@ function syncNodeHealthNotifications(health) {
   if (nextRank >= 2 && nextRank > previousRank) {
     createNotification({
       category: "Nodes",
-      severity: health.state === "Critical" || health.state === "Offline" ? "critical" : "warning",
+      severity: health.state === "Degraded" ? "critical" : "warning",
       title: `${health.nodeName} health ${health.state.toLowerCase()}`,
       message: health.summary,
       dedupKey: `node-health:${health.nodeId}:${health.state}`,
@@ -23394,9 +23423,9 @@ function getNodeHealthBreakdown(health) {
   (health?.categories || []).forEach((category) => {
     const state = normalizeNodeHealthState(category.state);
     if (category.applicable === false || state === "Unavailable") breakdown.unavailable += 1;
-    else if (state === "Not tested") breakdown.notTested += 1;
-    else if (state === "Critical" || state === "Blocked" || state === "Offline") breakdown.critical += 1;
-    else if (state === "Degraded" || state === "Needs attention") breakdown.warnings += 1;
+    else if (state === "Not Tested") breakdown.notTested += 1;
+    else if (state === "Degraded") breakdown.critical += 1;
+    else if (state === "Warning") breakdown.warnings += 1;
     else if (state === "Healthy") breakdown.healthy += 1;
     else breakdown.unknown += 1;
   });
@@ -23478,7 +23507,7 @@ function runNodeHealthAction(action) {
   return null;
 }
 
-function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
+function renderNodeHealth(health = getSharedNodeHealthModel()) {
   if (nodeHealthStatus) {
     nodeHealthStatus.className = `status-pill status-pill--${nodeHealthTone(health.state)}`;
     nodeHealthStatus.textContent = normalizeNodeHealthState(health.state);
@@ -23491,11 +23520,11 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
     renderSecuritySummaryGrid(nodeHealthOverview, [
       ["Overall", health.state],
       ["Issues", health.issueCount],
-      ["Critical", breakdown.critical],
+      ["Degraded", breakdown.critical],
       ["Warnings", breakdown.warnings],
       ["Healthy", breakdown.healthy],
       ["Unknown", breakdown.unknown],
-      ["Not tested", breakdown.notTested],
+      ["Not Tested", breakdown.notTested],
       ["Unavailable", breakdown.unavailable],
       ["Node", health.nodeName],
       ["Stale data", health.staleCount],
@@ -23544,12 +23573,7 @@ function renderNodeHealth(health = nodeHealthState || buildNodeHealthModel()) {
   }
   if (nodeHealthIssues) {
     nodeHealthIssues.replaceChildren();
-    const issues = sortNodeHealthIssues(health.categories.filter((category) => (
-      category.applicable !== false &&
-      category.current !== false &&
-      !category.stale &&
-      (category.issueCount > 0 || ["Blocked", "Critical", "Offline", "Degraded", "Needs attention"].includes(normalizeNodeHealthState(category.state)))
-    )));
+    const issues = sortNodeHealthIssues(health.currentIssueCategories || getNodeHealthIssueCategories(health.categories));
     if (!issues.length) {
       nodeHealthIssues.append(createEmptyState("No node health issues detected from current data."));
     } else {
@@ -23633,7 +23657,7 @@ function renderNodeSummary() {
   setNodeSummary("offline", offline);
   setNodeSummary("docker", docker);
   setNodeSummary("connected", selectedAgent && getNodeVisualState(selectedAgent) === "online" ? selectedAgent.displayName || "Agent" : "None");
-  const health = nodeHealthState || buildNodeHealthModel();
+  const health = getSharedNodeHealthModel();
   setNodeSummary("health", health.state);
   setNodeSummary("healthIssues", health.issueCount);
 }
@@ -23674,7 +23698,7 @@ function openNodeDetails(nodeId) {
   nodeDetailsId = node.id;
   const identity = getNodeIdentity(node);
   const visualState = getNodeVisualState(node);
-  const health = node.id === getSelectedNodeId() ? refreshNodeHealth({ notify: false }) : buildNodeHealthModel(node);
+  const health = node.id === getSelectedNodeId() ? refreshNodeHealth({ notify: false }) : getSharedNodeHealthModel(node);
   if (nodeDetailsTitle) nodeDetailsTitle.textContent = node.displayName || node.id || "Node";
   if (nodeDetailsSummary) {
     nodeDetailsSummary.textContent = `${node.kind === "application-host" ? "Application host" : "Agent node"} · ${getNodeStatusLabel(node)} · ${health.issueCount} health issue${health.issueCount === 1 ? "" : "s"}`;
@@ -23930,7 +23954,7 @@ function renderNodes() {
     }
     nodes.forEach((node) => {
       const state = getNodeVisualState(node);
-      const health = node.id === getSelectedNodeId() ? (nodeHealthState || buildNodeHealthModel(node)) : buildNodeHealthModel(node);
+      const health = getSharedNodeHealthModel(node);
       const item = document.createElement("article");
       item.className = "download-item node-card";
       item.dataset.agentState = state;

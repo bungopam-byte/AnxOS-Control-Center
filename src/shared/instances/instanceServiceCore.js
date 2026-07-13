@@ -41,7 +41,7 @@ const DEFAULT_RESTART_POLICY = "never";
 const RESTART_POLICIES = new Set(["never", "on-failure", "always"]);
 const DEFAULT_STARTUP_TIMEOUT_MS = 15000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10000;
-const MAX_STARTUP_TIMEOUT_MS = 30 * 60 * 1000;
+const MAX_STARTUP_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const MAX_SHUTDOWN_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_LINES = 1000;
@@ -142,9 +142,10 @@ function validatePositiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER,
     return fallback;
   }
 
-  const parsed = Number.parseInt(value, 10);
+  const raw = typeof value === "string" ? value.trim() : value;
+  const parsed = typeof raw === "number" ? raw : (/^[0-9]+$/.test(String(raw)) ? Number(raw) : NaN);
 
-  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > max) {
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > max) {
     throw createInstanceError("INVALID_NUMBER", 400, { field, expected: `positive integer up to ${max}`, received: value });
   }
 

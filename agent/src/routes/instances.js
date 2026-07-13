@@ -61,6 +61,11 @@ function errorResult(error) {
 
 function getValidationErrorDetails(error) {
   const code = error?.code || "INSTANCE_REQUEST_FAILED";
+  const numericFieldMessages = {
+    startupTimeoutMs: "Startup timeout must be a whole number within the allowed installer timeout range.",
+    shutdownTimeoutMs: "Shutdown timeout must be a whole number within the allowed shutdown timeout range.",
+    number: "Use a valid numeric value.",
+  };
   const definitions = {
     INVALID_INSTANCE_ID: { field: "id", expected: "2-64 letters, numbers, underscores, or dashes", userMessage: "Use a valid instance ID." },
     INVALID_DISPLAY_NAME: { field: "displayName", expected: "1-120 characters without line breaks", userMessage: "Enter a valid instance name." },
@@ -70,7 +75,12 @@ function getValidationErrorDetails(error) {
     INVALID_ARGS: { field: "args", expected: "argument array with safe string values", userMessage: "The generated startup arguments are invalid." },
     INVALID_PORTS: { field: "ports", expected: "ports between 1 and 65535", userMessage: "Enter valid ports between 1 and 65535." },
     INVALID_MEMORY_LIMIT: { field: "memoryLimit", expected: "memory value such as 512M, 2G, or 2048M", userMessage: "Use memory like 512M, 2G, or 2048M." },
-    INVALID_NUMBER: { field: error?.field || "number", expected: error?.expected || "positive integer within the allowed range", userMessage: "Use a valid numeric value." },
+    INVALID_NUMBER: {
+      field: error?.field || "number",
+      expected: error?.expected || "positive integer within the allowed range",
+      userMessage: numericFieldMessages[error?.field || "number"] || `${error?.field || "Value"} must be a valid whole number.`,
+      suggestion: "Check the generated install settings and retry with a whole number inside the allowed range.",
+    },
     INVALID_RESTART_POLICY: { field: "restartPolicy", expected: "never, on-failure, or always", userMessage: "The restart policy is invalid." },
     RUNTIME_FIELDS_READ_ONLY: { field: "state", expected: "runtime fields omitted from create/update requests", userMessage: "Runtime-only fields cannot be changed by install requests." },
     PATH_NOT_ALLOWED: { field: "workingDirectory", expected: "path inside the approved instance directory", userMessage: "The generated path is outside the instance directory." },

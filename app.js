@@ -8852,6 +8852,42 @@ function syncMarketplacePortValidity({ report = false } = {}) {
   return true;
 }
 
+function syncMarketplaceMemoryValidity({ report = false } = {}) {
+  const memoryField = getMarketplaceField("memory");
+  if (!memoryField) return true;
+  memoryField.setCustomValidity("");
+  const value = String(memoryField.value || "").trim();
+  if (!value) {
+    return true;
+  }
+  if (!/^[1-9][0-9]{0,5}[kKmMgG]?$/.test(value)) {
+    const message = "Memory must be a value such as 512M, 2G, or 2048M.";
+    memoryField.setCustomValidity(message);
+    if (marketplaceSelectedTemplateId) {
+      setMarketplaceMessage(message, "error");
+    }
+    if (report) memoryField.reportValidity();
+    return false;
+  }
+  return true;
+}
+
+function readMarketplaceWholeNumberField(name, { label, min = 1, max = Number.MAX_SAFE_INTEGER, optional = false } = {}) {
+  const field = getMarketplaceField(name);
+  const raw = String(field?.value || "").trim();
+  if (!raw) {
+    return undefined;
+  }
+  if (!/^[0-9]+$/.test(raw)) {
+    throw new Error(`${label || name} must be a whole number from ${min} to ${max}.`);
+  }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label || name} must be a whole number from ${min} to ${max}.`);
+  }
+  return optional && raw === "" ? undefined : parsed;
+}
+
 function setMarketplaceMessage(message, tone = "neutral") {
   if (!marketplaceMessage) {
     return;
@@ -10179,8 +10215,8 @@ function closeMarketplaceWizard() {
 }
 
 function collectMarketplaceInstallOptions() {
-  const portValue = Number.parseInt(getMarketplaceField("port")?.value || "", 10);
-  const ports = Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? [portValue] : [];
+  const portValue = readMarketplaceWholeNumberField("port", { label: "Server port", min: 1, max: 65535, optional: true });
+  const ports = Number.isInteger(portValue) ? [portValue] : [];
   const template = findMarketplaceTemplate();
   const isMinecraft = isMinecraftMarketplaceTemplate(template);
   const providerVersionId = getMarketplaceField("version")?.dataset?.providerVersionId || "";
@@ -10192,6 +10228,7 @@ function collectMarketplaceInstallOptions() {
     storageLocation: getMarketplaceField("storageLocation")?.value || "data",
     memory: normalizeMemoryLimit(getMarketplaceField("memory")?.value || ""),
     port: ports[0] || undefined,
+    serverPort: ports[0] || undefined,
     ports,
     playitTunnel: Boolean(getMarketplaceField("playitTunnel")?.checked),
     acceptEula: Boolean(getMarketplaceField("acceptEula")?.checked),
@@ -11411,6 +11448,10 @@ async function installMarketplaceTemplate(event) {
   }
   if (!syncMarketplacePortValidity({ report: true })) {
     getMarketplaceField("port")?.focus();
+    return;
+  }
+  if (!syncMarketplaceMemoryValidity({ report: true })) {
+    getMarketplaceField("memory")?.focus();
     return;
   }
 
@@ -25946,6 +25987,13 @@ document.querySelectorAll('[data-instance-form="memoryLimit"], [data-instance-co
       syncInstanceConfigDirtyState();
     }
   });
+});
+getMarketplaceField("memory")?.addEventListener("input", () => {
+  const memoryField = getMarketplaceField("memory");
+  memoryField?.setCustomValidity("");
+  if (marketplaceSelectedTemplateId) {
+    setMarketplaceMessage("Review the generated settings, then install.");
+  }
 });
 getMarketplaceField("port")?.addEventListener("input", () => {
   const portField = getMarketplaceField("port");

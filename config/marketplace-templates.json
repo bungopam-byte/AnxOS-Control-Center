@@ -956,7 +956,7 @@
       "executable": "bash",
       "args": [
         "-lc",
-        "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port={port} -players=32 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"
+        "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port={serverPort} -players={maxPlayers} -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS"
       ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"

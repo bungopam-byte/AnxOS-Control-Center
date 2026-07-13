@@ -56,6 +56,20 @@ function createMarketplaceError(message, code = "MARKETPLACE_ERROR", details = {
   return error;
 }
 
+function createMarketplaceValidationError({ field, received, expected, suggestion, userMessage }) {
+  const validation = {
+    field,
+    received,
+    expected,
+    suggestion,
+    userMessage: userMessage || suggestion || "Check the install value and try again.",
+  };
+  return createMarketplaceError(validation.userMessage, "MARKETPLACE_VALIDATION_FAILED", {
+    ...validation,
+    validation,
+  });
+}
+
 function buildInstallContext(payload = {}, template = {}, options = {}, instancePayload = {}) {
   return {
     nodeId: payload.nodeId || getSelectedNodeId(),
@@ -634,6 +648,163 @@ function parsePorts(value, fallback = []) {
   } catch (error) {
     throw createMarketplaceError(error.message, error.code || "PORT_INVALID", error.details || {});
   }
+}
+
+function isBlankNumericValue(value) {
+  return value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+}
+
+function normalizeWholeNumberField(value, {
+  field,
+  label,
+  min = 1,
+  max = Number.MAX_SAFE_INTEGER,
+  defaultValue,
+  optional = false,
+  suggestion,
+}) {
+  if (isBlankNumericValue(value)) {
+    if (defaultValue !== undefined && defaultValue !== null && defaultValue !== "") {
+      return normalizeWholeNumberField(defaultValue, { field, label, min, max, optional: false, suggestion });
+    }
+    if (optional) {
+      return null;
+    }
+  }
+
+  const raw = typeof value === "string" ? value.trim() : value;
+  const rawText = String(raw);
+  const expected = `whole number from ${min} to ${max}`;
+  const userMessage = `${label || field} must be a whole number from ${min} to ${max}.`;
+  if (typeof raw === "number") {
+    if (Number.isInteger(raw) && raw >= min && raw <= max) {
+      return raw;
+    }
+  } else if (/^[0-9]+$/.test(rawText)) {
+    const parsed = Number(rawText);
+    if (Number.isSafeInteger(parsed) && parsed >= min && parsed <= max) {
+      return parsed;
+    }
+  }
+
+  throw createMarketplaceValidationError({
+    field,
+    received: value,
+    expected,
+    userMessage,
+    suggestion: suggestion || `Enter ${label || field} as digits only, without units or decimals.`,
+  });
+}
+
+function normalizePortField(value, { field, label, defaultValue, optional = false } = {}) {
+  return normalizeWholeNumberField(value, {
+    field,
+    label,
+    min: 1,
+    max: 65535,
+    defaultValue,
+    optional,
+    suggestion: `${label || field} must be a whole number from 1 to 65535.`,
+  });
+}
+
+function normalizeMarketplaceMemoryField(value, defaultValue = "") {
+  const raw = isBlankNumericValue(value) ? defaultValue : value;
+  const memory = String(raw || "").trim();
+  if (!memory) {
+    return "";
+  }
+  const match = memory.match(/^([1-9][0-9]{0,5})([kKmMgG]?)$/);
+  if (!match) {
+    throw createMarketplaceValidationError({
+      field: "memory",
+      received: value,
+      expected: "memory value such as 512M, 2G, or 2048M",
+      userMessage: "Memory must be a value such as 512M, 2G, or 2048M.",
+      suggestion: "Remove spaces and words such as GB; use 8G instead of 8 GB.",
+    });
+  }
+  return `${match[1]}${match[2] ? match[2].toUpperCase() : ""}`;
+}
+
+function uniqueNumberList(values) {
+  return [...new Set(values.filter((value) => Number.isInteger(value)))];
+}
+
+function normalizePalworldInstallOptions(template, options = {}) {
+  const defaultPorts = Array.isArray(template.defaultPorts) ? template.defaultPorts : [];
+  const optionPorts = Array.isArray(options.ports) ? options.ports : [];
+  const serverPort = normalizePortField(options.serverPort ?? options.port ?? optionPorts[0], {
+    field: "serverPort",
+    label: "Server port",
+    defaultValue: defaultPorts[0] || 8211,
+  });
+  const queryPort = normalizePortField(options.queryPort ?? optionPorts[1], {
+    field: "queryPort",
+    label: "Query port",
+    defaultValue: defaultPorts[1] || 27015,
+  });
+  const rconPort = normalizePortField(options.rconPort, {
+    field: "rconPort",
+    label: "RCON port",
+    optional: true,
+  });
+  const maxPlayers = normalizeWholeNumberField(options.maxPlayers ?? options.players, {
+    field: "maxPlayers",
+    label: "Maximum players",
+    min: 1,
+    max: 256,
+    defaultValue: 32,
+    suggestion: "Enter the maximum player count as a whole number greater than 0.",
+  });
+  const memory = normalizeMarketplaceMemoryField(options.memory ?? options.ram ?? options.memoryLimit, template.defaultRam || "8G");
+  const steamAppId = normalizeWholeNumberField(template.installer?.appId ?? template.downloadSource?.appId, {
+    field: "steamAppId",
+    label: "Steam app ID",
+    min: 1,
+    max: 999999999,
+  });
+  const steamDepotId = isBlankNumericValue(options.steamDepotId)
+    ? null
+    : normalizeWholeNumberField(options.steamDepotId, {
+      field: "steamDepotId",
+      label: "Steam depot ID",
+      min: 1,
+      max: 999999999,
+      optional: true,
+    });
+  const ports = uniqueNumberList([serverPort, queryPort, rconPort]);
+  return {
+    ...options,
+    memory,
+    port: serverPort,
+    serverPort,
+    queryPort,
+    rconPort,
+    maxPlayers,
+    players: maxPlayers,
+    steamAppId,
+    steamDepotId,
+    ports,
+  };
+}
+
+function normalizeMarketplaceInstallOptions(template, options = {}) {
+  if (template?.id === "palworld") {
+    const normalized = normalizePalworldInstallOptions(template, options);
+    console.info("[Marketplace][Install] Normalized Palworld install configuration.", {
+      templateId: template.id,
+      serverPort: normalized.serverPort,
+      queryPort: normalized.queryPort,
+      rconPort: normalized.rconPort,
+      maxPlayers: normalized.maxPlayers,
+      memory: normalized.memory,
+      steamAppId: normalized.steamAppId,
+      hasSteamDepotId: normalized.steamDepotId !== null,
+    });
+    return normalized;
+  }
+  return options;
 }
 
 async function listAgentInstanceIds(agentConfig = null) {
@@ -1641,6 +1812,10 @@ function templateValue(key, template, options = {}, ports = []) {
     displayName: template.displayName || template.id,
     memory: normalizeName(options.memory, template.defaultRam || ""),
     port: String(firstPort(ports, firstPort(template.defaultPorts, 3000))),
+    serverPort: String(options.serverPort || firstPort(ports, firstPort(template.defaultPorts, 3000))),
+    queryPort: String(options.queryPort || (ports[1] || "")),
+    rconPort: String(options.rconPort || ""),
+    maxPlayers: String(options.maxPlayers || options.players || 32),
     version: options.version || "latest",
     jar: getPrimaryArtifactName(template, options),
   };
@@ -2865,7 +3040,7 @@ async function installTemplate(payload = {}) {
   const manifestValidation = validateMarketplaceTemplate(template);
   pushStep(progress, "Validate template", "complete", `${template.id} is installable as ${manifestValidation.installerType}.`);
 
-  const options = payload.options || {};
+  const options = normalizeMarketplaceInstallOptions(template, payload.options || {});
   const parentRecord = createInstallTaskRecord(template, options);
   const agentConfig = resolveMarketplaceAgentConfig(payload.nodeId);
   const ports = template.category === "Minecraft"
@@ -3143,6 +3318,8 @@ module.exports = {
     getEffectiveInstallerTimeoutMs,
     getTemplateInstallerType,
     getTemplateInstallPlan,
+    normalizeMarketplaceInstallOptions,
+    normalizePalworldInstallOptions,
     normalizeTemplateDownloads,
     normalizeTemplateTags,
     parsePorts,

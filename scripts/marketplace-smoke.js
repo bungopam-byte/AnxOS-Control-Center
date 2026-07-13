@@ -194,6 +194,57 @@ function assertSteamCmdTemplates() {
   }
 }
 
+function assertPalworldNumericValidation() {
+  const template = findTemplate("palworld");
+  const defaults = marketplaceService._test.normalizePalworldInstallOptions(template, {
+    id: "palworld-default-smoke",
+    name: "Palworld Default Smoke",
+  });
+  assert.strictEqual(defaults.serverPort, 8211, "Palworld default install should use the documented server port.");
+  assert.strictEqual(defaults.queryPort, 27015, "Palworld default install should use the documented query port.");
+  assert.strictEqual(defaults.maxPlayers, 32, "Palworld default install should use the documented player limit.");
+  assert.strictEqual(defaults.memory, "8G", "Palworld default install should use the template RAM value.");
+  assert.deepStrictEqual(defaults.ports, [8211, 27015], "Palworld default install should expose normalized ports.");
+
+  const blankOptional = marketplaceService._test.normalizePalworldInstallOptions(template, {
+    port: "",
+    queryPort: "",
+    rconPort: "",
+    maxPlayers: "",
+    memory: "",
+  });
+  assert.deepStrictEqual(blankOptional.ports, [8211, 27015], "Blank optional Palworld numeric fields should fall back to defaults.");
+  assert.strictEqual(blankOptional.rconPort, null, "Blank optional RCON port should remain unset instead of becoming NaN.");
+
+  const custom = marketplaceService._test.normalizePalworldInstallOptions(template, {
+    port: "8222",
+    queryPort: "27016",
+    rconPort: "25575",
+    maxPlayers: "24",
+    memory: "10G",
+  });
+  assert.deepStrictEqual(custom.ports, [8222, 27016, 25575], "Custom Palworld ports should normalize from numeric strings.");
+  assert.strictEqual(custom.maxPlayers, 24, "Custom Palworld player count should normalize from a numeric string.");
+  const payload = marketplaceService._test.buildInstancePayload(template, custom, custom.ports);
+  assert(payload.args.some((arg) => arg.includes("-port=8222") && arg.includes("-players=24")), "Palworld startup args should use normalized numeric settings.");
+
+  assert.throws(
+    () => marketplaceService._test.normalizePalworldInstallOptions(template, { port: "8211.0" }),
+    (error) => error?.code === "MARKETPLACE_VALIDATION_FAILED" &&
+      error.details?.field === "serverPort" &&
+      error.details?.received === "8211.0" &&
+      /whole number/.test(error.details?.expected || ""),
+    "Palworld decimal ports should fail with structured field details."
+  );
+  assert.throws(
+    () => marketplaceService._test.normalizePalworldInstallOptions(template, { memory: "4 GB" }),
+    (error) => error?.code === "MARKETPLACE_VALIDATION_FAILED" &&
+      error.details?.field === "memory" &&
+      error.details?.received === "4 GB",
+    "Palworld formatted memory strings should fail with structured field details."
+  );
+}
+
 function assertMarketplaceInstallerRegistry() {
   const validation = marketplaceService._test.validateMarketplaceCatalog(templates);
   assert.deepStrictEqual(validation.errors, [], `Marketplace catalog should validate.\n${JSON.stringify(validation.errors, null, 2)}`);
@@ -240,7 +291,7 @@ function assertMarketplaceInstallerRegistry() {
   assert(agentRouteSource.includes("getValidationErrorDetails"), "Agent instance routes should return structured validation details for HTTP 400.");
   assert(agentRouteSource.includes("INVALID_NUMBER") && agentRouteSource.includes("error?.field"), "Agent numeric validation errors should include the rejected field.");
   const instanceServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
-  assert(instanceServiceSource.includes("MAX_STARTUP_TIMEOUT_MS = 30 * 60 * 1000"), "Agent schema should allow long native installer startup timeouts.");
+  assert(instanceServiceSource.includes("MAX_STARTUP_TIMEOUT_MS = 2 * 60 * 60 * 1000"), "Agent schema should allow long native installer startup timeouts.");
 }
 
 function assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent() {
@@ -2709,6 +2760,7 @@ async function main() {
   assertDashboardRuntimeFallbacks();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
+  assertPalworldNumericValidation();
   assertMarketplaceInstallerRegistry();
   assertMarketplaceRuntimeSettingsReferencesAreScoped();
   assertMarketplaceInstallContextValidation();

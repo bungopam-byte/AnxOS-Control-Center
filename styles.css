@@ -7421,6 +7421,23 @@ dd {
   transform: translateY(0) scale(0.98);
 }
 
+.inline-action--danger,
+.inline-action.danger {
+  border-color: rgba(255, 107, 138, 0.26);
+  color: rgba(255, 214, 224, 0.94);
+}
+
+.inline-action--danger:not(:disabled):hover,
+.inline-action--danger:not(:disabled):focus-visible,
+.inline-action.danger:not(:disabled):hover,
+.inline-action.danger:not(:disabled):focus-visible {
+  border-color: rgba(255, 107, 138, 0.56);
+  background:
+    linear-gradient(180deg, rgba(255, 107, 138, 0.18), rgba(255, 107, 138, 0.08)),
+    rgba(46, 15, 30, 0.92);
+  box-shadow: 0 10px 24px rgba(58, 12, 29, 0.24);
+}
+
 .toast {
   position: fixed;
   right: 20px;
@@ -9422,7 +9439,9 @@ button:disabled {
 .backup-empty-state,
 .backup-loading-state,
 .marketplace-empty,
-.marketplace-loading {
+.marketplace-loading,
+.security-empty-state,
+.nodes-empty-state {
   border: 1px dashed rgba(190, 170, 220, 0.16);
   border-radius: 8px;
   background:
@@ -9445,7 +9464,9 @@ button:disabled {
 .backup-empty-state strong,
 .backup-loading-state strong,
 .marketplace-empty strong,
-.marketplace-loading strong {
+.marketplace-loading strong,
+.security-empty-state strong,
+.nodes-empty-state strong {
   color: rgba(248, 245, 255, 0.94);
 }
 

@@ -77,9 +77,16 @@ function setText(selector, value) {
   });
 }
 
+function rootSafeAssetPath(value) {
+  const path = String(value || "");
+  if (!path || path.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(path)) return path;
+  if (path.startsWith("assets/")) return `/${path}`;
+  return path;
+}
+
 function applyConfigText() {
   document.querySelectorAll("[data-logo]").forEach((node) => {
-    if (config.logoPath) node.src = config.logoPath;
+    if (config.logoPath) node.src = rootSafeAssetPath(config.logoPath);
   });
   document.querySelectorAll("[data-config]").forEach((node) => {
     const key = node.dataset.config;

@@ -43,6 +43,101 @@ const rootPackage = fs.readFileSync(path.join(root, "package.json"), "utf8");
 
 const officialOrigin = "https://anxoscontrolcenter.org";
 const oldPagesOrigin = "https://anxos-control-center.pages.dev";
+const removedBrandingFiles = [
+  "anxos-logo.jpg",
+  "anxhub-icon.svg",
+  "neon-core-favicon-512.png",
+];
+const localAssetPattern = /(?:src|href|content)=["']([^"']+\.(?:png|svg|ico|jpg|jpeg|webmanifest)(?:\?[^"']*)?)["']/gi;
+const quotedAssetPattern = /["']([^"']*(?:\/?assets\/|\/?favicon\.ico)[^"']+\.(?:png|svg|ico|jpg|jpeg|webmanifest)(?:\?[^"']*)?)["']/gi;
+const cssAssetPattern = /url\(["']?([^"')]+\.(?:png|svg|ico|jpg|jpeg)(?:\?[^"')]+)?)["']?\)/gi;
+
+function walkFiles(dir, predicate, output = []) {
+  fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(fullPath, predicate, output);
+      return;
+    }
+    if (predicate(fullPath)) output.push(fullPath);
+  });
+  return output;
+}
+
+function relativeWebsitePath(filePath) {
+  return path.relative(websiteRoot, filePath).replace(/\\/g, "/");
+}
+
+function routeCandidates(file) {
+  if (file === "index.html") return ["/", "/index.html"];
+  if (file.endsWith("/index.html")) {
+    const route = `/${file.slice(0, -"index.html".length)}`;
+    return [route.slice(0, -1), route];
+  }
+  return [`/${file}`];
+}
+
+function extractAssetReferences(file, source) {
+  const refs = [];
+  const extension = path.extname(file);
+  const patterns = extension === ".css"
+    ? [cssAssetPattern]
+    : extension === ".html" || extension === ".svg"
+      ? [localAssetPattern, quotedAssetPattern]
+      : [quotedAssetPattern];
+  patterns.forEach((pattern) => {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) {
+      const ref = match[1];
+      if (!ref || ref.startsWith("data:") || ref.startsWith("#")) continue;
+      refs.push(ref);
+    }
+  });
+  return Array.from(new Set(refs));
+}
+
+function localPathFromUrl(value, route = "/") {
+  const base = new URL(route || "/", officialOrigin);
+  const url = new URL(value, base);
+  if (url.origin !== officialOrigin) return null;
+  return decodeURIComponent(url.pathname);
+}
+
+function assertAssetPathExists(ref, sourceFile, route) {
+  const pathname = localPathFromUrl(ref, route);
+  if (!pathname) return;
+  const target = path.join(websiteRoot, pathname);
+  assert(fs.existsSync(target), `${sourceFile} references missing local asset ${ref} resolved as ${pathname}${route ? ` from ${route}` : ""}.`);
+}
+
+function assertWebsiteBrandingAssetsResolve() {
+  const websiteFiles = walkFiles(websiteRoot, (file) => /\.(?:html|js|css|json|webmanifest|svg)$/.test(file));
+  websiteFiles.forEach((filePath) => {
+    const file = relativeWebsitePath(filePath);
+    const source = fs.readFileSync(filePath, "utf8");
+    removedBrandingFiles.forEach((removedFile) => {
+      assert(!source.includes(removedFile), `${file} must not reference removed branding asset ${removedFile}.`);
+    });
+    extractAssetReferences(file, source).forEach((ref) => {
+      if (/^https?:\/\//i.test(ref)) {
+        assertAssetPathExists(ref, file);
+        return;
+      }
+      if (file.endsWith(".html")) {
+        routeCandidates(file).forEach((route) => {
+          assertAssetPathExists(ref, file, route);
+          if (!route.endsWith(".html") && route !== "/") assertAssetPathExists(ref, file, `${route}/`);
+        });
+        return;
+      }
+      const sourceDir = `/${path.dirname(file).replace(/^\.$/, "")}/`.replace("//", "/");
+      assertAssetPathExists(ref, file, sourceDir);
+    });
+  });
+
+  assert(config.includes('logoPath: "/assets/anxos-logo.png"'), "Shared website config must inject the canonical root-safe Neon Core logo path.");
+  assert(site.includes("function rootSafeAssetPath") && site.includes("rootSafeAssetPath(config.logoPath)"), "Shared website renderer must normalize injected logo paths.");
+}
 
 ["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
   const html = read(file);
@@ -63,6 +158,7 @@ assert(fs.existsSync(path.join(websiteRoot, "favicon.ico")), "Website must inclu
   assert(fs.existsSync(path.join(websiteRoot, "assets", file)), `Website asset ${file} must exist.`);
 });
 assert(manifest.includes("AnxOS Control Center") && manifest.includes("/assets/icon-192.png"), "Web manifest must include app icon metadata.");
+assertWebsiteBrandingAssetsResolve();
 assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate") && robots.includes("Disallow: /signin") && robots.includes("Disallow: /reset-password"), "Robots rules must expose sitemap and exclude account routes.");
 assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && sitemap.includes(`<loc>${officialOrigin}/download</loc>`) && sitemap.includes(`<loc>${officialOrigin}/features</loc>`) && sitemap.includes(`<loc>${officialOrigin}/getting-started</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
 assert(redirects.includes("/sign-in /signin 301") && redirects.includes("/changelog /release-notes.html 301") && !redirects.includes("/* /index.html"), "Cloudflare redirects must cover clean aliases without a broad SPA fallback.");

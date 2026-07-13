@@ -20,7 +20,7 @@
   <rect width="1200" height="630" fill="url(#glow-b)"/>
   <rect x="64" y="58" width="1072" height="514" rx="42" fill="url(#panel)" stroke="#844abe" stroke-opacity=".48" stroke-width="2"/>
   <rect x="88" y="82" width="300" height="466" rx="34" fill="#080512" fill-opacity=".5" stroke="#b66cff" stroke-opacity=".35"/>
-  <image href="anxos-logo.png" x="124" y="140" width="228" height="228" preserveAspectRatio="xMidYMid meet"/>
+  <image href="/assets/anxos-logo.png" x="124" y="140" width="228" height="228" preserveAspectRatio="xMidYMid meet"/>
   <text x="430" y="148" fill="#b66cff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="29" font-weight="800" letter-spacing="0">OFFICIAL DESKTOP APP</text>
   <text x="430" y="218" fill="#ffffff" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="58" font-weight="800" letter-spacing="0">AnxOS Control Center</text>
   <text x="430" y="304" fill="#e7dcf4" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="29" font-weight="500" letter-spacing="0">

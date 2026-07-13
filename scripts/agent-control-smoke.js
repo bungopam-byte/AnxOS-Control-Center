@@ -12,6 +12,7 @@ async function main() {
   process.env.ANXOS_LOG_DIR = path.join(root, "logs");
   const port = await freePort();
   const serviceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentControlService.js"), "utf8");
+  const ipcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "agentControlIpc.js"), "utf8");
   const rendererSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   const htmlSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(serviceSource.includes("getConfiguredAgentStatus"), "Agent Control must expose configured Agent status separately from local status.");
@@ -22,6 +23,7 @@ async function main() {
   assert(serviceSource.includes("normalizeAgentRuntimeStatus"), "Agent Control must normalize runtime status before rendering.");
   assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");
   assert(serviceSource.includes("runtime-payload-shape"), "Development diagnostics should log sanitized runtime payload shapes.");
+  assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
   assert(rendererSource.includes("getAgentControlOverviewTarget"), "Renderer must select the configured Agent state for the overview when applicable.");
   assert(rendererSource.includes("agentControlRefreshInFlight"), "Renderer must avoid overlapping Agent Control refreshes.");
   assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");

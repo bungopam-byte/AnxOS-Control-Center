@@ -861,6 +861,9 @@ const DOCKER_STATS_REFRESH_INTERVAL_MS = 5000;
 const CONSOLE_LOG_REFRESH_INTERVAL_MS = 2000;
 const FILE_INLINE_EDIT_LIMIT_BYTES = 1024 * 1024;
 const FILE_LARGE_TRANSFER_WARN_BYTES = 512 * 1024 * 1024;
+const FILES_NODE_SERVER_PREFIX = "files-node-server:";
+const FILES_LOCAL_PROFILE_PREFIX = "files-profile:local:";
+const FILES_AGENT_PROFILE_PREFIX = "files-profile:agent:";
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
@@ -2919,6 +2922,9 @@ function showPage(pageName) {
 
   if (safePageName === "files") {
     renderFilesView();
+    refreshFilesDiscovery().catch((error) => {
+      showToast(error?.message || "Files discovery could not be refreshed.", "warning");
+    });
 
     if (getSelectedRemoteFilesNode()) {
       connectFilesSession();
@@ -13127,11 +13133,125 @@ function getSelectedStorageConnection() {
   if (!selectedStorageId) {
     return null;
   }
-  return getStorageConnectionById(selectedStorageId) || getStorageConnectionById(storageConnectionsState.defaultConnectionId) || storageConnectionsState.connections?.[0] || null;
+  return getStorageConnectionById(selectedStorageId);
 }
 
 function storageConnectionLabel(connection) {
   return connection?.name || connection?.displayName || connection?.id || "Storage";
+}
+
+function getFilesNodeById(nodeId) {
+  return (nodesState.nodes || []).find((node) => node.id === nodeId) || null;
+}
+
+function isGenericFilesNodeLabel(value) {
+  return /^(owner machine|application host|default|remote node)$/i.test(String(value || "").trim());
+}
+
+function getFilesNodeUrlHost(node) {
+  try {
+    return new URL(String(node?.agentUrl || "")).host;
+  } catch {
+    return "";
+  }
+}
+
+function getFilesLocalNodeLabel(node) {
+  const platform = String(node?.applicationHost?.platform || node?.platform || "").toLowerCase();
+  if (platform === "win32" || /windows/i.test(node?.applicationHost?.operatingSystem || node?.operatingSystem || "")) {
+    return "This Windows PC";
+  }
+  return "This Device";
+}
+
+function getFilesNodeLabel(node) {
+  if (!node) {
+    return "Unknown node";
+  }
+  if (node.kind === "application-host" || node.local || node.id === "application-host") {
+    return getFilesLocalNodeLabel(node);
+  }
+  const hostname = String(node.agentIdentity?.hostname || "").trim();
+  if (hostname && !isGenericFilesNodeLabel(hostname)) {
+    return hostname;
+  }
+  const displayName = String(node.displayName || node.name || "").trim();
+  if (displayName && !isGenericFilesNodeLabel(displayName)) {
+    return displayName;
+  }
+  return getFilesNodeUrlHost(node) || node.id || "Agent node";
+}
+
+function getFilesNodeServerId(nodeId) {
+  return `${FILES_NODE_SERVER_PREFIX}${nodeId}`;
+}
+
+function getFilesLocalProfileId(nodeId) {
+  return `${FILES_LOCAL_PROFILE_PREFIX}${nodeId}`;
+}
+
+function getFilesAgentProfileId(nodeId) {
+  return `${FILES_AGENT_PROFILE_PREFIX}${nodeId}`;
+}
+
+function getFilesNodeProfileForNode(node) {
+  if (!node) {
+    return null;
+  }
+  const local = node.kind === "application-host" || node.local || node.id === "application-host";
+  const label = getFilesNodeLabel(node);
+  return {
+    id: local ? getFilesLocalProfileId(node.id) : getFilesAgentProfileId(node.id),
+    serverId: getFilesNodeServerId(node.id),
+    type: local ? "local-node" : "agent-node",
+    providerType: local ? "renderer-local" : "agent-native",
+    nodeId: node.id,
+    node,
+    displayName: local ? "Local Filesystem" : `${label} Agent Filesystem`,
+    detail: local ? `Local filesystem on ${label}` : `${node.agentIdentity?.operatingSystem || "Agent node"} · ${node.agentUrl || getFilesNodeUrlHost(node) || node.id}`,
+  };
+}
+
+function getFilesNodeServers() {
+  return (nodesState.nodes || [])
+    .filter((node) => node?.id)
+    .map((node) => ({
+      id: getFilesNodeServerId(node.id),
+      type: "node",
+      nodeId: node.id,
+      node,
+      displayName: getFilesNodeLabel(node),
+    }));
+}
+
+function getFilesProfileOptionById(profileId) {
+  const id = String(profileId || "");
+  if (id.startsWith(FILES_LOCAL_PROFILE_PREFIX) || id.startsWith(FILES_AGENT_PROFILE_PREFIX)) {
+    const nodeId = id.startsWith(FILES_LOCAL_PROFILE_PREFIX)
+      ? id.slice(FILES_LOCAL_PROFILE_PREFIX.length)
+      : id.slice(FILES_AGENT_PROFILE_PREFIX.length);
+    const profile = getFilesNodeProfileForNode(getFilesNodeById(nodeId));
+    return profile?.id === id ? profile : null;
+  }
+  return getFilesProfileById(id);
+}
+
+function getFilesServerOptions() {
+  return [
+    ...getFilesNodeServers(),
+    ...sshProfilesState.servers.map((server) => ({ ...server, type: "ssh" })),
+  ];
+}
+
+function getFilesProfileOptionsForServer(serverId = filesSelectedServerId) {
+  const id = String(serverId || "");
+  if (id.startsWith(FILES_NODE_SERVER_PREFIX)) {
+    return [getFilesNodeProfileForNode(getFilesNodeById(id.slice(FILES_NODE_SERVER_PREFIX.length)))].filter(Boolean);
+  }
+  return sshProfilesState.profiles.filter((profile) => {
+    if (profile.nodeId && !getFilesNodeById(profile.nodeId)) return false;
+    return !id || profile.serverId === id;
+  }).map((profile) => ({ ...profile, type: "ssh" }));
 }
 
 function clampPercent(value) {
@@ -14686,11 +14806,31 @@ function renderGlobalSearchResults() {
 }
 
 async function refreshCurrentFilesDirectory() {
+  await refreshFilesDiscovery();
   return refreshFileListing({
     profileId: getFilesRequestProfileId(),
     storageId: getFilesRequestStorageId(),
     path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
   });
+}
+
+let filesDiscoveryRefreshPromise = null;
+async function refreshFilesDiscovery() {
+  if (filesDiscoveryRefreshPromise) {
+    return filesDiscoveryRefreshPromise;
+  }
+  filesDiscoveryRefreshPromise = Promise.allSettled([
+    refreshNodes(),
+    loadSshProfiles(),
+    loadStorageConnections(),
+  ]).then(() => {
+    syncFilesSelectionState();
+    renderStorageConnections();
+    renderFilesView();
+  }).finally(() => {
+    filesDiscoveryRefreshPromise = null;
+  });
+  return filesDiscoveryRefreshPromise;
 }
 
 async function runDiagnosticsAction(action) {
@@ -15744,38 +15884,63 @@ function resetRendererUiState() {
 
 function renderStorageConnections() {
   const selected = getSelectedStorageConnection();
-  const selectedRemoteNode = selected ? null : getSelectedRemoteFilesNode();
+  const target = getFilesConnectionTarget();
+  const selectedRemoteNode = target?.providerType === "agent-native" ? target.node : null;
   const localSelected = !selected || selected.id === "local";
   renderRoutingDiagnostics();
-  if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Agent" : selected?.badge || (selected?.provider === "sftp" ? "SFTP" : "Local");
-  if (storageActiveName) storageActiveName.textContent = selectedRemoteNode ? "Agent Filesystem" : storageConnectionLabel(selected);
-  if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || "Not connected";
+  if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Agent" : selected?.badge || (target?.providerType === "sftp" ? "SFTP" : "Local");
+  if (storageActiveName) storageActiveName.textContent = target?.label || storageConnectionLabel(selected);
+  if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || target?.detail || "Not connected";
   document.querySelector('[data-storage-action="edit"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="delete"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="set-default"]')?.toggleAttribute("disabled", !selected || selected.default === true);
   if (!storageList) return;
   storageList.replaceChildren();
-  const agentNode = getSelectedRemoteFilesNode();
-  const visibleConnections = agentNode
-    ? [{ id: `agent-native:${agentNode.id}`, provider: "agent-native", badge: "Agent", name: "Agent Filesystem", nodeId: agentNode.id }, ...(storageConnectionsState.connections || [])]
-    : (storageConnectionsState.connections || []);
+  const agentConnections = (nodesState.nodes || [])
+    .filter((node) => node?.kind === "agent")
+    .map((node) => {
+      const profile = getFilesNodeProfileForNode(node);
+      return {
+        id: profile.id,
+        provider: "agent-native",
+        badge: "Agent",
+        name: profile.displayName,
+        nodeId: node.id,
+        node,
+        targetKey: `node:${node.id}`,
+        detail: profile.detail,
+      };
+    });
+  const visibleConnections = [...(storageConnectionsState.connections || []), ...agentConnections];
   visibleConnections.forEach((connection) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "storage-connection-item";
-    item.classList.toggle("is-active", connection.provider === "agent-native" ? !selectedStorageId : connection.id === selectedStorageId);
+    item.classList.toggle("is-active", connection.provider === "agent-native" ? target?.key === connection.targetKey : connection.id === selectedStorageId);
     const badge = createTextElement("span", connection.badge || (connection.provider === "sftp" ? "SFTP" : "Local"));
     const name = createTextElement("strong", `${storageConnectionLabel(connection)}${connection.default ? " · Default" : ""}`);
     const detail = createTextElement("small", connection.provider === "agent-native"
-      ? `${agentNode.agentIdentity?.operatingSystem || "Agent node"} · ${agentNode.agentUrl || "Agent API"}`
+      ? connection.detail
       : connection.provider === "sftp" || connection.type === "sftp"
       ? `${connection.username || "user"}@${connection.host || "host"}:${connection.port || 22} ${connection.rootDirectory || "/"}`
       : "Local filesystem on the application host");
     item.append(badge, name, detail);
     item.addEventListener("click", () => {
-      selectedStorageId = connection.provider === "agent-native" ? "" : connection.id;
-      filesSelectedProfileId = null;
+      if (connection.provider === "agent-native") {
+        filesSelectedServerId = getFilesNodeServerId(connection.nodeId);
+        filesSelectedProfileId = getFilesAgentProfileId(connection.nodeId);
+        selectedStorageId = "";
+      } else if (connection.id === "local") {
+        const localNode = getFilesNodeById("application-host");
+        filesSelectedServerId = localNode ? getFilesNodeServerId(localNode.id) : null;
+        filesSelectedProfileId = localNode ? getFilesLocalProfileId(localNode.id) : null;
+        selectedStorageId = "local";
+      } else {
+        selectedStorageId = connection.id;
+        filesSelectedProfileId = null;
+      }
       setFilesPasswordPromptState(false);
+      syncFilesSelectionState();
       renderStorageConnections();
       renderFilesView();
     });
@@ -16048,14 +16213,7 @@ async function handleStorageConnectionSaved(payload = {}) {
 }
 
 function getFilesFilteredProfiles() {
-  return sshProfilesState.profiles.filter((profile) => {
-    if (profile.nodeId && profile.nodeId !== getSelectedNodeId()) return false;
-    if (!filesSelectedServerId) {
-      return true;
-    }
-
-    return profile.serverId === filesSelectedServerId;
-  });
+  return getFilesProfileOptionsForServer(filesSelectedServerId);
 }
 
 function getSelectedRemoteFilesNode() {
@@ -16068,29 +16226,35 @@ function isSingleDeviceMode() {
 }
 
 function syncFilesSelectionState() {
-  const selectedRemoteNode = getSelectedRemoteFilesNode();
-  if (selectedRemoteNode && filesAutoSelectedNodeId !== selectedRemoteNode.id) {
-    filesSelectedServerId = null;
+  if (selectedStorageId && selectedStorageId !== "local") {
     filesSelectedProfileId = null;
-    selectedStorageId = "";
-    filesAutoSelectedNodeId = selectedRemoteNode.id;
-  }
-  if (selectedRemoteNode) {
+    filesAutoSelectedNodeId = getSelectedRemoteFilesNode()?.id || null;
     return;
-  } else {
-    filesAutoSelectedNodeId = null;
   }
-  const availableServerIds = new Set(sshProfilesState.servers.map((server) => server.id));
+  const serverOptions = getFilesServerOptions();
+  const availableServerIds = new Set(serverOptions.map((server) => server.id));
+  const selectedRemoteNode = getSelectedRemoteFilesNode();
+  const defaultNode = selectedRemoteNode && !filesAutoSelectedNodeId
+    ? selectedRemoteNode
+    : getFilesNodeById("application-host") || (nodesState.nodes || [])[0] || null;
 
   if (!availableServerIds.has(filesSelectedServerId)) {
-    filesSelectedServerId = sshProfilesState.defaultServerId || sshProfilesState.servers[0]?.id || null;
+    filesSelectedServerId = defaultNode ? getFilesNodeServerId(defaultNode.id) : serverOptions[0]?.id || sshProfilesState.defaultServerId || null;
   }
 
   const filteredProfiles = getFilesFilteredProfiles();
 
-  if (!filteredProfiles.some((profile) => profile.id === filesSelectedProfileId)) {
-    filesSelectedProfileId = filteredProfiles[0]?.id || sshProfilesState.defaultProfileId || null;
+  if (!filesSelectedProfileId && filteredProfiles.length > 0) {
+    filesSelectedProfileId = filteredProfiles[0]?.id || null;
   }
+
+  const selectedProfile = getFilesProfileOptionById(filesSelectedProfileId);
+  if (selectedProfile?.providerType === "renderer-local") {
+    selectedStorageId = "local";
+  } else if (selectedProfile?.providerType === "agent-native" || selectedProfile?.type === "ssh") {
+    selectedStorageId = "";
+  }
+  filesAutoSelectedNodeId = selectedRemoteNode?.id || null;
 }
 
 function renderFilesProfileSelectors() {
@@ -16099,14 +16263,8 @@ function renderFilesProfileSelectors() {
   if (filesServerSelect) {
     filesServerSelect.replaceChildren();
 
-    const selectedRemoteNode = getSelectedRemoteFilesNode();
-    if (selectedRemoteNode) {
-      const option = document.createElement("option");
-      option.value = selectedRemoteNode.id;
-      option.textContent = selectedRemoteNode.displayName || "Remote node";
-      option.selected = true;
-      filesServerSelect.appendChild(option);
-    } else sshProfilesState.servers.forEach((server) => {
+    const serverOptions = getFilesServerOptions();
+    serverOptions.forEach((server) => {
       const option = document.createElement("option");
       option.value = server.id;
       option.textContent = server.displayName;
@@ -16114,7 +16272,7 @@ function renderFilesProfileSelectors() {
       filesServerSelect.appendChild(option);
     });
 
-    if (!selectedRemoteNode && sshProfilesState.servers.length === 0) {
+    if (serverOptions.length === 0) {
       const option = document.createElement("option");
       option.textContent = "No servers configured";
       filesServerSelect.appendChild(option);
@@ -16126,30 +16284,17 @@ function renderFilesProfileSelectors() {
 
     const filteredProfiles = getFilesFilteredProfiles();
 
-    const selectedRemoteNode = getSelectedRemoteFilesNode();
-    if (selectedRemoteNode) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = `${selectedRemoteNode.displayName || "Remote node"} (Node)`;
-      option.selected = true;
-      filesProfileSelect.appendChild(option);
-    } else if (isSingleDeviceMode()) {
-      const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "This Device";
-      option.selected = !filesSelectedProfileId;
-      filesProfileSelect.appendChild(option);
-    }
-
     filteredProfiles.forEach((profile) => {
       const option = document.createElement("option");
       option.value = profile.id;
-      option.textContent = `${profile.displayName} (${profile.username}@${profile.host}:${profile.port})`;
+      option.textContent = profile.providerType
+        ? profile.displayName
+        : `${profile.displayName} (${profile.username}@${profile.host}:${profile.port})`;
       option.selected = profile.id === filesSelectedProfileId;
       filesProfileSelect.appendChild(option);
     });
 
-    if (filteredProfiles.length === 0 && !isSingleDeviceMode()) {
+    if (filteredProfiles.length === 0) {
       const option = document.createElement("option");
       option.textContent = "No profiles configured";
       filesProfileSelect.appendChild(option);
@@ -16256,6 +16401,7 @@ function renderFileListing(listing) {
   const normalized = normalizeFileListingForRenderer(listing);
   const entries = normalized.entries;
   const selectedEntry = getSelectedFileEntry(entries);
+  const target = getFilesConnectionTarget();
 
   updateFilesConnectionState({
     connected: normalized.connected,
@@ -16264,8 +16410,8 @@ function renderFileListing(listing) {
     currentPath: normalized.currentPath || filesConnectionState.currentPath,
     homePath: normalized.homePath || filesConnectionState.homePath,
     status: normalized.status || "connected",
-    nodeId: normalized.nodeId || null,
-    targetKey: normalized.targetKey || getFilesConnectionTarget()?.key || null,
+    nodeId: normalized.nodeId || target?.nodeId || null,
+    targetKey: normalized.targetKey || target?.key || null,
     message: normalized.message || "Remote filesystem connected.",
   });
   latestFilesListing = normalized;
@@ -16300,12 +16446,16 @@ function renderFileListingUnavailable(message = "File listing unavailable.") {
   latestFilesListing = null;
   latestFilesListingAt = 0;
   selectedFileEntryPath = null;
+  const target = getFilesConnectionTarget();
   updateFilesConnectionState({
     connected: false,
     profileId: filesSelectedProfileId,
+    storageId: getFilesRequestStorageId(),
     currentPath: null,
     homePath: null,
     status: "disconnected",
+    nodeId: target?.nodeId || null,
+    targetKey: target?.key || null,
     message,
   });
   clearFileRows();
@@ -17859,7 +18009,8 @@ async function handleDockerAction(actionName) {
 }
 
 function getFilesRequestProfileId() {
-  if (getSelectedRemoteFilesNode()) {
+  const selectedProfile = getFilesProfileOptionById(filesSelectedProfileId);
+  if (selectedProfile?.providerType) {
     return null;
   }
   if (selectedStorageId) {
@@ -17872,27 +18023,79 @@ function getFilesRequestProfileId() {
 }
 
 function getFilesRequestStorageId() {
+  const selectedProfile = getFilesProfileOptionById(filesSelectedProfileId);
+  if (selectedProfile?.providerType === "renderer-local") {
+    return "local";
+  }
+  if (selectedProfile?.providerType === "agent-native") {
+    return null;
+  }
   return selectedStorageId || null;
 }
 
 function getFilesConnectionTarget() {
+  const selectedProfile = getFilesProfileOptionById(filesSelectedProfileId);
+  if (selectedProfile?.providerType === "renderer-local") {
+    return {
+      key: `storage:local:${selectedProfile.nodeId}`,
+      type: "local",
+      providerType: "renderer-local",
+      label: getFilesNodeLabel(selectedProfile.node),
+      detail: selectedProfile.detail,
+      nodeId: selectedProfile.nodeId,
+      node: selectedProfile.node,
+    };
+  }
+  if (selectedProfile?.providerType === "agent-native") {
+    return {
+      key: `node:${selectedProfile.nodeId}`,
+      type: "node",
+      providerType: "agent-native",
+      label: selectedProfile.displayName,
+      detail: selectedProfile.detail,
+      nodeId: selectedProfile.nodeId,
+      node: selectedProfile.node,
+    };
+  }
   const storage = getSelectedStorageConnection();
   if (storage) {
     const providerType = storage.id === "local" || storage.provider === "local" ? "renderer-local" : "sftp";
-    return { key: `storage:${storage.id}`, type: "storage", providerType, label: storageConnectionLabel(storage), storage };
+    return { key: `storage:${storage.id}`, type: "storage", providerType, label: storageConnectionLabel(storage), storage, nodeId: providerType === "renderer-local" ? "application-host" : null };
   }
-  const profile = getActiveFilesProfile();
+  const profile = selectedProfile || getActiveFilesProfile();
   if (profile) {
-    return { key: `profile:${profile.id}`, type: "profile", providerType: "sftp", label: profile.displayName || profile.host, profile };
+    return { key: `profile:${profile.id}`, type: "profile", providerType: "sftp", label: profile.displayName || profile.host, profile, nodeId: profile.nodeId || null };
   }
   const node = getSelectedRemoteFilesNode();
   if (node) {
-    return { key: `node:${node.id}`, type: "node", providerType: "agent-native", label: node.displayName || "Remote node", node };
+    return { key: `node:${node.id}`, type: "node", providerType: "agent-native", label: getFilesNodeLabel(node), nodeId: node.id, node };
   }
   if (isSingleDeviceMode()) {
-    return { key: "storage:local", type: "local", providerType: "renderer-local", label: "Application Host" };
+    return { key: "storage:local:application-host", type: "local", providerType: "renderer-local", label: getFilesNodeLabel(getFilesNodeById("application-host")), nodeId: "application-host", node: getFilesNodeById("application-host") };
   }
   return null;
+}
+
+function getFilesRequestNodeId() {
+  return getFilesConnectionTarget()?.nodeId || getSelectedNodeId();
+}
+
+function getFilesRequestContext(label = "files-request") {
+  const target = getFilesConnectionTarget();
+  return {
+    label,
+    nodeId: getFilesRequestNodeId(),
+    targetKey: target?.key || null,
+    version: selectedNodeContextVersion,
+  };
+}
+
+function isFilesRequestCurrent(context) {
+  const target = getFilesConnectionTarget();
+  return Boolean(context) &&
+    context.nodeId === getFilesRequestNodeId() &&
+    context.targetKey === (target?.key || null) &&
+    context.version === selectedNodeContextVersion;
 }
 
 function getSafeFilesConnectionError(error, targetLabel = "filesystem") {
@@ -17945,7 +18148,9 @@ async function refreshFileListing(options = {}) {
     return null;
   }
 
-  const requestContext = options.context || getNodeRequestContext("files");
+  syncFilesSelectionState();
+  const target = getFilesConnectionTarget();
+  const requestContext = options.context || getFilesRequestContext("files");
   const desktopApiState = getDesktopApiState();
 
   if (!desktopApiState.hasFiles) {
@@ -17956,8 +18161,13 @@ async function refreshFileListing(options = {}) {
   const profileId = options.profileId !== undefined ? options.profileId : getFilesRequestProfileId();
   const storageId = options.storageId !== undefined ? options.storageId : getFilesRequestStorageId();
 
-  if (!storageId && !profileId && !isSingleDeviceMode()) {
-    renderFileListingUnavailable("No SSH profile is selected for remote file access.");
+  if (!target) {
+    renderFileListingUnavailable("No filesystem profile is selected.");
+    return null;
+  }
+
+  if (!storageId && !profileId && target.providerType !== "agent-native") {
+    renderFileListingUnavailable("No SSH profile or storage connection is selected for file access.");
     return null;
   }
 
@@ -17967,15 +18177,15 @@ async function refreshFileListing(options = {}) {
 
   try {
     const listing = await desktopApiState.api.files.list({
-      nodeId: getSelectedNodeId(),
-      providerType: getFilesConnectionTarget()?.providerType,
+      nodeId: getFilesRequestNodeId(),
+      providerType: target.providerType,
       storageId,
       profileId,
       path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined,
       password: options.password,
     });
 
-    if (!isNodeRequestCurrent(requestContext)) {
+    if (!isFilesRequestCurrent(requestContext)) {
       return null;
     }
     renderFileListing(listing);
@@ -17983,10 +18193,10 @@ async function refreshFileListing(options = {}) {
     setFilesPasswordPromptState(false);
     return listing;
   } catch (error) {
-    if (!isNodeRequestCurrent(requestContext)) {
+    if (!isFilesRequestCurrent(requestContext)) {
       return null;
     }
-    const message = getSafeFilesConnectionError(error, getFilesConnectionTarget()?.label || "filesystem");
+    const message = getSafeFilesConnectionError(error, target.label || "filesystem");
 
     if (!latestFilesListing || !filesConnectionState.connected) {
       renderFileListingUnavailable(`File listing request failed: ${message}`);
@@ -18008,10 +18218,8 @@ async function refreshFileListing(options = {}) {
 
     return null;
   } finally {
-    if (isNodeRequestCurrent(requestContext)) {
-      filesRequestInFlight = false;
-      updateFileActionButtons();
-    }
+    filesRequestInFlight = false;
+    updateFileActionButtons();
   }
 }
 
@@ -18219,7 +18427,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
 
   try {
     const payload = await desktopApiState.api.files.readText({
-      nodeId: getSelectedNodeId(),
+      nodeId: getFilesRequestNodeId(),
       providerType: getFilesConnectionTarget()?.providerType,
       storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
@@ -18291,7 +18499,7 @@ async function saveRemoteTextFile() {
 
   try {
     await desktopApiState.api.files.writeText({
-      nodeId: getSelectedNodeId(),
+      nodeId: getFilesRequestNodeId(),
       providerType: getFilesConnectionTarget()?.providerType,
       storageId: getFilesRequestStorageId(),
       profileId: getFilesRequestProfileId(),
@@ -18353,7 +18561,7 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath,
   }
 
   filesActionRequestInFlight = true;
-  payload.nodeId = getSelectedNodeId();
+  payload.nodeId = getFilesRequestNodeId();
   payload.providerType = getFilesConnectionTarget()?.providerType;
   updateFileActionButtons();
   const target = payload.path || payload.destinationPath || payload.sourcePath || payload.directoryPath || refreshPath || "Storage operation";
@@ -25087,6 +25295,7 @@ console.error = (...args) => {
 };
 filesServerSelect?.addEventListener("change", () => {
   filesSelectedServerId = filesServerSelect.value || null;
+  filesSelectedProfileId = null;
   setFilesPasswordPromptState(false);
   syncFilesSelectionState();
   if (filesSelectedProfileId) {
@@ -25097,12 +25306,16 @@ filesServerSelect?.addEventListener("change", () => {
 });
 filesProfileSelect?.addEventListener("change", () => {
   filesSelectedProfileId = filesProfileSelect.value || null;
-  if (filesSelectedProfileId) {
-    selectedStorageId = "";
-  } else if (!selectedStorageId) {
+  const selectedProfile = getFilesProfileOptionById(filesSelectedProfileId);
+  if (selectedProfile?.providerType === "renderer-local") {
     selectedStorageId = "local";
+  } else if (selectedProfile) {
+    selectedStorageId = "";
+  } else {
+    selectedStorageId = null;
   }
   setFilesPasswordPromptState(false);
+  syncFilesSelectionState();
   renderStorageConnections();
   renderFilesView();
 });

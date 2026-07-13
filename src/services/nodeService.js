@@ -18,15 +18,21 @@ function ensureConfigDirectory() { fs.mkdirSync(getConfigDirectory(), { recursiv
 function normalizeUrl(value) { try { const url = new URL(String(value || "").trim()); return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, "")}`; } catch { return String(value || "").trim(); } }
 function legacyDeviceId(url) { return `legacy-${crypto.createHash("sha256").update(normalizeUrl(url)).digest("hex").slice(0, 20)}`; }
 function nodeIdForDevice(deviceId) { return `agent-${String(deviceId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 56)}`; }
+function isGenericNodeDisplayName(value) { return /^(owner machine|default|remote node|agent node)$/i.test(String(value || "").trim()); }
 
 function normalizeAgentNode(node = {}) {
   const agentUrl = normalizeUrl(node.agentUrl || node.url);
   const identity = node.agentIdentity || node.identity || {};
   const deviceId = identity.deviceId || node.deviceId || legacyDeviceId(agentUrl);
+  const requestedDisplayName = String(node.displayName || node.name || "").trim();
+  const identityHostname = String(identity.hostname || "").trim();
+  const displayName = isGenericNodeDisplayName(requestedDisplayName) && identityHostname
+    ? identityHostname
+    : requestedDisplayName || identityHostname || "Agent Node";
   return {
     id: node.id && node.id !== "default" ? node.id : nodeIdForDevice(deviceId),
     kind: "agent",
-    displayName: String(node.displayName || node.name || identity.hostname || "Agent Node").trim().slice(0, 80),
+    displayName: displayName.slice(0, 80),
     agentUrl,
     agentToken: String(node.agentToken || node.token || ""),
     agentIdentity: { deviceId, hostname: identity.hostname || "", operatingSystem: identity.operatingSystem || "", platform: identity.platform || "", architecture: identity.architecture || "", agentVersion: identity.agentVersion || "" },
@@ -53,7 +59,7 @@ function mergeAgentNodes(nodes) {
     if (!current) { byDevice.set(key, raw); continue; }
     byDevice.set(key, {
       ...current,
-      displayName: current.displayName || raw.displayName,
+      displayName: isGenericNodeDisplayName(current.displayName) && !isGenericNodeDisplayName(raw.displayName) ? raw.displayName : current.displayName || raw.displayName,
       agentUrl: current.agentUrl || raw.agentUrl,
       agentToken: current.agentToken || raw.agentToken,
       agentIdentity: { ...raw.agentIdentity, ...Object.fromEntries(Object.entries(current.agentIdentity).filter(([, value]) => value)) },

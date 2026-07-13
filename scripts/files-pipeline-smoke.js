@@ -90,7 +90,13 @@ async function main() {
     assert.strictEqual((await localService.readText({ storageId: "local", path: path.join(tempRoot, "local.txt") })).content, "local", "Local provider should edit files.");
 
     const appSource = await fs.readFile(path.join(rootDir, "app.js"), "utf8");
-    assert(appSource.includes("filesAutoSelectedNodeId !== selectedRemoteNode.id"), "Renderer should auto-select a node only once.");
+    assert(appSource.includes('const FILES_AGENT_PROFILE_PREFIX = "files-profile:agent:"'), "Renderer should create stable Agent filesystem profile IDs.");
+    assert(appSource.includes('const FILES_LOCAL_PROFILE_PREFIX = "files-profile:local:"'), "Renderer should create stable local filesystem profile IDs.");
+    assert(appSource.includes("getFilesRequestNodeId()"), "Renderer should route file requests through the selected Files profile node.");
+    assert(appSource.includes("nodeId: getFilesRequestNodeId()"), "Renderer file payloads should not use the global selected node ID.");
+    assert(appSource.includes('return getStorageConnectionById(selectedStorageId);'), "Renderer should not silently fall back to the default local storage connection.");
+    assert(appSource.includes("getFilesProfileOptionById(filesSelectedProfileId)"), "Renderer should preserve stable profile IDs across refreshes.");
+    assert(appSource.includes("refreshFilesDiscovery"), "Files workspace should refresh node/profile discovery when opened or refreshed.");
     assert(appSource.includes("if (filesConnectPromise)"), "Renderer should deduplicate Connect requests.");
     assert(appSource.includes("filesConnectionState.targetKey === target.key"), "Renderer should compare complete connection targets.");
     assert(appSource.includes("getSafeFilesConnectionError"), "Renderer should sanitize connection failures.");
@@ -103,6 +109,9 @@ async function main() {
     const serviceSource = await fs.readFile(path.join(rootDir, "src", "services", "fileService.js"), "utf8");
     assert(serviceSource.includes("FILES_CONFLICT"), "File service should reject upload conflicts instead of silently overwriting.");
     assert(serviceSource.includes("options.conflictPolicy !== \"replace\""), "File service should require explicit replace policy for upload conflicts.");
+
+    const nodeServiceSource = await fs.readFile(path.join(rootDir, "src", "services", "nodeService.js"), "utf8");
+    assert(nodeServiceSource.includes("isGenericNodeDisplayName"), "Node service should replace legacy generic Agent labels when identity is refreshed.");
 
     console.log("Files pipeline smoke checks passed.");
   } finally {

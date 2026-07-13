@@ -280,10 +280,22 @@ function redirectToSignInForCurrentRoute() {
 }
 
 function redirectLegacyHashRoutes() {
-  if (document.body?.dataset?.standaloneRoute) return false;
   const hash = window.location.hash || "";
   const [route, hashQuery = ""] = hash.replace(/^#/, "").split("?");
-  const routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" };
+  const routes = {
+    signin: "/signin",
+    signup: "/signup",
+    account: "/account",
+    profile: "/profile",
+    "account-devices": "/account?section=devices",
+    "account-security": "/account?section=security",
+    downloads: "/download",
+    features: "/features",
+    "getting-started": "/getting-started",
+    install: "/getting-started",
+    release: "/release-notes.html",
+    top: "/",
+  };
   if (!routes[route]) return false;
   const params = new URLSearchParams(window.location.search);
   if (hashQuery) {
@@ -293,7 +305,8 @@ function redirectLegacyHashRoutes() {
     });
   }
   const query = params.toString();
-  window.location.replace(`${routes[route]}${query ? `?${query}` : ""}`);
+  const separator = routes[route].includes("?") ? "&" : "?";
+  window.location.replace(`${routes[route]}${query ? `${separator}${query}` : ""}`);
   return true;
 }
 

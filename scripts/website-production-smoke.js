@@ -77,6 +77,8 @@ assert(forgotRoute.includes('data-auth-form="forgot"') && forgotRoute.includes(`
 assert(resetRoute.includes('data-auth-form="reset"') && resetRoute.includes(`<link rel="canonical" href="${officialOrigin}/reset-password">`), "Reset-password must be a clean direct route.");
 assert(index.includes('routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" }'), "Homepage must redirect legacy hash auth routes to clean paths.");
 assert(!index.includes('href="#signin"') && !index.includes('href="#signup"') && !index.includes('href="#account"') && !index.includes('href="#profile"'), "Homepage must not link to hash-based account routes.");
+assert(site.includes('"account-security": "/account?section=security"') && site.includes('downloads: "/download"'), "Shared route normalizer must convert legacy hashes on every website page.");
+assert(!site.includes("if (document.body?.dataset?.standaloneRoute) return false;"), "Legacy hash cleanup must run on standalone clean routes.");
 ["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
   const html = read(file);
   const hashLinks = Array.from(html.matchAll(/\s(?:href|src)=["']([^"']*#[^"']*)["']/g))

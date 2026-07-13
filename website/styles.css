@@ -1495,6 +1495,8 @@ a[aria-disabled="true"] {
   display: grid;
   place-items: center;
   padding: 18px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .confirm-modal__backdrop {
@@ -1510,6 +1512,8 @@ a[aria-disabled="true"] {
   display: grid;
   gap: 12px;
   width: min(440px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--anx-radius-lg);
   padding: 18px;

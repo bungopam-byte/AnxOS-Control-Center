@@ -135,6 +135,7 @@ assert(site.includes("WEBSITE_DEBUG") && site.includes("if (!WEBSITE_DEBUG) retu
 assert(account.includes("data-confirm-modal") && activateRoute.includes("data-confirm-modal"), "Account and activation pages should expose the shared confirmation modal.");
 assert(site.includes("function confirmUserAction") && site.includes("Approve this desktop app?") && site.includes("Sign out all desktop sessions?"), "Security-sensitive website actions should use branded confirmation copy.");
 assert(!site.includes('confirm("Approve this AnxOS desktop app') && !site.includes('confirm("Sign out all desktop sessions'), "Website should not use raw browser confirmations for account/device actions.");
+assert(site.includes('document.body.classList.add("has-open-modal")') && site.includes('document.body.style.overflow = "hidden"') && site.includes('event.key !== "Tab"'), "Website confirmation modal must lock background scroll and trap keyboard focus.");
 
 assert(signup.includes('name="passwordConfirm"') && resetRoute.includes('name="passwordConfirm"'), "Create account and reset forms should include password confirmation.");
 assert(site.includes('setMessage("signup", "Passwords do not match.", "error")'), "Sign-up should validate password confirmation before network calls.");
@@ -145,5 +146,6 @@ assert(styles.includes(".site-menu-button") && styles.includes(".site-nav.is-ope
 assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "Website must respect reduced-motion preference.");
 assert(styles.includes(".download-status") && styles.includes(".account-unavailable"), "Website must style honest loading/unavailable states.");
 assert(styles.includes(".site-footer nav") && styles.includes(".steps--detailed"), "Website CSS must support footer and Getting Started responsive polish.");
+assert(styles.includes(".confirm-modal") && styles.includes("max-height: calc(100dvh - 36px)") && styles.includes("overscroll-behavior: contain"), "Website confirmation modal must remain viewport-safe on short screens.");
 
 console.log("Website production smoke checks passed.");

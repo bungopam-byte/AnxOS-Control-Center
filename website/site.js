@@ -1425,12 +1425,14 @@ function confirmUserAction({
 } = {}) {
   const modal = document.querySelector("[data-confirm-modal], [data-cleanup-modal]");
   if (!modal) return Promise.resolve(window.confirm(fallback));
+  const dialog = modal.querySelector('[role="dialog"]');
   const eyebrowNode = modal.querySelector("[data-confirm-modal-eyebrow]");
   const titleNode = modal.querySelector("[data-confirm-modal-title], [data-cleanup-modal-title]");
   const messageNode = modal.querySelector("[data-confirm-modal-message], [data-cleanup-modal-message]");
   const confirmButton = modal.querySelector("[data-confirm-modal-confirm], [data-cleanup-modal-confirm]");
   const cancelButtons = modal.querySelectorAll("[data-confirm-modal-cancel], [data-cleanup-modal-cancel]");
   const focusTarget = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const previousOverflow = document.body.style.overflow;
   if (eyebrowNode) eyebrowNode.textContent = eyebrow;
   if (titleNode) titleNode.textContent = title;
   if (messageNode) messageNode.textContent = message;
@@ -1439,13 +1441,17 @@ function confirmUserAction({
     confirmButton.classList.toggle("button-danger", confirmTone === "danger");
   }
   modal.hidden = false;
-  confirmButton?.focus?.();
+  document.body.classList.add("has-open-modal");
+  document.body.style.overflow = "hidden";
+  (confirmButton || dialog)?.focus?.();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value) => {
       if (settled) return;
       settled = true;
       modal.hidden = true;
+      document.body.classList.remove("has-open-modal");
+      document.body.style.overflow = previousOverflow;
       confirmButton?.removeEventListener("click", onConfirm);
       cancelButtons.forEach((button) => button.removeEventListener("click", onCancel));
       window.removeEventListener("keydown", onKeydown);
@@ -1456,6 +1462,23 @@ function confirmUserAction({
     const onCancel = () => finish(false);
     const onKeydown = (event) => {
       if (event.key === "Escape") finish(false);
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+        .filter((node) => !node.disabled && !node.hidden && node.offsetParent !== null);
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     confirmButton?.addEventListener("click", onConfirm);
     cancelButtons.forEach((button) => button.addEventListener("click", onCancel));

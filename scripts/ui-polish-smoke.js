@@ -104,6 +104,7 @@ assert(app.includes("hasPublicAccess") && app.includes("renderPublicAccessSnapsh
 assert(styles.includes(".public-access-grid") && styles.includes(".public-access-provider.is-disabled"), "Public Access CSS must include provider and service layout.");
 assert(app.includes("function createTextElement") && app.includes("function createSecurityBadgeElement"), "Renderer must keep safe DOM helper coverage for dynamic desktop surfaces.");
 assert(app.includes("pre = createTextElement(\"pre\", JSON.stringify(event.details || {}, null, 2)") && app.includes("createSvgElement(\"path\""), "High-risk diagnostics/security/icon surfaces must render through DOM APIs.");
+assert(app.includes("function isConfiguredStorageRootPath") && app.includes("Configured storage roots cannot be deleted from AnxOS"), "Files UI must prevent configured storage roots from being presented as deletable items.");
 
 [
   "@media (max-width: 640px), (max-height: 560px)",

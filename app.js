@@ -12406,6 +12406,12 @@ function isProtectedRemotePathForConfirm(remotePath) {
   return normalizedPath === "/" || ["/etc", "/usr", "/bin"].some((candidate) => normalizedPath === candidate || normalizedPath.startsWith(`${candidate}/`));
 }
 
+function isConfiguredStorageRootPath(remotePath) {
+  const normalizedPath = normalizeRemotePathValue(remotePath);
+  const roots = normalizeFilesArray(latestFilesListing?.roots);
+  return roots.some((root) => normalizeRemotePathValue(root?.path || root?.root || root?.directory || "") === normalizedPath);
+}
+
 function normalizeFileNameInput(value) {
   const name = String(value || "").trim();
   if (!name) return "";
@@ -12699,6 +12705,7 @@ function openFilesContextMenu(x, y, entry = getSelectedFileEntry(latestFilesList
   const isFile = hasEntry && !entry.isDirectory;
   const canMutate = filesConnectionState.connected && !filesActionRequestInFlight && !filesRequestInFlight;
   const canCopy = hasEntry && canCopyFileEntry(entry);
+  const isStorageRoot = hasEntry && isConfiguredStorageRootPath(entry.path);
   const canPaste = filesClipboardState.action === "copy"
     && filesClipboardState.entry
     && (!filesClipboardState.targetKey || filesClipboardState.targetKey === (filesConnectionState.targetKey || getFilesConnectionTarget()?.key));
@@ -12709,7 +12716,14 @@ function openFilesContextMenu(x, y, entry = getSelectedFileEntry(latestFilesList
     { label: "Copy", action: () => copyRemoteEntry(), disabled: !canCopy || !canMutate, reason: canCopy ? "A file operation is already running." : "Folder copy is not supported for this storage provider." },
     { label: "Paste", action: () => pasteFilesClipboard(), disabled: !canPaste || !canMutate, reason: canPaste ? "A file operation is already running." : "No compatible copied item is staged." },
     { label: "Copy Path", action: () => copyActiveFilePath(), disabled: !hasEntry, reason: "Select an item first." },
-    { label: "Delete", action: () => deleteRemoteEntry(), disabled: !hasEntry || !canMutate, reason: canMutate ? "Select an item first." : "A file operation is already running." },
+    {
+      label: "Delete",
+      action: () => deleteRemoteEntry(),
+      disabled: !hasEntry || !canMutate || isStorageRoot,
+      reason: isStorageRoot
+        ? "Configured storage roots cannot be deleted from AnxOS."
+        : (canMutate ? "Select an item first." : "A file operation is already running."),
+    },
     { label: "Upload Here", action: () => uploadRemoteFile(), disabled: !canMutate, reason: "Connect a writable filesystem first." },
     { label: "New Folder", action: () => createRemoteFolder(), disabled: !canMutate, reason: "Connect a writable filesystem first." },
     { label: "New File", action: () => createRemoteFile(), disabled: !canMutate, reason: "Connect a writable filesystem first." },
@@ -18085,6 +18099,11 @@ async function deleteRemoteEntry() {
   const entry = getSelectedFileEntry(latestFilesListing?.entries || []);
 
   if (!entry) {
+    return;
+  }
+
+  if (isConfiguredStorageRootPath(entry.path)) {
+    showToast("Configured storage roots cannot be deleted from AnxOS. Remove or change the storage root in Agent configuration instead.", "warning");
     return;
   }
 

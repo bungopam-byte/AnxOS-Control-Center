@@ -1,19 +1,9 @@
+@import url("anxos-design-system.css");
+
 :root {
   color-scheme: dark;
-  --bg: #07020f;
-  --panel: #150a24;
-  --panel-strong: #211033;
-  --text: #f8f5ff;
-  --muted: #b9abc8;
-  --line: #3a2552;
-  --accent: #b66cff;
-  --accent-soft: rgba(182, 108, 255, 0.16);
-  --success: #45e08f;
-  --danger: #ff6b8a;
-  --caution: #f5c451;
-  --radius: 8px;
   --shell: min(1180px, calc(100vw - 40px));
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--anx-font-sans);
 }
 
 * {
@@ -28,10 +18,7 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(182, 108, 255, 0.18), transparent 32rem),
-    radial-gradient(circle at bottom right, rgba(255, 255, 255, 0.05), transparent 28rem),
-    var(--bg);
+  background: var(--anx-bg-site);
   color: var(--text);
 }
 
@@ -43,6 +30,7 @@ a {
 a:focus-visible {
   outline: 2px solid rgba(206, 150, 255, 0.88);
   outline-offset: 2px;
+  box-shadow: var(--anx-focus-ring);
 }
 
 .svg-defs {
@@ -80,9 +68,10 @@ a:focus-visible {
   flex: 0 0 auto;
   width: 42px;
   height: 42px;
-  border-radius: var(--radius);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 10px rgba(182, 108, 255, 0.08);
+  border: 1px solid rgba(182, 108, 255, 0.22);
+  border-radius: var(--anx-radius-md);
+  background: linear-gradient(180deg, rgba(182, 108, 255, 0.2), rgba(182, 108, 255, 0.08));
+  box-shadow: var(--anx-glow-ring);
 }
 
 .brand-mark img {
@@ -113,17 +102,18 @@ a:focus-visible {
   align-items: center;
   padding: 6px;
   border: 1px solid rgba(185, 148, 255, 0.14);
-  border-radius: var(--radius);
-  background: rgba(17, 21, 31, 0.62);
+  border-radius: var(--anx-radius-md);
+  background: var(--anx-surface-glass);
+  box-shadow: var(--anx-shadow-inset);
 }
 
 .site-menu-button {
   display: none;
   min-height: 40px;
   border: 1px solid rgba(182, 108, 255, 0.28);
-  border-radius: var(--radius);
+  border-radius: var(--anx-radius-md);
   padding: 0 14px;
-  background: rgba(17, 21, 31, 0.72);
+  background: var(--anx-surface-glass);
   color: var(--text);
   font: inherit;
   font-size: 0.84rem;
@@ -148,7 +138,7 @@ a:focus-visible {
 .site-nav a:focus-visible,
 .site-nav__button:hover,
 .site-nav__button:focus-visible {
-  background: var(--panel);
+  background: var(--anx-surface-control-hover);
   color: var(--text);
   outline: none;
 }
@@ -260,15 +250,15 @@ h3 {
 .auth-card {
   display: grid;
   gap: 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  border: 1px solid var(--anx-color-border-strong);
+  border-radius: var(--anx-radius-lg);
   padding: 28px;
   background:
-    linear-gradient(180deg, rgba(28, 22, 43, 0.9), rgba(12, 14, 23, 0.9)),
-    rgba(17, 21, 31, 0.78);
+    var(--anx-surface-panel-subtle);
   box-shadow:
-    0 28px 90px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    var(--anx-shadow-elevated),
+    var(--anx-shadow-inset),
+    var(--anx-glow-xs);
 }
 
 .auth-card__header {
@@ -295,7 +285,7 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
   border: 1px solid rgba(182, 108, 255, 0.18);
-  border-radius: 10px;
+  border-radius: var(--anx-radius-md);
   padding: 4px;
   background: rgba(7, 10, 18, 0.34);
 }
@@ -305,7 +295,7 @@ h3 {
   align-items: center;
   justify-content: center;
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: var(--anx-radius-sm);
   color: var(--muted);
   font-size: 0.84rem;
   font-weight: 850;
@@ -348,9 +338,9 @@ h3 {
 .auth-feature-list li {
   position: relative;
   border: 1px solid rgba(182, 108, 255, 0.16);
-  border-radius: 12px;
+  border-radius: var(--anx-radius-md);
   padding: 14px 14px 14px 38px;
-  background: rgba(17, 21, 31, 0.5);
+  background: var(--anx-surface-control);
   color: var(--muted);
   line-height: 1.5;
 }
@@ -371,9 +361,9 @@ h3 {
 .account-panel,
 .device-code-card {
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: rgba(17, 21, 31, 0.72);
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22);
+  border-radius: var(--anx-radius-md);
+  background: var(--anx-surface-glass);
+  box-shadow: var(--anx-shadow-panel), var(--anx-shadow-inset);
 }
 
 .account-route__copy,
@@ -441,7 +431,7 @@ h3 {
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid rgba(182, 108, 255, 0.28);
-  border-radius: var(--radius);
+  border-radius: var(--anx-radius-sm);
   color: var(--text);
   font-size: 0.86rem;
   font-weight: 850;
@@ -467,7 +457,7 @@ h3 {
 .button:hover,
 .button:focus-visible {
   border-color: rgba(206, 150, 255, 0.52);
-  box-shadow: 0 0 20px rgba(182, 108, 255, 0.16);
+  box-shadow: var(--anx-glow-sm);
   transform: translateY(-1px);
   outline: none;
 }
@@ -484,17 +474,18 @@ a[aria-disabled="true"] {
 
 .button-primary {
   border-color: transparent;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), var(--anx-color-electric-violet));
   color: #160720;
+  box-shadow: var(--anx-glow-xs);
 }
 
 .button-secondary {
-  background: rgba(182, 108, 255, 0.16);
+  background: var(--anx-surface-control-hover);
   color: var(--text);
 }
 
 .button-ghost {
-  background: rgba(17, 21, 31, 0.62);
+  background: var(--anx-surface-glass);
   color: var(--muted);
 }
 
@@ -506,20 +497,18 @@ a[aria-disabled="true"] {
 .download-card,
 .steps article,
 .safety-card {
-  border: 1px solid rgba(185, 148, 255, 0.16);
-  border-radius: var(--radius);
-  background:
-    linear-gradient(145deg, rgba(32, 15, 58, 0.76), rgba(18, 8, 34, 0.72)),
-    rgba(17, 21, 31, 0.82);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+  border: 1px solid var(--anx-color-border-soft);
+  border-radius: var(--anx-radius-md);
+  background: var(--anx-surface-panel);
+  box-shadow: var(--anx-shadow-panel), var(--anx-shadow-inset);
 }
 
 .account-unavailable,
 .download-status,
 .download-help {
-  border: 1px solid rgba(185, 148, 255, 0.16);
-  border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--anx-color-border-soft);
+  border-radius: var(--anx-radius-md);
+  background: var(--anx-surface-control);
 }
 
 .account-unavailable {
@@ -735,9 +724,9 @@ a[aria-disabled="true"] {
   width: 58px;
   height: 58px;
   border: 1px solid rgba(185, 148, 255, 0.18);
-  border-radius: var(--radius);
+  border-radius: var(--anx-radius-md);
   background: var(--accent-soft);
-  box-shadow: 0 0 0 10px rgba(182, 108, 255, 0.08);
+  box-shadow: var(--anx-glow-ring);
   overflow: hidden;
 }
 
@@ -766,7 +755,7 @@ a[aria-disabled="true"] {
   padding: 3px 8px;
   border: 1px solid rgba(185, 171, 200, 0.16);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--anx-surface-control);
   color: var(--accent);
   font-size: 0.74rem;
   font-weight: 850;
@@ -1032,9 +1021,9 @@ a[aria-disabled="true"] {
 .account-form input {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--anx-radius-md);
   padding: 13px 14px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(3, 1, 7, 0.58);
   color: var(--text);
   font: inherit;
 }
@@ -1131,9 +1120,9 @@ a[aria-disabled="true"] {
   gap: 14px;
   align-items: center;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--anx-radius-md);
   padding: 14px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--anx-surface-control);
 }
 
 .profile-summary-card strong,
@@ -1238,8 +1227,8 @@ a[aria-disabled="true"] {
 
 .profile-skeleton {
   height: 112px;
-  border-radius: 12px;
-  background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.1), rgba(255,255,255,.04));
+  border-radius: var(--anx-radius-md);
+  background: linear-gradient(90deg, rgba(182, 108, 255, 0.045), rgba(255, 255, 255, 0.1), rgba(182, 108, 255, 0.045));
   background-size: 220% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
@@ -1249,13 +1238,24 @@ a[aria-disabled="true"] {
   to { background-position: -120% 0; }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .account-subpanel {
   display: grid;
   gap: 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--anx-radius-md);
   padding: 14px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--anx-surface-control);
 }
 
 .account-subpanel h4 {
@@ -1344,9 +1344,9 @@ a[aria-disabled="true"] {
 
 .account-list-item {
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
+  border-radius: var(--anx-radius-md);
   padding: 11px 12px;
-  background: rgba(7, 10, 18, 0.34);
+  background: rgba(3, 1, 7, 0.42);
 }
 
 .account-list-toggle {
@@ -1420,16 +1420,17 @@ a[aria-disabled="true"] {
 .account-form input:focus {
   outline: 2px solid rgba(197, 129, 255, 0.42);
   outline-offset: 2px;
+  box-shadow: var(--anx-focus-ring);
 }
 
 .account-device-summary {
   display: grid;
   gap: 6px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--anx-radius-md);
   padding: 14px;
-  background: rgba(255, 255, 255, 0.055);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: var(--anx-surface-control);
+  box-shadow: var(--anx-shadow-inset);
 }
 
 .account-device-summary span {
@@ -1467,10 +1468,10 @@ a[aria-disabled="true"] {
 
 .toast {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--anx-radius-md);
   padding: 10px 12px;
-  background: rgba(12, 8, 20, 0.94);
-  box-shadow: var(--shadow);
+  background: var(--anx-surface-glass-strong);
+  box-shadow: var(--anx-shadow-elevated), var(--anx-shadow-inset);
   color: var(--text);
   font-size: 0.86rem;
 }
@@ -1510,10 +1511,10 @@ a[aria-disabled="true"] {
   gap: 12px;
   width: min(440px, 100%);
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--anx-radius-lg);
   padding: 18px;
-  background: rgba(15, 10, 24, 0.98);
-  box-shadow: var(--shadow);
+  background: var(--anx-surface-glass-strong);
+  box-shadow: var(--anx-shadow-dialog), var(--anx-shadow-inset);
 }
 
 .confirm-modal__card h2,

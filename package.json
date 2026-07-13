@@ -69,6 +69,7 @@
       "windows/**/*",
       "assets/**/*",
       "config/**/*",
+      "website/anxos-design-system.css",
       "website/account-config.js",
       "src/**/*",
       "agent/**/*",

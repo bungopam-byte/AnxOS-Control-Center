@@ -1126,6 +1126,7 @@ function getDesktopApiState() {
       typeof api?.marketplace?.resumeManualInstall === "function",
     hasDependencies:
       typeof api?.dependencies?.check === "function" &&
+      typeof api?.dependencies?.plan === "function" &&
       typeof api?.dependencies?.install === "function" &&
       typeof api?.dependencies?.getCatalog === "function",
     hasInstances:
@@ -3227,9 +3228,25 @@ async function runDependencyAction(action) {
   let operationId = null;
   try {
     if (action === "install") {
+      const plan = await getDependencyPreparationPlan(payload);
+      const planText = formatDependencyPreparationPlan(plan);
+      if (plan.ok && !plan.installableActions?.length) {
+        dependencyOperationState = "idle";
+        dependencyLastError = null;
+        renderDependencyStatus(latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null, { updateSnapshot: false });
+        showToast("No dependency installation is needed.");
+        return;
+      }
+      if (!plan.installableActions?.length) {
+        dependencyOperationState = "failed";
+        dependencyLastError = new Error("Dependency preparation requires manual steps.");
+        renderDependencyStatus(latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null, { updateSnapshot: false });
+        showToast("Dependency preparation requires manual steps.", "warning");
+        return;
+      }
       if (!(await createSecurityConfirmation({
         title: "Install missing dependencies?",
-        message: "The Agent will use supported package-manager commands with non-interactive administrator privileges when available.",
+        message: `${planText}\n\nThe Agent will use supported package-manager commands with non-interactive administrator privileges when available, then verify the dependencies afterward.`,
         confirmLabel: "Install Missing",
       }))) {
         return;
@@ -11079,6 +11096,40 @@ function formatMissingDependencyList(dependencies = []) {
     .join(", ");
 }
 
+function formatDependencyPreparationPlan(plan = {}) {
+  const installable = Array.isArray(plan.installableActions) ? plan.installableActions : [];
+  const manual = Array.isArray(plan.manualActions) ? plan.manualActions : [];
+  const commandLines = installable
+    .flatMap((action) => Array.isArray(action.commands) ? action.commands.map((command) => command.display || `${command.command} ${(command.args || []).join(" ")}`.trim()) : [])
+    .filter(Boolean);
+  const packageLines = installable
+    .map((action) => {
+      const packages = Array.isArray(action.packages) && action.packages.length ? action.packages.join(", ") : "no package mapping";
+      return `${action.displayName || action.id}: ${packages}`;
+    });
+  const manualLines = manual.map((action) => `${action.displayName || action.id}: ${action.reason || "manual installation required"}`);
+  const parts = [];
+  if (packageLines.length) parts.push(`Packages:\n${packageLines.join("\n")}`);
+  if (commandLines.length) parts.push(`Commands:\n${commandLines.join("\n")}`);
+  if (manualLines.length) parts.push(`Manual steps still required:\n${manualLines.join("\n")}`);
+  return parts.join("\n\n") || "No dependency changes are planned.";
+}
+
+async function getDependencyPreparationPlan(payload = {}) {
+  const desktopApiState = getDesktopApiState();
+  if (typeof desktopApiState.api?.dependencies?.plan !== "function") {
+    throw new Error("Dependency planning is unavailable in this build.");
+  }
+  const plan = await desktopApiState.api.dependencies.plan(payload);
+  if (plan?.ok === false && plan.error) {
+    throw Object.assign(new Error(plan.error.message || "Dependency planning failed."), {
+      code: plan.error.code,
+      details: plan.error.details,
+    });
+  }
+  return plan;
+}
+
 async function maybePrepareMarketplaceDependencies(normalizedError, template, options, requestContext, providerInstall = false) {
   const desktopApiState = getDesktopApiState();
   const details = normalizedError?.details || {};
@@ -11089,9 +11140,21 @@ async function maybePrepareMarketplaceDependencies(normalizedError, template, op
   }
 
   const dependencyList = formatMissingDependencyList(missingDependencies);
+  const plan = await getDependencyPreparationPlan({
+    dependencyIds,
+    nodeId: requestContext.nodeId,
+  });
+  const planText = formatDependencyPreparationPlan(plan);
+  if (!plan.installableActions?.length) {
+    setMarketplaceMessage(`Install blocked until dependencies are prepared manually: ${dependencyList}.`, "warning");
+    renderMarketplaceProgress([
+      { label: "Prepare node", status: "failed", detail: planText },
+    ]);
+    return true;
+  }
   const confirmed = await createSecurityConfirmation({
     title: "Prepare Node Dependencies",
-    message: `${template.displayName || template.id} requires missing node dependencies: ${dependencyList}. AnxOS can install supported dependencies on the selected Agent, verify them, then retry the install.`,
+    message: `${template.displayName || template.id} requires missing node dependencies: ${dependencyList}.\n\n${planText}\n\nAnxOS will verify the dependencies after installation before retrying the Marketplace install.`,
     confirmLabel: "Install Missing",
   });
   if (!confirmed) {

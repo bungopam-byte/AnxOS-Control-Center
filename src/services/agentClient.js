@@ -2239,6 +2239,14 @@ async function checkDependencies(payload = {}, configOverride = null) {
   });
 }
 
+async function planDependencyPreparation(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/dependencies/plan", {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
 async function installDependencies(payload = {}, configOverride = null) {
   return requestJson("/api/v1/dependencies/install", {
     config: configOverride,
@@ -2307,6 +2315,7 @@ module.exports = {
   readAgentSettings,
   readFileText,
   pairAgentFromCode,
+  planDependencyPreparation,
   getSharedAgentTokenStatus,
   requestBuffer,
   requestJson,

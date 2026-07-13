@@ -2,6 +2,7 @@ const {
   checkDependencies,
   getDependencyCatalog,
   installDependencies,
+  planDependencyPreparation,
 } = require("../services/dependencyService");
 
 function parseJsonBody(request) {
@@ -39,6 +40,9 @@ async function handleDependencies(request, url) {
     }
     if (request.method === "POST" && url.pathname === "/api/v1/dependencies/check") {
       return result(200, await checkDependencies(parseJsonBody(request)));
+    }
+    if (request.method === "POST" && url.pathname === "/api/v1/dependencies/plan") {
+      return result(200, await planDependencyPreparation(parseJsonBody(request)));
     }
     if (request.method === "POST" && url.pathname === "/api/v1/dependencies/install") {
       return result(200, await installDependencies(parseJsonBody(request)));

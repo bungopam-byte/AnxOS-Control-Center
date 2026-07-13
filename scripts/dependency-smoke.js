@@ -93,12 +93,21 @@ async function run() {
 
   mock = createMockHooks({ installedCommands: ["sudo", "apt-get"], installProvides: "dotnet" });
   dependencyService.__setTestHooks(mock.hooks);
+  let plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["dotnet-runtime"] });
+  assert.strictEqual(plan.installableActions.length, 1, "Missing .NET should produce an installable preparation action.");
+  assert(plan.installableActions[0].commands.some((command) => command.display.includes("sudo -n apt-get install -y dotnet-runtime-8.0")), "Preparation plan should show the exact package-manager install command.");
   let install = await dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"] });
   assert.strictEqual(install.ok, true);
   assert(
     mock.commandCalls.some((call) => call.command === "sudo" && call.args.some((arg) => path.basename(String(arg)) === "apt-get")),
     "Install should use sudo -n with apt-get."
   );
+
+  mock = createMockHooks({ installedCommands: ["apt-get"] });
+  dependencyService.__setTestHooks(mock.hooks);
+  plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["nodejs"] });
+  assert.strictEqual(plan.installableActions.length, 0, "Preparation plan must not mark dependencies installable without elevation.");
+  assert.strictEqual(plan.manualActions[0].action, "manual", "Missing elevation should become a guided manual step.");
 
   mock = createMockHooks({
     installedCommands: ["sudo", "apt-get"],

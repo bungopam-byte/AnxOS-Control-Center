@@ -176,6 +176,7 @@ const desktopApi = {
   dependencies: {
     getCatalog: (payload = {}) => ipcRenderer.invoke("dependencies:getCatalog", payload),
     check: (payload = {}) => ipcRenderer.invoke("dependencies:check", payload),
+    plan: (payload = {}) => ipcRenderer.invoke("dependencies:plan", payload),
     install: (payload = {}) => ipcRenderer.invoke("dependencies:install", payload),
   },
   instances: {

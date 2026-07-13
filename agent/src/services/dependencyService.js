@@ -269,6 +269,95 @@ function buildInstallCommands(packageManager, packages) {
   throw createDependencyError("PACKAGE_MANAGER_UNSUPPORTED", "This operating system is not supported for automatic dependency installation.", { packageManager }, 400);
 }
 
+function formatCommand(command, args = []) {
+  return [command, ...args].map((part) => String(part || "")).join(" ");
+}
+
+async function planDependencyPreparation(payload = {}) {
+  const dependencyIds = resolveDependencyRequestIds(payload);
+  const check = await checkDependencies({ dependencyIds });
+  const elevation = await canElevate();
+  const actions = [];
+
+  for (const dependency of check.dependencies) {
+    if (dependency.installed && dependency.state !== "update-required") {
+      actions.push({
+        id: dependency.id,
+        displayName: dependency.displayName,
+        state: "already-installed",
+        action: "none",
+        installable: false,
+        reason: "Already installed and verified.",
+        packages: [],
+        commands: [],
+        dependency,
+      });
+      continue;
+    }
+
+    const packages = dependency.packages || [];
+    const packageManager = dependency.packageManager || null;
+    const packageManagerCommand = packageManager ? getPackageManagerCommand(packageManager) : null;
+    const installable = Boolean(dependency.supported && packageManager && packageManagerCommand && packages.length > 0 && elevation.available);
+    let reason = null;
+    if (!dependency.supported) {
+      reason = `${dependency.displayName} is not supported for automatic installation on ${dependency.distribution?.name || "this host"}.`;
+    } else if (!packageManager) {
+      reason = "No supported package manager was detected.";
+    } else if (!packageManagerCommand) {
+      reason = `Required package manager ${packageManager} was not found.`;
+    } else if (!packages.length) {
+      reason = "No trusted package mapping exists for this dependency on this host.";
+    } else if (!elevation.available) {
+      reason = `Administrator privileges are required (${elevation.reason || "elevation unavailable"}).`;
+    }
+
+    const commandSpecs = installable ? buildInstallCommands(packageManager, packages) : [];
+    const commands = commandSpecs.map((commandSpec) => ({
+      phase: commandSpec.phase,
+      command: commandSpec.command,
+      args: commandSpec.args,
+      display: elevation.method === "sudo-noninteractive"
+        ? formatCommand("sudo", ["-n", commandSpec.command, ...commandSpec.args])
+        : formatCommand(commandSpec.command, commandSpec.args),
+    }));
+
+    actions.push({
+      id: dependency.id,
+      displayName: dependency.displayName,
+      state: dependency.state,
+      action: installable ? "install" : "manual",
+      installable,
+      reason: reason || `Install ${dependency.displayName} with ${packageManager}.`,
+      packages,
+      packageManager,
+      requiresElevation: dependency.requiresElevation,
+      elevation,
+      commands,
+      verification: {
+        commands: dependency.commands,
+        minVersion: dependency.minVersion || null,
+      },
+      dependency,
+    });
+  }
+
+  const installableActions = actions.filter((action) => action.installable);
+  const manualActions = actions.filter((action) => action.action === "manual");
+  return {
+    ok: check.ok,
+    dependencyIds,
+    distribution: check.distribution,
+    actions,
+    installableActions,
+    manualActions,
+    missingDependencyIds: check.missingDependencyIds,
+    requiresUserInitiation: installableActions.length > 0,
+    elevation,
+    plannedAt: new Date().toISOString(),
+  };
+}
+
 async function installDependency(dependencyId) {
   const id = assertKnownDependencyId(dependencyId);
   if (activeDependencyInstalls.has(id)) {
@@ -414,5 +503,6 @@ module.exports = {
   detectDistribution,
   getDependencyCatalog,
   installDependencies,
+  planDependencyPreparation,
   parseOsRelease,
 };

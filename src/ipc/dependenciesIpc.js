@@ -3,6 +3,7 @@ const {
   checkDependencies,
   getDependencyCatalog,
   installDependencies,
+  planDependencyPreparation,
 } = require("../services/serviceRouter");
 const { audit, requirePermission } = require("../services/securityService");
 
@@ -22,6 +23,7 @@ function invokeDependencyOperation(operation) {
 function registerDependenciesIpc() {
   ipcMain.handle("dependencies:getCatalog", async (_, payload = {}) => invokeDependencyOperation(() => getDependencyCatalog(payload)));
   ipcMain.handle("dependencies:check", async (_, payload = {}) => invokeDependencyOperation(() => checkDependencies(payload)));
+  ipcMain.handle("dependencies:plan", async (_, payload = {}) => invokeDependencyOperation(() => planDependencyPreparation(payload)));
   ipcMain.handle("dependencies:install", async (_, payload = {}) => invokeDependencyOperation(() => {
     requirePermission("instance:write", "marketplace-dependencies");
     audit({ action: "dependencies.install", target: Array.isArray(payload.dependencyIds) ? payload.dependencyIds.join(",") : "marketplace" });

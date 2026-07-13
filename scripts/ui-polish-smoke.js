@@ -45,6 +45,7 @@ assert(index.includes("settings-workspace") && index.includes("data-settings-cat
 assert(index.includes("data-settings-category=\"updates\"") && index.includes("data-settings-category=\"integrations\""), "Settings workspace must separate Updates and Integrations categories.");
 assert(app.includes("setActiveSettingsCategory") && app.includes("renderSettingsSearch") && app.includes("settingsSearchInput"), "Renderer must wire Settings category switching and search.");
 assert(preload.includes("settings:getPreferences") && preload.includes("settings:savePreferences") && preload.includes("settings:resetPreferences"), "Preload must expose centralized settings preference IPC.");
+assert(preload.includes("dependencies:plan") && app.includes("typeof api?.dependencies?.plan === \"function\""), "Dependency preparation planning must be exposed before install actions.");
 assert(main.includes("registerSettingsIpc"), "Main process must register settings IPC.");
 assert(index.includes("nodes-summary-grid") && index.includes('data-node-summary="online"'), "Nodes workspace must expose a compact dashboard summary.");
 assert(index.includes("[data-node-list]") || index.includes("data-node-list"), "Nodes workspace must expose the node card list.");

@@ -480,6 +480,27 @@ async function checkDependencies(payload = {}) {
   return agentClient.checkDependencies(payload, getOptionalNodeConfig(payload));
 }
 
+async function planDependencyPreparation(payload = {}) {
+  if (shouldUseLocalInstances(payload)) {
+    return {
+      ok: true,
+      dependencyIds: [],
+      distribution: {
+        id: process.platform,
+        name: process.platform,
+        packageManager: null,
+      },
+      actions: [],
+      installableActions: [],
+      manualActions: [],
+      missingDependencyIds: [],
+      requiresUserInitiation: false,
+      plannedAt: new Date().toISOString(),
+    };
+  }
+  return agentClient.planDependencyPreparation(payload, getOptionalNodeConfig(payload));
+}
+
 async function installDependencies(payload = {}) {
   if (shouldUseLocalInstances(payload)) {
     return {
@@ -595,6 +616,7 @@ module.exports = {
   listBackups,
   listInstanceFiles,
   listInstances,
+  planDependencyPreparation,
   readInstanceFile,
   renameInstanceFile,
   restartInstance,

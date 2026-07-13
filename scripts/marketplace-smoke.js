@@ -2633,6 +2633,8 @@ function assertMarketplaceProductionPolishRendererContracts() {
   assert(appSource.includes("function getMarketplaceTemplateInstances"), "Renderer should derive installed state from real instance template metadata.");
   assert(appSource.includes("metadata?.templateId"), "Installed-state detection should use persisted instance metadata.");
   assert(appSource.includes("function getMarketplaceTemplateDependencyIds"), "Renderer should present dependency requirements from template metadata.");
+  assert(appSource.includes("function formatDependencyPreparationPlan") && appSource.includes("getDependencyPreparationPlan"), "Marketplace dependency recovery should show a structured preparation plan before installing.");
+  assert(appSource.includes("Commands:\\n") && appSource.includes("Packages:\\n"), "Dependency preparation confirmations should include package and command previews.");
   assert(appSource.includes("Compatibility unknown"), "Renderer must show unknown compatibility honestly when metadata is absent.");
   assert(appSource.includes("Install path\", \"Managed by the selected Agent instance data root"), "Install review should avoid exposing or inventing raw filesystem paths.");
   assert(appSource.includes("Data preservation\", \"Uninstall and backup behavior are managed"), "Install review should not imply unsupported uninstall/data-preservation choices.");

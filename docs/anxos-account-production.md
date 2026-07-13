@@ -34,6 +34,9 @@ supabase db push
 Migration added:
 
 - `supabase/migrations/202607100001_anxos_accounts.sql`
+- `supabase/migrations/202607120001_profiles_profile_fields_repair.sql`
+
+The Account Overview lists devices, desktop sessions, and security history through the `anxos-account` Edge Function. If those sections fail while basic Supabase sign-in works, verify that the migrations above have been applied to the live Supabase project; committed migrations do not change the production database until `supabase db push` or an equivalent deployment runs.
 
 ## Edge Function Deployment
 
@@ -52,6 +55,8 @@ supabase secrets set \
   ANXOS_DESKTOP_TOKEN_SECRET=<32+ random bytes> \
   ANXOS_DEVICE_CODE_SECRET=<different 32+ random bytes>
 ```
+
+The deployed function must allow `https://anxoscontrolcenter.org`, and `ANXOS_WEBSITE_BASE_URL` must also be `https://anxoscontrolcenter.org`. A stale `ANXOS_ALLOWED_ORIGINS` value that only includes the old Cloudflare Pages hostname causes browser CORS failures that appear as account sections being unable to fetch devices, sessions, or security history. A stale `ANXOS_WEBSITE_BASE_URL` value creates activation links on the old Pages hostname.
 
 Supabase automatically provides:
 

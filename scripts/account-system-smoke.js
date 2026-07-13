@@ -60,6 +60,10 @@ function assertWebsiteAccountUi() {
   assert(site.includes("getSignInUrlForActivation") && site.includes("returnTo"), "Website should preserve device activation codes through sign-in.");
   assert(site.includes("redirectToCanonicalSiteOrigin") && accountConfig.includes("https://anxoscontrolcenter.org"), "Website should use the configured official account origin.");
   assert(site.includes("isAccountApiConfigured") && site.includes("ACCOUNT_API_NOT_CONFIGURED"), "Website should allow Supabase sign-in to load separately from account API availability.");
+  assert(site.includes("apikey: accountConfig.supabaseAnonKey") && site.includes("client.auth.getSession()"), "Protected website account requests must include the current Supabase session and anon key.");
+  assert(site.includes("friendlyAccountDataError") && site.includes("ACCOUNT_NETWORK_OR_CORS") && site.includes("ACCOUNT_ENDPOINT_NOT_FOUND"), "Website account sections should classify fetch, CORS, auth, endpoint, and server errors.");
+  assert(site.includes("latestAccountSectionErrors") && site.includes("refreshAccountSection"), "Website account sections should degrade and refresh independently.");
+  assert(accountPage.includes('data-auth-action="refresh-devices"') && accountPage.includes('data-auth-action="refresh-sessions"') && accountPage.includes('data-auth-action="refresh-security"'), "Account overview should expose independent refresh controls.");
   assert(site.includes("auth.signUp"), "Website should implement sign-up.");
   assert(site.includes("resetPasswordForEmail"), "Website should implement forgot-password.");
   assert(site.includes("/reset-password"), "Recovery emails should redirect to the standalone reset page.");
@@ -142,6 +146,8 @@ function assertSupabaseBackend() {
   assert(fn.includes("sanitizeMessage") && fn.includes("[redacted]"), "Edge Function should redact secret-like values.");
   assert(fn.includes("deleteRevokedDevicesForUser") && fn.includes(".eq(\"user_id\", userId)"), "Cleanup endpoints must enforce ownership server-side.");
   assert(fn.includes("revoked_devices_cleared") && fn.includes("inactive_account_records_cleared"), "Cleanup endpoints should audit cleanup actions.");
+  assert(fn.includes("DEFAULT_ALLOWED_ORIGINS") && fn.includes("new Set([...DEFAULT_ALLOWED_ORIGINS, ...configuredAllowedOrigins])"), "Edge Function CORS must always include official default origins even when env origins are configured.");
+  assert(fn.includes("normalizeWebsiteBaseUrl") && fn.includes("OFFICIAL_WEBSITE_BASE_URL"), "Edge Function activation links should canonicalize stale website base URL settings.");
 }
 
 function assertDesktopIntegration() {
@@ -177,6 +183,8 @@ function assertDocsAndEnv() {
   assert(docs.includes("Supabase Auth") && docs.includes("Edge Function"), "Production docs should cover Supabase Auth and Edge Functions.");
   assert(docs.includes("Never put") && docs.includes("SUPABASE_SERVICE_ROLE_KEY"), "Production docs should warn about server-only secrets.");
   assert(docs.includes("trusted local owner allowlist"), "Docs should explain trusted owner account allowlist.");
+  assert(docs.includes("https://anxoscontrolcenter.org") && docs.includes("stale `ANXOS_ALLOWED_ORIGINS`") && docs.includes("stale `ANXOS_WEBSITE_BASE_URL`"), "Docs should cover official account origin and stale function deployment failures.");
+  assert(env.includes("ANXOS_ALLOWED_ORIGINS=https://anxoscontrolcenter.org"), ".env.example should default account CORS to the official domain.");
   assert(readme.includes("account-config.js") && readme.includes("public browser-safe values"), "Website README should document public account config.");
 }
 

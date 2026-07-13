@@ -113,6 +113,7 @@ assert(index.includes("Runtime Dependencies") && index.includes("Prepare Node"),
 assert(index.includes("data-download-status"), "Downloads page should expose release metadata status.");
 assert(site.includes("Release metadata is unavailable"), "Downloads should handle missing release metadata.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
+assert(site.includes("friendlyAccountDataError") && site.includes("ACCOUNT_NETWORK_OR_CORS") && site.includes("refreshAccountSection"), "Account overview should classify protected endpoint failures and refresh sections independently.");
 assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org\""), "www redirects should be handled by Cloudflare, not application JavaScript.");
 ["index.html", "download/index.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
   assert(!read(file).includes('href="#"'), `${file} must not ship dead # fallback links.`);

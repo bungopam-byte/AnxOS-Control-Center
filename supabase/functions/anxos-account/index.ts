@@ -12,11 +12,13 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const desktopTokenSecret = Deno.env.get("ANXOS_DESKTOP_TOKEN_SECRET") || "";
 const deviceCodeSecret = Deno.env.get("ANXOS_DEVICE_CODE_SECRET") || desktopTokenSecret;
-const websiteBaseUrl = trimSlash(Deno.env.get("ANXOS_WEBSITE_BASE_URL") || "https://anxoscontrolcenter.org");
-const allowedOrigins = (Deno.env.get("ANXOS_ALLOWED_ORIGINS") || DEFAULT_ALLOWED_ORIGINS.join(","))
+const OFFICIAL_WEBSITE_BASE_URL = "https://anxoscontrolcenter.org";
+const websiteBaseUrl = normalizeWebsiteBaseUrl(Deno.env.get("ANXOS_WEBSITE_BASE_URL"));
+const configuredAllowedOrigins = (Deno.env.get("ANXOS_ALLOWED_ORIGINS") || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const allowedOrigins = Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...configuredAllowedOrigins]));
 
 const admin = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -72,6 +74,12 @@ function normalizeRoute(pathname: string) {
     .replace(/^\/functions\/v1\/anxos-account/, "")
     .replace(/^\/anxos-account/, "")
     .replace(/\/+$/, "") || "/";
+}
+
+function normalizeWebsiteBaseUrl(value: string | undefined) {
+  const configured = trimSlash(value || "");
+  if (!configured || configured === "https://anxos-control-center.pages.dev") return OFFICIAL_WEBSITE_BASE_URL;
+  return configured;
 }
 
 async function startDevice(request: Request) {

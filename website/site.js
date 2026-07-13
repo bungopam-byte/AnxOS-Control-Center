@@ -19,6 +19,11 @@ let securityHistoryFilter = "all";
 let securityHistoryHideOld = true;
 let authRestoreFallbackTimer = null;
 let authStateSubscription = null;
+let latestAccountSectionErrors = {
+  devices: null,
+  sessions: null,
+  security: null,
+};
 
 const AUTH_RESTORE_TIMEOUT_MS = 5000;
 
@@ -219,6 +224,16 @@ function getSupabase() {
 function getAccountApiUrl(path) {
   const base = String(accountConfig.accountApiUrl || "").replace(/\/+$/, "");
   return `${base}${path}`;
+}
+
+function getAccountApiHostLabel() {
+  try {
+    const url = new URL(accountConfig.accountApiUrl || "");
+    if (url.hostname.endsWith(".functions.supabase.co")) return "Supabase Edge Function";
+    return url.hostname || "account API";
+  } catch {
+    return "account API";
+  }
 }
 
 function getRouteParams() {
@@ -438,23 +453,107 @@ async function apiFetch(path, options = {}) {
     error.code = "ACCOUNT_API_NOT_CONFIGURED";
     throw error;
   }
-  const session = currentSession || (await getSupabase()?.auth.getSession())?.data?.session;
-  const headers = {
-    "content-type": "application/json",
-    ...(session?.access_token ? { authorization: `Bearer ${session.access_token}` } : {}),
-  };
-  const response = await fetch(getAccountApiUrl(path), {
-    method: options.method || "POST",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.message || data.error || `Request failed with HTTP ${response.status}.`);
-    error.code = data.code || `HTTP_${response.status}`;
+  const client = getSupabase();
+  if (!client) {
+    const error = new Error("Account sign-in scripts are unavailable.");
+    error.code = "ACCOUNT_PROVIDER_UNAVAILABLE";
     throw error;
   }
-  return data;
+  const { data, error: sessionError } = await client.auth.getSession();
+  if (sessionError) {
+    const error = new Error("Unable to verify your signed-in session.");
+    error.code = "ACCOUNT_SESSION_CHECK_FAILED";
+    error.cause = sessionError;
+    throw error;
+  }
+  const session = data?.session?.user ? data.session : null;
+  currentSession = session?.user ? session : null;
+  if (!currentSession?.access_token) {
+    authState = "signed-out";
+    applyAuthVisibility("api-session-missing");
+    const error = new Error("Your session expired. Sign in again.");
+    error.code = "AUTH_REQUIRED";
+    throw error;
+  }
+  const headers = {
+    "content-type": "application/json",
+    authorization: `Bearer ${currentSession.access_token}`,
+    ...(accountConfig.supabaseAnonKey ? { apikey: accountConfig.supabaseAnonKey } : {}),
+  };
+  let response;
+  try {
+    response = await fetch(getAccountApiUrl(path), {
+      method: options.method || "POST",
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (error) {
+    throw classifyAccountFetchFailure(error, path);
+  }
+  const responseText = await response.text().catch(() => "");
+  const payload = parseJsonResponse(responseText);
+  if (!response.ok) {
+    const error = new Error(payload.message || payload.error || `Account request failed with HTTP ${response.status}.`);
+    error.code = payload.code || accountHttpCode(response.status);
+    error.status = response.status;
+    error.endpoint = path;
+    error.hostLabel = getAccountApiHostLabel();
+    throw error;
+  }
+  return payload;
+}
+
+function parseJsonResponse(text) {
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+function accountHttpCode(status) {
+  if (status === 401 || status === 403) return "ACCOUNT_UNAUTHORIZED";
+  if (status === 404) return "ACCOUNT_ENDPOINT_NOT_FOUND";
+  if (status === 503) return "ACCOUNT_SERVICE_NOT_CONFIGURED";
+  if (status >= 500) return "ACCOUNT_SERVER_ERROR";
+  return `HTTP_${status}`;
+}
+
+function classifyAccountFetchFailure(error, path) {
+  const next = new Error("Account data could not be loaded from the configured account service.");
+  next.code = "ACCOUNT_NETWORK_OR_CORS";
+  next.endpoint = path;
+  next.hostLabel = getAccountApiHostLabel();
+  next.cause = error;
+  return next;
+}
+
+function friendlyAccountDataError(error) {
+  const code = String(error?.code || "");
+  if (code === "ACCOUNT_API_NOT_CONFIGURED") return "Account API endpoint is not configured for this website deployment.";
+  if (code === "ACCOUNT_PROVIDER_UNAVAILABLE") return "Account sign-in scripts are unavailable. Check your connection and refresh.";
+  if (code === "AUTH_REQUIRED" || code === "ACCOUNT_UNAUTHORIZED") return "Your session expired or is unauthorized. Sign in again.";
+  if (code === "ACCOUNT_ENDPOINT_NOT_FOUND") return "Account endpoint is missing. Deploy the latest AnxOS account Edge Function.";
+  if (code === "ACCOUNT_SERVICE_NOT_CONFIGURED") return "Account service is not fully configured. Check Supabase function environment variables.";
+  if (code === "ACCOUNT_NETWORK_OR_CORS") return `The ${error?.hostLabel || "account API"} rejected or did not answer this website origin. Check CORS/allowed origins and retry.`;
+  if (code.includes("LIST_FAILED") || code.includes("CLEAR_FAILED")) return friendlyAuthError(error);
+  if (/relation .* does not exist|table .* does not exist|schema cache/i.test(error?.message || "")) {
+    return "Account database objects are missing. Apply the latest Supabase migrations.";
+  }
+  if (/row-level security|permission denied|not authorized/i.test(error?.message || "")) {
+    return "Account database permissions denied this request. Check Supabase RLS policies.";
+  }
+  return friendlyAuthError(error);
+}
+
+function logAccountDataFailure(section, error) {
+  logWebsiteDiagnostic("warn", `account-${section}`, {
+    message: friendlyAccountDataError(error),
+    code: error?.code || null,
+    status: error?.status || null,
+    endpoint: error?.endpoint || null,
+  });
 }
 
 async function initializeAccount() {
@@ -544,7 +643,7 @@ async function renderAuthState() {
     return;
   }
   await loadProfile().catch((error) => {
-    currentProfile = null;
+    currentProfile = fallbackProfileFromSession();
     setMessage("profile", friendlyAuthError(error), "warn");
     logWebsiteDiagnostic("warn", "profile-load", error);
   });
@@ -596,7 +695,8 @@ function applyAuthVisibility(operation = "apply") {
 
 function renderSignedIn() {
   applyAuthVisibility("render-signed-in");
-  setText("[data-account-display-name]", currentProfile?.display_name || currentProfile?.username || currentSession?.user?.email || "AnxOS Account");
+  const identity = getAccountIdentity();
+  setText("[data-account-display-name]", identity.primary);
   setText("[data-account-email]", currentSession?.user?.email || "");
   renderProfileViews();
 }
@@ -608,7 +708,45 @@ async function loadProfile() {
     .eq("id", currentSession.user.id)
     .maybeSingle();
   if (error) throw error;
-  currentProfile = data || null;
+  currentProfile = data || fallbackProfileFromSession();
+}
+
+function fallbackProfileFromSession() {
+  const user = currentSession?.user;
+  if (!user) return null;
+  const metadata = user.user_metadata || {};
+  return {
+    id: user.id,
+    username: metadata.username || "",
+    display_name: metadata.display_name || metadata.full_name || metadata.name || "",
+    avatar_url: metadata.avatar_url || metadata.picture || "",
+    role: metadata.role || "user",
+    bio: metadata.bio || "",
+    time_zone: metadata.time_zone || "",
+    preferred_platform: metadata.preferred_platform || "",
+    website_url: metadata.website_url || "",
+    github_url: metadata.github_url || "",
+    created_at: user.created_at || "",
+    updated_at: user.updated_at || "",
+    source: "auth_metadata",
+  };
+}
+
+function getAccountIdentity() {
+  const email = currentSession?.user?.email || "";
+  const displayName = String(currentProfile?.display_name || "").trim();
+  const username = String(currentProfile?.username || "").trim();
+  const primaryCandidate = displayName || username;
+  const primary = primaryCandidate && primaryCandidate.toLowerCase() !== email.toLowerCase()
+    ? primaryCandidate
+    : "AnxOS Account";
+  const secondaryParts = [];
+  if (username && username !== primary) secondaryParts.push(`@${username}`);
+  if (email) secondaryParts.push(email);
+  return {
+    primary,
+    subtitle: secondaryParts.join(" · "),
+  };
 }
 
 function setAvatarNode(node, imageUrl, fallbackText) {
@@ -639,16 +777,17 @@ function calculateProfileCompletion(profile) {
 }
 
 function renderProfileViews() {
-  const displayName = currentProfile?.display_name || currentProfile?.username || currentSession?.user?.email || "AnxOS Account";
-  const username = currentProfile?.username || "account";
+  const identity = getAccountIdentity();
+  const displayName = identity.primary;
+  const username = currentProfile?.username || "";
   const avatarUrl = currentProfile?.avatar_url || "";
   setText("[data-profile-display-name]", displayName);
-  setText("[data-profile-username]", `@${username}`);
+  setText("[data-profile-username]", username ? `@${username}` : "Username not set");
   setText("[data-profile-role]", currentProfile?.role || "Account");
   setText("[data-profile-member-since]", currentProfile?.created_at ? `Member since ${formatDate(currentProfile.created_at)}` : "Member since unavailable");
   setText("[data-profile-completion]", `${calculateProfileCompletion(currentProfile)}%`);
   setText("[data-profile-summary-name]", displayName);
-  setText("[data-profile-summary-meta]", `@${username} · ${currentProfile?.role || "user"} · ${calculateProfileCompletion(currentProfile)}% complete`);
+  setText("[data-profile-summary-meta]", `${username ? `@${username} · ` : ""}${currentProfile?.role || "user"} · ${calculateProfileCompletion(currentProfile)}% complete`);
   setText("[data-profile-account-id]", maskIdentifier(currentSession?.user?.id));
   setText("[data-profile-created]", formatDate(currentProfile?.created_at || currentSession?.user?.created_at));
   setText("[data-profile-updated]", formatDate(currentProfile?.updated_at));
@@ -812,13 +951,16 @@ async function loadDevices() {
   renderListLoading(container);
   try {
     const { devices = [] } = await apiFetch("/api/account/devices", { method: "GET" });
+    latestAccountSectionErrors.devices = null;
     latestAccountDevices = devices;
     renderDeviceList(container, devices);
     renderProfileDeviceList(devices);
     updateCleanupControls();
   } catch (error) {
+    latestAccountSectionErrors.devices = error;
+    logAccountDataFailure("devices", error);
     latestAccountDevices = [];
-    renderListMessage(container, friendlyAuthError(error));
+    renderListMessage(container, "Devices unavailable", friendlyAccountDataError(error));
     renderProfileDeviceList([]);
     updateCleanupControls();
   }
@@ -830,12 +972,15 @@ async function loadSessions() {
   renderListLoading(container);
   try {
     const { sessions = [] } = await apiFetch("/api/account/sessions", { method: "GET" });
+    latestAccountSectionErrors.sessions = null;
     latestAccountSessions = sessions;
     renderSessionList(container, sessions);
     updateCleanupControls();
   } catch (error) {
+    latestAccountSectionErrors.sessions = error;
+    logAccountDataFailure("sessions", error);
     latestAccountSessions = [];
-    renderListMessage(container, friendlyAuthError(error));
+    renderListMessage(container, "Sessions unavailable", friendlyAccountDataError(error));
     updateCleanupControls();
   }
 }
@@ -846,11 +991,14 @@ async function loadSecurityEvents() {
   renderListLoading(container);
   try {
     const { events = [] } = await apiFetch("/api/account/security-events", { method: "GET" });
+    latestAccountSectionErrors.security = null;
     latestSecurityEvents = events;
     renderSecurityEvents();
   } catch (error) {
+    latestAccountSectionErrors.security = error;
+    logAccountDataFailure("security", error);
     latestSecurityEvents = [];
-    renderListMessage(container, friendlyAuthError(error));
+    renderListMessage(container, "Security history unavailable", friendlyAccountDataError(error));
   }
 }
 
@@ -896,8 +1044,8 @@ function renderListLoading(container) {
   container.replaceChildren(createListItem("Loading...", "Waiting for account data."));
 }
 
-function renderListMessage(container, message) {
-  container.replaceChildren(createListItem("Not available", message));
+function renderListMessage(container, title, message) {
+  container.replaceChildren(createListItem(title || "Not available", message));
 }
 
 function renderGenericList(container, items, mapItem) {
@@ -1050,33 +1198,52 @@ function getCleanupCounts() {
 function updateCleanupControls() {
   const counts = getCleanupCounts();
   const inactiveTotal = counts.revokedDevices + counts.expiredSessions;
+  const devicesUnavailable = Boolean(latestAccountSectionErrors.devices);
+  const sessionsUnavailable = Boolean(latestAccountSectionErrors.sessions);
+  const devicesReason = devicesUnavailable ? friendlyAccountDataError(latestAccountSectionErrors.devices) : "No revoked devices to clear.";
+  const sessionsReason = sessionsUnavailable ? friendlyAccountDataError(latestAccountSectionErrors.sessions) : "No expired or revoked sessions to clear.";
   document.querySelectorAll('[data-auth-action="clear-revoked-devices"]').forEach((button) => {
     button.textContent = `Clear Revoked (${counts.revokedDevices})`;
-    button.disabled = accountCleanupBusy || counts.revokedDevices === 0;
+    button.disabled = accountCleanupBusy || devicesUnavailable || counts.revokedDevices === 0;
+    button.title = button.disabled ? devicesReason : "Clear revoked devices.";
   });
   document.querySelectorAll('[data-auth-action="clear-expired-sessions"]').forEach((button) => {
     button.textContent = `Clear Expired (${counts.expiredSessions})`;
-    button.disabled = accountCleanupBusy || counts.expiredSessions === 0;
+    button.disabled = accountCleanupBusy || sessionsUnavailable || counts.expiredSessions === 0;
+    button.title = button.disabled ? sessionsReason : "Clear expired sessions.";
   });
   document.querySelectorAll('[data-auth-action="cleanup-revoked-devices"]').forEach((button) => {
     button.textContent = `Clear revoked devices (${counts.revokedDevices})`;
-    button.disabled = accountCleanupBusy || counts.revokedDevices === 0;
+    button.disabled = accountCleanupBusy || devicesUnavailable || counts.revokedDevices === 0;
+    button.title = button.disabled ? devicesReason : "Clear revoked devices.";
   });
   document.querySelectorAll('[data-auth-action="cleanup-expired-sessions"]').forEach((button) => {
     button.textContent = `Clear expired sessions (${counts.expiredSessions})`;
-    button.disabled = accountCleanupBusy || counts.expiredSessions === 0;
+    button.disabled = accountCleanupBusy || sessionsUnavailable || counts.expiredSessions === 0;
+    button.title = button.disabled ? sessionsReason : "Clear expired sessions.";
   });
   document.querySelectorAll('[data-auth-action="cleanup-inactive-records"]').forEach((button) => {
     button.textContent = `Clear all inactive records (${inactiveTotal})`;
-    button.disabled = accountCleanupBusy || inactiveTotal === 0;
+    button.disabled = accountCleanupBusy || devicesUnavailable || sessionsUnavailable || inactiveTotal === 0;
+    button.title = button.disabled
+      ? (devicesUnavailable || sessionsUnavailable ? "Load devices and sessions before clearing inactive records." : "No inactive account records to clear.")
+      : "Clear revoked devices and inactive sessions.";
   });
   document.querySelectorAll('[data-auth-action="clear-local-cache"]').forEach((button) => {
     button.disabled = accountCleanupBusy;
+    button.title = "Clear local website cache on this browser.";
   });
 }
 
 async function refreshAccountLists() {
   await Promise.allSettled([loadDevices(), loadSessions(), loadSecurityEvents()]);
+}
+
+async function refreshAccountSection(section) {
+  if (section === "devices") return loadDevices();
+  if (section === "sessions") return loadSessions();
+  if (section === "security") return loadSecurityEvents();
+  return refreshAccountLists();
 }
 
 function setCleanupBusy(busy) {
@@ -1377,7 +1544,13 @@ function bindAccountForms() {
     });
   });
   document.querySelectorAll('[data-auth-action="refresh-devices"]').forEach((button) => {
-    button.addEventListener("click", refreshAccountLists);
+    button.addEventListener("click", () => refreshAccountSection("devices"));
+  });
+  document.querySelectorAll('[data-auth-action="refresh-sessions"]').forEach((button) => {
+    button.addEventListener("click", () => refreshAccountSection("sessions"));
+  });
+  document.querySelectorAll('[data-auth-action="refresh-security"]').forEach((button) => {
+    button.addEventListener("click", () => refreshAccountSection("security"));
   });
   document.querySelectorAll('[data-auth-action="revoke-sessions"]').forEach((button) => {
     button.addEventListener("click", async () => {

@@ -101,6 +101,7 @@
                   <div class="account-subpanel__actions">
                     <button class="button button-ghost" type="button" data-auth-action="clear-expired-sessions" disabled>Clear Expired (0)</button>
                     <button class="button button-ghost" type="button" data-auth-action="revoke-sessions">Sign Out All</button>
+                    <button class="button button-ghost" type="button" data-auth-action="refresh-sessions">Refresh</button>
                   </div>
                 </div>
                 <div data-account-sessions class="account-list"></div>
@@ -117,6 +118,7 @@
                     <button class="account-filter-chip" type="button" data-security-filter="session">Session</button>
                     <button class="account-filter-chip" type="button" data-security-filter="cleanup">Cleanup</button>
                     <button class="account-filter-chip" type="button" data-security-filter="error">Errors</button>
+                    <button class="account-filter-chip" type="button" data-auth-action="refresh-security">Refresh</button>
                     <label class="account-history-toggle"><input type="checkbox" data-security-hide-old checked><span>Hide older than 30 days</span></label>
                   </div>
                 </div>

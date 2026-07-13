@@ -330,6 +330,7 @@ const startupMessage = document.querySelector("[data-startup-message]");
 const startupDetail = document.querySelector("[data-startup-detail]");
 const playitStatusCard = document.querySelector("[data-playit-status-card]");
 const playitStatusPill = document.querySelector("[data-playit-status-pill]");
+const publicAccessProviderList = document.querySelector("[data-public-access-providers]");
 const ampPanelLink = document.querySelector("[data-amp-panel-link]");
 const startupSteps = {
   app: document.querySelector('[data-startup-step="app"]'),
@@ -5335,9 +5336,59 @@ function renderPlayitSnapshot(snapshot) {
   updateTitlebar();
 }
 
+function getPublicAccessProviderTone(provider = {}) {
+  if (provider.id === "playit" && provider.connected) return "is-connected";
+  if (provider.health === "healthy") return "status-pill--ok";
+  if (provider.available || provider.installed) return "status-pill--planned";
+  if (provider.status === "disabled") return "status-pill--critical";
+  return "status-pill--warning";
+}
+
+function getPublicAccessProviderLabel(provider = {}) {
+  if (provider.id === "playit" && provider.connected) return "Connected";
+  if (provider.id === "playit" && provider.installed) return provider.health === "stopped" ? "Stopped" : "Detected";
+  if (provider.available || provider.installed) return "Detected";
+  if (provider.status === "disabled") return "Disabled";
+  if (provider.status === "foundation") return "Not Installed";
+  return "Unavailable";
+}
+
+function renderPublicAccessProviders(providers = []) {
+  if (!publicAccessProviderList) return;
+  const providerRows = Array.isArray(providers) && providers.length ? providers : [];
+  publicAccessProviderList.replaceChildren();
+  providerRows.forEach((provider) => {
+    const article = document.createElement("article");
+    article.className = "public-access-provider";
+    article.dataset.providerId = provider.id || "";
+    article.classList.toggle("is-supported", provider.id === "playit");
+    article.classList.toggle("is-disabled", provider.id !== "playit" || provider.status === "disabled");
+    if (provider.id !== "playit" || provider.status === "disabled") {
+      article.setAttribute("aria-disabled", "true");
+    }
+
+    const title = document.createElement("strong");
+    title.textContent = provider.name || provider.id || "Provider";
+    const status = document.createElement("span");
+    status.className = `status-pill ${getPublicAccessProviderTone(provider)}`;
+    status.textContent = getPublicAccessProviderLabel(provider);
+    const description = document.createElement("small");
+    const scope = provider.exposureScope === "tailnet-only"
+      ? "Tailnet-only"
+      : provider.exposureScope === "public-internet"
+        ? "Public internet"
+        : "Unavailable";
+    description.textContent = `${scope}. ${provider.recoveryAction || provider.description || "Provider is unavailable."}`;
+
+    article.append(title, status, description);
+    publicAccessProviderList.append(article);
+  });
+}
+
 function renderPublicAccessSnapshot(snapshot = {}) {
   const playitSnapshot = snapshot.playit || snapshot;
   renderPlayitSnapshot(playitSnapshot);
+  renderPublicAccessProviders(snapshot.providers);
   const service = Array.isArray(snapshot.services) ? snapshot.services[0] : null;
   if (service) {
     setField("publicAccessServiceName", service.name || "Public service");

@@ -49,6 +49,7 @@
     "command-palette:smoke": "node scripts/command-palette-smoke.js",
     "renderer-safety:smoke": "node scripts/renderer-safety-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
+    "public-access:smoke": "node scripts/public-access-smoke.js",
     "website:smoke": "node scripts/website-production-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
     "notifications:smoke": "node scripts/notification-center-smoke.js",

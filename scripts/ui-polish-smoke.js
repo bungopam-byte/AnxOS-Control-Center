@@ -102,6 +102,7 @@ assert(styles.includes(".command-palette-dialog") && styles.includes(".command-p
 assert(pageMarkup("playit").includes("<h1>Public Access</h1>") && pageMarkup("playit").includes("data-public-access-action=\"enable\""), "Playit workspace must be presented as Public Access with service actions.");
 assert(pageMarkup("playit").includes("Cloudflare Tunnel") && pageMarkup("playit").includes("Tailscale") && pageMarkup("playit").includes("AnxOS Relay"), "Public Access must show future providers as disabled options.");
 assert(app.includes("hasPublicAccess") && app.includes("renderPublicAccessSnapshot") && preload.includes("publicAccess:getSnapshot") && main.includes("registerPublicAccessIpc"), "Public Access must use the provider abstraction while preserving Playit compatibility.");
+assert(app.includes("function renderPublicAccessProviders") && app.includes("Tailnet-only"), "Public Access UI must render provider capability and exposure scope from the provider snapshot.");
 assert(styles.includes(".public-access-grid") && styles.includes(".public-access-provider.is-disabled"), "Public Access CSS must include provider and service layout.");
 assert(app.includes("function createTextElement") && app.includes("function createSecurityBadgeElement"), "Renderer must keep safe DOM helper coverage for dynamic desktop surfaces.");
 assert(app.includes("pre = createTextElement(\"pre\", JSON.stringify(event.details || {}, null, 2)") && app.includes("createSvgElement(\"path\""), "High-risk diagnostics/security/icon surfaces must render through DOM APIs.");

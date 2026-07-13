@@ -1180,7 +1180,7 @@
                   <div class="docker-empty-state" data-docker-empty>
                     <span class="docker-icon" aria-hidden="true"></span>
                     <strong>No Docker data available</strong>
-                    <span data-field="dockerEmptyMessage">Docker status is unavailable.</span>
+                    <span data-field="dockerEmptyMessage">Docker containers appear here after the selected node reports Docker support. Install Docker on that node or choose another node.</span>
                   </div>
                 </div>
               </section>
@@ -1418,7 +1418,7 @@
                 </div>
                 <div class="docker-empty-state marketplace-empty" data-marketplace-empty hidden>
                   <strong>No templates found</strong>
-                  <span>Try another search or category.</span>
+                  <span>Marketplace templates appear here after the catalog loads. Clear filters, choose a category, or check dependencies for the selected node.</span>
                 </div>
               </section>
 
@@ -1502,7 +1502,7 @@
                     <button class="inline-action" type="button" data-download-refresh>Refresh</button>
                   </div>
                   <div class="download-list" data-download-list>
-                    <div class="docker-empty-state"><strong>No downloads queued</strong><span>Template downloads will appear here.</span></div>
+                    <div class="docker-empty-state"><strong>No downloads queued</strong><span>Marketplace install progress, manual download prompts, and installer logs will appear here after you start an install.</span></div>
                   </div>
                 </div>
               </aside>
@@ -1664,7 +1664,7 @@
                   <div class="docker-empty-state" data-instances-empty>
                     <span class="docker-icon" aria-hidden="true"></span>
                     <strong>No instances available</strong>
-                    <span data-field="instancesEmptyMessage">Create an instance to begin.</span>
+                    <span data-field="instancesEmptyMessage">Game servers and apps appear here after you create one from Marketplace or the instance templates.</span>
                   </div>
                 </div>
               </section>
@@ -2112,7 +2112,7 @@
                   </div>
                   <div class="ssh-empty-state" data-ssh-empty>
                     <strong>No SSH session connected</strong>
-                    <span>No SSH session is connected.</span>
+                    <span>Select a saved SSH profile, connect, then run commands against that server from this terminal.</span>
                   </div>
                 </div>
 
@@ -2246,7 +2246,7 @@
                   <div class="folder-tree-empty">
                     <span class="folder-icon" aria-hidden="true"></span>
                     <strong>No filesystem connected</strong>
-                    <span>No folder roots are connected.</span>
+                    <span>Choose a server and storage profile, then connect to browse local files or an Agent filesystem.</span>
                   </div>
                 </aside>
 
@@ -2279,7 +2279,7 @@
                     <div class="file-empty-state" data-file-empty>
                       <span class="file-icon" aria-hidden="true"></span>
                       <strong>No files to show</strong>
-                      <span>Connect a local filesystem service to browse folders and files.</span>
+                      <span>Connect a storage profile to load its home folder. Local Windows and remote Agent paths are kept separate.</span>
                     </div>
                   </div>
                 </section>
@@ -2464,7 +2464,7 @@
                   <ol class="console-log-list" data-console-log-list></ol>
                   <div class="console-empty-state" data-console-empty>
                     <strong>No instance selected</strong>
-                    <span>Select an instance from the source list to view live output.</span>
+                    <span>Create or select an instance, then refresh logs to view live output and send commands when the server supports console input.</span>
                   </div>
                   <button class="console-jump-latest" type="button" data-console-jump-latest hidden>Jump to Latest ↓</button>
                 </div>
@@ -2600,7 +2600,7 @@
                   <div class="backup-empty-state">
                     <span class="backup-icon" aria-hidden="true"></span>
                     <strong>No backups available</strong>
-                    <span data-backup-empty-message>No backups have been created yet.</span>
+                    <span data-backup-empty-message>Create a backup from an instance or configure backup paths to begin protecting server data.</span>
                   </div>
                   <div class="backup-loading-state" hidden>
                     <span class="file-loader" aria-hidden="true"></span>
@@ -3391,7 +3391,7 @@
                 <div><span>Marketplace</span><button class="inline-action" type="button" data-dependency-action="check">Check Dependencies</button><button class="inline-action" type="button" data-dependency-action="install">Install Missing</button><button class="inline-action" type="button" data-dependency-action="retry">Retry</button></div>
               </div>
               <div class="download-list" data-dependency-list>
-                <div class="docker-empty-state"><strong>No dependency check yet</strong><span>Run Check Dependencies before installing Marketplace templates.</span></div>
+                <div class="docker-empty-state"><strong>No dependency check yet</strong><span>Check dependencies on the selected node before installing Marketplace templates. Missing packages can be prepared from this panel.</span></div>
               </div>
             </section>
             <section class="settings-section agent-operations-panel">

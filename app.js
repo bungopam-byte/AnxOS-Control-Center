@@ -3218,7 +3218,7 @@ function renderDependencyStatus(result = null, options = {}) {
     const title = document.createElement("strong");
     title.textContent = result ? summary.label : "No dependency check yet";
     const message = document.createElement("span");
-    message.textContent = result ? summary.message : "Run Check Dependencies before installing Marketplace templates.";
+    message.textContent = result ? summary.message : "Check dependencies on the selected node before installing Marketplace templates. Missing packages can be prepared from this panel.";
     empty.append(title, message);
     dependencyList.append(empty);
     return;
@@ -3479,7 +3479,7 @@ function renderRemoteAgents(agents = []) {
   if (!agents.length) {
     const empty = document.createElement("div");
     empty.className = "security-empty-state";
-    empty.textContent = "No remote Agents are registered. Add one from Nodes.";
+    empty.textContent = "No remote Agents are registered. Add one from Nodes to manage another machine; the local application host remains available.";
     agentRemoteList.append(empty);
     return;
   }
@@ -6203,7 +6203,7 @@ function getDockerStateLabel(snapshot) {
   return {
     installed: "Installed",
     daemon: "Running",
-    message: "No containers found.",
+    message: "No containers found. Create a container, start a Compose project, or select another node with Docker workloads.",
   };
 }
 
@@ -8399,7 +8399,7 @@ function setInstancesLoading(isLoading) {
   document.querySelector('[data-page="instances"]')?.setAttribute("aria-busy", isLoading ? "true" : "false");
 }
 
-function setInstancesEmpty(isVisible, message = "Create an instance to begin.") {
+function setInstancesEmpty(isVisible, message = "Game servers and apps appear here after you create one from Marketplace or the instance templates.") {
   if (instancesEmpty) {
     instancesEmpty.hidden = !isVisible;
   }
@@ -9148,7 +9148,7 @@ function createMarketplaceEmptyStateContent(state = {}) {
   title.textContent = state.title || "No templates found";
 
   const detail = document.createElement("span");
-  detail.textContent = state.message || "Try another search or category.";
+  detail.textContent = state.message || "Marketplace templates appear here after the catalog loads. Clear filters, choose a category, or check dependencies for the selected node.";
 
   if (state.action === "open-settings") {
     const action = document.createElement("button");
@@ -9169,7 +9169,7 @@ function renderMarketplaceEmptyState(state = null) {
 
   const activeState = state || {
     title: "No templates found",
-    message: "Try another search or category.",
+    message: "Marketplace templates appear here after the catalog loads. Clear filters, choose a category, or check dependencies for the selected node.",
   };
   marketplaceEmpty.replaceChildren(...createMarketplaceEmptyStateContent(activeState));
   marketplaceEmpty.hidden = marketplaceRequestInFlight || marketplaceProviderRequestInFlight || Boolean(activeState.hidden);
@@ -10877,7 +10877,7 @@ function renderMarketplaceDownloads(downloads = []) {
     const title = document.createElement("strong");
     title.textContent = "No downloads queued";
     const detail = document.createElement("span");
-    detail.textContent = "Template downloads will appear here.";
+    detail.textContent = "Marketplace install progress, manual download prompts, and installer logs will appear here after you start an install.";
     empty.append(title, detail);
     downloadList.append(empty);
     return;
@@ -11250,8 +11250,8 @@ function renderBackups() {
   }
   if (backupEmptyMessage) {
     backupEmptyMessage.textContent = connected
-      ? "No backups have been created yet."
-      : backupsState.error || "Agent backup state is unavailable.";
+      ? "Create a backup from an instance or configure backup paths to begin protecting server data."
+      : backupsState.error || "Select a node with backup support, then refresh backup state.";
   }
   if (backupLoadingState) {
     backupLoadingState.hidden = !backupRequestInFlight;
@@ -13392,8 +13392,8 @@ function renderFolderRoots(listing) {
 
     if (messageTarget) {
       messageTarget.textContent = listing?.connected
-        ? "The file service did not return any folder roots."
-        : (listing?.message || "No folder roots are connected.");
+        ? "The file service did not return folder roots. Refresh the profile or check the Agent filesystem root."
+        : (listing?.message || "Choose a server and storage profile, then connect to browse local files or an Agent filesystem.");
     }
   }
 
@@ -14468,7 +14468,7 @@ function renderMaintenanceCenter() {
     const title = document.createElement("strong");
     title.textContent = maintenanceState.scanning ? "Scanning storage" : "No maintenance scan yet";
     const message = document.createElement("span");
-    message.textContent = maintenanceState.scanning ? "Measuring trusted AnxOS cache locations." : "Run Scan Storage to measure AnxOS-owned cache and diagnostic locations.";
+    message.textContent = maintenanceState.scanning ? "Measuring trusted AnxOS cache locations." : "Run Scan Storage to find AnxOS-owned cache, diagnostics, and temporary files that are safe to review.";
     empty.append(title, message);
     maintenanceList.append(empty);
     renderMaintenanceDetail();
@@ -16970,7 +16970,7 @@ function renderFileListing(listing) {
   }
 
   if (entries.length === 0) {
-    setFilesEmpty(true, "No files to show", "This folder is empty.");
+    setFilesEmpty(true, "This folder is empty", "Create or upload files here, or choose another folder from the breadcrumb or folder tree.");
     updateFileActionButtons();
     return;
   }
@@ -20897,7 +20897,7 @@ function getSshSessionMessage(session) {
   }
 
   if (!session) {
-    return "No SSH session is connected.";
+    return "Select a saved SSH profile, connect, then run commands against that server from this terminal.";
   }
 
   return session.message || (session.status === "connected" ? `Connected to ${session.label}.` : "SSH session is disconnected.");

@@ -108,44 +108,272 @@ function applyConfigText() {
   setText("[data-release-title]", `Version ${config.latestVersion || ""}`.trim());
 }
 
-function applyDownloads() {
-  const downloads = config.downloads || {};
-  let availableDownloads = 0;
+function downloadKeyToArtifactKey(key) {
+  return {
+    windows: "windows-setup",
+    windowsPortable: "windows-portable",
+    windowsMsi: "windows-msi",
+    linuxAppImage: "linux-appimage",
+    linuxDeb: "linux-deb",
+  }[key] || key;
+}
+
+function assetLabel(asset) {
+  return [asset.fileName, asset.architecture, asset.fileSizeLabel].filter(Boolean).join(" · ");
+}
+
+function findDownloadAsset(release, key) {
+  const artifactKey = downloadKeyToArtifactKey(key);
+  return (release?.assets || []).find((asset) => asset.key === artifactKey) || null;
+}
+
+function setDownloadStatus(message, tone = "warn") {
+  document.querySelectorAll("[data-download-status]").forEach((node) => {
+    node.textContent = message;
+    node.dataset.tone = tone;
+  });
+}
+
+function setDownloadLinksLoading() {
   document.querySelectorAll("[data-download]").forEach((node) => {
-    const item = downloads[node.dataset.download];
-    if (!item?.url) {
-      node.removeAttribute("href");
-      node.removeAttribute("download");
-      node.setAttribute("aria-disabled", "true");
-      node.classList.add("is-disabled");
-      const label = node.querySelector("span") || node;
-      label.textContent = "Unavailable";
-      return;
-    }
-    availableDownloads += 1;
-    node.href = item.url;
-    node.setAttribute("download", item.fileName);
-    node.setAttribute("aria-label", `${item.label}: ${item.fileName}`);
+    node.href = "/download";
+    node.removeAttribute("download");
+    node.removeAttribute("target");
+    node.removeAttribute("rel");
     node.removeAttribute("aria-disabled");
     node.classList.remove("is-disabled");
   });
   document.querySelectorAll("[data-file]").forEach((node) => {
-    const item = downloads[node.dataset.file];
-    if (!item) {
-      node.textContent = "Release metadata unavailable";
+    node.textContent = "Release metadata loading";
+  });
+  setDownloadStatus("Checking the latest published GitHub Release for official installer assets...", "loading");
+}
+
+function trackDownloadClick(asset, release) {
+  const payload = {
+    event: "download_click",
+    platform: asset.platform,
+    packageType: asset.packageType,
+    version: release.version,
+    buildNumber: release.buildNumber,
+  };
+  try {
+    if (typeof window.gtag === "function") {
+      window.gtag("event", "download_click", payload);
+    } else if (typeof window.plausible === "function") {
+      window.plausible("Download Click", { props: payload });
+    } else if (config.analyticsEndpoint && navigator.sendBeacon) {
+      navigator.sendBeacon(config.analyticsEndpoint, JSON.stringify(payload));
+    }
+  } catch {}
+}
+
+function bindDownloadAnchor(node, asset, release) {
+  node.href = asset.downloadUrl;
+  node.setAttribute("aria-label", `Download ${asset.installerType}: ${asset.fileName}`);
+  node.setAttribute("rel", "noopener noreferrer");
+  node.removeAttribute("aria-disabled");
+  node.classList.remove("is-disabled");
+  node.addEventListener("click", () => trackDownloadClick(asset, release), { once: false });
+}
+
+function applyDownloadButtons(release) {
+  const availableDownloads = (release?.assets || []).length;
+  document.querySelectorAll("[data-download]").forEach((node) => {
+    const asset = findDownloadAsset(release, node.dataset.download);
+    if (!node.closest("[data-download-page]")) {
+      node.href = "/download";
+      node.removeAttribute("download");
+      node.removeAttribute("target");
+      node.removeAttribute("rel");
       return;
     }
-    node.textContent = `${item.fileName} · ${item.size}`;
-  });
-  document.querySelectorAll("[data-download-status]").forEach((node) => {
-    if (availableDownloads > 0) {
-      node.textContent = `Release metadata loaded for ${availableDownloads} package${availableDownloads === 1 ? "" : "s"}.`;
-      node.dataset.tone = "ok";
-    } else {
-      node.textContent = "Release metadata is unavailable. Use the GitHub release page or try again later.";
-      node.dataset.tone = "warn";
+    if (!asset) {
+      node.href = "/download";
+      node.removeAttribute("download");
+      node.removeAttribute("target");
+      node.removeAttribute("rel");
+      const label = node.querySelector("span") || node;
+      if (!node.closest("[data-download-page]")) {
+        label.textContent = "Download";
+      }
+      return;
     }
+    bindDownloadAnchor(node, asset, release);
   });
+  document.querySelectorAll("[data-file]").forEach((node) => {
+    const asset = findDownloadAsset(release, node.dataset.file);
+    node.textContent = asset ? assetLabel(asset) : "Not available in the latest published release";
+  });
+  setDownloadStatus(
+    availableDownloads > 0
+      ? `Latest published release loaded: ${release.version ? `version ${release.version}` : release.tagName}${release.buildNumber ? ` build ${release.buildNumber}` : ""}.`
+      : "No downloadable installer assets are available in the latest published release.",
+    availableDownloads > 0 ? "ok" : "warn",
+  );
+}
+
+function platformLabel(platform) {
+  return {
+    windows: "Windows",
+    linux: "Linux",
+    macos: "macOS",
+    unknown: "Unknown platform",
+  }[platform] || platform;
+}
+
+function formatReleaseDate(value) {
+  if (!value) return "Unavailable";
+  try {
+    return new Date(value).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  } catch {
+    return "Unavailable";
+  }
+}
+
+function createDownloadButton(asset, release, primary = false) {
+  const link = document.createElement("a");
+  link.className = `button ${primary ? "button-primary" : "button-secondary"}`;
+  bindDownloadAnchor(link, asset, release);
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", "#icon-download");
+  icon.append(use);
+  const text = document.createElement("span");
+  text.textContent = asset.platform === "windows" && asset.packageType === "setup"
+    ? "Download for Windows"
+    : `Download ${asset.installerType}`;
+  link.append(icon, text);
+  return link;
+}
+
+function createAssetCard(asset, release) {
+  const card = document.createElement("article");
+  card.className = "download-card";
+  const body = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = asset.installerType;
+  const meta = document.createElement("p");
+  meta.textContent = assetLabel(asset);
+  const help = document.createElement("small");
+  help.textContent = asset.platform === "windows"
+    ? asset.packageType === "portable" ? "Portable build for Windows systems." : "Recommended package for Windows installs."
+    : asset.packageType === "deb" ? "For Debian and Ubuntu-based systems." : "Portable Linux package for distributions that support AppImage.";
+  body.append(title, meta, help);
+  card.append(body, createDownloadButton(asset, release, asset.key === "windows-setup" || asset.key === "linux-appimage"));
+  return card;
+}
+
+function renderReleaseSummary(release) {
+  document.querySelectorAll("[data-download-version]").forEach((node) => { node.textContent = release.version || "Unavailable"; });
+  document.querySelectorAll("[data-download-build]").forEach((node) => { node.textContent = release.buildNumber || "Unavailable"; });
+  document.querySelectorAll("[data-download-channel]").forEach((node) => { node.textContent = release.channel || "Unavailable"; });
+  document.querySelectorAll("[data-download-date]").forEach((node) => { node.textContent = formatReleaseDate(release.publishedAt); });
+  document.querySelectorAll("[data-download-release-link]").forEach((node) => {
+    node.href = release.releaseNotesUrl;
+    node.setAttribute("rel", "noopener noreferrer");
+    node.setAttribute("target", "_blank");
+  });
+  document.querySelectorAll("[data-download-release-body]").forEach((node) => {
+    node.textContent = release.releaseBody || "No release body was published for this GitHub Release.";
+  });
+  document.querySelectorAll("[data-download-checksum]").forEach((node) => {
+    node.replaceChildren();
+    if (!release.checksumAssets.length) {
+      node.textContent = "No checksum manifest is attached to this release yet. Verify that the filename and GitHub release match before installing.";
+      return;
+    }
+    const label = document.createElement("span");
+    label.textContent = "Checksum manifest: ";
+    const link = document.createElement("a");
+    link.href = release.checksumAssets[0].downloadUrl;
+    link.textContent = release.checksumAssets[0].fileName;
+    link.setAttribute("rel", "noopener noreferrer");
+    link.setAttribute("target", "_blank");
+    node.append(label, link);
+  });
+}
+
+function renderDownloadPage(release) {
+  const panel = document.querySelector("[data-download-page]");
+  if (!panel || !window.AnxOSReleaseDownloads) return;
+  panel.dataset.state = "ready";
+  renderReleaseSummary(release);
+  const detectedPlatform = window.AnxOSReleaseDownloads.detectPlatform();
+  const primaryAsset = window.AnxOSReleaseDownloads.preferredAssetForPlatform(release, detectedPlatform);
+  const primaryTarget = panel.querySelector("[data-primary-download]");
+  if (primaryTarget) {
+    primaryTarget.replaceChildren();
+    if (primaryAsset) {
+      const copy = document.createElement("div");
+      const heading = document.createElement("h3");
+      heading.textContent = `Recommended for ${platformLabel(detectedPlatform)}`;
+      const meta = document.createElement("p");
+      meta.textContent = `${primaryAsset.installerType} · ${assetLabel(primaryAsset)}`;
+      copy.append(heading, meta);
+      primaryTarget.append(copy, createDownloadButton(primaryAsset, release, true));
+    } else {
+      const heading = document.createElement("h3");
+      heading.textContent = detectedPlatform === "macos" ? "macOS is not available yet" : "Choose from available downloads";
+      const meta = document.createElement("p");
+      meta.textContent = detectedPlatform === "macos"
+        ? "AnxOS Control Center currently publishes Windows and Linux builds only."
+        : "Your platform could not be detected. Use one of the official packages below.";
+      primaryTarget.append(heading, meta);
+    }
+  }
+  const platforms = panel.querySelector("[data-download-platforms]");
+  if (platforms) {
+    platforms.replaceChildren();
+    release.assets.forEach((asset) => platforms.append(createAssetCard(asset, release)));
+    if (!release.assets.length) {
+      const empty = document.createElement("article");
+      empty.className = "download-card";
+      empty.textContent = "No installer assets are available in the latest published release.";
+      platforms.append(empty);
+    }
+  }
+  const other = panel.querySelector("[data-other-downloads]");
+  if (other) {
+    other.replaceChildren();
+    release.assets.forEach((asset) => {
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      bindDownloadAnchor(link, asset, release);
+      link.textContent = `${asset.installerType} - ${assetLabel(asset)}`;
+      item.append(link);
+      other.append(item);
+    });
+  }
+}
+
+function renderDownloadFailure(error) {
+  const message = error?.code === "GITHUB_RATE_LIMITED"
+    ? "GitHub release metadata is temporarily rate limited. Retry in a moment."
+    : error?.message || "Release metadata could not be loaded.";
+  setDownloadStatus(message, "warn");
+  const panel = document.querySelector("[data-download-page]");
+  if (panel) {
+    panel.dataset.state = "error";
+    document.querySelectorAll("[data-download-error]").forEach((node) => { node.textContent = message; });
+  }
+}
+
+async function applyDownloads(options = {}) {
+  setDownloadLinksLoading();
+  if (!window.AnxOSReleaseDownloads) {
+    renderDownloadFailure(new Error("Release download service is unavailable."));
+    return null;
+  }
+  try {
+    const release = await window.AnxOSReleaseDownloads.loadLatestRelease({ config, apiUrl: config.githubReleasesApiUrl, force: Boolean(options.force) });
+    applyDownloadButtons(release);
+    renderDownloadPage(release);
+    return release;
+  } catch (error) {
+    renderDownloadFailure(error);
+    return null;
+  }
 }
 
 function createReleaseNoteCard(release) {
@@ -1746,6 +1974,14 @@ function bindSiteNavigation() {
   });
 }
 
+function bindDownloadControls() {
+  document.querySelectorAll("[data-download-retry]").forEach((button) => {
+    button.addEventListener("click", () => {
+      applyDownloads({ force: true }).catch((error) => logWebsiteDiagnostic("warn", "download-retry", error));
+    });
+  });
+}
+
 async function applyRouteState() {
   if (redirectLegacyHashRoutes()) return;
   const route = getCurrentRoute();
@@ -1804,6 +2040,7 @@ applyConfigText();
 applyDownloads();
 applyReleaseNotes();
 bindSiteNavigation();
+bindDownloadControls();
 bindAccountForms();
 applyDeviceLoginPage();
 authInitializationPromise = initializeAccount().catch((error) => {

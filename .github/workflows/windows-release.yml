@@ -97,6 +97,12 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
+      - name: Generate SHA-256 checksum manifest
+        shell: bash
+        run: |
+          cd release-artifacts
+          sha256sum AnxOS-Control-Center-* > SHA256SUMS
+
       - name: Publish tagged release
         env:
           GH_TOKEN: ${{ github.token }}

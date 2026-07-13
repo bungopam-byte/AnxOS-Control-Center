@@ -13,25 +13,12 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   releaseTag: "v1.7-build142",
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center",
   releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build142",
-  downloads: {
-    windows: {
-      label: "Download for Windows",
-      fileName: "AnxOS-Control-Center-Setup-1.7-build142.exe",
-      size: "",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.7-build142/AnxOS-Control-Center-Setup-1.7-build142.exe",
-    },
-    linuxDeb: {
-      label: "Linux .deb",
-      fileName: "AnxOS-Control-Center-1.7-build142.deb",
-      size: "",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.7-build142/AnxOS-Control-Center-1.7-build142.deb",
-    },
-    linuxAppImage: {
-      label: "Linux AppImage",
-      fileName: "AnxOS-Control-Center-1.7-build142.AppImage",
-      size: "",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.7-build142/AnxOS-Control-Center-1.7-build142.AppImage",
-    },
+  githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center/releases?per_page=20",
+  stableDownloadEndpoints: {
+    windows: "/api/download/latest/windows",
+    windowsPortable: "/api/download/latest/windows-portable",
+    linuxAppImage: "/api/download/latest/linux-appimage",
+    linuxDeb: "/api/download/latest/linux-deb",
   },
   releaseNotes: [
       {

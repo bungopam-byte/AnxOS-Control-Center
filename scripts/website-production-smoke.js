@@ -21,6 +21,7 @@ const activateRoute = read("activate/index.html");
 const forgotRoute = read("forgot-password/index.html");
 const resetRoute = read("reset-password/index.html");
 const downloadRoute = read("download/index.html");
+const downloadHtmlRoute = read("download.html");
 const downloadsRoute = read("downloads/index.html");
 const featuresRoute = read("features/index.html");
 const gettingStartedRoute = read("getting-started/index.html");
@@ -162,7 +163,7 @@ assertWebsiteBrandingAssetsResolve();
 assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate") && robots.includes("Disallow: /signin") && robots.includes("Disallow: /reset-password"), "Robots rules must expose sitemap and exclude account routes.");
 assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && sitemap.includes(`<loc>${officialOrigin}/download</loc>`) && sitemap.includes(`<loc>${officialOrigin}/features</loc>`) && sitemap.includes(`<loc>${officialOrigin}/getting-started</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
 assert(redirects.includes("/sign-in /signin 301") && redirects.includes("/changelog /release-notes.html 301") && !redirects.includes("/* /index.html"), "Cloudflare redirects must cover clean aliases without a broad SPA fallback.");
-assert(downloadsRoute.includes('window.location.replace("/download" + window.location.search)') && installRoute.includes('window.location.replace("/getting-started" + window.location.search)'), "Static alias routes must preserve query strings while redirecting to canonical routes.");
+assert(downloadsRoute.includes('window.location.replace("/download" + window.location.search)') && downloadHtmlRoute.includes('window.location.replace("/download" + window.location.search)') && installRoute.includes('window.location.replace("/getting-started" + window.location.search)'), "Static alias routes must preserve query strings while redirecting to canonical routes.");
 assert(releaseRoute.includes('window.location.replace("/release-notes.html" + window.location.search)') && changelogRoute.includes('window.location.replace("/release-notes.html" + window.location.search)'), "Release alias routes must preserve query strings while redirecting to release notes.");
 assert([signin, signup, account, profile, activateRoute, forgotRoute, resetRoute, activate, forgot, reset].every((html) => html.includes('name="robots" content="noindex,nofollow"')), "Account and activation pages must be excluded from indexing.");
 assert(accountHtml.includes('name="robots" content="noindex,nofollow"') && profileHtml.includes('name="robots" content="noindex,nofollow"'), "Account clean URL HTML files must be excluded from indexing.");
@@ -170,7 +171,7 @@ assert(accountHtml.includes('data-account-route="account"') && profileHtml.inclu
 assert(!accountHtml.includes('window.location.replace("/account"') && !profileHtml.includes('window.location.replace("/profile"'), "Cloudflare clean URL HTML files must not self-redirect.");
 assert(index.includes("© 2026 AnxOS Control Center") && index.includes("anxoscontrolcenter.org") && index.includes("/getting-started"), "Homepage footer must include copyright, official domain, and Getting Started links.");
 assert(index.includes("First server workflow") && index.includes("Prepare Node") && index.includes("Node Health"), "Homepage must include honest Getting Started workflow copy.");
-assert(downloadRoute.includes(`<link rel="canonical" href="${officialOrigin}/download">`) && downloadRoute.includes("data-download-status"), "Download must be a clean direct route.");
+assert(downloadRoute.includes(`<link rel="canonical" href="${officialOrigin}/download">`) && downloadRoute.includes("data-download-status") && downloadRoute.includes("data-download-page") && downloadRoute.includes("data-primary-download"), "Download must be a clean direct route with the dynamic download workspace.");
 assert(featuresRoute.includes(`<link rel="canonical" href="${officialOrigin}/features">`) && featuresRoute.includes("Built for server work"), "Features must be a clean direct route.");
 assert(gettingStartedRoute.includes(`<link rel="canonical" href="${officialOrigin}/getting-started">`) && gettingStartedRoute.includes("First server workflow"), "Getting Started must be a clean direct route.");
 assert(signin.includes('data-auth-form="signin"') && signin.includes(`<link rel="canonical" href="${officialOrigin}/signin">`), "Sign-in must be a clean direct route.");
@@ -187,7 +188,7 @@ assert(site.includes('legacyPagesHost = "anxos-control-center.pages.dev"') && si
 assert(!site.includes("if (document.body?.dataset?.standaloneRoute) return false;"), "Legacy hash cleanup must run on standalone clean routes.");
 assert(!site.includes("window.location.hash =") && !site.includes('addEventListener("hashchange"') && site.includes("async function applyRouteState()"), "Website must use pathname route state instead of hash routing.");
 assert(!site.includes("hashParams") && !site.includes("hash.indexOf"), "Website query parsing must use clean route query strings.");
-["index.html", "download/index.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
+["index.html", "download/index.html", "download.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
   const html = read(file);
   const hashLinks = Array.from(html.matchAll(/\s(?:href|src)=["']([^"']*#[^"']*)["']/g))
     .map((match) => match[1])
@@ -208,7 +209,9 @@ assert(index.includes("Live health appears after you connect an Agent"), "Homepa
 assert(index.includes("Runtime Dependencies") && index.includes("Prepare Node"), "Homepage should mention runtime dependency management.");
 
 assert(index.includes("data-download-status"), "Downloads page should expose release metadata status.");
-assert(site.includes("Release metadata is unavailable"), "Downloads should handle missing release metadata.");
+assert(site.includes("loadLatestRelease") && site.includes("renderDownloadFailure"), "Downloads should discover GitHub Releases and handle missing release metadata.");
+assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && !config.includes("downloads:"), "Website config should use runtime release discovery instead of static artifact URLs.");
+assert(fs.existsSync(path.join(websiteRoot, "release-download-service.js")), "Website must ship the reusable release download service.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
 assert(site.includes("friendlyAccountDataError") && site.includes("ACCOUNT_NETWORK_OR_CORS") && site.includes("refreshAccountSection"), "Account overview should classify protected endpoint failures and refresh sections independently.");
 assert(site.includes('authorization: `Bearer ${accessToken}`') && site.includes("apikey: accountConfig.supabaseAnonKey"), "Protected account requests must include bearer auth and Supabase anon apikey.");
@@ -218,7 +221,7 @@ assert(site.includes("requireSignedInForDeviceAction"), "Device approval and den
 assert(site.includes("renderDeviceSummary(null)") && site.includes("Waiting for code"), "Failed device lookups must reset the requesting-device panel.");
 assert(!site.includes('setDeviceMessage(friendlyAuthError(error), "error")'), "Device activation should not show raw fetch/auth-only errors.");
 assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org\""), "www redirects should be handled by Cloudflare, not application JavaScript.");
-["index.html", "download/index.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
+["index.html", "download/index.html", "download.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
   assert(!read(file).includes('href="#"'), `${file} must not ship dead # fallback links.`);
 });
 

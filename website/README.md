@@ -16,14 +16,14 @@ Account features require Supabase configuration in `account-config.js`. Without 
 
 ## Release Data
 
-All public release data is generated into `config.js`:
+Build-time release metadata is generated into `config.js`:
 
 - latest version
 - release date
 - GitHub links
-- download URLs
-- file names
-- file sizes
+- the official GitHub repository source
+- release notes
+- stable domain download endpoint paths
 
 Run this after building release artifacts:
 
@@ -32,6 +32,93 @@ npm run website:sync
 ```
 
 The normal `npm run updates:manifest` release step also runs the website sync, so the download site stays aligned with app releases.
+
+`release.json` remains the source of truth for local application version/build/channel metadata. Publicly downloadable application binaries are not derived from `release.json`; they are discovered from the latest published GitHub Release at runtime.
+
+## Download Page
+
+The canonical public download route is:
+
+```text
+https://anxoscontrolcenter.org/download
+```
+
+Compatibility routes:
+
+- `/download/`
+- `/download.html`
+- `/downloads` redirects to `/download`
+
+The download page loads `release-download-service.js`, queries the public GitHub Releases API configured by `window.ANXOS_DOWNLOAD_CONFIG.repositoryUrl`, ignores drafts/source archives/invalid URLs, and renders only real assets from:
+
+```text
+https://github.com/bungopam-byte/AnxOS-Control-Center
+```
+
+No GitHub token or secret is used in browser code.
+
+### Supported Asset Patterns
+
+The release download service classifies these asset families:
+
+- Windows setup: `*.exe` with `Setup` in the filename, such as `AnxOS-Control-Center-Setup-1.7-build142.exe`
+- Windows portable: `*.exe` with `portable` in the filename
+- Windows MSI: `*.msi`
+- Linux AppImage: `*.AppImage`
+- Linux Debian package: `*.deb`
+- Checksums: `SHA256SUMS`, `checksums.txt`, `*.sha256`, or names containing `sha256`
+
+Architecture labels are inferred from filename tokens such as `x64`, `x86_64`, `amd64`, `arm64`, `aarch64`, `ia32`, `x86`, or `i386` when present.
+
+Future platform packages should keep descriptive, platform-specific extensions and include the app name in the asset filename. The page does not require source edits for new versions as long as the release asset names match these patterns.
+
+### Stable Redirect Endpoints
+
+Cloudflare Pages Functions provide versionless domain endpoints:
+
+- `/api/download/latest/windows`
+- `/api/download/latest/windows-portable`
+- `/api/download/latest/linux-appimage`
+- `/api/download/latest/linux-deb`
+
+Each endpoint queries the latest published GitHub Release, validates that the selected asset belongs to the official repository, and returns an HTTP redirect to the GitHub Release asset. If no matching artifact exists, the endpoint returns a JSON `404` response instead of redirecting to an unrelated file.
+
+Set `ANXOS_GITHUB_REPOSITORY=owner/repo` in the Pages Functions environment only if the official repository changes. The default is `bungopam-byte/AnxOS-Control-Center`.
+
+### Caching and Reliability
+
+The browser release service caches the last valid normalized release in `sessionStorage` for 10 minutes. The Cloudflare redirect helper sends cache-friendly JSON headers for successful metadata responses and no-store headers for error responses. The page handles GitHub API rate limits, network failures, invalid JSON, missing installers, partial releases, and unsupported visitor platforms with visible retry/unavailable states.
+
+The page never starts a download automatically. Browser platform detection is only progressive enhancement for choosing the recommended button.
+
+### Local Testing
+
+Run:
+
+```bash
+npm run website:download:smoke
+npm run website:smoke
+python3 -m http.server 4173 --directory website
+```
+
+Open:
+
+```text
+http://localhost:4173/download
+```
+
+The smoke tests mock GitHub responses and do not require GitHub to be online.
+
+### Troubleshooting Missing Assets
+
+If a platform does not appear on `/download`:
+
+1. Confirm the GitHub Release is published, not draft-only.
+2. Confirm the asset was uploaded to the official repository release.
+3. Confirm the filename matches one of the supported patterns above.
+4. Confirm the asset has a `browser_download_url` in the GitHub Releases API response.
+5. Confirm the release workflow uploaded `SHA256SUMS` if checksum information should appear.
+6. Use the browser retry button after publishing or replacing release assets.
 
 ## Local Development
 
@@ -58,6 +145,7 @@ Required files:
 - `index.html`
 - `styles.css`
 - `site.js`
+- `release-download-service.js`
 - `config.js`
 - `account-config.js`
 - `robots.txt`
@@ -73,6 +161,7 @@ Required files:
 - `assets/icon-192.png`
 - `assets/icon-512.png`
 - `assets/social-preview.png`
+- `download.html`
 - `signin/index.html`
 - `signup/index.html`
 - `account/index.html`
@@ -81,6 +170,7 @@ Required files:
 - `reset-password/index.html`
 - `activate/index.html`
 - `downloads/index.html`
+- `download/index.html`
 - `install/index.html`
 - `release/index.html`
 - `changelog/index.html`

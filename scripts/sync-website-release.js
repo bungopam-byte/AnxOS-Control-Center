@@ -2,42 +2,12 @@ const fs = require("fs");
 const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
-const distDir = path.join(rootDir, "dist");
 const { OFFICIAL_SITE_ORIGIN } = require(path.join(rootDir, "src", "shared", "officialSite"));
 const { getReleaseInfo } = require(path.join(rootDir, "src", "shared", "releaseConfig"));
 const websiteConfigPath = path.join(rootDir, "website", "config.js");
 const releaseNotesPath = path.join(rootDir, "website", "release-notes.json");
 const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
 const release = getReleaseInfo();
-const defaultDownloadBaseUrl = `${repositoryUrl}/releases/download/${release.tag}`;
-const downloadBaseUrl = (process.env.ANXOS_DOWNLOAD_BASE_URL || process.env.ANXOS_UPDATE_BASE_URL || process.env.ANXHUB_UPDATE_BASE_URL || defaultDownloadBaseUrl).replace(/\/+$/, "");
-
-function formatBytes(size) {
-  if (!Number.isFinite(size) || size <= 0) {
-    return "";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  let value = size;
-  let unitIndex = 0;
-
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function getAsset(name) {
-  const filePath = path.join(distDir, name);
-  return {
-    fileName: name,
-    size: fs.existsSync(filePath) ? formatBytes(fs.statSync(filePath).size) : "",
-    url: `${downloadBaseUrl}/${encodeURIComponent(name)}`,
-  };
-}
-
 function formatReleaseDate(date = new Date()) {
   return date.toLocaleDateString("en-US", {
     month: "long",
@@ -95,9 +65,6 @@ function getReleaseNotes() {
   return notes;
 }
 
-const windows = getAsset(`AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`);
-const linuxDeb = getAsset(`AnxOS-Control-Center-${release.artifactVersion}.deb`);
-const linuxAppImage = getAsset(`AnxOS-Control-Center-${release.artifactVersion}.AppImage`);
 const releaseNotes = getReleaseNotes();
 fs.writeFileSync(releaseNotesPath, `${JSON.stringify(releaseNotes, null, 2)}\n`);
 
@@ -116,25 +83,12 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   releaseTag: "${release.tag}",
   repositoryUrl: "${repositoryUrl}",
   releaseUrl: "${repositoryUrl}/releases/tag/${release.tag}",
-  downloads: {
-    windows: {
-      label: "Download for Windows",
-      fileName: "${windows.fileName}",
-      size: "${windows.size}",
-      url: "${windows.url}",
-    },
-    linuxDeb: {
-      label: "Linux .deb",
-      fileName: "${linuxDeb.fileName}",
-      size: "${linuxDeb.size}",
-      url: "${linuxDeb.url}",
-    },
-    linuxAppImage: {
-      label: "Linux AppImage",
-      fileName: "${linuxAppImage.fileName}",
-      size: "${linuxAppImage.size}",
-      url: "${linuxAppImage.url}",
-    },
+  githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center/releases?per_page=20",
+  stableDownloadEndpoints: {
+    windows: "/api/download/latest/windows",
+    windowsPortable: "/api/download/latest/windows-portable",
+    linuxAppImage: "/api/download/latest/linux-appimage",
+    linuxDeb: "/api/download/latest/linux-deb",
   },
   releaseNotes: ${JSON.stringify(releaseNotes, null, 4).replace(/^/gm, "  ").trimStart()},
 };

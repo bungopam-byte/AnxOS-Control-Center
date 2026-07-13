@@ -25,6 +25,7 @@
     "amp:debug": "node scripts/amp-debug.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "account:smoke": "node scripts/account-system-smoke.js",
+    "device-activation:smoke": "node scripts/device-activation-smoke.js",
     "owner-account:smoke": "node scripts/owner-account-smoke.js",
     "owner-bootstrap:smoke": "node scripts/bootstrap-owner-account-smoke.js",
     "account:diagnostics": "node scripts/account-diagnostics.js",

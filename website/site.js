@@ -19,6 +19,7 @@ let securityHistoryFilter = "all";
 let securityHistoryHideOld = true;
 let authRestoreFallbackTimer = null;
 let authStateSubscription = null;
+let authInitializationPromise = null;
 let latestAccountSectionErrors = {
   devices: null,
   sessions: null,
@@ -453,32 +454,45 @@ async function apiFetch(path, options = {}) {
     error.code = "ACCOUNT_API_NOT_CONFIGURED";
     throw error;
   }
-  const client = getSupabase();
-  if (!client) {
-    const error = new Error("Account sign-in scripts are unavailable.");
-    error.code = "ACCOUNT_PROVIDER_UNAVAILABLE";
+  if (!accountConfig.supabaseAnonKey) {
+    const error = new Error("Account API public key is not configured for this deployment.");
+    error.code = "ACCOUNT_API_KEY_NOT_CONFIGURED";
     throw error;
   }
-  const { data, error: sessionError } = await client.auth.getSession();
-  if (sessionError) {
-    const error = new Error("Unable to verify your signed-in session.");
-    error.code = "ACCOUNT_SESSION_CHECK_FAILED";
-    error.cause = sessionError;
-    throw error;
-  }
-  const session = data?.session?.user ? data.session : null;
-  currentSession = session?.user ? session : null;
-  if (!currentSession?.access_token) {
-    authState = "signed-out";
-    applyAuthVisibility("api-session-missing");
-    const error = new Error("Your session expired. Sign in again.");
-    error.code = "AUTH_REQUIRED";
-    throw error;
+  const requireAuth = options.requireAuth !== false;
+  let accessToken = "";
+  if (requireAuth) {
+    await waitForAuthRestoration();
+    const client = getSupabase();
+    if (!client) {
+      const error = new Error("Account sign-in scripts are unavailable.");
+      error.code = "ACCOUNT_PROVIDER_UNAVAILABLE";
+      throw error;
+    }
+    const { data, error: sessionError } = await client.auth.getSession();
+    if (sessionError) {
+      const error = new Error("Unable to verify your signed-in session.");
+      error.code = "ACCOUNT_SESSION_CHECK_FAILED";
+      error.cause = sessionError;
+      throw error;
+    }
+    const session = data?.session?.user ? data.session : null;
+    currentSession = session?.user ? session : null;
+    accessToken = String(currentSession?.access_token || "");
+    if (!accessToken) {
+      authState = "signed-out";
+      applyAuthVisibility("api-session-missing");
+      const error = new Error("Your session expired. Sign in again.");
+      error.code = "AUTH_REQUIRED";
+      throw error;
+    }
+  } else if (authState === "loading") {
+    await waitForAuthRestoration({ allowSignedOut: true });
   }
   const headers = {
     "content-type": "application/json",
-    authorization: `Bearer ${currentSession.access_token}`,
-    ...(accountConfig.supabaseAnonKey ? { apikey: accountConfig.supabaseAnonKey } : {}),
+    apikey: accountConfig.supabaseAnonKey,
+    ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
   };
   let response;
   try {
@@ -498,9 +512,46 @@ async function apiFetch(path, options = {}) {
     error.status = response.status;
     error.endpoint = path;
     error.hostLabel = getAccountApiHostLabel();
+    if (requireAuth && (response.status === 401 || response.status === 403)) {
+      currentSession = null;
+      currentProfile = null;
+      authState = "signed-out";
+      applyAuthVisibility("api-unauthorized");
+    }
     throw error;
   }
   return payload;
+}
+
+async function waitForAuthRestoration(options = {}) {
+  if (authState !== "loading") return;
+  try {
+    await withTimeout(
+      authInitializationPromise || Promise.resolve(),
+      AUTH_RESTORE_TIMEOUT_MS + 1000,
+      "AUTH_SESSION_RESTORE_TIMEOUT"
+    );
+  } catch (error) {
+    currentSession = null;
+    currentProfile = null;
+    authState = "signed-out";
+    setMessage("signin", "Unable to verify your session. Sign in again if needed.", "warn");
+    applyAuthVisibility("api-auth-restore-timeout");
+    logWebsiteDiagnostic("warn", "api-auth-restore", error);
+    if (!options.allowSignedOut) {
+      const next = new Error("Your session could not be restored. Sign in again.");
+      next.code = "AUTH_REQUIRED";
+      throw next;
+    }
+  }
+}
+
+async function requireSignedInForDeviceAction() {
+  await waitForAuthRestoration();
+  if (currentSession?.access_token) return true;
+  setDeviceMessage("Sign in before approving or denying this desktop device.", "warn");
+  window.location.href = getSignInUrlForActivation();
+  return false;
 }
 
 function parseJsonResponse(text) {
@@ -532,12 +583,17 @@ function classifyAccountFetchFailure(error, path) {
 function friendlyAccountDataError(error) {
   const code = String(error?.code || "");
   if (code === "ACCOUNT_API_NOT_CONFIGURED") return "Account API endpoint is not configured for this website deployment.";
+  if (code === "ACCOUNT_API_KEY_NOT_CONFIGURED") return "Account API public key is missing from this website deployment.";
   if (code === "ACCOUNT_PROVIDER_UNAVAILABLE") return "Account sign-in scripts are unavailable. Check your connection and refresh.";
   if (code === "AUTH_REQUIRED" || code === "ACCOUNT_UNAUTHORIZED") return "Your session expired or is unauthorized. Sign in again.";
   if (code === "ACCOUNT_ENDPOINT_NOT_FOUND") return "Account endpoint is missing. Deploy the latest AnxOS account Edge Function.";
   if (code === "ACCOUNT_SERVICE_NOT_CONFIGURED") return "Account service is not fully configured. Check Supabase function environment variables.";
   if (code === "ACCOUNT_NETWORK_OR_CORS") return `The ${error?.hostLabel || "account API"} rejected or did not answer this website origin. Check CORS/allowed origins and retry.`;
   if (code.includes("LIST_FAILED") || code.includes("CLEAR_FAILED")) return friendlyAuthError(error);
+  if (code === "USER_CODE_REQUIRED") return "Enter the device code shown in AnxOS.";
+  if (code === "DEVICE_LOOKUP_FAILED") return "Could not look up this device code. Try again.";
+  if (code === "DEVICE_APPROVAL_FAILED") return "Could not approve this device. Try again.";
+  if (code === "DEVICE_DENIAL_FAILED") return "Could not deny this device. Try again.";
   if (/relation .* does not exist|table .* does not exist|schema cache/i.test(error?.message || "")) {
     return "Account database objects are missing. Apply the latest Supabase migrations.";
   }
@@ -1427,15 +1483,6 @@ function setDeviceCode(code) {
 }
 
 async function lookupDevice() {
-  if (!currentSession) {
-    setDeviceMessage("Sign in before reviewing a desktop device.", "warn");
-    if (document.body?.dataset?.standaloneRoute === "activate") {
-      window.location.href = getSignInUrlForActivation();
-    } else {
-      window.location.href = "/signin";
-    }
-    return;
-  }
   setDeviceCode(document.querySelector("[data-device-code-input]")?.value || currentDeviceCode);
   if (!currentDeviceCode) {
     setDeviceMessage("Enter the device code shown in AnxOS.", "error");
@@ -1443,9 +1490,13 @@ async function lookupDevice() {
   }
   setDeviceMessage("Looking up device...");
   try {
-    const result = await apiFetch("/api/auth/device/lookup", { body: { userCode: currentDeviceCode } });
+    const result = await apiFetch("/api/auth/device/lookup", {
+      body: { userCode: currentDeviceCode },
+      requireAuth: false,
+    });
     if (result.state !== "pending") {
       currentDeviceRequest = null;
+      renderDeviceSummary(null);
       setDeviceActions(false);
       setDeviceMessage(getDeviceStateMessage(result.state), result.state === "expired" ? "error" : "warn");
       return;
@@ -1453,10 +1504,12 @@ async function lookupDevice() {
     currentDeviceRequest = result.device;
     renderDeviceSummary(result.device);
     setDeviceActions(true);
-    setDeviceMessage("Review this device, then approve or deny access.", "ok");
+    setDeviceMessage(currentSession
+      ? "Review this device, then approve or deny access."
+      : "Device found. Sign in before approving or denying access.", currentSession ? "ok" : "warn");
   } catch (error) {
     setDeviceActions(false);
-    setDeviceMessage(friendlyAuthError(error), "error");
+    setDeviceMessage(friendlyAccountDataError(error), "error");
   }
 }
 
@@ -1465,6 +1518,7 @@ async function approveOrDenyDevice(action) {
     await lookupDevice();
     if (!currentDeviceRequest) return;
   }
+  if (!await requireSignedInForDeviceAction()) return;
   const confirmed = await confirmUserAction(action === "approve" ? {
     eyebrow: "Device activation",
     title: "Approve this desktop app?",
@@ -1492,11 +1546,16 @@ async function approveOrDenyDevice(action) {
     }
   } catch (error) {
     setDeviceActions(true);
-    setDeviceMessage(friendlyAuthError(error), "error");
+    setDeviceMessage(friendlyAccountDataError(error), "error");
   }
 }
 
 function renderDeviceSummary(device) {
+  if (!device) {
+    setText("[data-device-name]", "Waiting for code");
+    setText("[data-device-details]", "Enter the code from AnxOS to load the device request.");
+    return;
+  }
   setText("[data-device-name]", device?.deviceName || "Unknown device");
   setText("[data-device-details]", [
     device?.platform || "desktop",
@@ -1710,7 +1769,7 @@ applyReleaseNotes();
 bindSiteNavigation();
 bindAccountForms();
 applyDeviceLoginPage();
-initializeAccount().catch((error) => {
+authInitializationPromise = initializeAccount().catch((error) => {
   disableAccountForms(friendlyAuthError(error));
 });
 window.addEventListener("beforeunload", (event) => {

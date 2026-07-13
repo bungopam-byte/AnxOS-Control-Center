@@ -60,7 +60,9 @@ function assertWebsiteAccountUi() {
   assert(site.includes("getSignInUrlForActivation") && site.includes("returnTo"), "Website should preserve device activation codes through sign-in.");
   assert(site.includes("redirectToCanonicalSiteOrigin") && accountConfig.includes("https://anxoscontrolcenter.org"), "Website should use the configured official account origin.");
   assert(site.includes("isAccountApiConfigured") && site.includes("ACCOUNT_API_NOT_CONFIGURED"), "Website should allow Supabase sign-in to load separately from account API availability.");
-  assert(site.includes("apikey: accountConfig.supabaseAnonKey") && site.includes("client.auth.getSession()"), "Protected website account requests must include the current Supabase session and anon key.");
+  assert(site.includes("apikey: accountConfig.supabaseAnonKey") && site.includes('authorization: `Bearer ${accessToken}`'), "Protected website account requests must include the current Supabase session bearer token and anon key.");
+  assert(site.includes("const requireAuth = options.requireAuth !== false") && site.includes("waitForAuthRestoration"), "Website account requests must separate public/protected calls and wait for auth restoration.");
+  assert(site.includes("ACCOUNT_API_KEY_NOT_CONFIGURED"), "Website account requests must report a missing Supabase anon key distinctly.");
   assert(site.includes("friendlyAccountDataError") && site.includes("ACCOUNT_NETWORK_OR_CORS") && site.includes("ACCOUNT_ENDPOINT_NOT_FOUND"), "Website account sections should classify fetch, CORS, auth, endpoint, and server errors.");
   assert(site.includes("latestAccountSectionErrors") && site.includes("refreshAccountSection"), "Website account sections should degrade and refresh independently.");
   assert(accountPage.includes('data-auth-action="refresh-devices"') && accountPage.includes('data-auth-action="refresh-sessions"') && accountPage.includes('data-auth-action="refresh-security"'), "Account overview should expose independent refresh controls.");
@@ -89,9 +91,10 @@ function assertWebsiteAccountUi() {
   assert(profileRepairMigration.includes("add column if not exists bio text") && profileRepairMigration.includes("profiles_bio_length"), "Profile schema repair migration must align the bio UI field with Supabase.");
   assert(site.includes("renderSecurityEvents") && site.includes("getSecurityEventCategory"), "Security history should filter audit records without deleting them.");
   assert(site.includes("securityHistoryHideOld") && !site.includes("/api/account/security-events/clear"), "Security history cleanup should hide/filter audit records instead of deleting them.");
-  assert(site.includes("/api/auth/device/lookup"), "Website should look up device authorization requests.");
+  assert(site.includes("/api/auth/device/lookup") && site.includes("requireAuth: false"), "Website should look up device authorization requests without requiring a website session.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("approve")'), "Website should approve device authorization requests.");
   assert(site.includes('/api/auth/device/${action}') && site.includes('approveOrDenyDevice("deny")'), "Website should deny device authorization requests.");
+  assert(site.includes("requireSignedInForDeviceAction"), "Website should require sign-in only for approving or denying a reviewed device.");
   assert(site.includes("redactSecret"), "Website should redact secrets from messages.");
   assert(accountConfig.includes("supabaseAnonKey") && !/service[_-]?role/i.test(accountConfig), "Public account config must not mention service-role secrets.");
 }
@@ -148,6 +151,8 @@ function assertSupabaseBackend() {
   assert(fn.includes("revoked_devices_cleared") && fn.includes("inactive_account_records_cleared"), "Cleanup endpoints should audit cleanup actions.");
   assert(fn.includes("DEFAULT_ALLOWED_ORIGINS") && fn.includes("new Set([...DEFAULT_ALLOWED_ORIGINS, ...configuredAllowedOrigins])"), "Edge Function CORS must always include official default origins even when env origins are configured.");
   assert(fn.includes("normalizeWebsiteBaseUrl") && fn.includes("OFFICIAL_WEBSITE_BASE_URL"), "Edge Function activation links should canonicalize stale website base URL settings.");
+  const lookupBody = fn.slice(fn.indexOf("async function lookupDevice"), fn.indexOf("async function approveDevice"));
+  assert(!lookupBody.includes("requireWebsiteUser") && !lookupBody.includes("accountId"), "Edge Function device lookup must be public and must not expose account IDs.");
 }
 
 function assertDesktopIntegration() {

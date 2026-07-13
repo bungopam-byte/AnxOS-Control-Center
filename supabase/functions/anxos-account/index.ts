@@ -173,14 +173,13 @@ async function pollDevice(request: Request) {
 }
 
 async function lookupDevice(request: Request) {
-  const user = await requireWebsiteUser(request);
   const payload = await readJson(request);
   const userCode = normalizeUserCode(payload.userCode || payload.user_code || payload.code);
   if (!userCode) throw httpError(400, "USER_CODE_REQUIRED", "Device code is required.");
   const record = await getRequestByUserCode(userCode);
   if (!record || isExpired(record.expires_at)) return { state: "expired" };
   if (record.status !== "pending") return { state: record.status };
-  return { state: "pending", device: publicDeviceRequest(record), accountId: user.id };
+  return { state: "pending", device: publicDeviceRequest(record) };
 }
 
 async function approveDevice(request: Request) {

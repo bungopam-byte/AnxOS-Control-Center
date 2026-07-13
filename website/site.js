@@ -146,6 +146,50 @@ function setDownloadLinksLoading() {
   document.querySelectorAll("[data-file]").forEach((node) => {
     node.textContent = "Release metadata loading";
   });
+  document.querySelectorAll("[data-download-version], [data-download-build], [data-download-channel], [data-download-date]").forEach((node) => {
+    node.textContent = "Loading";
+  });
+  document.querySelectorAll("[data-download-release-body]").forEach((node) => {
+    node.textContent = "Loading latest release notes...";
+  });
+  document.querySelectorAll("[data-download-checksum]").forEach((node) => {
+    node.textContent = "Loading checksum information...";
+  });
+  document.querySelectorAll("[data-download-error]").forEach((node) => {
+    node.textContent = "";
+  });
+  document.querySelectorAll("[data-primary-download]").forEach((node) => {
+    node.replaceChildren();
+    const heading = document.createElement("h3");
+    heading.textContent = "Preparing recommended download";
+    const copy = document.createElement("p");
+    copy.textContent = "Platform detection runs in your browser and never starts a download automatically.";
+    node.append(heading, copy);
+  });
+  document.querySelectorAll("[data-download-platforms]").forEach((node) => {
+    node.replaceChildren();
+    const card = document.createElement("article");
+    card.className = "download-card";
+    const body = document.createElement("div");
+    const heading = document.createElement("h3");
+    heading.textContent = "Loading packages";
+    const copy = document.createElement("p");
+    copy.textContent = "Release assets are being checked.";
+    const note = document.createElement("small");
+    note.textContent = "Only real installer assets from the official GitHub Release will appear here.";
+    body.append(heading, copy, note);
+    card.append(body);
+    node.append(card);
+  });
+  document.querySelectorAll("[data-other-downloads]").forEach((node) => {
+    node.replaceChildren();
+    const item = document.createElement("li");
+    item.textContent = "Loading available packages...";
+    node.append(item);
+  });
+  document.querySelectorAll("[data-download-page]").forEach((node) => {
+    node.dataset.state = "loading";
+  });
   setDownloadStatus("Checking the latest published GitHub Release for official installer assets...", "loading");
 }
 
@@ -348,13 +392,57 @@ function renderDownloadPage(release) {
 }
 
 function renderDownloadFailure(error) {
-  const message = error?.code === "GITHUB_RATE_LIMITED"
-    ? "GitHub release metadata is temporarily rate limited. Retry in a moment."
-    : error?.message || "Release metadata could not be loaded.";
+  const message = {
+    GITHUB_RATE_LIMITED: "Download information is temporarily unavailable. Please try again shortly.",
+    GITHUB_RELEASE_SOURCE_NOT_FOUND: "No published AnxOS release is available yet.",
+    NO_PUBLISHED_RELEASE: "No published AnxOS release is available yet.",
+    NO_SUPPORTED_INSTALLER: "The latest release does not contain a supported installer.",
+    NO_DOWNLOADABLE_RELEASE: "The latest release does not contain a supported installer.",
+    RELEASE_NETWORK_ERROR: "AnxOS could not reach the release service.",
+    RELEASE_API_TIMEOUT: "AnxOS could not reach the release service.",
+    INVALID_RELEASE_JSON: "Release metadata is unavailable. Use the GitHub release page or try again later.",
+    REPOSITORY_NOT_CONFIGURED: "Release metadata is unavailable. Use the GitHub release page or try again later.",
+  }[error?.code] || "Release metadata is unavailable. Use the GitHub release page or try again later.";
   setDownloadStatus(message, "warn");
   const panel = document.querySelector("[data-download-page]");
   if (panel) {
     panel.dataset.state = "error";
+    document.querySelectorAll("[data-download-version], [data-download-build], [data-download-channel], [data-download-date]").forEach((node) => { node.textContent = "Unavailable"; });
+    document.querySelectorAll("[data-primary-download]").forEach((node) => {
+      node.replaceChildren();
+      const heading = document.createElement("h3");
+      heading.textContent = "Download information unavailable";
+      const copy = document.createElement("p");
+      copy.textContent = message;
+      node.append(heading, copy);
+    });
+    document.querySelectorAll("[data-download-platforms]").forEach((node) => {
+      node.replaceChildren();
+      const card = document.createElement("article");
+      card.className = "download-card download-card--empty";
+      const body = document.createElement("div");
+      const heading = document.createElement("h3");
+      heading.textContent = "No downloadable release is currently available.";
+      const copy = document.createElement("p");
+      copy.textContent = message;
+      const note = document.createElement("small");
+      note.textContent = "Use Retry to check again.";
+      body.append(heading, copy, note);
+      card.append(body);
+      node.append(card);
+    });
+    document.querySelectorAll("[data-other-downloads]").forEach((node) => {
+      node.replaceChildren();
+      const item = document.createElement("li");
+      item.textContent = "No downloadable release is currently available.";
+      node.append(item);
+    });
+    document.querySelectorAll("[data-download-release-body]").forEach((node) => {
+      node.textContent = "Release notes could not be loaded from the public release source.";
+    });
+    document.querySelectorAll("[data-download-checksum]").forEach((node) => {
+      node.textContent = "Checksum information is unavailable until release metadata loads.";
+    });
     document.querySelectorAll("[data-download-error]").forEach((node) => { node.textContent = message; });
   }
 }

@@ -6,12 +6,17 @@ const { pathToFileURL } = require("url");
 const root = path.resolve(__dirname, "..");
 const websiteRoot = path.join(root, "website");
 const service = require(path.join(websiteRoot, "release-download-service.js"));
+const publicOwner = "bungopam-byte";
+const publicRepo = "AnxOS-Control-Center-Releases";
+const publicRepository = `${publicOwner}/${publicRepo}`;
+const publicRepositoryUrl = `https://github.com/${publicRepository}`;
+const privateSourceRepositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
 
 function readWebsite(file) {
   return fs.readFileSync(path.join(websiteRoot, file), "utf8");
 }
 
-function makeAsset(name, size = 1024, urlName = name, owner = "bungopam-byte", repo = "AnxOS-Control-Center") {
+function makeAsset(name, size = 1024, urlName = name, owner = publicOwner, repo = publicRepo) {
   return {
     name,
     size,
@@ -27,7 +32,7 @@ function sampleReleases() {
       tag_name: "v9.9-build999",
       name: "Draft release",
       published_at: "2026-07-14T00:00:00Z",
-      html_url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v9.9-build999",
+      html_url: `${publicRepositoryUrl}/releases/tag/v9.9-build999`,
       assets: [makeAsset("AnxOS-Control-Center-Setup-9.9-build999.exe")],
     },
     {
@@ -37,7 +42,7 @@ function sampleReleases() {
       name: "AnxOS Version 1.7 build142",
       body: "Channel: Private Alpha\n\n<script>alert(1)</script>\nUse official assets only.",
       published_at: "2026-07-13T12:00:00Z",
-      html_url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build142",
+      html_url: `${publicRepositoryUrl}/releases/tag/v1.7-build142`,
       assets: [
         makeAsset("AnxOS-Control-Center-Setup-1.7-build142.exe", 80 * 1024 * 1024),
         makeAsset("AnxOS-Control-Center-1.7-build142-portable.exe", 78 * 1024 * 1024),
@@ -45,7 +50,7 @@ function sampleReleases() {
         makeAsset("AnxOS-Control-Center-1.7-build142.deb", 84 * 1024 * 1024),
         makeAsset("SHA256SUMS", 512),
         makeAsset("AnxOS-Control-Center-evil.exe", 1, "AnxOS-Control-Center-evil.exe", "other", "repo"),
-        { name: "Source code (zip)", browser_download_url: "https://github.com/bungopam-byte/AnxOS-Control-Center/archive/refs/tags/v1.7-build142.zip" },
+        { name: "Source code (zip)", browser_download_url: `${publicRepositoryUrl}/archive/refs/tags/v1.7-build142.zip` },
       ],
     },
   ];
@@ -60,9 +65,8 @@ function mockFetchJson(payload, ok = true, status = 200) {
 }
 
 async function main() {
-  const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
   const normalized = service.latestPublishedRelease(sampleReleases(), {
-    repositoryUrl,
+    repositoryUrl: publicRepositoryUrl,
     config: { channel: "Private Alpha" },
   });
 
@@ -86,25 +90,57 @@ async function main() {
     draft: false,
     tag_name: "v1.0-build1",
     published_at: "2026-01-01T00:00:00Z",
-    html_url: `${repositoryUrl}/releases/tag/v1.0-build1`,
+    html_url: `${publicRepositoryUrl}/releases/tag/v1.0-build1`,
     assets: [makeAsset("AnxOS-Control-Center-Setup-1.0-build1.exe")],
-  }], { repositoryUrl, config: {} });
+  }], { repositoryUrl: publicRepositoryUrl, config: {} });
   assert.strictEqual(service.preferredAssetForPlatform(missingLinux, "linux"), null, "Missing platform should remain unavailable.");
 
   mockFetchJson(sampleReleases());
-  const loaded = await service.loadLatestRelease({ repositoryUrl, force: true, config: { channel: "Private Alpha" } });
+  const loaded = await service.loadLatestRelease({
+    force: true,
+    config: {
+      releaseRepository: { owner: publicOwner, repo: publicRepo },
+      repositoryUrl: privateSourceRepositoryUrl,
+      channel: "Private Alpha",
+    },
+  });
   assert.strictEqual(loaded.tagName, "v1.7-build142", "Release loader should use mocked GitHub API data.");
+  assert.strictEqual(loaded.repository.repositoryUrl, publicRepositoryUrl, "Release loader should prefer the public release repository over the source repository URL.");
   mockFetchJson("not json");
   await assert.rejects(
-    service.loadLatestRelease({ repositoryUrl, force: true }),
+    service.loadLatestRelease({ repositoryUrl: publicRepositoryUrl, force: true }),
     /invalid JSON/i,
     "Invalid GitHub JSON should be reported."
   );
   mockFetchJson({ message: "rate limit" }, false, 403);
   await assert.rejects(
-    service.loadLatestRelease({ repositoryUrl, force: true }),
+    service.loadLatestRelease({ repositoryUrl: publicRepositoryUrl, force: true }),
     /rate limit/i,
     "GitHub API failure should be reported."
+  );
+  mockFetchJson({ message: "not found" }, false, 404);
+  await assert.rejects(
+    service.loadLatestRelease({ repositoryUrl: publicRepositoryUrl, force: true }),
+    (error) => error.code === "GITHUB_RELEASE_SOURCE_NOT_FOUND",
+    "GitHub 404 should be categorized as a missing release source."
+  );
+  mockFetchJson([]);
+  await assert.rejects(
+    service.loadLatestRelease({ repositoryUrl: publicRepositoryUrl, force: true }),
+    (error) => error.code === "NO_PUBLISHED_RELEASE",
+    "An empty release list should be reported as no published release."
+  );
+  mockFetchJson([{ draft: false, tag_name: "v1.0-build1", published_at: "2026-01-01T00:00:00Z", assets: [makeAsset("README.txt")] }]);
+  await assert.rejects(
+    service.loadLatestRelease({ repositoryUrl: publicRepositoryUrl, force: true }),
+    (error) => error.code === "NO_SUPPORTED_INSTALLER",
+    "Published releases without supported installers should be categorized clearly."
+  );
+  global.fetch = async () => { throw new TypeError("fetch failed"); };
+  await assert.rejects(
+    service.loadLatestRelease({ repositoryUrl: publicRepositoryUrl, force: true }),
+    (error) => error.code === "RELEASE_NETWORK_ERROR",
+    "Network failures should be categorized without exposing raw browser errors."
   );
 
   const download = readWebsite("download/index.html");
@@ -131,23 +167,29 @@ async function main() {
   assert(site.includes("textContent = release.releaseBody") && !site.includes("innerHTML = release.releaseBody"), "Release text should be rendered safely.");
   assert(site.includes("function showDownloadStartupFallback") && site.includes("function initializeWebsite") && site.includes("try {"), "Website startup should have a top-level download failure boundary.");
   assert(site.includes("Download information could not be loaded right now."), "Release initialization failure should show a visitor-safe error message.");
+  assert(site.includes("No downloadable release is currently available.") && site.includes("Unavailable") && site.includes("Download information is temporarily unavailable. Please try again shortly."), "Failed release loading should clear loading placeholders and show a complete visible error state.");
+  assert(site.includes('button.addEventListener("click", () =>') && site.includes("applyDownloads({ force: true })") && site.includes("setDownloadLinksLoading()"), "Retry should reset loading state and force a fresh release lookup.");
   assert(site.includes("isExpectedAssetUrl") || fs.readFileSync(path.join(websiteRoot, "release-download-service.js"), "utf8").includes("isExpectedAssetUrl"), "Download URLs should be allowlisted.");
+  assert(config.includes("releaseRepository") && config.includes(publicRepo) && config.includes(`https://api.github.com/repos/${publicRepository}/releases?per_page=20`), "Config should use the public release-only repository.");
+  assert(!new RegExp(`${privateSourceRepositoryUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/releases|["'])`).test(config), "Browser release discovery must not use the private source repository.");
+  assert(!/GITHUB_TOKEN|GH_TOKEN|PERSONAL_ACCESS_TOKEN|ANXOS_RELEASE_REPO_TOKEN/.test(`${download}\n${downloadHtml}\n${site}\n${config}\n${fs.readFileSync(path.join(websiteRoot, "release-download-service.js"), "utf8")}`), "Frontend download code must not contain GitHub tokens or token variable names.");
   assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && !config.includes("downloads:"), "Config should contain release discovery settings, not static artifact URLs.");
-  assert(workflow.includes("sha256sum AnxOS-Control-Center-* > SHA256SUMS"), "Release workflow should publish a checksum manifest.");
+  assert(workflow.includes("sha256sum AnxOS-Control-Center-* > SHA256SUMS") && workflow.includes("ANXOS_RELEASE_REPO_TOKEN") && workflow.includes(publicRepository), "Release workflow should publish checksummed artifacts to the public release repository using a server-side secret.");
 
   const functionsHelper = await import(pathToFileURL(path.join(root, "functions", "_shared", "release-download.mjs")).href);
+  assert.strictEqual(functionsHelper.DEFAULT_RELEASE_REPOSITORY, publicRepository, "Pages Functions should default to the public release repository.");
   assert.strictEqual(functionsHelper.classifyAssetName("AnxOS-Control-Center-Setup-1.7-build142.exe"), "windows", "Redirect helper should classify Windows setup.");
   assert.strictEqual(functionsHelper.classifyAssetName("AnxOS-Control-Center-1.7-build142-portable.exe"), "windows-portable", "Redirect helper should classify Windows portable.");
   assert.strictEqual(functionsHelper.classifyAssetName("AnxOS-Control-Center-1.7-build142.AppImage"), "linux-appimage", "Redirect helper should classify AppImage.");
   assert.strictEqual(functionsHelper.classifyAssetName("AnxOS-Control-Center-1.7-build142.deb"), "linux-deb", "Redirect helper should classify .deb.");
-  const artifact = functionsHelper.findArtifact(sampleReleases()[1], functionsHelper.repositoryFromEnv({ ANXOS_GITHUB_REPOSITORY: "bungopam-byte/AnxOS-Control-Center" }), "linux-deb");
+  const artifact = functionsHelper.findArtifact(sampleReleases()[1], functionsHelper.repositoryFromEnv({}), "linux-deb");
   assert(artifact?.browser_download_url.endsWith(".deb"), "Redirect helper should select the requested artifact only.");
-  assert.strictEqual(functionsHelper.findArtifact(sampleReleases()[1], functionsHelper.repositoryFromEnv({ ANXOS_GITHUB_REPOSITORY: "bungopam-byte/AnxOS-Control-Center" }), "macos"), null, "Redirect helper must not redirect missing artifacts.");
+  assert.strictEqual(functionsHelper.findArtifact(sampleReleases()[1], functionsHelper.repositoryFromEnv({}), "macos"), null, "Redirect helper must not redirect missing artifacts.");
   mockFetchJson(sampleReleases());
-  const redirectResponse = await functionsHelper.redirectLatestArtifact(new Request("https://anxoscontrolcenter.org/api/download/latest/windows"), { ANXOS_GITHUB_REPOSITORY: "bungopam-byte/AnxOS-Control-Center" }, "windows");
+  const redirectResponse = await functionsHelper.redirectLatestArtifact(new Request("https://anxoscontrolcenter.org/api/download/latest/windows"), {}, "windows");
   assert.strictEqual(redirectResponse.status, 302, "Stable endpoint helper should redirect when the artifact exists.");
   assert(redirectResponse.headers.get("location").includes("AnxOS-Control-Center-Setup-1.7-build142.exe"), "Stable endpoint helper should redirect to the matching setup asset.");
-  const missingResponse = await functionsHelper.redirectLatestArtifact(new Request("https://anxoscontrolcenter.org/api/download/latest/macos"), { ANXOS_GITHUB_REPOSITORY: "bungopam-byte/AnxOS-Control-Center" }, "macos");
+  const missingResponse = await functionsHelper.redirectLatestArtifact(new Request("https://anxoscontrolcenter.org/api/download/latest/macos"), {}, "macos");
   assert.strictEqual(missingResponse.status, 404, "Stable endpoint helper should return JSON 404 when the artifact is missing.");
   assert.match(await missingResponse.text(), /ARTIFACT_NOT_FOUND/, "Missing artifact response should be structured JSON.");
 

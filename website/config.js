@@ -11,9 +11,13 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   releaseLabel: "Version 1.7 Build 142 Private Alpha",
   releaseDate: "July 13, 2026",
   releaseTag: "v1.7-build142",
-  repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build142",
-  githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center/releases?per_page=20",
+  releaseRepository: {
+    owner: "bungopam-byte",
+    repo: "AnxOS-Control-Center-Releases",
+  },
+  repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build142",
+  githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
     windowsPortable: "/api/download/latest/windows-portable",
@@ -33,7 +37,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
           "changes": [
               "Updated application build, website metadata, and downloadable release assets."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build142"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build142"
       },
       {
           "version": "1.7",
@@ -52,7 +56,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Improved the Add Storage dialog lifecycle and guarded asynchronous submissions against duplicate requests.",
               "Added regression coverage for redaction, rotation, snapshots, failure-safe logging, remote authorization, and real Agent start/restart/stop behavior."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build141"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build141"
       },
       {
           "version": "1.7",
@@ -71,7 +75,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Added standalone website password recovery pages and visible Reset Password and Change Password actions.",
               "Added regression coverage for credential verification, legacy migration, and session logout account preservation."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build140"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build140"
       },
       {
           "version": "1.7",
@@ -89,7 +93,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Separated local, Agent-native, and SFTP filesystem providers so only explicit SFTP connections create SFTP sessions.",
               "Added development routing diagnostics and regression coverage for node switching, persistence, migration, and filesystem routing."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build139"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build139"
       },
       {
           "version": "1.6",
@@ -108,7 +112,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Aligned Marketplace Install buttons across card rows and clamped long descriptions.",
               "Updated smoke coverage for runtime detection, no Paper preselect, provider loader metadata, and Quilt install handling."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.6-build138"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.6-build138"
       }
   ],
 };

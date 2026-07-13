@@ -213,8 +213,9 @@ assert(index.includes("Runtime Dependencies") && index.includes("Prepare Node"),
 assert(index.includes("data-download-status"), "Downloads page should expose release metadata status.");
 assert(site.includes("loadLatestRelease") && site.includes("renderDownloadFailure"), "Downloads should discover GitHub Releases and handle missing release metadata.");
 assert(site.includes("function showDownloadStartupFallback") && site.includes("function initializeWebsite"), "Website startup must have a top-level error boundary.");
-assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && !config.includes("downloads:"), "Website config should use runtime release discovery instead of static artifact URLs.");
+assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && config.includes("AnxOS-Control-Center-Releases") && !config.includes("downloads:"), "Website config should use runtime release discovery from the public release repository instead of static artifact URLs.");
 assert(fs.existsSync(path.join(websiteRoot, "release-download-service.js")), "Website must ship the reusable release download service.");
+assert(site.includes("No downloadable release is currently available.") && site.includes("Download information is temporarily unavailable. Please try again shortly."), "Download failures must clear loading placeholders with a complete visible unavailable state.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
 assert(site.includes("friendlyAccountDataError") && site.includes("ACCOUNT_NETWORK_OR_CORS") && site.includes("refreshAccountSection"), "Account overview should classify protected endpoint failures and refresh sections independently.");
 assert(site.includes('authorization: `Bearer ${accessToken}`') && site.includes("apikey: accountConfig.supabaseAnonKey"), "Protected account requests must include bearer auth and Supabase anon apikey.");
@@ -247,7 +248,7 @@ assert(activateRoute.includes('autocomplete="one-time-code"') && activateRoute.i
 
 assert(styles.includes(".site-menu-button") && styles.includes(".site-nav.is-open"), "Website CSS must include mobile menu states.");
 assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "Website must respect reduced-motion preference.");
-assert(styles.includes(".download-status") && styles.includes(".account-unavailable"), "Website must style honest loading/unavailable states.");
+assert(styles.includes(".download-status") && styles.includes(".account-unavailable") && styles.includes(".section-heading"), "Website must style honest loading/unavailable states and aligned download headings.");
 assert(styles.includes(".site-footer nav") && styles.includes(".steps--detailed"), "Website CSS must support footer and Getting Started responsive polish.");
 assert(styles.includes(".confirm-modal") && styles.includes("max-height: calc(100dvh - 36px)") && styles.includes("overscroll-behavior: contain"), "Website confirmation modal must remain viewport-safe on short screens.");
 

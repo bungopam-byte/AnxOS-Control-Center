@@ -695,10 +695,9 @@ a[aria-disabled="true"] {
 }
 
 .section-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: end;
+  display: grid;
+  gap: 6px;
+  align-items: start;
   margin-bottom: 16px;
   padding-top: 44px;
 }

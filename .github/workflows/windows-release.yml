@@ -105,9 +105,24 @@ jobs:
 
       - name: Publish tagged release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.ANXOS_RELEASE_REPO_TOKEN }}
+          ANXOS_RELEASE_REPOSITORY: bungopam-byte/AnxOS-Control-Center-Releases
         run: |
-          gh release create "${{ github.ref_name }}" release-artifacts/* \
-            --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" \
-            --notes "Desktop installers and portable builds for AnxOS Control Center ${{ github.ref_name }}."
+          if [ -z "$GH_TOKEN" ]; then
+            echo "ANXOS_RELEASE_REPO_TOKEN is required to publish public release assets." >&2
+            exit 1
+          fi
+          if gh release view "${{ github.ref_name }}" --repo "$ANXOS_RELEASE_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "${{ github.ref_name }}" \
+              --repo "$ANXOS_RELEASE_REPOSITORY" \
+              --title "${{ github.ref_name }}" \
+              --notes "Desktop installers and portable builds for AnxOS Control Center ${{ github.ref_name }}."
+            gh release upload "${{ github.ref_name }}" release-artifacts/* \
+              --repo "$ANXOS_RELEASE_REPOSITORY" \
+              --clobber
+          else
+            gh release create "${{ github.ref_name }}" release-artifacts/* \
+              --repo "$ANXOS_RELEASE_REPOSITORY" \
+              --title "${{ github.ref_name }}" \
+              --notes "Desktop installers and portable builds for AnxOS Control Center ${{ github.ref_name }}."
+          fi

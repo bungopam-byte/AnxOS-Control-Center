@@ -6,7 +6,11 @@ const { OFFICIAL_SITE_ORIGIN } = require(path.join(rootDir, "src", "shared", "of
 const { getReleaseInfo } = require(path.join(rootDir, "src", "shared", "releaseConfig"));
 const websiteConfigPath = path.join(rootDir, "website", "config.js");
 const releaseNotesPath = path.join(rootDir, "website", "release-notes.json");
-const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
+const releaseRepository = {
+  owner: "bungopam-byte",
+  repo: "AnxOS-Control-Center-Releases",
+};
+const repositoryUrl = `https://github.com/${releaseRepository.owner}/${releaseRepository.repo}`;
 const release = getReleaseInfo();
 function formatReleaseDate(date = new Date()) {
   return date.toLocaleDateString("en-US", {
@@ -38,10 +42,11 @@ function getReleaseNotes() {
   const notes = readReleaseNotes().map((entry) => {
     const tag = entry.tag || (entry.build ? `v${entry.version}-build${entry.build}` : `v${entry.version}`);
     const staleSemverUrl = /\/releases\/tag\/v\d+\.\d+\.\d+$/i.test(String(entry.url || ""));
+    const sourceRepositoryUrl = /^https:\/\/github\.com\/bungopam-byte\/AnxOS-Control-Center\/releases\/tag\//i.test(String(entry.url || ""));
     return {
       ...entry,
       tag,
-      url: !entry.url || staleSemverUrl ? `${repositoryUrl}/releases/tag/${tag}` : entry.url,
+      url: !entry.url || staleSemverUrl || sourceRepositoryUrl ? `${repositoryUrl}/releases/tag/${tag}` : entry.url,
     };
   });
 
@@ -81,9 +86,13 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   releaseLabel: "${release.compactLabel}",
   releaseDate: "${formatReleaseDate()}",
   releaseTag: "${release.tag}",
+  releaseRepository: {
+    owner: "${releaseRepository.owner}",
+    repo: "${releaseRepository.repo}",
+  },
   repositoryUrl: "${repositoryUrl}",
   releaseUrl: "${repositoryUrl}/releases/tag/${release.tag}",
-  githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center/releases?per_page=20",
+  githubReleasesApiUrl: "https://api.github.com/repos/${releaseRepository.owner}/${releaseRepository.repo}/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
     windowsPortable: "/api/download/latest/windows-portable",

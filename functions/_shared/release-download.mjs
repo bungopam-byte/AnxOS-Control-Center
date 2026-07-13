@@ -1,8 +1,8 @@
-const DEFAULT_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
+const DEFAULT_RELEASE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center-Releases";
 const REQUEST_TIMEOUT_MS = 9000;
 
 function repositoryFromEnv(env = {}) {
-  const value = String(env.ANXOS_GITHUB_REPOSITORY || env.GITHUB_REPOSITORY || DEFAULT_REPOSITORY).trim();
+  const value = String(env.ANXOS_RELEASE_REPOSITORY || env.ANXOS_GITHUB_REPOSITORY || DEFAULT_RELEASE_REPOSITORY).trim();
   const [owner, repo] = value.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/i, "").split("/");
   if (!owner || !repo) return null;
   return { owner, repo, repositoryUrl: `https://github.com/${owner}/${repo}` };
@@ -61,19 +61,27 @@ async function fetchLatestRelease(env = {}) {
       throw Object.assign(new Error("GitHub release API returned invalid JSON."), { code: "INVALID_RELEASE_JSON" });
     }
     if (!response.ok) {
-      throw Object.assign(new Error(releases?.message || `GitHub release API failed with HTTP ${response.status}.`), { code: `GITHUB_HTTP_${response.status}`, status: response.status });
+      const code = response.status === 404 ? "GITHUB_RELEASE_SOURCE_NOT_FOUND" : response.status === 403 ? "GITHUB_RATE_LIMITED" : `GITHUB_HTTP_${response.status}`;
+      throw Object.assign(new Error(releases?.message || `GitHub release API failed with HTTP ${response.status}.`), { code, status: response.status });
     }
-    const release = (Array.isArray(releases) ? releases : [])
+    const published = (Array.isArray(releases) ? releases : [])
       .filter((candidate) => candidate && !candidate.draft)
-      .sort((left, right) => new Date(right.published_at || right.created_at || 0) - new Date(left.published_at || left.created_at || 0))
+      .sort((left, right) => new Date(right.published_at || right.created_at || 0) - new Date(left.published_at || left.created_at || 0));
+    if (!published.length) {
+      throw Object.assign(new Error("No published AnxOS release is available yet."), { code: "NO_PUBLISHED_RELEASE" });
+    }
+    const release = published
       .find((candidate) => Array.isArray(candidate.assets) && candidate.assets.some((asset) => classifyAssetName(asset?.name)));
     if (!release) {
-      throw Object.assign(new Error("No published AnxOS installer assets are available."), { code: "NO_DOWNLOADABLE_RELEASE" });
+      throw Object.assign(new Error("The latest release does not contain a supported installer."), { code: "NO_SUPPORTED_INSTALLER" });
     }
     return { repository, release };
   } catch (error) {
     if (error?.name === "AbortError") {
       throw Object.assign(new Error("GitHub release API request timed out."), { code: "RELEASE_API_TIMEOUT" });
+    }
+    if (error instanceof TypeError && /fetch|network|failed/i.test(error.message || "")) {
+      throw Object.assign(new Error("AnxOS could not reach the release service."), { code: "RELEASE_NETWORK_ERROR" });
     }
     throw error;
   } finally {
@@ -117,6 +125,7 @@ async function redirectLatestArtifact(request, env, artifactType) {
 }
 
 export {
+  DEFAULT_RELEASE_REPOSITORY,
   classifyAssetName,
   findArtifact,
   isExpectedAssetUrl,

@@ -27,6 +27,7 @@ Start here:
 - [Real-Machine Validation](docs/REAL_MACHINE_VALIDATION.md)
 - [Tester Commands](docs/TEST_COMMANDS.md)
 - [Private Alpha Readiness Audit](docs/PRIVATE_ALPHA_READINESS_AUDIT.md)
+- [Private Alpha Final Release Gate](docs/PRIVATE_ALPHA_RELEASE_GATE.md)
 
 Do not paste tokens, passwords, pairing codes, private URLs, exported config files, or unredacted logs into bug reports. Use Diagnostics export or copied summaries only after confirming redaction.
 

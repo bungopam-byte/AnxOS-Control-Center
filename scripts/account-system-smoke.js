@@ -26,7 +26,7 @@ function assertWebsiteAccountUi() {
   assert(signinPage.includes('data-auth-message="signin-loading"'), "Sign-in route should keep a visible loading state during auth initialization.");
   assert(signinPage.includes('Already signed in') && signinPage.includes('Go to Account'), "Sign-in route should show a signed-in card instead of blanking the form.");
   assert(profilePage.includes('id="profile"') && profilePage.includes('data-account-route="profile"'), "Website should include a dedicated Profile route.");
-  assert(profilePage.includes('href="/account#account-devices"') && profileIndex.includes('href="/account#account-devices"'), "Website should provide static /profile route content.");
+  assert(profilePage.includes('href="/account?section=devices"') && profileIndex.includes('href="/account?section=devices"'), "Website should provide static /profile route content.");
   assert(accountPage.includes('href="/profile"'), "Account navigation should link to the Profile route.");
   assert(profilePage.includes('data-profile-completion'), "Profile page should show completion status.");
   assert(profilePage.includes('name="bio"') && profilePage.includes('name="timeZone"') && profilePage.includes('name="preferredPlatform"'), "Profile page should expose supported profile preference fields.");

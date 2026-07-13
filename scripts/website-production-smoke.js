@@ -20,6 +20,9 @@ const profile = read("profile/index.html");
 const activateRoute = read("activate/index.html");
 const forgotRoute = read("forgot-password/index.html");
 const resetRoute = read("reset-password/index.html");
+const downloadRoute = read("download/index.html");
+const featuresRoute = read("features/index.html");
+const gettingStartedRoute = read("getting-started/index.html");
 const releaseNotes = read("release-notes.html");
 const accountRedirect = read("account.html");
 const profileRedirect = read("profile.html");
@@ -36,7 +39,7 @@ const rootPackage = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const officialOrigin = "https://anxoscontrolcenter.org";
 const oldPagesOrigin = "https://anxos-control-center.pages.dev";
 
-["index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
+["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
   const html = read(file);
   assert(html.includes("data-site-menu-toggle"), `${file} must expose the mobile navigation toggle.`);
   assert(html.includes("data-site-nav"), `${file} must expose the mobile navigation target.`);
@@ -55,11 +58,14 @@ assert(fs.existsSync(path.join(websiteRoot, "favicon.ico")), "Website must inclu
 });
 assert(manifest.includes("AnxOS Control Center") && manifest.includes("/assets/icon-192.png"), "Web manifest must include app icon metadata.");
 assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate") && robots.includes("Disallow: /signin") && robots.includes("Disallow: /reset-password"), "Robots rules must expose sitemap and exclude account routes.");
-assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
+assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && sitemap.includes(`<loc>${officialOrigin}/download</loc>`) && sitemap.includes(`<loc>${officialOrigin}/features</loc>`) && sitemap.includes(`<loc>${officialOrigin}/getting-started</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
 assert([signin, signup, account, profile, activateRoute, forgotRoute, resetRoute, activate, forgot, reset].every((html) => html.includes('name="robots" content="noindex,nofollow"')), "Account and activation pages must be excluded from indexing.");
 assert(accountRedirect.includes('name="robots" content="noindex,nofollow"') && profileRedirect.includes('name="robots" content="noindex,nofollow"'), "Account redirect shims must be excluded from indexing.");
-assert(index.includes("© 2026 AnxOS Control Center") && index.includes("anxoscontrolcenter.org") && index.includes("/#getting-started"), "Homepage footer must include copyright, official domain, and Getting Started links.");
+assert(index.includes("© 2026 AnxOS Control Center") && index.includes("anxoscontrolcenter.org") && index.includes("/getting-started"), "Homepage footer must include copyright, official domain, and Getting Started links.");
 assert(index.includes("First server workflow") && index.includes("Prepare Node") && index.includes("Node Health"), "Homepage must include honest Getting Started workflow copy.");
+assert(downloadRoute.includes(`<link rel="canonical" href="${officialOrigin}/download">`) && downloadRoute.includes("data-download-status"), "Download must be a clean direct route.");
+assert(featuresRoute.includes(`<link rel="canonical" href="${officialOrigin}/features">`) && featuresRoute.includes("Built for server work"), "Features must be a clean direct route.");
+assert(gettingStartedRoute.includes(`<link rel="canonical" href="${officialOrigin}/getting-started">`) && gettingStartedRoute.includes("First server workflow"), "Getting Started must be a clean direct route.");
 assert(signin.includes('data-auth-form="signin"') && signin.includes(`<link rel="canonical" href="${officialOrigin}/signin">`), "Sign-in must be a clean direct route.");
 assert(signup.includes('data-auth-form="signup"') && signup.includes(`<link rel="canonical" href="${officialOrigin}/signup">`), "Sign-up must be a clean direct route.");
 assert(account.includes('data-account-route="account"') && account.includes(`<link rel="canonical" href="${officialOrigin}/account">`), "Account must be a clean direct route.");
@@ -69,6 +75,13 @@ assert(forgotRoute.includes('data-auth-form="forgot"') && forgotRoute.includes(`
 assert(resetRoute.includes('data-auth-form="reset"') && resetRoute.includes(`<link rel="canonical" href="${officialOrigin}/reset-password">`), "Reset-password must be a clean direct route.");
 assert(index.includes('routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" }'), "Homepage must redirect legacy hash auth routes to clean paths.");
 assert(!index.includes('href="#signin"') && !index.includes('href="#signup"') && !index.includes('href="#account"') && !index.includes('href="#profile"'), "Homepage must not link to hash-based account routes.");
+["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
+  const html = read(file);
+  const hashLinks = Array.from(html.matchAll(/\s(?:href|src)=["']([^"']*#[^"']*)["']/g))
+    .map((match) => match[1])
+    .filter((value) => !value.startsWith("#icon-"));
+  assert.strictEqual(hashLinks.length, 0, `${file} must not contain hash-fragment website links: ${hashLinks.join(", ")}`);
+});
 
 const deployedWebsiteText = fs.readdirSync(websiteRoot)
   .filter((file) => fs.statSync(path.join(websiteRoot, file)).isFile() && file !== "README.md")
@@ -86,7 +99,7 @@ assert(index.includes("data-download-status"), "Downloads page should expose rel
 assert(site.includes("Release metadata is unavailable"), "Downloads should handle missing release metadata.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
 assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org\""), "www redirects should be handled by Cloudflare, not application JavaScript.");
-["index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
+["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
   assert(!read(file).includes('href="#"'), `${file} must not ship dead # fallback links.`);
 });
 

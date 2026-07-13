@@ -267,6 +267,13 @@ function getReturnTargetFromParams(fallback = "/account") {
   return normalizeReturnTarget(params.get("returnTo") || params.get("return"), fallback);
 }
 
+function getAccountSectionTarget() {
+  const section = String(getRouteParams().get("section") || "").toLowerCase();
+  if (section === "devices") return "account-devices";
+  if (section === "security") return "account-security";
+  return "";
+}
+
 function redirectToSignInForCurrentRoute() {
   const target = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   window.location.replace(buildSignInUrl(target));
@@ -1458,7 +1465,8 @@ async function applyHashRoute() {
   document.querySelectorAll("[data-account-route]").forEach((section) => {
     section.classList.toggle("account-route--active", section.dataset.accountRoute === activeRoute);
   });
-  const target = document.getElementById(route);
+  const accountSectionTarget = activeRoute === "account" ? getAccountSectionTarget() : "";
+  const target = document.getElementById(accountSectionTarget || route);
   if (target && activeRoute !== "top") target.scrollIntoView({ block: "start" });
   applyAuthVisibility("route-change");
   lastAppliedRoute = activeRoute;

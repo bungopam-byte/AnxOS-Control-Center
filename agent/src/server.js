@@ -12,7 +12,7 @@ const { getConfig } = require("./config");
 const { handleDocker, handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
 const { handleDiagnostics } = require("./routes/diagnostics");
 const { handleDependencies } = require("./routes/dependencies");
-const { handleFilesDownload, handleFilesList, handleFilesMutate, handleFilesRead, handleFilesStat } = require("./routes/files");
+const { handleFilesDownload, handleFilesIdentity, handleFilesList, handleFilesMutate, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
@@ -260,6 +260,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/files/list") {
     return handleFilesList(url);
+  }
+
+  if (pathname === "/api/v1/files/identity") {
+    return handleFilesIdentity();
   }
 
   if (pathname === "/api/v1/files/stat") {

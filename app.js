@@ -786,6 +786,10 @@ let storageConnectionsState = {
 let selectedStorageId = "local";
 let filesAutoSelectedNodeId = null;
 let filesConnectPromise = null;
+let filesNavigationGeneration = 0;
+let filesActiveTargetKey = null;
+const filesProfileNavigationState = new Map();
+const filesFilesystemIdentityCache = new Map();
 const fileTransfers = new Map();
 const filesClipboardState = {
   action: null,
@@ -12787,6 +12791,7 @@ function selectFileEntry(entry) {
   }
 
   selectedFileEntryPath = entry?.path || null;
+  getFilesProfileState().selectedFileEntryPath = selectedFileEntryPath;
   setFileDetails(entry);
 
   if (shouldClearEditor) {
@@ -14447,6 +14452,7 @@ function getGlobalSearchProviders() {
                 if (entry.entry.isDirectory) await navigateRemoteDirectory(entry.entry.path);
               } else if (entry.connection) {
                 selectedStorageId = entry.connection.id;
+                activateFilesTargetState({ loading: false, message: "Select Connect to browse this filesystem." });
                 renderStorageConnections();
                 renderFilesView();
               }
@@ -14826,6 +14832,7 @@ async function refreshFilesDiscovery() {
   if (filesDiscoveryRefreshPromise) {
     return filesDiscoveryRefreshPromise;
   }
+  filesFilesystemIdentityCache.clear();
   filesDiscoveryRefreshPromise = Promise.allSettled([
     refreshNodes(),
     loadSshProfiles(),
@@ -15897,7 +15904,13 @@ function renderStorageConnections() {
   renderRoutingDiagnostics();
   if (storageActiveBadge) storageActiveBadge.textContent = selectedRemoteNode ? "Agent" : selected?.badge || (target?.providerType === "sftp" ? "SFTP" : "Local");
   if (storageActiveName) storageActiveName.textContent = target?.label || storageConnectionLabel(selected);
-  if (storageActivePath) storageActivePath.textContent = filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected" : selected?.rootDirectory || target?.detail || "Not connected";
+  if (storageActivePath) {
+    const targetState = getFilesProfileState(target?.key);
+    const activeTargetConnected = filesConnectionState.connected && filesConnectionState.targetKey === target?.key;
+    storageActivePath.textContent = activeTargetConnected
+      ? filesConnectionState.currentPath || filesConnectionState.homePath || "Connected"
+      : targetState.homePath || selected?.rootDirectory || target?.detail || "Not connected";
+  }
   document.querySelector('[data-storage-action="edit"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="delete"]')?.toggleAttribute("disabled", localSelected);
   document.querySelector('[data-storage-action="set-default"]')?.toggleAttribute("disabled", !selected || selected.default === true);
@@ -15948,6 +15961,7 @@ function renderStorageConnections() {
       }
       setFilesPasswordPromptState(false);
       syncFilesSelectionState();
+      activateFilesTargetState({ loading: false, message: "Select Connect to browse this filesystem." });
       renderStorageConnections();
       renderFilesView();
     });
@@ -16348,6 +16362,139 @@ function focusFilesPasswordPrompt() {
   }
 }
 
+function getFilesTargetKey() {
+  return getFilesConnectionTarget()?.key || "files:none";
+}
+
+function getFilesProfileState(targetKey = getFilesTargetKey()) {
+  if (!filesProfileNavigationState.has(targetKey)) {
+    filesProfileNavigationState.set(targetKey, {
+      currentPath: null,
+      homePath: null,
+      breadcrumbs: [],
+      entries: [],
+      selectedFileEntryPath: null,
+      latestFileDocument: null,
+      searchQuery: "",
+      connected: false,
+      status: "disconnected",
+      message: "",
+      identity: null,
+    });
+  }
+  return filesProfileNavigationState.get(targetKey);
+}
+
+function saveActiveFilesProfileState() {
+  const targetKey = filesActiveTargetKey;
+  if (!targetKey || targetKey === "files:none") return;
+  const state = getFilesProfileState(targetKey);
+  state.currentPath = filesConnectionState.currentPath || state.currentPath || null;
+  state.homePath = filesConnectionState.homePath || state.homePath || null;
+  state.breadcrumbs = normalizeFilesArray(latestFilesListing?.breadcrumbs);
+  state.entries = normalizeFilesArray(latestFilesListing?.entries);
+  state.selectedFileEntryPath = selectedFileEntryPath;
+  state.latestFileDocument = latestFileDocument ? { ...latestFileDocument, dirty: false } : null;
+  state.searchQuery = filesSearchInput?.value || "";
+  state.connected = filesConnectionState.connected;
+  state.status = filesConnectionState.status;
+  state.message = filesConnectionState.message;
+}
+
+function clearFilesVisibleState(message = "Connect to browse this filesystem.") {
+  latestFilesListing = null;
+  latestFilesListingAt = 0;
+  selectedFileEntryPath = null;
+  clearFileRows();
+  renderFileBreadcrumbs({ connected: false, breadcrumbs: [], message });
+  renderFolderRoots({ connected: false, roots: [], message });
+  setFileDetails(null);
+  resetFileEditor(message);
+  setFilesEmpty(true, "No files to show", message);
+}
+
+function activateFilesTargetState({ loading = false, message = "Connecting filesystem..." } = {}) {
+  saveActiveFilesProfileState();
+  const target = getFilesConnectionTarget();
+  filesActiveTargetKey = target?.key || "files:none";
+  filesNavigationGeneration += 1;
+  filesRequestInFlight = false;
+  setFilesPasswordPromptState(false);
+  updateFilesConnectionState({
+    connected: false,
+    profileId: filesSelectedProfileId,
+    storageId: getFilesRequestStorageId(),
+    currentPath: null,
+    homePath: getFilesProfileState(filesActiveTargetKey).homePath,
+    status: loading ? "connecting" : "disconnected",
+    nodeId: target?.nodeId || null,
+    targetKey: target?.key || null,
+    message,
+  });
+  if (filesSearchInput) filesSearchInput.value = "";
+  clearFilesVisibleState(message);
+  if (loading) setFilesLoading(true, message);
+  renderStorageConnections();
+  updateFileActionButtons();
+}
+
+function isWindowsPathValue(value) {
+  return /^[a-zA-Z]:[\\/]/.test(String(value || "")) || /^\\\\/.test(String(value || ""));
+}
+
+function isUnixPathValue(value) {
+  return String(value || "").startsWith("/");
+}
+
+function isPathValidForFilesIdentity(value, identity = {}, target = getFilesConnectionTarget()) {
+  const pathValue = String(value || "").trim();
+  if (!pathValue) return false;
+  const platform = String(identity.platform || "").toLowerCase();
+  if (platform === "win32" || target?.providerType === "renderer-local" && isWindowsPathValue(identity.homeDirectory)) {
+    return isWindowsPathValue(pathValue) || /^[\\/]/.test(pathValue);
+  }
+  if (platform && platform !== "win32") {
+    return isUnixPathValue(pathValue) && !isWindowsPathValue(pathValue);
+  }
+  if (target?.providerType === "agent-native" || target?.providerType === "sftp") {
+    return isUnixPathValue(pathValue) && !isWindowsPathValue(pathValue);
+  }
+  return true;
+}
+
+async function resolveFilesTargetIdentity(target = getFilesConnectionTarget()) {
+  if (!target) return null;
+  const cached = filesFilesystemIdentityCache.get(target.key);
+  if (cached) return cached;
+  const desktopApiState = getDesktopApiState();
+  if (typeof desktopApiState.api?.files?.identity !== "function") {
+    return null;
+  }
+  const identity = await desktopApiState.api.files.identity({
+    nodeId: target.nodeId || getFilesRequestNodeId(),
+    providerType: target.providerType,
+    storageId: getFilesRequestStorageId(),
+    profileId: getFilesRequestProfileId(),
+  });
+  filesFilesystemIdentityCache.set(target.key, identity);
+  getFilesProfileState(target.key).identity = identity;
+  return identity;
+}
+
+function getDefaultPathForFilesTarget(target, identity) {
+  return identity?.homeDirectory || identity?.rootPath || getFilesProfileState(target?.key).homePath || "/";
+}
+
+async function resolveFilesListPath(options = {}, target = getFilesConnectionTarget()) {
+  const identity = await resolveFilesTargetIdentity(target);
+  const state = getFilesProfileState(target?.key);
+  const explicitPath = typeof options.path === "string" && options.path.trim() ? options.path : null;
+  const rememberedPath = state.currentPath || null;
+  const candidates = [explicitPath, rememberedPath, getDefaultPathForFilesTarget(target, identity)];
+  const selected = candidates.find((candidate) => isPathValidForFilesIdentity(candidate, identity || {}, target));
+  return selected || getDefaultPathForFilesTarget(target, identity);
+}
+
 function updateFilesConnectionState(nextState = {}) {
   filesConnectionState.connected = Boolean(nextState.connected);
   filesConnectionState.profileId = nextState.profileId || null;
@@ -16407,8 +16554,13 @@ function normalizeFileListingForRenderer(listing) {
 function renderFileListing(listing) {
   const normalized = normalizeFileListingForRenderer(listing);
   const entries = normalized.entries;
-  const selectedEntry = getSelectedFileEntry(entries);
   const target = getFilesConnectionTarget();
+  const state = getFilesProfileState(target?.key);
+  selectedFileEntryPath = state.selectedFileEntryPath;
+  if (filesSearchInput) {
+    filesSearchInput.value = state.searchQuery || "";
+  }
+  const selectedEntry = getSelectedFileEntry(entries);
 
   updateFilesConnectionState({
     connected: normalized.connected,
@@ -16423,6 +16575,14 @@ function renderFileListing(listing) {
   });
   latestFilesListing = normalized;
   latestFilesListingAt = Date.now();
+  state.currentPath = normalized.currentPath || null;
+  state.homePath = normalized.homePath || state.homePath || null;
+  state.breadcrumbs = normalized.breadcrumbs || [];
+  state.entries = entries;
+  state.selectedFileEntryPath = selectedFileEntryPath;
+  state.connected = Boolean(normalized.connected);
+  state.status = normalized.status || "connected";
+  state.message = normalized.message || "";
   if (normalized.storageId) {
     selectedStorageId = normalized.storageId;
   }
@@ -16450,16 +16610,24 @@ function renderFileListing(listing) {
 }
 
 function renderFileListingUnavailable(message = "File listing unavailable.") {
+  const target = getFilesConnectionTarget();
+  const state = getFilesProfileState(target?.key);
+  state.connected = false;
+  state.status = "disconnected";
+  state.message = message;
+  state.entries = [];
+  state.breadcrumbs = [];
+  state.selectedFileEntryPath = null;
+  state.latestFileDocument = null;
   latestFilesListing = null;
   latestFilesListingAt = 0;
   selectedFileEntryPath = null;
-  const target = getFilesConnectionTarget();
   updateFilesConnectionState({
     connected: false,
     profileId: filesSelectedProfileId,
     storageId: getFilesRequestStorageId(),
     currentPath: null,
-    homePath: null,
+    homePath: state.homePath || null,
     status: "disconnected",
     nodeId: target?.nodeId || null,
     targetKey: target?.key || null,
@@ -18092,7 +18260,9 @@ function getFilesRequestContext(label = "files-request") {
   return {
     label,
     nodeId: getFilesRequestNodeId(),
+    profileId: filesSelectedProfileId || null,
     targetKey: target?.key || null,
+    generation: filesNavigationGeneration,
     version: selectedNodeContextVersion,
   };
 }
@@ -18101,7 +18271,9 @@ function isFilesRequestCurrent(context) {
   const target = getFilesConnectionTarget();
   return Boolean(context) &&
     context.nodeId === getFilesRequestNodeId() &&
+    context.profileId === (filesSelectedProfileId || null) &&
     context.targetKey === (target?.key || null) &&
+    context.generation === filesNavigationGeneration &&
     context.version === selectedNodeContextVersion;
 }
 
@@ -18183,12 +18355,18 @@ async function refreshFileListing(options = {}) {
   updateFileActionButtons();
 
   try {
+    const requestPath = await resolveFilesListPath(options, target);
+
+    if (!isFilesRequestCurrent(requestContext)) {
+      return null;
+    }
+
     const listing = await desktopApiState.api.files.list({
       nodeId: getFilesRequestNodeId(),
       providerType: target.providerType,
       storageId,
       profileId,
-      path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined,
+      path: requestPath || undefined,
       password: options.password,
     });
 
@@ -18204,29 +18382,16 @@ async function refreshFileListing(options = {}) {
       return null;
     }
     const message = getSafeFilesConnectionError(error, target.label || "filesystem");
-
-    if (!latestFilesListing || !filesConnectionState.connected) {
-      renderFileListingUnavailable(`File listing request failed: ${message}`);
-    } else {
-      setFilesLoading(false);
-      setFilesEmpty(latestFilesListing.entries.length === 0, "No files to show", message);
-      updateFilesConnectionState({
-        connected: filesConnectionState.connected,
-        profileId,
-        storageId,
-        currentPath: filesConnectionState.currentPath,
-        homePath: filesConnectionState.homePath,
-        status: "connected",
-        message,
-      });
-      renderFilesView();
-      showToast(message);
-    }
+    renderFileListingUnavailable(`File listing request failed: ${message}`);
+    renderFilesView();
+    showToast(message);
 
     return null;
   } finally {
-    filesRequestInFlight = false;
-    updateFileActionButtons();
+    if (isFilesRequestCurrent(requestContext)) {
+      filesRequestInFlight = false;
+      updateFileActionButtons();
+    }
   }
 }
 
@@ -18235,15 +18400,17 @@ async function performConnectFilesSession(options = {}) {
   const target = getFilesConnectionTarget();
   const selectedStorage = getSelectedStorageConnection();
   const profile = getActiveFilesProfile();
-  const switchingProfiles = Boolean(filesConnectionState.connected && filesConnectionState.profileId && filesConnectionState.profileId !== profile?.id);
+  const activeTargetKey = target?.key || null;
+  const switchingProfiles = Boolean(filesConnectionState.connected && filesConnectionState.targetKey && filesConnectionState.targetKey !== activeTargetKey);
+
+  if (target && filesActiveTargetKey !== activeTargetKey) {
+    activateFilesTargetState({ loading: true, message: `Connecting to ${target.label || "filesystem"}...` });
+  }
 
   if (selectedStorage) {
     const listing = await refreshFileListing({
       storageId: selectedStorage.id,
       profileId: null,
-      path: filesConnectionState.connected && filesConnectionState.storageId === selectedStorage.id
-        ? filesConnectionState.currentPath || filesConnectionState.homePath
-        : undefined,
       loadingMessage: `Connecting to ${storageConnectionLabel(selectedStorage)}...`,
     });
     if (listing?.connected) {
@@ -18256,9 +18423,6 @@ async function performConnectFilesSession(options = {}) {
     const listing = await refreshFileListing({
       storageId: null,
       profileId: null,
-      path: filesConnectionState.connected && filesConnectionState.targetKey === target.key
-        ? filesConnectionState.currentPath || filesConnectionState.homePath
-        : undefined,
       loadingMessage: `Connecting to ${target.label}...`,
     });
     if (listing?.connected) showToast(`Connected to ${target.label}.`);
@@ -18279,7 +18443,6 @@ async function performConnectFilesSession(options = {}) {
   if (!profile && isSingleDeviceMode()) {
     const listing = await refreshFileListing({
       profileId: null,
-      path: filesConnectionState.connected ? filesConnectionState.currentPath || filesConnectionState.homePath : undefined,
       loadingMessage: "Opening files on this device...",
     });
     if (listing?.connected) {
@@ -18306,9 +18469,6 @@ async function performConnectFilesSession(options = {}) {
 
   const listing = await refreshFileListing({
     profileId: profile.id,
-    path: filesConnectionState.connected && filesConnectionState.profileId === profile.id
-      ? filesConnectionState.currentPath || filesConnectionState.homePath
-      : undefined,
     password: options.password,
     loadingMessage: `Connecting to ${profile.displayName || profile.host}...`,
   });
@@ -25308,6 +25468,7 @@ filesServerSelect?.addEventListener("change", () => {
   if (filesSelectedProfileId) {
     selectedStorageId = "";
   }
+  activateFilesTargetState({ loading: false, message: "Select Connect to browse this filesystem." });
   renderStorageConnections();
   renderFilesView();
 });
@@ -25323,6 +25484,7 @@ filesProfileSelect?.addEventListener("change", () => {
   }
   setFilesPasswordPromptState(false);
   syncFilesSelectionState();
+  activateFilesTargetState({ loading: false, message: "Select Connect to browse this filesystem." });
   renderStorageConnections();
   renderFilesView();
 });
@@ -25373,7 +25535,10 @@ filesDetailsDivider?.addEventListener("mousedown", (event) => {
   event.preventDefault();
   startFilesPanelResize("details", event.clientX);
 });
-filesSearchInput?.addEventListener("input", debounce(filterFileRows, 120));
+filesSearchInput?.addEventListener("input", debounce(() => {
+  getFilesProfileState().searchQuery = filesSearchInput?.value || "";
+  filterFileRows();
+}, 120));
 filesList?.addEventListener("keydown", (event) => {
   if (event.key === "ArrowDown") {
     event.preventDefault();

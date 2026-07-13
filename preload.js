@@ -251,6 +251,7 @@ const desktopApi = {
     deleteConnection: (storageId) => ipcRenderer.invoke("files:deleteConnection", { storageId }),
     setDefaultConnection: (storageId) => ipcRenderer.invoke("files:setDefaultConnection", { storageId }),
     testConnection: (payload = {}) => ipcRenderer.invoke("files:testConnection", payload),
+    identity: (payload = {}) => ipcRenderer.invoke("files:identity", payload),
     list: (payload) => ipcRenderer.invoke("files:list", payload),
     disconnect: (profileId, storageId = null) => ipcRenderer.invoke("files:disconnect", { profileId, storageId }),
     cancelTransfer: (transferId) => ipcRenderer.invoke("files:cancelTransfer", { transferId }),

@@ -6,7 +6,7 @@ const { EventEmitter } = require("events");
 const { pipeline } = require("stream/promises");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
-const { AgentClientError, downloadFile, getFileListing, mutateFile, readFileText } = require("./agentClient");
+const { AgentClientError, downloadFile, getFileListing, getFilesystemIdentity, mutateFile, readFileText } = require("./agentClient");
 const { getNodeAgentConfig } = require("./nodeService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
@@ -605,6 +605,52 @@ class FileService extends EventEmitter {
       profileId,
       storageId,
       connected: false,
+    };
+  }
+
+  async identity(options = {}) {
+    if (shouldUseNodeAgent(options)) {
+      try {
+        const identity = await getFilesystemIdentity(getFileNodeConfig(options));
+        return {
+          providerType: "agent-native",
+          nodeId: options.nodeId || null,
+          platform: identity.platform || "",
+          hostname: identity.hostname || "",
+          homeDirectory: identity.homeDirectory || identity.home || "/",
+          rootPath: identity.rootPath || "/",
+          pathSeparator: identity.pathSeparator || "/",
+          roots: Array.isArray(identity.roots) ? identity.roots : [],
+        };
+      } catch (error) {
+        throw mapAgentFileOperationError(error, "Node filesystem identity failed.");
+      }
+    }
+    if (shouldUseLocalFiles(options)) {
+      const homeDirectory = getLocalHomePath();
+      return {
+        providerType: "renderer-local",
+        nodeId: options.nodeId || "application-host",
+        platform: process.platform,
+        hostname: os.hostname(),
+        homeDirectory,
+        rootPath: path.parse(homeDirectory).root || path.sep,
+        pathSeparator: path.sep,
+        roots: [path.parse(homeDirectory).root || path.sep],
+      };
+    }
+    const providerProfile = this.getProviderProfile(options);
+    const profile = providerProfile.profile || providerProfile.connection || {};
+    const homeDirectory = profile.rootDirectory || getDefaultRemotePath(profile);
+    return {
+      providerType: "sftp",
+      nodeId: options.nodeId || profile.nodeId || null,
+      platform: "linux",
+      hostname: profile.host || "",
+      homeDirectory,
+      rootPath: "/",
+      pathSeparator: "/",
+      roots: [homeDirectory],
     };
   }
 

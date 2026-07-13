@@ -56,6 +56,11 @@ async function main() {
     const agentClient = require("../src/services/agentClient");
     const config = { backendMode: "agent", url, token };
 
+    const identity = await agentClient.getFilesystemIdentity(config);
+    assert.strictEqual(identity.platform, process.platform, "Agent identity should report the target platform.");
+    assert.strictEqual(identity.homeDirectory, os.homedir(), "Agent identity should report the target home directory.");
+    assert(identity.roots.includes(tempRoot), "Agent identity should include allowed filesystem roots.");
+
     const first = await agentClient.getFileListing(tempRoot, config);
     const reconnected = await agentClient.getFileListing(tempRoot, config);
     assert(first.connected && reconnected.connected, "Agent filesystem should connect and reconnect.");
@@ -94,6 +99,14 @@ async function main() {
     assert(appSource.includes('const FILES_LOCAL_PROFILE_PREFIX = "files-profile:local:"'), "Renderer should create stable local filesystem profile IDs.");
     assert(appSource.includes("getFilesRequestNodeId()"), "Renderer should route file requests through the selected Files profile node.");
     assert(appSource.includes("nodeId: getFilesRequestNodeId()"), "Renderer file payloads should not use the global selected node ID.");
+    assert(appSource.includes("filesProfileNavigationState"), "Renderer should keep Files navigation state per stable target/profile.");
+    assert(appSource.includes("filesNavigationGeneration"), "Renderer should invalidate stale filesystem responses after profile changes.");
+    assert(appSource.includes("resolveFilesTargetIdentity"), "Renderer should resolve filesystem identity before listing files.");
+    assert(appSource.includes("resolveFilesListPath"), "Renderer should validate remembered paths before listing files.");
+    assert(appSource.includes("isWindowsPathValue") && appSource.includes("isPathValidForFilesIdentity"), "Renderer should reject cross-platform remembered paths.");
+    assert(!appSource.includes("path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined"), "Renderer must not reuse global Files path state for list requests.");
+    assert(appSource.includes("profileId: filesSelectedProfileId || null"), "Renderer request context should include the selected profile ID.");
+    assert(appSource.includes("generation: filesNavigationGeneration"), "Renderer request context should include the navigation generation.");
     assert(appSource.includes('return getStorageConnectionById(selectedStorageId);'), "Renderer should not silently fall back to the default local storage connection.");
     assert(appSource.includes("getFilesProfileOptionById(filesSelectedProfileId)"), "Renderer should preserve stable profile IDs across refreshes.");
     assert(appSource.includes("refreshFilesDiscovery"), "Files workspace should refresh node/profile discovery when opened or refreshed.");
@@ -107,8 +120,19 @@ async function main() {
     assert(appSource.includes("Operations") && appSource.includes("transfer.retry"), "Transfer history should link to Operations and expose real retry actions when available.");
 
     const serviceSource = await fs.readFile(path.join(rootDir, "src", "services", "fileService.js"), "utf8");
+    assert(serviceSource.includes("async identity(options = {})"), "Desktop file service should expose filesystem identity for local, Agent, and SFTP providers.");
+    assert(serviceSource.includes("getFilesystemIdentity(getFileNodeConfig(options))"), "Desktop file service should route Agent identity requests to the selected node.");
     assert(serviceSource.includes("FILES_CONFLICT"), "File service should reject upload conflicts instead of silently overwriting.");
     assert(serviceSource.includes("options.conflictPolicy !== \"replace\""), "File service should require explicit replace policy for upload conflicts.");
+
+    const preloadSource = await fs.readFile(path.join(rootDir, "preload.js"), "utf8");
+    assert(preloadSource.includes("files:identity"), "Preload should expose the Files identity IPC bridge.");
+
+    const filesIpcSource = await fs.readFile(path.join(rootDir, "src", "ipc", "filesIpc.js"), "utf8");
+    assert(filesIpcSource.includes('ipcMain.handle("files:identity"'), "Main process should register the Files identity IPC handler.");
+
+    const agentServerSource = await fs.readFile(path.join(rootDir, "agent", "src", "server.js"), "utf8");
+    assert(agentServerSource.includes('pathname === "/api/v1/files/identity"'), "Agent should register the filesystem identity endpoint.");
 
     const nodeServiceSource = await fs.readFile(path.join(rootDir, "src", "services", "nodeService.js"), "utf8");
     assert(nodeServiceSource.includes("isGenericNodeDisplayName"), "Node service should replace legacy generic Agent labels when identity is refreshed.");

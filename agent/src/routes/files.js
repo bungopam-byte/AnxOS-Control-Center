@@ -1,4 +1,4 @@
-const { createFileDownload, listFiles, mutateFile, readTextFile, statPath } = require("../services/fileService");
+const { createFileDownload, getFilesystemIdentity, listFiles, mutateFile, readTextFile, statPath } = require("../services/fileService");
 
 function buildContentDisposition(filename) {
   const fallbackName = String(filename || "download")
@@ -16,6 +16,13 @@ async function handleFilesList(url) {
   return {
     statusCode: 200,
     body: await listFiles(getPathParam(url)),
+  };
+}
+
+async function handleFilesIdentity() {
+  return {
+    statusCode: 200,
+    body: await getFilesystemIdentity(),
   };
 }
 
@@ -63,6 +70,7 @@ async function handleFilesMutate(request) {
 
 module.exports = {
   handleFilesDownload,
+  handleFilesIdentity,
   handleFilesList,
   handleFilesMutate,
   handleFilesRead,

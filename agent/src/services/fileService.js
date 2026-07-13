@@ -1,5 +1,6 @@
 const fs = require("fs");
 const fsPromises = require("fs/promises");
+const os = require("os");
 const path = require("path");
 const { getConfig } = require("../config");
 
@@ -32,6 +33,19 @@ async function getAllowedRoots() {
   }
 
   return unique(roots);
+}
+
+async function getFilesystemIdentity() {
+  const homeDirectory = os.homedir() || process.cwd();
+  const roots = await getAllowedRoots();
+  return {
+    platform: process.platform,
+    hostname: os.hostname(),
+    homeDirectory,
+    rootPath: roots[0] || path.parse(homeDirectory).root || path.sep,
+    pathSeparator: path.sep,
+    roots,
+  };
 }
 
 function isInsideRoot(filePath, root) {
@@ -293,6 +307,7 @@ async function mutateFile(action, payload = {}) {
 
 module.exports = {
   createFileDownload,
+  getFilesystemIdentity,
   listFiles,
   mutateFile,
   readTextFile,

@@ -32,6 +32,7 @@ function registerFilesIpc() {
   }
 
   ipcMain.handle("files:list", async (_, payload = {}) => fileService.list(payload));
+  ipcMain.handle("files:identity", async (_, payload = {}) => fileService.identity(payload));
   ipcMain.handle("files:listConnections", async () => listConnections());
   ipcMain.handle("files:saveConnection", async (_, payload = {}) => {
     requirePermission("settings:write", "storage-connections");

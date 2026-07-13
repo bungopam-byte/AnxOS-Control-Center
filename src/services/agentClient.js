@@ -1980,6 +1980,10 @@ async function getFileListing(currentPath = ".", configOverride = null) {
   return normalizeFileListing(await getFileList(currentPath, configOverride), configOverride);
 }
 
+async function getFilesystemIdentity(configOverride = null) {
+  return requestJson("/api/v1/files/identity", { config: configOverride });
+}
+
 async function readFileText(currentPath, configOverride = null) {
   const query = new URLSearchParams({ path: currentPath || "." });
   return requestJson(`/api/v1/files/read?${query.toString()}`, { config: configOverride });
@@ -2401,6 +2405,7 @@ module.exports = {
   inspectDockerVolume,
   getFileList,
   getFileListing,
+  getFilesystemIdentity,
   getHealth,
   getDependencyCatalog,
   getSystemStats,

@@ -162,6 +162,9 @@ function assertDesktopIntegration() {
   assert(service.includes("getBundledAccountConfigPath") && service.includes("website\", \"account-config.js"), "Desktop should load bundled website/account-config.js when env config is absent.");
   assert(service.includes("ACCOUNT_CONFIG_LOAD_FAILED"), "Desktop should report account configuration load failures explicitly.");
   assert(service.includes("configSource"), "Desktop account status should expose sanitized config source metadata.");
+  assert(service.includes("LEGACY_ACCOUNT_HOSTS") && service.includes("anxos-control-center.pages.dev"), "Desktop should recognize the legacy account website host for safe canonicalization.");
+  assert(service.includes("canonicalizeAccountWebsiteUrl") && service.includes("OFFICIAL_SITE_ORIGIN"), "Desktop should canonicalize stale account website URLs to the official origin.");
+  assert(service.includes("verificationUrl: canonicalizeAccountWebsiteUrl"), "Desktop should canonicalize remote device verification URLs before exposing them.");
   assert(packageJson.includes("\"website/account-config.js\""), "Packaged Electron builds should include public account configuration.");
   assert(service.includes("/api/auth/device/start") && service.includes("/api/auth/device/poll"), "Desktop should use device authorization endpoints.");
   assert(service.includes("/api/auth/refresh") && service.includes("/api/auth/logout"), "Desktop should refresh and revoke account sessions.");

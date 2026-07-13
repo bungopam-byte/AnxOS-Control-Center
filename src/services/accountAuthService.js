@@ -16,6 +16,9 @@ const APPROVED_AUTH_HOSTS = new Set([
   "localhost",
   "127.0.0.1",
 ]);
+const LEGACY_ACCOUNT_HOSTS = new Set([
+  "anxos-control-center.pages.dev",
+]);
 const APPROVED_SUPABASE_FUNCTION_HOST = /^[a-z0-9-]+\.functions\.supabase\.co$/i;
 const APPROVED_SUPABASE_AUTH_HOST = /^[a-z0-9-]+\.supabase\.co$/i;
 
@@ -178,6 +181,24 @@ function buildWebsiteUrl(route = "account", params = {}) {
   return url.toString();
 }
 
+function canonicalizeAccountWebsiteUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+  if (!LEGACY_ACCOUNT_HOSTS.has(parsed.hostname)) {
+    return parsed.toString();
+  }
+  const official = new URL(OFFICIAL_SITE_ORIGIN);
+  parsed.protocol = official.protocol;
+  parsed.username = "";
+  parsed.password = "";
+  parsed.host = official.host;
+  return parsed.toString();
+}
+
 function getAccountApiUrl() {
   return normalizeBaseUrl(getAccountConfig().accountApiUrl, "");
 }
@@ -209,7 +230,7 @@ function getAccountApiHeaders(rawUrl, options = {}) {
 function assertApprovedExternalUrl(rawUrl, purpose = "account") {
   let parsed;
   try {
-    parsed = new URL(rawUrl);
+    parsed = new URL(canonicalizeAccountWebsiteUrl(rawUrl));
   } catch {
     const error = new Error("Account URL is invalid.");
     error.code = "ACCOUNT_URL_INVALID";
@@ -462,7 +483,7 @@ function normalizeDeviceStartResponse(response = {}) {
   const login = {
     deviceCode: response.deviceCode || response.device_code,
     userCode: response.userCode || response.user_code,
-    verificationUrl: response.verificationUrl || response.verification_uri || response.verificationUri,
+    verificationUrl: canonicalizeAccountWebsiteUrl(response.verificationUrl || response.verification_uri || response.verificationUri),
     expiresAt: response.expiresAt || new Date(Date.now() + ((Number.isFinite(expiresIn) ? expiresIn : 600) * 1000)).toISOString(),
     intervalMs: Math.max(1500, (Number.isFinite(pollInterval) ? pollInterval : 3) * 1000),
     createdAt: Date.now(),

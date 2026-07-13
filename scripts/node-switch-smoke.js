@@ -54,7 +54,8 @@ includesAll(appSource, [
 includesAll(appSource, [
   "desktopApiState.api.system.getSnapshot(getNodeScopedPayload(requestContext))",
   "desktopApiState.api.amp.getSnapshot(getNodeScopedPayload(requestContext))",
-  "desktopApiState.api.playit.getSnapshot(getNodeScopedPayload(requestContext))",
+  "desktopApiState.api.publicAccess.getSnapshot(payload)",
+  "desktopApiState.api.playit.getSnapshot(payload)",
   "desktopApiState.api.docker.getSnapshot(getNodeScopedPayload(requestContext))",
   "desktopApiState.api.instances.list(getNodeScopedPayload(requestContext))",
   "desktopApiState.api.backups.list(getNodeScopedPayload(requestContext))",
@@ -102,6 +103,7 @@ includesAll(preloadSource, [
   "system: {\n    getSnapshot: (payload = {})",
   "amp: {\n    getSnapshot: (payload = {})",
   "playit: {\n    getSnapshot: (payload = {})",
+  "publicAccess: {\n    getSnapshot: (payload = {})",
   "getMetrics: (instanceId, options = {})",
   "listSchedules: (payload = {})",
 ], "Preload bridge");

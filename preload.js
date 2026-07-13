@@ -128,6 +128,9 @@ const desktopApi = {
   playit: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("playit:getSnapshot", payload),
   },
+  publicAccess: {
+    getSnapshot: (payload = {}) => ipcRenderer.invoke("publicAccess:getSnapshot", payload),
+  },
   docker: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("docker:getSnapshot", payload),
     listContainers: (payload = {}) => ipcRenderer.invoke("docker:listContainers", payload),

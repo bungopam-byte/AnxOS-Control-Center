@@ -20,6 +20,7 @@ function assertWebsiteAccountUi() {
   const profileIndex = read("website/profile/index.html");
   const site = read("website/site.js");
   const accountConfig = read("website/account-config.js");
+  const profileRepairMigration = read("supabase/migrations/202607120001_profiles_profile_fields_repair.sql");
 
   assert(signinPage.includes('data-auth-form="signin"'), "Website should include a real sign-in form.");
   assert(signupPage.includes('data-auth-form="signup"'), "Website should include a real sign-up form.");
@@ -66,6 +67,9 @@ function assertWebsiteAccountUi() {
   assert(site.includes("loadProfile().catch") && site.includes("currentProfile = null"), "Website profile loading should not block signed-in account state.");
   assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");
   assert(site.includes('authState = "loading"') && site.includes("applyAuthVisibility"), "Website auth rendering should have an explicit loading state and scoped visibility.");
+  assert(site.includes("function applyAuthNavigation") && site.includes("[data-auth-nav]") && site.includes('window.location.replace("/profile")'), "Website navigation should be auth-aware and redirect signed-in users away from sign-in routes.");
+  assert(signinPage.includes('data-auth-nav="signed-out" hidden') && signinPage.includes('data-auth-nav="signed-in"') && signinPage.includes('data-auth-action="signout"'), "Website header must hide auth-dependent nav until session state resolves.");
+  assert(site.includes('window.location.assign("/")'), "Website sign-out should clear auth UI and return to the homepage.");
   assert(site.includes("fallbackState") && site.includes("selectedState"), "Scoped auth rendering should avoid hiding every auth state.");
   assert(site.includes("signinDisplays") && site.includes("logAuthVisibility") && site.includes("WEBSITE_DEBUG"), "Website should support opt-in sanitized auth visibility diagnostics.");
   assert(site.includes("redirectToSignInForCurrentRoute") && site.includes("returnTo"), "Unauthenticated routes should preserve return destination through sign-in.");
@@ -76,6 +80,7 @@ function assertWebsiteAccountUi() {
   assert(site.includes("Clear Revoked") && site.includes("Clear Expired"), "Website should show cleanup counts in card actions.");
   assert(site.includes("clearSafeStorageEntries") && site.includes("supabase|sb-|auth|token|session|profile|preferences"), "Local cache cleanup should preserve auth tokens, profile data, and preferences.");
   assert(site.includes("runAccountCleanup") && site.includes("confirmCleanup"), "Inactive account cleanup should require confirmation before deletion.");
+  assert(profileRepairMigration.includes("add column if not exists bio text") && profileRepairMigration.includes("profiles_bio_length"), "Profile schema repair migration must align the bio UI field with Supabase.");
   assert(site.includes("renderSecurityEvents") && site.includes("getSecurityEventCategory"), "Security history should filter audit records without deleting them.");
   assert(site.includes("securityHistoryHideOld") && !site.includes("/api/account/security-events/clear"), "Security history cleanup should hide/filter audit records instead of deleting them.");
   assert(site.includes("/api/auth/device/lookup"), "Website should look up device authorization requests.");

@@ -130,23 +130,31 @@ a:focus-visible {
   font-weight: 850;
 }
 
-.site-nav a {
+.site-nav a,
+.site-nav__button {
   min-height: 32px;
   padding: 7px 10px;
   border-radius: 7px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 800;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }
 
 .site-nav a:hover,
-.site-nav a:focus-visible {
+.site-nav a:focus-visible,
+.site-nav__button:hover,
+.site-nav__button:focus-visible {
   background: var(--panel);
   color: var(--text);
   outline: none;
 }
 
-.site-nav__cta {
+.site-nav__cta,
+.site-nav__button {
   border: 1px solid rgba(182, 108, 255, 0.32);
   background: rgba(182, 108, 255, 0.12);
   color: var(--text) !important;
@@ -973,9 +981,23 @@ a[aria-disabled="true"] {
   justify-content: flex-end;
 }
 
-.site-footer a {
+.site-footer a,
+.site-footer button {
   color: var(--accent);
   font-weight: 850;
+}
+
+.site-footer button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.site-footer button:hover,
+.site-footer button:focus-visible {
+  color: var(--text);
 }
 
 .account-hero {
@@ -1626,7 +1648,8 @@ a[aria-disabled="true"] {
     display: flex;
   }
 
-  .site-nav a {
+  .site-nav a,
+  .site-nav__button {
     width: 100%;
     min-height: 44px;
     white-space: nowrap;

@@ -98,6 +98,10 @@ assert(styles.includes(".global-search-dialog") && styles.includes(".global-sear
 assert(index.includes("data-command-palette-open") && index.includes("data-command-palette-results") && index.includes("data-command-palette-recents"), "Command Palette must expose a visible trigger, command results, and recent commands.");
 assert(app.includes("function getCommandRegistry") && app.includes("function runCommandPaletteCommand") && app.includes("COMMAND_PALETTE_RECENTS_STORAGE_KEY"), "Renderer must wire a registry-backed Command Palette and recent command storage.");
 assert(styles.includes(".command-palette-dialog") && styles.includes(".command-palette-result.is-active"), "Command Palette CSS must include dialog and active command styling.");
+assert(pageMarkup("playit").includes("<h1>Public Access</h1>") && pageMarkup("playit").includes("data-public-access-action=\"enable\""), "Playit workspace must be presented as Public Access with service actions.");
+assert(pageMarkup("playit").includes("Cloudflare Tunnel") && pageMarkup("playit").includes("Tailscale") && pageMarkup("playit").includes("AnxOS Relay"), "Public Access must show future providers as disabled options.");
+assert(app.includes("hasPublicAccess") && app.includes("renderPublicAccessSnapshot") && preload.includes("publicAccess:getSnapshot") && main.includes("registerPublicAccessIpc"), "Public Access must use the provider abstraction while preserving Playit compatibility.");
+assert(styles.includes(".public-access-grid") && styles.includes(".public-access-provider.is-disabled"), "Public Access CSS must include provider and service layout.");
 assert(app.includes("function createTextElement") && app.includes("function createSecurityBadgeElement"), "Renderer must keep safe DOM helper coverage for dynamic desktop surfaces.");
 assert(app.includes("pre = createTextElement(\"pre\", JSON.stringify(event.details || {}, null, 2)") && app.includes("createSvgElement(\"path\""), "High-risk diagnostics/security/icon surfaces must render through DOM APIs.");
 

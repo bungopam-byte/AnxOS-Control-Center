@@ -31,8 +31,10 @@
       </a>
       <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
       <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
-        <a href="/signin">Sign In</a>
-        <a href="/signup">Sign Up</a>
+        <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a>
+        <a class="site-nav__cta" href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a>
+        <a href="/profile" data-auth-nav="signed-in" hidden>Profile</a>
+        <button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button>
         <a href="/release-notes.html">Release Notes</a>
       </nav>
     </header>
@@ -74,7 +76,7 @@
       </section>
     </main>
 
-    <footer class="site-footer"><div><strong>AnxOS Control Center</strong><span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span></div><nav aria-label="Footer"><a href="/">Home</a><a href="/signin">Sign In</a><a href="/account">Account</a><a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a></nav></footer>
+    <footer class="site-footer"><div><strong>AnxOS Control Center</strong><span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span></div><nav aria-label="Footer"><a href="/">Home</a><a href="/account">Account</a><a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center">GitHub</a><a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a><a href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a><a href="/profile" data-auth-nav="signed-in" hidden>Profile</a><button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button></nav></footer>
     <div class="confirm-modal" data-confirm-modal hidden>
       <div class="confirm-modal__backdrop" data-confirm-modal-cancel></div>
       <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">

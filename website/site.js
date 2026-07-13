@@ -511,6 +511,10 @@ async function renderAuthState() {
   });
   authState = "signed-in";
   renderSignedIn();
+  if (["signin", "signup"].includes(getCurrentRoute())) {
+    window.location.replace("/profile");
+    return;
+  }
   await Promise.allSettled([loadDevices(), loadSessions(), loadSecurityEvents()]);
 }
 
@@ -523,7 +527,17 @@ function setScopedAuthView(container, selectedState) {
   });
 }
 
+function applyAuthNavigation() {
+  document.querySelectorAll("[data-auth-nav]").forEach((node) => {
+    const show = authState !== "loading" && node.dataset.authNav === authState;
+    node.hidden = !show;
+    if ("disabled" in node) node.disabled = !show;
+    node.setAttribute("aria-hidden", show ? "false" : "true");
+  });
+}
+
 function applyAuthVisibility(operation = "apply") {
+  applyAuthNavigation();
   document.querySelectorAll("[data-account-route]").forEach((section) => {
     let selectedState = authState;
     if (section.dataset.accountRoute === "signin" && authState === "loading") selectedState = "loading";
@@ -662,7 +676,7 @@ async function handleSignUp(form) {
   try {
     const username = form.elements.username.value.trim();
     const displayName = form.elements.displayName.value.trim();
-    const { error } = await getSupabase().auth.signUp({
+    const { data, error } = await getSupabase().auth.signUp({
       email: form.elements.email.value.trim(),
       password: form.elements.password.value,
       options: {
@@ -671,6 +685,13 @@ async function handleSignUp(form) {
       },
     });
     if (error) throw error;
+    if (data?.session?.user) {
+      currentSession = data.session;
+      authState = "signed-in";
+      await renderAuthState();
+      window.location.assign("/profile");
+      return;
+    }
     setMessage("signup", "Account created. Check your email to verify your address.", "ok");
     window.location.assign("/signin?created=1");
   } catch (error) {
@@ -1313,7 +1334,7 @@ function bindAccountForms() {
       currentProfile = null;
       authState = "signed-out";
       applyAuthVisibility("signout");
-      window.location.assign("/signin");
+      window.location.assign("/");
     });
   });
   document.querySelectorAll('[data-auth-action="refresh-devices"]').forEach((button) => {

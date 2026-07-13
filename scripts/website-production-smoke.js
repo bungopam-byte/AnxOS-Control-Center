@@ -48,6 +48,7 @@ const oldPagesOrigin = "https://anxos-control-center.pages.dev";
   const html = read(file);
   assert(html.includes("data-site-menu-toggle"), `${file} must expose the mobile navigation toggle.`);
   assert(html.includes("data-site-nav"), `${file} must expose the mobile navigation target.`);
+  assert(html.includes('data-auth-nav="signed-out" hidden') && html.includes('data-auth-nav="signed-in"') && html.includes('data-auth-action="signout"'), `${file} must expose auth-aware navigation.`);
   assert(html.includes('rel="canonical"'), `${file} must declare a canonical URL.`);
   assert(html.includes('rel="icon"') && html.includes('apple-touch-icon') && html.includes('site.webmanifest'), `${file} must declare favicon and app icons.`);
 });

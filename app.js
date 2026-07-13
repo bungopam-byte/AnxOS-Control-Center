@@ -1090,6 +1090,7 @@ function getDesktopApiState() {
     hasSystem: typeof api?.system?.getSnapshot === "function",
     hasAmp: typeof api?.amp?.getSnapshot === "function",
     hasPlayit: typeof api?.playit?.getSnapshot === "function",
+    hasPublicAccess: typeof api?.publicAccess?.getSnapshot === "function",
     hasDocker:
       typeof api?.docker?.getSnapshot === "function" &&
       typeof api?.docker?.create === "function" &&
@@ -5190,7 +5191,7 @@ function getPlayitState(snapshot, configuredAddress = null) {
       connected,
       state: "connected",
       label: "Connected",
-      summary: "Playit tunnel is running and forwarding traffic.",
+      summary: "Public Access is running and forwarding traffic through Playit.gg.",
       hasTunnelEvidence,
     };
   }
@@ -5203,10 +5204,10 @@ function getPlayitState(snapshot, configuredAddress = null) {
       state: "running",
       label: "Running",
       summary: isPartialRunning
-        ? "Playit is running and tunnel domain is available."
+        ? "Public Access is running and a public address is available."
         : hasTunnelEvidence
-          ? "Playit is running and partial tunnel diagnostics are available."
-          : "Playit is running.",
+          ? "Public Access is running and partial provider diagnostics are available."
+          : "Public Access provider is running.",
       hasTunnelEvidence,
     };
   }
@@ -5218,7 +5219,7 @@ function getPlayitState(snapshot, configuredAddress = null) {
       connected,
       state: "stopped",
       label: "Disconnected",
-      summary: "Playit is installed, but the tunnel process is stopped.",
+      summary: "Playit.gg is installed, but the provider process is stopped.",
       hasTunnelEvidence,
     };
   }
@@ -5230,7 +5231,7 @@ function getPlayitState(snapshot, configuredAddress = null) {
       connected,
       state: "running",
       label: "Running",
-      summary: "Playit tunnel details were detected, but the running state could not be verified.",
+      summary: "Public Access details were detected, but the provider running state could not be verified.",
       hasTunnelEvidence,
     };
   }
@@ -5241,7 +5242,7 @@ function getPlayitState(snapshot, configuredAddress = null) {
     connected,
     state: "missing",
     label: "Unknown",
-    summary: "Playit status could not be determined.",
+    summary: "Public Access status could not be determined.",
     hasTunnelEvidence: false,
   };
 }
@@ -5308,11 +5309,29 @@ function renderPlayitSnapshot(snapshot) {
   setField("playitLatency", formatPlayitLatency(snapshot));
   setField("playitTraffic", formatPlayitTraffic(snapshot));
   setField("playitSummary", playitState.summary);
+  setField("publicAccessServices", playitState.hasTunnelEvidence ? "1 service" : "No public services");
+  setField("publicAccessActiveTunnels", playitState.state === "connected" || playitState.state === "running" ? "1 active" : "None");
+  setField("publicAccessProvider", "Playit.gg");
+  setField("publicAccessServiceName", tunnelAddress !== "Unavailable" ? "Public service" : "Unconfigured service");
+  setField("publicAccessActivity", snapshot?.lastSuccessfulRefreshAt ? `Checked ${formatDateTime(snapshot.lastSuccessfulRefreshAt)}` : "Status checked");
   renderInstanceNetwork(findInstance());
   updateTitlebar();
 }
 
-function renderPlayitUnavailable(message = "Playit status unavailable.") {
+function renderPublicAccessSnapshot(snapshot = {}) {
+  const playitSnapshot = snapshot.playit || snapshot;
+  renderPlayitSnapshot(playitSnapshot);
+  const service = Array.isArray(snapshot.services) ? snapshot.services[0] : null;
+  if (service) {
+    setField("publicAccessServiceName", service.name || "Public service");
+    setField("publicAccessProvider", service.providerName || snapshot.connectedProvider || "Playit.gg");
+    setField("publicAccessServices", `${snapshot.services.length} service${snapshot.services.length === 1 ? "" : "s"}`);
+    setField("publicAccessActiveTunnels", `${Number(snapshot.activeTunnels || 0)} active`);
+    setField("publicAccessActivity", snapshot.recentActivity?.[0]?.label || "Status checked");
+  }
+}
+
+function renderPlayitUnavailable(message = "Public Access status unavailable.") {
   latestPlayitSnapshot = null;
   setPlayitVisualState("missing");
   setField("playitInstalled", "Unavailable");
@@ -5327,6 +5346,11 @@ function renderPlayitUnavailable(message = "Playit status unavailable.") {
   setField("playitLatency", "Not measured");
   setField("playitTraffic", "Not reported");
   setField("playitSummary", message);
+  setField("publicAccessServices", "Unavailable");
+  setField("publicAccessActiveTunnels", "Unavailable");
+  setField("publicAccessProvider", "Playit.gg");
+  setField("publicAccessServiceName", "Unavailable");
+  setField("publicAccessActivity", "No recent activity");
   renderInstanceNetwork(findInstance());
   updateTitlebar();
 }
@@ -7194,7 +7218,7 @@ function renderInstanceNetworkSummary(instance) {
   setInstanceNetworkDetail("localAddress", localPort === "Unavailable" ? "Unavailable" : `${localIp}:${localPort}`);
   setInstanceNetworkDetail("publicAddress", tunnelAddress);
   setInstanceNetworkDetail("configuredPort", formatInstanceValue(configuredPort));
-  setInstanceNetworkDetail("playitTunnel", isMinecraft ? tunnelAddress : "Shared Playit page");
+  setInstanceNetworkDetail("playitTunnel", isMinecraft ? tunnelAddress : "Shared Public Access workspace");
   setInstanceNetworkDetail("tunnelStatus", latestPlayitSnapshot?.connected ? "Connected" : "Unavailable");
 }
 
@@ -9803,7 +9827,7 @@ function renderMarketplaceWizardSteps(template) {
 
   const isMinecraft = isMinecraftMarketplaceTemplate(template);
   const steps = isMinecraft
-    ? ["Server Name", "Version", "Server Runtime", "Memory", "Port", "Playit", "Accept EULA"]
+    ? ["Server Name", "Version", "Server Runtime", "Memory", "Port", "Public Access", "Accept EULA"]
     : ["Name", "Storage Location", "Port", "Memory"];
   marketplaceWizardSteps.replaceChildren();
   steps.forEach((step, index) => {
@@ -16796,8 +16820,8 @@ async function refreshPlayitStatus() {
 
   const desktopApiState = getDesktopApiState();
 
-  if (!desktopApiState.hasPlayit) {
-    renderPlayitUnavailable(desktopApiState.hasBridge ? "Playit IPC bridge unavailable." : "Desktop preload bridge unavailable.");
+  if (!desktopApiState.hasPublicAccess && !desktopApiState.hasPlayit) {
+    renderPlayitUnavailable(desktopApiState.hasBridge ? "Public Access IPC bridge unavailable." : "Desktop preload bridge unavailable.");
     return;
   }
 
@@ -16805,16 +16829,23 @@ async function refreshPlayitStatus() {
   const requestContext = getNodeRequestContext("playit");
 
   try {
-    const snapshot = await desktopApiState.api.playit.getSnapshot(getNodeScopedPayload(requestContext));
+    const payload = getNodeScopedPayload(requestContext);
+    const snapshot = desktopApiState.hasPublicAccess
+      ? await desktopApiState.api.publicAccess.getSnapshot(payload)
+      : await desktopApiState.api.playit.getSnapshot(payload);
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    renderPlayitSnapshot(snapshot);
+    if (desktopApiState.hasPublicAccess) {
+      renderPublicAccessSnapshot(snapshot);
+    } else {
+      renderPlayitSnapshot(snapshot);
+    }
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    renderPlayitUnavailable(`Playit status request failed: ${error?.message || "Unknown error"}`);
+    renderPlayitUnavailable(`Public access status request failed: ${error?.message || "Unknown error"}`);
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
       playitRequestInFlight = false;
@@ -25606,6 +25637,23 @@ document.querySelectorAll("[data-diagnostics-action]").forEach((button) => butto
   try { await runDiagnosticsAction(action); }
   catch {}
   finally { button.disabled = false; }
+}));
+document.querySelectorAll("[data-public-access-action]").forEach((button) => button.addEventListener("click", () => {
+  const action = button.dataset.publicAccessAction;
+  if (action === "enable" || action === "settings") {
+    showPage("settings");
+    document.querySelector('[data-setting="playit.address"]')?.focus();
+    showToast("Public Access currently uses Playit.gg provider settings.", "info");
+    return;
+  }
+  if (action === "logs") {
+    showPage("console");
+    showToast("Open the Playit service log source from Console when available.", "info");
+    return;
+  }
+  if (action === "disable" || action === "restart") {
+    showToast("This Public Access action needs a supported provider control handler before it can run.", "info");
+  }
 }));
 backupActionButtons.forEach((button) => {
   button.addEventListener("click", async () => {

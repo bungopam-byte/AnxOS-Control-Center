@@ -279,7 +279,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>AMP</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="playit" data-page-label="Playit" data-tooltip="Playit" aria-label="Playit">
+          <button class="nav-item" type="button" data-page-target="playit" data-page-label="Public Access" data-tooltip="Public Access" aria-label="Public Access">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M4 12h12"></path>
@@ -288,7 +288,7 @@
                 <path d="M6 17h4"></path>
               </svg>
             </span>
-            <span class="nav-item__label" data-nav-label>Playit</span>
+            <span class="nav-item__label" data-nav-label>Public Access</span>
           </button>
           <button class="nav-item" type="button" data-page-target="docker" data-page-label="Docker" data-tooltip="Docker" aria-label="Docker">
             <span class="nav-item__icon" aria-hidden="true">
@@ -775,67 +775,146 @@
         <section class="page" data-page="playit">
           <header class="page-header">
             <div>
-              <p class="eyebrow">Tunnel</p>
-              <h1>Playit</h1>
-              <p class="lede">Local tunnel status and routing details for configured playit services.</p>
+              <p class="eyebrow">Public Access</p>
+              <h1>Public Access</h1>
+              <p class="lede">Expose selected local services to the internet through a supported provider. Playit.gg is the first available provider.</p>
             </div>
           </header>
-          <section class="playit-shell" aria-label="Playit tunnel status">
-            <article class="status-card status-card--wide playit-status-card" data-playit-status-card>
-              <div class="status-card__top">
-                <span class="service-icon">PG</span>
-                <span class="status-pill status-pill--planned" data-playit-status-pill data-field="playitConnected">Checking...</span>
-              </div>
-              <h3>Tunnel Status</h3>
-              <p data-field="playitSummary">Checking local playit status...</p>
-              <dl>
-                <div>
-                  <dt>Installed</dt>
-                  <dd data-field="playitInstalled">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Running</dt>
-                  <dd data-field="playitRunning">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Tunnel domain</dt>
-                  <dd data-field="playitTunnelAddress">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Local IP</dt>
-                  <dd data-field="playitLocalIp">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Local Port</dt>
-                  <dd data-field="playitLocalPort">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Protocol</dt>
-                  <dd data-field="playitProtocol">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Tunnel ID</dt>
-                  <dd data-field="playitTunnelId">Checking...</dd>
-                </div>
-                <div>
-                  <dt>Last Check</dt>
-                  <dd data-field="playitLastSuccessfulRefresh">Checking...</dd>
-                </div>
-              </dl>
-            </article>
-
-            <div class="playit-summary-grid">
+          <section class="playit-shell public-access-shell" aria-label="Public Access status">
+            <div class="playit-summary-grid public-access-overview" aria-label="Public Access overview">
               <article class="playit-summary-card">
-                <span>STATUS</span>
+                <span>PUBLIC SERVICES</span>
+                <strong data-field="publicAccessServices">Checking...</strong>
+              </article>
+              <article class="playit-summary-card">
+                <span>ACTIVE TUNNELS</span>
+                <strong data-field="publicAccessActiveTunnels">Checking...</strong>
+              </article>
+              <article class="playit-summary-card">
+                <span>CONNECTED PROVIDER</span>
+                <strong data-field="publicAccessProvider">Checking...</strong>
+              </article>
+              <article class="playit-summary-card">
+                <span>TUNNEL STATUS</span>
                 <strong data-field="playitConnected">Checking...</strong>
               </article>
               <article class="playit-summary-card">
-                <span>LATENCY</span>
-                <strong data-field="playitLatency">Unavailable</strong>
+                <span>RECENT ACTIVITY</span>
+                <strong data-field="publicAccessActivity">Checking...</strong>
               </article>
-              <article class="playit-summary-card">
-                <span>TRAFFIC</span>
-                <strong data-field="playitTraffic">Unavailable</strong>
+            </div>
+
+            <div class="public-access-grid">
+              <article class="status-card status-card--wide playit-status-card" data-playit-status-card>
+                <div class="status-card__top">
+                  <span class="service-icon">PA</span>
+                  <span class="status-pill status-pill--planned" data-playit-status-pill data-field="playitConnected">Checking...</span>
+                </div>
+                <h3>Public Service</h3>
+                <p data-field="playitSummary">Checking public access status...</p>
+                <dl>
+                  <div>
+                    <dt>Service Name</dt>
+                    <dd data-field="publicAccessServiceName">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Local Port</dt>
+                    <dd data-field="playitLocalPort">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Provider</dt>
+                    <dd data-field="publicAccessProvider">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Public Address</dt>
+                    <dd data-field="playitTunnelAddress">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd data-field="playitConnected">Checking...</dd>
+                  </div>
+                </dl>
+                <div class="settings-actions public-access-actions" aria-label="Public service actions">
+                  <button class="inline-action inline-action--primary" type="button" data-public-access-action="enable">Enable Public Access</button>
+                  <button class="inline-action" type="button" data-public-access-action="disable" disabled>Disable</button>
+                  <button class="inline-action" type="button" data-public-access-action="restart" disabled>Restart</button>
+                  <button class="inline-action" type="button" data-public-access-action="logs">View Logs</button>
+                  <button class="inline-action" type="button" data-public-access-action="settings">Settings</button>
+                </div>
+              </article>
+
+              <article class="status-card public-access-providers">
+                <div class="status-card__top">
+                  <span class="service-icon">PR</span>
+                  <span class="status-pill is-connected">Provider</span>
+                </div>
+                <h3>Providers</h3>
+                <p>Choose how AnxOS exposes services. Only Playit.gg is currently supported.</p>
+                <div class="public-access-provider-list" data-public-access-providers>
+                  <article class="public-access-provider is-supported" data-provider-id="playit">
+                    <strong>Playit.gg</strong>
+                    <span class="status-pill is-connected">Supported</span>
+                    <small>Current provider for public service access.</small>
+                  </article>
+                  <article class="public-access-provider is-disabled" aria-disabled="true">
+                    <strong>Cloudflare Tunnel</strong>
+                    <span class="status-pill status-pill--planned">Coming Soon</span>
+                    <small>Not available in this build.</small>
+                  </article>
+                  <article class="public-access-provider is-disabled" aria-disabled="true">
+                    <strong>Tailscale</strong>
+                    <span class="status-pill status-pill--planned">Coming Soon</span>
+                    <small>Not available in this build.</small>
+                  </article>
+                  <article class="public-access-provider is-disabled" aria-disabled="true">
+                    <strong>AnxOS Relay</strong>
+                    <span class="status-pill status-pill--planned">Coming Soon</span>
+                    <small>Not available in this build.</small>
+                  </article>
+                </div>
+              </article>
+
+              <article class="status-card public-access-details">
+                <div class="status-card__top">
+                  <span class="service-icon">PG</span>
+                  <span class="status-pill status-pill--planned">Playit.gg</span>
+                </div>
+                <h3>Provider Details</h3>
+                <p>Technical status from the Playit.gg provider.</p>
+                <dl>
+                  <div>
+                    <dt>Installed</dt>
+                    <dd data-field="playitInstalled">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Running</dt>
+                    <dd data-field="playitRunning">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Local IP</dt>
+                    <dd data-field="playitLocalIp">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Protocol</dt>
+                    <dd data-field="playitProtocol">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Tunnel ID</dt>
+                    <dd data-field="playitTunnelId">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Last Check</dt>
+                    <dd data-field="playitLastSuccessfulRefresh">Checking...</dd>
+                  </div>
+                  <div>
+                    <dt>Latency</dt>
+                    <dd data-field="playitLatency">Not measured</dd>
+                  </div>
+                  <div>
+                    <dt>Traffic</dt>
+                    <dd data-field="playitTraffic">Not reported</dd>
+                  </div>
+                </dl>
               </article>
             </div>
           </section>
@@ -1265,7 +1344,7 @@
                   <label class="ssh-field" data-marketplace-field-wrap="storageLocation"><span>Storage Location</span><input type="text" data-marketplace-field="storageLocation" placeholder="data"></label>
                   <label class="ssh-field"><span>Memory</span><input type="text" data-marketplace-field="memory" placeholder="4G"></label>
                   <label class="ssh-field"><span>Port</span><input type="number" min="1" max="65535" data-marketplace-field="port" placeholder="25565"></label>
-                  <label class="console-toggle" data-marketplace-field-wrap="playitTunnel"><input type="checkbox" data-marketplace-field="playitTunnel"><span>Configure Playit tunnel later</span></label>
+                  <label class="console-toggle" data-marketplace-field-wrap="playitTunnel"><input type="checkbox" data-marketplace-field="playitTunnel"><span>Configure Public Access later</span></label>
                   <label class="console-toggle" data-marketplace-field-wrap="acceptEula"><input type="checkbox" data-marketplace-field="acceptEula"><span>Accept Minecraft EULA</span></label>
                   <label class="console-toggle"><input type="checkbox" checked data-marketplace-field="start"><span>Start after install</span></label>
                   <div class="marketplace-install-summary" data-marketplace-install-summary aria-live="polite"></div>
@@ -1410,7 +1489,7 @@
               <label class="ssh-field"><span>Environment</span><input type="text" placeholder="NODE_ENV=production,PORT=3000" data-instance-form="environment" autocomplete="off"></label>
               <label class="ssh-field"><span>Tags</span><input type="text" placeholder="minecraft, production" data-instance-form="tags" autocomplete="off"></label>
               <label class="console-toggle instance-wizard-option"><input type="checkbox" data-instance-form="acceptEula"><span>Accept Minecraft EULA</span></label>
-              <label class="console-toggle instance-wizard-option"><input type="checkbox" data-instance-form="playitTunnel"><span>Playit tunnel later</span></label>
+              <label class="console-toggle instance-wizard-option"><input type="checkbox" data-instance-form="playitTunnel"><span>Public Access later</span></label>
               <div class="ssh-connection-actions">
                 <button class="inline-action" type="submit" data-instance-create-submit>Create Instance</button>
                 <button class="inline-action" type="button" data-instance-action="cancel-create">Cancel</button>
@@ -1531,7 +1610,7 @@
                     <section class="instance-minecraft-card">
                       <h4>Network</h4>
                       <dl class="docker-details-list">
-                        <div><dt>Playit Tunnel</dt><dd data-minecraft-summary="playit">—</dd></div>
+                        <div><dt>Public Access</dt><dd data-minecraft-summary="playit">—</dd></div>
                       </dl>
                     </section>
                     <section class="instance-minecraft-card">
@@ -1675,7 +1754,7 @@
                       <article><span>Local Address</span><strong data-instance-network-detail="localAddress">Unavailable</strong></article>
                       <article><span>Public Address</span><strong data-instance-network-detail="publicAddress">Unavailable</strong></article>
                       <article><span>Configured Port</span><strong data-instance-network-detail="configuredPort">Unavailable</strong></article>
-                      <article><span>Playit Tunnel</span><strong data-instance-network-detail="playitTunnel">Unavailable</strong></article>
+                      <article><span>Public Access</span><strong data-instance-network-detail="playitTunnel">Unavailable</strong></article>
                       <article><span>Tunnel Status</span><strong data-instance-network-detail="tunnelStatus">Unavailable</strong></article>
                     </div>
                     <div class="instance-network-list" data-instance-network-list></div>
@@ -3381,7 +3460,7 @@
                     <option value="dashboard">Dashboard</option>
                     <option value="minecraft">Minecraft</option>
                     <option value="amp">AMP</option>
-                    <option value="playit">Playit</option>
+                    <option value="playit">Public Access</option>
                     <option value="docker">Docker</option>
                     <option value="ssh">SSH</option>
                     <option value="files">Files</option>
@@ -3586,14 +3665,14 @@
             <section class="settings-section settings-section--playit" data-settings-category="integrations" data-settings-keywords="integrations playit tunnel address">
               <div class="settings-section__header">
                 <div>
-                  <h3>Playit</h3>
-                  <p>Keep the preferred tunnel address close to the Playit dashboard.</p>
+                  <h3>Public Access Provider</h3>
+                  <p>Keep the preferred Playit.gg public address close to the Public Access workspace.</p>
                 </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
               <div class="settings-grid">
                 <label class="settings-field">
-                  <span>Playit address</span>
+                  <span>Playit.gg public address</span>
                   <input type="text" placeholder="Not configured" data-setting="playit.address">
                 </label>
               </div>

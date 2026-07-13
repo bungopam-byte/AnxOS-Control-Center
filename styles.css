@@ -7122,6 +7122,57 @@ dd {
   gap: 14px;
 }
 
+.public-access-shell {
+  grid-template-columns: 1fr;
+}
+
+.public-access-overview {
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+}
+
+.public-access-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 0.8fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.public-access-details {
+  grid-column: 1 / -1;
+}
+
+.public-access-actions {
+  margin-top: 14px;
+}
+
+.public-access-provider-list {
+  display: grid;
+  gap: 10px;
+}
+
+.public-access-provider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(17, 21, 31, 0.58);
+}
+
+.public-access-provider small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.public-access-provider.is-supported {
+  border-color: rgba(69, 224, 143, 0.36);
+}
+
+.public-access-provider.is-disabled {
+  opacity: 0.72;
+}
+
 .playit-status-card {
   border-color: var(--line);
   transition: border-color 160ms ease, box-shadow 160ms ease;
@@ -8606,17 +8657,17 @@ body.has-open-modal {
   min-height: clamp(360px, 58vh, 700px);
 }
 
-.playit-shell {
+.playit-shell:not(.public-access-shell) {
   grid-template-columns: minmax(360px, 0.74fr) minmax(620px, 1.26fr);
   align-items: stretch;
 }
 
-.playit-shell .playit-status-card {
+.playit-shell:not(.public-access-shell) .playit-status-card {
   max-width: none;
   min-height: clamp(430px, 62vh, 720px);
 }
 
-.playit-summary-grid {
+.playit-shell:not(.public-access-shell) .playit-summary-grid {
   grid-template-columns: 1fr;
 }
 
@@ -11152,6 +11203,7 @@ button:disabled {
   .status-grid.dashboard-grid,
   .status-grid.status-grid--two,
   .playit-shell,
+  .public-access-grid,
   .ssh-workspace-shell,
   .console-ops-shell,
   .instances-shell,
@@ -11159,6 +11211,10 @@ button:disabled {
   .backup-workspace,
   .coolpals-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .public-access-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .instances-toolbar {

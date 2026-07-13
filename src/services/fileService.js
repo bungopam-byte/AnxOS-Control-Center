@@ -236,18 +236,47 @@ function mapAgentFileOperationError(error, fallbackMessage) {
   }
 
   const code = error?.payload?.error?.code || error.code || null;
+  const details = error?.payload?.error?.details && typeof error.payload.error.details === "object"
+    ? error.payload.error.details
+    : {};
+  const message = error?.payload?.error?.message || error.message || fallbackMessage || "Remote file operation failed.";
+
+  const rootConfigurationCodes = new Set([
+    "FILESYSTEM_ROOT_EMPTY",
+    "FILESYSTEM_ROOT_INVALID",
+    "FILESYSTEM_ROOT_MISSING",
+    "FILESYSTEM_ROOT_UNREADABLE",
+  ]);
+
+  if (rootConfigurationCodes.has(code)) {
+    return new FileServiceError(message, {
+      code: `FILES_${code}`,
+      status: error.status || 403,
+      details,
+    });
+  }
 
   if (code === "PATH_NOT_FOUND") {
-    return new FileServiceError("Remote path not found.", {
+    return new FileServiceError(message || "Remote path not found.", {
       code: "FILES_PATH_NOT_FOUND",
       status: 404,
+      details,
     });
   }
 
   if (code === "PATH_NOT_ALLOWED") {
-    return new FileServiceError("Permission denied for that remote path.", {
+    return new FileServiceError(message || "Permission denied for that remote path.", {
       code: "FILES_PERMISSION_DENIED",
       status: 403,
+      details,
+    });
+  }
+
+  if (code === "PATH_UNREADABLE" || code === "REALPATH_FAILED") {
+    return new FileServiceError(message, {
+      code: `FILES_${code}`,
+      status: error.status || 400,
+      details,
     });
   }
 
@@ -272,9 +301,10 @@ function mapAgentFileOperationError(error, fallbackMessage) {
     });
   }
 
-  return new FileServiceError(fallbackMessage || error.message || "Remote file operation failed.", {
+  return new FileServiceError(message, {
     code: code || "FILES_OPERATION_FAILED",
     status: error.status || 400,
+    details,
   });
 }
 
@@ -619,6 +649,15 @@ class FileService extends EventEmitter {
           hostname: identity.hostname || "",
           homeDirectory: identity.homeDirectory || identity.home || "/",
           rootPath: identity.rootPath || "/",
+          filesystemRoot: identity.filesystemRoot || identity.rootPath || "/",
+          filesystemRootStatus: identity.filesystemRootStatus || null,
+          filesystemRoots: Array.isArray(identity.filesystemRoots) ? identity.filesystemRoots : [],
+          filesystemRootExists: Boolean(identity.filesystemRootExists),
+          filesystemRootReadable: Boolean(identity.filesystemRootReadable),
+          homeInsideFilesystemRoot: Boolean(identity.homeInsideFilesystemRoot),
+          initialPath: identity.initialPath || null,
+          configSourceType: identity.configSourceType || null,
+          restartRequired: Boolean(identity.restartRequired),
           pathSeparator: identity.pathSeparator || "/",
           roots: Array.isArray(identity.roots) ? identity.roots : [],
         };
@@ -635,6 +674,20 @@ class FileService extends EventEmitter {
         hostname: os.hostname(),
         homeDirectory,
         rootPath: path.parse(homeDirectory).root || path.sep,
+        filesystemRoot: path.parse(homeDirectory).root || path.sep,
+        filesystemRootStatus: {
+          status: "valid",
+          code: "valid",
+          exists: true,
+          readable: true,
+        },
+        filesystemRoots: [],
+        filesystemRootExists: true,
+        filesystemRootReadable: true,
+        homeInsideFilesystemRoot: true,
+        initialPath: homeDirectory,
+        configSourceType: "local",
+        restartRequired: false,
         pathSeparator: path.sep,
         roots: [path.parse(homeDirectory).root || path.sep],
       };
@@ -649,6 +702,20 @@ class FileService extends EventEmitter {
       hostname: profile.host || "",
       homeDirectory,
       rootPath: "/",
+      filesystemRoot: homeDirectory,
+      filesystemRootStatus: {
+        status: "valid",
+        code: "valid",
+        exists: true,
+        readable: true,
+      },
+      filesystemRoots: [],
+      filesystemRootExists: true,
+      filesystemRootReadable: true,
+      homeInsideFilesystemRoot: true,
+      initialPath: homeDirectory,
+      configSourceType: "sftp-profile",
+      restartRequired: false,
       pathSeparator: "/",
       roots: [homeDirectory],
     };

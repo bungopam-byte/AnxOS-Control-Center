@@ -59,6 +59,9 @@ async function main() {
     const identity = await agentClient.getFilesystemIdentity(config);
     assert.strictEqual(identity.platform, process.platform, "Agent identity should report the target platform.");
     assert.strictEqual(identity.homeDirectory, os.homedir(), "Agent identity should report the target home directory.");
+    assert.strictEqual(identity.filesystemRoot, tempRoot, "Agent identity should report the authorized filesystem root.");
+    assert.strictEqual(identity.filesystemRootStatus.status, "valid", "Agent identity should report root validation status.");
+    assert.strictEqual(identity.initialPath, tempRoot, "Agent identity should fall back to the authorized root when home is outside it.");
     assert(identity.roots.includes(tempRoot), "Agent identity should include allowed filesystem roots.");
 
     const first = await agentClient.getFileListing(tempRoot, config);
@@ -83,7 +86,7 @@ async function main() {
     await agentClient.mutateFile({ action: "delete", path: renamed }, config);
     await assert.rejects(
       agentClient.mutateFile({ action: "delete", path: tempRoot }, config),
-      /ROOT_DELETE_FORBIDDEN/,
+      (error) => error?.code === "ROOT_DELETE_FORBIDDEN",
       "Agent must not delete a configured filesystem root."
     );
 
@@ -103,6 +106,8 @@ async function main() {
     assert(appSource.includes("filesNavigationGeneration"), "Renderer should invalidate stale filesystem responses after profile changes.");
     assert(appSource.includes("resolveFilesTargetIdentity"), "Renderer should resolve filesystem identity before listing files.");
     assert(appSource.includes("resolveFilesListPath"), "Renderer should validate remembered paths before listing files.");
+    assert(appSource.includes("isPathInsideFilesIdentityRoots"), "Renderer should validate remembered paths against the current authorized root.");
+    assert(appSource.includes("homeInsideFilesystemRoot ? identity?.homeDirectory"), "Renderer should use the Agent home only when it remains inside the authorized root.");
     assert(appSource.includes("isWindowsPathValue") && appSource.includes("isPathValidForFilesIdentity"), "Renderer should reject cross-platform remembered paths.");
     assert(!appSource.includes("path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined"), "Renderer must not reuse global Files path state for list requests.");
     assert(appSource.includes("profileId: filesSelectedProfileId || null"), "Renderer request context should include the selected profile ID.");

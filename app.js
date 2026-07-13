@@ -16554,6 +16554,50 @@ function isUnixPathValue(value) {
   return String(value || "").startsWith("/");
 }
 
+function normalizeFilesPathForComparison(value, identity = {}, target = getFilesConnectionTarget()) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const platform = String(identity.platform || "").toLowerCase();
+  const windowsTarget = platform === "win32" || (target?.providerType === "renderer-local" && isWindowsPathValue(identity.homeDirectory));
+  const separatorPattern = windowsTarget ? /[\\/]+/g : /\/+/g;
+  let normalized = raw.replace(separatorPattern, windowsTarget ? "\\" : "/");
+  if (!windowsTarget && normalized.length > 1) normalized = normalized.replace(/\/+$/, "");
+  if (windowsTarget) {
+    normalized = normalized.replace(/[\\/]+$/, "");
+    if (/^[a-zA-Z]:$/.test(normalized)) normalized += "\\";
+    return normalized.toLowerCase();
+  }
+  return normalized || "/";
+}
+
+function isPathInsideFilesRoot(pathValue, rootValue, identity = {}, target = getFilesConnectionTarget()) {
+  const candidate = normalizeFilesPathForComparison(pathValue, identity, target);
+  const root = normalizeFilesPathForComparison(rootValue, identity, target);
+  if (!candidate || !root) return false;
+  const platform = String(identity.platform || "").toLowerCase();
+  const windowsTarget = platform === "win32" || (target?.providerType === "renderer-local" && isWindowsPathValue(identity.homeDirectory));
+  const separator = windowsTarget ? "\\" : "/";
+  if (candidate === root) return true;
+  if (!windowsTarget && root === "/") return candidate.startsWith("/");
+  if (windowsTarget && /^[a-z]:\\$/i.test(root)) return candidate.startsWith(root);
+  return candidate.startsWith(`${root}${separator}`);
+}
+
+function getFilesIdentityRoots(identity = {}) {
+  const roots = normalizeFilesArray(identity.roots)
+    .map((root) => typeof root === "string" ? root : root?.path || root?.root || root?.realPath)
+    .filter(Boolean);
+  if (identity.filesystemRoot) roots.unshift(identity.filesystemRoot);
+  if (identity.rootPath) roots.push(identity.rootPath);
+  return [...new Set(roots.filter(Boolean))];
+}
+
+function isPathInsideFilesIdentityRoots(pathValue, identity = {}, target = getFilesConnectionTarget()) {
+  const roots = getFilesIdentityRoots(identity);
+  if (!roots.length) return target?.providerType !== "agent-native";
+  return roots.some((root) => isPathInsideFilesRoot(pathValue, root, identity, target));
+}
+
 function isPathValidForFilesIdentity(value, identity = {}, target = getFilesConnectionTarget()) {
   const pathValue = String(value || "").trim();
   if (!pathValue) return false;
@@ -16568,6 +16612,25 @@ function isPathValidForFilesIdentity(value, identity = {}, target = getFilesConn
     return isUnixPathValue(pathValue) && !isWindowsPathValue(pathValue);
   }
   return true;
+}
+
+function isPathAllowedForFilesIdentity(value, identity = {}, target = getFilesConnectionTarget()) {
+  if (!isPathValidForFilesIdentity(value, identity, target)) return false;
+  if (target?.providerType !== "agent-native") return true;
+  return isPathInsideFilesIdentityRoots(value, identity, target);
+}
+
+function getFilesRootConfigurationError(identity = {}, target = getFilesConnectionTarget()) {
+  if (target?.providerType !== "agent-native") return null;
+  const status = identity?.filesystemRootStatus || {};
+  const statusCode = status.code || status.status || null;
+  if (statusCode && statusCode !== "valid") {
+    return status.message || "The Agent filesystem root is not available.";
+  }
+  if (!identity?.filesystemRoot || identity.filesystemRootReadable === false) {
+    return status.message || "The Agent filesystem root is not readable.";
+  }
+  return null;
 }
 
 async function resolveFilesTargetIdentity(target = getFilesConnectionTarget()) {
@@ -16590,7 +16653,17 @@ async function resolveFilesTargetIdentity(target = getFilesConnectionTarget()) {
 }
 
 function getDefaultPathForFilesTarget(target, identity) {
-  return identity?.homeDirectory || identity?.rootPath || getFilesProfileState(target?.key).homePath || "/";
+  if (target?.providerType === "agent-native") {
+    const candidates = [
+      identity?.initialPath,
+      identity?.homeInsideFilesystemRoot ? identity?.homeDirectory : null,
+      identity?.filesystemRoot,
+      identity?.rootPath,
+      getFilesProfileState(target?.key).homePath,
+    ];
+    return candidates.find((candidate) => isPathAllowedForFilesIdentity(candidate, identity || {}, target)) || null;
+  }
+  return identity?.initialPath || identity?.homeDirectory || identity?.rootPath || getFilesProfileState(target?.key).homePath || "/";
 }
 
 async function resolveFilesListPath(options = {}, target = getFilesConnectionTarget()) {
@@ -16598,9 +16671,23 @@ async function resolveFilesListPath(options = {}, target = getFilesConnectionTar
   const state = getFilesProfileState(target?.key);
   const explicitPath = typeof options.path === "string" && options.path.trim() ? options.path : null;
   const rememberedPath = state.currentPath || null;
-  const candidates = [explicitPath, rememberedPath, getDefaultPathForFilesTarget(target, identity)];
-  const selected = candidates.find((candidate) => isPathValidForFilesIdentity(candidate, identity || {}, target));
-  return selected || getDefaultPathForFilesTarget(target, identity);
+  const rootError = getFilesRootConfigurationError(identity || {}, target);
+  if (rootError) {
+    throw new Error(rootError);
+  }
+  if (explicitPath && !isPathAllowedForFilesIdentity(explicitPath, identity || {}, target)) {
+    throw new Error("The requested path is outside the Agent filesystem root.");
+  }
+  if (rememberedPath && !isPathAllowedForFilesIdentity(rememberedPath, identity || {}, target)) {
+    state.currentPath = null;
+  }
+  const defaultPath = getDefaultPathForFilesTarget(target, identity);
+  const candidates = [explicitPath, state.currentPath || null, defaultPath];
+  const selected = candidates.find((candidate) => isPathAllowedForFilesIdentity(candidate, identity || {}, target));
+  if (!selected) {
+    throw new Error("No valid starting path is available for this filesystem profile.");
+  }
+  return selected;
 }
 
 function updateFilesConnectionState(nextState = {}) {

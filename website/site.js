@@ -204,14 +204,7 @@ function getAccountApiUrl(path) {
 }
 
 function getRouteParams() {
-  const hash = window.location.hash || "";
-  const queryIndex = hash.indexOf("?");
-  const hashParams = queryIndex >= 0 ? new URLSearchParams(hash.slice(queryIndex + 1)) : new URLSearchParams();
-  const pageParams = new URLSearchParams(window.location.search);
-  for (const [key, value] of pageParams.entries()) {
-    if (!hashParams.has(key)) hashParams.set(key, value);
-  }
-  return hashParams;
+  return new URLSearchParams(window.location.search);
 }
 
 function routeFromPathname() {
@@ -229,8 +222,7 @@ function routeFromPathname() {
 function getCurrentRoute() {
   const standaloneRoute = document.body?.dataset?.standaloneRoute;
   if (standaloneRoute) return standaloneRoute;
-  const hash = window.location.hash || "";
-  return hash.replace(/^#/, "").split("?")[0] || routeFromPathname();
+  return routeFromPathname();
 }
 
 function normalizeReturnTarget(value, fallback = "/account") {
@@ -275,7 +267,7 @@ function getAccountSectionTarget() {
 }
 
 function redirectToSignInForCurrentRoute() {
-  const target = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const target = `${window.location.pathname}${window.location.search}`;
   window.location.replace(buildSignInUrl(target));
 }
 
@@ -289,11 +281,14 @@ function redirectLegacyHashRoutes() {
     profile: "/profile",
     "account-devices": "/account?section=devices",
     "account-security": "/account?section=security",
+    download: "/download",
     downloads: "/download",
     features: "/features",
     "getting-started": "/getting-started",
     install: "/getting-started",
+    changelog: "/release-notes.html",
     release: "/release-notes.html",
+    "release-notes": "/release-notes.html",
     top: "/",
   };
   if (!routes[route]) return false;
@@ -1422,13 +1417,10 @@ function bindSiteNavigation() {
   });
 }
 
-async function applyHashRoute() {
+async function applyRouteState() {
   if (redirectLegacyHashRoutes()) return;
-  const hash = window.location.hash || "";
-  const standaloneRoute = document.body?.dataset?.standaloneRoute || "";
   const route = getCurrentRoute();
-  const accountAnchorRoutes = new Set(["account-devices", "account-security"]);
-  const activeRoute = accountAnchorRoutes.has(route) ? "account" : route;
+  const activeRoute = route;
   if (profileDirty && lastAppliedRoute === "profile" && activeRoute !== "profile") {
     const leave = await confirmUserAction({
       eyebrow: "Unsaved profile changes",
@@ -1444,12 +1436,6 @@ async function applyHashRoute() {
     }
     setProfileDirty(false);
   }
-  if (!standaloneRoute && route === "activate") {
-    const hashQuery = hash.includes("?") ? `?${hash.split("?").slice(1).join("?")}` : "";
-    const query = window.location.search || hashQuery;
-    window.location.replace(`/activate${query}`);
-    return;
-  }
   if (activeRoute === "profile" && authState === "signed-out") {
     redirectToSignInForCurrentRoute();
     return;
@@ -1463,15 +1449,14 @@ async function applyHashRoute() {
     "forgot-password",
     "reset-password",
     "verify-email",
-    "release",
+    "release-notes",
     "features",
-    "install",
-    "downloads",
+    "getting-started",
+    "download",
     "top",
     "not-found",
   ]);
   if (!supportedRoutes.has(activeRoute)) {
-    if (!standaloneRoute) window.location.hash = "not-found";
     return;
   }
   applyDeviceLoginPage();
@@ -1495,15 +1480,12 @@ applyDeviceLoginPage();
 initializeAccount().catch((error) => {
   disableAccountForms(friendlyAuthError(error));
 });
-window.addEventListener("hashchange", () => {
-  applyHashRoute().catch((error) => logWebsiteDiagnostic("error", "route-change", error));
-});
 window.addEventListener("beforeunload", (event) => {
   if (!profileDirty) return;
   event.preventDefault();
   event.returnValue = "";
 });
-applyHashRoute().catch((error) => logWebsiteDiagnostic("error", "initial-route", error));
+applyRouteState().catch((error) => logWebsiteDiagnostic("error", "initial-route", error));
 
 function logWebsiteDiagnostic(severity, operation, error) {
   const message = redactSecret(error?.message || String(error || "Website account error"));

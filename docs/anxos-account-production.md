@@ -20,10 +20,10 @@ Single-Device Mode, Use This Device, and Local Owner Login remain separate from 
 4. Configure Site URL:
    - `https://anxoscontrolcenter.org`
 5. Configure redirect URLs:
-   - `https://anxoscontrolcenter.org/#verify-email`
-   - `https://anxoscontrolcenter.org/#reset-password`
-   - `http://localhost:4173/#verify-email`
-   - `http://localhost:4173/#reset-password`
+   - `https://anxoscontrolcenter.org/signin`
+   - `https://anxoscontrolcenter.org/reset-password`
+   - `http://localhost:4173/signin`
+   - `http://localhost:4173/reset-password`
 6. Apply migrations:
 
 ```bash

@@ -63,6 +63,7 @@ Required files:
 - `robots.txt`
 - `sitemap.xml`
 - `site.webmanifest`
+- `_redirects`
 - `favicon.ico`
 - `assets/anxos-logo.jpg`
 - `assets/favicon.svg`
@@ -79,10 +80,16 @@ Required files:
 - `forgot-password/index.html`
 - `reset-password/index.html`
 - `activate/index.html`
+- `downloads/index.html`
+- `install/index.html`
+- `release/index.html`
+- `changelog/index.html`
 
 For GitHub Pages, publish the `website/` directory as the site root or copy its contents into the configured Pages branch/folder.
 
 For Cloudflare Pages, deploy the contents of `website/` as the output directory and configure Supabase Auth redirect URLs to the deployed domain.
+
+`_redirects` keeps clean alias paths such as `/sign-in`, `/sign-up`, `/downloads`, `/install`, and `/changelog` on supported canonical pages without using hash fragments or a broad SPA fallback.
 
 ### Official Domain
 

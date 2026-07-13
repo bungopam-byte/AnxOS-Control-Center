@@ -101,7 +101,7 @@ function parseWebsiteConfigRelease(configText, sourceUrl) {
   const latestVersion = normalizeVersion(extractConfigString(configText, "latestVersion") || extractConfigString(configText, "releaseTag"));
   if (!latestVersion) return null;
 
-  const releaseUrl = extractConfigString(configText, "releaseUrl") || `${sourceUrl.replace(/\/[^/]*$/, "")}/#release`;
+  const releaseUrl = extractConfigString(configText, "releaseUrl") || `${sourceUrl.replace(/\/[^/]*$/, "")}/release-notes.html`;
   const releaseDate = extractConfigString(configText, "releaseDate") || null;
   const assetMatches = [...String(configText || "").matchAll(/fileName\s*:\s*["']([^"']+)["'][\s\S]{0,300}?url\s*:\s*["']([^"']+)["']/g)];
   const assets = assetMatches.map((match) => ({

@@ -21,14 +21,19 @@ const activateRoute = read("activate/index.html");
 const forgotRoute = read("forgot-password/index.html");
 const resetRoute = read("reset-password/index.html");
 const downloadRoute = read("download/index.html");
+const downloadsRoute = read("downloads/index.html");
 const featuresRoute = read("features/index.html");
 const gettingStartedRoute = read("getting-started/index.html");
+const installRoute = read("install/index.html");
 const releaseNotes = read("release-notes.html");
+const releaseRoute = read("release/index.html");
+const changelogRoute = read("changelog/index.html");
 const accountHtml = read("account.html");
 const profileHtml = read("profile.html");
 const robots = read("robots.txt");
 const sitemap = read("sitemap.xml");
 const manifest = read("site.webmanifest");
+const redirects = read("_redirects");
 const websiteReadme = read("README.md");
 const config = read("config.js");
 const accountConfig = read("account-config.js");
@@ -59,6 +64,9 @@ assert(fs.existsSync(path.join(websiteRoot, "favicon.ico")), "Website must inclu
 assert(manifest.includes("AnxOS Control Center") && manifest.includes("/assets/icon-192.png"), "Web manifest must include app icon metadata.");
 assert(robots.includes(`Sitemap: ${officialOrigin}/sitemap.xml`) && robots.includes("Disallow: /activate") && robots.includes("Disallow: /signin") && robots.includes("Disallow: /reset-password"), "Robots rules must expose sitemap and exclude account routes.");
 assert(sitemap.includes(`<loc>${officialOrigin}/</loc>`) && sitemap.includes(`<loc>${officialOrigin}/release-notes.html</loc>`) && sitemap.includes(`<loc>${officialOrigin}/download</loc>`) && sitemap.includes(`<loc>${officialOrigin}/features</loc>`) && sitemap.includes(`<loc>${officialOrigin}/getting-started</loc>`) && !sitemap.includes("activate"), "Sitemap must include only public canonical pages.");
+assert(redirects.includes("/sign-in /signin 301") && redirects.includes("/changelog /release-notes.html 301") && !redirects.includes("/* /index.html"), "Cloudflare redirects must cover clean aliases without a broad SPA fallback.");
+assert(downloadsRoute.includes('window.location.replace("/download" + window.location.search)') && installRoute.includes('window.location.replace("/getting-started" + window.location.search)'), "Static alias routes must preserve query strings while redirecting to canonical routes.");
+assert(releaseRoute.includes('window.location.replace("/release-notes.html" + window.location.search)') && changelogRoute.includes('window.location.replace("/release-notes.html" + window.location.search)'), "Release alias routes must preserve query strings while redirecting to release notes.");
 assert([signin, signup, account, profile, activateRoute, forgotRoute, resetRoute, activate, forgot, reset].every((html) => html.includes('name="robots" content="noindex,nofollow"')), "Account and activation pages must be excluded from indexing.");
 assert(accountHtml.includes('name="robots" content="noindex,nofollow"') && profileHtml.includes('name="robots" content="noindex,nofollow"'), "Account clean URL HTML files must be excluded from indexing.");
 assert(accountHtml.includes('data-account-route="account"') && profileHtml.includes('data-account-route="profile"'), "Cloudflare clean URL HTML files must serve the real account/profile pages.");
@@ -75,11 +83,13 @@ assert(profile.includes('data-account-route="profile"') && profile.includes(`<li
 assert(activateRoute.includes('data-standalone-route="activate"') && activateRoute.includes(`<link rel="canonical" href="${officialOrigin}/activate">`), "Activation must be a clean direct route.");
 assert(forgotRoute.includes('data-auth-form="forgot"') && forgotRoute.includes(`<link rel="canonical" href="${officialOrigin}/forgot-password">`), "Forgot-password must be a clean direct route.");
 assert(resetRoute.includes('data-auth-form="reset"') && resetRoute.includes(`<link rel="canonical" href="${officialOrigin}/reset-password">`), "Reset-password must be a clean direct route.");
-assert(index.includes('routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" }'), "Homepage must redirect legacy hash auth routes to clean paths.");
+assert(!index.includes("window.location.hash") && !index.includes("location.hash"), "Homepage must not include inline hash routing.");
 assert(!index.includes('href="#signin"') && !index.includes('href="#signup"') && !index.includes('href="#account"') && !index.includes('href="#profile"'), "Homepage must not link to hash-based account routes.");
-assert(site.includes('"account-security": "/account?section=security"') && site.includes('downloads: "/download"'), "Shared route normalizer must convert legacy hashes on every website page.");
+assert(site.includes("function redirectLegacyHashRoutes") && site.includes('"account-security": "/account?section=security"') && site.includes('download: "/download"') && site.includes('changelog: "/release-notes.html"'), "Shared legacy normalizer must convert old hash URLs on every website page.");
 assert(!site.includes("if (document.body?.dataset?.standaloneRoute) return false;"), "Legacy hash cleanup must run on standalone clean routes.");
-["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
+assert(!site.includes("window.location.hash =") && !site.includes('addEventListener("hashchange"') && site.includes("async function applyRouteState()"), "Website must use pathname route state instead of hash routing.");
+assert(!site.includes("hashParams") && !site.includes("hash.indexOf"), "Website query parsing must use clean route query strings.");
+["index.html", "download/index.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
   const html = read(file);
   const hashLinks = Array.from(html.matchAll(/\s(?:href|src)=["']([^"']*#[^"']*)["']/g))
     .map((match) => match[1])
@@ -103,11 +113,11 @@ assert(index.includes("data-download-status"), "Downloads page should expose rel
 assert(site.includes("Release metadata is unavailable"), "Downloads should handle missing release metadata.");
 assert(site.includes('node.setAttribute("aria-disabled", "true")'), "Unavailable download/config links should become disabled, not dead # links.");
 assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org\""), "www redirects should be handled by Cloudflare, not application JavaScript.");
-["index.html", "download/index.html", "features/index.html", "getting-started/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release-notes.html"].forEach((file) => {
+["index.html", "download/index.html", "downloads/index.html", "features/index.html", "getting-started/index.html", "install/index.html", "signin/index.html", "signup/index.html", "account/index.html", "profile/index.html", "activate/index.html", "forgot-password/index.html", "reset-password/index.html", "release/index.html", "changelog/index.html", "release-notes.html"].forEach((file) => {
   assert(!read(file).includes('href="#"'), `${file} must not ship dead # fallback links.`);
 });
 
-assert(index.includes('id="not-found"') && site.includes('window.location.hash = "not-found"'), "Website must route unsupported hashes to a not-found state.");
+assert(index.includes('id="not-found"') && !site.includes('window.location.hash = "not-found"'), "Website must not route unsupported paths by writing hash fragments.");
 assert(activate.includes('data-standalone-route="activate"') && forgot.includes('data-auth-form="forgot"') && reset.includes('data-auth-form="reset"'), "Cloudflare clean URL HTML files must serve real activation and recovery pages.");
 assert(site.includes('selectedState = "loading"'), "Sign-in route should show loading state instead of flashing signed-out UI while auth initializes.");
 assert(site.includes("normalizeReturnTarget") && site.includes("parsed.origin !== window.location.origin"), "Return destinations must be same-origin validated.");

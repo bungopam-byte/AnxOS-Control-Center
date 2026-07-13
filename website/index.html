@@ -26,21 +26,6 @@
     <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16.png">
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
     <link rel="manifest" href="site.webmanifest">
-    <script>
-      (() => {
-        const routes = { signin: "/signin", signup: "/signup", account: "/account", profile: "/profile" };
-        const hash = window.location.hash || "";
-        const [route, hashQuery = ""] = hash.replace(/^#/, "").split("?");
-        if (!routes[route]) return;
-        const params = new URLSearchParams(window.location.search);
-        if (hashQuery) {
-          const legacyParams = new URLSearchParams(hashQuery);
-          legacyParams.forEach((value, key) => { if (!params.has(key)) params.set(key, value); });
-        }
-        const query = params.toString();
-        window.location.replace(routes[route] + (query ? "?" + query : ""));
-      })();
-    </script>
     <link rel="stylesheet" href="styles.css">
     <script src="config.js" defer></script>
     <script src="account-config.js" defer></script>

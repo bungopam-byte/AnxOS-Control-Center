@@ -32,6 +32,8 @@ const HTTP_USER_AGENT = "AnxOS-Control-Center/Marketplace";
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const DOWNLOAD_RETRY_DELAYS_MS = [0, 750, 2000];
 const STEAMCMD_INSTALL_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const STEAMCMD_MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024;
+const STEAMCMD_RETRY_DELAYS_MS = [0, 1000];
 const INSTALLER_RESULT_STAGES = new Set([
   "validating",
   "dependency-check",
@@ -1906,7 +1908,7 @@ function buildSteamCmdInstallerScript(installer) {
   ].join("\n");
 }
 
-function buildSteamCmdInstallerArgs(installer = {}) {
+function buildSteamCmdInstallerArgs(installer = {}, installDirOverride = null) {
   if (!installer.appId) {
     throw createMarketplaceError("SteamCMD template is missing an app ID.", "INVALID_TEMPLATE_CATALOG");
   }
@@ -1918,7 +1920,7 @@ function buildSteamCmdInstallerArgs(installer = {}) {
   }
   const args = [
     "+force_install_dir",
-    installer.installDir || "server",
+    installDirOverride || installer.installDir || "server",
     "+login",
     "anonymous",
     "+app_update",
@@ -2530,6 +2532,24 @@ async function hasInstalledArtifacts(instanceId, artifactPaths = [], agentConfig
   return true;
 }
 
+async function verifyInstalledArtifacts(instanceId, artifactPaths = [], agentConfig = null, context = {}) {
+  const missing = [];
+  for (const artifactPath of artifactPaths) {
+    try {
+      await agentClient.readInstanceFile(instanceId, artifactPath, agentConfig);
+    } catch {
+      missing.push(artifactPath);
+    }
+  }
+  if (missing.length > 0) {
+    throw createMarketplaceStepError("SteamCMD finished but required install artifacts are missing.", "STEAMCMD_ARTIFACTS_MISSING", {
+      ...context,
+      missingArtifacts: missing,
+      retryable: true,
+    });
+  }
+}
+
 function getSteamCmdResolvedInstallDirectory(instance = {}, installer = {}) {
   const workingDirectory = String(instance.workingDirectory || "data")
     .replace(/\\/g, "/")
@@ -2543,6 +2563,11 @@ function getSteamCmdResolvedInstallDirectory(instance = {}, installer = {}) {
     relativeInstallDirectory,
     resolvedInstallDirectory: instancePath ? `${instancePath}/${relativeInstallDirectory}` : relativeInstallDirectory,
   };
+}
+
+function getSteamCmdMinFreeBytes(installer = {}) {
+  const declared = Number(installer.minFreeBytes ?? installer.requiredFreeBytes ?? installer.minDiskBytes);
+  return Number.isFinite(declared) && declared > 0 ? declared : STEAMCMD_MIN_FREE_BYTES;
 }
 
 function normalizeDiskEvidence(snapshot = {}) {
@@ -2560,6 +2585,71 @@ function normalizeDiskEvidence(snapshot = {}) {
     usedPercent: Number.isFinite(usedPercent) ? usedPercent : null,
     mount: disk.mount || disk.mountPoint || disk.path || disk.target || null,
   };
+}
+
+async function assertSteamCmdDiskSpace(installer = {}, agentConfig = null, context = {}) {
+  let diskSpaceCheck;
+  try {
+    diskSpaceCheck = normalizeDiskEvidence(await agentClient.getSystemStats(agentConfig));
+  } catch (error) {
+    diskSpaceCheck = { status: "unavailable", message: truncateLogLine(error?.message || "Could not read Agent disk metrics.") };
+  }
+  const minFreeBytes = getSteamCmdMinFreeBytes(installer);
+  if (Number.isFinite(diskSpaceCheck.freeBytes) && diskSpaceCheck.freeBytes < minFreeBytes) {
+    throw createMarketplaceStepError("The selected node does not have enough free disk space for this SteamCMD install.", "INSUFFICIENT_DISK_SPACE", {
+      ...context,
+      diskSpaceCheck: { ...diskSpaceCheck, requiredFreeBytes: minFreeBytes },
+      retryable: false,
+    });
+  }
+  return { ...diskSpaceCheck, requiredFreeBytes: minFreeBytes };
+}
+
+async function assertInstanceWriteAccess(instanceId, directoryPath, agentConfig = null, context = {}) {
+  const cleanDirectory = normalizeInstanceFilePath(directoryPath || "runtime");
+  const probePath = normalizeInstanceFilePath(`${cleanDirectory}/.anxos-installer-write-check-${Date.now()}.tmp`);
+  try {
+    await agentClient.writeInstanceFile(instanceId, probePath, "write-check\n", { encoding: "utf8" }, agentConfig);
+    await agentClient.deleteInstanceFile(instanceId, probePath, agentConfig).catch(() => {});
+    return { status: "passed", path: probePath };
+  } catch (error) {
+    throw createMarketplaceStepError("SteamCMD install directory is not writable on the selected node.", "INSTALL_DIRECTORY_UNWRITABLE", {
+      ...context,
+      writePermissionCheck: { status: "failed", path: probePath, message: truncateLogLine(error?.message || "Write check failed.") },
+      retryable: false,
+    });
+  }
+}
+
+function getSteamCmdFailureText(error = {}) {
+  const details = error?.details || {};
+  return [
+    error.message,
+    ...(Array.isArray(details.finalStdoutLines) ? details.finalStdoutLines : []),
+    ...(Array.isArray(details.finalStderrLines) ? details.finalStderrLines : []),
+    details.failureReason,
+  ].filter(Boolean).join("\n");
+}
+
+function isPermanentSteamCmdFailure(error = {}) {
+  const code = error?.code || error?.details?.code;
+  if (["DEPENDENCY_MISSING", "INSUFFICIENT_DISK_SPACE", "INSTALL_DIRECTORY_UNWRITABLE", "INSTALL_DIRECTORY_CREATE_FAILED"].includes(code)) {
+    return true;
+  }
+  const text = getSteamCmdFailureText(error);
+  return /permission denied|not enough disk|no space left|access denied|invalid password|requires authenticated steam login|not available on path|executable_not_found/i.test(text);
+}
+
+function isTransientSteamCmdFailure(error = {}) {
+  if (isPermanentSteamCmdFailure(error)) {
+    return false;
+  }
+  const text = getSteamCmdFailureText(error);
+  return /timed?\s*out|timeout|connection|temporar|try again|rate limit|busy|network|failed to request app info|content servers unavailable/i.test(text);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getLogTail(entries = [], stream) {
@@ -2686,11 +2776,25 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
   const installerType = getTemplateInstallerType(template);
   try {
     if (installerType === "steamcmd-native") {
-      const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer);
+      const status = await agentClient.getInstanceStatus(instanceId, agentConfig).catch(() => null);
+      const instance = status?.instance || status || {};
+      const installDirectory = getSteamCmdResolvedInstallDirectory({ ...instance, workingDirectory: "data" }, template.installer);
+      const absoluteInstallDirectory = installDirectory.resolvedInstallDirectory;
+      if (!/^([A-Za-z]:\/|\/)/.test(absoluteInstallDirectory)) {
+        throw createMarketplaceStepError("SteamCMD install directory could not be resolved to an absolute path.", "INSTALL_DIRECTORY_INVALID", {
+          templateId: template.id,
+          step: "Install SteamCMD app",
+          installerType: "steamcmd-native",
+          workingDirectory: installDirectory.workingDirectory,
+          resolvedInstallDirectory: absoluteInstallDirectory,
+          retryable: false,
+        });
+      }
+      const steamcmdArgs = buildSteamCmdInstallerArgs(template.installer, absoluteInstallDirectory);
       const steamcmdCommand = ["steamcmd", ...steamcmdArgs].join(" ");
       const artifactPaths = getSteamCmdInstallArtifactPaths(template);
       if (await hasInstalledArtifacts(instanceId, artifactPaths, agentConfig)) {
-        pushStep(progress, "Extract files", "complete", "SteamCMD app is already installed.");
+        pushStep(progress, "Install SteamCMD app", "complete", "SteamCMD app is already installed.");
         return createInstallerResultOk("installed", {
           installDirectory: normalizeInstanceFilePath(template.installer.installDir || "server"),
           executable: template.startup?.executable || "steamcmd",
@@ -2698,7 +2802,34 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
           artifacts: artifactPaths,
         });
       }
-      pushStep(progress, "Extract files", "running", `Running SteamCMD app ${template.installer.appId}.`);
+      pushStep(progress, "Install SteamCMD app", "running", `Preparing ${absoluteInstallDirectory}.`);
+      try {
+        await agentClient.createInstanceFolder(instanceId, installDirectory.installDir, agentConfig);
+      } catch (error) {
+        throw createMarketplaceStepError("SteamCMD install directory could not be created on the selected node.", "INSTALL_DIRECTORY_CREATE_FAILED", {
+          templateId: template.id,
+          step: "Install SteamCMD app",
+          installerType: "steamcmd-native",
+          workingDirectory: installDirectory.workingDirectory,
+          resolvedInstallDirectory: absoluteInstallDirectory,
+          relativeInstallDirectory: installDirectory.relativeInstallDirectory,
+          message: truncateLogLine(error?.message || "Directory create failed."),
+          retryable: false,
+        });
+      }
+      const diskSpaceCheck = await assertSteamCmdDiskSpace(template.installer, agentConfig, {
+        templateId: template.id,
+        step: "Install SteamCMD app",
+        installerType: "steamcmd-native",
+        resolvedInstallDirectory: absoluteInstallDirectory,
+      });
+      const writePermissionCheck = await assertInstanceWriteAccess(instanceId, installDirectory.installDir, agentConfig, {
+        templateId: template.id,
+        step: "Install SteamCMD app",
+        installerType: "steamcmd-native",
+        resolvedInstallDirectory: absoluteInstallDirectory,
+      });
+      pushStep(progress, "Install SteamCMD app", "running", `Running SteamCMD app ${template.installer.appId}.`);
       await agentClient.updateInstance(instanceId, {
         executable: "steamcmd",
         args: steamcmdArgs,
@@ -2706,33 +2837,69 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
         restartPolicy: "never",
         startupTimeoutMs: getEffectiveInstallerTimeoutMs(template),
       }, agentConfig);
-      try {
-        await startAndWaitForInstanceInstaller(instanceId, getEffectiveInstallerTimeoutMs(template), agentConfig, {
+      const installerContext = {
           templateId: template.id,
-          step: "Extract files",
+          step: "Install SteamCMD app",
           installerType: "steamcmd-native",
           handlerName: "runTemplateInstaller",
           command: steamcmdCommand,
           executablePath: "steamcmd",
           installer: template.installer,
           timeoutArtifactPaths: artifactPaths,
-        });
+          workingDirectory: "data",
+          resolvedInstallDirectory: absoluteInstallDirectory,
+          relativeInstallDirectory: installDirectory.relativeInstallDirectory,
+          diskSpaceCheck,
+          writePermissionCheck,
+      };
+      let lastInstallerError = null;
+      for (let attempt = 0; attempt < STEAMCMD_RETRY_DELAYS_MS.length; attempt += 1) {
+        if (STEAMCMD_RETRY_DELAYS_MS[attempt] > 0) {
+          await sleep(STEAMCMD_RETRY_DELAYS_MS[attempt]);
+        }
+        try {
+          await startAndWaitForInstanceInstaller(instanceId, getEffectiveInstallerTimeoutMs(template), agentConfig, {
+            ...installerContext,
+            attempt: attempt + 1,
+          });
+          lastInstallerError = null;
+          break;
+        } catch (error) {
+          lastInstallerError = error;
+          if (await hasInstalledArtifacts(instanceId, artifactPaths, agentConfig)) {
+            pushStep(progress, "Install SteamCMD app", "complete", "SteamCMD app was already installed after a retry failure.");
+            lastInstallerError = null;
+            break;
+          }
+          const hasRetry = attempt < STEAMCMD_RETRY_DELAYS_MS.length - 1;
+          if (!hasRetry || !isTransientSteamCmdFailure(error)) {
+            error.details = {
+              ...(error.details || {}),
+              ...installerContext,
+              attempt: attempt + 1,
+              retryable: hasRetry && isTransientSteamCmdFailure(error),
+            };
+            throw error;
+          }
+          pushStep(progress, "Install SteamCMD app", "running", `SteamCMD failed with a transient error; retrying attempt ${attempt + 2}.`);
+        }
+      }
+      if (lastInstallerError) {
+        throw lastInstallerError;
+      }
+      try {
+        await verifyInstalledArtifacts(instanceId, artifactPaths, agentConfig, installerContext);
       } catch (error) {
         if (!(await hasInstalledArtifacts(instanceId, artifactPaths, agentConfig))) {
           throw error;
         }
-        pushStep(progress, "Extract files", "complete", "SteamCMD app was already installed after a retry failure.");
       }
-      const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
-      for (const requiredFile of requiredFiles) {
-        await agentClient.readInstanceFile(instanceId, normalizeInstanceFilePath(requiredFile), agentConfig);
-      }
-      pushStep(progress, "Extract files", "complete", "SteamCMD installer finished.");
+      pushStep(progress, "Install SteamCMD app", "complete", "SteamCMD installer finished.");
       return createInstallerResultOk("installed", {
         installDirectory: normalizeInstanceFilePath(template.installer.installDir || "server"),
         executable: template.startup?.executable || "steamcmd",
         runtime: "steamcmd-native",
-        artifacts: requiredFiles,
+        artifacts: artifactPaths,
       });
     }
 
@@ -3297,8 +3464,9 @@ async function installTemplate(payload = {}) {
     }
 
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig, parentRecord);
+    const installerStageLabel = manifestValidation.installerType === "steamcmd-native" ? "Install SteamCMD app" : "Extract files";
     updateDownload(parentRecord, {
-      stage: "Extract files",
+      stage: installerStageLabel,
       progress: Math.max(Number(parentRecord.progress) || 0, downloadResult.downloaded ? 55 : 40),
       childTaskIds: downloadResult.records.map((record) => record.id),
     });
@@ -3316,7 +3484,7 @@ async function installTemplate(payload = {}) {
         runtimeType: template.startupType || template.runtime || template.instanceType || null,
         templateId: template.id,
       });
-      finishInstallerDownloadRecords(downloadResult.records, "complete", "Installer completed.");
+      finishInstallerDownloadRecords(downloadResult.records, "complete", "Installer completed.", { step: installerStageLabel });
     } catch (error) {
       finishInstallerDownloadRecords(downloadResult.records, "failed", getConciseInstallerFailureMessage(error), error?.details || {});
       throw error;

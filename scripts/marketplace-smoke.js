@@ -1777,6 +1777,9 @@ async function assertSharedTemplateInstallFlowMatrix() {
   const files = new Map();
   const started = [];
   const created = [];
+  const createdFolders = [];
+  const updatePatches = [];
+  const steamStartCounts = new Map();
 
   function jsonResponse(body) {
     return {
@@ -1841,11 +1844,14 @@ async function assertSharedTemplateInstallFlowMatrix() {
     });
     agentClient.createInstance = async (payload) => {
       created.push(payload.id);
-      instances.set(payload.id, { ...payload, state: "Stopped", pid: null });
+      instances.set(payload.id, { ...payload, instancePath: `/srv/anxos/instances/${payload.id}`, state: "Stopped", pid: null });
       return { instance: instances.get(payload.id) };
     };
     agentClient.listInstances = async () => ({ root: "/mock/instances", instances: [...instances.values()] });
-    agentClient.createInstanceFolder = async () => ({ ok: true });
+    agentClient.createInstanceFolder = async (instanceId, folderPath) => {
+      createdFolders.push({ instanceId, folderPath });
+      return { ok: true };
+    };
     agentClient.writeInstanceFile = async (instanceId, filePath, content) => {
       files.set(`${instanceId}:${filePath}`, content);
       return { path: filePath, size: Buffer.byteLength(Buffer.isBuffer(content) ? content : String(content || "")) };
@@ -1866,6 +1872,7 @@ async function assertSharedTemplateInstallFlowMatrix() {
       return { ok: true, properties };
     };
     agentClient.updateInstance = async (instanceId, patch) => {
+      updatePatches.push({ instanceId, patch });
       instances.set(instanceId, { ...(instances.get(instanceId) || {}), ...patch });
       return { instance: instances.get(instanceId) };
     };
@@ -1873,7 +1880,14 @@ async function assertSharedTemplateInstallFlowMatrix() {
       started.push(instanceId);
       const instance = instances.get(instanceId) || {};
       if (instance.executable === "steamcmd") {
+        steamStartCounts.set(instanceId, (steamStartCounts.get(instanceId) || 0) + 1);
+      }
+      if (instance.executable === "steamcmd" && !/steamcmd-(exit|missing|artifact-missing|permanent)-smoke/.test(instanceId) && !(/steamcmd-transient-smoke/.test(instanceId) && steamStartCounts.get(instanceId) < 2)) {
+        const forceInstallDirIndex = Array.isArray(instance.args) ? instance.args.indexOf("+force_install_dir") : -1;
+        assert(forceInstallDirIndex >= 0, "SteamCMD should receive +force_install_dir.");
+        assert.match(instance.args[forceInstallDirIndex + 1] || "", new RegExp(`/srv/anxos/instances/${instanceId}/data/server$`), "SteamCMD install path should be absolute.");
         files.set(`${instanceId}:server/PalServer.sh`, "#!/usr/bin/env bash\n");
+        files.set(`${instanceId}:server/steamapps/appmanifest_2394010.acf`, '"AppState"\n{\n  "appid" "2394010"\n  "buildid" "12345"\n}\n');
       }
       if (Array.isArray(instance.args) && instance.args.includes("runtime/marketplace-install.sh")) {
         files.set(`${instanceId}:server/TShock.Server`, "tshock");
@@ -1920,6 +1934,19 @@ async function assertSharedTemplateInstallFlowMatrix() {
     const terrariaInstance = instances.get("terraria-flow-smoke");
     assert(!terrariaInstance?.args?.[1]?.includes("required_command in 'dotnet'"), "Terraria startup should not use the old raw-command dependency wrapper.");
     assert(!terrariaInstance?.args?.[1]?.includes("Missing required runtime dependency"), "Missing dependencies should be handled by shared preflight, not startup shell snippets.");
+    const palworldInstallerPatch = updatePatches.find(({ instanceId, patch }) => instanceId === "palworld-flow-smoke" && patch.executable === "steamcmd");
+    assert(palworldInstallerPatch, "Palworld should temporarily switch to SteamCMD for installation.");
+    const forceInstallDirIndex = palworldInstallerPatch.patch.args.indexOf("+force_install_dir");
+    assert(forceInstallDirIndex >= 0, "SteamCMD invocation should include +force_install_dir.");
+    assert.strictEqual(
+      palworldInstallerPatch.patch.args[forceInstallDirIndex + 1],
+      "/srv/anxos/instances/palworld-flow-smoke/data/server",
+      "SteamCMD should receive an absolute install directory."
+    );
+    assert(createdFolders.some((entry) => entry.instanceId === "palworld-flow-smoke" && entry.folderPath === "server"), "SteamCMD target directory should be created before launch through the data-rooted file API.");
+    assert(files.has("palworld-flow-smoke:server/steamapps/appmanifest_2394010.acf"), "Palworld install should verify the Steam app manifest artifact.");
+    const palworldRuntimePatch = updatePatches.find(({ instanceId, patch }) => instanceId === "palworld-flow-smoke" && patch.executable === "bash" && patch.workingDirectory === "data/server");
+    assert(palworldRuntimePatch, "Palworld runtime command should be restored only after SteamCMD artifacts are verified.");
 
     const steamcmdStartsBeforeIdempotentInstall = started.length;
     files.set("palworld-idempotent-smoke:server/steamapps/appmanifest_2394010.acf", '"AppState" { "appid" "2394010" "buildid" "123" }');
@@ -1963,6 +1990,109 @@ async function assertSharedTemplateInstallFlowMatrix() {
       "Invalid manifest/input should produce controlled validation failure."
     );
     assert.strictEqual(created.length, createdBeforeFailure, "Instance should not be registered before validation succeeds.");
+
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-steamcmd-artifact-missing-smoke", name: "Palworld Artifact Missing Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => {
+        assert.strictEqual(error?.code, "STEAMCMD_ARTIFACTS_MISSING", "SteamCMD success without declared artifacts should fail verification.");
+        assert(Array.isArray(error?.details?.missingArtifacts) && error.details.missingArtifacts.includes("server/steamapps/appmanifest_2394010.acf"), "Missing appmanifest should be reported.");
+        return true;
+      },
+      "SteamCMD installs must verify appmanifest and runtime artifacts before success."
+    );
+    assert(!updatePatches.some(({ instanceId, patch }) => instanceId === "palworld-steamcmd-artifact-missing-smoke" && patch.executable === "bash" && patch.workingDirectory === "data/server"), "Runtime command must not be restored when SteamCMD artifacts are missing.");
+
+    const originalSystemStats = agentClient.getSystemStats;
+    const startsBeforeLowDisk = started.length;
+    agentClient.getSystemStats = async () => ({ disk: { free: 1024, total: 100 * 1024 * 1024 * 1024, percent: 99, mount: "/srv" } });
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-low-disk-smoke", name: "Palworld Low Disk Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => {
+        assert.strictEqual(error?.code, "INSUFFICIENT_DISK_SPACE", "SteamCMD should fail before launch when disk space is insufficient.");
+        assert.strictEqual(error?.details?.retryable, false, "Disk-space failures should not be marked retryable.");
+        return true;
+      },
+      "SteamCMD preflight should reject insufficient disk space."
+    );
+    assert.strictEqual(started.length, startsBeforeLowDisk, "SteamCMD should not launch when disk space preflight fails.");
+    agentClient.getSystemStats = originalSystemStats;
+
+    const originalWriteFile = agentClient.writeInstanceFile;
+    const startsBeforeUnwritable = started.length;
+    agentClient.writeInstanceFile = async (instanceId, filePath, content, options) => {
+      if (instanceId === "palworld-unwritable-smoke" && String(filePath).startsWith("server/")) {
+        throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
+      }
+      return originalWriteFile(instanceId, filePath, content, options);
+    };
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-unwritable-smoke", name: "Palworld Unwritable Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => {
+        assert.strictEqual(error?.code, "INSTALL_DIRECTORY_UNWRITABLE", "SteamCMD should fail before launch when target directory is unwritable.");
+        assert.strictEqual(error?.details?.retryable, false, "Permission preflight failures should not be marked retryable.");
+        return true;
+      },
+      "SteamCMD preflight should reject unwritable target directories."
+    );
+    assert.strictEqual(started.length, startsBeforeUnwritable, "SteamCMD should not launch when write preflight fails.");
+    agentClient.writeInstanceFile = originalWriteFile;
+
+    const originalStatusForRetry = agentClient.getInstanceStatus;
+    const originalLogsForRetry = agentClient.getInstanceLogs;
+    agentClient.getInstanceStatus = async (instanceId) => {
+      const instance = instances.get(instanceId) || {};
+      if (instanceId === "palworld-steamcmd-transient-smoke" && instance.executable === "steamcmd" && (steamStartCounts.get(instanceId) || 0) === 1) {
+        return { instance: { ...instance, state: "Failed", exitCode: 8, failureReason: "PROCESS_EXITED" } };
+      }
+      if (instanceId === "palworld-steamcmd-permanent-smoke" && instance.executable === "steamcmd") {
+        return { instance: { ...instance, state: "Failed", exitCode: 8, failureReason: "PROCESS_EXITED" } };
+      }
+      return originalStatusForRetry(instanceId);
+    };
+    agentClient.getInstanceLogs = async (instanceId, options = {}) => {
+      if (instanceId === "palworld-steamcmd-transient-smoke") {
+        return {
+          id: instanceId,
+          entries: [{ stream: options.stream || "stderr", message: options.stream === "stderr" ? "Steam content servers temporarily unavailable, try again." : "SteamCMD startup complete." }],
+        };
+      }
+      if (instanceId === "palworld-steamcmd-permanent-smoke") {
+        return {
+          id: instanceId,
+          entries: [{ stream: options.stream || "stderr", message: options.stream === "stderr" ? "ERROR! Permission denied writing depot files." : "SteamCMD startup complete." }],
+        };
+      }
+      return originalLogsForRetry(instanceId, options);
+    };
+    const transientResult = await marketplaceService.installTemplate({
+      templateId: "palworld",
+      options: { id: "palworld-steamcmd-transient-smoke", name: "Palworld Transient Smoke", port: 8211, memory: "8G", start: false },
+    });
+    assert(transientResult.progress.some((step) => /retrying attempt 2/i.test(step.detail || "")), "Transient SteamCMD failures should record the retry attempt.");
+    assert.strictEqual(steamStartCounts.get("palworld-steamcmd-transient-smoke"), 2, "Transient SteamCMD failure should be retried once.");
+    await assert.rejects(
+      () => marketplaceService.installTemplate({
+        templateId: "palworld",
+        options: { id: "palworld-steamcmd-permanent-smoke", name: "Palworld Permanent Smoke", port: 8211, memory: "8G", start: false },
+      }),
+      (error) => {
+        assert.strictEqual(error?.code, "STEAMCMD_INSTALL_FAILED", "Permanent SteamCMD failures should preserve process failure code.");
+        return true;
+      },
+      "Permanent SteamCMD failures should not be retried."
+    );
+    assert.strictEqual(steamStartCounts.get("palworld-steamcmd-permanent-smoke"), 1, "Permanent SteamCMD failures should not retry.");
+    agentClient.getInstanceStatus = originalStatusForRetry;
+    agentClient.getInstanceLogs = originalLogsForRetry;
 
     const originalStart = agentClient.startInstance;
     agentClient.startInstance = async () => {

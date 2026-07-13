@@ -262,7 +262,7 @@ async function handleInstances(request, url) {
       });
     }
 
-    const deleteId = getInstanceIdFromPath(url.pathname);
+    const deleteId = getDirectInstanceId(url.pathname);
     if (request.method === "DELETE" && deleteId) {
       return result(200, await deleteInstance(deleteId));
     }

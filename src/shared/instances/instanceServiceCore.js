@@ -2045,7 +2045,31 @@ async function updateInstance(instanceId, payload = {}) {
 }
 
 async function deleteInstance(instanceId) {
-  const config = await reconcileConfigState(await loadInstanceConfig(instanceId));
+  const id = validateInstanceId(instanceId);
+  let config;
+
+  try {
+    config = await reconcileConfigState(await loadInstanceConfig(id));
+  } catch (error) {
+    if (error?.code === "INSTANCE_NOT_FOUND" || error?.code === "INSTANCE_CONFIG_UNREADABLE") {
+      const processEntry = runningProcesses.get(id);
+      if (processEntry?.pid && isProcessAlive(processEntry.pid)) {
+        throw createInstanceError("INSTANCE_RUNNING", 409);
+      }
+
+      await fs.rm(instancePath(id), { recursive: true, force: true });
+      runningProcesses.delete(id);
+      metricsSamples.delete(id);
+
+      return {
+        id,
+        deleted: true,
+        stale: true,
+      };
+    }
+
+    throw error;
+  }
 
   if (config.pid && isProcessAlive(config.pid)) {
     throw createInstanceError("INSTANCE_RUNNING", 409);

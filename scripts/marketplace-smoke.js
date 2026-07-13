@@ -926,6 +926,49 @@ async function assertFiveMPlaceholderStartIsBlocked() {
   }
 }
 
+async function assertStoppedAndStaleInstancesCanBeDeleted() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-instance-delete-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    const stopped = await instanceService.createInstance({
+      id: "stopped-delete-smoke",
+      displayName: "Stopped Delete Smoke",
+      type: "node-app",
+      workingDirectory: "data",
+      executable: "node",
+      args: ["server.js"],
+    });
+    const stoppedPath = stopped.instancePath;
+    await instanceService.deleteInstance("stopped-delete-smoke");
+    assert(!fs.existsSync(stoppedPath), "Stopped instances should be removed from disk.");
+
+    const partialPath = path.join(process.env.AGENT_INSTANCE_ROOT, "partial-delete-smoke");
+    fs.mkdirSync(path.join(partialPath, "data"), { recursive: true });
+    await instanceService.deleteInstance("partial-delete-smoke");
+    assert(!fs.existsSync(partialPath), "Partial instances without config should still be removable.");
+
+    const corruptPath = path.join(process.env.AGENT_INSTANCE_ROOT, "corrupt-delete-smoke");
+    fs.mkdirSync(corruptPath, { recursive: true });
+    fs.writeFileSync(path.join(corruptPath, "config.json"), "{not json");
+    await instanceService.deleteInstance("corrupt-delete-smoke");
+    assert(!fs.existsSync(corruptPath), "Corrupted stopped instance configs should not block delete.");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function assertScriptMarketplaceStartupIsNotJarWrapped() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-script-startup-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
@@ -2633,6 +2676,7 @@ async function main() {
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMPlaceholderStartIsBlocked();
+  await assertStoppedAndStaleInstancesCanBeDeleted();
   await assertScriptMarketplaceStartupIsNotJarWrapped();
   await assertPaperMetadataBackfill();
   await assertMinecraftPropertiesVersionBackfill();

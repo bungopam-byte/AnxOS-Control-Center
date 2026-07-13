@@ -8,6 +8,7 @@ const agentClient = require("./agentClient");
 const { getAllNodesSync, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
 const agentPackage = require("../../agent/package.json");
+const { getReleaseInfo } = require("../shared/releaseConfig");
 
 const SERVICE_NAME = "AnxOSAgent";
 const REMOTE_DIAGNOSTICS_CACHE_MS = 30000;
@@ -302,8 +303,8 @@ async function getConfiguredAgentStatus() {
         message: partialFailure.message,
       }, { file: "agent", errorCode: partialFailure.code });
     }
-    let appVersion = null;
-    try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; }
+    const releaseInfo = getReleaseInfo();
+    const appVersion = releaseInfo.compactLabel;
     const runtime = normalizeAgentRuntimeStatus({
       base: { agentUrl: effective.agentUrl, agentVersion: health?.identity?.agentVersion || health?.agentVersion, partialFailure },
       health,
@@ -369,8 +370,8 @@ async function getStatus() {
   }
 
   const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok);
-  let appVersion = null;
-  try { appVersion = app.getVersion(); } catch { appVersion = require("../../package.json").version; }
+  const releaseInfo = getReleaseInfo();
+  const appVersion = releaseInfo.compactLabel;
   const localMemoryTotal = os.totalmem();
   const localMemoryUsed = localMemoryTotal - os.freemem();
   const localStats = {

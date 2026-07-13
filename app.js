@@ -3865,7 +3865,7 @@ function renderDiagnosticsSupportPreview() {
 
 function getDiagnosticsSupportBundleCategories() {
   return [
-    ["Application", `${runtimeInfoState?.appVersion || "Current build"} · ${navigator.platform || "platform unavailable"}`],
+    ["Application", `${runtimeInfoState?.releaseLabel || runtimeInfoState?.appVersion || "Current build"} · ${navigator.platform || "platform unavailable"}`],
     ["Selected node", formatMarketplaceSelectedNodeLabel()],
     ["Recent issues", `${diagnosticsIssueGroups.length} grouped issue(s), bounded to recent sanitized log entries`],
     ["Operations", `${operationsState.items.size} bounded operation records loaded`],
@@ -4211,7 +4211,7 @@ function getOwnerBuildSummary() {
   return {
     state: dev.status === "error" ? "Needs attention" : runtimeInfoState ? "Healthy" : "Unknown",
     label: "Build and environment",
-    evidence: `${mode} · version ${runtimeInfoState?.version || runtimeInfoState?.appVersion || "unavailable"} · branch ${branch} · commit ${commit} · Electron ${runtimeInfoState?.electron || "unavailable"} · Node ${runtimeInfoState?.node || "unavailable"}.`,
+    evidence: `${mode} · ${runtimeInfoState?.releaseLabel || runtimeInfoState?.version || runtimeInfoState?.appVersion || "version unavailable"} · branch ${branch} · commit ${commit} · Electron ${runtimeInfoState?.electron || "unavailable"} · Node ${runtimeInfoState?.node || "unavailable"}.`,
     action: "developer-update",
   };
 }
@@ -22944,7 +22944,7 @@ function openNodeDetails(nodeId) {
   const values = {
     hostname: identity.hostname || node.displayName || "Unavailable",
     os: formatNodePlatform(node),
-    version: identity.agentVersion || (node.kind === "application-host" ? runtimeInfoState?.version : null) || "Unavailable",
+    version: identity.agentVersion || (node.kind === "application-host" ? runtimeInfoState?.releaseLabel || runtimeInfoState?.version : null) || "Unavailable",
     docker: node.kind === "application-host" ? "Local provider" : node.docker?.enabled === false ? "Disabled" : "Enabled",
     lastSeen: formatNodeLastSeen(node),
     connection: node.connection?.message || getNodeStatusLabel(node),

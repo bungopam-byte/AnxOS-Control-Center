@@ -6,6 +6,7 @@ const https = require("https");
 const path = require("path");
 const { openExternalUrl } = require("./externalUrlService");
 const { OFFICIAL_SITE_ORIGIN } = require("../shared/officialSite");
+const { getReleaseInfo } = require("../shared/releaseConfig");
 
 const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
 const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
@@ -38,6 +39,36 @@ function compareVersions(left, right) {
     if ((leftParts[index] || 0) < (rightParts[index] || 0)) return -1;
   }
   return 0;
+}
+
+function normalizeBuild(value) {
+  const build = Number.parseInt(value, 10);
+  if (Number.isInteger(build) && build >= 0) return build;
+  const parsed = String(value || "").match(/\bbuild[-_. ]?(\d+)\b/i)?.[1];
+  if (parsed) return normalizeBuild(parsed);
+  return null;
+}
+
+function extractReleaseBuild(...values) {
+  for (const value of values) {
+    const build = normalizeBuild(value);
+    if (build !== null) return build;
+  }
+  return null;
+}
+
+function compareReleaseBuilds(left, right) {
+  const versionCompare = compareVersions(left?.version, right?.version);
+  if (versionCompare !== 0) return versionCompare;
+  return (normalizeBuild(left?.build) || 0) - (normalizeBuild(right?.build) || 0);
+}
+
+function formatReleaseLabel(version, build, channel = "") {
+  const parts = [];
+  if (version) parts.push(`Version ${version}`);
+  if (normalizeBuild(build) !== null) parts.push(`Build ${normalizeBuild(build)}`);
+  if (channel) parts.push(channel);
+  return parts.join(" ");
 }
 
 function sanitizeFileName(value) {
@@ -82,9 +113,16 @@ function normalizeManifestAsset(asset) {
 function normalizeManifestRelease(manifest, sourceUrl) {
   const rawAssets = Array.isArray(manifest?.assets) ? manifest.assets : [];
   const latestVersion = normalizeVersion(manifest?.version || manifest?.tag_name || manifest?.name);
+  const build = extractReleaseBuild(manifest?.build, manifest?.buildNumber, manifest?.tag_name, manifest?.name);
+  const channel = manifest?.channel || "";
+  const releaseLabel = manifest?.releaseLabel || formatReleaseLabel(latestVersion, build, channel);
   return {
     tag_name: latestVersion ? `v${latestVersion}` : null,
-    name: manifest?.name || (latestVersion ? `v${latestVersion}` : "AnxOS update"),
+    name: manifest?.name || releaseLabel || (latestVersion ? `v${latestVersion}` : "AnxOS update"),
+    version: latestVersion || null,
+    build,
+    channel,
+    releaseLabel,
     body: manifest?.body || manifest?.notes || manifest?.releaseNotes || "",
     html_url: manifest?.html_url || manifest?.releaseUrl || sourceUrl,
     published_at: manifest?.published_at || manifest?.publishedAt || null,
@@ -103,6 +141,9 @@ function parseWebsiteConfigRelease(configText, sourceUrl) {
 
   const releaseUrl = extractConfigString(configText, "releaseUrl") || `${sourceUrl.replace(/\/[^/]*$/, "")}/release-notes.html`;
   const releaseDate = extractConfigString(configText, "releaseDate") || null;
+  const build = normalizeBuild(extractConfigString(configText, "build") || extractConfigString(configText, "buildNumber"));
+  const channel = extractConfigString(configText, "channel");
+  const releaseLabel = extractConfigString(configText, "releaseLabel") || formatReleaseLabel(latestVersion, build, channel);
   const assetMatches = [...String(configText || "").matchAll(/fileName\s*:\s*["']([^"']+)["'][\s\S]{0,300}?url\s*:\s*["']([^"']+)["']/g)];
   const assets = assetMatches.map((match) => ({
     name: match[1],
@@ -112,7 +153,11 @@ function parseWebsiteConfigRelease(configText, sourceUrl) {
 
   return {
     tag_name: `v${latestVersion}`,
-    name: `v${latestVersion}`,
+    name: releaseLabel || `v${latestVersion}`,
+    version: latestVersion,
+    build,
+    channel,
+    releaseLabel,
     body: "",
     html_url: releaseUrl,
     published_at: releaseDate,
@@ -270,16 +315,28 @@ class UpdateManager extends EventEmitter {
   }
 
   resolveUpdateResult(release, sourceUrl) {
-    const latestVersion = normalizeVersion(release?.tag_name || release?.name);
-    const currentVersion = normalizeVersion(app.getVersion());
+    const currentRelease = getReleaseInfo();
+    const latestVersion = normalizeVersion(release?.version || release?.tag_name || release?.name);
+    const latestBuild = extractReleaseBuild(release?.build, release?.buildNumber, release?.tag_name, release?.name);
+    const currentVersion = currentRelease.version;
+    const currentBuild = currentRelease.build;
     const asset = pickUpdateAsset(release);
-    const skipped = latestVersion ? this.skippedVersions.has(latestVersion) : false;
-    const hasUpdate = Boolean(latestVersion && compareVersions(latestVersion, currentVersion) > 0 && asset);
+    const releaseKey = latestBuild === null ? latestVersion : `${latestVersion}-build${latestBuild}`;
+    const skipped = releaseKey ? this.skippedVersions.has(releaseKey) : false;
+    const hasUpdate = Boolean(latestVersion && compareReleaseBuilds({ version: latestVersion, build: latestBuild }, { version: currentVersion, build: currentBuild }) > 0 && asset);
+    const latestLabel = release?.releaseLabel || formatReleaseLabel(latestVersion, latestBuild, release?.channel || "");
+    const currentLabel = currentRelease.compactLabel;
     return {
       hasUpdate,
       skipped,
-      currentVersion,
-      latestVersion: latestVersion || null,
+      currentVersion: currentLabel,
+      currentReleaseVersion: currentVersion,
+      currentBuild,
+      latestVersion: latestLabel || latestVersion || null,
+      latestReleaseVersion: latestVersion || null,
+      latestBuild,
+      channel: release?.channel || null,
+      releaseKey,
       releaseName: release?.name || release?.tag_name || null,
       releaseDate: release?.published_at || null,
       releaseNotes: release?.body || "",
@@ -493,12 +550,12 @@ class UpdateManager extends EventEmitter {
   }
 
   skip(version) {
-    const target = normalizeVersion(version || this.state.latest?.latestVersion);
+    const target = this.state.latest?.releaseKey || normalizeVersion(version || this.state.latest?.latestReleaseVersion || this.state.latest?.latestVersion);
     if (target) {
       this.skippedVersions.add(target);
       this.saveStore();
       this.state.status = "skipped";
-      if (this.state.latest && normalizeVersion(this.state.latest.latestVersion) === target) {
+      if (this.state.latest && (this.state.latest.releaseKey === target || normalizeVersion(this.state.latest.latestVersion) === target)) {
         this.state.latest = { ...this.state.latest, skipped: true };
       }
       this.log("Skipped update version.", { version: target });
@@ -512,6 +569,9 @@ module.exports = {
   UPDATE_STATUS_CHANNEL,
   UpdateManager,
   compareVersions,
+  compareReleaseBuilds,
+  extractReleaseBuild,
+  formatReleaseLabel,
   normalizeVersion,
   parseWebsiteConfigRelease,
   resolveRedirectUrl,

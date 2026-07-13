@@ -8,6 +8,7 @@ const agentPackage = require("../../agent/package.json");
 const { sanitize } = require("../shared/redaction");
 const { StructuredLogger, safeWriteJson } = require("../shared/structuredLogger");
 const { buildEnvironmentReadinessSummary } = require("./readinessService");
+const { getReleaseInfo } = require("../shared/releaseConfig");
 
 function isDevelopment() { return app?.isPackaged === false || process.env.NODE_ENV === "development"; }
 function getDirectory() {
@@ -16,8 +17,9 @@ function getDirectory() {
   try { return isDevelopment() ? path.join(app.getAppPath(), ".dev-logs") : path.join(app.getPath("userData"), "logs"); }
   catch { return path.join(process.cwd(), ".dev-logs"); }
 }
-const logger = new StructuredLogger({ directory: getDirectory(), source: "desktop", processName: "main", appVersion: packageJson.version, agentVersion: agentPackage.version });
-let runtimeState = { applicationRunning: true, appVersion: packageJson.version, agentVersion: agentPackage.version, platform: process.platform, architecture: process.arch, currentWorkspace: "startup" };
+const releaseInfo = getReleaseInfo();
+const logger = new StructuredLogger({ directory: getDirectory(), source: "desktop", processName: "main", appVersion: releaseInfo.compactLabel, agentVersion: agentPackage.version });
+let runtimeState = { applicationRunning: true, appVersion: releaseInfo.compactLabel, release: releaseInfo, packageVersion: packageJson.version, agentVersion: agentPackage.version, platform: process.platform, architecture: process.arch, currentWorkspace: "startup" };
 
 function buildReadinessFromRuntime(state = runtimeState) {
   const base = { ...state };
@@ -76,7 +78,8 @@ async function copySummary() {
 async function exportBundle(parentWindow = null) {
   const result = await dialog.showSaveDialog(parentWindow || undefined, { title: "Export AnxOS Diagnostic Bundle", defaultPath: `anxos-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
   if (result.canceled || !result.filePath) return { canceled: true };
-  const bundle = sanitize({ generatedAt: new Date().toISOString(), application: { version: packageJson.version, platform: os.platform(), release: os.release(), architecture: os.arch() }, agentVersion: agentPackage.version, readinessSummary: buildReadinessFromRuntime(), runtimeState, latestError: (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })(), logs: readLogs({ limit: 500 }).entries });
+  const release = getReleaseInfo();
+  const bundle = sanitize({ generatedAt: new Date().toISOString(), application: { name: "AnxOS Control Center", version: release.versionLabel, build: release.buildLabel, channel: release.channel, releaseLabel: release.compactLabel, packageVersion: packageJson.version, platform: os.platform(), release: os.release(), architecture: os.arch() }, agentVersion: agentPackage.version, readinessSummary: buildReadinessFromRuntime(), runtimeState, latestError: (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })(), logs: readLogs({ limit: 500 }).entries });
   fs.writeFileSync(result.filePath, `${JSON.stringify(bundle, null, 2)}\n`, { mode: 0o600 });
   log("info", "diagnostics", "export", "Sanitized diagnostic bundle exported", { destinationType: "user-selected-json" });
   return { canceled: false, exported: true };

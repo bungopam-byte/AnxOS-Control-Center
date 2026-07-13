@@ -24,6 +24,8 @@ const { UpdateManager } = require("./src/services/updateManager");
 const { configureElectronPaths } = require("./src/services/electronPaths");
 const { DeveloperGitUpdater } = require("./src/services/developerGitUpdater");
 const { openExternalUrl } = require("./src/services/externalUrlService");
+const { getReleaseInfo } = require("./src/shared/releaseConfig");
+const packageJson = require("./package.json");
 
 const APP_ICON_PATH = process.platform === "win32"
   ? path.join(__dirname, "assets", "icon.ico")
@@ -85,8 +87,18 @@ function getGitCommit() {
 
 function getRuntimeInfo() {
   const trustedDevelopmentMode = process.env.ANXOS_TRUSTED_DEVELOPMENT_MODE === "1" && app.isPackaged === false;
+  const release = getReleaseInfo();
   return {
-    version: app.getVersion(),
+    name: "AnxOS Control Center",
+    version: release.versionLabel,
+    releaseVersion: release.version,
+    build: release.buildLabel,
+    buildNumber: release.build,
+    channel: release.channel,
+    releaseLabel: release.compactLabel,
+    releaseTag: release.tag,
+    packageVersion: packageJson.version,
+    appVersion: release.compactLabel,
     gitCommit: getGitCommit(),
     electron: process.versions.electron || null,
     node: process.versions.node || null,

@@ -3,12 +3,13 @@ const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
-const packageJson = require(path.join(rootDir, "package.json"));
 const { OFFICIAL_SITE_ORIGIN } = require(path.join(rootDir, "src", "shared", "officialSite"));
+const { getReleaseInfo } = require(path.join(rootDir, "src", "shared", "releaseConfig"));
 const websiteConfigPath = path.join(rootDir, "website", "config.js");
 const releaseNotesPath = path.join(rootDir, "website", "release-notes.json");
 const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
-const defaultDownloadBaseUrl = `${repositoryUrl}/releases/download/v${packageJson.version}`;
+const release = getReleaseInfo();
+const defaultDownloadBaseUrl = `${repositoryUrl}/releases/download/${release.tag}`;
 const downloadBaseUrl = (process.env.ANXOS_DOWNLOAD_BASE_URL || process.env.ANXOS_UPDATE_BASE_URL || process.env.ANXHUB_UPDATE_BASE_URL || defaultDownloadBaseUrl).replace(/\/+$/, "");
 
 function formatBytes(size) {
@@ -63,19 +64,26 @@ function readReleaseNotes() {
 function getReleaseNotes() {
   const releaseDate = formatReleaseDate();
   const today = new Date().toISOString().slice(0, 10);
-  const currentTag = `v${packageJson.version}`;
-  const notes = readReleaseNotes().map((entry) => ({
-    ...entry,
-    url: entry.url || `${repositoryUrl}/releases/tag/${entry.tag || `v${entry.version}`}`,
-  }));
+  const currentTag = release.tag;
+  const notes = readReleaseNotes().map((entry) => {
+    const tag = entry.tag || (entry.build ? `v${entry.version}-build${entry.build}` : `v${entry.version}`);
+    const staleSemverUrl = /\/releases\/tag\/v\d+\.\d+\.\d+$/i.test(String(entry.url || ""));
+    return {
+      ...entry,
+      tag,
+      url: !entry.url || staleSemverUrl ? `${repositoryUrl}/releases/tag/${tag}` : entry.url,
+    };
+  });
 
-  if (!notes.some((entry) => entry.version === packageJson.version || entry.tag === currentTag)) {
+  if (!notes.some((entry) => (entry.version === release.version && Number(entry.build) === release.build) || entry.tag === currentTag)) {
     notes.unshift({
-      version: packageJson.version,
+      version: release.version,
+      build: release.build,
+      channel: release.channel,
       tag: currentTag,
       date: releaseDate,
       datetime: today,
-      title: `AnxOS ${currentTag}`,
+      title: `AnxOS ${release.versionLabel}`,
       summary: "Latest AnxOS-Control-Center release.",
       changes: [
         "Updated application build, website metadata, and downloadable release assets.",
@@ -87,10 +95,11 @@ function getReleaseNotes() {
   return notes;
 }
 
-const windows = getAsset(`AnxOS-Control-Center-Setup-${packageJson.version}.exe`);
-const linuxDeb = getAsset(`AnxOS-Control-Center-${packageJson.version}.deb`);
-const linuxAppImage = getAsset(`AnxOS-Control-Center-${packageJson.version}.AppImage`);
+const windows = getAsset(`AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`);
+const linuxDeb = getAsset(`AnxOS-Control-Center-${release.artifactVersion}.deb`);
+const linuxAppImage = getAsset(`AnxOS-Control-Center-${release.artifactVersion}.AppImage`);
 const releaseNotes = getReleaseNotes();
+fs.writeFileSync(releaseNotesPath, `${JSON.stringify(releaseNotes, null, 2)}\n`);
 
 const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   brandName: "AnxOS",
@@ -98,11 +107,15 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
   siteUrl: "${OFFICIAL_SITE_ORIGIN}",
   logoPath: "/assets/anxos-logo.png",
-  latestVersion: "${packageJson.version}",
+  latestVersion: "${release.version}",
+  build: "${release.build}",
+  buildNumber: "${release.build}",
+  channel: "${release.channel}",
+  releaseLabel: "${release.compactLabel}",
   releaseDate: "${formatReleaseDate()}",
-  releaseTag: "v${packageJson.version}",
+  releaseTag: "${release.tag}",
   repositoryUrl: "${repositoryUrl}",
-  releaseUrl: "${repositoryUrl}/releases/tag/v${packageJson.version}",
+  releaseUrl: "${repositoryUrl}/releases/tag/${release.tag}",
   downloads: {
     windows: {
       label: "Download for Windows",
@@ -128,4 +141,4 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
 `;
 
 fs.writeFileSync(websiteConfigPath, config);
-console.log(`Updated website/config.js for v${packageJson.version}.`);
+console.log(`Updated website/config.js for ${release.compactLabel}.`);

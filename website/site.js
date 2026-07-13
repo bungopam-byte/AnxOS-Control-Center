@@ -155,7 +155,7 @@ function createReleaseNoteCard(release) {
   const titleGroup = document.createElement("div");
   const badge = document.createElement("span");
   badge.className = "badge";
-  badge.textContent = release.tag || release.version || "Release";
+  badge.textContent = [release.version ? `Version ${release.version}` : release.tag || "Release", release.build ? `Build ${release.build}` : "", release.channel || ""].filter(Boolean).join(" · ");
   const title = document.createElement("h3");
   title.textContent = release.title || `Version ${release.version || ""}`.trim();
   titleGroup.append(badge, title);

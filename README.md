@@ -195,8 +195,8 @@ On Windows, this keeps the existing Windows installer workflow and produces the 
 
 On Debian/Linux, the build produces Linux release artifacts:
 
-- `AnxOS-Control-Center-<version>.deb`
-- `AnxOS-Control-Center-<version>.AppImage`
+- `AnxOS-Control-Center-<version>-build<build>.deb`
+- `AnxOS-Control-Center-<version>-build<build>.AppImage`
 
 The `.deb` package is the recommended Linux installer for Debian-based AnxOS systems. The AppImage remains available as a fallback for systems where installing a package is not desired.
 
@@ -227,24 +227,44 @@ The Debian package installs a desktop entry so `AnxOS Control Center` appears in
 
 ## Release Artifacts
 
+Public release metadata lives in `release.json`:
+
+```json
+{
+  "version": "1.7",
+  "build": 142,
+  "channel": "Private Alpha"
+}
+```
+
+`package.json` keeps a SemVer-compatible internal package version for npm and Electron tooling only. User-facing app, updater, diagnostics, installer, and website metadata use `release.json`.
+
+Useful versioning commands:
+
+```bash
+npm run build:increment
+npm run version:set 1.8
+npm run channel:set beta
+```
+
 For a local updater-ready release, run:
 
 ```bash
 npm run release:update -- --message "fix: describe the change"
 ```
 
-That command bumps the patch version, runs the Marketplace smoke checks, builds the Windows installer plus Linux packages, refreshes `dist/update-manifest.json`, commits, tags, and pushes. Add `--github-release` when GitHub CLI is authenticated and you want the built artifacts uploaded to the latest GitHub Release source used by Check for update.
+That command increments the release build, runs the Marketplace smoke checks, builds the Windows installer plus Linux packages, refreshes `dist/update-manifest.json` and website metadata, commits, tags, and pushes. Add `--version 1.8` for a meaningful product version milestone, `--channel beta` for channel changes, and `--github-release` when GitHub CLI is authenticated and you want the built artifacts uploaded to the latest GitHub Release source used by Check for update.
 
 Recommended GitHub Releases layout:
 
 ```text
 Windows
-- AnxOS-Control-Center-Setup-<version>.exe
-- AnxOS-Control-Center-<version>-portable.exe
+- AnxOS-Control-Center-Setup-<version>-build<build>.exe
+- AnxOS-Control-Center-<version>-build<build>-portable.exe
 
 Linux
-- AnxOS-Control-Center-<version>.deb
-- AnxOS-Control-Center-<version>.AppImage
+- AnxOS-Control-Center-<version>-build<build>.deb
+- AnxOS-Control-Center-<version>-build<build>.AppImage
 
 Future
 - macOS DMG
@@ -253,7 +273,7 @@ Future
 Validation checklist before publishing a release:
 
 - Windows installer still builds with `npm run dist:win`.
-- Signed Windows releases verify with `signtool verify /pa dist\AnxOS-Control-Center-Setup-<version>.exe` when Anx signing secrets are configured.
+- Signed Windows releases verify with `signtool verify /pa dist\AnxOS-Control-Center-Setup-<version>-build<build>.exe` when Anx signing secrets are configured.
 - Linux AppImage and `.deb` build on Debian with `npm run dist:linux`.
 - AppImage launches with `./AnxOS-Control-Center.AppImage`.
 - `.deb` installs with `sudo dpkg -i AnxOS-Control-Center-*.deb`.

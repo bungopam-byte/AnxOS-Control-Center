@@ -4,35 +4,55 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   subtitle: "A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.",
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
-  latestVersion: "1.0.48",
-  releaseDate: "July 11, 2026",
-  releaseTag: "v1.0.48",
+  latestVersion: "1.7",
+  build: "142",
+  buildNumber: "142",
+  channel: "Private Alpha",
+  releaseLabel: "Version 1.7 Build 142 Private Alpha",
+  releaseDate: "July 13, 2026",
+  releaseTag: "v1.7-build142",
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.48",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build142",
   downloads: {
     windows: {
       label: "Download for Windows",
-      fileName: "AnxOS-Control-Center-Setup-1.0.48.exe",
+      fileName: "AnxOS-Control-Center-Setup-1.7-build142.exe",
       size: "",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.48/AnxOS-Control-Center-Setup-1.0.48.exe",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.7-build142/AnxOS-Control-Center-Setup-1.7-build142.exe",
     },
     linuxDeb: {
       label: "Linux .deb",
-      fileName: "AnxOS-Control-Center-1.0.48.deb",
+      fileName: "AnxOS-Control-Center-1.7-build142.deb",
       size: "",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.48/AnxOS-Control-Center-1.0.48.deb",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.7-build142/AnxOS-Control-Center-1.7-build142.deb",
     },
     linuxAppImage: {
       label: "Linux AppImage",
-      fileName: "AnxOS-Control-Center-1.0.48.AppImage",
+      fileName: "AnxOS-Control-Center-1.7-build142.AppImage",
       size: "",
-      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.0.48/AnxOS-Control-Center-1.0.48.AppImage",
+      url: "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/download/v1.7-build142/AnxOS-Control-Center-1.7-build142.AppImage",
     },
   },
   releaseNotes: [
       {
-          "version": "1.0.48",
-          "tag": "v1.0.48",
+          "version": "1.7",
+          "build": 142,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build142",
+          "date": "July 13, 2026",
+          "datetime": "2026-07-13",
+          "title": "AnxOS Version 1.7",
+          "summary": "Latest AnxOS-Control-Center release.",
+          "changes": [
+              "Updated application build, website metadata, and downloadable release assets."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build142"
+      },
+      {
+          "version": "1.7",
+          "build": 141,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build141",
           "date": "July 11, 2026",
           "datetime": "2026-07-11",
           "title": "Secure diagnostics and Agent Control Center",
@@ -45,11 +65,13 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Improved the Add Storage dialog lifecycle and guarded asynchronous submissions against duplicate requests.",
               "Added regression coverage for redaction, rotation, snapshots, failure-safe logging, remote authorization, and real Agent start/restart/stop behavior."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.48"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build141"
       },
       {
-          "version": "1.0.47",
-          "tag": "v1.0.47",
+          "version": "1.7",
+          "build": 140,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build140",
           "date": "July 10, 2026",
           "datetime": "2026-07-10",
           "title": "Local Owner authentication recovery",
@@ -62,11 +84,13 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Added standalone website password recovery pages and visible Reset Password and Change Password actions.",
               "Added regression coverage for credential verification, legacy migration, and session logout account preservation."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.47"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build140"
       },
       {
-          "version": "1.0.46",
-          "tag": "v1.0.46",
+          "version": "1.7",
+          "build": 139,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build139",
           "date": "July 10, 2026",
           "datetime": "2026-07-10",
           "title": "Explicit device identity and workspace routing",
@@ -78,11 +102,13 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Separated local, Agent-native, and SFTP filesystem providers so only explicit SFTP connections create SFTP sessions.",
               "Added development routing diagnostics and regression coverage for node switching, persistence, migration, and filesystem routing."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.46"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.7-build139"
       },
       {
-          "version": "1.0.19",
-          "tag": "v1.0.19",
+          "version": "1.6",
+          "build": 138,
+          "channel": "Private Alpha",
+          "tag": "v1.6-build138",
           "date": "July 9, 2026",
           "datetime": "2026-07-09",
           "title": "Marketplace runtime selector and storefront polish",
@@ -95,7 +121,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
               "Aligned Marketplace Install buttons across card rows and clamped long descriptions.",
               "Updated smoke coverage for runtime detection, no Paper preselect, provider loader metadata, and Quilt install handling."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.0.19"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center/releases/tag/v1.6-build138"
       }
   ],
 };

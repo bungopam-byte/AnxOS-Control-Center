@@ -1,12 +1,21 @@
 const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const {
+  buildReleaseInfo,
+  getReleaseConfigPath,
+  normalizeChannel,
+  normalizeReleaseConfig,
+  normalizeReleaseVersion,
+  readReleaseConfig,
+} = require("../src/shared/releaseConfig");
 
 const rootDir = path.resolve(__dirname, "..");
 
 function parseArgs(argv) {
   const options = {
-    bump: "patch",
+    version: "",
+    channel: "",
     message: "",
     push: true,
     tag: true,
@@ -19,10 +28,12 @@ function parseArgs(argv) {
     if (arg === "--message" || arg === "-m") {
       options.message = argv[index + 1] || "";
       index += 1;
-    } else if (arg === "--minor") {
-      options.bump = "minor";
-    } else if (arg === "--major") {
-      options.bump = "major";
+    } else if (arg === "--version") {
+      options.version = argv[index + 1] || "";
+      index += 1;
+    } else if (arg === "--channel") {
+      options.channel = argv[index + 1] || "";
+      index += 1;
     } else if (arg === "--no-push") {
       options.push = false;
     } else if (arg === "--no-tag") {
@@ -51,59 +62,23 @@ function run(command, args, options = {}) {
   }
 }
 
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
-
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function bumpVersion(version, bump) {
-  const parts = String(version || "0.0.0").split(".").map((part) => Number.parseInt(part, 10) || 0);
-  while (parts.length < 3) parts.push(0);
-
-  if (bump === "major") {
-    parts[0] += 1;
-    parts[1] = 0;
-    parts[2] = 0;
-  } else if (bump === "minor") {
-    parts[1] += 1;
-    parts[2] = 0;
-  } else {
-    parts[2] += 1;
-  }
-
-  return parts.slice(0, 3).join(".");
+function writeReleaseConfig(config) {
+  const normalized = normalizeReleaseConfig(config);
+  writeJson(getReleaseConfigPath(), normalized);
+  return buildReleaseInfo(normalized);
 }
 
-function updatePackageVersions(version) {
-  const packagePath = path.join(rootDir, "package.json");
-  const lockPath = path.join(rootDir, "package-lock.json");
-  const packageJson = readJson(packagePath);
-  const lockJson = readJson(lockPath);
-
-  packageJson.version = version;
-  lockJson.version = version;
-  if (lockJson.packages?.[""]) {
-    lockJson.packages[""].version = version;
-  }
-
-  writeJson(packagePath, packageJson);
-  writeJson(lockPath, lockJson);
-}
-
-function getPackageVersion() {
-  return readJson(path.join(rootDir, "package.json")).version;
-}
-
-function getReleaseAssets(version) {
+function getReleaseAssets(release) {
   const distDir = path.join(rootDir, "dist");
   return [
-    `AnxOS-Control-Center-Setup-${version}.exe`,
-    `AnxOS-Control-Center-${version}-portable.exe`,
-    `AnxOS-Control-Center-${version}.deb`,
-    `AnxOS-Control-Center-${version}.AppImage`,
+    `AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`,
+    `AnxOS-Control-Center-${release.artifactVersion}-portable.exe`,
+    `AnxOS-Control-Center-${release.artifactVersion}.deb`,
+    `AnxOS-Control-Center-${release.artifactVersion}.AppImage`,
   ]
     .map((name) => path.join(distDir, name))
     .filter((filePath) => fs.existsSync(filePath));
@@ -136,20 +111,25 @@ function restoreTrackedBuildOutputs() {
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const currentVersion = getPackageVersion();
-  const nextVersion = bumpVersion(currentVersion, options.bump);
-  const tagName = `v${nextVersion}`;
+  const current = readReleaseConfig();
+  const next = {
+    ...current,
+    version: options.version ? normalizeReleaseVersion(options.version) : current.version,
+    channel: options.channel ? normalizeChannel(options.channel) : current.channel,
+    build: current.build + 1,
+  };
+  const release = writeReleaseConfig(next);
+  const tagName = release.tag;
   const message = options.message || `chore: release ${tagName}`;
 
-  console.log(`Preparing ${tagName} from ${currentVersion}.`);
-  updatePackageVersions(nextVersion);
+  console.log(`Preparing ${release.compactLabel} from ${buildReleaseInfo(current).compactLabel}.`);
 
   run("npm", ["run", "marketplace:smoke"]);
 
   if (options.build) {
-    run("npm", ["run", "dist:win:installer"]);
-    run("npm", ["run", "dist:win:portable"]);
-    run("npm", ["run", "dist:linux"]);
+    run("npm", ["run", "dist:win:installer", "--", "--no-increment-build"]);
+    run("npm", ["run", "dist:win:portable", "--", "--no-increment-build"]);
+    run("npm", ["run", "dist:linux", "--", "--no-increment-build"]);
   }
 
   run("npm", ["run", "updates:manifest"]);
@@ -180,7 +160,7 @@ function main() {
   }
 
   if (options.githubRelease) {
-    const assets = getReleaseAssets(nextVersion);
+    const assets = getReleaseAssets(release);
     if (assets.length === 0) {
       console.warn("No release assets found for GitHub release upload.");
       return;

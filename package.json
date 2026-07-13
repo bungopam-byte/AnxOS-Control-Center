@@ -11,11 +11,14 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win --x64",
-    "dist:win:installer": "electron-builder --win nsis --x64",
-    "dist:win:portable": "electron-builder --win portable --x64",
-    "dist:linux": "electron-builder --linux deb AppImage --x64",
+    "dist": "node scripts/run-electron-builder.js",
+    "dist:win": "node scripts/run-electron-builder.js --win --x64",
+    "dist:win:installer": "node scripts/run-electron-builder.js --win nsis --x64",
+    "dist:win:portable": "node scripts/run-electron-builder.js --win portable --x64",
+    "dist:linux": "node scripts/run-electron-builder.js --linux deb AppImage --x64",
+    "build:increment": "node scripts/release-config.js build:increment",
+    "version:set": "node scripts/release-config.js version:set",
+    "channel:set": "node scripts/release-config.js channel:set",
     "updates:manifest": "node scripts/write-update-manifest.js && node scripts/sync-website-release.js",
     "website:sync": "node scripts/sync-website-release.js",
     "release:update": "node scripts/release-update.js",
@@ -52,6 +55,7 @@
     "public-access:smoke": "node scripts/public-access-smoke.js",
     "website:smoke": "node scripts/website-production-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
+    "versioning:smoke": "node scripts/versioning-smoke.js",
     "notifications:smoke": "node scripts/notification-center-smoke.js",
     "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",
@@ -67,6 +71,7 @@
       "preload.js",
       "app.js",
       "index.html",
+      "release.json",
       "styles.css",
       "windows/**/*",
       "assets/**/*",
@@ -121,17 +126,17 @@
       }
     },
     "appImage": {
-      "artifactName": "AnxOS-Control-Center-${version}.${ext}"
+      "artifactName": "AnxOS-Control-Center-${env.ANXOS_RELEASE_ARTIFACT_VERSION}.${ext}"
     },
     "deb": {
-      "artifactName": "AnxOS-Control-Center-${version}.${ext}",
+      "artifactName": "AnxOS-Control-Center-${env.ANXOS_RELEASE_ARTIFACT_VERSION}.${ext}",
       "packageCategory": "utils"
     },
     "portable": {
-      "artifactName": "AnxOS-Control-Center-${version}-portable.${ext}"
+      "artifactName": "AnxOS-Control-Center-${env.ANXOS_RELEASE_ARTIFACT_VERSION}-portable.${ext}"
     },
     "nsis": {
-      "artifactName": "AnxOS-Control-Center-Setup-${version}.${ext}",
+      "artifactName": "AnxOS-Control-Center-Setup-${env.ANXOS_RELEASE_ARTIFACT_VERSION}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

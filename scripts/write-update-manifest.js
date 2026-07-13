@@ -3,16 +3,17 @@ const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
-const packageJson = require(path.join(rootDir, "package.json"));
+const { getReleaseInfo } = require(path.join(rootDir, "src", "shared", "releaseConfig"));
 const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center";
-const defaultBaseUrl = `${repositoryUrl}/releases/download/v${packageJson.version}`;
+const release = getReleaseInfo();
+const defaultBaseUrl = `${repositoryUrl}/releases/download/${release.tag}`;
 const baseUrl = (process.env.ANXOS_UPDATE_BASE_URL || process.env.ANXHUB_UPDATE_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
 
 const assetNames = [
-  `AnxOS-Control-Center-Setup-${packageJson.version}.exe`,
-  `AnxOS-Control-Center-${packageJson.version}.deb`,
-  `AnxOS-Control-Center-${packageJson.version}.AppImage`,
-  `AnxOS-Control-Center-${packageJson.version}-portable.exe`,
+  `AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`,
+  `AnxOS-Control-Center-${release.artifactVersion}.deb`,
+  `AnxOS-Control-Center-${release.artifactVersion}.AppImage`,
+  `AnxOS-Control-Center-${release.artifactVersion}-portable.exe`,
 ];
 
 const assets = assetNames
@@ -32,9 +33,12 @@ const assets = assetNames
   .filter(Boolean);
 
 const manifest = {
-  version: packageJson.version,
-  name: `v${packageJson.version}`,
-  releaseUrl: `${repositoryUrl}/releases/tag/v${packageJson.version}`,
+  version: release.version,
+  build: release.build,
+  channel: release.channel,
+  releaseLabel: release.compactLabel,
+  name: release.tag,
+  releaseUrl: `${repositoryUrl}/releases/tag/${release.tag}`,
   publishedAt: new Date().toISOString(),
   assets,
 };

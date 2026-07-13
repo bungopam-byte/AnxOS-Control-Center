@@ -15,7 +15,7 @@ npm run dist:win
 When the repository secrets below are present, electron-builder signs:
 
 - `dist/win-unpacked/AnxOS Control Center.exe`
-- `dist/AnxOS-Control-Center-Setup-<version>.exe`
+- `dist/AnxOS-Control-Center-Setup-<version>-build<build>.exe`
 - the NSIS uninstaller embedded in the setup package
 
 The signed installer should show:
@@ -73,7 +73,7 @@ Do not distribute unsigned builds as trusted Anx releases.
 On Windows, verify the setup installer:
 
 ```powershell
-signtool verify /pa "dist\AnxOS-Control-Center-Setup-<version>.exe"
+signtool verify /pa "dist\AnxOS-Control-Center-Setup-<version>-build<build>.exe"
 ```
 
 Verify the unpacked Electron app executable:
@@ -85,7 +85,7 @@ signtool verify /pa "dist\win-unpacked\AnxOS Control Center.exe"
 Inspect signer details:
 
 ```powershell
-Get-AuthenticodeSignature "dist\AnxOS-Control-Center-Setup-<version>.exe" | Format-List
+Get-AuthenticodeSignature "dist\AnxOS-Control-Center-Setup-<version>-build<build>.exe" | Format-List
 ```
 
 Expected signed release result:

@@ -117,11 +117,20 @@ async function main() {
   const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "windows-release.yml"), "utf8");
   assert(download.includes('data-download-page') && download.includes('data-primary-download'), "/download should render the dynamic download workspace.");
   assert(download.includes('rel="canonical" href="https://anxoscontrolcenter.org/download"'), "/download should expose canonical metadata.");
-  assert(downloadHtml.includes('window.location.replace("/download" + window.location.search)'), "/download.html should preserve query strings while redirecting.");
+  assert(downloadHtml.includes('data-download-page') && downloadHtml.includes("Download AnxOS Control Center"), "/download.html should serve visible compatibility content, not a blank redirect shell.");
+  assert(!downloadHtml.includes('window.location.replace("/download"'), "/download.html must not redirect to itself through Cloudflare extensionless routing.");
+  for (const html of [download, downloadHtml]) {
+    assert(html.includes('src="/site.js"') && html.includes('src="/release-download-service.js"') && html.includes('href="/styles.css"'), "Download pages must use root-safe script and stylesheet paths.");
+    assert(!html.includes('src="site.js"') && !html.includes('src="release-download-service.js"') && !html.includes('href="styles.css"'), "Download pages must not use route-relative assets.");
+    assert(html.includes("<header") && html.includes("<main") && html.includes("<footer"), "Download pages must contain visible page structure before JavaScript executes.");
+    assert(!/body[^>]*(hidden|display:\s*none|visibility:\s*hidden|opacity:\s*0)/i.test(html), "Download pages must not hide the full document by default.");
+  }
   assert(index.includes('href="/download"') && releaseNotes.includes('href="/download"') && gettingStarted.includes('href="/download"'), "Public CTAs should point to the domain download route.");
   assert(!/AnxOS-Control-Center-Setup-1\.7-build142\.exe/.test(`${download}\n${index}\n${releaseNotes}\n${gettingStarted}\n${site}\n${config}`), "Website download logic must not hardcode an obsolete installer filename.");
   assert(!/releases\/download\/v1\.7-build142/.test(`${download}\n${index}\n${releaseNotes}\n${gettingStarted}\n${site}\n${config}`), "Website download logic must not hardcode an obsolete release asset URL.");
   assert(site.includes("textContent = release.releaseBody") && !site.includes("innerHTML = release.releaseBody"), "Release text should be rendered safely.");
+  assert(site.includes("function showDownloadStartupFallback") && site.includes("function initializeWebsite") && site.includes("try {"), "Website startup should have a top-level download failure boundary.");
+  assert(site.includes("Download information could not be loaded right now."), "Release initialization failure should show a visitor-safe error message.");
   assert(site.includes("isExpectedAssetUrl") || fs.readFileSync(path.join(websiteRoot, "release-download-service.js"), "utf8").includes("isExpectedAssetUrl"), "Download URLs should be allowlisted.");
   assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && !config.includes("downloads:"), "Config should contain release discovery settings, not static artifact URLs.");
   assert(workflow.includes("sha256sum AnxOS-Control-Center-* > SHA256SUMS"), "Release workflow should publish a checksum manifest.");

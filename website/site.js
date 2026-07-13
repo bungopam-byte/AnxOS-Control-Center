@@ -359,6 +359,17 @@ function renderDownloadFailure(error) {
   }
 }
 
+function showDownloadStartupFallback(error) {
+  console.error("[AnxOS][Download] Startup failed.", {
+    message: error?.message || String(error || "Unknown startup error"),
+    code: error?.code || null,
+  });
+  renderDownloadFailure(new Error("Download information could not be loaded right now."));
+  document.querySelectorAll("[hidden][data-auth-nav]").forEach((node) => {
+    node.setAttribute("aria-hidden", "true");
+  });
+}
+
 async function applyDownloads(options = {}) {
   setDownloadLinksLoading();
   if (!window.AnxOSReleaseDownloads) {
@@ -2035,23 +2046,32 @@ async function applyRouteState() {
   lastAppliedRoute = activeRoute;
 }
 
-redirectToCanonicalSiteOrigin();
-applyConfigText();
-applyDownloads();
-applyReleaseNotes();
-bindSiteNavigation();
-bindDownloadControls();
-bindAccountForms();
-applyDeviceLoginPage();
-authInitializationPromise = initializeAccount().catch((error) => {
-  disableAccountForms(friendlyAuthError(error));
-});
-window.addEventListener("beforeunload", (event) => {
-  if (!profileDirty) return;
-  event.preventDefault();
-  event.returnValue = "";
-});
-applyRouteState().catch((error) => logWebsiteDiagnostic("error", "initial-route", error));
+function initializeWebsite() {
+  try {
+    redirectToCanonicalSiteOrigin();
+    applyConfigText();
+    applyDownloads().catch((error) => showDownloadStartupFallback(error));
+    applyReleaseNotes();
+    bindSiteNavigation();
+    bindDownloadControls();
+    bindAccountForms();
+    applyDeviceLoginPage();
+    authInitializationPromise = initializeAccount().catch((error) => {
+      disableAccountForms(friendlyAuthError(error));
+    });
+    window.addEventListener("beforeunload", (event) => {
+      if (!profileDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+    applyRouteState().catch((error) => logWebsiteDiagnostic("error", "initial-route", error));
+  } catch (error) {
+    showDownloadStartupFallback(error);
+    logWebsiteDiagnostic("error", "startup", error);
+  }
+}
+
+initializeWebsite();
 
 function logWebsiteDiagnostic(severity, operation, error) {
   const message = redactSecret(error?.message || String(error || "Website account error"));

@@ -46,11 +46,15 @@ function runNormalizationChecks() {
   assert.strictEqual(botWithStats.name, "discord-bot", "Live Discord bot container names should be normalized.");
   assert.strictEqual(botWithStats.state, "running", "Live Discord bot running state should be preserved.");
   assert.strictEqual(botWithStats.stats.cpuPercent, "0.02%", "Live Discord bot CPU stats should attach by name or ID.");
+
+  const masked = dockerService.maskEnv(["MYSQL_PASSWORD=secret", "VISIBLE=value"]);
+  assert.deepStrictEqual(masked, ["MYSQL_PASSWORD=[REDACTED]", "VISIBLE=value"], "Sensitive Docker environment values should be masked.");
 }
 
 async function main() {
   runNormalizationChecks();
   const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   const styleSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
   const dockerIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "dockerIpc.js"), "utf8");
   const serviceRouterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "serviceRouter.js"), "utf8");
@@ -65,13 +69,42 @@ async function main() {
     "updateDockerInspectorTabs(false)",
     "document.hidden || !dockerWorkspaceState?.ready",
     "logDockerDiagnostic(\"snapshot-success\"",
+    "createSecurityConfirmation({ title: \"Remove Docker image?\"",
+    "createSecurityConfirmation({ title: \"Remove Docker volume?\"",
+    "function runDockerComposeUiAction",
+    "function runDockerCleanupAction",
   ].forEach((needle) => assert(appSource.includes(needle), `Docker workspace regression guard missing: ${needle}`));
+  [
+    "data-docker-compose-action=\"config\"",
+    "data-docker-cleanup=\"volumes\"",
+    "data-docker-create=\"privileged\"",
+    "data-docker-logs-timestamps",
+  ].forEach((needle) => assert(indexSource.includes(needle), `Docker workspace markup guard missing: ${needle}`));
   const fastFailureBody = appSource.match(/function getDockerFastFailure\(\) \{[\s\S]*?\n\}/)?.[0] || "";
   assert(!fastFailureBody.includes("getCurrentAgentHealthTarget") && !fastFailureBody.includes("getNodeVisualState"), "Docker refresh must not be blocked by stale Agent Control or node visual state.");
   assert(dockerIpcSource.includes("DOCKER_REQUEST_FAILED") && dockerIpcSource.includes("docker:getSnapshot") && dockerIpcSource.includes("invokeDockerOperation(() => getDockerSnapshot(payload))"), "Docker IPC must preserve coded snapshot errors.");
+  [
+    "docker:pause",
+    "docker:kill",
+    "docker:pullImage",
+    "docker:compose",
+    "docker:cleanup",
+    "docker:removeVolume",
+  ].forEach((needle) => assert(dockerIpcSource.includes(needle), `Docker IPC route missing: ${needle}`));
   assert(serviceRouterSource.includes("agent-snapshot-failed") && !serviceRouterSource.includes("throw new AgentUnavailableError();\n  }\n}\n\nfunction createDockerUnavailableSnapshot"), "Remote Docker failures must not be flattened into generic Agent unavailable.");
+  assert(serviceRouterSource.includes("routeDockerOperation") && serviceRouterSource.includes("dockerComposeAction"), "Docker router must route extended Docker operations through the selected node.");
   assert(dockerServiceSource.includes("DOCKER_SOCKET_PERMISSION_DENIED") && dockerServiceSource.includes("DOCKER_SOCKET_UNAVAILABLE") && dockerServiceSource.includes("DOCKER_SERVICE_UNREACHABLE"), "Docker service must classify socket and service failures explicitly.");
+  [
+    "listComposeProjects",
+    "validateComposeConfig",
+    "DOCKER_VOLUME_IN_USE",
+    "DOCKER_DEFAULT_NETWORK_PROTECTED",
+    "redactDockerText",
+    "getCleanupPreview",
+    "execContainer",
+  ].forEach((needle) => assert(dockerServiceSource.includes(needle), `Docker service guard missing: ${needle}`));
   assert(styleSource.includes(".docker-empty-actions"), "Docker empty state actions must have stable layout.");
+  assert(styleSource.includes(".docker-resource-grid") && styleSource.includes(".docker-warning"), "Docker resource panels must have stable styling.");
 
   const snapshot = await dockerService.getDockerSnapshot();
 

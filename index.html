@@ -1127,8 +1127,12 @@
                 <button class="inline-action" type="button" data-docker-action="start" disabled>Start</button>
                 <button class="inline-action" type="button" data-docker-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-docker-action="restart" disabled>Restart</button>
+                <button class="inline-action" type="button" data-docker-action="pause" disabled>Pause</button>
+                <button class="inline-action" type="button" data-docker-action="unpause" disabled>Unpause</button>
+                <button class="inline-action danger" type="button" data-docker-action="kill" disabled>Kill</button>
                 <button class="inline-action" type="button" data-docker-action="remove" disabled>Remove</button>
                 <button class="inline-action" type="button" data-docker-action="logs" disabled>Logs</button>
+                <button class="inline-action" type="button" data-docker-action="terminal" disabled>Terminal</button>
               </div>
             </div>
 
@@ -1179,18 +1183,26 @@
                 <div class="docker-inspector-panel is-active" data-docker-panel="overview">
                   <dl class="docker-details-list">
                     <div><dt>Name</dt><dd data-docker-detail="name">None selected</dd></div>
+                    <div><dt>Container ID</dt><dd data-docker-detail="id">Unavailable</dd></div>
                     <div><dt>Status</dt><dd data-docker-detail="status">Unavailable</dd></div>
+                    <div><dt>Health</dt><dd data-docker-detail="health">Unavailable</dd></div>
                     <div><dt>Image</dt><dd data-docker-detail="image">Unavailable</dd></div>
+                    <div><dt>Restart Policy</dt><dd data-docker-detail="restart">Unavailable</dd></div>
                     <div><dt>Resources</dt><dd data-docker-detail="resources">Unavailable</dd></div>
                     <div><dt>Ports</dt><dd data-docker-detail="ports">Unavailable</dd></div>
                     <div><dt>Uptime</dt><dd data-docker-detail="uptime">Unavailable</dd></div>
+                    <div><dt>Created</dt><dd data-docker-detail="created">Unavailable</dd></div>
                   </dl>
                 </div>
                 <div class="docker-inspector-panel" data-docker-panel="logs">
                   <div class="docker-log-toolbar">
                     <label><input type="checkbox" data-docker-logs-pause> Pause</label>
+                    <label><input type="checkbox" data-docker-logs-timestamps> Timestamps</label>
+                    <label>Tail <select data-docker-logs-tail><option>100</option><option selected>300</option><option>1000</option><option>5000</option></select></label>
+                    <input type="search" placeholder="Search logs" data-docker-logs-search>
                     <button class="inline-action" type="button" data-docker-log-action="refresh">Refresh</button>
                     <button class="inline-action" type="button" data-docker-log-action="copy">Copy</button>
+                    <button class="inline-action" type="button" data-docker-log-action="download">Export</button>
                     <button class="inline-action" type="button" data-docker-log-action="clear">Clear</button>
                   </div>
                   <pre class="docker-log-viewer" data-docker-logs>No container selected.</pre>
@@ -1209,6 +1221,116 @@
                   <pre class="docker-inspect-viewer" data-docker-inspect>Select a container to inspect.</pre>
                 </div>
               </aside>
+            </div>
+
+            <div class="docker-resource-grid" aria-label="Docker resources">
+              <section class="docker-resource-panel">
+                <div class="panel-heading">
+                  <h3>Images</h3>
+                  <button class="inline-action" type="button" data-docker-resource-action="refresh-images">Refresh</button>
+                </div>
+                <div class="docker-inline-form">
+                  <input type="text" placeholder="repository/image:tag" data-docker-image-pull>
+                  <button class="inline-action" type="button" data-docker-resource-action="pull-image">Pull</button>
+                  <button class="inline-action danger" type="button" data-docker-resource-action="prune-images">Prune</button>
+                </div>
+                <div class="docker-resource-list" data-docker-images-list></div>
+              </section>
+
+              <section class="docker-resource-panel">
+                <div class="panel-heading">
+                  <h3>Volumes</h3>
+                  <button class="inline-action" type="button" data-docker-resource-action="refresh-volumes">Refresh</button>
+                </div>
+                <p class="docker-warning">Deleting volumes may permanently remove application or game-server data.</p>
+                <button class="inline-action danger" type="button" data-docker-resource-action="prune-volumes">Prune unused volumes</button>
+                <div class="docker-resource-list" data-docker-volumes-list></div>
+              </section>
+
+              <section class="docker-resource-panel">
+                <div class="panel-heading">
+                  <h3>Networks</h3>
+                  <button class="inline-action" type="button" data-docker-resource-action="refresh-networks">Refresh</button>
+                </div>
+                <div class="docker-inline-form">
+                  <input type="text" placeholder="network name" data-docker-network-name>
+                  <button class="inline-action" type="button" data-docker-resource-action="create-network">Create</button>
+                  <button class="inline-action danger" type="button" data-docker-resource-action="prune-networks">Prune</button>
+                </div>
+                <div class="docker-resource-list" data-docker-networks-list></div>
+              </section>
+
+              <section class="docker-resource-panel">
+                <div class="panel-heading">
+                  <h3>Compose</h3>
+                  <button class="inline-action" type="button" data-docker-resource-action="refresh-compose">Discover</button>
+                </div>
+                <div class="docker-compose-form">
+                  <input type="text" placeholder="Project name" data-docker-compose-project>
+                  <input type="text" placeholder="/srv/my-project" data-docker-compose-directory>
+                  <textarea spellcheck="false" placeholder="compose.yaml editor. Save files through the Files workspace, then validate here." data-docker-compose-editor></textarea>
+                  <div class="docker-actions">
+                    <button class="inline-action" type="button" data-docker-compose-action="config">Validate</button>
+                    <button class="inline-action" type="button" data-docker-compose-action="up">Start</button>
+                    <button class="inline-action" type="button" data-docker-compose-action="stop">Stop</button>
+                    <button class="inline-action" type="button" data-docker-compose-action="restart">Restart</button>
+                    <button class="inline-action" type="button" data-docker-compose-action="pull">Pull</button>
+                    <button class="inline-action" type="button" data-docker-compose-action="build">Build</button>
+                    <button class="inline-action" type="button" data-docker-compose-action="logs">Logs</button>
+                    <button class="inline-action danger" type="button" data-docker-compose-action="down">Remove</button>
+                  </div>
+                </div>
+                <pre class="docker-output" data-docker-compose-output>No Compose project selected.</pre>
+                <div class="docker-resource-list" data-docker-compose-list></div>
+              </section>
+
+              <section class="docker-resource-panel">
+                <div class="panel-heading">
+                  <h3>Create Container</h3>
+                  <button class="inline-action" type="button" data-docker-resource-action="create-container">Create</button>
+                </div>
+                <div class="docker-create-grid">
+                  <input type="text" placeholder="Container name" data-docker-create="name">
+                  <input type="text" placeholder="Image" data-docker-create="image">
+                  <input type="text" placeholder="Command" data-docker-create="command">
+                  <input type="text" placeholder="Entrypoint" data-docker-create="entrypoint">
+                  <input type="text" placeholder="Ports: 8080:80/tcp" data-docker-create="ports">
+                  <input type="text" placeholder="Env: KEY=value" data-docker-create="environment">
+                  <input type="text" placeholder="Volumes: name:/path" data-docker-create="volumes">
+                  <input type="text" placeholder="Network" data-docker-create="network">
+                  <select data-docker-create="restartPolicy">
+                    <option value="unless-stopped">unless-stopped</option>
+                    <option value="no">no</option>
+                    <option value="always">always</option>
+                    <option value="on-failure">on-failure</option>
+                  </select>
+                  <input type="text" placeholder="Working directory" data-docker-create="workdir">
+                  <input type="text" placeholder="User" data-docker-create="user">
+                  <input type="text" placeholder="CPU limit, e.g. 1.5" data-docker-create="cpus">
+                  <input type="text" placeholder="Memory, e.g. 512m" data-docker-create="memory">
+                  <input type="text" placeholder="Labels: key=value" data-docker-create="labels">
+                  <label><input type="checkbox" data-docker-create="privileged"> Privileged mode</label>
+                  <label><input type="checkbox" data-docker-create="autoRemove"> Auto-remove</label>
+                  <label><input type="checkbox" data-docker-create="start"> Start after create</label>
+                </div>
+                <p class="docker-warning">Privileged mode, host networking, Docker socket mounts, and host filesystem mounts are dangerous. Review mappings before creating.</p>
+              </section>
+
+              <section class="docker-resource-panel">
+                <div class="panel-heading">
+                  <h3>Cleanup</h3>
+                  <button class="inline-action" type="button" data-docker-resource-action="cleanup-preview">Preview</button>
+                </div>
+                <div class="docker-actions">
+                  <button class="inline-action danger" type="button" data-docker-cleanup="containers">Stopped containers</button>
+                  <button class="inline-action danger" type="button" data-docker-cleanup="images">Unused images</button>
+                  <button class="inline-action danger" type="button" data-docker-cleanup="build-cache">Build cache</button>
+                  <button class="inline-action danger" type="button" data-docker-cleanup="networks">Unused networks</button>
+                  <button class="inline-action danger" type="button" data-docker-cleanup="volumes">Unused volumes</button>
+                  <button class="inline-action danger" type="button" data-docker-cleanup="safe">Full safe prune</button>
+                </div>
+                <pre class="docker-output" data-docker-cleanup-output>Preview cleanup before deletion. Volume pruning is never selected by default.</pre>
+              </section>
             </div>
           </section>
         </section>

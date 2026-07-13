@@ -261,6 +261,55 @@ async function deleteDockerImage(image, options = {}) {
   return agentClient.deleteDockerImage(image, getOptionalNodeConfig(options));
 }
 
+async function routeDockerOperation(localMethod, agentMethod, args = [], options = {}) {
+  assertDockerEnabledForNode(options);
+  if (shouldUseLocalDocker(options)) {
+    return localDockerService[localMethod](...args);
+  }
+  return agentClient[agentMethod](...args, getOptionalNodeConfig(options));
+}
+
+async function pullDockerImage(image, options = {}) { return routeDockerOperation("pullImage", "pullDockerImage", [image], options); }
+async function inspectDockerImage(image, options = {}) { return routeDockerOperation("inspectImage", "inspectDockerImage", [image], options); }
+async function pruneDockerImages(options = {}) { return routeDockerOperation("pruneImages", "pruneDockerImages", [], options); }
+async function pauseDockerContainer(container, options = {}) { return routeDockerOperation("pauseContainer", "pauseDockerContainer", [container], options); }
+async function unpauseDockerContainer(container, options = {}) { return routeDockerOperation("unpauseContainer", "unpauseDockerContainer", [container], options); }
+async function killDockerContainer(container, options = {}) { return routeDockerOperation("killContainer", "killDockerContainer", [container], options); }
+async function renameDockerContainer(container, name, options = {}) { return routeDockerOperation("renameContainer", "renameDockerContainer", [container, name], options); }
+async function execDockerContainer(container, payload = {}, options = {}) { return routeDockerOperation("execContainer", "execDockerContainer", [container, payload], options); }
+async function inspectDockerVolume(volume, options = {}) { return routeDockerOperation("inspectVolume", "inspectDockerVolume", [volume], options); }
+async function removeDockerVolume(volume, options = {}) { return routeDockerOperation("removeVolume", "removeDockerVolume", [volume], options); }
+async function pruneDockerVolumes(options = {}) { return routeDockerOperation("pruneVolumes", "pruneDockerVolumes", [], options); }
+async function inspectDockerNetwork(network, options = {}) { return routeDockerOperation("inspectNetwork", "inspectDockerNetwork", [network], options); }
+async function createDockerNetwork(payload = {}) { return routeDockerOperation("createNetwork", "createDockerNetwork", [payload], payload); }
+async function removeDockerNetwork(network, options = {}) { return routeDockerOperation("removeNetwork", "removeDockerNetwork", [network], options); }
+async function connectDockerNetwork(network, container, options = {}) { return routeDockerOperation("connectNetwork", "connectDockerNetwork", [network, container], options); }
+async function disconnectDockerNetwork(network, container, options = {}) { return routeDockerOperation("disconnectNetwork", "disconnectDockerNetwork", [network, container], options); }
+async function pruneDockerNetworks(options = {}) { return routeDockerOperation("pruneNetworks", "pruneDockerNetworks", [], options); }
+async function listDockerComposeProjects(options = {}) { return routeDockerOperation("listComposeProjects", "listDockerComposeProjects", [], options); }
+async function dockerComposeAction(action, payload = {}) {
+  assertDockerEnabledForNode(payload);
+  if (shouldUseLocalDocker(payload)) {
+    const map = {
+      config: "validateComposeConfig",
+      up: "startComposeProject",
+      stop: "stopComposeProject",
+      restart: "restartComposeProject",
+      pull: "pullComposeProject",
+      build: "buildComposeProject",
+      recreate: "recreateComposeProject",
+      logs: "getComposeLogs",
+      status: "getComposeStatus",
+      down: "removeComposeProject",
+    };
+    if (!map[action]) throw Object.assign(new Error("Invalid Compose action."), { code: "INVALID_COMPOSE_ACTION" });
+    return localDockerService[map[action]](payload);
+  }
+  return agentClient.dockerComposeAction(action, payload, getOptionalNodeConfig(payload));
+}
+async function getDockerCleanupPreview(options = {}) { return routeDockerOperation("getCleanupPreview", "getDockerCleanupPreview", [], options); }
+async function runDockerCleanup(payload = {}) { return routeDockerOperation("runCleanup", "runDockerCleanup", [payload], payload); }
+
 async function listDockerNetworks(options = {}) {
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
@@ -584,12 +633,16 @@ module.exports = {
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
+  createDockerNetwork,
   deleteDockerImage,
   createInstance,
   createInstanceFolder,
   deleteBackup,
   deleteBackupSchedule,
   deleteDockerContainer,
+  disconnectDockerNetwork,
+  dockerComposeAction,
+  execDockerContainer,
   deleteInstance,
   deleteInstanceFile,
   downloadBackup,
@@ -597,10 +650,14 @@ module.exports = {
   getAmpSnapshot,
   getDependencyCatalog,
   getDockerSnapshot,
+  getDockerCleanupPreview,
   getDockerContainerLogs,
   getDockerContainerStats,
   getFileListing,
   inspectDockerContainer,
+  inspectDockerImage,
+  inspectDockerNetwork,
+  inspectDockerVolume,
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
@@ -609,9 +666,17 @@ module.exports = {
   importBackup,
   installDependencies,
   listDockerContainers,
+  listDockerComposeProjects,
   listDockerImages,
   listDockerNetworks,
   listDockerVolumes,
+  connectDockerNetwork,
+  killDockerContainer,
+  pauseDockerContainer,
+  pullDockerImage,
+  pruneDockerImages,
+  pruneDockerNetworks,
+  pruneDockerVolumes,
   listBackupSchedules,
   listBackups,
   listInstanceFiles,
@@ -621,6 +686,10 @@ module.exports = {
   renameInstanceFile,
   restartInstance,
   restartDockerContainer,
+  removeDockerNetwork,
+  removeDockerVolume,
+  renameDockerContainer,
+  runDockerCleanup,
   restoreBackup,
   saveMinecraftProperties,
   saveBackupSchedule,
@@ -629,6 +698,7 @@ module.exports = {
   startDockerContainer,
   stopInstance,
   stopDockerContainer,
+  unpauseDockerContainer,
   updateInstance,
   writeInstanceFile,
 };

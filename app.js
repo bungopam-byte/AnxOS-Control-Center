@@ -5657,6 +5657,35 @@ function renderDockerEmptyState(state = dockerWorkspaceState) {
   dockerEmpty.append(icon, title, message, actions);
 }
 
+function captureDockerDiagnostics(snapshot = latestDockerSnapshot, state = dockerWorkspaceState) {
+  getDesktopApiState().api?.diagnostics?.capture?.({
+    dockerHealth: {
+      nodeId: getSelectedNodeId(),
+      nodeLabel: getSelectedNode()?.displayName || getSelectedNodeId() || "unknown",
+      installed: Boolean(snapshot?.installed),
+      daemonRunning: Boolean(snapshot?.daemonRunning),
+      dockerVersion: snapshot?.dockerVersion || null,
+      composeVersion: snapshot?.composeVersion || null,
+      permissionState: state?.key === "permission-denied" ? "denied" : snapshot?.daemonRunning ? "allowed" : "unknown",
+      diskUsage: snapshot?.summary?.diskUsage || snapshot?.diskUsage?.summary || null,
+      containerCounts: {
+        total: snapshot?.summary?.totalContainers ?? 0,
+        running: snapshot?.summary?.runningContainers ?? 0,
+        stopped: snapshot?.summary?.stoppedContainers ?? 0,
+      },
+      imageCount: snapshot?.summary?.images ?? snapshot?.imageCount ?? 0,
+      volumeCount: snapshot?.summary?.volumes ?? snapshot?.volumeCount ?? 0,
+      networkCount: snapshot?.summary?.networks ?? snapshot?.networkCount ?? 0,
+      failedContainers: getDockerContainers(snapshot)
+        .filter((container) => /exited|dead|unhealthy/i.test(`${container.status || ""} ${container.health || ""}`))
+        .slice(0, 12)
+        .map((container) => ({ id: String(container.id || "").slice(0, 12), name: container.name || null, status: container.status || null, health: container.health || null })),
+      lastErrorCode: state?.errorCode || null,
+      lastMessage: state?.ready === false ? state?.message || null : null,
+    },
+  }).catch(() => {});
+}
+
 function parseDockerSizeToBytes(value) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -5847,6 +5876,18 @@ function canRestartDockerContainer(container) {
   return normalizeDockerActionState(container) === "running";
 }
 
+function canPauseDockerContainer(container) {
+  return normalizeDockerActionState(container) === "running";
+}
+
+function canUnpauseDockerContainer(container) {
+  return /paused/i.test(String(container?.state || container?.status || ""));
+}
+
+function canKillDockerContainer(container) {
+  return normalizeDockerActionState(container) === "running" || canUnpauseDockerContainer(container);
+}
+
 function updateDockerActionButtons() {
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
   const hasDocker = getDesktopApiState().hasDocker && latestDockerSnapshot?.installed && latestDockerSnapshot?.daemonRunning;
@@ -5873,6 +5914,12 @@ function updateDockerActionButtons() {
 
     if (action === "remove" || action === "logs") {
       button.disabled = disableManagedActions;
+    } else if (action === "pause") {
+      button.disabled = disableManagedActions || !canPauseDockerContainer(selectedContainer);
+    } else if (action === "unpause") {
+      button.disabled = disableManagedActions || !canUnpauseDockerContainer(selectedContainer);
+    } else if (action === "kill" || action === "terminal") {
+      button.disabled = disableManagedActions || (action === "kill" && !canKillDockerContainer(selectedContainer));
     } else if (action !== "refresh" && action !== "start" && action !== "stop" && action !== "restart") {
       button.disabled = true;
     }
@@ -5940,6 +5987,10 @@ function setDockerDetails(container = null) {
   setDockerDetail("name", formatDockerValue(container.name));
   setDockerDetail("status", formatDockerValue(container.status || container.state));
   setDockerDetail("image", formatDockerValue(container.image));
+  setDockerDetail("id", formatDockerValue(container.id));
+  setDockerDetail("health", formatDockerValue(container.health));
+  setDockerDetail("restart", formatDockerValue(container.restartPolicy));
+  setDockerDetail("created", formatDockerValue(container.createdAt));
   setDockerDetail("resources", formatDockerResources(container));
   setDockerDetail("ports", formatDockerPorts(container.ports));
   setDockerDetail("uptime", formatDockerValue(container.runningFor || container.createdAt));
@@ -6152,6 +6203,10 @@ function renderDockerSnapshot(snapshot) {
     dockerFilterSelect.disabled = !snapshot?.installed || !snapshot?.daemonRunning;
   }
   updateTitlebar();
+  captureDockerDiagnostics(snapshot, dockerWorkspaceState);
+  if (dockerWorkspaceState.ready && getActivePageName() === "docker") {
+    refreshDockerResources("all");
+  }
 }
 
 function renderDockerUnavailable(message = "Docker status unavailable.") {
@@ -6181,6 +6236,7 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setDockerEmpty(true);
   updateDockerActionButtons();
   updateTitlebar();
+  captureDockerDiagnostics(null, dockerWorkspaceState);
 }
 
 function normalizeInstancesPayload(payload) {
@@ -17031,10 +17087,32 @@ function getDockerActionDefinition(actionName) {
       successMessage: "Docker restart request sent.",
       allowed: canRestartDockerContainer,
     },
+    pause: {
+      confirmLabel: "Pause",
+      successMessage: "Docker container paused.",
+      allowed: canPauseDockerContainer,
+    },
+    unpause: {
+      confirmLabel: "Unpause",
+      successMessage: "Docker container unpaused.",
+      allowed: canUnpauseDockerContainer,
+    },
+    kill: {
+      confirmLabel: "Kill",
+      successMessage: "Docker container killed.",
+      allowed: canKillDockerContainer,
+      destructive: true,
+    },
     remove: {
       confirmLabel: "Remove",
       successMessage: "Docker container removed.",
       allowed: () => true,
+      destructive: true,
+    },
+    terminal: {
+      confirmLabel: "Open terminal for",
+      successMessage: "Container command completed.",
+      allowed: canKillDockerContainer,
     },
     logs: {
       confirmLabel: "Show logs for",
@@ -17052,6 +17130,263 @@ function getDockerContainerLabel(container) {
 
 function getDockerContainerTarget(container) {
   return container?.id || container?.name || null;
+}
+
+function getDockerNodePayload() {
+  return { nodeId: getSelectedNodeId() };
+}
+
+function getDockerApi() {
+  return getDesktopApiState().api?.docker || null;
+}
+
+function renderDockerResourceList(selector, rows, emptyText, renderRow) {
+  const list = document.querySelector(selector);
+  if (!list) return;
+  list.replaceChildren();
+  if (!rows.length) {
+    const empty = document.createElement("div");
+    empty.className = "docker-resource-empty";
+    empty.textContent = emptyText;
+    list.append(empty);
+    return;
+  }
+  rows.forEach((row) => list.append(renderRow(row)));
+}
+
+function createDockerResourceItem(title, meta, actions = []) {
+  const item = document.createElement("article");
+  item.className = "docker-resource-item";
+  const body = document.createElement("div");
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const small = document.createElement("small");
+  small.textContent = meta;
+  body.append(strong, small);
+  const actionWrap = document.createElement("div");
+  actionWrap.className = "docker-row-actions";
+  actions.forEach(({ label, action, danger, disabled }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `inline-action${danger ? " danger" : ""}`;
+    button.textContent = label;
+    button.disabled = Boolean(disabled);
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      action();
+    });
+    actionWrap.append(button);
+  });
+  item.append(body, actionWrap);
+  return item;
+}
+
+async function refreshDockerResources(kind = "all") {
+  const api = getDockerApi();
+  if (!api) return;
+  const payload = getDockerNodePayload();
+  try {
+    if (kind === "all" || kind === "images") {
+      const result = await api.listImages(payload);
+      renderDockerResourceList("[data-docker-images-list]", result.images || [], "No Docker images found.", (image) => {
+        const ref = `${image.repository || "<none>"}:${image.tag || "<none>"}`;
+        return createDockerResourceItem(ref, `${image.id || "unknown"} · ${image.size || "unknown size"} · used by ${(image.containersUsing || []).length}`, [
+          { label: "Inspect", action: () => inspectDockerResource("image", ref) },
+          { label: "Create", action: () => seedDockerCreateFromImage(ref) },
+          { label: "Remove", danger: true, disabled: (image.containersUsing || []).length > 0, action: () => removeDockerImage(ref) },
+        ]);
+      });
+    }
+    if (kind === "all" || kind === "volumes") {
+      const result = await api.listVolumes(payload);
+      renderDockerResourceList("[data-docker-volumes-list]", result.volumes || [], "No Docker volumes found.", (volume) => createDockerResourceItem(
+        volume.name || "unnamed volume",
+        `${volume.driver || "local"} · ${volume.mountpoint || "mount unavailable"} · used by ${(volume.containersUsing || []).join(", ") || "none"}`,
+        [
+          { label: "Inspect", action: () => inspectDockerResource("volume", volume.name) },
+          { label: "Remove", danger: true, disabled: (volume.containersUsing || []).length > 0, action: () => removeDockerVolume(volume.name) },
+        ],
+      ));
+    }
+    if (kind === "all" || kind === "networks") {
+      const result = await api.listNetworks(payload);
+      renderDockerResourceList("[data-docker-networks-list]", result.networks || [], "No Docker networks found.", (network) => createDockerResourceItem(
+        network.name || "unnamed network",
+        `${network.driver || "driver unknown"} · ${network.subnet || "subnet unknown"} · ${(network.containers || []).length} containers`,
+        [
+          { label: "Inspect", action: () => inspectDockerResource("network", network.name) },
+          { label: "Remove", danger: true, disabled: ["bridge", "host", "none"].includes(network.name), action: () => removeDockerNetwork(network.name) },
+        ],
+      ));
+    }
+    if (kind === "all" || kind === "compose") {
+      const result = await api.listComposeProjects(payload);
+      renderDockerResourceList("[data-docker-compose-list]", result.projects || [], "No Compose projects discovered.", (project) => createDockerResourceItem(
+        project.Name || project.name || "compose project",
+        `${project.Status || project.status || "status unknown"} · ${project.ConfigFiles || project.configFiles || "config path unavailable"}`,
+        [{ label: "Use", action: () => seedDockerCompose(project) }],
+      ));
+    }
+  } catch (error) {
+    showToast(getDockerActionErrorMessage(error), "error");
+  }
+}
+
+function seedDockerCreateFromImage(ref) {
+  const input = document.querySelector('[data-docker-create="image"]');
+  if (input) input.value = ref;
+}
+
+function seedDockerCompose(project) {
+  const name = document.querySelector("[data-docker-compose-project]");
+  const dir = document.querySelector("[data-docker-compose-directory]");
+  if (name) name.value = project.Name || project.name || "";
+  if (dir) dir.value = project.ProjectDir || project.projectDir || project.WorkingDir || "";
+}
+
+async function inspectDockerResource(kind, target) {
+  const api = getDockerApi();
+  if (!api || !target) return;
+  const output = document.querySelector("[data-docker-compose-output]") || dockerInspectViewer;
+  const payload = getDockerNodePayload();
+  const method = kind === "image" ? "inspectImage" : kind === "volume" ? "inspectVolume" : "inspectNetwork";
+  try {
+    const result = await api[method](target, payload);
+    if (output) output.textContent = JSON.stringify(result.inspect || result, null, 2);
+  } catch (error) {
+    showToast(getDockerActionErrorMessage(error), "error");
+  }
+}
+
+async function removeDockerImage(ref) {
+  if (!(await createSecurityConfirmation({ title: "Remove Docker image?", message: `${ref} will be deleted if Docker allows it. Images used by active containers require extra review.`, confirmLabel: "Remove" }))) return;
+  await runDockerOperationRecord("Remove Docker image", ref, () => getDockerApi().removeImage(ref, getDockerNodePayload()));
+  await refreshDockerResources("images");
+}
+
+async function removeDockerVolume(name) {
+  if (!(await createSecurityConfirmation({ title: "Remove Docker volume?", message: `${name} may contain application or game-server data. This cannot be undone.`, phrase: name, confirmLabel: "Remove Volume" }))) return;
+  await runDockerOperationRecord("Remove Docker volume", name, () => getDockerApi().removeVolume(name, getDockerNodePayload()));
+  await refreshDockerResources("volumes");
+}
+
+async function removeDockerNetwork(name) {
+  if (!(await createSecurityConfirmation({ title: "Remove Docker network?", message: `${name} will be deleted if no containers are attached. Default Docker networks are protected.`, confirmLabel: "Remove Network" }))) return;
+  await runDockerOperationRecord("Remove Docker network", name, () => getDockerApi().removeNetwork(name, getDockerNodePayload()));
+  await refreshDockerResources("networks");
+}
+
+async function runDockerOperationRecord(title, target, operation) {
+  const operationId = startOperation({ type: "Docker", title, target, status: "running", step: "Starting Docker operation..." });
+  try {
+    const result = await operation();
+    updateOperation(operationId, { status: "completed", percent: 100, step: "Docker operation completed.", log: result?.output || "Completed." });
+    showToast(`${title} completed.`, "success");
+    return result;
+  } catch (error) {
+    const message = getDockerActionErrorMessage(error);
+    finishOperation(operationId, false, message);
+    showToast(message, "error");
+    throw error;
+  }
+}
+
+function splitDockerInputList(value) {
+  return String(value || "").split(/[\n,]+/).map((entry) => entry.trim()).filter(Boolean);
+}
+
+function getDockerCreatePayload() {
+  const fields = {};
+  document.querySelectorAll("[data-docker-create]").forEach((field) => {
+    const key = field.dataset.dockerCreate;
+    fields[key] = field.type === "checkbox" ? field.checked : field.value;
+  });
+  return {
+    ...getDockerNodePayload(),
+    name: fields.name,
+    image: fields.image,
+    command: splitDockerInputList(fields.command),
+    entrypoint: fields.entrypoint,
+    ports: splitDockerInputList(fields.ports),
+    environment: splitDockerInputList(fields.environment),
+    volumes: splitDockerInputList(fields.volumes),
+    network: fields.network,
+    restartPolicy: fields.restartPolicy,
+    workdir: fields.workdir,
+    user: fields.user,
+    cpus: fields.cpus,
+    memory: fields.memory,
+    labels: splitDockerInputList(fields.labels),
+    privileged: Boolean(fields.privileged),
+    autoRemove: Boolean(fields.autoRemove),
+    start: Boolean(fields.start),
+  };
+}
+
+async function createDockerContainerFromForm() {
+  const payload = getDockerCreatePayload();
+  if (!payload.image || !payload.name) {
+    showToast("Container name and image are required.", "warning");
+    return;
+  }
+  const dangerous = payload.privileged || payload.network === "host" || payload.volumes.some((entry) => /docker\.sock|^\/:|:\/host\b/i.test(entry));
+  if (dangerous && !(await createSecurityConfirmation({ title: "Create container with dangerous options?", message: "Privileged mode, host networking, Docker socket mounts, or broad host mounts can expose the node. Review the configuration before continuing.", confirmLabel: "Create" }))) return;
+  await runDockerOperationRecord("Create Docker container", payload.name, () => getDockerApi().create(payload));
+  await refreshDockerStatus();
+}
+
+function getDockerComposePayload() {
+  return {
+    ...getDockerNodePayload(),
+    projectName: document.querySelector("[data-docker-compose-project]")?.value || "",
+    projectDirectory: document.querySelector("[data-docker-compose-directory]")?.value || "",
+    composeYaml: document.querySelector("[data-docker-compose-editor]")?.value || "",
+  };
+}
+
+async function runDockerComposeUiAction(action) {
+  const payload = getDockerComposePayload();
+  if (!payload.projectName || !payload.projectDirectory) {
+    showToast("Compose project name and directory are required.", "warning");
+    return;
+  }
+  if (["up", "down", "recreate"].includes(action)) {
+    const destructive = action === "down";
+    const confirmed = await createSecurityConfirmation({
+      title: destructive ? "Remove Compose project containers?" : "Run Compose project?",
+      message: destructive ? "Compose down removes project containers. Removing volumes requires a separate explicit backend flag and is not enabled here." : "AnxOS will validate docker compose config before starting the project.",
+      confirmLabel: destructive ? "Remove" : "Run",
+    });
+    if (!confirmed) return;
+  }
+  const result = await runDockerOperationRecord(`Docker Compose ${action}`, payload.projectName, () => getDockerApi().compose(action, payload));
+  const output = document.querySelector("[data-docker-compose-output]");
+  if (output) output.textContent = result?.output || JSON.stringify(result, null, 2);
+  await refreshDockerResources("compose");
+}
+
+async function refreshDockerCleanupPreview() {
+  const output = document.querySelector("[data-docker-cleanup-output]");
+  try {
+    const result = await getDockerApi().getCleanupPreview(getDockerNodePayload());
+    if (output) output.textContent = `${result.diskUsage?.summary || "No disk usage rows returned."}\n\n${(result.actions || []).map((action) => `${action.label}: docker ${action.command}${action.affectsPersistentData ? " (persistent data risk)" : ""}`).join("\n")}`;
+  } catch (error) {
+    if (output) output.textContent = getDockerActionErrorMessage(error);
+  }
+}
+
+async function runDockerCleanupAction(kind) {
+  const volumeRisk = kind === "volumes";
+  const confirmed = await createSecurityConfirmation({
+    title: "Run Docker cleanup?",
+    message: volumeRisk ? "Unused Docker volumes may contain persistent application or game-server data. This cannot be undone." : "Docker will delete matching unused resources after this confirmation.",
+    confirmLabel: "Run Cleanup",
+  });
+  if (!confirmed) return;
+  const result = await runDockerOperationRecord("Docker cleanup", kind, () => getDockerApi().cleanup(kind, getDockerNodePayload()));
+  const output = document.querySelector("[data-docker-cleanup-output]");
+  if (output) output.textContent = result?.output || "Cleanup completed.";
+  await refreshDockerStatus();
 }
 
 function getDockerActionErrorMessage(error) {
@@ -17197,7 +17532,8 @@ async function refreshDockerLogs() {
     const logs = await withTimeout(
       desktopApiState.api.docker.getLogs(getDockerContainerTarget(selectedContainer), {
         nodeId: requestContext.nodeId,
-        tail: 500,
+        tail: document.querySelector("[data-docker-logs-tail]")?.value || 300,
+        timestamps: document.querySelector("[data-docker-logs-timestamps]")?.checked === true,
       }),
       12000,
       "Docker logs did not respond before the request timed out.",
@@ -17206,7 +17542,9 @@ async function refreshDockerLogs() {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    setDockerLogsText(logs?.logs || "");
+    const query = String(document.querySelector("[data-docker-logs-search]")?.value || "").trim().toLowerCase();
+    const rawLogs = logs?.logs || "";
+    setDockerLogsText(query ? rawLogs.split(/\r?\n/).filter((line) => line.toLowerCase().includes(query)).join("\n") : rawLogs);
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
@@ -17385,8 +17723,12 @@ async function handleDockerAction(actionName) {
   }
 
   const containerLabel = getDockerContainerLabel(selectedContainer);
-  if (actionName === "remove") {
-    const confirmed = window.confirm(`Remove ${containerLabel}? This cannot be undone.`);
+  if (definition.destructive) {
+    const confirmed = await createSecurityConfirmation({
+      title: `${definition.confirmLabel} ${containerLabel}?`,
+      message: actionName === "remove" ? "This removes the container. Attached named volumes are not deleted by this action." : "This forcefully terminates the selected container process.",
+      confirmLabel: definition.confirmLabel,
+    });
     if (!confirmed) {
       return;
     }
@@ -17415,6 +17757,20 @@ async function handleDockerAction(actionName) {
       if (!isNodeActionStillCurrent(requestContext)) return;
       setDockerTab("logs");
       await refreshDockerLogs();
+      return;
+    }
+
+    if (actionName === "terminal") {
+      const command = await createSecurityTextPrompt({
+        title: `Run command in ${containerLabel}`,
+        message: "Commands run through docker exec inside the selected container using bash, sh, or ash. Host shell access is not exposed.",
+        label: "Container command",
+        confirmLabel: "Run",
+      });
+      if (!command) return;
+      const result = await runDockerOperationRecord("Docker container command", containerLabel, () => desktopApiState.api.docker.exec(containerTarget, { ...getNodeScopedPayload(requestContext), command }));
+      setDockerTab("logs");
+      setDockerLogsText(result?.output || result?.errorOutput || "Command completed without output.");
       return;
     }
 
@@ -24904,7 +25260,7 @@ dockerEmpty?.addEventListener("click", (event) => {
 });
 dockerActionButtons.forEach((button) => {
   const action = button.dataset.dockerAction;
-  if (["remove", "logs"].includes(action)) {
+  if (["remove", "logs", "pause", "unpause", "kill", "terminal"].includes(action)) {
     button.addEventListener("click", () => handleDockerAction(action));
   }
 });
@@ -24919,11 +25275,63 @@ dockerLogActionButtons.forEach((button) => {
     } else if (action === "copy") {
       await navigator.clipboard.writeText(dockerLogsVisibleText || "");
       showToast("Copied Docker logs.");
+    } else if (action === "download") {
+      const blob = new Blob([dockerLogsVisibleText || ""], { type: "text/plain" });
+      const anchor = document.createElement("a");
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `docker-${selectedDockerContainerId || "container"}-logs.txt`;
+      anchor.click();
+      URL.revokeObjectURL(anchor.href);
+      showToast("Exported Docker logs.");
     } else if (action === "clear") {
       setDockerLogsText("");
       showToast("Cleared visible logs.");
     }
   });
+});
+document.querySelector("[data-docker-logs-search]")?.addEventListener("input", debounce(refreshDockerLogs, 180));
+document.querySelector("[data-docker-logs-tail]")?.addEventListener("change", refreshDockerLogs);
+document.querySelector("[data-docker-logs-timestamps]")?.addEventListener("change", refreshDockerLogs);
+document.querySelectorAll("[data-docker-resource-action]").forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.dockerResourceAction;
+    if (action === "refresh-images") return refreshDockerResources("images");
+    if (action === "refresh-volumes") return refreshDockerResources("volumes");
+    if (action === "refresh-networks") return refreshDockerResources("networks");
+    if (action === "refresh-compose") return refreshDockerResources("compose");
+    if (action === "pull-image") {
+      const image = document.querySelector("[data-docker-image-pull]")?.value || "";
+      if (!image.trim()) return showToast("Enter an image reference.", "warning");
+      await runDockerOperationRecord("Pull Docker image", image, () => getDockerApi().pullImage(image, getDockerNodePayload()));
+      return refreshDockerResources("images");
+    }
+    if (action === "prune-images" && await createSecurityConfirmation({ title: "Prune unused Docker images?", message: "Docker will remove unused images and report reclaimed space.", confirmLabel: "Prune" })) {
+      await runDockerOperationRecord("Prune Docker images", "unused images", () => getDockerApi().pruneImages(getDockerNodePayload()));
+      return refreshDockerResources("images");
+    }
+    if (action === "prune-volumes" && await createSecurityConfirmation({ title: "Prune unused Docker volumes?", message: "This may permanently delete application or game-server data in unused volumes.", confirmLabel: "Prune Volumes" })) {
+      await runDockerOperationRecord("Prune Docker volumes", "unused volumes", () => getDockerApi().pruneVolumes(getDockerNodePayload()));
+      return refreshDockerResources("volumes");
+    }
+    if (action === "create-network") {
+      const name = document.querySelector("[data-docker-network-name]")?.value || "";
+      if (!name.trim()) return showToast("Enter a network name.", "warning");
+      await runDockerOperationRecord("Create Docker network", name, () => getDockerApi().createNetwork({ ...getDockerNodePayload(), name }));
+      return refreshDockerResources("networks");
+    }
+    if (action === "prune-networks" && await createSecurityConfirmation({ title: "Prune unused Docker networks?", message: "Default Docker networks are protected; Docker removes only unused custom networks.", confirmLabel: "Prune" })) {
+      await runDockerOperationRecord("Prune Docker networks", "unused networks", () => getDockerApi().pruneNetworks(getDockerNodePayload()));
+      return refreshDockerResources("networks");
+    }
+    if (action === "create-container") return createDockerContainerFromForm();
+    if (action === "cleanup-preview") return refreshDockerCleanupPreview();
+  });
+});
+document.querySelectorAll("[data-docker-compose-action]").forEach((button) => {
+  button.addEventListener("click", () => runDockerComposeUiAction(button.dataset.dockerComposeAction));
+});
+document.querySelectorAll("[data-docker-cleanup]").forEach((button) => {
+  button.addEventListener("click", () => runDockerCleanupAction(button.dataset.dockerCleanup));
 });
 updateDockerActionButtons();
 marketplaceSearchInput?.addEventListener("input", debounce(() => {

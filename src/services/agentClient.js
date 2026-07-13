@@ -1037,12 +1037,33 @@ async function deleteDockerImage(image, configOverride = null) {
   });
 }
 
+async function pullDockerImage(image, configOverride = null) {
+  return requestJson("/api/v1/docker/images/pull", {
+    config: configOverride,
+    method: "POST",
+    body: { image },
+    timeoutMs: 10 * 60 * 1000,
+  });
+}
+
+async function inspectDockerImage(image, configOverride = null) {
+  return requestJson(`/api/v1/docker/images/${encodeURIComponent(String(image || ""))}`, { config: configOverride });
+}
+
+async function pruneDockerImages(configOverride = null) {
+  return requestJson("/api/v1/docker/images/prune", { config: configOverride, method: "POST", timeoutMs: 120000 });
+}
+
 async function listDockerNetworks(configOverride = null) {
   return requestJson("/api/v1/docker/networks", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
 }
 
 async function listDockerVolumes(configOverride = null) {
   return requestJson("/api/v1/docker/volumes", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
+}
+
+async function dockerPost(path, payload = {}, configOverride = null, timeoutMs = DOCKER_REQUEST_TIMEOUT_MS) {
+  return requestJson(path, { config: configOverride, method: "POST", body: payload, timeoutMs });
 }
 
 async function startDockerContainer(container, configOverride = null) {
@@ -1066,6 +1087,26 @@ async function restartDockerContainer(container, configOverride = null) {
   });
 }
 
+async function pauseDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/pause`, { config: configOverride, method: "POST" });
+}
+
+async function unpauseDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/unpause`, { config: configOverride, method: "POST" });
+}
+
+async function killDockerContainer(container, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/kill`, { config: configOverride, method: "POST" });
+}
+
+async function renameDockerContainer(container, name, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/rename`, { config: configOverride, method: "POST", body: { name } });
+}
+
+async function execDockerContainer(container, payload = {}, configOverride = null) {
+  return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/exec`, { config: configOverride, method: "POST", body: payload, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
+}
+
 async function deleteDockerContainer(container, configOverride = null) {
   return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}`, {
     config: configOverride,
@@ -1075,6 +1116,7 @@ async function deleteDockerContainer(container, configOverride = null) {
 
 async function getDockerContainerLogs(container, options = {}, configOverride = null) {
   const query = new URLSearchParams({ tail: String(options.tail || 200) });
+  if (options.timestamps === true || options.timestamps === "true") query.set("timestamps", "true");
   return requestJson(`/api/v1/docker/containers/${encodeURIComponent(String(container || ""))}/logs?${query.toString()}`, {
     config: configOverride,
   });
@@ -1085,6 +1127,58 @@ async function getDockerContainerStats(container, configOverride = null) {
     config: configOverride,
     timeoutMs: DOCKER_REQUEST_TIMEOUT_MS,
   });
+}
+
+async function inspectDockerVolume(volume, configOverride = null) {
+  return requestJson(`/api/v1/docker/volumes/${encodeURIComponent(String(volume || ""))}/inspect`, { config: configOverride });
+}
+
+async function removeDockerVolume(volume, configOverride = null) {
+  return requestJson(`/api/v1/docker/volumes/${encodeURIComponent(String(volume || ""))}`, { config: configOverride, method: "DELETE" });
+}
+
+async function pruneDockerVolumes(configOverride = null) {
+  return requestJson("/api/v1/docker/volumes/prune", { config: configOverride, method: "POST", timeoutMs: 120000 });
+}
+
+async function inspectDockerNetwork(network, configOverride = null) {
+  return requestJson(`/api/v1/docker/networks/${encodeURIComponent(String(network || ""))}/inspect`, { config: configOverride });
+}
+
+async function createDockerNetwork(payload = {}, configOverride = null) {
+  return dockerPost("/api/v1/docker/networks", payload, configOverride);
+}
+
+async function removeDockerNetwork(network, configOverride = null) {
+  return requestJson(`/api/v1/docker/networks/${encodeURIComponent(String(network || ""))}`, { config: configOverride, method: "DELETE" });
+}
+
+async function connectDockerNetwork(network, container, configOverride = null) {
+  return dockerPost(`/api/v1/docker/networks/${encodeURIComponent(String(network || ""))}/connect`, { container }, configOverride);
+}
+
+async function disconnectDockerNetwork(network, container, configOverride = null) {
+  return dockerPost(`/api/v1/docker/networks/${encodeURIComponent(String(network || ""))}/disconnect`, { container }, configOverride);
+}
+
+async function pruneDockerNetworks(configOverride = null) {
+  return requestJson("/api/v1/docker/networks/prune", { config: configOverride, method: "POST", timeoutMs: 120000 });
+}
+
+async function listDockerComposeProjects(configOverride = null) {
+  return requestJson("/api/v1/docker/compose/projects", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
+}
+
+async function dockerComposeAction(action, payload = {}, configOverride = null) {
+  return dockerPost(`/api/v1/docker/compose/${action}`, payload, configOverride, 20 * 60 * 1000);
+}
+
+async function getDockerCleanupPreview(configOverride = null) {
+  return requestJson("/api/v1/docker/cleanup/preview", { config: configOverride, timeoutMs: DOCKER_REQUEST_TIMEOUT_MS });
+}
+
+async function runDockerCleanup(payload = {}, configOverride = null) {
+  return dockerPost("/api/v1/docker/cleanup", payload, configOverride, 10 * 60 * 1000);
 }
 
 function normalizePlayitSnapshot(payload) {
@@ -2261,6 +2355,7 @@ module.exports = {
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
+  createDockerNetwork,
   deleteDockerImage,
   downloadFile,
   downloadBackup,
@@ -2269,6 +2364,8 @@ module.exports = {
   deleteBackup,
   deleteBackupSchedule,
   deleteDockerContainer,
+  disconnectDockerNetwork,
+  execDockerContainer,
   deleteInstance,
   deleteInstanceFile,
   forceKillInstance,
@@ -2283,10 +2380,14 @@ module.exports = {
   getDockerContainers,
   getDockerContainerLogs,
   getDockerContainerStats,
+  getDockerCleanupPreview,
   getDockerSnapshot,
   getDockerSummary,
   getDiagnostics,
   inspectDockerContainer,
+  inspectDockerImage,
+  inspectDockerNetwork,
+  inspectDockerVolume,
   getFileList,
   getFileListing,
   getHealth,
@@ -2305,15 +2406,27 @@ module.exports = {
   listBackupSchedules,
   listBackups,
   listDockerImages,
+  listDockerComposeProjects,
   listDockerNetworks,
   listDockerVolumes,
+  connectDockerNetwork,
   listInstanceFiles,
   listInstances,
   loadEnvironment,
   normalizeAgentSettings,
   mutateFile,
+  killDockerContainer,
+  pauseDockerContainer,
+  pullDockerImage,
+  pruneDockerImages,
+  pruneDockerNetworks,
+  pruneDockerVolumes,
   readAgentSettings,
   readFileText,
+  removeDockerNetwork,
+  removeDockerVolume,
+  renameDockerContainer,
+  runDockerCleanup,
   pairAgentFromCode,
   planDependencyPreparation,
   getSharedAgentTokenStatus,
@@ -2325,12 +2438,14 @@ module.exports = {
   saveMinecraftProperties,
   sendInstanceCommand,
   startDockerContainer,
+  dockerComposeAction,
   restartInstance,
   restoreBackup,
   testConnection,
   startInstance,
   stopInstance,
   stopDockerContainer,
+  unpauseDockerContainer,
   restartDockerContainer,
   readInstanceFile,
   renameInstanceFile,

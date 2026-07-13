@@ -3994,6 +3994,124 @@ body.is-resizing-files * {
   align-items: stretch;
 }
 
+.docker-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.docker-resource-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--anx-radius-md);
+  background: var(--anx-surface-glass);
+}
+
+.docker-resource-panel .panel-heading {
+  margin-bottom: 0;
+}
+
+.docker-inline-form,
+.docker-create-grid,
+.docker-compose-form {
+  display: grid;
+  gap: 10px;
+}
+
+.docker-inline-form {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.docker-create-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.docker-inline-form input,
+.docker-create-grid input,
+.docker-create-grid select,
+.docker-compose-form input,
+.docker-compose-form textarea,
+.docker-log-toolbar input,
+.docker-log-toolbar select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--anx-radius-sm);
+  background: rgba(3, 1, 7, 0.72);
+  color: var(--text);
+  font: inherit;
+}
+
+.docker-compose-form textarea {
+  min-height: 220px;
+  resize: vertical;
+  font-family: var(--mono-font);
+  line-height: 1.45;
+  tab-size: 2;
+}
+
+.docker-resource-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.docker-resource-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--anx-radius-sm);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.docker-resource-item strong,
+.docker-resource-item small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docker-resource-item small,
+.docker-resource-empty,
+.docker-warning {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.docker-warning {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 190, 92, 0.34);
+  border-radius: var(--anx-radius-sm);
+  background: rgba(255, 190, 92, 0.08);
+  color: var(--warning);
+}
+
+.docker-output {
+  max-height: 320px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--anx-radius-sm);
+  background: rgba(3, 1, 7, 0.72);
+  color: var(--text);
+  font-family: var(--mono-font);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+}
+
 .docker-table-panel,
 .docker-details-panel {
   min-height: min(560px, calc(100vh - 330px));
@@ -11201,6 +11319,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .docker-resource-grid {
+    grid-template-columns: 1fr;
+  }
+
   .status-grid.dashboard-grid,
   .status-grid.status-grid--two,
   .playit-shell,
@@ -11575,6 +11697,12 @@ button:disabled {
 
   .docker-table-wrap {
     min-height: 360px;
+  }
+
+  .docker-resource-grid,
+  .docker-create-grid,
+  .docker-inline-form {
+    grid-template-columns: 1fr;
   }
 
   .coolpals-summary-grid {

@@ -7,6 +7,12 @@ const LOG_TIMEOUT_MS = 12000;
 const SNAPSHOT_OPTIONAL_TIMEOUT_MS = 2500;
 const CONTAINER_TARGET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/;
 const IMAGE_TARGET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:/@-]{0,255}$/;
+const NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const NETWORK_TARGET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/;
+const VOLUME_TARGET_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,255}$/;
+const COMPOSE_PROJECT_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const SAFE_PATH_PATTERN = /^[^\0\r\n]+$/;
+const SECRET_KEY_PATTERN = /(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|auth)/i;
 
 class DockerServiceError extends Error {
   constructor(message, code = "DOCKER_COMMAND_FAILED", statusCode = 502, detail = null) {
@@ -100,6 +106,11 @@ function parseDockerVersion(output) {
   return match?.[1] || null;
 }
 
+function parseComposeVersion(output) {
+  const text = String(output || "").trim();
+  return text.match(/(?:Docker\s+)?Compose\s+version\s+v?([^\s,]+)/i)?.[1] || text.match(/\bv?(\d+\.\d+\.\d+[^\s,]*)/)?.[1] || null;
+}
+
 function classifyDockerFailure(result) {
   const output = `${result?.stdout || ""}\n${result?.stderr || ""}`;
   const errorCode = String(result?.errorCode || "");
@@ -109,11 +120,27 @@ function classifyDockerFailure(result) {
   }
 
   if (/permission denied|got permission denied|access is denied|requires elevated privileges|connect: operation not permitted/i.test(output)) {
-    return new DockerServiceError("Docker is installed, but this user does not have permission to access it.", "DOCKER_PERMISSION_DENIED", 403, output.trim() || null);
+    const socketRelated = /docker\.sock|\/\/\.\/pipe\/docker|docker_engine|daemon socket|var\/run\/docker/i.test(output);
+    return new DockerServiceError(
+      socketRelated
+        ? "Docker is running, but the Agent process cannot access the Docker socket."
+        : "Docker is installed, but this user does not have permission to access it.",
+      socketRelated ? "DOCKER_SOCKET_PERMISSION_DENIED" : "DOCKER_PERMISSION_DENIED",
+      403,
+      output.trim() || null,
+    );
   }
 
-  if (/cannot connect|is the docker daemon running|error during connect|docker daemon is not running|open \/\/\.\/pipe\/docker/i.test(output)) {
-    return new DockerServiceError("Docker is installed, but the Docker daemon is not running or is unavailable on this node.", "DOCKER_DAEMON_UNAVAILABLE", 503, output.trim() || null);
+  if (/cannot connect|is the docker daemon running|error during connect|docker daemon is not running|open \/\/\.\/pipe\/docker|Cannot connect to the Docker daemon/i.test(output)) {
+    const socketUnavailable = /docker\.sock|\/\/\.\/pipe\/docker|docker_engine|var\/run\/docker/i.test(output);
+    return new DockerServiceError(
+      socketUnavailable
+        ? "Docker is installed, but the Agent process cannot reach the Docker socket."
+        : "Docker is installed, but the Docker daemon is not running or is unavailable on this node.",
+      socketUnavailable ? "DOCKER_SOCKET_UNAVAILABLE" : "DOCKER_SERVICE_UNREACHABLE",
+      503,
+      output.trim() || null,
+    );
   }
 
   return new DockerServiceError("Docker command failed.", "DOCKER_COMMAND_FAILED", 502, output.trim() || null);
@@ -213,6 +240,7 @@ function parseJsonLines(output, normalizer) {
 function normalizeContainer(container) {
   const status = container.Status || container.State || null;
   const rawPorts = container.Ports || null;
+  const health = String(status || "").match(/\((healthy|unhealthy|starting)\)/i)?.[1] || container.Health || null;
   return {
     id: container.ID || container.Id || null,
     name: normalizeName(container.Names || container.Name) || null,
@@ -220,10 +248,12 @@ function normalizeContainer(container) {
     command: container.Command || null,
     createdAt: container.CreatedAt || container.Created || null,
     status,
+    health,
     state: container.State || inferState(status),
     ports: normalizePortBindings(rawPorts),
     rawPorts,
     runningFor: container.RunningFor || status,
+    restartPolicy: container.RestartPolicy || null,
     stats: null,
   };
 }
@@ -258,6 +288,25 @@ function normalizeVolume(volume) {
     scope: volume.Scope || null,
     size: volume.Size || null,
   };
+}
+
+function redactDockerText(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/([A-Z0-9_]*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|CREDENTIAL|AUTH)[A-Z0-9_]*\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,]+)/gi, "$1[REDACTED]"))
+    .join("\n");
+}
+
+function maskEnv(env = []) {
+  return (Array.isArray(env) ? env : []).map((entry) => {
+    const text = String(entry || "");
+    const index = text.indexOf("=");
+    const key = index >= 0 ? text.slice(0, index) : text;
+    if (SECRET_KEY_PATTERN.test(key)) {
+      return `${key}=[REDACTED]`;
+    }
+    return text;
+  });
 }
 
 function parseMemoryUsage(value) {
@@ -363,6 +412,60 @@ function validateImage(value) {
   return image;
 }
 
+function validateName(value, label = "Docker name") {
+  const target = String(value || "").trim();
+  if (!NAME_PATTERN.test(target)) {
+    throw new DockerServiceError(`Invalid ${label}.`, "INVALID_DOCKER_NAME", 400);
+  }
+  return target;
+}
+
+function validateNetworkTarget(value) {
+  const target = String(value || "").trim();
+  if (!NETWORK_TARGET_PATTERN.test(target)) {
+    throw new DockerServiceError("Invalid Docker network target.", "INVALID_NETWORK_TARGET", 400);
+  }
+  return target;
+}
+
+function validateVolumeTarget(value) {
+  const target = String(value || "").trim();
+  if (!VOLUME_TARGET_PATTERN.test(target)) {
+    throw new DockerServiceError("Invalid Docker volume target.", "INVALID_VOLUME_TARGET", 400);
+  }
+  return target;
+}
+
+function validateComposeProject(value) {
+  return validateName(value, "Compose project name");
+}
+
+function validateNodePath(value) {
+  const text = String(value || "").trim();
+  if (!text || !SAFE_PATH_PATTERN.test(text) || text.includes("..")) {
+    throw new DockerServiceError("Invalid node path.", "INVALID_DOCKER_PATH", 400);
+  }
+  return text;
+}
+
+function normalizeKeyValueMap(value, maxItems = 128) {
+  if (value === undefined || value === null || value === "") {
+    return [];
+  }
+  const entries = Array.isArray(value)
+    ? value
+    : Object.entries(value).map(([key, entryValue]) => `${key}=${entryValue}`);
+  if (!Array.isArray(entries) || entries.length > maxItems) {
+    throw new DockerServiceError("Invalid Docker key/value entries.", "INVALID_DOCKER_ARGS", 400);
+  }
+  return entries.map((entry) => String(entry || "").trim()).filter(Boolean).map((entry) => {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*(=.*)?$/.test(entry) && !/^[a-zA-Z0-9_.-]+=.*/.test(entry)) {
+      throw new DockerServiceError("Invalid Docker key/value entry.", "INVALID_DOCKER_ARGS", 400);
+    }
+    return entry;
+  });
+}
+
 function normalizeStringArray(value, maxItems = 64) {
   if (value === undefined || value === null) {
     return [];
@@ -374,7 +477,12 @@ function normalizeStringArray(value, maxItems = 64) {
 }
 
 function normalizePorts(value) {
-  return normalizeStringArray(value, 32).filter((entry) => /^\d{1,5}:\d{1,5}(\/(?:tcp|udp))?$/i.test(entry));
+  return normalizeStringArray(value, 32).map((entry) => {
+    if (!/^(?:\d{1,3}(?:\.\d{1,3}){3}:)?\d{1,5}:\d{1,5}(?:\/(?:tcp|udp))?$/i.test(entry)) {
+      throw new DockerServiceError("Invalid Docker port mapping.", "INVALID_DOCKER_PORT", 400);
+    }
+    return entry;
+  });
 }
 
 function normalizeRestartPolicy(value) {
@@ -403,6 +511,14 @@ async function runDockerCommand(args, options = {}) {
   return runDockerCommandWithExecutable(dockerPath, args, options);
 }
 
+async function getComposeVersion(dockerPath = null) {
+  const resolved = dockerPath || await getDockerExecutableOrThrow();
+  const result = await exec(resolved, ["compose", "version", "--short"], { timeout: SNAPSHOT_OPTIONAL_TIMEOUT_MS });
+  if (result.ok) return parseComposeVersion(result.stdout);
+  const fallback = await exec(resolved, ["compose", "version"], { timeout: SNAPSHOT_OPTIONAL_TIMEOUT_MS });
+  return fallback.ok ? parseComposeVersion(fallback.stdout) : null;
+}
+
 async function probeDocker() {
   const executable = await resolveDockerExecutable();
   const versionResult = executable.found
@@ -420,6 +536,7 @@ async function probeDocker() {
     installed,
     daemonRunning,
     dockerVersion: parseDockerVersion(versionResult.stdout),
+    composeVersion: installed ? await getComposeVersion(executable.executablePath).catch(() => null) : null,
     version: parseDockerVersion(versionResult.stdout),
     message: !installed
       ? "Docker is not installed or is not available on PATH for this node."
@@ -486,6 +603,18 @@ async function listVolumesRaw(options = {}) {
   return parseJsonLines(result.stdout, normalizeVolume);
 }
 
+async function getDockerDiskUsage(options = {}) {
+  const dockerPath = options.dockerPath || await getDockerExecutableOrThrow();
+  const result = await runDockerCommandWithExecutable(dockerPath, ["system", "df", "--format", "json"], {
+    timeout: options.timeoutMs || COMMAND_TIMEOUT_MS,
+  });
+  const rows = parseJsonLines(result.stdout, (row) => row);
+  return {
+    rows,
+    summary: rows.map((row) => `${row.Type || "Resource"}: ${row.Size || row.TotalSize || "unknown"} (${row.Reclaimable || "0B"} reclaimable)`).join("; "),
+  };
+}
+
 function summarizeContainers(containers) {
   const runningContainers = containers.filter((container) => /^running$/i.test(container.state || "") || /^up\b/i.test(container.status || ""));
   return {
@@ -519,11 +648,13 @@ async function getDockerSnapshot() {
 
   const dockerPath = status.executable?.executablePath || await getDockerExecutableOrThrow();
   const optionalSnapshotOptions = { dockerPath, timeoutMs: SNAPSHOT_OPTIONAL_TIMEOUT_MS };
-  const [containers, stats, images, volumes] = await Promise.all([
+  const [containers, stats, images, volumes, networks, diskUsage] = await Promise.all([
     listContainersRaw({ dockerPath }),
     listStatsRaw(null, optionalSnapshotOptions).catch(() => []),
     listImagesRaw(optionalSnapshotOptions).catch(() => []),
     listVolumesRaw(optionalSnapshotOptions).catch(() => []),
+    listNetworksRaw(optionalSnapshotOptions).catch(() => []),
+    getDockerDiskUsage(optionalSnapshotOptions).catch(() => ({ rows: [], summary: null })),
   ]);
   const containersWithStats = attachStats(containers, stats);
   const containerSummary = summarizeContainers(containersWithStats);
@@ -533,6 +664,8 @@ async function getDockerSnapshot() {
     images: images.length,
     imageCount: images.length,
     volumeCount: volumes.length,
+    networkCount: networks.length,
+    diskUsage,
     containers: containersWithStats,
     summary: {
       installed: status.installed,
@@ -540,6 +673,8 @@ async function getDockerSnapshot() {
       ...containerSummary,
       images: images.length,
       volumes: volumes.length,
+      networks: networks.length,
+      diskUsage: diskUsage.summary,
     },
     lastCheckedAt: new Date().toISOString(),
   };
@@ -556,6 +691,9 @@ async function getDockerSummary() {
     images: snapshot.summary.images,
     volumes: snapshot.summary.volumes,
     dockerVersion: snapshot.dockerVersion,
+    composeVersion: snapshot.composeVersion,
+    networks: snapshot.summary.networks,
+    diskUsage: snapshot.summary.diskUsage,
     message: snapshot.message,
   };
 }
@@ -582,18 +720,53 @@ async function createContainer(payload = {}) {
   const image = validateImage(payload.image);
   const args = ["create", "--name", name, "--restart", normalizeRestartPolicy(payload.restartPolicy)];
   normalizePorts(payload.ports).forEach((port) => args.push("-p", port));
+  normalizeKeyValueMap(payload.environment || payload.env).forEach((entry) => args.push("-e", entry));
+  normalizeKeyValueMap(payload.labels, 64).forEach((entry) => args.push("--label", entry));
+  normalizeStringArray(payload.volumes, 64).forEach((entry) => args.push("-v", entry));
+  normalizeStringArray(payload.binds || payload.mounts, 64).forEach((entry) => args.push("--mount", entry));
+  if (payload.network) args.push("--network", validateNetworkTarget(payload.network));
+  if (payload.entrypoint) args.push("--entrypoint", String(payload.entrypoint).trim());
+  if (payload.workdir || payload.workingDirectory) args.push("-w", String(payload.workdir || payload.workingDirectory).trim());
+  if (payload.user) args.push("-u", String(payload.user).trim());
   if (payload.memory) {
     args.push("--memory", String(payload.memory));
   }
   if (payload.cpus) {
     args.push("--cpus", String(payload.cpus));
   }
+  if (payload.privileged === true) args.push("--privileged");
+  if (payload.autoRemove === true) args.push("--rm");
   args.push(image, ...normalizeStringArray(payload.command, 64));
   const result = await runDockerCommand(args);
   if (payload.start === true) {
     await runDockerCommand(["start", name]);
   }
   return { container: { id: result.stdout || name, name, image, started: payload.start === true } };
+}
+
+async function pauseContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["pause", target]);
+  return { container: target, action: "pause" };
+}
+
+async function unpauseContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["unpause", target]);
+  return { container: target, action: "unpause" };
+}
+
+async function killContainer(container) {
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["kill", target]);
+  return { container: target, action: "kill" };
+}
+
+async function renameContainer(container, nextName) {
+  const target = validateContainerTarget(container);
+  const name = validateName(nextName, "container name");
+  await runDockerCommand(["rename", target, name]);
+  return { container: target, name };
 }
 
 async function startContainer(container) {
@@ -626,14 +799,31 @@ async function removeImage(image) {
   return { image: target, deleted: true };
 }
 
+async function inspectImage(image) {
+  const target = validateImageTarget(image);
+  const result = await runDockerCommand(["image", "inspect", target]);
+  return { image: target, inspect: JSON.parse(result.stdout || "[]") };
+}
+
+async function pullImage(image) {
+  const target = validateImage(image);
+  const result = await runDockerCommand(["pull", target], { timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024 * 4 });
+  return { image: target, output: redactDockerText(`${result.stdout}\n${result.stderr}`.trim()) };
+}
+
+async function pruneImages() {
+  const result = await runDockerCommand(["image", "prune", "-f"], { timeout: 120000 });
+  return { output: redactDockerText(result.stdout) };
+}
+
 async function getContainerLogs(container, options = {}) {
   const target = validateContainerTarget(container);
   const tail = Number.parseInt(options.tail, 10);
   const result = await runDockerCommand(
-    ["logs", "--tail", String(Number.isFinite(tail) ? Math.min(Math.max(tail, 1), 2000) : 300), target],
+    ["logs", ...(options.timestamps === true || options.timestamps === "true" ? ["--timestamps"] : []), "--tail", String(Number.isFinite(tail) ? Math.min(Math.max(tail, 1), 5000) : 300), target],
     { timeout: LOG_TIMEOUT_MS, maxBuffer: 1024 * 1024 * 2 },
   );
-  return { container: target, logs: result.stdout };
+  return { container: target, logs: redactDockerText(result.stdout) };
 }
 
 async function getContainerStats(container) {
@@ -650,38 +840,272 @@ async function getContainerStats(container) {
 }
 
 async function listImages() {
-  return { images: await listImagesRaw() };
+  const [images, containers] = await Promise.all([listImagesRaw(), listContainersRaw().catch(() => [])]);
+  return {
+    images: images.map((image) => {
+      const ref = `${image.repository || "<none>"}:${image.tag || "<none>"}`;
+      return { ...image, containersUsing: containers.filter((container) => container.image === ref || container.image === image.id).map((container) => container.name || container.id) };
+    }),
+  };
 }
 
 async function listNetworks() {
-  return { networks: await listNetworksRaw() };
+  const networks = await listNetworksRaw();
+  const detailed = await Promise.all(networks.map(async (network) => {
+    const inspect = await inspectNetwork(network.name || network.id).catch(() => null);
+    const data = Array.isArray(inspect?.inspect) ? inspect.inspect[0] : null;
+    const ipam = data?.IPAM?.Config?.[0] || {};
+    return { ...network, subnet: ipam.Subnet || null, gateway: ipam.Gateway || null, containers: Object.values(data?.Containers || {}).map((entry) => entry.Name).filter(Boolean) };
+  }));
+  return { networks: detailed };
 }
 
 async function listVolumes() {
-  return { volumes: await listVolumesRaw() };
+  const [volumes, containers] = await Promise.all([listVolumesRaw(), listContainersRaw().catch(() => [])]);
+  const inspectedContainers = await Promise.all(containers.map((container) => inspectContainer(container.id).catch(() => null)));
+  return {
+    volumes: await Promise.all(volumes.map(async (volume) => {
+      const inspect = await inspectVolume(volume.name).catch(() => null);
+      const data = Array.isArray(inspect?.inspect) ? inspect.inspect[0] : null;
+      const users = inspectedContainers
+        .map((entry) => Array.isArray(entry?.inspect) ? entry.inspect[0] : null)
+        .filter((entry) => (entry?.Mounts || []).some((mount) => mount.Type === "volume" && mount.Name === volume.name))
+        .map((entry) => normalizeName(entry?.Name) || entry?.Id)
+        .filter(Boolean);
+      return { ...volume, labels: data?.Labels || {}, containersUsing: users };
+    })),
+  };
+}
+
+async function inspectVolume(volume) {
+  const target = validateVolumeTarget(volume);
+  const result = await runDockerCommand(["volume", "inspect", target]);
+  return { volume: target, inspect: JSON.parse(result.stdout || "[]") };
+}
+
+async function removeVolume(volume) {
+  const target = validateVolumeTarget(volume);
+  const volumes = await listVolumes();
+  const entry = volumes.volumes.find((candidate) => candidate.name === target);
+  if (entry?.containersUsing?.length) {
+    throw new DockerServiceError("Docker volume is currently used by a container.", "DOCKER_VOLUME_IN_USE", 409);
+  }
+  await runDockerCommand(["volume", "rm", target]);
+  return { volume: target, deleted: true };
+}
+
+async function pruneVolumes() {
+  const result = await runDockerCommand(["volume", "prune", "-f"], { timeout: 120000 });
+  return { output: redactDockerText(result.stdout) };
+}
+
+async function inspectNetwork(network) {
+  const target = validateNetworkTarget(network);
+  const result = await runDockerCommand(["network", "inspect", target]);
+  return { network: target, inspect: JSON.parse(result.stdout || "[]") };
+}
+
+async function createNetwork(payload = {}) {
+  const name = validateName(payload.name, "network name");
+  const args = ["network", "create"];
+  if (payload.driver) args.push("--driver", String(payload.driver).trim());
+  if (payload.subnet) args.push("--subnet", String(payload.subnet).trim());
+  if (payload.gateway) args.push("--gateway", String(payload.gateway).trim());
+  normalizeKeyValueMap(payload.labels, 64).forEach((entry) => args.push("--label", entry));
+  args.push(name);
+  const result = await runDockerCommand(args);
+  return { network: { id: result.stdout, name } };
+}
+
+function assertMutableNetwork(network) {
+  const target = validateNetworkTarget(network);
+  if (["bridge", "host", "none"].includes(target)) {
+    throw new DockerServiceError("Default Docker networks are protected from deletion.", "DOCKER_DEFAULT_NETWORK_PROTECTED", 409);
+  }
+  return target;
+}
+
+async function removeNetwork(network) {
+  const target = assertMutableNetwork(network);
+  await runDockerCommand(["network", "rm", target]);
+  return { network: target, deleted: true };
+}
+
+async function connectNetwork(network, container) {
+  const net = validateNetworkTarget(network);
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["network", "connect", net, target]);
+  return { network: net, container: target, connected: true };
+}
+
+async function disconnectNetwork(network, container) {
+  const net = validateNetworkTarget(network);
+  const target = validateContainerTarget(container);
+  await runDockerCommand(["network", "disconnect", net, target]);
+  return { network: net, container: target, disconnected: true };
+}
+
+async function pruneNetworks() {
+  const result = await runDockerCommand(["network", "prune", "-f"], { timeout: 120000 });
+  return { output: redactDockerText(result.stdout) };
+}
+
+async function listComposeProjects() {
+  const result = await runDockerCommand(["compose", "ls", "--format", "json"], { timeout: COMMAND_TIMEOUT_MS });
+  const projects = JSON.parse(result.stdout || "[]");
+  return { projects: Array.isArray(projects) ? projects : [] };
+}
+
+function composeArgs(payload = {}, command = []) {
+  const projectName = validateComposeProject(payload.projectName || payload.name || "anxos");
+  const projectDirectory = validateNodePath(payload.projectDirectory || payload.path || process.cwd());
+  return ["compose", "--project-name", projectName, "--project-directory", projectDirectory, ...command];
+}
+
+async function runCompose(payload = {}, command = [], options = {}) {
+  const result = await runDockerCommand(composeArgs(payload, command), { timeout: options.timeoutMs || 120000, maxBuffer: options.maxBuffer || 1024 * 1024 * 4 });
+  return { projectName: payload.projectName || payload.name || "anxos", output: redactDockerText(`${result.stdout}\n${result.stderr}`.trim()) };
+}
+
+async function validateComposeConfig(payload = {}) {
+  return runCompose(payload, ["config"], { timeoutMs: 30000 });
+}
+
+async function startComposeProject(payload = {}) {
+  await validateComposeConfig(payload);
+  return runCompose(payload, ["up", "-d"], { timeoutMs: 10 * 60 * 1000 });
+}
+
+async function stopComposeProject(payload = {}) {
+  return runCompose(payload, ["stop"]);
+}
+
+async function restartComposeProject(payload = {}) {
+  return runCompose(payload, ["restart"]);
+}
+
+async function pullComposeProject(payload = {}) {
+  return runCompose(payload, ["pull"], { timeoutMs: 10 * 60 * 1000 });
+}
+
+async function buildComposeProject(payload = {}) {
+  return runCompose(payload, ["build"], { timeoutMs: 20 * 60 * 1000 });
+}
+
+async function recreateComposeProject(payload = {}) {
+  await validateComposeConfig(payload);
+  return runCompose(payload, ["up", "-d", "--force-recreate"], { timeoutMs: 10 * 60 * 1000 });
+}
+
+async function getComposeLogs(payload = {}) {
+  const tail = Number.parseInt(payload.tail, 10);
+  return runCompose(payload, ["logs", "--no-color", "--tail", String(Number.isFinite(tail) ? Math.min(Math.max(tail, 1), 2000) : 300)], { timeoutMs: LOG_TIMEOUT_MS });
+}
+
+async function getComposeStatus(payload = {}) {
+  const result = await runCompose(payload, ["ps", "--format", "json"]);
+  return { ...result, services: parseJsonLines(result.output, (row) => row) };
+}
+
+async function removeComposeProject(payload = {}) {
+  const command = ["down"];
+  if (payload.volumes === true) command.push("--volumes");
+  return runCompose(payload, command, { timeoutMs: 10 * 60 * 1000 });
+}
+
+async function getCleanupPreview() {
+  const diskUsage = await getDockerDiskUsage().catch(() => ({ rows: [], summary: null }));
+  return {
+    diskUsage,
+    actions: [
+      { id: "containers", label: "Stopped containers", command: "container prune", affectsPersistentData: false },
+      { id: "images", label: "Unused images", command: "image prune -a", affectsPersistentData: false },
+      { id: "build-cache", label: "Build cache", command: "builder prune", affectsPersistentData: false },
+      { id: "networks", label: "Unused networks", command: "network prune", affectsPersistentData: false },
+      { id: "volumes", label: "Unused volumes", command: "volume prune", affectsPersistentData: true },
+      { id: "safe", label: "Full safe prune without volumes", command: "system prune", affectsPersistentData: false },
+    ],
+  };
+}
+
+async function runCleanup(payload = {}) {
+  const kind = String(payload.kind || "").trim();
+  const commands = {
+    containers: ["container", "prune", "-f"],
+    images: ["image", "prune", "-a", "-f"],
+    "build-cache": ["builder", "prune", "-f"],
+    networks: ["network", "prune", "-f"],
+    volumes: ["volume", "prune", "-f"],
+    safe: ["system", "prune", "-f"],
+  };
+  if (!commands[kind]) throw new DockerServiceError("Invalid Docker cleanup action.", "INVALID_DOCKER_CLEANUP", 400);
+  const result = await runDockerCommand(commands[kind], { timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024 * 4 });
+  return { kind, output: redactDockerText(result.stdout) };
+}
+
+async function execContainer(container, payload = {}) {
+  const target = validateContainerTarget(container);
+  const shellCandidates = ["bash", "sh", "ash"];
+  const shell = shellCandidates.find((candidate) => !payload.shell || payload.shell === candidate) || "sh";
+  const command = String(payload.command || "").trim();
+  if (!command || command.length > 2000 || /[\0]/.test(command)) {
+    throw new DockerServiceError("Invalid container command.", "INVALID_CONTAINER_COMMAND", 400);
+  }
+  const result = await runDockerCommand(["exec", target, shell, "-lc", command], { timeout: LOG_TIMEOUT_MS, maxBuffer: 1024 * 1024 * 2 });
+  return { container: target, shell, output: redactDockerText(result.stdout), errorOutput: redactDockerText(result.stderr) };
 }
 
 module.exports = {
   DockerServiceError,
   attachStats,
+  connectNetwork,
   createContainer,
+  createNetwork,
   deleteContainer,
+  disconnectNetwork,
+  execContainer,
+  getCleanupPreview,
+  getComposeLogs,
+  getComposeStatus,
   getContainerLogs,
   getContainerStats,
   getDockerContainers,
   getDockerSnapshot,
   getDockerSummary,
+  inspectImage,
   inspectContainer,
+  inspectNetwork,
+  inspectVolume,
+  killContainer,
   listImages,
+  listComposeProjects,
   listNetworks,
   listVolumes,
+  maskEnv,
   normalizeContainer,
   normalizePortBindings,
   normalizeStats,
   parseJsonLines,
+  pauseContainer,
+  pullImage,
+  pruneImages,
+  pruneNetworks,
+  pruneVolumes,
+  recreateComposeProject,
   removeImage,
+  removeComposeProject,
+  removeNetwork,
+  removeVolume,
+  renameContainer,
   resolveDockerExecutable,
   restartContainer,
+  restartComposeProject,
+  runCleanup,
   startContainer,
+  startComposeProject,
   stopContainer,
+  stopComposeProject,
+  pullComposeProject,
+  buildComposeProject,
+  validateComposeConfig,
 };

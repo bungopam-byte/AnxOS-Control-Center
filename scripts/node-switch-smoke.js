@@ -7,6 +7,8 @@ const appSource = fs.readFileSync(path.join(repoRoot, "app.js"), "utf8");
 const preloadSource = fs.readFileSync(path.join(repoRoot, "preload.js"), "utf8");
 const serviceRouterSource = fs.readFileSync(path.join(repoRoot, "src", "services", "serviceRouter.js"), "utf8");
 const agentClientSource = fs.readFileSync(path.join(repoRoot, "src", "services", "agentClient.js"), "utf8");
+const applicationHostSource = fs.readFileSync(path.join(repoRoot, "src", "services", "applicationHostService.js"), "utf8");
+const indexSource = fs.readFileSync(path.join(repoRoot, "index.html"), "utf8");
 
 function includesAll(source, snippets, label) {
   for (const snippet of snippets) {
@@ -98,6 +100,38 @@ includesAll(appSource, [
   "Local Agent Service",
   "renderRemoteAgents(payload?.remote || [])",
 ], "Agent Control local and remote system identity");
+
+includesAll(applicationHostSource, [
+  "cpu: {",
+  "memory: {",
+  "storage: {",
+  "desktopUptimeSeconds",
+  "electronVersion",
+  "appVersion",
+  "developerMode",
+  "runningState: \"running\"",
+], "Application host first-class identity");
+
+includesAll(indexSource, [
+  'data-node-detail="cpu"',
+  'data-node-detail="memory"',
+  'data-node-detail="storage"',
+  'data-node-detail="desktopUptime"',
+  'data-node-detail="electronVersion"',
+  'data-node-detail="appVersion"',
+  'data-node-detail="developerMode"',
+  'data-node-detail="runningState"',
+  'data-node-detail="unsupportedFeatures"',
+], "Node Details desktop identity fields");
+
+includesAll(appSource, [
+  "formatNodeCpu",
+  "formatNodeMemory",
+  "formatNodeStorage",
+  "getNodeUnsupportedFeatureSummary",
+  "Unsupported here: Docker workspace controls require an Agent node.",
+  "Remote Agent APIs, Agent token management, and remote Docker controls require an Agent node.",
+], "Renderer desktop Node Details identity");
 
 includesAll(appSource, [
   "const requestContext = createNodeActionContext(\"backup-create\");",

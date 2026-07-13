@@ -3,6 +3,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { app } = require("electron");
+const { getReleaseInfo } = require("../shared/releaseConfig");
 
 const APPLICATION_HOST_NODE_ID = "application-host";
 
@@ -29,6 +30,11 @@ function readOrCreateHostId() {
 }
 
 function getApplicationHost() {
+  const cpus = os.cpus();
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  const release = getReleaseInfo();
+  const trustedDevelopmentMode = process.env.ANXOS_TRUSTED_DEVELOPMENT_MODE === "1" && app?.isPackaged === false;
   return {
     hostId: readOrCreateHostId(),
     hostname: os.hostname(),
@@ -36,6 +42,30 @@ function getApplicationHost() {
     platform: process.platform,
     architecture: process.arch,
     displayName: process.platform === "win32" ? "Windows Desktop" : `${os.hostname()} Desktop`,
+    cpu: {
+      model: cpus[0]?.model || "Unknown CPU",
+      cores: cpus.length,
+    },
+    memory: {
+      total: totalMemory,
+      free: freeMemory,
+      used: Math.max(totalMemory - freeMemory, 0),
+    },
+    storage: {
+      status: "metrics-required",
+      message: "Open Dashboard or select this desktop node to load current storage metrics.",
+    },
+    desktopUptimeSeconds: Math.round(process.uptime()),
+    systemUptimeSeconds: Math.round(os.uptime()),
+    electronVersion: process.versions.electron || null,
+    nodeVersion: process.versions.node || null,
+    appVersion: release.compactLabel,
+    releaseVersion: release.version,
+    buildNumber: release.build,
+    channel: release.channel,
+    developerMode: trustedDevelopmentMode,
+    packaged: app?.isPackaged === true,
+    runningState: "running",
   };
 }
 

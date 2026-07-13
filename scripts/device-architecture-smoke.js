@@ -47,8 +47,8 @@ async function main() {
       { id: "owner-a", displayName: "Owner Machine", agentUrl: first.url, agentToken: first.token },
       { id: "owner-b", displayName: "Duplicate URL", agentUrl: `${first.url}/`, agentToken: "" },
     ] });
-    assert.strictEqual(legacy.nodes.length, 1, "Legacy duplicate URLs should merge without losing the named node.");
-    assert.strictEqual(legacy.nodes[0].displayName, "Owner Machine");
+    assert.strictEqual(legacy.nodes.length, 1, "Legacy duplicate URLs should merge into one stable Agent node.");
+    assert.strictEqual(legacy.nodes[0].displayName, "Duplicate URL", "A non-generic duplicate display name should replace the legacy Owner Machine label.");
     assert.strictEqual(legacy.nodes[0].agentToken, first.token);
 
     await fs.writeFile(nodes.getNodesPath(), `${JSON.stringify({ schemaVersion: 1, selectedNodeId: "default", nodes: legacy.nodes }, null, 2)}\n`);

@@ -57,6 +57,7 @@ function requireApp(needle, message) {
   "function buildNodeHealthModel",
   "function buildConnectivityHealth",
   "function buildAgentHealth",
+  "function buildDesktopRuntimeHealth",
   "function buildResourceHealth",
   "function buildStorageHealth",
   "function buildDependencyHealth",
@@ -97,6 +98,9 @@ function requireApp(needle, message) {
 [
   "latestSystemSnapshot",
   "latestSystemSnapshotAt",
+  "latestSystemSnapshotNodeId",
+  "function hasSystemSnapshotForNode",
+  "function getSystemSnapshotForNode",
   "latestInstancesSnapshotAt",
   "latestFilesListingAt",
   "latestDependencyResult",
@@ -155,7 +159,20 @@ function requireApp(needle, message) {
   "showPage(\"files\")",
   "showPage(\"maintenance\")",
   "checkForUpdates({ silent: false })",
+  "openNodeDetails(getSelectedNodeId())",
 ].forEach((needle) => requireApp(needle, `Node health remediation should reuse ${needle}.`));
+
+[
+  'id: "desktop-runtime"',
+  'label: "Desktop runtime"',
+  "Desktop runtime health applies only to the local application host.",
+  "Desktop uptime",
+  "Electron",
+  "Developer Mode",
+  "buildDesktopRuntimeHealth(selectedNode)",
+  "latestSystemSnapshotNodeId === (node?.id || getSelectedNodeId() || \"application-host\")",
+  "renderSnapshot(snapshot, requestContext.nodeId)",
+].forEach((needle) => requireApp(needle, `Desktop node health should include ${needle}.`));
 
 [
   "Test connection",

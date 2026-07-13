@@ -667,6 +667,7 @@ let dockerWorkspaceState = null;
 let dockerRequestSerial = 0;
 let latestSystemSnapshot = null;
 let latestSystemSnapshotAt = 0;
+let latestSystemSnapshotNodeId = null;
 let lastLoggedAmpUrlSource = null;
 let latestInstancesSnapshot = null;
 let latestInstancesSnapshotAt = 0;
@@ -5229,10 +5230,11 @@ function updateLocalTime() {
   updateSidebarFooterTooltip();
 }
 
-function renderSnapshot(snapshot) {
+function renderSnapshot(snapshot, nodeId = getSelectedNodeId()) {
   const safeSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
   latestSystemSnapshot = safeSnapshot;
   latestSystemSnapshotAt = Date.now();
+  latestSystemSnapshotNodeId = nodeId || getSelectedNodeId() || "application-host";
   const timestamp = safeSnapshot.currentTime ? new Date(safeSnapshot.currentTime) : new Date();
 
   if (timeTarget) {
@@ -17753,7 +17755,7 @@ async function refreshDashboard() {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    renderSnapshot(snapshot);
+    renderSnapshot(snapshot, requestContext.nodeId);
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
@@ -17768,6 +17770,7 @@ async function refreshDashboard() {
     setField("networkThroughput", "Unavailable");
     latestSystemSnapshot = null;
     latestSystemSnapshotAt = 0;
+    latestSystemSnapshotNodeId = null;
     showToast("System metrics are unavailable.");
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
@@ -22891,6 +22894,9 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
   dependencyOperationState = "idle";
   dependencyLastError = null;
 
+  latestSystemSnapshot = null;
+  latestSystemSnapshotAt = 0;
+  latestSystemSnapshotNodeId = null;
   latestAmpSnapshot = null;
   latestPlayitSnapshot = null;
   latestDockerSnapshot = null;
@@ -23193,6 +23199,14 @@ function getNodeHealthIssueCategories(categories = []) {
   ));
 }
 
+function hasSystemSnapshotForNode(node = getSelectedNode()) {
+  return Boolean(latestSystemSnapshot && latestSystemSnapshotNodeId === (node?.id || getSelectedNodeId() || "application-host"));
+}
+
+function getSystemSnapshotForNode(node = getSelectedNode()) {
+  return hasSystemSnapshotForNode(node) ? latestSystemSnapshot : null;
+}
+
 function buildConnectivityHealth(node) {
   const visual = getNodeVisualState(node);
   const target = getCurrentAgentHealthTarget();
@@ -23274,13 +23288,57 @@ function buildAgentHealth(node) {
   });
 }
 
-function buildResourceHealth() {
-  const snapshot = latestSystemSnapshot || {};
-  const cpu = Number(snapshot.cpu?.usagePercent);
-  const memory = Number(snapshot.memory?.percent);
+function buildDesktopRuntimeHealth(node = getSelectedNode()) {
+  if (node?.kind !== "application-host") {
+    return buildNodeHealthCategory({
+      id: "desktop-runtime",
+      label: "Desktop runtime",
+      state: "Unavailable",
+      evidence: "Desktop runtime health applies only to the local application host.",
+      workspace: "nodes",
+      remediation: "Open Node Details",
+      action: "open-node-details",
+      actions: [{ label: "Open Node Details", action: "open-node-details" }],
+      required: false,
+      applicable: false,
+      current: false,
+    });
+  }
+  const identity = getNodeIdentity(node);
+  const hasRuntime = Boolean(runtimeInfoState || identity.appVersion || identity.electronVersion);
+  const running = identity.runningState === "running";
+  const state = running && hasRuntime ? "Healthy" : running ? "Unknown" : "Degraded";
+  return buildNodeHealthCategory({
+    id: "desktop-runtime",
+    label: "Desktop runtime",
+    state,
+    evidence: [
+      `Running state ${identity.runningState || "unknown"}`,
+      `Desktop uptime ${formatDuration(identity.desktopUptimeSeconds || 0)}`,
+      `Electron ${identity.electronVersion || runtimeInfoState?.electron || "unavailable"}`,
+      `App ${identity.appVersion || runtimeInfoState?.releaseLabel || runtimeInfoState?.appVersion || "unavailable"}`,
+      `Developer Mode ${identity.developerMode || runtimeInfoState?.developmentMode ? "enabled" : "disabled"}`,
+    ].join(" · "),
+    checkedAt: Date.now(),
+    issueCount: state === "Healthy" ? 0 : 1,
+    required: true,
+    workspace: "nodes",
+    remediation: "Open Node Details",
+    action: "open-node-details",
+    actions: [
+      { label: "Open Node Details", action: "open-node-details" },
+      { label: "Open Dashboard", action: "open-dashboard" },
+    ],
+  });
+}
+
+function buildResourceHealth(node = getSelectedNode()) {
+  const snapshot = getSystemSnapshotForNode(node);
+  const cpu = Number(snapshot?.cpu?.usagePercent);
+  const memory = Number(snapshot?.memory?.percent);
   const stateIssues = [];
-  let state = latestSystemSnapshot ? "Healthy" : "Unknown";
-  if (latestSystemSnapshot && !Number.isFinite(cpu) && !Number.isFinite(memory)) {
+  let state = snapshot ? "Healthy" : "Unknown";
+  if (snapshot && !Number.isFinite(cpu) && !Number.isFinite(memory)) {
     state = "Unknown";
     stateIssues.push("CPU and memory unavailable");
   }
@@ -23291,13 +23349,13 @@ function buildResourceHealth() {
     id: "resources",
     label: "Resources",
     state,
-    evidence: latestSystemSnapshot
+    evidence: snapshot
       ? `CPU ${formatPercent(cpu)} · Memory ${formatPercent(memory)} (${formatBytes(snapshot.memory?.used)} / ${formatBytes(snapshot.memory?.total)})`
-      : "CPU and memory metrics have not loaded.",
-    checkedAt: latestSystemSnapshotAt || null,
+      : `${node?.displayName || "Node"} resource metrics have not loaded for this node.`,
+    checkedAt: snapshot ? latestSystemSnapshotAt : null,
     issueCount: stateIssues.length,
     required: true,
-    current: Boolean(latestSystemSnapshot),
+    current: Boolean(snapshot),
     workspace: "dashboard",
     remediation: "Open Dashboard",
     action: "open-dashboard",
@@ -23308,8 +23366,9 @@ function buildResourceHealth() {
   });
 }
 
-function buildStorageHealth() {
-  const disk = latestSystemSnapshot?.disk || null;
+function buildStorageHealth(node = getSelectedNode()) {
+  const snapshot = getSystemSnapshotForNode(node);
+  const disk = snapshot?.disk || null;
   let state = disk ? "Healthy" : "Unknown";
   const percent = Number(disk?.percent);
   const free = Number(disk?.free);
@@ -23330,8 +23389,8 @@ function buildStorageHealth() {
     id: "storage",
     label: "Storage",
     state,
-    evidence: disk ? `Disk ${formatPercent(percent)} used · ${formatBytes(free)} free · Mount ${disk.mount || "unavailable"}` : "Disk metrics have not loaded.",
-    checkedAt: latestSystemSnapshotAt || null,
+    evidence: disk ? `Disk ${formatPercent(percent)} used · ${formatBytes(free)} free · Mount ${disk.mount || "unavailable"}` : `${node?.displayName || "Node"} storage metrics have not loaded for this node.`,
+    checkedAt: disk ? latestSystemSnapshotAt : null,
     issueCount: issues.length,
     required: true,
     current: Boolean(disk),
@@ -23501,8 +23560,9 @@ function buildNodeHealthModel(node = getSelectedNode()) {
   const rawCategories = [
     buildConnectivityHealth(selectedNode),
     buildAgentHealth(selectedNode),
-    buildResourceHealth(),
-    buildStorageHealth(),
+    buildDesktopRuntimeHealth(selectedNode),
+    buildResourceHealth(selectedNode),
+    buildStorageHealth(selectedNode),
     buildDependencyHealth(),
     buildMarketplaceHealth(),
     buildFilesHealth(),
@@ -23713,6 +23773,7 @@ function exportDiagnosticsSupportBundleFromHealth() {
 }
 
 function runNodeHealthAction(action) {
+  if (action === "open-node-details") return openNodeDetails(getSelectedNodeId());
   if (action === "test-node") return testSelectedNode();
   if (action === "ping-agent") return testAgentConnection({ silent: false });
   if (action === "reconnect-agent") { showPage("agent-control"); return refreshAgentControl({ includeConfig: true }); }
@@ -23868,6 +23929,43 @@ function formatNodePlatform(node = {}) {
   return identity.operatingSystem || identity.platform || "Agent OS unavailable";
 }
 
+function formatNodeCpu(node = {}) {
+  const identity = getNodeIdentity(node);
+  const snapshot = getSystemSnapshotForNode(node);
+  const model = snapshot?.cpu?.model || identity.cpu?.model || "CPU model unavailable";
+  const cores = Number.isFinite(snapshot?.cpu?.cores) ? snapshot.cpu.cores : identity.cpu?.cores;
+  const usage = Number.isFinite(snapshot?.cpu?.usagePercent) ? ` · ${formatPercent(snapshot.cpu.usagePercent)} used` : "";
+  return `${model}${Number.isFinite(cores) ? ` · ${cores} core${cores === 1 ? "" : "s"}` : ""}${usage}`;
+}
+
+function formatNodeMemory(node = {}) {
+  const identity = getNodeIdentity(node);
+  const snapshot = getSystemSnapshotForNode(node);
+  const memory = snapshot?.memory || identity.memory || null;
+  if (!memory) return "Memory metrics unavailable.";
+  const percent = Number.isFinite(memory.percent) ? `${formatPercent(memory.percent)} · ` : "";
+  return `${percent}${formatBytes(memory.used)} / ${formatBytes(memory.total)} used`;
+}
+
+function formatNodeStorage(node = {}) {
+  const snapshot = getSystemSnapshotForNode(node);
+  if (snapshot?.disk) {
+    return `${formatPercent(snapshot.disk.percent)} used · ${formatBytes(snapshot.disk.free)} free · ${snapshot.disk.mount || "mount unavailable"}`;
+  }
+  const identity = getNodeIdentity(node);
+  if (node.kind === "application-host" && identity.storage?.message) {
+    return identity.storage.message;
+  }
+  return "Storage metrics unavailable until this node is selected and Dashboard metrics load.";
+}
+
+function getNodeUnsupportedFeatureSummary(node = {}) {
+  if (node.kind === "application-host") {
+    return "Remote Agent APIs, Agent token management, and remote Docker controls require an Agent node. Local desktop files and dashboard metrics remain available.";
+  }
+  return "Desktop uptime, Electron version, and local developer-mode fields apply only to the application host.";
+}
+
 function setNodeSummary(name, value) {
   nodeSummaryFields.forEach((field) => {
     if (field.dataset.nodeSummary === name) {
@@ -23946,11 +24044,20 @@ function openNodeDetails(nodeId) {
     hostname: identity.hostname || node.displayName || "Unavailable",
     os: formatNodePlatform(node),
     version: identity.agentVersion || (node.kind === "application-host" ? runtimeInfoState?.releaseLabel || runtimeInfoState?.version : null) || "Unavailable",
-    docker: node.kind === "application-host" ? "Local provider" : node.docker?.enabled === false ? "Disabled" : "Enabled",
+    cpu: formatNodeCpu(node),
+    memory: formatNodeMemory(node),
+    storage: formatNodeStorage(node),
+    desktopUptime: node.kind === "application-host" ? formatDuration(identity.desktopUptimeSeconds || 0) : "Unavailable: desktop uptime applies only to the application host.",
+    electronVersion: node.kind === "application-host" ? identity.electronVersion || runtimeInfoState?.electron || "Unavailable" : "Unavailable: Electron runs on the application host, not this Agent.",
+    appVersion: node.kind === "application-host" ? identity.appVersion || runtimeInfoState?.releaseLabel || runtimeInfoState?.appVersion || "Unavailable" : "Unavailable: app version belongs to the desktop shell.",
+    developerMode: node.kind === "application-host" ? (identity.developerMode || runtimeInfoState?.developmentMode ? "Enabled" : "Disabled") : "Unavailable: developer mode belongs to the desktop shell.",
+    runningState: node.kind === "application-host" ? identity.runningState || "running" : node.connection?.connected ? "Agent connected" : "Agent unavailable",
+    docker: node.kind === "application-host" ? "Unsupported here: Docker workspace controls require an Agent node." : node.docker?.enabled === false ? "Disabled" : "Enabled",
     lastSeen: formatNodeLastSeen(node),
     connection: node.connection?.message || getNodeStatusLabel(node),
     url: node.kind === "application-host" ? "Local Application" : node.agentUrl || "Unavailable",
     token: node.kind === "application-host" ? "Not required" : node.hasToken ? "Configured" : "Missing",
+    unsupportedFeatures: getNodeUnsupportedFeatureSummary(node),
   };
   nodeDetailsFields.forEach((field) => {
     field.textContent = values[field.dataset.nodeDetail] || "Unavailable";
@@ -25145,6 +25252,7 @@ async function loadRuntimeInfo() {
     runtimeInfoState = info;
     setAboutFields(info);
     renderRoutingDiagnostics();
+    refreshNodeHealth({ notify: false });
   } catch {
     setAboutFields(null);
   }

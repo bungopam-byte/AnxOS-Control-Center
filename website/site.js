@@ -17,6 +17,24 @@ let revokedDevicesExpanded = false;
 let accountCleanupBusy = false;
 let securityHistoryFilter = "all";
 let securityHistoryHideOld = true;
+let authRestoreFallbackTimer = null;
+let authStateSubscription = null;
+
+const AUTH_RESTORE_TIMEOUT_MS = 5000;
+
+function withTimeout(promise, timeoutMs, code) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      const error = new Error("Account session verification timed out.");
+      error.code = code;
+      reject(error);
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  });
+}
 
 function readLocalStorageFlag(key) {
   try {
@@ -442,6 +460,15 @@ async function apiFetch(path, options = {}) {
 async function initializeAccount() {
   authState = "loading";
   applyAuthVisibility("initialize-start");
+  if (authRestoreFallbackTimer) window.clearTimeout(authRestoreFallbackTimer);
+  authRestoreFallbackTimer = window.setTimeout(() => {
+    if (authState !== "loading") return;
+    currentSession = null;
+    currentProfile = null;
+    authState = "signed-out";
+    setMessage("signin", "Unable to verify your session quickly. You can still sign in.", "warn");
+    applyAuthVisibility("initialize-timeout-fallback");
+  }, AUTH_RESTORE_TIMEOUT_MS + 1000);
   if (!isAccountConfigured()) {
     disableAccountForms("AnxOS account sign-in is not configured for this deployment. Local desktop mode still works without an online account.");
     return;
@@ -451,8 +478,23 @@ async function initializeAccount() {
     disableAccountForms("Account scripts could not load. Check your connection and try again.");
     return;
   }
+  if (!authStateSubscription) {
+    const listener = client.auth.onAuthStateChange((event, session) => {
+      currentSession = session?.user ? session : null;
+      authState = currentSession ? "signed-in" : "signed-out";
+      logAuthVisibility("auth-state-change", { event });
+      renderAuthState().catch((error) => {
+        logWebsiteDiagnostic("error", "auth-state-render", error);
+        currentSession = null;
+        authState = "signed-out";
+        setMessage("signin", "Unable to verify your session. You can still try signing in.", "warn");
+        applyAuthVisibility("auth-state-render-error");
+      });
+    });
+    authStateSubscription = listener?.data?.subscription || listener?.subscription || true;
+  }
   try {
-    const { data, error } = await client.auth.getSession();
+    const { data, error } = await withTimeout(client.auth.getSession(), AUTH_RESTORE_TIMEOUT_MS, "AUTH_SESSION_RESTORE_TIMEOUT");
     if (error) throw error;
     currentSession = data.session?.user ? data.session : null;
   } catch (error) {
@@ -462,24 +504,21 @@ async function initializeAccount() {
     logWebsiteDiagnostic("warn", "auth-session-restore", error);
     applyAuthVisibility("initialize-error");
     return;
+  } finally {
+    if (authRestoreFallbackTimer) {
+      window.clearTimeout(authRestoreFallbackTimer);
+      authRestoreFallbackTimer = null;
+    }
   }
-  client.auth.onAuthStateChange((event, session) => {
-    currentSession = session?.user ? session : null;
-    authState = currentSession ? "signed-in" : "signed-out";
-    logAuthVisibility("auth-state-change", { event });
-    renderAuthState().catch((error) => {
-      logWebsiteDiagnostic("error", "auth-state-render", error);
-      currentSession = null;
-      authState = "signed-out";
-      setMessage("signin", "Unable to verify your session. You can still try signing in.", "warn");
-      applyAuthVisibility("auth-state-render-error");
-    });
-  });
   authState = currentSession ? "signed-in" : "signed-out";
   await renderAuthState();
 }
 
 function disableAccountForms(message) {
+  if (authRestoreFallbackTimer) {
+    window.clearTimeout(authRestoreFallbackTimer);
+    authRestoreFallbackTimer = null;
+  }
   authState = "signed-out";
   document.querySelectorAll("[data-device-login-form]").forEach((form) => setFormDisabled(form, true));
   document.querySelectorAll("[data-account-unavailable]").forEach((node) => {

@@ -121,6 +121,7 @@ assert(!site.includes("window.location.hostname === \"www.anxoscontrolcenter.org
 assert(index.includes('id="not-found"') && !site.includes('window.location.hash = "not-found"'), "Website must not route unsupported paths by writing hash fragments.");
 assert(activate.includes('data-standalone-route="activate"') && forgot.includes('data-auth-form="forgot"') && reset.includes('data-auth-form="reset"'), "Cloudflare clean URL HTML files must serve real activation and recovery pages.");
 assert(site.includes('selectedState = "loading"'), "Sign-in route should show loading state instead of flashing signed-out UI while auth initializes.");
+assert(site.includes("initialize-timeout-fallback") && site.includes('authState = "signed-out"'), "Auth-dependent navigation must not stay permanently hidden after a failed session restore.");
 assert(site.includes("normalizeReturnTarget") && site.includes("parsed.origin !== window.location.origin"), "Return destinations must be same-origin validated.");
 assert(site.includes("redirectToSignInForCurrentRoute") && site.includes("/signin?"), "Authenticated routes must redirect signed-out users to clean sign-in routes.");
 assert(site.includes("WEBSITE_DEBUG") && site.includes("if (!WEBSITE_DEBUG) return;"), "Verbose website auth logging must be opt-in.");

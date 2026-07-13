@@ -68,6 +68,8 @@ function assertWebsiteAccountUi() {
   assert(site.includes(".from(\"profiles\").upsert"), "Website profile saves should repair missing profile rows.");
   assert(site.includes('authState = "loading"') && site.includes("applyAuthVisibility"), "Website auth rendering should have an explicit loading state and scoped visibility.");
   assert(site.includes("function applyAuthNavigation") && site.includes("[data-auth-nav]") && site.includes('window.location.replace("/profile")'), "Website navigation should be auth-aware and redirect signed-in users away from sign-in routes.");
+  assert(site.includes("AUTH_RESTORE_TIMEOUT_MS") && site.includes("withTimeout(client.auth.getSession()") && site.includes("initialize-timeout-fallback"), "Website auth navigation must resolve from loading even if session restore stalls.");
+  assert(site.includes("authStateSubscription") && site.includes("if (!authStateSubscription)"), "Website should avoid duplicate auth state listeners.");
   assert(signinPage.includes('data-auth-nav="signed-out" hidden') && signinPage.includes('data-auth-nav="signed-in"') && signinPage.includes('data-auth-action="signout"'), "Website header must hide auth-dependent nav until session state resolves.");
   assert(site.includes('window.location.assign("/")'), "Website sign-out should clear auth UI and return to the homepage.");
   assert(site.includes("fallbackState") && site.includes("selectedState"), "Scoped auth rendering should avoid hiding every auth state.");

@@ -292,8 +292,10 @@ function assertMarketplaceInstallerRegistry() {
   assert.notStrictEqual(palworldDownloads[0]?.destination, "server.jar", "SteamCMD-native templates must not create server.jar download tasks.");
 
   const ipcSource = fs.readFileSync(marketplaceIpcPath, "utf8");
+  const appSource = fs.readFileSync(appPath, "utf8");
   assert(ipcSource.includes("getMarketplaceRecoverySuggestion"), "Marketplace IPC should preserve stable installer error codes with recovery suggestions.");
   assert(ipcSource.includes("STEAMCMD_INSTALL_FAILED"), "Marketplace IPC should preserve SteamCMD-specific failures.");
+  assert(appSource.includes("View installer logs") && appSource.includes("finalStdoutLines") && appSource.includes("finalStderrLines"), "Download Manager should expose concise SteamCMD installer logs.");
   assert(ipcSource.includes("MINECRAFT_PORT_INVALID"), "Marketplace IPC should preserve Minecraft port validation failures.");
   assert(ipcSource.includes("validation?.field"), "Marketplace IPC should expose agent validation field details.");
   const agentClientSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentClient.js"), "utf8");
@@ -1759,8 +1761,11 @@ async function assertSharedTemplateInstallFlowMatrix() {
     "updateInstance",
     "startInstance",
     "getInstanceStatus",
+    "getInstanceLogs",
+    "getSystemStats",
     "listInstances",
     "deleteInstance",
+    "deleteInstanceFile",
     "checkDependencies",
     "installDependencies",
   ];
@@ -1852,6 +1857,10 @@ async function assertSharedTemplateInstallFlowMatrix() {
       }
       return { path: filePath, content: files.get(`${instanceId}:${filePath}`) || "" };
     };
+    agentClient.deleteInstanceFile = async (instanceId, filePath) => {
+      files.delete(`${instanceId}:${filePath}`);
+      return { deleted: true, path: filePath };
+    };
     agentClient.saveMinecraftProperties = async (instanceId, properties) => {
       files.set(`${instanceId}:server.properties`, JSON.stringify(properties));
       return { ok: true, properties };
@@ -1874,6 +1883,14 @@ async function assertSharedTemplateInstallFlowMatrix() {
       return { instance: instances.get(instanceId) };
     };
     agentClient.getInstanceStatus = async (instanceId) => ({ instance: { ...(instances.get(instanceId) || {}), state: "Stopped", exitCode: 0 } });
+    agentClient.getInstanceLogs = async (instanceId, options = {}) => ({
+      id: instanceId,
+      entries: [
+        { at: "2026-01-01T00:00:00.000Z", stream: options.stream || "stdout", message: options.stream === "stderr" ? "ERROR! Failed to install app 2394010." : "SteamCMD startup complete." },
+        { at: "2026-01-01T00:00:01.000Z", stream: options.stream || "stdout", message: options.stream === "stderr" ? "No subscription or permission for app 2394010." : "Redirecting stderr to console" },
+      ],
+    });
+    agentClient.getSystemStats = async () => ({ disk: { free: 20 * 1024 * 1024 * 1024, total: 100 * 1024 * 1024 * 1024, percent: 80, mount: "/srv" } });
     agentClient.deleteInstance = async (instanceId) => {
       instances.delete(instanceId);
       return { deleted: true };
@@ -1977,10 +1994,26 @@ async function assertSharedTemplateInstallFlowMatrix() {
       (error) => {
         assert.strictEqual(error?.code, "STEAMCMD_INSTALL_FAILED", "SteamCMD nonzero exit should preserve SteamCMD failure code.");
         assert.strictEqual(error?.details?.exitCode, 1, "SteamCMD failure should preserve process exit code.");
+        assert.strictEqual(error?.details?.signal, null, "SteamCMD failure should preserve process signal.");
+        assert.strictEqual(error?.details?.workingDirectory, "data", "SteamCMD failure should include the installer working directory.");
+        assert.match(error?.details?.resolvedInstallDirectory || "", /palworld-steamcmd-exit-smoke\/data\/server|data\/server/, "SteamCMD failure should include the resolved install directory.");
+        assert.strictEqual(error?.details?.executablePath, "steamcmd", "SteamCMD failure should include the executable path or PATH-resolved executable name.");
+        assert(Array.isArray(error?.details?.finalStdoutLines) && error.details.finalStdoutLines.some((line) => /SteamCMD startup/i.test(line)), "SteamCMD failure should preserve final stdout lines.");
+        assert(Array.isArray(error?.details?.finalStderrLines) && error.details.finalStderrLines.some((line) => /permission|Failed/i.test(line)), "SteamCMD failure should preserve final stderr lines.");
+        assert.strictEqual(error?.details?.diskSpaceCheck?.status, "available", "SteamCMD failure should include disk-space check evidence.");
+        assert.strictEqual(error?.details?.writePermissionCheck?.status, "passed", "SteamCMD failure should include write-permission check evidence.");
+        assert(!/"displayName":|"environment":|"ports":/.test(error.message), "SteamCMD user-facing error should not dump serialized instance JSON.");
+        assert.match(error.message, /logs=View installer logs/i, "SteamCMD failure should point users to installer logs.");
         return true;
       },
       "SteamCMD process failures should be surfaced with exit details."
     );
+    const failedSteamDownload = marketplaceService.getDownloads().downloads.find((download) => download.templateId === "palworld" &&
+      download.status === "failed" &&
+      !/"displayName":|"environment":|"ports":/.test(download.error || "") &&
+      download.logs.some((entry) => Array.isArray(entry.finalStderrLines) && entry.finalStderrLines.length > 0));
+    assert(failedSteamDownload, "SteamCMD failure should update Download Manager with a concise failed record.");
+    assert(failedSteamDownload.logs.some((entry) => Array.isArray(entry.finalStderrLines) && entry.finalStderrLines.length > 0), "Download Manager logs should expose final SteamCMD stderr lines.");
     agentClient.getInstanceStatus = originalStatus;
 
     agentClient.getInstanceStatus = async (instanceId) => {

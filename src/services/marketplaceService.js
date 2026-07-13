@@ -15,6 +15,7 @@ const {
 } = require("./marketplaceInstallerRegistry");
 const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
+const { redactString, sanitize } = require("../shared/redaction");
 
 const TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
 const CATEGORIES = ["Minecraft", "Game Servers", "Applications", "Databases", "Media", "Bots", "Development", "Networking", "Utilities"];
@@ -255,6 +256,10 @@ function truncateText(value, maxLength = 1200) {
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
+function truncateLogLine(value, maxLength = 300) {
+  return truncateText(redactString(value), maxLength);
+}
+
 function formatErrorDetails(details = {}) {
   const parts = [];
   if (details.templateId) parts.push(`templateId=${details.templateId}`);
@@ -267,7 +272,10 @@ function formatErrorDetails(details = {}) {
   if (details.exitCode !== undefined && details.exitCode !== null) parts.push(`exitCode=${details.exitCode}`);
   if (details.failureReason) parts.push(`failureReason=${details.failureReason}`);
   if (details.command) parts.push(`command=${details.command}`);
-  if (details.body) parts.push(`body=${truncateText(details.body, 500)}`);
+  if (details.workingDirectory) parts.push(`workingDirectory=${details.workingDirectory}`);
+  if (details.resolvedInstallDirectory) parts.push(`installDirectory=${details.resolvedInstallDirectory}`);
+  if (details.executablePath) parts.push(`executable=${details.executablePath}`);
+  if (details.logHint) parts.push(`logs=${details.logHint}`);
   if (details.message) parts.push(`message=${details.message}`);
   return parts.length ? ` (${parts.join(" | ")})` : "";
 }
@@ -907,6 +915,13 @@ function appendDownloadLog(record, entry = {}) {
     exitCode: entry.exitCode ?? null,
     failureReason: entry.failureReason || null,
     body: entry.body ? truncateText(entry.body) : null,
+    workingDirectory: entry.workingDirectory || null,
+    resolvedInstallDirectory: entry.resolvedInstallDirectory || null,
+    executablePath: entry.executablePath || null,
+    finalStdoutLines: Array.isArray(entry.finalStdoutLines) ? entry.finalStdoutLines.slice(-20).map((line) => truncateLogLine(line)) : [],
+    finalStderrLines: Array.isArray(entry.finalStderrLines) ? entry.finalStderrLines.slice(-20).map((line) => truncateLogLine(line)) : [],
+    diskSpaceCheck: entry.diskSpaceCheck ? sanitize(entry.diskSpaceCheck, { maxStringLength: 500 }) : null,
+    writePermissionCheck: entry.writePermissionCheck ? sanitize(entry.writePermissionCheck, { maxStringLength: 500 }) : null,
   });
   record.logs = logs.slice(-50);
   downloads.set(record.id, record);
@@ -975,6 +990,7 @@ function finalizeInstallTaskRecord(record, status, message, details = {}) {
     message,
     status: details.status || null,
     body: details.body || null,
+    ...details,
   });
   return updateDownload(record, {
     status,
@@ -2434,10 +2450,18 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
       const code = instance.failureReason === "EXECUTABLE_NOT_FOUND"
         ? "DEPENDENCY_MISSING"
         : context.installerType === "steamcmd-native" ? "STEAMCMD_INSTALL_FAILED" : "MARKETPLACE_INSTALL_FAILED";
+      const installerEvidence = context.installerType === "steamcmd-native"
+        ? await collectInstallerFailureEvidence(instanceId, agentConfig, context).catch((error) => ({
+          evidenceError: truncateLogLine(error?.message || "Could not collect SteamCMD evidence."),
+        }))
+        : {};
       const details = {
         ...context,
+        ...installerEvidence,
         message: "The installer process entered Failed state.",
-        body: JSON.stringify(last),
+        body: installerEvidence.statusSummary
+          ? JSON.stringify(installerEvidence.statusSummary)
+          : JSON.stringify({ state, exitCode: instance.exitCode ?? null, failureReason: instance.failureReason || null }),
         exitCode: instance.exitCode ?? null,
         failureReason: instance.failureReason || null,
       };
@@ -2504,6 +2528,106 @@ async function hasInstalledArtifacts(instanceId, artifactPaths = [], agentConfig
     }
   }
   return true;
+}
+
+function getSteamCmdResolvedInstallDirectory(instance = {}, installer = {}) {
+  const workingDirectory = String(instance.workingDirectory || "data")
+    .replace(/\\/g, "/")
+    .replace(/^\/+|\/+$/g, "") || "data";
+  const installDir = normalizeInstanceFilePath(installer.installDir || "server");
+  const relativeInstallDirectory = `${workingDirectory}/${installDir}`.replace(/\/+/g, "/");
+  const instancePath = String(instance.instancePath || "").replace(/\\/g, "/").replace(/\/+$/, "");
+  return {
+    workingDirectory,
+    installDir,
+    relativeInstallDirectory,
+    resolvedInstallDirectory: instancePath ? `${instancePath}/${relativeInstallDirectory}` : relativeInstallDirectory,
+  };
+}
+
+function normalizeDiskEvidence(snapshot = {}) {
+  const disk = snapshot.disk || snapshot.storage || snapshot.filesystem || snapshot.rootDisk || null;
+  if (!disk || typeof disk !== "object") {
+    return { status: "not_available", message: "Agent system snapshot did not include disk metrics." };
+  }
+  const freeBytes = Number(disk.free ?? disk.freeBytes ?? disk.available ?? disk.availableBytes ?? disk.availBytes);
+  const totalBytes = Number(disk.total ?? disk.totalBytes ?? disk.size ?? disk.sizeBytes);
+  const usedPercent = Number(disk.percent ?? disk.usagePercent ?? disk.usedPercent);
+  return {
+    status: Number.isFinite(freeBytes) || Number.isFinite(totalBytes) || Number.isFinite(usedPercent) ? "available" : "not_available",
+    freeBytes: Number.isFinite(freeBytes) ? freeBytes : null,
+    totalBytes: Number.isFinite(totalBytes) ? totalBytes : null,
+    usedPercent: Number.isFinite(usedPercent) ? usedPercent : null,
+    mount: disk.mount || disk.mountPoint || disk.path || disk.target || null,
+  };
+}
+
+function getLogTail(entries = [], stream) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => !stream || entry?.stream === stream)
+    .map((entry) => entry?.message || "")
+    .filter(Boolean)
+    .slice(-20)
+    .map((line) => truncateLogLine(line));
+}
+
+async function readInstanceLogTail(instanceId, stream, agentConfig = null) {
+  try {
+    const logs = await agentClient.getInstanceLogs(instanceId, { stream, limit: 80 }, agentConfig);
+    return getLogTail(logs?.entries || [], stream);
+  } catch (error) {
+    return [`[log read failed: ${truncateLogLine(error?.message || "unknown error")}]`];
+  }
+}
+
+async function collectInstallerFailureEvidence(instanceId, agentConfig = null, context = {}) {
+  const status = await agentClient.getInstanceStatus(instanceId, agentConfig).catch(() => null);
+  const instance = status?.instance || status || {};
+  const installer = context.installer || {};
+  const installDirectory = getSteamCmdResolvedInstallDirectory(instance, installer);
+  const [finalStdoutLines, finalStderrLines] = await Promise.all([
+    readInstanceLogTail(instanceId, "stdout", agentConfig),
+    readInstanceLogTail(instanceId, "stderr", agentConfig),
+  ]);
+
+  let diskSpaceCheck = { status: "not_checked", message: "Disk-space preflight has not run for this installer yet." };
+  try {
+    diskSpaceCheck = normalizeDiskEvidence(await agentClient.getSystemStats(agentConfig));
+  } catch (error) {
+    diskSpaceCheck = { status: "unavailable", message: truncateLogLine(error?.message || "Could not read Agent disk metrics.") };
+  }
+
+  const probePath = `runtime/.anxos-installer-write-check-${Date.now()}.tmp`;
+  let writePermissionCheck = { status: "not_checked", path: probePath };
+  try {
+    await agentClient.writeInstanceFile(instanceId, probePath, "write-check\n", { encoding: "utf8" }, agentConfig);
+    await agentClient.deleteInstanceFile(instanceId, probePath, agentConfig).catch(() => {});
+    writePermissionCheck = { status: "passed", path: probePath };
+  } catch (error) {
+    writePermissionCheck = { status: "failed", path: probePath, message: truncateLogLine(error?.message || "Write check failed.") };
+  }
+
+  return {
+    exitCode: instance.exitCode ?? null,
+    signal: instance.signal || null,
+    failureReason: instance.failureReason || null,
+    workingDirectory: instance.workingDirectory || installDirectory.workingDirectory,
+    resolvedInstallDirectory: installDirectory.resolvedInstallDirectory,
+    relativeInstallDirectory: installDirectory.relativeInstallDirectory,
+    executablePath: instance.executable || context.executablePath || "steamcmd",
+    finalStdoutLines,
+    finalStderrLines,
+    diskSpaceCheck,
+    writePermissionCheck,
+    logHint: "View installer logs in Download Manager or the instance Console logs.",
+    statusSummary: {
+      instanceId,
+      state: instance.state || status?.state || null,
+      exitCode: instance.exitCode ?? null,
+      signal: instance.signal || null,
+      failureReason: instance.failureReason || null,
+    },
+  };
 }
 
 async function runTemplatePostInstall(template, options, instanceId, progress, agentConfig = null) {
@@ -2589,6 +2713,8 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
           installerType: "steamcmd-native",
           handlerName: "runTemplateInstaller",
           command: steamcmdCommand,
+          executablePath: "steamcmd",
+          installer: template.installer,
           timeoutArtifactPaths: artifactPaths,
         });
       } catch (error) {
@@ -2657,12 +2783,21 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
   }
 }
 
-function finishInstallerDownloadRecords(records = [], status, message) {
+function getConciseInstallerFailureMessage(error = {}) {
+  const details = error?.details || {};
+  if (details.installerType === "steamcmd-native") {
+    const codeText = details.exitCode !== undefined && details.exitCode !== null ? ` exit code ${details.exitCode}` : "";
+    return `SteamCMD installer failed${codeText}. View installer logs for the final SteamCMD output.`;
+  }
+  return error?.message || "Installer failed.";
+}
+
+function finishInstallerDownloadRecords(records = [], status, message, details = {}) {
   for (const record of records) {
-    if (!record || !["queued", "resolving"].includes(record.status)) {
+    if (!record || !["queued", "resolving", "running", "waiting", "skipped"].includes(record.status)) {
       continue;
     }
-    appendDownloadLog(record, { step: "Extract files", level: status === "complete" ? "info" : "error", message });
+    appendDownloadLog(record, { step: details.step || "Extract files", level: status === "complete" ? "info" : "error", message, ...details });
     updateDownload(record, {
       status,
       progress: status === "complete" ? 100 : record.progress,
@@ -3183,7 +3318,7 @@ async function installTemplate(payload = {}) {
       });
       finishInstallerDownloadRecords(downloadResult.records, "complete", "Installer completed.");
     } catch (error) {
-      finishInstallerDownloadRecords(downloadResult.records, "failed", error?.message || "Installer failed.");
+      finishInstallerDownloadRecords(downloadResult.records, "failed", getConciseInstallerFailureMessage(error), error?.details || {});
       throw error;
     }
 
@@ -3292,6 +3427,7 @@ async function installTemplate(payload = {}) {
     const errorDetails = getErrorDetails(error);
     const failureStage = getErrorStage(error, createdInstanceId ? "Failed" : "Create instance");
     finalizeInstallTaskRecord(parentRecord, "failed", mapMarketplaceError(error), {
+      ...errorDetails,
       stage: failureStage,
       code: getAgentErrorCode(error) || "MARKETPLACE_INSTALL_FAILED",
       retryable: errorDetails.retryable,

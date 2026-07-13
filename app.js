@@ -10924,7 +10924,9 @@ function renderMarketplaceDownloads(downloads = []) {
     const logs = document.createElement("details");
     logs.className = "download-item__logs";
     const summary = document.createElement("summary");
-    summary.textContent = "Logs";
+    summary.textContent = download.installerType === "steamcmd-native" || /steamcmd/i.test(String(download.error || download.body || ""))
+      ? "View installer logs"
+      : "Logs";
     logs.append(summary);
     (Array.isArray(download.logs) ? download.logs : []).forEach((entry) => {
       const line = document.createElement("pre");
@@ -10940,6 +10942,13 @@ function renderMarketplaceDownloads(downloads = []) {
         entry.networkCode ? `networkCode=${entry.networkCode}` : "",
         entry.exitCode !== null && entry.exitCode !== undefined ? `exitCode=${entry.exitCode}` : "",
         entry.failureReason ? `failureReason=${entry.failureReason}` : "",
+        entry.workingDirectory ? `workingDirectory=${entry.workingDirectory}` : "",
+        entry.resolvedInstallDirectory ? `installDirectory=${entry.resolvedInstallDirectory}` : "",
+        entry.executablePath ? `executable=${entry.executablePath}` : "",
+        entry.diskSpaceCheck ? `disk=${entry.diskSpaceCheck.status || "unknown"}` : "",
+        entry.writePermissionCheck ? `write=${entry.writePermissionCheck.status || "unknown"}` : "",
+        Array.isArray(entry.finalStdoutLines) && entry.finalStdoutLines.length ? `stdout=${entry.finalStdoutLines.join(" / ")}` : "",
+        Array.isArray(entry.finalStderrLines) && entry.finalStderrLines.length ? `stderr=${entry.finalStderrLines.join(" / ")}` : "",
         entry.body ? `body=${entry.body}` : "",
       ].filter(Boolean).join(" | ");
       logs.append(line);

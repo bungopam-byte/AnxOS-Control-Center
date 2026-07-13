@@ -6,6 +6,30 @@ Official website: https://anxoscontrolcenter.org
 
 This project intentionally does not include secrets, tokens, API keys, credentials, or backend service controls.
 
+## Private Alpha Status
+
+Current public app metadata comes from `release.json`:
+
+```json
+{
+  "version": "1.7",
+  "build": 142,
+  "channel": "Private Alpha"
+}
+```
+
+Private Alpha means AnxOS Control Center is intended for a small group of trusted testers on known Windows and Debian machines. It is not a public beta and it is not a v1.0 release.
+
+Start here:
+
+- [Private Alpha Tester Guide](docs/PRIVATE_ALPHA_TESTER_GUIDE.md)
+- [Known Limitations](docs/KNOWN_LIMITATIONS.md)
+- [Real-Machine Validation](docs/REAL_MACHINE_VALIDATION.md)
+- [Tester Commands](docs/TEST_COMMANDS.md)
+- [Private Alpha Readiness Audit](docs/PRIVATE_ALPHA_READINESS_AUDIT.md)
+
+Do not paste tokens, passwords, pairing codes, private URLs, exported config files, or unredacted logs into bug reports. Use Diagnostics export or copied summaries only after confirming redaction.
+
 ## Files
 
 ```text
@@ -41,19 +65,18 @@ AnxOS-Control-Center/
 
 ## Current Dashboard Features
 
-The dashboard refreshes once per second and displays:
+The desktop application includes workspaces for:
 
-- Current time
-- Hostname
-- OS version
-- CPU usage
-- RAM usage
-- Disk usage
-- Network upload/download rate
-- System uptime
-- CPU temperature when the OS exposes it
+- Dashboard metrics for the local desktop and selected Agent node
+- Nodes and Node Details
+- Agent Control and Diagnostics
+- Marketplace installs and dependency checks
+- Instances, console logs, files, backups, and operations
+- Public Access provider status
+- Docker resources when Docker is available on the selected node
+- Owner and security workflows
 
-Missing platform data is shown as unavailable instead of using fake values.
+Missing platform data is shown as unavailable, unknown, or not tested instead of using fake values.
 
 ## AMP API Integration
 
@@ -425,8 +448,10 @@ For a simple local-only setup, keep it bound to your LAN or localhost. Do not ex
 - AMP panel: `http://192.168.1.134:8080`
 - Minecraft address: `coolpals.playit.fan`
 
-## Notes
+## Private Alpha Notes
 
-- Status cards are manual/static placeholders.
-- The CoolPals Bot card is reserved for future service health or controls.
-- No existing bot code is required or modified.
+- Keep the release channel as Private Alpha until the real-machine release gates pass.
+- The Debian Agent and Windows desktop must stay on compatible commits during testing.
+- Docker, Public Access, AMP, and some Marketplace templates depend on host-specific services and may be unavailable on a tester machine.
+- If a workspace is empty, use the page guidance first: connect an Agent, check dependencies, create an instance, or run diagnostics.
+- See [Known Limitations](docs/KNOWN_LIMITATIONS.md) before filing issues for intentionally unsupported capabilities.

@@ -416,6 +416,7 @@ const agentConfigFields = document.querySelectorAll("[data-agent-config]");
 const agentConfigMessage = document.querySelector("[data-agent-config-message]");
 const agentConfigSummary = document.querySelector("[data-agent-config-summary]");
 const agentDiagnosticsList = document.querySelector("[data-agent-diagnostics]");
+const agentLocalHostList = document.querySelector("[data-agent-local-host-list]");
 const agentRemoteList = document.querySelector("[data-agent-remote-list]");
 const agentLogViewer = document.querySelector("[data-agent-log-viewer]");
 const agentLogSearch = document.querySelector("[data-agent-log-search]");
@@ -3118,6 +3119,7 @@ function renderAgentControlState(payload = agentControlState) {
     }
   });
   renderAgentSetupSummary(payload?.local || local);
+  renderLocalAgentSystems(payload);
   renderRemoteAgents(payload?.remote || []);
   if (nodeHealthOverview || nodeHealthCategories || nodeHealthIssues) {
     refreshNodeHealth({ notify: false });
@@ -3405,6 +3407,58 @@ function readAgentControlConfig() {
   const result = {};
   agentConfigFields.forEach((field) => { const key = field.dataset.agentConfig; result[key] = ["allowedFolders", "allowedOrigins", "storageRoots"].includes(key) ? field.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean) : field.type === "checkbox" ? field.checked : field.type === "number" ? Number(field.value) : field.value; });
   return result;
+}
+
+function getLocalApplicationHostNode() {
+  return (nodesState.nodes || []).find((node) => node.id === "application-host" || node.kind === "application-host")
+    || nodesState.applicationHost
+    || { id: "application-host", kind: "application-host", displayName: "Windows Desktop", local: true };
+}
+
+function createAgentSystemCard({ title, subtitle, status, statusTone = "planned", details = [] }) {
+  const card = document.createElement("article");
+  card.className = "agent-remote-card";
+  const body = document.createElement("div");
+  body.append(createTextElement("strong", title), createTextElement("p", subtitle));
+  const detail = document.createElement("small");
+  detail.textContent = details.filter(Boolean).join(" · ") || "No additional details.";
+  body.append(detail);
+  const badge = createTextElement("span", status, `status-pill status-pill--${statusTone}`);
+  card.append(body, badge);
+  return card;
+}
+
+function renderLocalAgentSystems(payload = agentControlState) {
+  if (!agentLocalHostList) return;
+  agentLocalHostList.replaceChildren();
+  const applicationHost = getLocalApplicationHostNode();
+  const localAgent = payload?.local || null;
+  agentLocalHostList.append(createAgentSystemCard({
+    title: applicationHost.displayName || "Windows Desktop",
+    subtitle: "Local Application Host",
+    status: "Available",
+    statusTone: "ok",
+    details: [
+      "Stable ID application-host",
+      formatNodePlatform(applicationHost),
+      "Local desktop APIs",
+    ],
+  }));
+  if (localAgent) {
+    const service = localAgent.service || {};
+    const running = isAgentTargetRunning(localAgent) || localAgent.runtime?.serviceState === "running";
+    agentLocalHostList.append(createAgentSystemCard({
+      title: localAgent.config?.name || localAgent.hostname || "Local Agent service",
+      subtitle: "Local Agent Service",
+      status: running ? "Running" : service.installed ? "Stopped" : "Not installed",
+      statusTone: running ? "ok" : "planned",
+      details: [
+        service.supported ? `${service.type} ${service.registrationStatus || service.state || "unknown"}` : "Service management unsupported",
+        localAgent.agentUrl || null,
+        localAgent.agentVersion ? `Agent ${localAgent.agentVersion}` : null,
+      ],
+    }));
+  }
 }
 
 function renderRemoteAgents(agents = []) {

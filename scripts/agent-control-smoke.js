@@ -34,8 +34,12 @@ async function main() {
   assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");
   assert(rendererSource.includes("serviceNeedsElevation") && rendererSource.includes("Administrator required"), "Renderer must block or relabel Agent service actions that require elevation.");
   assert(!rendererSource.includes("try { await api.uninstallService(); } catch {} await api.installService()"), "Agent repair must not blindly uninstall and reinstall service registration.");
+  assert(rendererSource.includes("function renderLocalAgentSystems") && rendererSource.includes("Stable ID application-host"), "Agent Control must render the local application host with a stable identity.");
+  assert(rendererSource.includes("Local Application Host") && rendererSource.includes("Local Agent Service"), "Agent Control must distinguish the application host from the local Agent service.");
+  assert(!rendererSource.includes('subtitle: "Remote Agent"') || rendererSource.includes("renderRemoteAgents"), "Local host rendering must not label the application host as a remote Agent.");
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
   assert(htmlSource.includes("Agent Connection") && htmlSource.includes('data-agent-setting="agentUrl"'), "Agent Connection must render in Agent Control.");
+  assert(htmlSource.includes("data-agent-local-host-list") && htmlSource.includes("Local Systems"), "Agent Control must expose a local systems panel.");
   const control = require("../src/services/agentControlService");
   const validTask = control._test.validateWindowsTaskRegistration(`Task To Run: ${control._test.expectedWindowsTaskCommand(control.readConfig())}\nStatus: Ready`, control.readConfig());
   assert.strictEqual(validTask.valid, true, "Matching Windows scheduled task command should validate.");

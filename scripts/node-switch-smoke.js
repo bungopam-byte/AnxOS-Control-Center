@@ -91,6 +91,15 @@ includesAll(appSource, [
 ], "Node switch persistence and completion");
 
 includesAll(appSource, [
+  "function renderLocalAgentSystems",
+  "getLocalApplicationHostNode",
+  "Stable ID application-host",
+  "Local Application Host",
+  "Local Agent Service",
+  "renderRemoteAgents(payload?.remote || [])",
+], "Agent Control local and remote system identity");
+
+includesAll(appSource, [
   "const requestContext = createNodeActionContext(\"backup-create\");",
   "const requestContext = createNodeActionContext(`docker-${actionName}`);",
   "const requestContext = createNodeActionContext(\"instance-create\");",

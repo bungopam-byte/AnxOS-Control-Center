@@ -128,6 +128,7 @@ async function main() {
   assert(app.includes('id: `diagnostics.${action}`') && app.includes('health: "Run Health Checks"'), "Command Palette must expose real Diagnostics health-check action.");
   assert(app.includes("diagnosticsIssueGroups") && app.includes("issueResults"), "Global Search must include grouped diagnostic issues without duplicating diagnostics logic.");
   assert(app.includes('agentLogSource?.addEventListener("change", renderAgentLogs)'), "Diagnostics source filter must rerender logs and issue groups.");
+  assert(/function buildDiagnosticsHealthChecks\(\) \{[\s\S]*const desktopApiState = getDesktopApiState\(\);[\s\S]*desktopApiState\.hasBridge/.test(app), "Diagnostics health rendering must read desktop API state from the scoped accessor before use.");
   console.log("Diagnostics smoke checks passed.");
 }
 

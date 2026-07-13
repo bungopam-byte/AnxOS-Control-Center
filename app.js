@@ -3729,6 +3729,7 @@ function createDiagnosticStatusCard(check) {
 
 function buildDiagnosticsHealthChecks() {
   const now = new Date().toISOString();
+  const desktopApiState = getDesktopApiState();
   const failedOperations = [...operationsState.items.values()].filter((operation) => operation.status === "failed").length;
   const recentErrors = agentLogEntries.filter((entry) => getDiagnosticSeverityRank(entry.severity) >= 3).length;
   return [

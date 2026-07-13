@@ -93,5 +93,6 @@ assert(sourceBetween("function createSecurityConfirmation", "function createSecu
 assert(sourceBetween("function createSecurityTextPrompt", "const SECURITY_OPERATION_ACTIONS").includes("document.createElement(\"section\")"), "Security text prompt should use safe DOM construction.");
 assert(functionBody("sanitizeMarkdownText").includes("replace(/[<>&]/g"), "Markdown sanitizer must escape HTML-sensitive characters.");
 assert(sourceBetween("function renderMarkdownLite", "function formatUpdateDate").includes("sanitizeMarkdownText("), "Release note markdown renderer must sanitize input before allowlisted formatting.");
+assert(functionBody("buildDiagnosticsHealthChecks").includes("const desktopApiState = getDesktopApiState();"), "Diagnostics health checks must not rely on an unsafe global desktopApiState.");
 
 console.log("Renderer safety smoke checks passed.");

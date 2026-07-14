@@ -4,3 +4,5 @@
 /install /getting-started 301
 /release /release-notes.html 301
 /changelog /release-notes.html 301
+/device /activate 301
+/device-login /activate 301

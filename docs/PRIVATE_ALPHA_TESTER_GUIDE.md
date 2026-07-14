@@ -15,7 +15,7 @@ Do not share secrets in reports. Never paste Agent tokens, pairing codes, Supaba
 ## Recommended Test Order
 
 1. Open the AnxOS website.
-2. Download build 146 from the Download page.
+2. Download build 147 from the Download page.
 3. Expect a visible Private Alpha warning.
 4. Install the application.
 5. Complete onboarding.
@@ -38,7 +38,7 @@ Normal testers should use the Windows installer from the website. Do not ask nor
 
 Developers may still use `npm install` and `npm start` for development-mode validation.
 
-If Windows SmartScreen shows a blue warning, it usually means the Private Alpha installer is unsigned or not widely downloaded yet. Confirm the file is from the AnxOS website or the `v1.7-build146` GitHub release before choosing to continue. Stop and report it if the filename, version, or publisher details look wrong.
+If Windows SmartScreen shows a blue warning, it usually means the Private Alpha installer is unsigned or not widely downloaded yet. Confirm the file is from the AnxOS website or the `v1.7-build147` GitHub release before choosing to continue. Stop and report it if the filename, version, or publisher details look wrong.
 
 Do not use this alpha release for irreplaceable production data. Back up worlds and server files before testing destructive actions such as delete, restore, or dependency cleanup.
 

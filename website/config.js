@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "146",
-  buildNumber: "146",
+  build: "147",
+  buildNumber: "147",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 146 Private Alpha",
+  releaseLabel: "Version 1.7 Build 147 Private Alpha",
   releaseDate: "July 14, 2026",
-  releaseTag: "v1.7-build146",
+  releaseTag: "v1.7-build147",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build146",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build147",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -26,23 +26,41 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build146.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-Setup-1.7-build146.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build147.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-Setup-1.7-build147.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build146-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-1.7-build146-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build147-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-1.7-build147-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build146.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-1.7-build146.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build147.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-1.7-build147.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build146.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-1.7-build146.deb"
+          fileName: "AnxOS-Control-Center-1.7-build147.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-1.7-build147.deb"
       }
   ],
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 147,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build147",
+          "date": "July 14, 2026",
+          "datetime": "2026-07-14",
+          "title": "Build 147 Private Alpha hotfix",
+          "summary": "Private Alpha hotfix for a packaged Windows startup crash caused by Local Agent metadata resolving from the wrong packaged path.",
+          "changes": [
+              "Fixed a main-process startup crash where diagnostics tried to load Local Agent package metadata from inside app.asar.",
+              "Resolved bundled Local Agent version metadata from the packaged local-agent-runtime resource with a safe fallback.",
+              "Kept Agent Control update and diagnostics screens working when bundled runtime metadata is unavailable.",
+              "Added smoke coverage to prevent diagnostics and Agent Control from hard-loading agent/package.json from app.asar.",
+              "Bumped the Electron updater package version to 1.0.49 so Private Alpha hotfix updates can be detected."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build147"
+      },
       {
           "version": "1.7",
           "build": 146,

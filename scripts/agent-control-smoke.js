@@ -36,9 +36,13 @@ async function main() {
   assert(!rendererSource.includes("try { await api.uninstallService(); } catch {} await api.installService()"), "Agent repair must not blindly uninstall and reinstall service registration.");
   assert(rendererSource.includes("function renderLocalAgentSystems") && rendererSource.includes("Stable ID application-host"), "Agent Control must render the local application host with a stable identity.");
   assert(rendererSource.includes("Local Application Host") && rendererSource.includes("Local Agent Service"), "Agent Control must distinguish the application host from the local Agent service.");
+  assert(rendererSource.includes("function renderAgentBeginnerSummary") && rendererSource.includes("This Computer") && rendererSource.includes("Local AnxOS Agent") && rendererSource.includes("Connected Systems"), "Agent Control must render a beginner summary that separates desktop, local Agent, and remote systems.");
+  assert(rendererSource.includes("getLocalAgentFriendlyState") && rendererSource.includes("Authentication issue") && rendererSource.includes("Install Agent"), "Agent Control beginner summary must adapt actions to the real local Agent state.");
+  assert(rendererSource.includes("data-agent-summary-page") && rendererSource.includes("runAgentControlAction(action)"), "Agent Control summary actions must reuse existing page routing and Agent Control operations.");
   assert(!rendererSource.includes('subtitle: "Remote Agent"') || rendererSource.includes("renderRemoteAgents"), "Local host rendering must not label the application host as a remote Agent.");
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
   assert(htmlSource.includes("Agent Connection") && htmlSource.includes('data-agent-setting="agentUrl"'), "Agent Connection must render in Agent Control.");
+  assert(htmlSource.includes("data-agent-beginner-summary") && htmlSource.includes("Agent Control Summary"), "Agent Control must include the beginner-friendly summary panel.");
   assert(htmlSource.includes("data-agent-local-host-list") && htmlSource.includes("Local Systems"), "Agent Control must expose a local systems panel.");
   const control = require("../src/services/agentControlService");
   const validTask = control._test.validateWindowsTaskRegistration(`Task To Run: ${control._test.expectedWindowsTaskCommand(control.readConfig())}\nStatus: Ready`, control.readConfig());

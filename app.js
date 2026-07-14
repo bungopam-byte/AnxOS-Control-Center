@@ -440,6 +440,7 @@ const agentStatusDot = document.querySelector(".agent-status-dot");
 const agentControlMessage = document.querySelector("[data-agent-control-message]");
 const agentControlFields = document.querySelectorAll("[data-agent-control-field]");
 const agentControlButtons = document.querySelectorAll("[data-agent-control-action]");
+const agentBeginnerSummary = document.querySelector("[data-agent-beginner-summary]");
 const dependencyStatus = document.querySelector("[data-dependency-status]");
 const dependencyList = document.querySelector("[data-dependency-list]");
 const dependencyButtons = document.querySelectorAll("[data-dependency-action]");
@@ -3687,6 +3688,7 @@ function renderAgentControlState(payload = agentControlState) {
     }
   });
   renderAgentSetupSummary(payload?.local || local);
+  renderAgentBeginnerSummary(payload);
   renderLocalAgentSystems(payload);
   renderRemoteAgents(payload?.remote || []);
   if (nodeHealthOverview || nodeHealthCategories || nodeHealthIssues) {
@@ -4002,6 +4004,181 @@ function createAgentSystemCard({ title, subtitle, status, statusTone = "planned"
   const badge = createTextElement("span", status, `status-pill status-pill--${statusTone}`);
   card.append(body, badge);
   return card;
+}
+
+function createAgentSummaryAction(action = {}) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = action.primary ? "inline-action inline-action--primary" : "inline-action";
+  button.textContent = action.label || "Open";
+  if (action.page) button.dataset.agentSummaryPage = action.page;
+  if (action.agentAction) button.dataset.agentSummaryAction = action.agentAction;
+  if (action.disabled) button.disabled = true;
+  if (action.title) button.title = action.title;
+  return button;
+}
+
+function createAgentSummaryCard({ title, subtitle, status, statusTone = "planned", details = [], actions = [] }) {
+  const card = document.createElement("article");
+  card.className = "agent-summary-card";
+  const heading = document.createElement("div");
+  heading.className = "agent-summary-card__heading";
+  heading.append(
+    createTextElement("span", status, `status-pill status-pill--${statusTone}`),
+    createTextElement("h3", title),
+    createTextElement("p", subtitle),
+  );
+  const detail = document.createElement("small");
+  detail.textContent = details.filter(Boolean).join(" · ") || "No additional details available.";
+  const actionRow = document.createElement("div");
+  actionRow.className = "agent-summary-card__actions";
+  actions.forEach((action) => actionRow.append(createAgentSummaryAction(action)));
+  card.append(heading, detail);
+  if (actions.length) card.append(actionRow);
+  return card;
+}
+
+function getLocalAgentFriendlyState(localAgent = {}) {
+  const service = localAgent.service || {};
+  const running = isAgentTargetRunning(localAgent) || localAgent.runtime?.serviceState === "running";
+  const stateText = String(localAgent.state || localAgent.runtime?.state || "").toLowerCase();
+  if (running) {
+    return {
+      status: "Running",
+      tone: "ok",
+      message: "The local Agent is running and can manage supported services on this computer.",
+      actions: [
+        { label: "Restart Agent", agentAction: "restart" },
+        { label: "View Diagnostics", agentAction: "runDiagnostics" },
+      ],
+    };
+  }
+  if (stateText.includes("auth")) {
+    return {
+      status: "Authentication issue",
+      tone: "critical",
+      message: "The local Agent is reachable, but AnxOS cannot authenticate with it.",
+      actions: [
+        { label: "Reconnect", agentAction: "reconnect", primary: true },
+        { label: "View Diagnostics", agentAction: "runDiagnostics" },
+      ],
+    };
+  }
+  if (service.installed) {
+    return {
+      status: "Stopped",
+      tone: "planned",
+      message: "The local Agent service is installed but not currently running.",
+      actions: [
+        { label: "Start Agent", agentAction: "start", primary: true },
+        { label: "View Diagnostics", agentAction: "runDiagnostics" },
+      ],
+    };
+  }
+  if (service.supported === false || localAgent.lifecycleSupported === false) {
+    return {
+      status: "Unsupported",
+      tone: "planned",
+      message: "This platform does not support local Agent service management from AnxOS.",
+      actions: [{ label: "View Diagnostics", agentAction: "runDiagnostics" }],
+    };
+  }
+  if (localAgent.state === "Unreachable" || stateText.includes("unreachable")) {
+    return {
+      status: "Unable to confirm",
+      tone: "warning",
+      message: "AnxOS could not confirm the local Agent state. It may be stopped or unreachable.",
+      actions: [
+        { label: "Retry Check", agentAction: "refresh", primary: true },
+        { label: "View Diagnostics", agentAction: "runDiagnostics" },
+      ],
+    };
+  }
+  return {
+    status: "Not installed",
+    tone: "planned",
+    message: "Install the local Agent when you want AnxOS to manage files, servers, containers, and services on this computer.",
+    actions: [
+      { label: "Install Agent", agentAction: "installService", primary: true, disabled: Boolean(service.requiresElevation && service.privilege?.elevated !== true), title: service.requiresElevation ? "Run AnxOS Control Center as Administrator to install the service." : "" },
+      { label: "View Diagnostics", agentAction: "runDiagnostics" },
+    ],
+  };
+}
+
+function renderAgentBeginnerSummary(payload = agentControlState) {
+  if (!agentBeginnerSummary) return;
+  const grid = document.createElement("div");
+  grid.className = "agent-summary-grid";
+  const applicationHost = getLocalApplicationHostNode();
+  const localAgent = payload?.local || {};
+  const remoteAgents = Array.isArray(payload?.remote) ? payload.remote : [];
+  const localState = getLocalAgentFriendlyState(localAgent);
+  const connectedRemoteCount = remoteAgents.filter((agent) => agent.state === "Running").length;
+  const remoteStatus = remoteAgents.length ? `${connectedRemoteCount}/${remoteAgents.length} connected` : "None connected";
+  const remoteTone = connectedRemoteCount > 0 ? "ok" : "planned";
+  const diagnosticsMessage = localAgent.mostRecentError?.message
+    || (localState.status === "Running" ? "Everything reported by Agent Control looks ready." : localState.message);
+  const diagnosticsTone = localAgent.mostRecentError ? "warning" : localState.tone;
+  grid.append(
+    createAgentSummaryCard({
+      title: "This Computer",
+      subtitle: "Desktop application host",
+      status: "Available",
+      statusTone: "ok",
+      details: [
+        applicationHost.displayName || "Local desktop",
+        formatNodePlatform(applicationHost),
+        "Local management bridge is active",
+      ],
+      actions: [{ label: "Open Node Details", page: "nodes" }],
+    }),
+    createAgentSummaryCard({
+      title: "Local AnxOS Agent",
+      subtitle: localState.message,
+      status: localState.status,
+      statusTone: localState.tone,
+      details: [
+        localAgent.agentVersion ? `Version ${localAgent.agentVersion}` : "Version unavailable",
+        localAgent.agentUrl || "No local Agent URL confirmed",
+        localAgent.service?.registrationStatus ? `Registration ${localAgent.service.registrationStatus}` : null,
+      ],
+      actions: localState.actions,
+    }),
+    createAgentSummaryCard({
+      title: "Connected Systems",
+      subtitle: remoteAgents.length ? "Remote Agents are listed separately from this computer." : "Add another Windows or Linux system when you are ready.",
+      status: remoteStatus,
+      statusTone: remoteTone,
+      details: [
+        `${remoteAgents.length} remote Agent${remoteAgents.length === 1 ? "" : "s"} registered`,
+        connectedRemoteCount ? `${connectedRemoteCount} reachable` : "No reachable remote Agent confirmed",
+      ],
+      actions: [{ label: remoteAgents.length ? "View Systems" : "Add Remote System", page: "nodes", primary: !remoteAgents.length }],
+    }),
+    createAgentSummaryCard({
+      title: "Diagnostics",
+      subtitle: diagnosticsMessage,
+      status: localAgent.mostRecentError ? "Needs attention" : localState.status === "Running" ? "Ready" : "Check recommended",
+      statusTone: diagnosticsTone,
+      details: [
+        "Beginner summary first",
+        "Technical logs and support bundles remain below",
+      ],
+      actions: [
+        { label: "Run Diagnostics", agentAction: "runDiagnostics", primary: true },
+        { label: "Refresh", agentAction: "refresh" },
+      ],
+    }),
+  );
+  const header = document.createElement("div");
+  header.className = "settings-section__header";
+  const headerText = document.createElement("div");
+  headerText.append(
+    createTextElement("h2", "Agent Control Summary"),
+    createTextElement("p", "Plain-language status for this computer, the local Agent, connected systems, and diagnostics."),
+  );
+  header.append(headerText);
+  agentBeginnerSummary.replaceChildren(header, grid);
 }
 
 function renderLocalAgentSystems(payload = agentControlState) {
@@ -29670,6 +29847,14 @@ nodeDetailsModal?.addEventListener("click", async (event) => {
   }
 });
 agentControlButtons.forEach((button) => button.addEventListener("click", () => runAgentControlAction(button.dataset.agentControlAction)));
+agentBeginnerSummary?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-agent-summary-page], [data-agent-summary-action]");
+  if (!button) return;
+  const page = button.dataset.agentSummaryPage;
+  const action = button.dataset.agentSummaryAction;
+  if (page) showPage(page);
+  if (action) runAgentControlAction(action);
+});
 dependencyButtons.forEach((button) => button.addEventListener("click", () => runDependencyAction(button.dataset.dependencyAction)));
 agentLogSearch?.addEventListener("input", renderAgentLogs);
 agentLogSeverity?.addEventListener("change", renderAgentLogs);

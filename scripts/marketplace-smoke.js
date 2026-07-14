@@ -2570,6 +2570,11 @@ async function assertProviderInstallSupport() {
       },
       "CurseForge API requests must include API key and User-Agent headers."
     );
+    assert.strictEqual(
+      curseforgeProvider._test.buildDownloadHeaders("https://edge.forgecdn.net/files/1/2/example.jar", { cfApiKey: "cf-direct-token" })["x-api-key"],
+      "cf-direct-token",
+      "CurseForge CDN downloads must include API key authentication."
+    );
   } finally {
     if (previousAliasMigrationDisabled === undefined) {
       delete process.env.ANXHUB_DISABLE_CURSEFORGE_KEY_MIGRATION;

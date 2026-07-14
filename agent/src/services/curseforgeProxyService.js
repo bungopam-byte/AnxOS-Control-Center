@@ -122,6 +122,39 @@ function validateDownloadUrl(value) {
   return parsed;
 }
 
+async function fetchDownloadWithRedirects(url, apiKey, context = {}) {
+  let current = validateDownloadUrl(url);
+  const maxRedirects = 5;
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const response = await fetch(current, {
+      redirect: "manual",
+      headers: {
+        "User-Agent": USER_AGENT,
+        "x-api-key": apiKey,
+      },
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      response.redirectCount = redirectCount;
+      response.finalUrl = String(current);
+      response.finalHostname = current.hostname;
+      return response;
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      response.redirectCount = redirectCount;
+      response.finalUrl = String(current);
+      response.finalHostname = current.hostname;
+      return response;
+    }
+    current = validateDownloadUrl(new URL(location, current).toString());
+  }
+  throw new CurseForgeProxyError("CurseForge download exceeded the redirect limit.", "CURSEFORGE_DOWNLOAD_REDIRECT_LIMIT", {
+    projectId: context.projectId || null,
+    fileId: context.fileId || null,
+    redirectLimit: maxRedirects,
+  }, 508);
+}
+
 async function fetchCurseForgeApi(url) {
   const resolved = requireApiKey();
   const target = buildApiUrl(url);
@@ -149,19 +182,27 @@ async function fetchCurseForgeApi(url) {
 async function fetchCurseForgeDownload(url) {
   const resolved = requireApiKey();
   const target = validateDownloadUrl(url.searchParams.get("url") || "");
-  const response = await fetch(target, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      "x-api-key": resolved.key,
-    },
+  const context = {
+    projectId: url.searchParams.get("projectId") || null,
+    fileId: url.searchParams.get("fileId") || null,
+  };
+  const response = await fetchDownloadWithRedirects(target, resolved.key, context);
+  console.info("[AnxOS Agent][CurseForge] Download response.", {
+    hostname: response.finalHostname || target.hostname,
+    status: response.status,
+    redirectCount: response.redirectCount || 0,
+    projectId: context.projectId,
+    fileId: context.fileId,
+    authenticated: true,
   });
   const buffer = Buffer.from(await response.arrayBuffer());
   if (!response.ok) {
     throw new CurseForgeProxyError("CurseForge download request failed.", "CURSEFORGE_DOWNLOAD_FAILED", {
       status: response.status,
-      hostname: target.hostname,
-      projectId: url.searchParams.get("projectId") || null,
-      fileId: url.searchParams.get("fileId") || null,
+      hostname: response.finalHostname || target.hostname,
+      redirectCount: response.redirectCount || 0,
+      projectId: context.projectId,
+      fileId: context.fileId,
     }, response.status);
   }
   return {

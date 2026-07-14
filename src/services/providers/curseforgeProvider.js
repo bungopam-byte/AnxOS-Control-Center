@@ -843,6 +843,39 @@ function buildDownloadHeaders(url, config = {}) {
   return headers;
 }
 
+async function fetchDownloadWithRedirects(url, options = {}) {
+  let current = validateDownloadUrl(url, "CurseForge file");
+  const maxRedirects = Math.min(Math.max(Number(options.maxRedirects) || 5, 0), 10);
+  for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
+    const headers = buildDownloadHeaders(current, options.config || {});
+    const response = await fetchWithTimeout(current, {
+      headers,
+      redirect: "manual",
+      timeoutMs: options.timeoutMs || options.config?.timeoutMs,
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      response.redirectCount = redirectCount;
+      response.authenticated = Boolean(headers["x-api-key"]);
+      response.finalUrl = String(current);
+      response.finalHostname = current.hostname;
+      return response;
+    }
+    const location = response.headers.get("location");
+    if (!location) {
+      response.redirectCount = redirectCount;
+      response.authenticated = Boolean(headers["x-api-key"]);
+      response.finalUrl = String(current);
+      response.finalHostname = current.hostname;
+      return response;
+    }
+    current = validateDownloadUrl(new URL(location, current).toString(), "CurseForge file redirect");
+  }
+  throw new CurseForgeProviderError("CurseForge download exceeded the redirect limit.", "CURSEFORGE_DOWNLOAD_REDIRECT_LIMIT", {
+    url: String(current),
+    redirectLimit: maxRedirects,
+  });
+}
+
 async function requestJson(url, label, config = {}) {
   try {
     return await withRetry(async () => {
@@ -908,35 +941,32 @@ function validateDownloadUrl(url, label = "CurseForge file") {
 
 async function requestBuffer(url, label, options = {}) {
   const parsed = validateDownloadUrl(url, label);
-  const headers = buildDownloadHeaders(parsed, options.config || {});
   try {
     return await withRetry(async () => {
-      const response = await fetchWithTimeout(parsed, {
-        headers,
-        timeoutMs: options.timeoutMs || options.config?.timeoutMs,
-      });
+      const response = await fetchDownloadWithRedirects(parsed, options);
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_DOWNLOAD_FAILED", {
           status: response.status,
           body: truncateForLog(body),
-          url,
-          hostname: parsed.hostname,
-          authenticated: Boolean(headers["x-api-key"]),
+          url: response.finalUrl || url,
+          hostname: response.finalHostname || parsed.hostname,
+          redirectCount: response.redirectCount || 0,
+          authenticated: Boolean(response.authenticated),
           projectId: options.projectId || null,
           fileId: options.fileId || null,
         });
       }
       console.info("[Marketplace][CurseForge] Download response.", {
         label,
-        hostname: parsed.hostname,
+        hostname: response.finalHostname || parsed.hostname,
         status: response.status,
         ok: response.ok,
-        redirected: response.redirected,
-        redirectCount: response.redirected ? 1 : 0,
+        redirected: Boolean(response.redirectCount),
+        redirectCount: response.redirectCount || 0,
         projectId: options.projectId || null,
         fileId: options.fileId || null,
-        authenticated: Boolean(headers["x-api-key"]),
+        authenticated: Boolean(response.authenticated),
       });
       return Buffer.from(await response.arrayBuffer());
     }, { label, url, attempts: options.attempts || options.config?.attempts, delayMs: options.retryDelayMs || options.config?.retryDelayMs });
@@ -1268,6 +1298,7 @@ module.exports = {
     buildDownloadHeaders,
     cleanSecretValue,
     curseForgeClient,
+    fetchDownloadWithRedirects,
     friendlyHttpMessage,
     getApiKeyStatus,
     getConfigurationDiagnostics,

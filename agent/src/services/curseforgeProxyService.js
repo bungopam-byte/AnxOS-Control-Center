@@ -3,7 +3,8 @@ const fs = require("fs");
 
 const CURSEFORGE_API = "https://api.curseforge.com/v1";
 const USER_AGENT = "AnxOS-Agent/0.1 (+https://anxos.local)";
-const API_KEY_ENV = ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
+const API_KEY_ENV = ["CURSEFORGE_API_KEY"];
+const API_KEY_ENV_ALIASES = ["CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
 const API_KEY_FILE_ENV = ["CURSEFORGE_API_KEY_FILE", "CF_API_KEY_FILE", "ANXHUB_CURSEFORGE_API_KEY_FILE"];
 const ALLOWED_API_PATHS = [
   /^\/mods\/search$/,
@@ -47,11 +48,15 @@ function readSecretFile(filePath) {
 function resolveApiKey() {
   for (const envName of API_KEY_ENV) {
     const value = cleanSecretValue(process.env[envName]);
-    if (value) return { key: value, source: `agent-env:${envName}` };
+    if (value) return { key: value, source: "environment" };
+  }
+  for (const envName of API_KEY_ENV_ALIASES) {
+    const value = cleanSecretValue(process.env[envName]);
+    if (value) return { key: value, source: "environment-alias" };
   }
   for (const envName of API_KEY_FILE_ENV) {
     const value = cleanSecretValue(process.env[envName]);
-    if (value) return { key: readSecretFile(value), source: `agent-env:${envName}` };
+    if (value) return { key: readSecretFile(value), source: "protected-file" };
   }
   return { key: "", source: null };
 }

@@ -28,6 +28,9 @@ bot-config/
 config/marketplace.json
 config/agent.json
 config/owner-accounts.json
+agent/.env
+agent/config/
+*.env
 agent/*.log
 release-build.json
 

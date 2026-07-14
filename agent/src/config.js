@@ -63,6 +63,13 @@ function loadEnvFile(filePath) {
   }
 }
 
+function getUserConfigEnvPath() {
+  const base = process.env.XDG_CONFIG_HOME
+    ? path.join(process.env.XDG_CONFIG_HOME, "anxos-control-center")
+    : path.join(process.env.HOME || "", ".config", "anxos-control-center");
+  return path.join(base, "agent.env");
+}
+
 function loadEnvironment() {
   if (environmentLoaded) {
     return;
@@ -70,6 +77,8 @@ function loadEnvironment() {
   environmentLoaded = true;
   [
     process.env.ANXHUB_AGENT_ENV_PATH,
+    process.env.ANXOS_AGENT_ENV_PATH,
+    getUserConfigEnvPath(),
     path.join(process.cwd(), ".env"),
     path.join(__dirname, "..", ".env"),
     path.join(__dirname, "..", "..", ".env"),

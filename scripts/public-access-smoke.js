@@ -4,13 +4,20 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const servicePath = path.join(root, "src", "services", "publicAccessProviderService.js");
+const sharedDetectionPath = path.join(root, "src", "shared", "publicAccessProviderDetection.js");
+const agentRoutePath = path.join(root, "agent", "src", "routes", "publicAccess.js");
+const agentServerPath = path.join(root, "agent", "src", "server.js");
 const appPath = path.join(root, "app.js");
 const indexPath = path.join(root, "index.html");
 const preloadPath = path.join(root, "preload.js");
 const ipcPath = path.join(root, "src", "ipc", "publicAccessIpc.js");
 
 const publicAccess = require("../src/services/publicAccessProviderService");
+const detection = require("../src/shared/publicAccessProviderDetection");
 const serviceSource = fs.readFileSync(servicePath, "utf8");
+const sharedDetectionSource = fs.readFileSync(sharedDetectionPath, "utf8");
+const agentRouteSource = fs.readFileSync(agentRoutePath, "utf8");
+const agentServerSource = fs.readFileSync(agentServerPath, "utf8");
 const appSource = fs.readFileSync(appPath, "utf8");
 const indexSource = fs.readFileSync(indexPath, "utf8");
 const preloadSource = fs.readFileSync(preloadPath, "utf8");
@@ -59,12 +66,104 @@ const readiness = publicAccess._test.summarizePublicAccessReadiness({
 assert.strictEqual(readiness.state, "degraded", "Tailnet-only connectivity should be degraded for public access validation.");
 assert.strictEqual(readiness.context.providerCapabilities[0].publicInternet, false, "Tailscale tailnet-only capability must not be reported as public internet.");
 
-assert(serviceSource.includes('execFile(command, args') && !serviceSource.includes("exec("), "Provider detection must use execFile with argument arrays.");
-assert(serviceSource.includes('runCommand("tailscale", ["status", "--json"])'), "Tailscale foundation must inspect real CLI status.");
-assert(serviceSource.includes('runCommand("cloudflared", ["--version"])'), "Cloudflare foundation must inspect real cloudflared availability.");
-assert(serviceSource.includes("redactOutput"), "Provider diagnostics must redact token-like output.");
+async function assertDetectionCases() {
+  const tailscaleRunCommand = async (command, args = []) => {
+    const signature = `${command} ${args.join(" ")}`;
+    if (signature === "sh -lc command -v tailscale") return { ok: true, stdout: "/usr/bin/tailscale", stderr: "" };
+    if (signature === "sh -lc command -v tailscaled") return { ok: true, stdout: "/usr/sbin/tailscaled", stderr: "" };
+    if (signature === "tailscale version") return { ok: true, stdout: "1.70.0\n  go version: go1.22", stderr: "" };
+    if (signature === "tailscale status --json") return {
+      ok: true,
+      stdout: JSON.stringify({
+        BackendState: "Running",
+        Self: {
+          HostName: "anxlab",
+          DNSName: "anxlab.tailnet.ts.net.",
+          TailscaleIPs: ["100.64.0.10", "fd7a:115c:a1e0::10"],
+          Online: true,
+        },
+        CurrentTailnet: { Name: "tailnet.ts.net", MagicDNSSuffix: "tailnet.ts.net" },
+      }),
+      stderr: "",
+    };
+    if (signature === "tailscale ip -4") return { ok: true, stdout: "100.64.0.10", stderr: "" };
+    if (signature === "tailscale ip -6") return { ok: true, stdout: "fd7a:115c:a1e0::10", stderr: "" };
+    if (signature === "systemctl is-active tailscaled") return { ok: true, stdout: "active", stderr: "" };
+    if (signature === "systemctl is-enabled tailscaled") return { ok: true, stdout: "enabled", stderr: "" };
+    if (signature === "tailscale serve status --json") return { ok: true, stdout: "{}", stderr: "" };
+    if (signature === "tailscale funnel status --json") return { ok: false, errorCode: 1, stdout: "", stderr: "not enabled" };
+    return { ok: false, errorCode: "ENOENT", stdout: "", stderr: "" };
+  };
+  const tailscale = await detection.detectTailscaleProvider({ runCommand: tailscaleRunCommand, nodeId: "anxlab", platform: "linux" });
+  assert.strictEqual(tailscale.nodeId, "anxlab", "Tailscale detection must preserve selected node id.");
+  assert.strictEqual(tailscale.providerId, "tailscale", "Provider result must expose a stable providerId.");
+  assert.strictEqual(tailscale.displayState, "Installed and connected", "Connected Tailscale must not be shown as Not Installed.");
+  assert.strictEqual(tailscale.IPv4, "100.64.0.10", "Tailscale IPv4 address should be captured.");
+  assert.strictEqual(tailscale.DNSName, "anxlab.tailnet.ts.net.", "Tailscale MagicDNS name should be captured.");
+
+  const tailscaleLoginRequired = await detection.detectTailscaleProvider({
+    nodeId: "anxlab",
+    platform: "linux",
+    runCommand: async (command, args = []) => {
+      const signature = `${command} ${args.join(" ")}`;
+      if (signature === "sh -lc command -v tailscale") return { ok: true, stdout: "/usr/bin/tailscale", stderr: "" };
+      if (signature === "sh -lc command -v tailscaled") return { ok: true, stdout: "/usr/sbin/tailscaled", stderr: "" };
+      if (signature === "tailscale status --json") return { ok: true, stdout: JSON.stringify({ BackendState: "NeedsLogin" }), stderr: "" };
+      return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+    },
+  });
+  assert.strictEqual(tailscaleLoginRequired.lifecycleState, "auth-required", "Tailscale login-required state should be explicit.");
+
+  const cloudflareRunCommand = async (command, args = []) => {
+    const signature = `${command} ${args.join(" ")}`;
+    if (signature === "sh -lc command -v cloudflared") return { ok: true, stdout: "/usr/bin/cloudflared", stderr: "" };
+    if (signature === "cloudflared --version") return { ok: true, stdout: "cloudflared version 2026.7.0", stderr: "" };
+    if (signature === "cloudflared tunnel list --output json") return { ok: true, stdout: "[]", stderr: "" };
+    if (signature === "pgrep -af cloudflared") return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+    if (signature === "systemctl is-active cloudflared") return { ok: false, errorCode: 3, stdout: "inactive", stderr: "" };
+    if (signature.includes("cert.pem")) return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+    if (signature.includes("config.yml")) return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+    return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+  };
+  const cloudflare = await detection.detectCloudflareProvider({ runCommand: cloudflareRunCommand, nodeId: "anxlab", platform: "linux" });
+  assert.strictEqual(cloudflare.displayState, "Authentication Required", "cloudflared with no auth should not be shown as Not Installed.");
+
+  const cloudflareConfigured = await detection.detectCloudflareProvider({
+    nodeId: "anxlab",
+    platform: "linux",
+    runCommand: async (command, args = []) => {
+      const signature = `${command} ${args.join(" ")}`;
+      if (signature === "sh -lc command -v cloudflared") return { ok: true, stdout: "/usr/bin/cloudflared", stderr: "" };
+      if (signature === "cloudflared --version") return { ok: true, stdout: "cloudflared version 2026.7.0", stderr: "" };
+      if (signature === "cloudflared tunnel list --output json") return { ok: true, stdout: JSON.stringify([{ id: "tunnel-1", name: "anxlab" }]), stderr: "" };
+      if (signature === "pgrep -af cloudflared") return { ok: true, stdout: "123 /usr/bin/cloudflared tunnel run anxlab", stderr: "" };
+      if (signature === "systemctl is-active cloudflared") return { ok: true, stdout: "active", stderr: "" };
+      if (signature.includes("config.yml")) return { ok: true, stdout: "/etc/cloudflared/config.yml", stderr: "" };
+      if (signature.includes("cert.pem")) return { ok: true, stdout: "present", stderr: "" };
+      return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+    },
+  });
+  assert.strictEqual(cloudflareConfigured.displayState, "Running", "Configured active cloudflared should report Running.");
+  assert.strictEqual(cloudflareConfigured.tunnelCount, 1, "Cloudflare tunnel count should be captured.");
+
+  const normalized = publicAccess._test.normalizeSnapshotContext({
+    providers: [publicAccess._test.createProviderState(publicAccess.TailscaleProvider, { nodeId: "old-node", platform: "win32" })],
+    services: [{ id: "stale", nodeId: "old-node" }],
+  }, { nodeId: "anxlab", platform: "linux", checkedAt: "2026-07-13T00:00:00.000Z" });
+  assert.strictEqual(normalized.providers[0].nodeId, "anxlab", "Snapshot context should prevent stale node data from leaking into provider rows.");
+  assert.strictEqual(normalized.services[0].nodeId, "anxlab", "Service context should be tied to the active node.");
+}
+
+assert(sharedDetectionSource.includes('execFile(command, args') === false, "Shared detection should receive a command runner instead of executing directly.");
+assert(serviceSource.includes('execFile(command, args'), "Desktop provider detection must use execFile with argument arrays.");
+assert(sharedDetectionSource.includes('runCommand("tailscale", ["status", "--json"])'), "Tailscale foundation must inspect real CLI status.");
+assert(sharedDetectionSource.includes('runCommand("cloudflared", ["--version"])'), "Cloudflare foundation must inspect real cloudflared availability.");
+assert(sharedDetectionSource.includes("redactOutput"), "Provider diagnostics must redact token-like output.");
 assert(serviceSource.includes("summarizePublicAccessReadiness"), "Public Access snapshots must include readiness summaries.");
+assert(serviceSource.includes("agentClient.getPublicAccessSnapshot") && agentRouteSource.includes("/api/v1/public-access/snapshot") && agentServerSource.includes("handlePublicAccess"), "Remote Public Access detection must route through the selected Agent.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
+assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
+assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");
 assert(indexSource.includes('data-public-access-service-card="playit-primary"') && indexSource.includes('role="button"') && indexSource.includes("data-public-access-service-actions"), "Public Access service cards must be clickable and render live actions.");
 assert(indexSource.includes("data-public-access-provider-detail-pill") && indexSource.includes("data-public-access-provider-actions") && indexSource.includes("data-public-access-provider-unsupported"), "Provider Details must expose dynamic actions and unsupported reasons.");
@@ -93,4 +192,9 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
 assert(!indexSource.includes('data-public-access-action="disable" disabled') && !indexSource.includes('data-public-access-action="restart" disabled'), "Public Access must not render dead disabled action buttons.");
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");
 
-console.log("Public Access smoke checks passed.");
+assertDetectionCases().then(() => {
+  console.log("Public Access smoke checks passed.");
+}).catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

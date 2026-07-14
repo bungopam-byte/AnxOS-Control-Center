@@ -16,6 +16,7 @@ const { handleFilesDownload, handleFilesIdentity, handleFilesList, handleFilesMu
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
+const { handlePublicAccess } = require("./routes/publicAccess");
 const { handleStats, handleSystemSummary } = require("./routes/system");
 
 const config = getConfig();
@@ -232,6 +233,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/playit/status") {
     return handlePlayitStatus();
+  }
+
+  if (pathname === "/api/v1/public-access/snapshot") {
+    return handlePublicAccess(request, url);
   }
 
   if (pathname === "/api/v1/amp/snapshot") {

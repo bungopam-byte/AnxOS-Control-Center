@@ -1301,6 +1301,12 @@ async function getPlayitSnapshot(configOverride = null) {
   }));
 }
 
+async function getPublicAccessSnapshot(configOverride = null) {
+  return requestJson("/api/v1/public-access/snapshot", {
+    config: configOverride,
+  });
+}
+
 function safeNumber(value) {
   if (value === null || value === undefined || typeof value === "boolean" || value === "" || Array.isArray(value)) {
     return null;
@@ -2507,6 +2513,7 @@ module.exports = {
   getMinecraftProperties,
   getPlayitSnapshot,
   getPlayitStatus,
+  getPublicAccessSnapshot,
   isHealthy,
   importBackup,
   installDependencies,

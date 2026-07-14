@@ -5505,6 +5505,7 @@ function renderPublicAccessProviderDetails(snapshot = latestPublicAccessSnapshot
   if (publicAccessProviderDetailSummary) {
     publicAccessProviderDetailSummary.textContent = provider.recoveryAction || provider.description || "Provider details are available.";
   }
+  renderPublicAccessProviderMetricFields(provider, service || {});
   setField("publicAccessConnectionHealth", formatPublicAccessHealth(provider.health));
   setField("publicAccessReachability", formatPublicAccessReachability(service || {}, provider));
   setField("publicAccessProviderCapabilities", formatPublicAccessCapabilities(provider));
@@ -5524,13 +5525,17 @@ function renderPublicAccessProviderDetails(snapshot = latestPublicAccessSnapshot
 function getPublicAccessPublicAddress() {
   const service = getSelectedPublicAccessService();
   const provider = getSelectedPublicAccessProvider();
-  return service?.publicAddress || provider?.publicAddress || latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || getConfiguredPlayitAddress() || "";
+  if (provider?.id === "playit") {
+    return service?.publicAddress || provider?.publicAddress || latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || getConfiguredPlayitAddress() || "";
+  }
+  return service?.publicAddress || provider?.publicAddress || provider?.tailnetAddress || "";
 }
 
 function getPublicAccessLocalEndpoint() {
   const service = getSelectedPublicAccessService();
-  const host = latestPlayitSnapshot?.localIp || "127.0.0.1";
-  const port = service?.localPort || latestPlayitSnapshot?.localPort || "";
+  const provider = getSelectedPublicAccessProvider();
+  const host = service?.localHost || service?.localIp || (provider?.id === "playit" ? latestPlayitSnapshot?.localIp || "127.0.0.1" : "");
+  const port = service?.localPort || (provider?.id === "playit" ? latestPlayitSnapshot?.localPort : "");
   return port ? `${host}:${port}` : "";
 }
 
@@ -5606,18 +5611,52 @@ function renderPlayitSnapshot(snapshot) {
 function getPublicAccessProviderTone(provider = {}) {
   if (provider.id === "playit" && provider.connected) return "is-connected";
   if (provider.health === "healthy") return "status-pill--ok";
+  if (provider.lifecycleState === "running") return "status-pill--ok";
+  if (provider.lifecycleState === "disabled" || provider.status === "disabled") return "status-pill--critical";
+  if (["setup-required", "auth-required", "degraded", "stopped"].includes(provider.lifecycleState)) return "status-pill--warning";
   if (provider.available || provider.installed) return "status-pill--planned";
   if (provider.status === "disabled") return "status-pill--critical";
   return "status-pill--warning";
 }
 
 function getPublicAccessProviderLabel(provider = {}) {
+  if (provider.displayState) return provider.displayState;
+  if (provider.lifecycleState === "not-installed") return "Not Installed";
+  if (provider.lifecycleState === "setup-required") return "Setup Required";
+  if (provider.lifecycleState === "auth-required") return "Authentication Required";
+  if (provider.lifecycleState === "stopped") return "Stopped";
+  if (provider.lifecycleState === "running") return "Running";
+  if (provider.lifecycleState === "degraded") return "Degraded";
+  if (provider.lifecycleState === "disabled") return "Disabled";
   if (provider.id === "playit" && provider.connected) return "Connected";
   if (provider.id === "playit" && provider.installed) return provider.health === "stopped" ? "Stopped" : "Detected";
   if (provider.available || provider.installed) return "Detected";
   if (provider.status === "disabled") return "Disabled";
   if (provider.status === "foundation") return "Not Installed";
   return "Unavailable";
+}
+
+function renderPublicAccessProviderMetricFields(provider = {}, service = {}) {
+  const providerName = provider.name || "Provider";
+  const publicAddress = service.publicAddress || provider.publicAddress || provider.tailnetAddress || "Unavailable";
+  const localHost = service.localHost || service.localIp || "Unavailable";
+  const localPort = service.localPort || "Unavailable";
+  const protocol = service.protocol || "Unavailable";
+  const tunnelId = service.tunnelId || provider.tunnelId || "Not reported";
+
+  setField("publicAccessProvider", providerName);
+  setField("playitInstalled", provider.installed ? "Installed" : provider.lifecycleState === "disabled" ? "Disabled" : "Missing");
+  setField("playitRunning", provider.running || provider.connected ? "Running" : provider.lifecycleState === "disabled" ? "Disabled" : "Stopped");
+  setField("playitConnected", getPublicAccessProviderLabel(provider));
+  setField("playitTunnelAddress", publicAddress);
+  setField("playitLocalIp", localHost);
+  setField("playitLocalPort", localPort);
+  setField("playitProtocol", protocol);
+  setField("playitTunnelId", tunnelId);
+  setField("playitLastSuccessfulRefresh", formatDateTime(provider.checkedAt || service.lastCheckedAt));
+  setField("playitLatency", provider.latencyMs !== undefined && provider.latencyMs !== null ? `${provider.latencyMs} ms` : "Not measured");
+  setField("playitTraffic", "Not reported");
+  setField("playitSummary", provider.recoveryAction || provider.description || "Provider details are available.");
 }
 
 function renderPublicAccessProviders(providers = []) {
@@ -5632,8 +5671,8 @@ function renderPublicAccessProviders(providers = []) {
     if (provider.dependencyId) {
       article.dataset.dependencyId = provider.dependencyId;
     }
-    article.classList.toggle("is-supported", provider.id === "playit");
-    article.classList.toggle("is-disabled", provider.id !== "playit" || provider.status === "disabled");
+    article.classList.toggle("is-supported", provider.status !== "disabled");
+    article.classList.toggle("is-disabled", provider.status === "disabled" || provider.lifecycleState === "disabled");
     article.classList.toggle("is-selected", provider.id === selectedPublicAccessProviderId);
     article.setAttribute("aria-pressed", provider.id === selectedPublicAccessProviderId ? "true" : "false");
 
@@ -5653,6 +5692,7 @@ function renderPublicAccessProviders(providers = []) {
     article.append(title, status, description);
     article.addEventListener("click", () => {
       selectedPublicAccessProviderId = provider.id || selectedPublicAccessProviderId;
+      renderPublicAccessProviderMetricFields(provider, {});
       renderPublicAccessProviders(providerRows);
       renderPublicAccessProviderDetails(latestPublicAccessSnapshot);
     });

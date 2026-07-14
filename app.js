@@ -5584,10 +5584,13 @@ function renderOwnerSidebarPages() {
       return;
     }
     groupPages.forEach((page) => {
+      const active = getActivePageName() === "owner-workspace" && page.id === ownerWorkspaceState.selectedPageId;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `owner-nav-page${getActivePageName() === "owner-workspace" && page.id === ownerWorkspaceState.selectedPageId ? " is-active" : ""}`;
+      button.className = `owner-nav-page${active ? " is-active" : ""}`;
       button.textContent = page.title || "Workspace Page";
+      button.title = page.title || "Workspace Page";
+      if (active) button.setAttribute("aria-current", "page");
       button.style.setProperty("--owner-accent", page.accent || "#b66cff");
       button.addEventListener("click", () => selectOwnerPage(page.id));
       container.appendChild(button);
@@ -29202,7 +29205,12 @@ instanceAddressCopyButton?.addEventListener("click", () => {
 });
 
 navItems.forEach((item) => {
-  item.addEventListener("click", () => showPage(item.dataset.pageTarget));
+  item.addEventListener("click", () => {
+    if (item.hidden || item.getAttribute("aria-disabled") === "true") {
+      return;
+    }
+    showPage(item.dataset.pageTarget);
+  });
 });
 ownerWorkspaceToggle?.addEventListener("click", () => {
   if (!isOwnerWorkspaceAuthorized()) {

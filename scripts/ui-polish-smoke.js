@@ -70,6 +70,10 @@ assert(app.includes("isNodeSwitching() || document.hidden"), "Background polling
 assert(app.includes("renderNodeSummary") && app.includes("startNodeRefreshPolling"), "Nodes workspace must render summary stats and page-scoped live refresh.");
 assert(app.includes("setNodeModalVisible") && app.includes("openNodeDetails") && app.includes("handleNodeCardAction"), "Nodes modal, details, and quick actions must be wired.");
 assert(index.indexOf("data-development-badge") < index.indexOf("data-titlebar-connection"), "Developer Mode badge must sit beside and before the Connected badge.");
+assert(app.includes('item.hidden || item.getAttribute("aria-disabled") === "true"'), "Navigation clicks must ignore hidden or disabled shell items.");
+assert(app.includes('button.setAttribute("aria-current", "page")') && app.includes("owner-nav-page"), "Owner Workspace sidebar links must expose current-page state.");
+assert(styles.includes("@media (max-width: 1180px)") && styles.includes(".app-titlebar__search kbd") && styles.includes("display: none"), "Titlebar shortcuts must collapse before shell controls clip.");
+assert(styles.includes(".app-titlebar__search span") && styles.includes("width: 34px"), "Titlebar search actions must collapse to icon controls on compact shells.");
 assert(index.includes("data-dev-update-modal") && index.includes('data-dev-update-field="branch"') && index.includes('data-dev-update-action="update"'), "Developer update modal must expose Git status and actions.");
 assert(styles.includes('data-dev-state="available"') && styles.includes("devBadgePulse"), "Developer update badge must include a subtle available-update state.");
 assert(app.includes("setupDeveloperUpdates") && app.includes("openDeveloperUpdateModal") && app.includes("renderDevelopmentBadge"), "Developer update badge must be wired in the renderer.");

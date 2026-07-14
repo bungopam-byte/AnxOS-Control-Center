@@ -380,6 +380,7 @@ a:focus-visible,
 
 .app-titlebar__brand {
   display: flex;
+  flex: 0 1 190px;
   gap: 10px;
   align-items: center;
   min-width: 0;
@@ -444,6 +445,8 @@ a:focus-visible,
 }
 
 .app-titlebar__context strong {
+  flex: 0 1 180px;
+  min-width: 64px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -452,6 +455,7 @@ a:focus-visible,
 }
 
 .app-titlebar__divider {
+  flex: 0 0 auto;
   width: 1px;
   height: 18px;
   background: rgba(182, 108, 255, 0.24);
@@ -459,6 +463,7 @@ a:focus-visible,
 
 .app-titlebar__search {
   display: inline-flex;
+  flex: 0 1 210px;
   align-items: center;
   gap: 8px;
   min-width: 168px;
@@ -517,11 +522,13 @@ a:focus-visible,
 }
 
 .app-titlebar__search--command {
+  flex-basis: 220px;
   min-width: 188px;
 }
 
 .app-titlebar__connection {
   display: inline-flex;
+  flex: 0 1 auto;
   gap: 8px;
   align-items: center;
   min-width: 0;
@@ -539,6 +546,7 @@ a:focus-visible,
 }
 
 .app-titlebar__connection-dot {
+  flex: 0 0 auto;
   width: 9px;
   height: 9px;
   border-radius: 999px;
@@ -561,6 +569,7 @@ a:focus-visible,
 
 .app-titlebar__dev-badge {
   display: inline-flex;
+  flex: 0 0 auto;
   gap: 6px;
   align-items: center;
   min-width: max-content;
@@ -12028,6 +12037,30 @@ button:disabled {
   }
 }
 
+@media (max-width: 1180px) {
+  .app-titlebar__drag {
+    gap: 12px;
+  }
+
+  .app-titlebar__brand {
+    flex-basis: 150px;
+  }
+
+  .app-titlebar__search {
+    min-width: 42px;
+    max-width: 180px;
+  }
+
+  .app-titlebar__search kbd {
+    display: none;
+  }
+
+  .app-titlebar__search--command {
+    flex-basis: 190px;
+    min-width: 42px;
+  }
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
@@ -12037,6 +12070,24 @@ button:disabled {
 
   .app-titlebar__drag {
     gap: 12px;
+  }
+
+  .app-titlebar__brand {
+    flex: 0 1 auto;
+  }
+
+  .app-titlebar__search {
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
+    max-width: 34px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .app-titlebar__search span,
+  .app-titlebar__search kbd {
+    display: none;
   }
 
   .app-titlebar__brand-copy span,
@@ -12339,6 +12390,11 @@ button:disabled {
 
   .app-titlebar__context {
     gap: 8px;
+  }
+
+  .app-titlebar__brand-copy,
+  .app-titlebar__context strong {
+    display: none;
   }
 
   .app-titlebar__divider,

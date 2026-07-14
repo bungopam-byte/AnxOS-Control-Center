@@ -382,8 +382,8 @@ function renderDownloadPage(release) {
       actions.append(createDownloadButton(primaryAsset, release, true));
       if (windowsPortable) actions.append(createDownloadButton(windowsPortable, release, false));
       actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
-      actions.append(createDownloadSupportLink("Installation Help", "#install-help"));
-      actions.append(createDownloadSupportLink("System Requirements", "#system-requirements"));
+      actions.append(createDownloadSupportLink("Installation Help", "/getting-started"));
+      actions.append(createDownloadSupportLink("System Requirements", "/download"));
       primaryTarget.append(copy, actions);
     } else {
       const heading = document.createElement("h3");
@@ -395,7 +395,7 @@ function renderDownloadPage(release) {
       const actions = document.createElement("div");
       actions.className = "download-primary__actions";
       actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
-      actions.append(createDownloadSupportLink("Installation Help", "#install-help"));
+      actions.append(createDownloadSupportLink("Installation Help", "/getting-started"));
       primaryTarget.append(heading, meta, actions);
     }
   }

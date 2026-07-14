@@ -54,6 +54,8 @@ assert(styles.includes(".dashboard-welcome") && styles.includes(".dashboard-frie
 assert(index.includes('data-nav-description="System overview"') && index.includes('data-nav-description="Install servers and tools"'), "Primary navigation should expose friendly expanded descriptions.");
 assert(app.includes("label.dataset.navDescription") && app.includes("PAGE_INTRODUCTIONS"), "Renderer should wire nav descriptions and page introductions.");
 assert(styles.includes(".page-introduction") && styles.includes(".nav-item[data-nav-description] .nav-item__label::after"), "Friendly navigation and page introduction CSS must exist.");
+assert(index.includes("Help and Learning") && index.includes("data-contextual-help-modal"), "Settings must include in-app Help and Learning with a contextual help modal.");
+assert(app.includes("CONTEXTUAL_HELP_TOPICS") && app.includes("openContextualHelp") && app.includes("dismissContextualHelpTip"), "Contextual help must render through the reusable renderer component.");
 assert(index.includes("[data-node-list]") || index.includes("data-node-list"), "Nodes workspace must expose the node card list.");
 assert(index.includes("data-node-modal") && index.includes('data-node-action="open-add"'), "Nodes registration form must live in an Add Node modal.");
 assert(index.includes("data-node-details-modal") && index.includes("node-details-drawer"), "Nodes workspace must include a details drawer.");

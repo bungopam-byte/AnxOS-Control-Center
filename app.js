@@ -407,6 +407,12 @@ const onboardingWizardProgress = document.querySelector("[data-onboarding-wizard
 const onboardingWizardTrack = document.querySelector("[data-onboarding-wizard-track]");
 const onboardingWizardBody = document.querySelector("[data-onboarding-wizard-body]");
 const onboardingWizardButtons = document.querySelectorAll("[data-onboarding-wizard-action]");
+const helpTopicButtons = document.querySelectorAll("[data-help-topic]");
+const helpActionButtons = document.querySelectorAll("[data-help-action]");
+const contextualHelpModal = document.querySelector("[data-contextual-help-modal]");
+const contextualHelpTitle = document.querySelector("[data-contextual-help-title]");
+const contextualHelpBody = document.querySelector("[data-contextual-help-body]");
+const contextualHelpButtons = document.querySelectorAll("[data-contextual-help-action]");
 settingsInputs.forEach((input) => {
   input.dataset.settingsInitiallyDisabled = input.disabled ? "true" : "false";
 });
@@ -483,6 +489,8 @@ let devUpdateModalCleanup = null;
 let fivemSetupModalCleanup = null;
 let onboardingWelcomeCleanup = null;
 let onboardingWizardCleanup = null;
+let contextualHelpCleanup = null;
+let activeContextualHelpTopic = null;
 let openModalCount = 0;
 let modalBackgroundWasInert = false;
 
@@ -1101,6 +1109,7 @@ const DEFAULT_SETTINGS = {
   "onboarding.welcomeGuidance": true,
   "onboarding.contextualTips": true,
   "guidance.pageIntroductions": true,
+  "guidance.dismissedTips": "",
   "onboarding.version": 1,
   "developer.debugMode": false,
 };
@@ -1176,6 +1185,74 @@ const PAGE_INTRODUCTIONS = {
   settings: ["Customize AnxOS", "Change local preferences, guidance options, connections, updates, and Owner-only administration settings."],
   operations: ["Track background work", "Review installs, file transfers, dependency jobs, and other long-running operations."],
   maintenance: ["Clean up and repair", "Run supported cleanup, maintenance, and UI-state reset actions."],
+};
+const CONTEXTUAL_HELP_TOPICS = {
+  agent: {
+    title: "Agent",
+    explanation: "The Agent runs on a managed computer and allows AnxOS to control services, files, containers, servers, and system information.",
+    details: "The desktop app is the interface. The Agent is the service on a local or remote system that performs trusted management actions.",
+    action: { label: "Open Agent Control", page: "agent-control" },
+  },
+  system: {
+    title: "System / Node",
+    explanation: "A system is a Windows or Linux computer connected to AnxOS.",
+    details: "Node is the technical name for a managed system. The local desktop host and remote Agents use separate identities.",
+    action: { label: "Open Nodes", page: "nodes" },
+  },
+  instance: {
+    title: "Instance",
+    explanation: "An instance is a server installed and managed through AnxOS.",
+    details: "Instances can have files, logs, ports, backups, console commands, and lifecycle actions such as start or stop.",
+    action: { label: "Open Instances", page: "instances" },
+  },
+  docker: {
+    title: "Docker",
+    explanation: "Docker runs applications in isolated containers.",
+    details: "AnxOS can manage containers, images, volumes, networks, Compose projects, logs, and stats when Docker is available on the selected system.",
+    action: { label: "Open Docker", page: "docker" },
+  },
+  "public-access": {
+    title: "Public Access",
+    explanation: "Public Access providers can make a local service reachable outside your home network.",
+    details: "Provider capabilities differ. Playit, Tailscale, and Cloudflare Tunnel do not support the same protocols or exposure models.",
+    action: { label: "Open Public Access", page: "playit" },
+  },
+  playit: {
+    title: "Playit",
+    explanation: "Playit creates a public tunnel for supported services without requiring router port forwarding.",
+    details: "Use Playit for supported TCP or UDP services when the provider and selected node report compatible capabilities.",
+    action: { label: "Open Public Access", page: "playit" },
+  },
+  tailscale: {
+    title: "Tailscale",
+    explanation: "Tailscale creates a private network between your approved devices.",
+    details: "Normal Tailscale access is private tailnet access, not public internet exposure.",
+    action: { label: "Open Public Access", page: "playit" },
+  },
+  cloudflare: {
+    title: "Cloudflare Tunnel",
+    explanation: "Cloudflare Tunnel securely connects supported services through Cloudflare.",
+    details: "The current Cloudflare workflow is intended for HTTP and HTTPS services, not raw UDP game-server ports.",
+    action: { label: "Open Public Access", page: "playit" },
+  },
+  backups: {
+    title: "Backups",
+    explanation: "Backups protect server files and can be restored when something goes wrong.",
+    details: "Create backups before major server changes, configuration edits, or risky updates.",
+    action: { label: "Open Backups", page: "backups" },
+  },
+  dependency: {
+    title: "Dependency",
+    explanation: "A dependency is another program required by a server or AnxOS feature.",
+    details: "Examples include Java, Docker, .NET, SteamCMD, Tailscale, cloudflared, Git, npm, and PowerShell.",
+    action: { label: "Check Dependencies", page: "agent-control" },
+  },
+  "service-registration": {
+    title: "Service Registration",
+    explanation: "Service registration allows the AnxOS Agent to start automatically with the operating system.",
+    details: "Some service registration changes require administrator privileges and are platform-specific.",
+    action: { label: "Open Agent Control", page: "agent-control" },
+  },
 };
 
 function getCurrentSettings() {
@@ -1577,6 +1654,58 @@ function applyPageIntroductionPreference(settings = getCurrentSettings()) {
   document.querySelectorAll("[data-page-introduction]").forEach((intro) => {
     intro.hidden = !visible;
   });
+}
+
+function getDismissedHelpTips(settings = getCurrentSettings()) {
+  return new Set(String(settings["guidance.dismissedTips"] || "").split(",").map((entry) => entry.trim()).filter(Boolean));
+}
+
+function setContextualHelpVisible(visible) {
+  if (!contextualHelpModal) return;
+  if (visible) {
+    contextualHelpModal.hidden = false;
+    contextualHelpCleanup = activateModal(contextualHelpModal, {
+      initialFocus: () => contextualHelpModal.querySelector("[data-contextual-help-action=\"close\"]"),
+    });
+  } else {
+    contextualHelpCleanup?.();
+    contextualHelpCleanup = null;
+    contextualHelpModal.hidden = true;
+  }
+}
+
+function openContextualHelp(topicId) {
+  const topic = CONTEXTUAL_HELP_TOPICS[topicId];
+  if (!topic || !contextualHelpBody) return;
+  activeContextualHelpTopic = topicId;
+  if (contextualHelpTitle) contextualHelpTitle.textContent = topic.title;
+  contextualHelpBody.replaceChildren(
+    createTextElement("p", topic.explanation),
+    createTextElement("p", topic.details || ""),
+  );
+  const dismissed = getDismissedHelpTips().has(topicId);
+  contextualHelpButtons.forEach((button) => {
+    const action = button.dataset.contextualHelpAction;
+    if (action === "dismiss") button.textContent = dismissed ? "Tip dismissed" : "Dismiss tip";
+    if (action === "related") {
+      button.textContent = topic.action?.label || "Open related page";
+      button.hidden = !topic.action?.page;
+    }
+  });
+  setContextualHelpVisible(true);
+}
+
+async function dismissContextualHelpTip(topicId = activeContextualHelpTopic) {
+  if (!topicId) return;
+  const dismissed = getDismissedHelpTips();
+  dismissed.add(topicId);
+  await saveSettingsPatch({ "guidance.dismissedTips": [...dismissed].join(",") }, { statusMessage: "Tip dismissed." });
+  openContextualHelp(topicId);
+}
+
+async function resetDismissedContextualTips() {
+  await saveSettingsPatch({ "guidance.dismissedTips": "" }, { statusMessage: "Dismissed tips reset." });
+  showToast("Dismissed tips reset.");
 }
 
 function configurePrimaryNavigation() {
@@ -28552,6 +28681,33 @@ dashboardActionButtons.forEach((button) => {
   button.addEventListener("click", () => runDashboardFriendlyAction(button.dataset.dashboardAction || "dashboard"));
 });
 dashboardNextAction?.addEventListener("click", () => runDashboardFriendlyAction(dashboardNextActionState.page || "dashboard"));
+helpTopicButtons.forEach((button) => {
+  button.addEventListener("click", () => openContextualHelp(button.dataset.helpTopic));
+});
+helpActionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.helpAction;
+    if (action === "reset-tips") {
+      resetDismissedContextualTips().catch((error) => showToast(normalizeIpcErrorMessage(error, "Tips could not be reset."), "error"));
+    } else if (action === "diagnostics-guide") {
+      showPage("agent-control");
+      showToast("Diagnostics are available from Agent Control.");
+    }
+  });
+});
+contextualHelpButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.contextualHelpAction;
+    if (action === "close") setContextualHelpVisible(false);
+    else if (action === "dismiss") {
+      dismissContextualHelpTip().catch((error) => showToast(normalizeIpcErrorMessage(error, "Tip could not be dismissed."), "error"));
+    } else if (action === "related") {
+      const topic = CONTEXTUAL_HELP_TOPICS[activeContextualHelpTopic];
+      setContextualHelpVisible(false);
+      if (topic?.action?.page) showPage(topic.action.page);
+    }
+  });
+});
 document.querySelector('[data-page="settings"]')?.addEventListener("click", async (event) => {
   const categoryButton = event.target.closest("[data-settings-category-target]");
   if (categoryButton) {

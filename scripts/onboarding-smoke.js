@@ -23,6 +23,7 @@ try {
   assert.strictEqual(initial.settings["onboarding.welcomeGuidance"], true, "Welcome guidance should default on.");
   assert.strictEqual(initial.settings["onboarding.contextualTips"], true, "Contextual tips should default on.");
   assert.strictEqual(initial.settings["guidance.pageIntroductions"], true, "Page introductions should default on.");
+  assert.strictEqual(initial.settings["guidance.dismissedTips"], "", "Dismissed contextual tips should default empty.");
   assert.strictEqual(initial.settings["onboarding.version"], prefs.ONBOARDING_VERSION, "Onboarding version should be persisted.");
 
   const skipped = prefs.updatePreferences({
@@ -69,6 +70,10 @@ try {
     'data-setting="onboarding.welcomeGuidance"',
     'data-setting="onboarding.contextualTips"',
     'data-setting="guidance.pageIntroductions"',
+    "Help and Learning",
+    "data-contextual-help-modal",
+    "data-help-topic=\"agent\"",
+    "data-help-action=\"reset-tips\"",
   ].forEach((needle) => assert(index.includes(needle), `Onboarding UI missing: ${needle}`));
 
   [
@@ -93,6 +98,12 @@ try {
     "ensurePageIntroductions",
     "applyPageIntroductionPreference",
     "Do not show page introductions",
+    "CONTEXTUAL_HELP_TOPICS",
+    "openContextualHelp",
+    "dismissContextualHelpTip",
+    "resetDismissedContextualTips",
+    "The Agent runs on a managed computer",
+    "A system is a Windows or Linux computer connected to AnxOS.",
     "runDependencyAction(\"check\")",
     "setNodeModalVisible(true)",
     "handleOnboardingAction",
@@ -111,6 +122,8 @@ try {
 
   assert(styles.includes(".app-modal--welcome"), "Welcome modal CSS should be scoped.");
   assert(styles.includes(".app-modal--onboarding-wizard"), "Wizard modal CSS should be scoped.");
+  assert(styles.includes(".app-modal--contextual-help"), "Contextual help modal CSS should be scoped.");
+  assert(styles.includes(".help-topic-grid"), "Help topic grid CSS should exist.");
   assert(styles.includes(".onboarding-step-track"), "Wizard step tracker CSS should exist.");
   assert(styles.includes(".onboarding-feature-grid"), "Welcome feature grid CSS should exist.");
   assert(packageJson.includes('"onboarding:smoke"'), "package.json should expose onboarding smoke command.");

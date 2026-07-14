@@ -1368,6 +1368,44 @@ body.window-is-maximized .app-workspace {
   justify-self: start;
 }
 
+.help-topic-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.help-topic-grid button {
+  border: 1px solid rgba(190, 170, 220, .16);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, .045);
+  color: var(--text);
+  font: inherit;
+  font-size: .86rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.help-topic-grid button:hover,
+.help-topic-grid button:focus-visible {
+  border-color: rgba(182, 108, 255, .46);
+  background: rgba(182, 108, 255, .12);
+  outline: none;
+}
+
+.settings-actions--wrap {
+  flex-wrap: wrap;
+}
+
+.app-modal--contextual-help {
+  width: min(620px, 100%);
+}
+
+.contextual-help-body p {
+  color: rgba(237, 230, 247, .88);
+  line-height: 1.55;
+}
+
 [aria-busy="true"] {
   cursor: progress;
 }

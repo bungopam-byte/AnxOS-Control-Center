@@ -3731,6 +3731,34 @@
               <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="appearance">Reset Appearance</button></div>
             </section>
 
+            <section class="settings-section settings-section--help" data-settings-category="general" data-settings-keywords="help learning setup guide contextual tips introductions agents nodes systems dependencies public access">
+              <div class="settings-section__header">
+                <div>
+                  <h3>Help and Learning</h3>
+                  <p>Short in-app explanations for common AnxOS concepts.</p>
+                </div>
+                <span class="status-pill status-pill--local">Guidance</span>
+              </div>
+              <div class="settings-actions settings-actions--wrap">
+                <button class="inline-action" type="button" data-onboarding-action="restart">Restart setup guide</button>
+                <button class="inline-action" type="button" data-help-action="reset-tips">Reset dismissed tips</button>
+                <button class="inline-action" type="button" data-help-action="diagnostics-guide">Open diagnostics guide</button>
+                <button class="inline-action" type="button" data-help-topic="agent">About Agents</button>
+                <button class="inline-action" type="button" data-help-topic="system">About local and remote systems</button>
+              </div>
+              <div class="help-topic-grid" aria-label="AnxOS help topics">
+                <button type="button" data-help-topic="instance">Instance</button>
+                <button type="button" data-help-topic="docker">Docker</button>
+                <button type="button" data-help-topic="public-access">Public Access</button>
+                <button type="button" data-help-topic="playit">Playit</button>
+                <button type="button" data-help-topic="tailscale">Tailscale</button>
+                <button type="button" data-help-topic="cloudflare">Cloudflare Tunnel</button>
+                <button type="button" data-help-topic="backups">Backups</button>
+                <button type="button" data-help-topic="dependency">Dependency</button>
+                <button type="button" data-help-topic="service-registration">Service Registration</button>
+              </div>
+            </section>
+
             <section class="settings-section settings-section--startup" data-settings-category="startup" data-settings-keywords="startup splash sound login minimized window reconnect agent restore">
               <div class="settings-section__header">
                 <div>
@@ -4233,6 +4261,22 @@
           <button class="inline-action" type="button" data-onboarding-wizard-action="skip">Skip</button>
           <button class="primary-button" type="button" data-onboarding-wizard-action="continue">Continue</button>
           <button class="primary-button" type="button" data-onboarding-wizard-action="finish" hidden>Finish</button>
+        </footer>
+      </section>
+    </div>
+    <div class="app-modal-backdrop" data-contextual-help-modal hidden>
+      <section class="app-modal app-modal--contextual-help" role="dialog" aria-modal="true" aria-labelledby="contextual-help-title" tabindex="-1">
+        <header class="app-modal__header">
+          <div>
+            <p class="app-modal__eyebrow">Help</p>
+            <h2 id="contextual-help-title" data-contextual-help-title>AnxOS help</h2>
+          </div>
+          <button class="app-modal__close" type="button" aria-label="Close help" data-contextual-help-action="close">&times;</button>
+        </header>
+        <div class="app-modal__body contextual-help-body" data-contextual-help-body></div>
+        <footer class="app-modal__actions">
+          <button class="inline-action" type="button" data-contextual-help-action="dismiss">Dismiss tip</button>
+          <button class="primary-button" type="button" data-contextual-help-action="related">Open related page</button>
         </footer>
       </section>
     </div>

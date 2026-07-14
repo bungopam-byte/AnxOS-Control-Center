@@ -1406,6 +1406,17 @@ body.window-is-maximized .app-workspace {
   line-height: 1.55;
 }
 
+html[data-guided-mode="true"] .onboarding-technical-details:not([open]),
+html[data-guided-mode="true"] .node-technical-details:not([open]) {
+  opacity: .86;
+}
+
+html[data-advanced-mode="true"] .onboarding-technical-details,
+html[data-advanced-mode="true"] .node-technical-details,
+html[data-advanced-mode="true"] .marketplace-progress-debug {
+  border-color: rgba(182, 108, 255, .34);
+}
+
 [aria-busy="true"] {
   cursor: progress;
 }

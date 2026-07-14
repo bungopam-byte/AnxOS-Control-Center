@@ -24,6 +24,8 @@ try {
   assert.strictEqual(initial.settings["onboarding.contextualTips"], true, "Contextual tips should default on.");
   assert.strictEqual(initial.settings["guidance.pageIntroductions"], true, "Page introductions should default on.");
   assert.strictEqual(initial.settings["guidance.dismissedTips"], "", "Dismissed contextual tips should default empty.");
+  assert.strictEqual(initial.settings["interface.guidedMode"], true, "Clean first launch should enable Guided Mode.");
+  assert.strictEqual(initial.settings["interface.advancedMode"], false, "Advanced Mode should default off.");
   assert.strictEqual(initial.settings["onboarding.version"], prefs.ONBOARDING_VERSION, "Onboarding version should be persisted.");
 
   const skipped = prefs.updatePreferences({
@@ -70,6 +72,8 @@ try {
     'data-setting="onboarding.welcomeGuidance"',
     'data-setting="onboarding.contextualTips"',
     'data-setting="guidance.pageIntroductions"',
+    'data-setting="interface.guidedMode"',
+    'data-setting="interface.advancedMode"',
     "Help and Learning",
     "data-contextual-help-modal",
     "data-help-topic=\"agent\"",
@@ -102,6 +106,9 @@ try {
     "openContextualHelp",
     "dismissContextualHelpTip",
     "resetDismissedContextualTips",
+    "confirmDestructiveAction",
+    "document.documentElement.dataset.guidedMode",
+    "document.documentElement.dataset.advancedMode",
     "The Agent runs on a managed computer",
     "A system is a Windows or Linux computer connected to AnxOS.",
     "runDependencyAction(\"check\")",

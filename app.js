@@ -1051,6 +1051,8 @@ const DEFAULT_SETTINGS = {
   "general.defaultPage": "dashboard",
   "general.restorePreviousPage": true,
   "general.confirmDestructiveActions": true,
+  "interface.guidedMode": false,
+  "interface.advancedMode": false,
   "general.openExternalLinks": "system",
   "general.language": "en",
   "appearance.theme": "dark",
@@ -1920,10 +1922,14 @@ function getFriendlyErrorMessage(error = {}, fallback = "Request failed.") {
 function readStoredSettings() {
   try {
     const storedSettings = JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
+    const firstLocalSettings = Object.keys(storedSettings || {}).length === 0;
     const migratedSettings = {
       ...DEFAULT_SETTINGS,
       ...storedSettings,
     };
+    if (firstLocalSettings) {
+      migratedSettings["interface.guidedMode"] = true;
+    }
 
     if (storedSettings["general.startupSound"] !== undefined && storedSettings["startup.sound"] === undefined) {
       migratedSettings["startup.sound"] = storedSettings["general.startupSound"];
@@ -3034,6 +3040,8 @@ function applySettings(settings, options = {}) {
   document.documentElement.dataset.sidebarDensity = settings["appearance.sidebarDensity"] === "compact" ? "compact" : "comfortable";
   document.documentElement.dataset.reduceMotion = settings["appearance.reduceMotion"] === true || settings["appearance.animations"] === false ? "true" : "false";
   document.documentElement.dataset.transparency = settings["appearance.transparency"] === false ? "off" : "on";
+  document.documentElement.dataset.guidedMode = settings["interface.guidedMode"] === true ? "true" : "false";
+  document.documentElement.dataset.advancedMode = settings["interface.advancedMode"] === true ? "true" : "false";
   applyPageIntroductionPreference(settings);
   appNameTargets.forEach((target) => {
     target.textContent = displayName;
@@ -12800,7 +12808,11 @@ async function restoreSelectedBackup() {
   if (!selected || !desktopApiState.hasBackups) {
     return;
   }
-  if (!window.confirm(`Restore ${selected.name || selected.id}? The instance will be stopped and a safety snapshot will be created first.`)) {
+  if (!(await confirmDestructiveAction({
+    title: "Restore this backup?",
+    message: `${selected.name || selected.id} will be restored. The instance may be stopped first, and AnxOS will create a safety snapshot before replacing files.`,
+    confirmLabel: "Restore Backup",
+  }))) {
     return;
   }
   try {
@@ -12819,7 +12831,14 @@ async function deleteSelectedBackup() {
   const selected = getSelectedBackup();
   const desktopApiState = getDesktopApiState();
   const requestContext = createNodeActionContext("backup-delete");
-  if (!selected || !desktopApiState.hasBackups || !window.confirm(`Delete backup ${selected.name || selected.id}?`)) {
+  if (!selected || !desktopApiState.hasBackups) {
+    return;
+  }
+  if (!(await confirmDestructiveAction({
+    title: "Delete this backup?",
+    message: `${selected.name || selected.id} will be removed from backup history. This cannot be undone from AnxOS.`,
+    confirmLabel: "Delete Backup",
+  }))) {
     return;
   }
   try {
@@ -13793,18 +13812,30 @@ async function runInstanceAction(actionName) {
   if (actionName === "delete") {
     const linkedAccessServices = getInstanceAccessServices(selectedInstance);
     const accessWarning = linkedAccessServices.length
-      ? `\n\nThis instance has ${linkedAccessServices.length} linked access service${linkedAccessServices.length === 1 ? "" : "s"}: ${linkedAccessServices.map(getInstanceAccessBadgeLabel).join(", ")}. AnxOS will remove supported access records after deletion and report any cleanup failures.`
+      ? ` This instance has ${linkedAccessServices.length} linked access service${linkedAccessServices.length === 1 ? "" : "s"}: ${linkedAccessServices.map(getInstanceAccessBadgeLabel).join(", ")}. AnxOS will remove supported access records after deletion and report any cleanup failures.`
       : "";
-    if (!window.confirm(`Delete ${label}? This cannot be undone.${accessWarning}`)) {
+    if (!(await confirmDestructiveAction({
+      title: "Delete this server?",
+      message: `${label} will be removed from AnxOS. Depending on the selected backend result, its files may also be permanently deleted.${accessWarning}`,
+      confirmLabel: "Delete Server",
+    }))) {
       showToast("Delete canceled.");
       return;
     }
   } else if (actionName === "forget") {
-    if (!window.confirm(`Forget ${label}? This only removes the saved instance record from AnxOS Control Center. Server files may remain on disk.`)) {
+    if (!(await confirmDestructiveAction({
+      title: "Remove this server from the list?",
+      message: `${label} will be removed from AnxOS Control Center metadata. Server files may remain on disk.`,
+      confirmLabel: "Remove from List",
+    }))) {
       showToast("Forget canceled.");
       return;
     }
-  } else if (!window.confirm(`${actionName[0].toUpperCase()}${actionName.slice(1)} ${label}?`)) {
+  } else if (["stop", "restart", "forceKill"].includes(actionName) && !(await confirmDestructiveAction({
+    title: `${actionName[0].toUpperCase()}${actionName.slice(1)} this server?`,
+    message: `${label} may disconnect active players or services while this action runs.`,
+    confirmLabel: actionName === "forceKill" ? "Force Stop" : `${actionName[0].toUpperCase()}${actionName.slice(1)} Server`,
+  }))) {
     return;
   }
 
@@ -20928,7 +20959,11 @@ async function deleteRemoteEntry() {
     }
 
     confirmDangerous = true;
-  } else if (!window.confirm(`Delete ${entry.name}?\n\nType: ${formatFileType(entry)}\nSize: ${entry.isDirectory ? "Folder size not measured" : formatBytes(entry.size)}\nPath: ${entry.path}\n\nThis is permanent in AnxOS unless the backing filesystem provides its own recovery.`)) {
+  } else if (!(await confirmDestructiveAction({
+    title: `Delete ${entry.name}?`,
+    message: `Type: ${formatFileType(entry)}. Size: ${entry.isDirectory ? "Folder size not measured" : formatBytes(entry.size)}. Path: ${entry.path}. This is permanent in AnxOS unless the backing filesystem provides its own recovery.`,
+    confirmLabel: "Delete",
+  }))) {
     return;
   }
 
@@ -24024,6 +24059,30 @@ function createSecurityConfirmation({ title, message, phrase = "", confirmLabel 
   });
 }
 
+function isGuidedModeEnabled(settings = getCurrentSettings()) {
+  return settings["interface.guidedMode"] === true;
+}
+
+function isAdvancedModeEnabled(settings = getCurrentSettings()) {
+  return settings["interface.advancedMode"] === true;
+}
+
+async function confirmDestructiveAction({ title, message, confirmLabel = "Continue", phrase = "" } = {}) {
+  const settings = getCurrentSettings();
+  if (settings["general.confirmDestructiveActions"] === false && !isGuidedModeEnabled(settings) && !phrase) {
+    return true;
+  }
+  if (isGuidedModeEnabled(settings) || phrase) {
+    return Boolean(await createSecurityConfirmation({
+      title,
+      message,
+      phrase,
+      confirmLabel,
+    }));
+  }
+  return window.confirm(`${title || "Confirm action"}\n\n${message || "This action may permanently change data."}`);
+}
+
 function createSecurityTextPrompt({ title, message, label = "Value", confirmLabel = "Save" } = {}) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
@@ -26000,7 +26059,14 @@ async function deleteSelectedNode() {
   const desktopApiState = getDesktopApiState();
   const nodeId = nodeEditId || getSelectedNodeId();
   const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
-  if (!desktopApiState.hasNodes || node?.kind === "application-host" || !window.confirm(`Delete node ${nodeId}?`)) {
+  if (!desktopApiState.hasNodes || node?.kind === "application-host") {
+    return;
+  }
+  if (!(await confirmDestructiveAction({
+    title: "Remove this connected system?",
+    message: `${node?.displayName || nodeId} will be removed from AnxOS. This does not uninstall the Agent from that system.`,
+    confirmLabel: "Remove System",
+  }))) {
     return;
   }
   try {
@@ -26023,7 +26089,14 @@ async function testNodeById(nodeId) {
 async function deleteNodeById(nodeId) {
   const desktopApiState = getDesktopApiState();
   const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
-  if (!desktopApiState.hasNodes || !node || node.kind === "application-host" || !window.confirm(`Remove ${node.displayName || node.id}?`)) {
+  if (!desktopApiState.hasNodes || !node || node.kind === "application-host") {
+    return;
+  }
+  if (!(await confirmDestructiveAction({
+    title: "Remove this connected system?",
+    message: `${node.displayName || node.id} will be removed from AnxOS. This does not uninstall the Agent from that system.`,
+    confirmLabel: "Remove System",
+  }))) {
     return;
   }
   try {

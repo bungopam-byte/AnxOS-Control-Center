@@ -10,6 +10,8 @@ const SETTING_DEFINITIONS = {
   "general.defaultPage": { category: "general", type: "enum", default: "dashboard", values: ["dashboard", "minecraft", "amp", "playit", "docker", "ssh", "files", "console", "backups", "operations", "notifications", "maintenance", "security", "nodes", "agent-control", "coolpals", "settings"] },
   "general.restorePreviousPage": { category: "general", type: "boolean", default: true },
   "general.confirmDestructiveActions": { category: "general", type: "boolean", default: true },
+  "interface.guidedMode": { category: "general", type: "boolean", default: false },
+  "interface.advancedMode": { category: "general", type: "boolean", default: false },
   "general.openExternalLinks": { category: "general", type: "enum", default: "system", values: ["system"] },
   "general.language": { category: "general", type: "enum", default: "en", values: ["en"], disabledReason: "English is the only bundled language." },
 
@@ -156,6 +158,9 @@ function readRawFile() {
 function readPreferences() {
   const raw = readRawFile();
   const settings = normalizeSettings(raw.settings || raw);
+  if (!raw.settings && Object.keys(raw).length === 0) {
+    settings["interface.guidedMode"] = true;
+  }
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     settings,

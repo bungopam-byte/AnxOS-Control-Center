@@ -20532,6 +20532,7 @@ async function refreshDockerResources(kind = "all") {
 function seedDockerCreateFromImage(ref) {
   const input = document.querySelector('[data-docker-create="image"]');
   if (input) input.value = ref;
+  focusDockerCreateForm();
 }
 
 function seedDockerCompose(project) {
@@ -20539,6 +20540,14 @@ function seedDockerCompose(project) {
   const dir = document.querySelector("[data-docker-compose-directory]");
   if (name) name.value = project.Name || project.name || "";
   if (dir) dir.value = project.ProjectDir || project.projectDir || project.WorkingDir || "";
+}
+
+function focusDockerCreateForm() {
+  const nameInput = document.querySelector('[data-docker-create="name"]');
+  const imageInput = document.querySelector('[data-docker-create="image"]');
+  const target = nameInput?.value ? imageInput : nameInput || imageInput;
+  target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  target?.focus?.();
 }
 
 async function inspectDockerResource(kind, target) {
@@ -20970,47 +20979,18 @@ function stopDockerPagePolling() {
 }
 
 async function handleDockerAction(actionName) {
-  const requestContext = createNodeActionContext(`docker-${actionName}`);
   if (actionName === "create") {
     const desktopApiState = getDesktopApiState();
     if (!desktopApiState.hasDocker) {
       showToast("Docker actions are unavailable in this build.");
       return;
     }
-    const name = window.prompt("Container name", `anxhub-${Date.now()}`);
-    if (!name) {
-      return;
-    }
-    const image = window.prompt("Docker image", "itzg/minecraft-server:latest");
-    if (!image) {
-      return;
-    }
-    const port = window.prompt("Port mapping host:container", "25565:25565") || "";
-    const memory = window.prompt("Memory limit", "2g") || "";
-    try {
-      dockerActionRequestInFlight = true;
-      updateDockerActionButtons();
-      if (!isNodeActionStillCurrent(requestContext)) return;
-      await desktopApiState.api.docker.create({
-        nodeId: requestContext.nodeId,
-        name,
-        image,
-        ports: port ? [port] : [],
-        memory,
-        restartPolicy: "unless-stopped",
-        start: window.confirm("Start container after create?"),
-      });
-      showToast("Docker container created.");
-      await refreshDockerStatus();
-    } catch (error) {
-      showToast(getDockerActionErrorMessage(error));
-    } finally {
-      dockerActionRequestInFlight = false;
-      updateDockerActionButtons();
-    }
+    focusDockerCreateForm();
+    showToast("Use the Create Container form to review ports, volumes, resources, and start behavior before creating.");
     return;
   }
 
+  const requestContext = createNodeActionContext(`docker-${actionName}`);
   const definition = getDockerActionDefinition(actionName);
   const selectedContainer = findDockerContainer(selectedDockerContainerId);
 

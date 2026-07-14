@@ -196,6 +196,7 @@ async function main() {
     "createSecurityConfirmation({ title: \"Remove Docker volume?\"",
     "function runDockerComposeUiAction",
     "function runDockerCleanupAction",
+    "function focusDockerCreateForm",
   ].forEach((needle) => assert(appSource.includes(needle), `Docker workspace regression guard missing: ${needle}`));
   [
     "data-docker-compose-action=\"config\"",
@@ -205,6 +206,9 @@ async function main() {
   ].forEach((needle) => assert(indexSource.includes(needle), `Docker workspace markup guard missing: ${needle}`));
   const fastFailureBody = appSource.match(/function getDockerFastFailure\(\) \{[\s\S]*?\n\}/)?.[0] || "";
   assert(!fastFailureBody.includes("getCurrentAgentHealthTarget") && !fastFailureBody.includes("getNodeVisualState"), "Docker refresh must not be blocked by stale Agent Control or node visual state.");
+  const createActionBody = appSource.match(/async function handleDockerAction\(actionName\) \{[\s\S]*?\n  const definition = getDockerActionDefinition/)?.[0] || "";
+  assert(createActionBody.includes("focusDockerCreateForm") && createActionBody.includes("Create Container form"), "Docker create action should route users to the in-page form.");
+  assert(!/window\.prompt|prompt\(|window\.confirm|confirm\(/.test(createActionBody), "Docker create action must not use browser dialogs.");
   assert(dockerIpcSource.includes("DOCKER_REQUEST_FAILED") && dockerIpcSource.includes("docker:getSnapshot") && dockerIpcSource.includes("invokeDockerOperation(() => getDockerSnapshot(payload))"), "Docker IPC must preserve coded snapshot errors.");
   [
     "docker:pause",

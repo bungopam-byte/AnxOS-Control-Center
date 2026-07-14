@@ -801,6 +801,16 @@ function setMessage(key, message, tone = "muted") {
   });
 }
 
+function applyAuthRouteMessages() {
+  const params = getRouteParams();
+  if (getCurrentRoute() !== "signin") return;
+  if (params.get("created") === "1") {
+    setMessage("signin", "Account created. Check your email to verify your address, then sign in.", "ok");
+  } else if (params.get("verified") === "1") {
+    setMessage("signin", "Email verified. You can sign in now.", "ok");
+  }
+}
+
 function setDeviceMessage(message, tone = "muted") {
   document.querySelectorAll("[data-device-login-message]").forEach((node) => {
     node.textContent = message || "";
@@ -1118,6 +1128,7 @@ function applyAuthVisibility(operation = "apply") {
   document.querySelectorAll("[data-account-route]").forEach((section) => {
     let selectedState = authState;
     if (section.dataset.accountRoute === "signin" && authState === "loading") selectedState = "loading";
+    if (section.dataset.accountRoute === "signup" && authState === "loading") selectedState = "loading";
     if (["account", "profile"].includes(section.dataset.accountRoute) && authState === "loading") selectedState = "loading";
     if (section.dataset.accountRoute === "profile" && authState === "signed-out") selectedState = "signed-out";
     setScopedAuthView(section, selectedState);
@@ -2225,6 +2236,7 @@ function initializeWebsite() {
     bindSiteNavigation();
     bindDownloadControls();
     bindAccountForms();
+    applyAuthRouteMessages();
     applyDeviceLoginPage();
     authInitializationPromise = initializeAccount().catch((error) => {
       disableAccountForms(friendlyAuthError(error));

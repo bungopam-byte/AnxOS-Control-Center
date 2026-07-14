@@ -42,6 +42,14 @@
     <main id="signup-page">
       <section id="signup" class="section-shell account-route account-route--active" data-account-route="signup">
         <div class="auth-shell">
+          <div class="auth-card" data-auth-view="loading" hidden>
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Checking your session</h2>
+              <p>Preparing account creation. If you are already signed in, we will send you to your profile.</p>
+            </div>
+            <p class="form-message" role="status" data-auth-message="signup-loading">Verifying account state...</p>
+          </div>
           <div class="auth-card" data-auth-view="signed-out">
             <div class="auth-card__header">
               <p class="eyebrow">AnxOS Account</p>
@@ -61,6 +69,18 @@
               <button class="button button-primary auth-primary" type="submit">Create Account</button>
               <p class="form-message" role="status" data-auth-message="signup"></p>
             </form>
+          </div>
+          <div class="auth-card" data-auth-view="signed-in" hidden>
+            <div class="auth-card__header">
+              <p class="eyebrow">AnxOS Account</p>
+              <h2>Already signed in</h2>
+              <p>You are signed in as <strong data-account-email>this AnxOS account</strong>.</p>
+            </div>
+            <div class="route-actions">
+              <a class="button button-primary" href="/profile">Open Profile</a>
+              <a class="button button-secondary" href="/account">Go to Account</a>
+              <button class="button button-ghost" type="button" data-auth-action="signout">Sign Out</button>
+            </div>
           </div>
           <ul class="auth-feature-list" aria-label="AnxOS account features">
             <li>Email verification protects your account before device approvals.</li>

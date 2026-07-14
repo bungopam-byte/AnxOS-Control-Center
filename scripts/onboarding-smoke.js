@@ -22,6 +22,7 @@ try {
   assert.strictEqual(initial.settings["onboarding.skipped"], false, "Onboarding should not be skipped by default.");
   assert.strictEqual(initial.settings["onboarding.welcomeGuidance"], true, "Welcome guidance should default on.");
   assert.strictEqual(initial.settings["onboarding.contextualTips"], true, "Contextual tips should default on.");
+  assert.strictEqual(initial.settings["guidance.pageIntroductions"], true, "Page introductions should default on.");
   assert.strictEqual(initial.settings["onboarding.version"], prefs.ONBOARDING_VERSION, "Onboarding version should be persisted.");
 
   const skipped = prefs.updatePreferences({
@@ -67,6 +68,7 @@ try {
     'data-onboarding-wizard-action="finish"',
     'data-setting="onboarding.welcomeGuidance"',
     'data-setting="onboarding.contextualTips"',
+    'data-setting="guidance.pageIntroductions"',
   ].forEach((needle) => assert(index.includes(needle), `Onboarding UI missing: ${needle}`));
 
   [
@@ -87,6 +89,10 @@ try {
     "renderOnboardingDependenciesStep",
     "renderOnboardingRemoteStep",
     "handleOnboardingWizardFinish",
+    "PAGE_INTRODUCTIONS",
+    "ensurePageIntroductions",
+    "applyPageIntroductionPreference",
+    "Do not show page introductions",
     "runDependencyAction(\"check\")",
     "setNodeModalVisible(true)",
     "handleOnboardingAction",

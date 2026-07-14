@@ -245,7 +245,7 @@
         </div>
 
         <nav class="nav-menu" id="app-sidebar-nav">
-          <button class="nav-item is-active" type="button" data-page-target="dashboard" data-page-label="Dashboard" data-tooltip="Dashboard" aria-current="page" aria-label="Dashboard">
+          <button class="nav-item is-active" type="button" data-page-target="dashboard" data-page-label="Dashboard" data-nav-description="System overview" data-tooltip="Dashboard" aria-current="page" aria-label="Dashboard">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="4" width="6" height="6" rx="1.5"></rect>
@@ -279,7 +279,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>AMP</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="playit" data-page-label="Public Access" data-tooltip="Public Access" aria-label="Public Access">
+          <button class="nav-item" type="button" data-page-target="playit" data-page-label="Public Access" data-nav-description="Make services reachable" data-tooltip="Public Access" aria-label="Public Access">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M4 12h12"></path>
@@ -290,7 +290,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Public Access</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="docker" data-page-label="Docker" data-tooltip="Docker" aria-label="Docker">
+          <button class="nav-item" type="button" data-page-target="docker" data-page-label="Docker" data-nav-description="Manage containers" data-tooltip="Docker" aria-label="Docker">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="10" width="4" height="4" rx="1"></rect>
@@ -302,7 +302,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Docker</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="instances" data-page-label="Instances" data-tooltip="Instances" aria-label="Instances">
+          <button class="nav-item" type="button" data-page-target="instances" data-page-label="Instances" data-nav-description="Manage installed servers" data-tooltip="Instances" aria-label="Instances">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="5" width="16" height="5" rx="1.4"></rect>
@@ -312,7 +312,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Instances</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="marketplace" data-page-label="Marketplace" data-tooltip="Marketplace" aria-label="Marketplace">
+          <button class="nav-item" type="button" data-page-target="marketplace" data-page-label="Marketplace" data-nav-description="Install servers and tools" data-tooltip="Marketplace" aria-label="Marketplace">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M5 8h14l-1 12H6Z"></path>
@@ -322,7 +322,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Marketplace</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="ssh" data-page-label="SSH" data-tooltip="SSH" aria-label="SSH">
+          <button class="nav-item" type="button" data-page-target="ssh" data-page-label="SSH" data-nav-description="Connect to remote systems" data-tooltip="SSH" aria-label="SSH">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="5" width="16" height="14" rx="2"></rect>
@@ -332,7 +332,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>SSH</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="files" data-page-label="Files" data-tooltip="Files" aria-label="Files">
+          <button class="nav-item" type="button" data-page-target="files" data-page-label="Files" data-nav-description="Browse and edit files" data-tooltip="Files" aria-label="Files">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6H10l2 2h5.5A2.5 2.5 0 0 1 20 10.5v7A2.5 2.5 0 0 1 17.5 20h-11A2.5 2.5 0 0 1 4 17.5Z"></path>
@@ -340,7 +340,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Files</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="console" data-page-label="Monitoring" data-tooltip="Monitoring" aria-label="Monitoring">
+          <button class="nav-item" type="button" data-page-target="console" data-page-label="Monitoring" data-nav-description="Run and view commands" data-tooltip="Monitoring" aria-label="Monitoring">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="5" width="16" height="14" rx="2"></rect>
@@ -350,7 +350,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Monitoring</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="backups" data-page-label="Backups" data-tooltip="Backups" aria-label="Backups">
+          <button class="nav-item" type="button" data-page-target="backups" data-page-label="Backups" data-nav-description="Protect your server data" data-tooltip="Backups" aria-label="Backups">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M6 10a6 6 0 1 1 1.8 4.2"></path>
@@ -360,7 +360,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Backups</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="operations" data-page-label="Operations" data-tooltip="Operations" aria-label="Operations">
+          <button class="nav-item" type="button" data-page-target="operations" data-page-label="Operations" data-nav-description="Track background work" data-tooltip="Operations" aria-label="Operations">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="5" width="16" height="14" rx="2"></rect>
@@ -372,7 +372,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Operations</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="notifications" data-page-label="Notifications" data-tooltip="Notifications" aria-label="Notifications">
+          <button class="nav-item" type="button" data-page-target="notifications" data-page-label="Notifications" data-nav-description="Review app messages" data-tooltip="Notifications" aria-label="Notifications">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
@@ -382,7 +382,7 @@
             <span class="nav-item__label" data-nav-label>Notifications</span>
             <span class="nav-item__badge" data-notification-nav-count hidden>0</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="maintenance" data-page-label="Maintenance" data-tooltip="Maintenance" aria-label="Maintenance">
+          <button class="nav-item" type="button" data-page-target="maintenance" data-nav-description="Clean up and repair" data-page-label="Maintenance" data-tooltip="Maintenance" aria-label="Maintenance">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M14.5 5.5 18 2l4 4-3.5 3.5"></path>
@@ -393,7 +393,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Maintenance</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="security" data-page-label="Security" data-tooltip="Security" aria-label="Security">
+          <button class="nav-item" type="button" data-page-target="security" data-page-label="Security" data-nav-description="Review security settings" data-tooltip="Security" aria-label="Security">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M12 3 5.5 5.5v5.2c0 4.2 2.6 7.9 6.5 9.3 3.9-1.4 6.5-5.1 6.5-9.3V5.5Z"></path>
@@ -423,7 +423,7 @@
               <div data-owner-nav-section="custom"></div>
             </div>
           </div>
-          <button class="nav-item" type="button" data-page-target="nodes" data-page-label="Nodes" data-tooltip="Nodes" aria-label="Nodes">
+          <button class="nav-item" type="button" data-page-target="nodes" data-page-label="Nodes" data-nav-description="Manage systems / nodes" data-tooltip="Nodes" aria-label="Nodes">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <rect x="4" y="4.5" width="6" height="5" rx="1.4"></rect>
@@ -435,7 +435,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>Nodes</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="agent-control" data-page-label="Agent Control" data-tooltip="Agent Control" aria-label="Agent Control">
+          <button class="nav-item" type="button" data-page-target="agent-control" data-page-label="Agent Control" data-nav-description="Manage AnxOS connections" data-tooltip="Agent Control" aria-label="Agent Control">
             <span class="nav-item__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M8 9h8M8 13h5M17 15.5v3M15.5 17h3"></path></svg></span>
             <span class="nav-item__label" data-nav-label>Agent Control</span>
           </button>
@@ -450,7 +450,7 @@
             </span>
             <span class="nav-item__label" data-nav-label>CoolPals</span>
           </button>
-          <button class="nav-item" type="button" data-page-target="settings" data-page-label="Settings" data-tooltip="Settings" aria-label="Settings">
+          <button class="nav-item" type="button" data-page-target="settings" data-page-label="Settings" data-nav-description="Customize AnxOS" data-tooltip="Settings" aria-label="Settings">
             <span class="nav-item__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
                 <path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"></path>
@@ -3697,6 +3697,7 @@
                 <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="general.confirmDestructiveActions"><span>Confirm before destructive actions</span></label>
                 <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="onboarding.welcomeGuidance"><span>Enable welcome guidance</span></label>
                 <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="onboarding.contextualTips"><span>Enable contextual tips</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="guidance.pageIntroductions"><span>Show page introductions</span></label>
                 <label class="settings-field"><span>Language</span><select data-setting="general.language" disabled title="English is the only bundled language."><option value="en">English only</option></select></label>
                 <label class="settings-field"><span>External links</span><select data-setting="general.openExternalLinks"><option value="system">Open in system browser</option></select></label>
               </div>

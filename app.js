@@ -1100,6 +1100,7 @@ const DEFAULT_SETTINGS = {
   "onboarding.skipped": false,
   "onboarding.welcomeGuidance": true,
   "onboarding.contextualTips": true,
+  "guidance.pageIntroductions": true,
   "onboarding.version": 1,
   "developer.debugMode": false,
 };
@@ -1159,6 +1160,23 @@ const ONBOARDING_USAGE_OPTIONS = [
   ["minecraft", "Minecraft servers"],
   ["remote-systems", "Remote systems"],
 ];
+const PAGE_INTRODUCTIONS = {
+  dashboard: ["System overview", "See connected systems, running services, and recommended next steps for the selected system / node."],
+  marketplace: ["Install servers and tools", "Browse supported templates and install servers through the existing Marketplace pipeline on the selected system / node."],
+  instances: ["Manage installed servers", "Start, stop, configure, inspect, and open files for each instance - an installed server managed by AnxOS."],
+  docker: ["Manage containers", "View Docker containers, images, volumes, networks, logs, and actions for the selected system / node."],
+  files: ["Browse and edit files", "Open local or Agent-backed file targets. File actions run against the selected storage profile and system."],
+  ssh: ["Connect to remote systems", "Use saved SSH profiles to connect to systems when terminal access is needed."],
+  console: ["Run and view commands", "Monitor instance console output and send supported commands to managed servers."],
+  playit: ["Make services reachable", "Configure Public Access providers for supported services on the selected system / node."],
+  backups: ["Protect your server data", "Create, restore, import, and manage backups for supported instances."],
+  "agent-control": ["Manage AnxOS connections", "Check the desktop host, local Agent, remote Agents, service registration, logs, and diagnostics."],
+  security: ["Review security settings", "Inspect account, session, token, audit, and security status. Some controls are Owner-only."],
+  nodes: ["Manage systems / nodes", "Register and switch between this desktop application host and remote Agent systems."],
+  settings: ["Customize AnxOS", "Change local preferences, guidance options, connections, updates, and Owner-only administration settings."],
+  operations: ["Track background work", "Review installs, file transfers, dependency jobs, and other long-running operations."],
+  maintenance: ["Clean up and repair", "Run supported cleanup, maintenance, and UI-state reset actions."],
+};
 
 function getCurrentSettings() {
   return currentSettings || DEFAULT_SETTINGS;
@@ -1533,6 +1551,34 @@ function renderFriendlyDashboard() {
   }
 }
 
+function ensurePageIntroductions() {
+  Object.entries(PAGE_INTRODUCTIONS).forEach(([pageName, [title, copy]]) => {
+    const page = document.querySelector(`[data-page="${pageName}"]`);
+    const header = page?.querySelector(".page-header");
+    if (!page || !header || page.querySelector("[data-page-introduction]")) return;
+    const intro = document.createElement("section");
+    intro.className = "page-introduction";
+    intro.dataset.pageIntroduction = pageName;
+    intro.append(createTextElement("strong", title), createTextElement("p", copy));
+    const dismiss = createTextElement("button", "Do not show page introductions", "inline-action");
+    dismiss.type = "button";
+    dismiss.addEventListener("click", () => {
+      saveSettingsPatch({ "guidance.pageIntroductions": false }, { statusMessage: "Page introductions hidden." }).catch((error) => {
+        showToast(normalizeIpcErrorMessage(error, "Page introduction preference could not be saved."), "error");
+      });
+    });
+    intro.append(dismiss);
+    header.insertAdjacentElement("afterend", intro);
+  });
+}
+
+function applyPageIntroductionPreference(settings = getCurrentSettings()) {
+  const visible = settings["guidance.pageIntroductions"] !== false;
+  document.querySelectorAll("[data-page-introduction]").forEach((intro) => {
+    intro.hidden = !visible;
+  });
+}
+
 function configurePrimaryNavigation() {
   const navMenu = document.querySelector(".nav-menu");
 
@@ -1543,6 +1589,11 @@ function configurePrimaryNavigation() {
   const orderedItems = PRIMARY_NAVIGATION_ORDER
     .map((pageName) => navMenu.querySelector(`[data-page-target="${pageName}"]`))
     .filter(Boolean);
+
+  navMenu.querySelectorAll("[data-nav-description]").forEach((item) => {
+    const label = item.querySelector("[data-nav-label]");
+    if (label) label.dataset.navDescription = item.dataset.navDescription || "";
+  });
 
   orderedItems.forEach((item) => {
     item.hidden = false;
@@ -2705,6 +2756,7 @@ function applySettings(settings, options = {}) {
   document.documentElement.dataset.sidebarDensity = settings["appearance.sidebarDensity"] === "compact" ? "compact" : "comfortable";
   document.documentElement.dataset.reduceMotion = settings["appearance.reduceMotion"] === true || settings["appearance.animations"] === false ? "true" : "false";
   document.documentElement.dataset.transparency = settings["appearance.transparency"] === false ? "off" : "on";
+  applyPageIntroductionPreference(settings);
   appNameTargets.forEach((target) => {
     target.textContent = displayName;
   });
@@ -29155,6 +29207,7 @@ windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaxi
 }) || null;
 syncTitlebarWindowState();
 configurePrimaryNavigation();
+ensurePageIntroductions();
 loadSettings();
 renderOperationsCenter();
 renderNotificationCenter();

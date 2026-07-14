@@ -895,6 +895,24 @@ a:focus-visible,
   stroke-linejoin: round;
 }
 
+.nav-item[data-nav-description] .nav-item__label {
+  display: grid;
+  gap: 2px;
+}
+
+.nav-item[data-nav-description] .nav-item__label::after {
+  content: attr(data-nav-description);
+  max-width: 150px;
+  overflow: hidden;
+  color: rgba(222, 212, 238, .58);
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 .nav-item:hover,
 .nav-item:focus-visible,
 .nav-item.is-active {
@@ -1323,6 +1341,31 @@ body.window-is-maximized .app-workspace {
 .page-header h2,
 .page-header p {
   overflow-wrap: anywhere;
+}
+
+.page-introduction {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 13px 14px;
+  border: 1px solid rgba(190, 170, 220, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.page-introduction strong {
+  color: var(--text);
+}
+
+.page-introduction p {
+  max-width: 860px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.page-introduction .inline-action {
+  justify-self: start;
 }
 
 [aria-busy="true"] {

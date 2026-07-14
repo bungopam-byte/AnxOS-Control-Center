@@ -80,6 +80,7 @@ const SETTING_DEFINITIONS = {
   "onboarding.skipped": { category: "onboarding", type: "boolean", default: false },
   "onboarding.welcomeGuidance": { category: "onboarding", type: "boolean", default: true },
   "onboarding.contextualTips": { category: "onboarding", type: "boolean", default: true },
+  "guidance.pageIntroductions": { category: "onboarding", type: "boolean", default: true },
   "onboarding.version": { category: "onboarding", type: "number", default: ONBOARDING_VERSION, min: 1, max: ONBOARDING_VERSION },
   "developer.debugMode": { category: "developer", type: "boolean", default: false },
   "developer.verboseLogging": { category: "developer", type: "boolean", default: false },

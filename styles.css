@@ -8823,12 +8823,14 @@ body.has-open-modal {
   background: rgba(65, 18, 28, 0.55);
 }
 
-.download-item[data-status="waiting"] {
+.download-item[data-status="waiting"],
+.download-item[data-status="degraded"] {
   border-color: rgba(251, 191, 36, 0.5);
   background: rgba(78, 52, 18, 0.56);
 }
 
 .download-item[data-status="waiting"] .status-pill,
+.download-item[data-status="degraded"] .status-pill,
 .marketplace-manual-recovery .status-pill {
   border-color: rgba(251, 191, 36, 0.42);
   background: rgba(251, 191, 36, 0.14);

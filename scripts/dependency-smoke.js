@@ -126,6 +126,11 @@ async function run() {
   plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["nodejs"] });
   assert.strictEqual(plan.installableActions.length, 0, "Preparation plan must not mark dependencies installable without elevation.");
   assert.strictEqual(plan.manualActions[0].action, "manual", "Missing elevation should become a guided manual step.");
+  await assert.rejects(
+    () => dependencyService.installDependencies({ dependencyIds: ["nodejs"], nodeId: "anxlab" }),
+    (error) => error.code === "AUTHORIZATION_REQUIRED",
+    "Missing elevation should become an authorization-required install state."
+  );
 
   mock = createMockHooks({
     installedCommands: ["sudo", "apt-get"],
@@ -184,16 +189,43 @@ async function run() {
   assert.strictEqual(finalized.dependencyJobs[0].dependencyName, "Tailscale", "Dependency job summaries must preserve dependency identity.");
   assert.strictEqual(finalized.dependencyJobs[0].executionBackend, null, "Job summaries should include backend only when reported by the backend.");
 
+  const degradedDownload = marketplaceService.createDependencyInstallRecord({ nodeId: "agent-smoke", dependencyIds: ["cloudflared"] }, {
+    installableActions: [{ id: "cloudflared", displayName: "cloudflared" }],
+  });
+  const degraded = marketplaceService.finalizeDependencyInstallRecord(degradedDownload.id, {
+    ok: false,
+    degraded: true,
+    jobs: [{
+      id: "dep-cloudflared-smoke",
+      dependencyId: "cloudflared",
+      dependencyName: "cloudflared",
+      nodeId: "agent-smoke",
+      state: "degraded",
+      stage: "Verifying installation",
+      error: { code: "VERIFICATION_FAILED", message: "Verification failed." },
+      cancellationSupported: false,
+      cancellationReason: "Installation cannot be safely interrupted during package configuration.",
+      events: [{ state: "degraded", stage: "Verifying installation", message: "Verification failed." }],
+      output: [],
+    }],
+  });
+  assert.strictEqual(degraded.status, "degraded", "Verification failures should produce a degraded dependency record.");
+  assert.strictEqual(degraded.errorCode, "VERIFICATION_FAILED", "Verification failures should keep a structured retryable code.");
+  assert.strictEqual(degraded.canRetryVerification, true, "Degraded dependency records should expose Retry Verification.");
+  assert.strictEqual(degraded.dependencyJobs[0].cancellationSupported, false, "Dependency job summaries should expose cancellation safety.");
+
   assert(dependenciesIpcSource.includes("progressMode: \"indeterminate\"") && !dependenciesIpcSource.includes("progress: 25"), "Dependency IPC must not seed fake progress percentages.");
   assert(marketplaceServiceSource.includes("dependencyJobs") && marketplaceServiceSource.includes("progressMode: \"indeterminate\""), "Dependency Download Manager records must preserve job summaries and progress mode.");
   assert(agentDependencySource.includes("windowsHide: true"), "Dependency command execution must hide Windows command windows.");
   assert(agentDependencySource.includes("externalTerminal: false") && agentDependencySource.includes("executionBackend: \"agent\""), "Agent dependency jobs must declare backend execution without external terminals.");
+  assert(agentDependencySource.includes("AUTHORIZATION_REQUIRED") && agentDependencySource.includes("VERIFICATION_FAILED"), "Dependency lifecycle must expose structured authorization and verification states.");
   assert(serviceRouterSource.includes("executionBackend: \"desktop\"") && serviceRouterSource.includes("installationMethod: \"local-noop\""), "Local Desktop dependency routing must stay owned by the Desktop backend.");
   [
     "function buildDependencyInstallPanel",
     "Install Dependency",
     "Installation Details",
     "Selected node backend",
+    "Retry Verification",
     "formatDependencyProgress",
     "isDependencyDownload",
     "dataset.downloadType",

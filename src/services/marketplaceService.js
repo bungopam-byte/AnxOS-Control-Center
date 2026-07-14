@@ -936,6 +936,7 @@ function updateDownload(record, patch) {
     resolving: "Resolving installer",
     running: "Downloading",
     complete: "Completed",
+    degraded: "Verification degraded",
     failed: "Failed",
     cancelled: "Cancelled",
     skipped: "Installing",
@@ -1082,9 +1083,12 @@ function finalizeDependencyInstallRecord(downloadId, installResult = null, error
     executionBackend: job.executionBackend || null,
     installationMethod: job.installationMethod || null,
     externalTerminal: job.externalTerminal === true,
+    cancellationSupported: job.cancellationSupported === true,
+    cancellationReason: job.cancellationReason || null,
     error: job.error || null,
   }));
-  const failed = Boolean(error) || installResult?.ok === false;
+  const degraded = !error && (installResult?.degraded === true || dependencyJobs.some((job) => job.state === "degraded"));
+  const failed = Boolean(error) || (installResult?.ok === false && !degraded);
   const jobLogs = jobs.flatMap((job) => [
     ...(Array.isArray(job.events) ? job.events.map((event) => ({
       level: event.state === "failed" ? "error" : "info",
@@ -1102,19 +1106,24 @@ function finalizeDependencyInstallRecord(downloadId, installResult = null, error
   ]);
   jobLogs.forEach((entry) => appendDownloadLog(record, entry));
   return sanitizeDownload(updateDownload(record, {
-    status: failed ? "failed" : "complete",
-    stage: failed ? "Failed" : "Installation complete",
+    status: failed ? "failed" : degraded ? "degraded" : "complete",
+    stage: failed ? "Failed" : degraded ? "Verification degraded" : "Installation complete",
     progress: failed ? Math.min(Number(record.progress) || 0, 99) : 100,
     progressMode: "determinate",
     body: failed
       ? error?.message || "Dependency installation failed."
+      : degraded
+        ? "Installation completed, but AnxOS could not verify the dependency."
       : "Dependency installation completed and verification succeeded.",
     error: failed ? error?.message || "Dependency installation failed." : null,
-    errorCode: failed ? error?.code || "DEPENDENCY_INSTALL_FAILED" : null,
+    errorCode: failed ? error?.code || "DEPENDENCY_INSTALL_FAILED" : degraded ? "VERIFICATION_FAILED" : null,
     actionText: failed
       ? "Review sanitized logs, fix the dependency issue, then retry from the dependency panel."
+      : degraded
+        ? "Retry verification after confirming the dependency is available on the selected node."
       : "Dependency state has been refreshed for the selected node.",
-    canRetry: false,
+    canRetry: degraded,
+    canRetryVerification: degraded,
     canCancel: false,
     dependencyJobs,
   }));

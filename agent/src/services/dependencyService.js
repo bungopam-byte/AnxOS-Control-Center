@@ -66,6 +66,8 @@ function dependencyJob(dependency, patch = {}) {
     executionBackend: patch.executionBackend || "agent",
     installationMethod: patch.installationMethod || null,
     externalTerminal: patch.externalTerminal === true,
+    cancellationSupported: patch.cancellationSupported === true,
+    cancellationReason: patch.cancellationReason || "Installation cannot be safely interrupted during package configuration.",
     error: patch.error || null,
     events: [],
     output: [],
@@ -660,9 +662,9 @@ async function doInstallDependency(dependencyId, context = {}) {
         stage: "Waiting for authorization",
         message: `${before.displayName} requires administrator privileges to install.`,
         authenticationRequired: true,
-        error: { code: "INSUFFICIENT_PRIVILEGES", message: elevation.reason || "Administrator authorization is required." },
+        error: { code: "AUTHORIZATION_REQUIRED", message: elevation.reason || "Administrator authorization is required." },
       });
-      throw createDependencyError("ADMIN_REQUIRED", `${before.displayName} requires administrator privileges to install.`, {
+      throw createDependencyError("AUTHORIZATION_REQUIRED", `${before.displayName} requires administrator privileges to install.`, {
         dependencyId,
         reason: elevation.reason,
         job,
@@ -710,17 +712,12 @@ async function doInstallDependency(dependencyId, context = {}) {
     const after = await checkDependency(dependencyId);
     if (!after.installed || after.state === "update-required") {
       completeJob(job, {
-        state: "failed",
+        state: "degraded",
         stage: "Verifying installation",
         message: `${after.displayName} was installed but could not be verified.`,
-        error: { code: "DEPENDENCY_VERIFICATION_FAILED", message: `${after.displayName} was installed but could not be verified.` },
+        error: { code: "VERIFICATION_FAILED", message: `${after.displayName} was installed but could not be verified.` },
       });
-      throw createDependencyError("DEPENDENCY_VERIFY_FAILED", `${after.displayName} was installed but could not be verified.`, {
-        dependencyId,
-        state: after.state,
-        commands: after.commands,
-        job,
-      }, 500);
+      return { id: dependencyId, state: "degraded", changed: true, log, before, after, job };
     }
     completeJob(job, {
       state: "completed",
@@ -757,7 +754,7 @@ function classifyInstallFailure(result) {
   if (/signature|gpg|public key|not signed/.test(output)) return "SIGNATURE_FAILURE";
   if (/repository|metadata|release file/.test(output)) return "REPOSITORY_UNAVAILABLE";
   if (/permission denied|operation not permitted|sudo/.test(output)) return "INSUFFICIENT_PRIVILEGES";
-  return "DEPENDENCY_INSTALL_FAILED";
+  return "INSTALL_COMMAND_FAILED";
 }
 
 async function installDependencies(payload = {}) {
@@ -772,8 +769,10 @@ async function installDependencies(payload = {}) {
   }
   const check = await checkDependencies({ dependencyIds });
   const jobs = results.map((result) => result.job).filter(Boolean);
+  const degraded = results.filter((result) => result.state === "degraded" || result.job?.state === "degraded");
   return {
-    ok: check.ok,
+    ok: check.ok && degraded.length === 0,
+    degraded: degraded.length > 0,
     jobs,
     job: jobs[0] || null,
     results,

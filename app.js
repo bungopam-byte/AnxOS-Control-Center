@@ -11543,7 +11543,7 @@ function formatDependencyElapsed(download = {}) {
   const started = Date.parse(download.startedAt || "");
   if (!Number.isFinite(started)) return "Not started";
   const ended = Date.parse(download.completedAt || download.updatedAt || "");
-  const endTime = Number.isFinite(ended) && ["complete", "failed", "cancelled"].includes(String(download.status || "").toLowerCase())
+  const endTime = Number.isFinite(ended) && ["complete", "degraded", "failed", "cancelled"].includes(String(download.status || "").toLowerCase())
     ? ended
     : Date.now();
   return formatDuration(Math.max(0, Math.floor((endTime - started) / 1000)));
@@ -11561,7 +11561,7 @@ function appendDependencyMetric(container, label, value) {
 
 function buildDependencyInstallPanel(download = {}) {
   const jobs = Array.isArray(download.dependencyJobs) ? download.dependencyJobs : [];
-  const currentJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(String(job.state || "").toLowerCase())) || jobs[0] || null;
+  const currentJob = jobs.find((job) => !["completed", "degraded", "failed", "cancelled"].includes(String(job.state || "").toLowerCase())) || jobs[0] || null;
   const panel = document.createElement("section");
   panel.className = "dependency-install-panel";
   panel.setAttribute("aria-label", "Install Dependency");
@@ -11631,7 +11631,7 @@ function renderMarketplaceDownloads(downloads = []) {
     header.append(name, status);
 
     const bar = document.createElement("div");
-    const indeterminate = dependencyDownload && download.progressMode !== "determinate" && !["complete", "failed", "cancelled"].includes(String(download.status || "").toLowerCase());
+    const indeterminate = dependencyDownload && download.progressMode !== "determinate" && !["complete", "degraded", "failed", "cancelled"].includes(String(download.status || "").toLowerCase());
     bar.className = indeterminate ? "download-progress is-indeterminate" : "download-progress";
     const fill = document.createElement("span");
     const rawProgress = Math.max(0, Math.min(Number(download.progress) || 0, 100));
@@ -11644,7 +11644,7 @@ function renderMarketplaceDownloads(downloads = []) {
     const url = download.url ? ` · ${download.url}` : "";
     const stage = download.stage || "Preparing";
     const installer = download.installerType ? ` · ${download.installerType}` : "";
-    const terminalState = ["failed", "cancelled", "complete"].includes(download.status) ? download.status : "";
+    const terminalState = ["failed", "cancelled", "complete", "degraded"].includes(download.status) ? download.status : "";
     const speedText = terminalState ? "" : ` · ${formatDownloadSpeed(download.speedBytesPerSecond)}`;
     meta.textContent = download.body || `${stage}${installer} · ${download.progress || 0}%${speedText}${eta}${url}`;
 
@@ -11726,7 +11726,7 @@ function renderMarketplaceDownloads(downloads = []) {
     const retry = document.createElement("button");
     retry.type = "button";
     retry.className = "inline-action";
-    retry.textContent = "Retry";
+    retry.textContent = download.canRetryVerification ? "Retry Verification" : "Retry";
     retry.disabled = !download.canRetry;
     retry.addEventListener("click", () => retryMarketplaceDownload(download.id));
     actions.append(cancel, retry);

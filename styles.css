@@ -9022,6 +9022,42 @@ body.has-open-modal {
   gap: 12px;
 }
 
+.marketplace-readiness-strip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.marketplace-readiness-strip > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(190, 170, 220, .12);
+  border-radius: 8px;
+  background: rgba(7, 9, 14, .34);
+}
+
+.marketplace-readiness-strip span,
+.marketplace-readiness-strip strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketplace-readiness-strip span {
+  color: var(--muted);
+  font-size: .66rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.marketplace-readiness-strip strong {
+  margin-top: 4px;
+  color: var(--text);
+  font-size: .82rem;
+}
+
 .marketplace-manual-recovery {
   display: grid;
   gap: 12px;

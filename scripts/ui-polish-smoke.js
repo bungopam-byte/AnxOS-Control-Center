@@ -106,6 +106,7 @@ assert(!app.includes('"Service managed"'), "Agent Control must not render Servic
 assert(styles.includes(".agent-overview-actions .primary-button:disabled"), "Disabled lifecycle buttons must not keep the active primary styling.");
 assert(styles.includes(".docker-empty-actions") && styles.includes(".docker-empty-state > *"), "Docker empty states must use non-overlapping content and action layout.");
 assert(index.includes("No matching servers found") && index.includes("Try another search, clear your filters, or choose a different category."), "Marketplace empty state must explain no results and recovery.");
+assert(index.includes("marketplace-readiness-strip") && index.includes('data-marketplace-readiness="dependencies"') && app.includes("function renderMarketplaceReadiness"), "Marketplace installer panel must summarize readiness before install.");
 assert(index.includes("You have not installed any servers yet.") && app.includes("Install a server from the Marketplace to get started."), "Instances empty state must point new users to Marketplace.");
 assert(app.includes("Docker is not installed on this system.") && app.includes("Install Docker") && app.includes("No containers yet"), "Docker empty states must distinguish missing Docker from an empty container list.");
 assert(app.includes("Connect a supported system to browse its files.") && app.includes("This folder is empty"), "Files empty states must distinguish no target from an empty folder.");
@@ -117,6 +118,7 @@ assert(pageMarkup("operations").includes("data-operation-list") && pageMarkup("o
 assert(pageMarkup("operations").includes('data-operation-action="clear-completed"') && pageMarkup("operations").includes("data-operation-detail"), "Operations Center must expose history cleanup and details.");
 assert(app.includes("function startOperation") && app.includes("function updateOperation") && app.includes("function renderOperationsCenter"), "Renderer must own centralized operation tracking.");
 assert(app.includes("updateMarketplaceOperationFromEvent") && app.includes("activeMarketplaceOperationId"), "Marketplace installs must feed the Operations Center from real progress events.");
+assert(styles.includes(".marketplace-readiness-strip") && styles.includes(".marketplace-readiness-strip strong"), "Marketplace readiness strip CSS must exist.");
 assert(app.includes("operationId = startOperation") && app.includes("fileTransfers.set(id"), "File transfers and subsystem actions must create Operations Center entries.");
 assert(styles.includes(".operations-shell") && styles.includes("@keyframes operationIndeterminate"), "Operations Center CSS must include page layout and indeterminate progress styling.");
 assert(pageMarkup("maintenance").includes("data-maintenance-list") && pageMarkup("maintenance").includes('data-maintenance-action="scan"'), "Maintenance Center must expose real scan controls and category history.");

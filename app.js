@@ -196,6 +196,7 @@ const marketplaceEmpty = document.querySelector("[data-marketplace-empty]");
 const marketplaceSelectedName = document.querySelector("[data-marketplace-selected-name]");
 const marketplaceSelectedMeta = document.querySelector("[data-marketplace-selected-meta]");
 const marketplaceInstallState = document.querySelector("[data-marketplace-install-state]");
+const marketplaceReadinessFields = document.querySelectorAll("[data-marketplace-readiness]");
 const marketplaceManualRecovery = document.querySelector("[data-marketplace-manual-recovery]");
 const marketplaceManualRecoveryTitle = document.querySelector("[data-marketplace-manual-title]");
 const marketplaceManualRecoverySubtitle = document.querySelector("[data-marketplace-manual-subtitle]");
@@ -11239,6 +11240,23 @@ function setMarketplaceMessage(message, tone = "neutral") {
   marketplaceMessage.dataset.tone = tone;
 }
 
+function setMarketplaceReadinessField(name, value) {
+  marketplaceReadinessFields.forEach((field) => {
+    if (field.dataset.marketplaceReadiness === name) {
+      field.textContent = value;
+    }
+  });
+}
+
+function renderMarketplaceReadiness() {
+  const dependencySummary = summarizeDependencyStatus(latestDependencyResult);
+  const activeQueueItems = marketplaceLocalDownloadEntries.length + (activeMarketplaceOperationId ? 1 : 0);
+  setMarketplaceReadinessField("node", formatMarketplaceSelectedNodeLabel());
+  setMarketplaceReadinessField("installer", getDesktopApiState().hasMarketplace ? "Ready" : "Unavailable");
+  setMarketplaceReadinessField("dependencies", latestDependencyResult ? dependencySummary.label : "Not checked");
+  setMarketplaceReadinessField("queue", activeQueueItems ? `${activeQueueItems} active` : "Idle");
+}
+
 function openCurseForgeIntegrationSettings() {
   showPage("settings");
   if (marketplaceConfigInput) {
@@ -11393,6 +11411,7 @@ function renderMarketplaceTemplates() {
     return;
   }
 
+  renderMarketplaceReadiness();
   renderMarketplaceProviderControls();
   marketplaceGrid.replaceChildren();
   const providerBrowserActive = isMarketplaceProviderBrowserActive();
@@ -11903,6 +11922,7 @@ function createMarketplaceSummarySection(titleText, items = []) {
 
 function renderMarketplaceInstallSummary(template) {
   if (!marketplaceInstallSummary) return;
+  renderMarketplaceReadiness();
   marketplaceInstallSummary.replaceChildren();
   if (!template) return;
 
@@ -12585,6 +12605,7 @@ function closeMarketplaceWizard() {
     serverTypeField.disabled = false;
   }
   resetMarketplaceVersionPicker();
+  renderMarketplaceReadiness();
   renderMarketplaceTemplates();
 }
 
@@ -13203,6 +13224,7 @@ function renderMarketplaceDownloads(downloads = []) {
     return;
   }
 
+  renderMarketplaceReadiness();
   const visibleDownloads = [...marketplaceLocalDownloadEntries, ...downloads]
     .filter((download) => !download.parentTaskId);
   downloadList.replaceChildren();

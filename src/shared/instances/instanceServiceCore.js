@@ -47,6 +47,9 @@ const MAX_SHUTDOWN_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_LOG_BYTES = 5 * 1024 * 1024;
 const MAX_LOG_LINES = 1000;
 const STARTUP_EARLY_EXIT_MS = 8000;
+const RESTART_BACKOFF_BASE_MS = 1000;
+const RESTART_BACKOFF_MAX_MS = 30000;
+const RESTART_BACKOFF_MAX_IMMEDIATE_FAILURES = 5;
 const PROCESS_TAIL_LINE_LIMIT = 20;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
@@ -74,6 +77,7 @@ const DEFAULT_EXECUTABLE_ROOTS = [
 
 const runningProcesses = new Map();
 const metricsSamples = new Map();
+const restartBackoffStates = new Map();
 let processInspectionProvider = null;
 let processAliveProvider = null;
 
@@ -1636,6 +1640,40 @@ function isInvalidCommandExit(config = {}, exitCode, failureReason = "") {
     (isScriptBasedCommand(config) && Number(exitCode) === 127);
 }
 
+function resetRestartBackoff(instanceId) {
+  restartBackoffStates.delete(instanceId);
+}
+
+function getRestartBackoffDecision(instanceId, options = {}) {
+  const immediateExit = Boolean(options.immediateExit);
+
+  if (!immediateExit) {
+    restartBackoffStates.delete(instanceId);
+    return {
+      allowed: true,
+      delayMs: RESTART_BACKOFF_BASE_MS,
+      failures: 0,
+    };
+  }
+
+  const previous = restartBackoffStates.get(instanceId) || { failures: 0 };
+  const failures = previous.failures + 1;
+  const delayMs = Math.min(RESTART_BACKOFF_BASE_MS * (2 ** Math.max(0, failures - 1)), RESTART_BACKOFF_MAX_MS);
+  const allowed = failures <= RESTART_BACKOFF_MAX_IMMEDIATE_FAILURES;
+
+  restartBackoffStates.set(instanceId, {
+    failures,
+    lastFailureAt: nowIso(),
+    delayMs,
+  });
+
+  return {
+    allowed,
+    delayMs,
+    failures,
+  };
+}
+
 async function findJarPaths(config) {
   const workingDirectory = config.workingDirectory || "data";
   const roots = [
@@ -2976,7 +3014,11 @@ function buildSpawnEnvironment(config) {
   };
 }
 
-async function startInstance(instanceId) {
+async function startInstance(instanceId, options = {}) {
+  if (!options.automaticRestart) {
+    resetRestartBackoff(instanceId);
+  }
+
   let config = await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId)), { force: true });
   const repairedArgs = normalizeShellWrapperArgs(config.executable, config.args);
   if (JSON.stringify(repairedArgs) !== JSON.stringify(config.args || [])) {
@@ -3260,9 +3302,21 @@ async function startInstance(instanceId) {
       }
 
       if (failed && !suppressRestart && !invalidCommandExit && !earlyCleanExit && (updatedConfig.restartPolicy === "always" || updatedConfig.restartPolicy === "on-failure")) {
-        setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
+        const backoff = getRestartBackoffDecision(config.id, { immediateExit: runtimeMs > 0 && runtimeMs < STARTUP_EARLY_EXIT_MS });
+        if (backoff.allowed) {
+          appendLog(config.id, "stderr", `Auto-restart scheduled in ${Math.round(backoff.delayMs / 1000)}s after failure ${backoff.failures || 1}.`).catch(() => {});
+          setTimeout(() => startInstance(config.id, { automaticRestart: true }).catch(() => {}), backoff.delayMs);
+        } else {
+          appendLog(config.id, "stderr", `Auto-restart disabled after ${backoff.failures} immediate failures. Manual Start will reset retries.`).catch(() => {});
+        }
       } else if (!failed && !suppressRestart && !invalidCommandExit && updatedConfig.restartPolicy === "always" && !requestedStop) {
-        setTimeout(() => startInstance(config.id).catch(() => {}), 1000);
+        const backoff = getRestartBackoffDecision(config.id, { immediateExit: runtimeMs > 0 && runtimeMs < STARTUP_EARLY_EXIT_MS });
+        if (backoff.allowed) {
+          appendLog(config.id, "stderr", `Auto-restart scheduled in ${Math.round(backoff.delayMs / 1000)}s after exit ${backoff.failures || 1}.`).catch(() => {});
+          setTimeout(() => startInstance(config.id, { automaticRestart: true }).catch(() => {}), backoff.delayMs);
+        } else {
+          appendLog(config.id, "stderr", `Auto-restart disabled after ${backoff.failures} immediate exits. Manual Start will reset retries.`).catch(() => {});
+        }
       }
     }).catch(() => {});
   });
@@ -3373,6 +3427,7 @@ async function forceKillInstance(instanceId) {
 
   runningProcesses.delete(config.id);
   metricsSamples.delete(config.id);
+  resetRestartBackoff(config.id);
   return publicConfig(updated);
 }
 
@@ -3420,6 +3475,7 @@ async function stopInstance(instanceId) {
   const pid = entry?.child?.pid || config.pid;
 
   if (!pid || !isProcessAlive(pid)) {
+    resetRestartBackoff(config.id);
     config = await updateRuntimeState(config.id, {
       state: INSTANCE_STATES.STOPPED,
       pid: null,
@@ -3468,6 +3524,7 @@ async function stopInstance(instanceId) {
 
   runningProcesses.delete(config.id);
   metricsSamples.delete(config.id);
+  resetRestartBackoff(config.id);
 
   return publicConfig(config);
 }
@@ -3911,6 +3968,8 @@ module.exports = {
     parseTpsFromMessages,
     normalizeShellWrapperArgs,
     formatCommandForLog,
+    getRestartBackoffDecision,
+    resetRestartBackoff,
     setProcessInspectionProvider(provider) {
       processInspectionProvider = typeof provider === "function" ? provider : null;
     },

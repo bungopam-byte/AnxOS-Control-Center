@@ -135,6 +135,26 @@ async function assertPalworldShellCommandNormalization() {
   });
 }
 
+async function assertRestartBackoffBounds() {
+  await withTempService(async (instanceService) => {
+    const instanceId = "restart-backoff-smoke";
+    const delays = [];
+    for (let index = 0; index < 5; index += 1) {
+      const decision = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });
+      assert.strictEqual(decision.allowed, true, "Immediate exit should be restartable before the retry ceiling.");
+      delays.push(decision.delayMs);
+    }
+    const blocked = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });
+    assert.strictEqual(blocked.allowed, false, "Immediate exit should stop restarting after the retry ceiling.");
+    assert.deepStrictEqual(delays, [1000, 2000, 4000, 8000, 16000], "Immediate restart delays should back off exponentially.");
+
+    instanceService._test.resetRestartBackoff(instanceId);
+    const reset = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });
+    assert.strictEqual(reset.allowed, true, "Manual start/stop reset should allow retries again.");
+    assert.strictEqual(reset.delayMs, 1000, "Manual reset should restore the initial restart delay.");
+  });
+}
+
 async function assertNoUnrelatedAdoptionAndPortCollision() {
   await withTempService(async (instanceService) => {
     const instanceRoot = await createPalworld(instanceService, "palworld-collision-smoke");
@@ -260,6 +280,7 @@ async function assertRenameDuplicateAndCrashLifecycle() {
 
 async function run() {
   await assertPalworldShellCommandNormalization();
+  await assertRestartBackoffBounds();
   await assertDetachedRuntimeReconciliation();
   await assertNoUnrelatedAdoptionAndPortCollision();
   await assertStopAfterReconciliation();

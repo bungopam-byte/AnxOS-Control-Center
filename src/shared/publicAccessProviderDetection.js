@@ -147,6 +147,44 @@ const PUBLIC_ACCESS_PROVIDERS = [
       diagnostics: false,
     },
   },
+  {
+    id: "manual-port-forwarding",
+    dependencyId: null,
+    className: "ManualPortForwardingProvider",
+    name: "Manual Port Forwarding",
+    status: "foundation",
+    description: "Use router port forwarding and local firewall rules for services you choose to expose.",
+    exposureScope: "public-internet",
+    capabilities: {
+      detection: true,
+      authenticationStatus: false,
+      connectionStatus: false,
+      serviceExposure: true,
+      listServices: true,
+      createService: true,
+      editService: true,
+      deleteService: true,
+      refreshService: true,
+      publicInternet: true,
+      privateNetwork: false,
+      tcp: true,
+      udp: true,
+      http: true,
+      https: true,
+      generatedAddress: false,
+      createProviderResource: false,
+      createTunnel: false,
+      listTunnels: false,
+      startTunnel: false,
+      stopTunnel: false,
+      deleteTunnel: false,
+      publicAddress: false,
+      healthCheck: true,
+      diagnostics: true,
+      firewallRules: true,
+      routerConfiguration: true,
+    },
+  },
 ];
 
 const DEFAULT_CHECKED_AT = () => new Date().toISOString();
@@ -175,13 +213,69 @@ function normalizeCommandDiagnostic(command, result) {
   };
 }
 
+function getProviderStatus(overrides = {}) {
+  if (overrides.providerStatus) return overrides.providerStatus;
+  if (overrides.lifecycleState === "not-installed") return "Not Installed";
+  if (overrides.lifecycleState === "auth-required") return "Signed Out";
+  if (overrides.lifecycleState === "setup-required") return "Configuration Required";
+  if (overrides.lifecycleState === "running" || overrides.connected === true) return "Connected";
+  if (overrides.lifecycleState === "stopped" || overrides.running === false && overrides.installed === true) return "Disconnected";
+  if (overrides.lifecycleState === "degraded" || overrides.health === "degraded") return "Degraded";
+  if (overrides.lifecycleState === "disabled") return "Unsupported";
+  return "Not Installed";
+}
+
+function buildFirewallRequirements(providerId, platform, overrides = {}) {
+  const windows = platform === "win32";
+  const manual = providerId === "manual-port-forwarding";
+  const tailscale = providerId === "tailscale";
+  const tunnelProvider = providerId === "playit" || providerId === "cloudflare-tunnel";
+  return {
+    platform,
+    windowsFirewall: windows,
+    required: windows && (manual || tailscale),
+    localInboundRuleRequired: windows && (manual || tailscale),
+    outboundOnly: tunnelProvider,
+    routerPortForwardRequired: manual,
+    managedRulesSupported: windows && (manual || tailscale),
+    explicitConsentRequired: windows && (manual || tailscale),
+    status: windows
+      ? manual || tailscale
+        ? "Consent Required"
+        : "Usually Not Required"
+      : manual
+        ? "Check host firewall"
+        : "Provider Managed",
+    message: windows
+      ? manual
+        ? "Manual Port Forwarding usually needs a Windows Firewall inbound rule and router port forwarding for the selected service port."
+        : tailscale
+          ? "Tailscale private services may need a Windows Firewall inbound rule for the selected service port."
+          : "Tunnel providers usually use outbound connections; Windows Firewall inbound rules are normally not required for the tunnel process."
+      : manual
+        ? "Check the host firewall and router before relying on manual port forwarding."
+        : "No Windows Firewall action applies on this platform.",
+    actions: windows && (manual || tailscale)
+      ? [{
+          id: "create-windows-firewall-rule",
+          label: "Create Windows Firewall Rule",
+          supported: true,
+          requiresAdministrator: true,
+          requiresExplicitConsent: true,
+        }]
+      : [],
+    ...overrides,
+  };
+}
+
 function createProviderState(provider, overrides = {}) {
   const checkedAt = overrides.checkedAt || DEFAULT_CHECKED_AT();
+  const platform = overrides.platform || null;
   return {
     ...provider,
     providerId: provider.id,
     nodeId: overrides.nodeId || null,
-    platform: overrides.platform || null,
+    platform,
     checkedAt,
     available: false,
     installed: false,
@@ -194,6 +288,8 @@ function createProviderState(provider, overrides = {}) {
     health: "unavailable",
     lifecycleState: "unavailable",
     displayState: "Unavailable",
+    providerStatus: getProviderStatus(overrides),
+    firewall: buildFirewallRequirements(provider.id, platform, overrides.firewall || {}),
     publicAddress: null,
     tailnetAddress: null,
     version: null,
@@ -202,6 +298,8 @@ function createProviderState(provider, overrides = {}) {
     ...overrides,
     checkedAt,
     providerId: provider.id,
+    providerStatus: getProviderStatus(overrides),
+    firewall: buildFirewallRequirements(provider.id, platform, overrides.firewall || {}),
   };
 }
 
@@ -581,6 +679,35 @@ function createRelayProviderState(context = {}) {
   });
 }
 
+function createManualPortForwardingProviderState(context = {}) {
+  return createProviderState(providerById("manual-port-forwarding"), {
+    nodeId: context.nodeId || null,
+    platform: context.platform || null,
+    checkedAt: context.checkedAt || DEFAULT_CHECKED_AT(),
+    available: true,
+    installed: true,
+    authenticated: null,
+    configured: false,
+    connected: false,
+    running: false,
+    health: "setup-required",
+    lifecycleState: "setup-required",
+    displayState: "Configuration Required",
+    providerStatus: "Configuration Required",
+    publicAddress: null,
+    tailnetAddress: null,
+    version: null,
+    diagnostics: [{
+      provider: "manual-port-forwarding",
+      ok: true,
+      message: "Manual Port Forwarding depends on router configuration and host firewall rules chosen by the user.",
+    }],
+    recoveryAction: context.platform === "win32"
+      ? "Choose a service port, explicitly allow a Windows Firewall inbound rule if required, then configure the same port on your router."
+      : "Choose a service port, allow it in the host firewall if required, then configure the same port on your router.",
+  });
+}
+
 async function buildPublicAccessSnapshot({ runCommand, getPlayitSnapshot, nodeId = null, platform = process.platform } = {}) {
   let playitSnapshot;
   try {
@@ -602,6 +729,7 @@ async function buildPublicAccessSnapshot({ runCommand, getPlayitSnapshot, nodeId
     buildPlayitProviderState(playitSnapshot, context),
     await detectCloudflareProvider({ runCommand, nodeId, platform }),
     await detectTailscaleProvider({ runCommand, nodeId, platform }),
+    createManualPortForwardingProviderState(context),
     createRelayProviderState(context),
   ];
   const service = buildServiceFromPlayitSnapshot(playitSnapshot, context);
@@ -636,6 +764,7 @@ module.exports = {
   buildPublicAccessSnapshot,
   buildServiceFromPlayitSnapshot,
   createProviderState,
+  createManualPortForwardingProviderState,
   createRelayProviderState,
   detectCloudflareProvider,
   detectTailscaleProvider,

@@ -1,6 +1,7 @@
 const { ipcMain } = require("electron");
 const {
   createPublicAccessService,
+  createWindowsFirewallRule,
   deletePublicAccessService,
   getPublicAccessSnapshot,
   listPublicAccessServices,
@@ -32,6 +33,11 @@ function registerPublicAccessIpc() {
     requirePermission("instance:write", "public-access");
     audit({ action: "publicAccess.deleteService", target: payload.serviceId || payload.id || "public-access" });
     return deletePublicAccessService(payload);
+  }));
+  ipcMain.handle("publicAccess:createFirewallRule", async (_, payload = {}) => wrapPublicAccessOperation(() => {
+    requirePermission("instance:write", "public-access-firewall");
+    audit({ action: "publicAccess.createFirewallRule", target: `${payload.protocol || "tcp"}:${payload.localPort || payload.port || ""}` });
+    return createWindowsFirewallRule(payload);
   }));
 }
 

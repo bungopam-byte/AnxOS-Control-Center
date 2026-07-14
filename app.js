@@ -6435,6 +6435,12 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
       supported: Boolean(provider.dependencyId && provider.installed !== true && provider.lifecycleState !== "disabled"),
       reason: provider.dependencyId ? `${provider.name || "This provider"} is already installed or cannot be installed from here.` : "This provider has no installable dependency.",
     },
+    {
+      action: "create-firewall-rule",
+      label: "Create Firewall Rule",
+      supported: provider.firewall?.managedRulesSupported === true && provider.firewall?.explicitConsentRequired === true,
+      reason: provider.firewall?.message || "Windows Firewall rule creation is not required for this provider.",
+    },
     { action: "open-logs", label: "Open logs", supported: true },
     { action: "refresh", label: "Refresh", supported: true },
     { action: "copy-public-address", label: "Copy public address", supported: capabilities.publicAddress === true && hasPublicAddress, reason: capabilities.publicAddress === true ? "No public address has been detected yet." : "This provider does not expose a public address through AnxOS." },
@@ -7030,6 +7036,39 @@ async function runPublicAccessAction(action) {
         ? "cloudflared installed successfully. Authenticate Cloudflare or configure a tunnel next."
         : `${provider.name} dependency check complete.`;
     showToast(nextMessage);
+    return result;
+  }
+  if (action === "create-firewall-rule") {
+    const provider = getSelectedPublicAccessProvider();
+    const service = getSelectedPublicAccessService();
+    const localPort = service?.localPort || latestPlayitSnapshot?.localPort || window.prompt("Local service port for the firewall rule", "");
+    const rawProtocol = String(service?.protocol || latestPlayitSnapshot?.protocol || window.prompt("Protocol for the firewall rule: tcp or udp", "tcp") || "tcp").toLowerCase();
+    const protocol = ["http", "https"].includes(rawProtocol) ? "tcp" : rawProtocol;
+    if (!localPort) return null;
+    if (!(await createSecurityConfirmation({
+      title: "Create Windows Firewall rule?",
+      message: `AnxOS will ask Windows to allow inbound ${protocol.toUpperCase()} traffic on port ${localPort} for ${provider?.name || "this provider"}. Administrator permission may be required.`,
+      confirmLabel: "Create Rule",
+    }))) {
+      return null;
+    }
+    if (typeof getDesktopApiState().api?.publicAccess?.createFirewallRule !== "function") {
+      throw new Error("Windows Firewall rule creation is not available in this build.");
+    }
+    const result = await getDesktopApiState().api?.publicAccess?.createFirewallRule?.({
+      providerId: provider?.id,
+      localPort,
+      protocol,
+      name: `AnxOS ${provider?.name || "Public Access"} ${protocol.toUpperCase()} ${localPort}`,
+      confirmConsent: true,
+    });
+    if (result?.ok === false) {
+      throw Object.assign(new Error(result.error?.message || "Windows Firewall rule could not be created."), {
+        code: result.error?.code || "FIREWALL_RULE_FAILED",
+      });
+    }
+    showToast("Windows Firewall rule created.");
+    await refreshPlayitStatus();
     return result;
   }
   if (action === "copy-public-address") return copyPublicAccessValue(getPublicAccessPublicAddress(), "Public address copied.", "No public address is available to copy.");

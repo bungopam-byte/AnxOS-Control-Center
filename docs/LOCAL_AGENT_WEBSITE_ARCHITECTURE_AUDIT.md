@@ -288,3 +288,9 @@ File list responses now include the same shortcut roots, operation capabilities,
 Local Agent backups now create and restore `.tar.gz` archives through Node.js instead of shelling out to a platform `tar` binary. Archive entries are normalized with forward-slash paths, reject absolute paths, drive-letter paths, `..` traversal, unsupported entry types, and invalid gzip/tar payloads before import or restore.
 
 Restore requests require explicit overwrite confirmation from the Desktop after the user confirms the destructive action. Full restores replace the managed instance directory after creating a safety snapshot; world-only restores replace only the archived world paths and preserve the instance record. Backup metadata now records entry count, uncompressed size, and required restore disk estimate. Real locked-file handling and Windows volume free-space validation still require real-machine validation.
+
+## Phase 16 Local Windows Public Access Note
+
+Public Access now models Playit, Tailscale, Cloudflare Tunnel, and Manual Port Forwarding through the shared provider snapshot. Provider rows expose normalized user-facing states such as Not Installed, Signed Out, Connected, Disconnected, Degraded, and Configuration Required instead of treating a detected binary as ready.
+
+Windows snapshots include firewall guidance for providers that may require inbound rules. Manual Port Forwarding records router configuration requirements, and local desktop builds expose an audited, confirmation-gated Windows Firewall rule action that validates protocol and port before invoking `netsh advfirewall`. The action is local-Windows only; remote Debian behavior remains unchanged.

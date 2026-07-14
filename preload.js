@@ -135,6 +135,7 @@ const desktopApi = {
     listServices: (payload = {}) => ipcRenderer.invoke("publicAccess:listServices", payload),
     createService: (payload = {}) => ipcRenderer.invoke("publicAccess:createService", payload),
     deleteService: (payload = {}) => ipcRenderer.invoke("publicAccess:deleteService", payload),
+    createFirewallRule: (payload = {}) => ipcRenderer.invoke("publicAccess:createFirewallRule", payload),
   },
   docker: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("docker:getSnapshot", payload),

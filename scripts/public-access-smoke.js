@@ -28,7 +28,7 @@ const ipcSource = fs.readFileSync(ipcPath, "utf8");
 const providers = publicAccess.PUBLIC_ACCESS_PROVIDERS;
 const byId = new Map(providers.map((provider) => [provider.id, provider]));
 
-assert(byId.has("playit") && byId.has("tailscale") && byId.has("cloudflare-tunnel") && byId.has("anxos-relay"), "Public Access must declare all evaluated providers.");
+assert(byId.has("playit") && byId.has("tailscale") && byId.has("cloudflare-tunnel") && byId.has("manual-port-forwarding") && byId.has("anxos-relay"), "Public Access must declare all evaluated providers.");
 assert.strictEqual(byId.get("playit").status, "supported", "Playit must remain the supported provider.");
 assert.strictEqual(byId.get("playit").capabilities.createService, true, "Playit must support AnxOS access service record creation.");
 assert.strictEqual(byId.get("playit").capabilities.createProviderResource, false, "Playit must not claim provider tunnel creation unless the integration supports it.");
@@ -41,6 +41,8 @@ assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createTunnel, fals
 assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createProviderResource, false, "Cloudflare Tunnel must not claim provider-resource creation for metadata-only records.");
 assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.serviceExposure, true, "Cloudflare must support HTTP/HTTPS service records.");
 assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.httpServices, true, "Cloudflare must be limited to HTTP/HTTPS services.");
+assert.strictEqual(byId.get("manual-port-forwarding").capabilities.routerConfiguration, true, "Manual Port Forwarding must explain router configuration.");
+assert.strictEqual(byId.get("manual-port-forwarding").capabilities.firewallRules, true, "Manual Port Forwarding must expose firewall-rule requirements.");
 assert.strictEqual(byId.get("anxos-relay").status, "disabled", "AnxOS Relay must stay disabled without a real backend.");
 
 const playitService = publicAccess._test.buildServiceFromPlayitSnapshot({
@@ -330,6 +332,25 @@ async function assertDetectionCases() {
   assert.strictEqual(cloudflareConfigured.displayState, "Running", "Configured active cloudflared should report Running.");
   assert.strictEqual(cloudflareConfigured.tunnelCount, 1, "Cloudflare tunnel count should be captured.");
 
+  const windowsSnapshot = await detection.buildPublicAccessSnapshot({
+    nodeId: "this-pc",
+    platform: "win32",
+    getPlayitSnapshot: async () => ({ installed: true, running: false, connected: false }),
+    runCommand: async (command, args = []) => {
+      const signature = `${command} ${args.join(" ")}`;
+      if (signature === "where.exe cloudflared") return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+      if (signature === "where.exe tailscale") return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+      if (signature === "where.exe tailscaled") return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+      return { ok: false, errorCode: 1, stdout: "", stderr: "" };
+    },
+  });
+  const manualWindows = windowsSnapshot.providers.find((provider) => provider.id === "manual-port-forwarding");
+  const tailscaleWindows = windowsSnapshot.providers.find((provider) => provider.id === "tailscale");
+  assert.strictEqual(manualWindows.providerStatus, "Configuration Required", "Manual Port Forwarding should be configuration-required.");
+  assert.strictEqual(manualWindows.firewall.required, true, "Manual Port Forwarding on Windows should require firewall review.");
+  assert.strictEqual(manualWindows.firewall.routerPortForwardRequired, true, "Manual Port Forwarding should require router configuration.");
+  assert.strictEqual(tailscaleWindows.firewall.managedRulesSupported, true, "Tailscale on Windows should expose managed firewall rule support.");
+
   const normalized = publicAccess._test.normalizeSnapshotContext({
     providers: [publicAccess._test.createProviderState(publicAccess.TailscaleProvider, { nodeId: "old-node", platform: "win32" })],
     services: [{ id: "stale", nodeId: "old-node" }],
@@ -348,6 +369,7 @@ assert(serviceSource.includes("agentClient.getPublicAccessSnapshot") && agentRou
 assert(serviceSource.includes("createPublicAccessService") && serviceSource.includes("deletePublicAccessService"), "Desktop Public Access service lifecycle must route through the selected backend.");
 assert(agentRouteSource.includes("/api/v1/public-access/services") && agentServerSource.includes("pathname.startsWith(\"/api/v1/public-access/services/\")"), "Agent must register Public Access service lifecycle routes.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
+assert(appSource.includes("create-firewall-rule") && appSource.includes("Create Firewall Rule"), "Renderer must expose consent-gated Windows Firewall rule creation.");
 assert(appSource.includes("buildTailscalePrivateAddress") && appSource.includes("private-tailnet"), "Renderer must create Tailscale services as private tailnet records.");
 assert(appSource.includes("chooseTailscaleEndpoint") && appSource.includes("Choose Tailscale private address"), "Renderer must let users choose real Tailscale endpoint types when available.");
 assert(appSource.includes("Private tailnet") && appSource.includes("service.privateAddress"), "Renderer must display Tailscale private reachability and endpoint.");
@@ -413,6 +435,7 @@ assert(!indexSource.includes('data-public-access-action="disable" disabled') && 
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");
 assert(preloadSource.includes("publicAccess:createService") && ipcSource.includes("publicAccess:createService"), "Public Access service creation IPC bridge must remain wired.");
 assert(preloadSource.includes("publicAccess:deleteService") && ipcSource.includes("publicAccess:deleteService"), "Public Access service deletion IPC bridge must remain wired.");
+assert(preloadSource.includes("publicAccess:createFirewallRule") && ipcSource.includes("createWindowsFirewallRule"), "Public Access firewall rule IPC bridge must remain wired.");
 
 assertDetectionCases().then(() => {
   console.log("Public Access smoke checks passed.");

@@ -15,6 +15,10 @@ function getElectronApp() {
 }
 
 function getConfigDirectory() {
+  if (typeof process.env.ANXHUB_CONFIG_DIR === "string" && process.env.ANXHUB_CONFIG_DIR.trim()) {
+    return process.env.ANXHUB_CONFIG_DIR.trim();
+  }
+
   const app = getElectronApp();
 
   if (app) {

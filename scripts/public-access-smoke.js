@@ -387,7 +387,7 @@ assert(agentRouteSource.includes("/api/v1/public-access/services") && agentServe
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
 assert(appSource.includes("create-firewall-rule") && appSource.includes("Create Firewall Rule"), "Renderer must expose consent-gated Windows Firewall rule creation.");
 assert(appSource.includes("buildTailscalePrivateAddress") && appSource.includes("private-tailnet"), "Renderer must create Tailscale services as private tailnet records.");
-assert(appSource.includes("chooseTailscaleEndpoint") && appSource.includes("Choose Tailscale private address"), "Renderer must let users choose real Tailscale endpoint types when available.");
+assert(appSource.includes("chooseTailscaleEndpoint") && appSource.includes("getTailscaleEndpointOptions(provider, port)"), "Renderer must derive real Tailscale endpoint types when available.");
 assert(appSource.includes("Private tailnet") && appSource.includes("service.privateAddress"), "Renderer must display Tailscale private reachability and endpoint.");
 assert(appSource.includes("Create Web Service") && appSource.includes("cloudflare-tunnel") && appSource.includes("Public hostname"), "Renderer must expose Cloudflare web-service setup without raw game-port compatibility.");
 assert(indexSource.includes('data-instance-action="expose-share"') && indexSource.includes('data-instance-action="copy-access-address"') && indexSource.includes('data-instance-action="manage-access"'), "Instances must expose provider sharing, copy, and manage actions.");
@@ -456,6 +456,16 @@ const createProviderBody = functionBody(appSource, "createProviderAccessService"
 assert(!/window\.prompt|prompt\(/.test(createProviderBody), "Create Access Service workflow must not use browser prompt().");
 assert(createProviderBody.includes("createPublicAccessServiceModal"), "Create Access Service workflow must open the in-app modal.");
 assert(appSource.includes("function validatePublicAccessCreateForm") && appSource.includes("Port must be a whole number from 1 to 65535."), "Create Access Service modal must validate port range.");
+[
+  "chooseTailscaleEndpoint",
+  "chooseInstanceAccessSuggestion",
+  "createAccessServiceForInstance",
+  "copyInstanceAccessAddress",
+  "runPublicAccessAction",
+].forEach((functionName) => {
+  const body = functionBody(appSource, functionName);
+  assert(!/window\.prompt|prompt\(|window\.alert|alert\(|window\.confirm|confirm\(/.test(body), `${functionName} must not use browser dialogs in Public Access workflows.`);
+});
 assert(!indexSource.includes('data-public-access-action="disable" disabled') && !indexSource.includes('data-public-access-action="restart" disabled'), "Public Access must not render dead disabled action buttons.");
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");
 assert(preloadSource.includes("publicAccess:createService") && ipcSource.includes("publicAccess:createService"), "Public Access service creation IPC bridge must remain wired.");

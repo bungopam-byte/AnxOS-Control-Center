@@ -6601,12 +6601,7 @@ function getTailscaleEndpointOptions(provider = {}, port) {
 
 function chooseTailscaleEndpoint(provider = {}, port) {
   const options = getTailscaleEndpointOptions(provider, port);
-  if (options.length <= 1) return options[0] || null;
-  const menu = options.map((option, index) => `${index + 1}. ${option.label}: ${option.address}`).join("\n");
-  const selected = window.prompt(`Choose Tailscale private address:\n${menu}`, "1");
-  if (selected === null) return null;
-  const text = String(selected).trim().toLowerCase();
-  return options[Number.parseInt(text, 10) - 1] || options.find((option) => option.type === text || option.label.toLowerCase().includes(text)) || null;
+  return options[0] || null;
 }
 
 function getInstanceAccessServices(instance = findInstance(), snapshot = latestPublicAccessSnapshot) {
@@ -6760,13 +6755,8 @@ function chooseInstanceAccessSuggestion(instance = findInstance(), preferredProv
     const reasons = suggestions.map((suggestion) => suggestion.reason).filter(Boolean).join("\n");
     throw Object.assign(new Error(reasons || "This instance does not have a compatible port to expose."), { code: "INCOMPATIBLE_SERVICE" });
   }
-  if (compatible.length === 1) return compatible[0];
-  const menu = compatible.map((suggestion, index) => `${index + 1}. ${suggestion.providerName} (${suggestion.protocol.toUpperCase()} ${suggestion.localPort})`).join("\n");
-  const selected = window.prompt(`Choose access provider:\n${menu}`, "1");
-  if (selected === null) return null;
-  const selectedText = String(selected).trim().toLowerCase();
-  const byIndex = compatible[Number.parseInt(selectedText, 10) - 1];
-  return byIndex || compatible.find((suggestion) => suggestion.providerId === selectedText || suggestion.providerName.toLowerCase().includes(selectedText)) || null;
+  if (compatible.length === 1 || preferredProviderId) return compatible[0];
+  return compatible.find((suggestion) => !suggestion.requiresPublicHostname) || compatible[0];
 }
 
 function getPublicAccessProtocolOptions(provider = {}) {
@@ -7159,11 +7149,9 @@ async function createAccessServiceForInstance(instance = findInstance(), preferr
   }
   let publicHostname = "";
   if (suggestion.providerId === "cloudflare-tunnel") {
-    publicHostname = window.prompt("Cloudflare public hostname", `${instance.id || "service"}.example.com`);
-    if (publicHostname === null) return null;
-    if (!String(publicHostname || "").trim()) {
-      throw Object.assign(new Error("Cloudflare services require a public hostname."), { code: "INVALID_PUBLIC_HOSTNAME" });
-    }
+    showToast("Cloudflare web services need a public hostname. Open Public Access and use Create Access Service for this provider.", "warning");
+    openInstanceAccessManager(instance);
+    return null;
   }
   const tailscaleEndpoint = suggestion.providerId === "tailscale"
     ? chooseTailscaleEndpoint(provider, suggestion.localPort)
@@ -7230,10 +7218,7 @@ async function copyInstanceAccessAddress(instance = findInstance()) {
   }
   let selected = choices[0];
   if (choices.length > 1) {
-    const menu = choices.map((entry, index) => `${index + 1}. ${getInstanceAccessBadgeLabel(entry.service)}: ${entry.address}`).join("\n");
-    const response = window.prompt(`Choose address to copy:\n${menu}`, "1");
-    if (response === null) return;
-    selected = choices[Number.parseInt(String(response).trim(), 10) - 1] || selected;
+    selected = choices.find((entry) => entry.service.id === selectedPublicAccessServiceId) || selected;
   }
   await copyPublicAccessValue(selected.address, "Access address copied.", "No access address is available to copy.");
 }
@@ -7353,10 +7338,13 @@ async function runPublicAccessAction(action) {
   if (action === "create-firewall-rule") {
     const provider = getSelectedPublicAccessProvider();
     const service = getSelectedPublicAccessService();
-    const localPort = service?.localPort || latestPlayitSnapshot?.localPort || window.prompt("Local service port for the firewall rule", "");
-    const rawProtocol = String(service?.protocol || latestPlayitSnapshot?.protocol || window.prompt("Protocol for the firewall rule: tcp or udp", "tcp") || "tcp").toLowerCase();
+    const localPort = service?.localPort || latestPlayitSnapshot?.localPort || "";
+    const rawProtocol = String(service?.protocol || latestPlayitSnapshot?.protocol || "tcp").toLowerCase();
     const protocol = ["http", "https"].includes(rawProtocol) ? "tcp" : rawProtocol;
-    if (!localPort) return null;
+    if (!localPort) {
+      showToast("Create or select an access service with a local port before creating a firewall rule.", "warning");
+      return null;
+    }
     if (!(await createSecurityConfirmation({
       title: "Create Windows Firewall rule?",
       message: `AnxOS will ask Windows to allow inbound ${protocol.toUpperCase()} traffic on port ${localPort} for ${provider?.name || "this provider"}. Administrator permission may be required.`,

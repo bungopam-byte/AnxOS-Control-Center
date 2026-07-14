@@ -8,6 +8,7 @@ const preloadSource = fs.readFileSync(path.join(repoRoot, "preload.js"), "utf8")
 const serviceRouterSource = fs.readFileSync(path.join(repoRoot, "src", "services", "serviceRouter.js"), "utf8");
 const agentClientSource = fs.readFileSync(path.join(repoRoot, "src", "services", "agentClient.js"), "utf8");
 const applicationHostSource = fs.readFileSync(path.join(repoRoot, "src", "services", "applicationHostService.js"), "utf8");
+const nodeServiceSource = fs.readFileSync(path.join(repoRoot, "src", "services", "nodeService.js"), "utf8");
 const indexSource = fs.readFileSync(path.join(repoRoot, "index.html"), "utf8");
 
 function includesAll(source, snippets, label) {
@@ -158,6 +159,15 @@ includesAll(serviceRouterSource, [
   "return agentClient.listBackups(options, getOptionalNodeConfig(options));",
   "return agentClient.createBackup(payload, getOptionalNodeConfig(payload));",
 ], "Service router");
+
+includesAll(nodeServiceSource, [
+  "function buildNodeCapabilities",
+  "serviceControls: localAgent",
+  "remoteAgent: !localAgent",
+  "Local Agent service controls only apply to This PC.",
+  "capabilities: buildNodeCapabilities(node)",
+  "capabilities: buildNodeCapabilities(node)",
+], "Shared node capabilities");
 
 includesAll(agentClientSource, [
   "async function getPlayitSnapshot(configOverride = null)",

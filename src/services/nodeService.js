@@ -98,6 +98,52 @@ function buildLocalNodeProfile({ node = {}, health = null, stats = null, instanc
   };
 }
 
+function buildNodeCapabilities(node = {}) {
+  if (node.kind === "application-host") {
+    return {
+      applicationHost: true,
+      agentApi: false,
+      localAgent: false,
+      remoteAgent: false,
+      serviceControls: true,
+      windowsServiceControls: process.platform === "win32",
+      filesystem: true,
+      marketplace: false,
+      instances: true,
+      backups: false,
+      docker: false,
+      publicAccess: true,
+      dependencyManagement: false,
+      unsupportedActions: {
+        docker: "Docker workspace controls require an Agent node.",
+        remoteAgentRegistration: "Remote Agent APIs require an Agent node.",
+      },
+    };
+  }
+  const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);
+  return {
+    applicationHost: false,
+    agentApi: true,
+    localAgent,
+    remoteAgent: !localAgent,
+    serviceControls: localAgent,
+    windowsServiceControls: localAgent,
+    filesystem: true,
+    marketplace: true,
+    instances: true,
+    backups: true,
+    docker: node.docker?.enabled !== false,
+    publicAccess: true,
+    dependencyManagement: true,
+    unsupportedActions: localAgent
+      ? {}
+      : {
+          localServiceInstall: "Local Agent service controls only apply to This PC.",
+          localPairingRepair: "Automatic local pairing is only available for This PC.",
+        },
+  };
+}
+
 function readLocalAgentRuntimeConfig() {
   try {
     const parsed = JSON.parse(fs.readFileSync(getRuntimeConfigPath(), "utf8"));
@@ -166,6 +212,7 @@ function normalizeAgentNode(node = {}) {
     local: localAgent,
     modeLabel: localAgent ? "Local Agent" : "Agent",
     profile: localAgent ? node.profile || buildLocalNodeProfile({ node: { ...node, displayName }, health: { identity } }) : node.profile || null,
+    capabilities: buildNodeCapabilities({ ...node, kind: "agent", agentUrl, localAgent }),
     connection: node.connection && typeof node.connection === "object" ? {
       connected: node.connection.connected === true,
       status: node.connection.status || (node.connection.connected ? "online" : "offline"),
@@ -361,6 +408,7 @@ function publicNode(node) {
   if (node.kind === "application-host") {
     return {
       ...node,
+      capabilities: buildNodeCapabilities(node),
       connection: {
         connected: true,
         status: "online",
@@ -370,7 +418,7 @@ function publicNode(node) {
       },
     };
   }
-  return { ...node, hasToken: Boolean(node.agentToken), agentToken: node.agentToken ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
+  return { ...node, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken), agentToken: node.agentToken ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
 }
 
 async function refreshIdentities(state) {
@@ -466,7 +514,7 @@ function getSelectedNodeId() { return readNodeState().selectedNodeId; }
 function getAllNodesSync() { const state = readNodeState(); return [getApplicationHostNode(), ...state.nodes]; }
 function getNodeAgentConfigFromNode(node) { return normalizeAgentSettings({ backendMode: "agent", agentUrl: node.agentUrl, agentToken: node.agentToken }); }
 function getNodeAgentConfig(nodeId) { const node = getNode(nodeId); if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" }); return getNodeAgentConfigFromNode(node); }
-function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId }; }
+function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, localAgent: node.localAgent === true, capabilities: buildNodeCapabilities(node), config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId, capabilities: buildNodeCapabilities(node) }; }
 
 async function saveNode(payload = {}) {
   const displayName = String(payload.displayName || payload.name || "").trim();

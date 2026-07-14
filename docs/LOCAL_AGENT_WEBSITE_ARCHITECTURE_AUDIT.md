@@ -306,3 +306,9 @@ The update flow backs up Agent configuration and identity state, stops the Agent
 Agent Control diagnostics now return a dedicated Local Agent diagnostic summary with Desktop version, Agent version, service state, local endpoint, pairing status and token fingerprint, port availability, filesystem access, managed storage paths, disk-space estimates, dependency readiness for Docker/Java/SteamCMD, recent sanitized Agent logs, and update compatibility.
 
 Diagnostics continue to use existing repair actions instead of exposing raw stack traces. Repair buttons route to start, service repair, pairing repair, permission repair, dependency rescan, and Local Agent update actions where appropriate. Exported diagnostics continue to flow through the shared sanitized diagnostics service, which redacts secrets and avoids full tokens/API keys.
+
+## Phase 19 Local and Remote Agent Coexistence Note
+
+Nodes now expose an explicit shared capability model. Application Host, Local Agent, and Remote Agent nodes all keep the same node interface, while capability flags distinguish Agent APIs, local service controls, Windows service controls, filesystem browsing, Marketplace, instances, backups, Docker, Public Access, and dependency management.
+
+Remote Agent nodes explicitly mark local service installation and automatic local pairing repair as unsupported, preventing Local Agent service controls from targeting remote machines. Local Agent nodes retain `This PC` identity, service controls, and local-only pairing behavior. Existing Debian/remote Agent routing remains on the same `getExecutionTarget` and node-scoped renderer paths.

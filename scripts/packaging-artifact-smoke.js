@@ -12,17 +12,46 @@ const releaseConfig = readReleaseConfig();
 const releaseInfo = buildReleaseInfo(releaseConfig);
 const artifactVersion = releaseInfo.artifactVersion;
 
-const artifacts = [
-  `AnxOS-Control-Center-Setup-${artifactVersion}.exe`,
-  `AnxOS-Control-Center-${artifactVersion}-portable.exe`,
-  `AnxOS-Control-Center-${artifactVersion}.AppImage`,
-  `AnxOS-Control-Center-${artifactVersion}.deb`,
-];
+const platformTargets = {
+  win: {
+    artifacts: [
+      `AnxOS-Control-Center-Setup-${artifactVersion}.exe`,
+      `AnxOS-Control-Center-${artifactVersion}-portable.exe`,
+    ],
+    asarArchives: [path.join(distDir, "win-unpacked", "resources", "app.asar")],
+    requiredPaths: [
+      path.join(distDir, "win-unpacked", "AnxOS Control Center.exe"),
+      path.join(distDir, "win-unpacked", "resources", "app.asar.unpacked"),
+    ],
+  },
+  linux: {
+    artifacts: [
+      `AnxOS-Control-Center-${artifactVersion}.AppImage`,
+      `AnxOS-Control-Center-${artifactVersion}.deb`,
+    ],
+    asarArchives: [path.join(distDir, "linux-unpacked", "resources", "app.asar")],
+    requiredPaths: [
+      path.join(distDir, "linux-unpacked", "anxos-control-center"),
+      path.join(distDir, "linux-unpacked", "resources", "app.asar.unpacked"),
+    ],
+  },
+};
 
-const asarArchives = [
-  path.join(distDir, "win-unpacked", "resources", "app.asar"),
-  path.join(distDir, "linux-unpacked", "resources", "app.asar"),
-];
+function parseTargets() {
+  const platformArg = process.argv.find((arg) => arg.startsWith("--platform="));
+  const raw = (platformArg ? platformArg.slice("--platform=".length) : process.env.ANXOS_PACKAGING_SMOKE_TARGETS || "win,linux")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const targets = raw.map((entry) => entry === "windows" ? "win" : entry);
+  for (const target of targets) {
+    assert(platformTargets[target], `Unknown packaging smoke platform target: ${target}`);
+  }
+  return [...new Set(targets)];
+}
+
+const selectedTargets = parseTargets();
+const selectedTargetConfigs = selectedTargets.map((target) => platformTargets[target]);
 
 const requiredEntries = [
   "/main.js",
@@ -52,13 +81,13 @@ const forbiddenEntries = [
   "/config/owner-accounts.json",
 ];
 
-for (const artifact of artifacts) {
+for (const artifact of selectedTargetConfigs.flatMap((target) => target.artifacts)) {
   const artifactPath = path.join(distDir, artifact);
   assert(fs.existsSync(artifactPath), `Missing packaged artifact: ${artifact}`);
   assert(fs.statSync(artifactPath).size > 1024 * 1024, `Packaged artifact is unexpectedly small: ${artifact}`);
 }
 
-for (const archivePath of asarArchives) {
+for (const archivePath of selectedTargetConfigs.flatMap((target) => target.asarArchives)) {
   assert(fs.existsSync(archivePath), `Missing app.asar: ${path.relative(rootDir, archivePath)}`);
   const entries = new Set(asar.listPackage(archivePath));
 
@@ -84,10 +113,9 @@ for (const archivePath of asarArchives) {
   assert.strictEqual(buildMetadata.releaseRepository?.repo, "AnxOS-Control-Center-Releases", `${path.relative(rootDir, archivePath)} release metadata must use the public release repository`);
 }
 
-assert(fs.existsSync(path.join(distDir, "win-unpacked", "AnxOS Control Center.exe")), "Missing Windows unpacked executable");
-assert(fs.existsSync(path.join(distDir, "linux-unpacked", "anxos-control-center")), "Missing Linux unpacked executable");
-assert(fs.existsSync(path.join(distDir, "win-unpacked", "resources", "app.asar.unpacked")), "Missing Windows app.asar.unpacked");
-assert(fs.existsSync(path.join(distDir, "linux-unpacked", "resources", "app.asar.unpacked")), "Missing Linux app.asar.unpacked");
+for (const requiredPath of selectedTargetConfigs.flatMap((target) => target.requiredPaths)) {
+  assert(fs.existsSync(requiredPath), `Missing packaged path: ${path.relative(rootDir, requiredPath)}`);
+}
 
 const linuxResources = path.join(distDir, "linux-unpacked", "resources");
 if (fs.existsSync(linuxResources)) {
@@ -96,7 +124,10 @@ if (fs.existsSync(linuxResources)) {
   assert((fs.statSync(path.join(linuxResources, "app.asar.unpacked")).mode & 0o755) === 0o755, "Linux app.asar.unpacked must be readable and traversable after packaging.");
 }
 
-const dpkgDeb = spawnSync("dpkg-deb", ["--contents", path.join(distDir, `AnxOS-Control-Center-${artifactVersion}.deb`)], { encoding: "utf8" });
+const debPath = path.join(distDir, `AnxOS-Control-Center-${artifactVersion}.deb`);
+const dpkgDeb = selectedTargets.includes("linux") && fs.existsSync(debPath)
+  ? spawnSync("dpkg-deb", ["--contents", debPath], { encoding: "utf8" })
+  : { status: null };
 if (dpkgDeb.status === 0) {
   const contents = dpkgDeb.stdout;
   assert(/-rw-r--r--\s+0\/0\s+\d+.*\/usr\/share\/applications\/anxos-control-center\.desktop/.test(contents), "Linux desktop entry must install with world-readable permissions.");
@@ -104,4 +135,4 @@ if (dpkgDeb.status === 0) {
   assert(/drwxr-xr-x\s+0\/0\s+0.*\/opt\/AnxOS Control Center\/resources\/app\.asar\.unpacked\//.test(contents), "Linux unpacked resources must install with traversable directory permissions.");
 }
 
-console.log(`Packaging artifact smoke passed for ${artifactVersion}.`);
+console.log(`Packaging artifact smoke passed for ${artifactVersion} (${selectedTargets.join(", ")}).`);

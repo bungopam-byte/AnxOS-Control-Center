@@ -26480,6 +26480,7 @@ function renderNodes() {
 
 async function refreshNodes() {
   const desktopApiState = getDesktopApiState();
+  const previousSelectedNodeId = nodesState.selectedNodeId || "application-host";
   if (!desktopApiState.hasNodes) {
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
     refreshNodeHealth({ notify: false });
@@ -26488,6 +26489,10 @@ async function refreshNodes() {
   }
   try {
     nodesState = await desktopApiState.api.nodes.list();
+    if (previousSelectedNodeId !== "application-host" && nodesState.selectedNodeId !== previousSelectedNodeId) {
+      const selected = (nodesState.nodes || []).find((node) => node.id === nodesState.selectedNodeId);
+      showToast(`Selected node was unavailable. Switched to ${selected?.displayName || "the available default node"}.`, "warning");
+    }
   } catch {
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
   }

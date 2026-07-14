@@ -258,3 +258,9 @@ The Linux `apt` and `dnf` package-manager flows are preserved. This phase is sou
 The discovered Local Agent node now carries a `localProfile`/`profile` object for `This PC`. The profile uses the Agent device ID as stable identity, preserves custom display-name renames without changing the actual Windows hostname, and includes hostname, operating system, Windows version when applicable, platform, architecture, CPU, RAM, storage, local IP addresses, Agent version, Agent uptime, service state, dependency readiness, and instance count when the selected Local Agent APIs are reachable.
 
 Remote node profile behavior is unchanged. The profile is source- and smoke-tested only; GPU discovery and real Windows hardware validation remain later validation items.
+
+## Phase 11 Default Target Note
+
+A healthy discovered Local Agent now becomes the default management target as `This PC` when the user has not explicitly selected an existing remote node. Explicit remote selections are preserved, and if a previously selected non-local node disappears the renderer shows a plain fallback warning instead of silently changing targets.
+
+This phase keeps all pages on the shared node-selection path rather than duplicating Local Agent views. Destructive-action destination labeling and full Marketplace/instance/files/backups validation remain later-phase work.

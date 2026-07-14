@@ -90,6 +90,7 @@ includesAll(appSource, [
   "nodesState = previousNodesState;",
   "showToast(normalizeIpcErrorMessage(error, \"Node could not be selected.\"), \"warning\");",
   "nodeSwitchInProgress = false;\n    renderNodes();",
+  "Selected node was unavailable. Switched to",
 ], "Node switch persistence and completion");
 
 includesAll(appSource, [

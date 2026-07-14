@@ -28,6 +28,8 @@ const nodeService = fs.readFileSync(path.join(root, "src", "services", "nodeServ
   "customDisplayName",
   "stableNodeId",
   "node.localAgent === true || isLocalAgentUrl(node.agentUrl)",
+  "selectedRemoteNode",
+  "shouldDefaultToLocal",
   "mergeAgentNodes([",
   "agentToken: node.agentToken ? \"[configured]\" : \"\"",
   "modeLabel: node.localAgent ? \"Local Agent\" : \"Agent\"",

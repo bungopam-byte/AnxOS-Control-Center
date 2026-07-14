@@ -317,7 +317,10 @@ async function withDiscoveredLocalAgent(state) {
     ...state.nodes.filter((node) => !(node.localAgent === true || isLocalAgentUrl(node.agentUrl) || node.agentIdentity?.deviceId === localNode.agentIdentity.deviceId)),
     localNode,
   ]);
-  return { ...state, nodes };
+  const currentSelection = state.selectedNodeId || APPLICATION_HOST_NODE_ID;
+  const selectedRemoteNode = nodes.find((node) => node.id === currentSelection && node.localAgent !== true);
+  const shouldDefaultToLocal = !selectedRemoteNode && localNode.connection?.connected === true;
+  return { ...state, selectedNodeId: shouldDefaultToLocal ? localNode.id : currentSelection, nodes };
 }
 
 function migrateState(parsed = {}) {
@@ -330,6 +333,10 @@ function migrateState(parsed = {}) {
   let selectedNodeId = parsed.selectedNodeId || APPLICATION_HOST_NODE_ID;
   if (selectedNodeId === "default") selectedNodeId = effective.backendMode === "agent" && nodes[0] ? nodes[0].id : APPLICATION_HOST_NODE_ID;
   if (selectedNodeId !== APPLICATION_HOST_NODE_ID && !nodes.some((node) => node.id === selectedNodeId)) selectedNodeId = nodes[0]?.id || APPLICATION_HOST_NODE_ID;
+  if (selectedNodeId === APPLICATION_HOST_NODE_ID) {
+    const localNode = nodes.find((node) => node.localAgent === true || isLocalAgentUrl(node.agentUrl));
+    if (localNode && effective.backendMode === "agent" && isLocalAgentUrl(effective.agentUrl)) selectedNodeId = localNode.id;
+  }
   return { schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId, nodes };
 }
 

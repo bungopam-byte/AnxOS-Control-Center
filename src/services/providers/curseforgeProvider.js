@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
+const agentClient = require("../agentClient");
 const { getMarketplaceConfigPath, readMarketplaceConfig, saveMarketplaceConfig } = require("../providerConfigService");
 
 const CURSEFORGE_API = "https://api.curseforge.com/v1";
@@ -21,6 +22,8 @@ const API_KEY_FIELDS = ["apiKey", "curseForgeApiKey", "curseforgeApiKey", "cfApi
 const API_KEY_ENV = ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
 const API_KEY_FILE_FIELDS = ["apiKeyFile", "curseForgeApiKeyFile", "curseforgeApiKeyFile", "cfApiKeyFile"];
 const API_KEY_FILE_ENV = ["CURSEFORGE_API_KEY_FILE", "CF_API_KEY_FILE", "ANXHUB_CURSEFORGE_API_KEY_FILE"];
+const PROXY_URL_FIELDS = ["proxyUrl", "curseForgeProxyUrl", "curseforgeProxyUrl", "cfProxyUrl"];
+const PROXY_URL_ENV = ["ANXOS_CURSEFORGE_PROXY_URL", "ANXHUB_CURSEFORGE_PROXY_URL", "CURSEFORGE_PROXY_URL"];
 let envLoaded = false;
 let envLoadInfo = null;
 let startupStatusLogged = false;
@@ -299,6 +302,18 @@ function firstSecretValue(config = {}, fields = [], envNames = []) {
   return "";
 }
 
+function firstConfigValue(config = {}, fields = [], envNames = []) {
+  for (const field of fields) {
+    const value = trimValue(config[field]);
+    if (value) return value;
+  }
+  for (const envName of envNames) {
+    const value = trimValue(process.env[envName]);
+    if (value) return value;
+  }
+  return "";
+}
+
 function readSecretFile(filePath) {
   const cleanPath = cleanSecretValue(filePath);
   if (!cleanPath) {
@@ -504,6 +519,8 @@ function getApiKeyStatus(config = {}) {
     source,
     errorCode,
     env: envInfo,
+    hostedProxyConfigured: Boolean(getHostedProxyUrl(config)),
+    agentProxyEligible: shouldUseAgentProxy(config),
   };
 }
 
@@ -610,6 +627,145 @@ function buildApiHeaders(config = {}) {
     "User-Agent": USER_AGENT,
     "x-api-key": requireApiKey(config),
   };
+}
+
+function getHostedProxyUrl(config = {}) {
+  loadEnv();
+  return firstConfigValue(config, PROXY_URL_FIELDS, PROXY_URL_ENV);
+}
+
+function shouldUseAgentProxy(config = {}) {
+  if (config.useAgentProxy === false || process.env.ANXOS_DISABLE_CURSEFORGE_AGENT_PROXY === "1") {
+    return false;
+  }
+  if (config.useAgentProxy === true || process.env.ANXOS_CURSEFORGE_USE_AGENT_PROXY === "1") {
+    return true;
+  }
+  return agentClient.getBackendMode() !== "local";
+}
+
+function appendProxyParams(endpoint, pathname, params = {}) {
+  const url = new URL(endpoint);
+  url.searchParams.set("path", pathname);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
+  return url;
+}
+
+async function requestHostedProxyJson(proxyUrl, pathname, params = {}, label = "CurseForge request", config = {}) {
+  const endpoint = appendProxyParams(new URL("/api/v1/marketplace/curseforge/api", proxyUrl.endsWith("/") ? proxyUrl : `${proxyUrl}/`), pathname, params);
+  const response = await fetchWithTimeout(endpoint, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": USER_AGENT,
+    },
+    timeoutMs: config.timeoutMs,
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    throw new CurseForgeProviderError(friendlyHttpMessage(label, response.status, body), "CURSEFORGE_PROXY_REQUEST_FAILED", {
+      status: response.status,
+      body: truncateForLog(body),
+      url: String(endpoint),
+      source: "hosted-proxy",
+    });
+  }
+  return JSON.parse(body);
+}
+
+async function requestAgentProxyJson(pathname, params = {}, label = "CurseForge request", config = {}) {
+  const query = new URLSearchParams({ path: pathname });
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      query.set(key, String(value));
+    }
+  });
+  try {
+    return await agentClient.requestJson(`/api/v1/marketplace/curseforge/api?${query.toString()}`, {
+      config: config.agentConfig || null,
+      timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS,
+      targetLabel: "curseforge-agent-proxy",
+      suppressConnectionRefusedLog: true,
+    });
+  } catch (error) {
+    throw new CurseForgeProviderError(error?.message || `${label}: Agent proxy request failed.`, "CURSEFORGE_AGENT_PROXY_FAILED", {
+      provider: "curseforge",
+      status: error?.status || null,
+      payload: error?.payload || null,
+      source: "agent-proxy",
+    });
+  }
+}
+
+async function requestJsonViaTrustedBackend(pathname, params = {}, label = "CurseForge request", config = {}) {
+  const proxyUrl = getHostedProxyUrl(config);
+  if (proxyUrl) {
+    return requestHostedProxyJson(proxyUrl, pathname, params, label, config);
+  }
+  if (shouldUseAgentProxy(config)) {
+    return requestAgentProxyJson(pathname, params, label, config);
+  }
+  return requestJson(createUrl(pathname, params), label, config);
+}
+
+async function requestHostedProxyBuffer(proxyUrl, url, label, options = {}) {
+  const endpoint = new URL("/api/v1/marketplace/curseforge/download", proxyUrl.endsWith("/") ? proxyUrl : `${proxyUrl}/`);
+  endpoint.searchParams.set("url", String(url));
+  if (options.projectId) endpoint.searchParams.set("projectId", String(options.projectId));
+  if (options.fileId) endpoint.searchParams.set("fileId", String(options.fileId));
+  const response = await fetchWithTimeout(endpoint, {
+    headers: {
+      Accept: "application/octet-stream, application/json",
+      "User-Agent": USER_AGENT,
+    },
+    timeoutMs: options.timeoutMs || options.config?.timeoutMs,
+  });
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!response.ok) {
+    throw new CurseForgeProviderError(`${label}: hosted proxy download failed.`, "CURSEFORGE_PROXY_DOWNLOAD_FAILED", {
+      status: response.status,
+      url: String(endpoint),
+      source: "hosted-proxy",
+      projectId: options.projectId || null,
+      fileId: options.fileId || null,
+    });
+  }
+  return buffer;
+}
+
+async function requestAgentProxyBuffer(url, label, options = {}) {
+  const query = new URLSearchParams({ url: String(url) });
+  if (options.projectId) query.set("projectId", String(options.projectId));
+  if (options.fileId) query.set("fileId", String(options.fileId));
+  try {
+    const result = await agentClient.requestBuffer(`/api/v1/marketplace/curseforge/download?${query.toString()}`, {
+      config: options.config?.agentConfig || null,
+    });
+    return result.buffer;
+  } catch (error) {
+    throw new CurseForgeProviderError(error?.message || `${label}: Agent proxy download failed.`, "CURSEFORGE_AGENT_PROXY_DOWNLOAD_FAILED", {
+      provider: "curseforge",
+      status: error?.status || null,
+      payload: error?.payload || null,
+      source: "agent-proxy",
+      projectId: options.projectId || null,
+      fileId: options.fileId || null,
+    });
+  }
+}
+
+async function requestBufferViaTrustedBackend(url, label, options = {}) {
+  const proxyUrl = getHostedProxyUrl(options.config || {});
+  if (proxyUrl) {
+    return requestHostedProxyBuffer(proxyUrl, url, label, options);
+  }
+  if (shouldUseAgentProxy(options.config || {})) {
+    return requestAgentProxyBuffer(url, label, options);
+  }
+  return requestBuffer(url, label, options);
 }
 
 function buildDownloadHeaders(url, config = {}) {
@@ -741,36 +897,28 @@ const curseForgeClient = {
   requestJson,
   requestBuffer,
   searchMods(params = {}, config = {}) {
-    return requestJson(createUrl("/mods/search", params), "CurseForge search", config);
+    return requestJsonViaTrustedBackend("/mods/search", params, "CurseForge search", config);
   },
   getMod(projectId, config = {}) {
-    return requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}`), "CurseForge mod", config);
+    return requestJsonViaTrustedBackend(`/mods/${encodeURIComponent(projectId)}`, {}, "CurseForge mod", config);
   },
   getFiles(projectId, params = {}, config = {}) {
-    return requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}/files`, params), "CurseForge files", config);
+    return requestJsonViaTrustedBackend(`/mods/${encodeURIComponent(projectId)}/files`, params, "CurseForge files", config);
   },
   getFile(projectId, fileId, config = {}) {
-    return requestJson(
-      createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`),
-      "CurseForge file",
-      config
-    );
+    return requestJsonViaTrustedBackend(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`, {}, "CurseForge file", config);
   },
   getFileDownloadUrl(projectId, fileId, config = {}) {
-    return requestJson(
-      createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download-url`),
-      "CurseForge download URL",
-      config
-    );
+    return requestJsonViaTrustedBackend(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download-url`, {}, "CurseForge download URL", config);
   },
   getMinecraftVersions(config = {}) {
-    return requestJson(createUrl("/minecraft/version"), "CurseForge Minecraft versions", config);
+    return requestJsonViaTrustedBackend("/minecraft/version", {}, "CurseForge Minecraft versions", config);
   },
   getModLoaders(config = {}) {
-    return requestJson(createUrl("/minecraft/modloader"), "CurseForge mod loaders", config);
+    return requestJsonViaTrustedBackend("/minecraft/modloader", {}, "CurseForge mod loaders", config);
   },
   downloadFile(url, label, options = {}) {
-    return requestBuffer(url, label, options);
+    return requestBufferViaTrustedBackend(url, label, options);
   },
 };
 

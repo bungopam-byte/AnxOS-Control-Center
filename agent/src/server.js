@@ -7,6 +7,7 @@ const { auditAction } = require("./audit/auditLogger");
 const { handleBackups, handleBackupsList } = require("./routes/backups");
 const { startBackupScheduler } = require("./services/backupService");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
+const { handleCurseForgeProxy } = require("./services/curseforgeProxyService");
 const { isAuthorized } = require("./auth");
 const { getConfig } = require("./config");
 const { handleDocker, handleDockerContainers, handleDockerSnapshot, handleDockerSummary } = require("./routes/docker");
@@ -206,6 +207,10 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/public-access/snapshot" || pathname === "/api/v1/public-access/services" || pathname.startsWith("/api/v1/public-access/services/")) {
     return handlePublicAccess(request, url);
+  }
+
+  if (pathname === "/api/v1/marketplace/curseforge/status" || pathname === "/api/v1/marketplace/curseforge/api" || pathname === "/api/v1/marketplace/curseforge/download") {
+    return handleCurseForgeProxy(request, url);
   }
 
   if (request.method !== "GET") {

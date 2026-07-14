@@ -12,6 +12,30 @@ const releaseRepository = {
 };
 const repositoryUrl = `https://github.com/${releaseRepository.owner}/${releaseRepository.repo}`;
 const release = getReleaseInfo();
+const releaseAssetBaseUrl = `${repositoryUrl}/releases/download/${release.tag}`;
+
+const releaseAssets = [
+  {
+    fileName: `AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`,
+    url: `${releaseAssetBaseUrl}/AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`,
+  },
+  {
+    fileName: `AnxOS-Control-Center-${release.artifactVersion}-portable.exe`,
+    url: `${releaseAssetBaseUrl}/AnxOS-Control-Center-${release.artifactVersion}-portable.exe`,
+  },
+  {
+    fileName: `AnxOS-Control-Center-${release.artifactVersion}.AppImage`,
+    url: `${releaseAssetBaseUrl}/AnxOS-Control-Center-${release.artifactVersion}.AppImage`,
+  },
+  {
+    fileName: `AnxOS-Control-Center-${release.artifactVersion}.deb`,
+    url: `${releaseAssetBaseUrl}/AnxOS-Control-Center-${release.artifactVersion}.deb`,
+  },
+];
+
+function formatReleaseAssetsForConfig(assets) {
+  return `[\n${assets.map((asset) => `      {\n          fileName: "${asset.fileName}",\n          url: "${asset.url}"\n      }`).join(",\n")}\n  ]`;
+}
 function formatReleaseDate(date = new Date()) {
   return date.toLocaleDateString("en-US", {
     month: "long",
@@ -99,6 +123,7 @@ const config = `window.ANXOS_DOWNLOAD_CONFIG = {
     linuxAppImage: "/api/download/latest/linux-appimage",
     linuxDeb: "/api/download/latest/linux-deb",
   },
+  releaseAssets: ${formatReleaseAssetsForConfig(releaseAssets)},
   releaseNotes: ${JSON.stringify(releaseNotes, null, 4).replace(/^/gm, "  ").trimStart()},
 };
 `;

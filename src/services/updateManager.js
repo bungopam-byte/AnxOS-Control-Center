@@ -10,7 +10,8 @@ const { getReleaseInfo } = require("../shared/releaseConfig");
 
 const DEFAULT_UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center-Releases";
 const UPDATE_REPOSITORY = normalizeUpdateRepository(process.env.ANXOS_UPDATE_REPOSITORY) || DEFAULT_UPDATE_REPOSITORY;
-const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
+const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases?per_page=20`;
+const UPDATE_LATEST_RELEASE_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
 const WEBSITE_CONFIG_URLS = [
   process.env.ANXOS_WEBSITE_CONFIG_URL,
   `${OFFICIAL_SITE_ORIGIN}/config.js`,
@@ -134,6 +135,17 @@ function normalizeManifestAsset(asset) {
     size: Number(asset.size || 0),
     browser_download_url: downloadUrl,
   };
+}
+
+function hasSupportedUpdateAsset(release) {
+  return Boolean(pickUpdateAsset(release));
+}
+
+function pickLatestPublishedRelease(releases) {
+  return (Array.isArray(releases) ? releases : [])
+    .filter((release) => release && !release.draft)
+    .sort((left, right) => new Date(right.published_at || right.created_at || 0) - new Date(left.published_at || left.created_at || 0))
+    .find(hasSupportedUpdateAsset) || null;
 }
 
 function normalizeManifestRelease(manifest, sourceUrl) {
@@ -389,10 +401,19 @@ class UpdateManager extends EventEmitter {
       let sourceUrl = "";
       try {
         checkedSources.push(UPDATE_RELEASES_URL);
-        release = await this.requestJson(UPDATE_RELEASES_URL);
+        release = pickLatestPublishedRelease(await this.requestJson(UPDATE_RELEASES_URL));
         sourceUrl = UPDATE_RELEASES_URL;
       } catch (error) {
         this.log("GitHub release check failed.", { message: error?.message || String(error), url: UPDATE_RELEASES_URL }, error?.statusCode === 404 ? "warn" : "error");
+      }
+      if (!release) {
+        try {
+          checkedSources.push(UPDATE_LATEST_RELEASE_URL);
+          release = await this.requestJson(UPDATE_LATEST_RELEASE_URL);
+          sourceUrl = UPDATE_LATEST_RELEASE_URL;
+        } catch (error) {
+          this.log("GitHub latest release check failed.", { message: error?.message || String(error), url: UPDATE_LATEST_RELEASE_URL }, error?.statusCode === 404 ? "warn" : "error");
+        }
       }
       if (!release) {
         for (const websiteConfigUrl of WEBSITE_CONFIG_URLS) {
@@ -599,6 +620,7 @@ module.exports = {
   extractReleaseBuild,
   formatReleaseLabel,
   normalizeVersion,
+  pickLatestPublishedRelease,
   parseWebsiteConfigRelease,
   resolveRedirectUrl,
 };

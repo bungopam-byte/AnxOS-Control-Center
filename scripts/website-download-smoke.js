@@ -180,7 +180,7 @@ async function main() {
   assert(config.includes("releaseRepository") && config.includes(publicRepo) && config.includes(`https://api.github.com/repos/${publicRepository}/releases?per_page=20`), "Config should use the public release-only repository.");
   assert(!new RegExp(`${privateSourceRepositoryUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/releases|["'])`).test(config), "Browser release discovery must not use the private source repository.");
   assert(!/GITHUB_TOKEN|GH_TOKEN|PERSONAL_ACCESS_TOKEN|ANXOS_RELEASE_REPO_TOKEN/.test(`${download}\n${downloadHtml}\n${site}\n${config}\n${fs.readFileSync(path.join(websiteRoot, "release-download-service.js"), "utf8")}`), "Frontend download code must not contain GitHub tokens or token variable names.");
-  assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && !config.includes("downloads:"), "Config should contain release discovery settings, not static artifact URLs.");
+  assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && config.includes("releaseAssets"), "Config should contain release discovery settings and public release asset fallback metadata.");
   assert(workflow.includes("sha256sum * > SHA256SUMS") && workflow.includes("update-manifest.json") && workflow.includes("ANXOS_RELEASE_REPO_TOKEN") && workflow.includes(publicRepository), "Release workflow should publish checksummed artifacts and updater metadata to the public release repository using a server-side secret.");
 
   const functionsHelper = await import(pathToFileURL(path.join(root, "functions", "_shared", "release-download.mjs")).href);

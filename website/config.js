@@ -24,6 +24,24 @@ window.ANXOS_DOWNLOAD_CONFIG = {
     linuxAppImage: "/api/download/latest/linux-appimage",
     linuxDeb: "/api/download/latest/linux-deb",
   },
+  releaseAssets: [
+      {
+          fileName: "AnxOS-Control-Center-Setup-1.7-build146.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-Setup-1.7-build146.exe"
+      },
+      {
+          fileName: "AnxOS-Control-Center-1.7-build146-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-1.7-build146-portable.exe"
+      },
+      {
+          fileName: "AnxOS-Control-Center-1.7-build146.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-1.7-build146.AppImage"
+      },
+      {
+          fileName: "AnxOS-Control-Center-1.7-build146.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-1.7-build146.deb"
+      }
+  ],
   releaseNotes: [
       {
           "version": "1.7",

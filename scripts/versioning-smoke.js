@@ -14,6 +14,7 @@ const {
 const {
   compareReleaseBuilds,
   extractReleaseBuild,
+  pickLatestPublishedRelease,
   parseWebsiteConfigRelease,
 } = require("../src/services/updateManager");
 
@@ -40,6 +41,14 @@ assert(!/^\d+\.\d+\.\d+$/.test(release.version), "Public release version must no
 assert(compareReleaseBuilds({ version: "1.7", build: 143 }, { version: "1.7", build: 142 }) > 0, "Updater must detect newer builds in the same public version.");
 assert(compareReleaseBuilds({ version: "1.8", build: 150 }, { version: "1.7", build: 999 }) > 0, "Updater must detect newer public versions.");
 assert.strictEqual(extractReleaseBuild("v1.7-build143"), 143, "Updater must parse build numbers from release tags.");
+assert.strictEqual(
+  pickLatestPublishedRelease([
+    { draft: false, prerelease: true, tag_name: "v1.7-build146", published_at: "2026-07-14T17:15:00Z", assets: [{ name: "AnxOS-Control-Center-Setup-1.7-build146.exe", size: 100 * 1024 * 1024, browser_download_url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build146/AnxOS-Control-Center-Setup-1.7-build146.exe" }] },
+    { draft: false, prerelease: true, tag_name: "v1.7-build145", published_at: "2026-07-14T06:53:00Z", assets: [{ name: "AnxOS-Control-Center-Setup-1.7-build145.exe", size: 100 * 1024 * 1024, browser_download_url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build145/AnxOS-Control-Center-Setup-1.7-build145.exe" }] },
+  ])?.tag_name,
+  "v1.7-build146",
+  "Updater must discover the newest published prerelease when the release repository has no stable latest release.",
+);
 
 const parsedWebsiteRelease = parseWebsiteConfigRelease(websiteConfig, "https://anxoscontrolcenter.org/config.js");
 assert.strictEqual(parsedWebsiteRelease.version, release.version, "Website config must expose the centralized public version.");
@@ -64,6 +73,7 @@ assert(releaseArtifactValidatorSource.includes("SHA256SUMS") && releaseArtifactV
 assert(packageSource.includes('"release:artifacts:smoke": "node scripts/validate-release-artifacts.js --fixture"'), "Package scripts must expose release artifact validation smoke coverage.");
 assert(updateManagerSource.includes("AnxOS-Control-Center-Releases"), "Updater must default to the public release-only repository.");
 assert(updateManagerSource.includes("DEFAULT_UPDATE_REPOSITORY") && updateManagerSource.includes("normalizeUpdateRepository(process.env.ANXOS_UPDATE_REPOSITORY)"), "Updater repository overrides must be validated before use.");
+assert(updateManagerSource.includes("releases?per_page=20") && updateManagerSource.includes("pickLatestPublishedRelease"), "Updater must discover Private Alpha prereleases instead of relying only on GitHub releases/latest.");
 assert(updateManagerSource.includes("isProductionSafeMetadataUrl") && updateManagerSource.includes("app?.isPackaged !== true") && updateManagerSource.includes('parsed.protocol === "https:"'), "Packaged builds must ignore local or non-HTTPS update metadata overrides.");
 assert(!updateManagerSource.includes("192.168.1.134:8766"), "Updater must not ship a hardcoded local-network manifest fallback.");
 assert(websiteConfig.includes(`latestVersion: "${release.version}"`) && websiteConfig.includes(`channel: "${release.channel}"`), "Website download metadata must display the public release model.");

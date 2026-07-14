@@ -93,7 +93,7 @@ function buildReleaseInfo(config = readReleaseConfig()) {
     releaseRepository: { ...RELEASE_REPOSITORY },
     releaseRepositoryUrl: RELEASE_REPOSITORY_URL,
     releaseUrl: `${RELEASE_REPOSITORY_URL}/releases/tag/${tag}`,
-    updateSource: `${RELEASE_REPOSITORY_URL}/releases/latest`,
+    updateSource: `${RELEASE_REPOSITORY_URL}/releases`,
     supportedOperatingSystems: [...SUPPORTED_OPERATING_SYSTEMS],
     minimumArchitecture: "x64",
   };

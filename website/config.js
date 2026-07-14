@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "147",
-  buildNumber: "147",
+  build: "148",
+  buildNumber: "148",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 147 Private Alpha",
+  releaseLabel: "Version 1.7 Build 148 Private Alpha",
   releaseDate: "July 14, 2026",
-  releaseTag: "v1.7-build147",
+  releaseTag: "v1.7-build148",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build147",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build148",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -26,23 +26,41 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build147.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-Setup-1.7-build147.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build148.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-Setup-1.7-build148.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build147-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-1.7-build147-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build148-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-1.7-build148-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build147.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-1.7-build147.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build148.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-1.7-build148.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build147.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build147/AnxOS-Control-Center-1.7-build147.deb"
+          fileName: "AnxOS-Control-Center-1.7-build148.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-1.7-build148.deb"
       }
   ],
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 148,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build148",
+          "date": "July 14, 2026",
+          "datetime": "2026-07-14",
+          "title": "Build 148 Private Alpha hotfix",
+          "summary": "Private Alpha hotfix for a packaged startup crash caused by shared desktop modules missing from app.asar.",
+          "changes": [
+              "Fixed a main-process startup crash where diagnostics could not load src/shared/redaction.js from the packaged app.",
+              "Added explicit packaging coverage for shared desktop modules used by diagnostics, logging, and release metadata.",
+              "Added artifact smoke assertions so Windows and Linux packages must include required shared modules in app.asar.",
+              "Preserved the build 147 Local Agent metadata resolver fix.",
+              "Bumped the Electron updater package version to 1.0.50 so Private Alpha hotfix updates can be detected."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build148"
+      },
       {
           "version": "1.7",
           "build": 147,

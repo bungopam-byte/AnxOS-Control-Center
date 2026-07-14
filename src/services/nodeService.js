@@ -47,7 +47,56 @@ function legacyDeviceId(url) {
   return `legacy-${crypto.createHash("sha256").update(normalizeUrl(url)).digest("hex").slice(0, 20)}`;
 }
 function nodeIdForDevice(deviceId) { return `agent-${String(deviceId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 56)}`; }
-function isGenericNodeDisplayName(value) { return /^(owner machine|default|remote node|agent node|windows desktop|local agent)$/i.test(String(value || "").trim()); }
+function isGenericNodeDisplayName(value) { return /^(owner machine|default|remote node|agent node|windows desktop|local agent|this pc)$/i.test(String(value || "").trim()); }
+function isDefaultLocalAgentDisplayName(value) { return /^(this pc|local agent|owner machine|windows desktop)$/i.test(String(value || "").trim()); }
+
+function getLocalIpAddresses() {
+  const interfaces = require("os").networkInterfaces();
+  return Object.values(interfaces).flat().filter(Boolean)
+    .filter((entry) => !entry.internal)
+    .map((entry) => entry.address)
+    .filter(Boolean)
+    .slice(0, 16);
+}
+
+function summarizeDependencyReadiness(result = null) {
+  const dependencies = Array.isArray(result?.dependencies) ? result.dependencies : [];
+  const ready = dependencies.filter((dependency) => dependency.state === "installed").length;
+  const attention = dependencies.filter((dependency) => dependency.state !== "installed");
+  return {
+    checked: Boolean(result),
+    ready,
+    total: dependencies.length,
+    attention: attention.length,
+    state: !result ? "unknown" : attention.length ? "needs-attention" : "ready",
+  };
+}
+
+function buildLocalNodeProfile({ node = {}, health = null, stats = null, instances = null, dependencies = null, service = null } = {}) {
+  const identity = health?.identity || node.agentIdentity || {};
+  return {
+    localAgent: true,
+    stableNodeId: node.id || nodeIdForDevice(identity.deviceId),
+    displayName: node.displayName || LOCAL_AGENT_DISPLAY_NAME,
+    customDisplayName: node.displayName && node.displayName !== LOCAL_AGENT_DISPLAY_NAME ? node.displayName : null,
+    hostname: identity.hostname || stats?.hostname || null,
+    operatingSystem: identity.operatingSystem || stats?.osVersion || null,
+    windowsVersion: identity.platform === "win32" || stats?.platform === "win32" ? identity.operatingSystem || stats?.osVersion || null : null,
+    platform: identity.platform || stats?.platform || null,
+    architecture: identity.architecture || null,
+    cpu: stats?.cpu ? { model: stats.cpu.model || null, cores: stats.cpu.cores || null, usagePercent: stats.cpu.usagePercent ?? null } : null,
+    ram: stats?.memory ? { totalBytes: stats.memory.total ?? null, usedBytes: stats.memory.used ?? null, usagePercent: stats.memory.percent ?? null } : null,
+    gpu: null,
+    storage: stats?.disk || null,
+    localIpAddresses: getLocalIpAddresses(),
+    agentVersion: identity.agentVersion || health?.agentVersion || null,
+    agentUptimeSeconds: health?.process?.uptimeSeconds ?? stats?.uptimeSeconds ?? null,
+    serviceState: service?.state || null,
+    dependencyReadiness: summarizeDependencyReadiness(dependencies),
+    instanceCount: Array.isArray(instances?.instances) ? instances.instances.length : null,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 function readLocalAgentRuntimeConfig() {
   try {
@@ -100,7 +149,7 @@ function normalizeAgentNode(node = {}) {
   const identityHostname = String(identity.hostname || "").trim();
   const localAgent = node.localAgent === true || isLocalAgentUrl(agentUrl);
   const displayName = localAgent
-    ? LOCAL_AGENT_DISPLAY_NAME
+    ? requestedDisplayName && !isDefaultLocalAgentDisplayName(requestedDisplayName) ? requestedDisplayName : LOCAL_AGENT_DISPLAY_NAME
     : isGenericNodeDisplayName(requestedDisplayName) && identityHostname
     ? identityHostname
     : requestedDisplayName || identityHostname || "Agent Node";
@@ -116,6 +165,7 @@ function normalizeAgentNode(node = {}) {
     localAgent,
     local: localAgent,
     modeLabel: localAgent ? "Local Agent" : "Agent",
+    profile: localAgent ? node.profile || buildLocalNodeProfile({ node: { ...node, displayName }, health: { identity } }) : node.profile || null,
     connection: node.connection && typeof node.connection === "object" ? {
       connected: node.connection.connected === true,
       status: node.connection.status || (node.connection.connected ? "online" : "offline"),
@@ -186,10 +236,20 @@ async function discoverLocalAgentNode(state) {
       if (!identity.deviceId) {
         continue;
       }
+      const healthConfig = {
+        backendMode: "agent",
+        agentUrl,
+        agentToken: effective.agentToken || existingLocal?.agentToken || "",
+      };
+      const [stats, instances, dependencies] = await Promise.all([
+        agentClient.getSystemStats(healthConfig).catch(() => null),
+        agentClient.listInstances(healthConfig).catch(() => null),
+        agentClient.checkDependencies({ dependencyIds: ["java", "docker", "git", "steamcmd", "dotnet-runtime", "dotnet-desktop-runtime", "powershell", "ffmpeg", "tailscale", "cloudflared", "playit", "vcredist-runtime"] }, healthConfig).catch(() => null),
+      ]);
       return normalizeAgentNode({
         ...existingLocal,
         id: existingLocal?.id && existingLocal.id !== nodeIdForDevice(existingLocal?.agentIdentity?.deviceId) ? existingLocal.id : nodeIdForDevice(identity.deviceId),
-        displayName: LOCAL_AGENT_DISPLAY_NAME,
+        displayName: existingLocal?.displayName || LOCAL_AGENT_DISPLAY_NAME,
         agentUrl,
         agentToken: effective.agentToken || existingLocal?.agentToken || "",
         agentIdentity: identity,
@@ -212,6 +272,14 @@ async function discoverLocalAgentNode(state) {
           architecture: identity.architecture || null,
           hostname: identity.hostname || null,
         }),
+        profile: buildLocalNodeProfile({
+          node: { ...existingLocal, id: existingLocal?.id || nodeIdForDevice(identity.deviceId), displayName: existingLocal?.displayName || LOCAL_AGENT_DISPLAY_NAME, agentIdentity: identity },
+          health,
+          stats,
+          instances,
+          dependencies,
+          service: { state: "running" },
+        }),
       });
     } catch (error) {
       lastError = error;
@@ -224,7 +292,7 @@ async function discoverLocalAgentNode(state) {
 
   return normalizeAgentNode({
     ...existingLocal,
-    displayName: LOCAL_AGENT_DISPLAY_NAME,
+    displayName: existingLocal?.displayName || LOCAL_AGENT_DISPLAY_NAME,
     localAgent: true,
     ownerMachine: true,
     connection: createLocalAgentConnectionStatus({
@@ -295,7 +363,7 @@ function publicNode(node) {
       },
     };
   }
-  return { ...node, hasToken: Boolean(node.agentToken), agentToken: node.agentToken ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent" };
+  return { ...node, hasToken: Boolean(node.agentToken), agentToken: node.agentToken ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
 }
 
 async function refreshIdentities(state) {
@@ -305,6 +373,12 @@ async function refreshIdentities(state) {
     try {
       const health = await getHealth(getNodeAgentConfigFromNode(node));
       const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);
+      const healthConfig = getNodeAgentConfigFromNode(node);
+      const [stats, instances, dependencies] = localAgent ? await Promise.all([
+        agentClient.getSystemStats(healthConfig).catch(() => null),
+        agentClient.listInstances(healthConfig).catch(() => null),
+        agentClient.checkDependencies({ dependencyIds: ["java", "docker", "git", "steamcmd", "dotnet-runtime", "dotnet-desktop-runtime", "powershell", "ffmpeg", "tailscale", "cloudflared", "playit", "vcredist-runtime"] }, healthConfig).catch(() => null),
+      ]) : [null, null, null];
       refreshed.push(normalizeAgentNode({
         ...node,
         agentIdentity: health.identity || node.agentIdentity,
@@ -332,6 +406,7 @@ async function refreshIdentities(state) {
           lastSeen: new Date().toISOString(),
           latencyMs: Date.now() - startedAt,
         },
+        profile: localAgent ? buildLocalNodeProfile({ node, health, stats, instances, dependencies, service: { state: "running" } }) : node.profile,
       }));
     } catch (error) {
       const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);

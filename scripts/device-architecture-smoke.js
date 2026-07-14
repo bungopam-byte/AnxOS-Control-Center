@@ -64,7 +64,8 @@ async function main() {
     assert.strictEqual(state.nodes.filter((node) => node.kind === "agent").length, 1, "Registering the same Agent identity must not duplicate it.");
     const future = await nodes.saveNode({ displayName: "Future Windows", agentUrl: second.url, agentToken: second.token });
     state = await nodes.listNodes();
-    assert.strictEqual(state.nodes.filter((node) => node.kind === "agent").length, 2, "Two different Agent identities must coexist.");
+    assert.strictEqual(state.nodes.filter((node) => node.kind === "agent").length, 1, "Loopback Agent URLs should collapse into the single This PC Local Agent profile.");
+    assert(state.nodes.find((node) => node.kind === "agent")?.localAgent, "The remaining loopback Agent should be marked as the Local Agent.");
 
     const owner = state.nodes.find((node) => node.kind === "agent" && node.agentUrl === first.url);
     await nodes.selectNode(owner.id);

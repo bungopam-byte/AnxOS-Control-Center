@@ -252,3 +252,9 @@ This phase does not install Windows dependencies. Real Windows validation is sti
 Windows Local Agent dependency installation now has a managed Agent-side path for allowlisted dependencies through Windows Package Manager (`winget`). Plans expose fixed package IDs and non-interactive commands, while installs publish Downloading, Verifying, Installing, Configuring, Complete, Failed, and verification-degraded job stages through the existing dependency job model. Renderer-provided installer arguments are not accepted.
 
 The Linux `apt` and `dnf` package-manager flows are preserved. This phase is source- and smoke-tested from Linux only; it does not claim that each Windows package ID has been installed on a real Windows machine.
+
+## Phase 10 Local Node Profile Note
+
+The discovered Local Agent node now carries a `localProfile`/`profile` object for `This PC`. The profile uses the Agent device ID as stable identity, preserves custom display-name renames without changing the actual Windows hostname, and includes hostname, operating system, Windows version when applicable, platform, architecture, CPU, RAM, storage, local IP addresses, Agent version, Agent uptime, service state, dependency readiness, and instance count when the selected Local Agent APIs are reachable.
+
+Remote node profile behavior is unchanged. The profile is source- and smoke-tested only; GPU discovery and real Windows hardware validation remain later validation items.

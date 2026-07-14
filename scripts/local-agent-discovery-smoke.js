@@ -11,6 +11,9 @@ const nodeService = fs.readFileSync(path.join(root, "src", "services", "nodeServ
   "function isLocalAgentUrl",
   "function getLocalAgentUrls",
   "function createLocalAgentConnectionStatus",
+  "function buildLocalNodeProfile",
+  "function getLocalIpAddresses",
+  "function summarizeDependencyReadiness",
   "async function discoverLocalAgentNode",
   "async function withDiscoveredLocalAgent",
   "localAgent: true",
@@ -19,6 +22,11 @@ const nodeService = fs.readFileSync(path.join(root, "src", "services", "nodeServ
   "desktopApplication: \"running\"",
   "remoteAvailability: \"not-remote\"",
   "versionCompatibility",
+  "dependencyReadiness",
+  "instanceCount",
+  "localIpAddresses",
+  "customDisplayName",
+  "stableNodeId",
   "node.localAgent === true || isLocalAgentUrl(node.agentUrl)",
   "mergeAgentNodes([",
   "agentToken: node.agentToken ? \"[configured]\" : \"\"",
@@ -38,8 +46,13 @@ assert(
 );
 
 assert(
-  nodeService.includes("const displayName = localAgent") && nodeService.includes("? LOCAL_AGENT_DISPLAY_NAME"),
-  "Local Agent nodes should normalize their display name to This PC.",
+  nodeService.includes("isDefaultLocalAgentDisplayName") && nodeService.includes("requestedDisplayName && !isDefaultLocalAgentDisplayName(requestedDisplayName)"),
+  "Local Agent nodes should default to This PC while allowing a custom display name.",
+);
+
+assert(
+  nodeService.includes("localProfile: node.localAgent === true ? node.profile || null : null"),
+  "Public Local Agent nodes should expose a local node profile without exposing the raw token.",
 );
 
 assert(

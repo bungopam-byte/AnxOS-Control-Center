@@ -206,6 +206,7 @@ async function fetchDownloadWithRedirects(url, apiKey, context = {}) {
       headers: {
         "User-Agent": USER_AGENT,
         "x-api-key": apiKey,
+        ...(context.range ? { Range: context.range } : {}),
       },
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) {
@@ -322,6 +323,66 @@ async function fetchCurseForgeDownloadPost(request) {
   return fetchCurseForgeDownload(url);
 }
 
+async function testCurseForgeConnectivity() {
+  const checkedAt = new Date().toISOString();
+  const status = getCurseForgeProxyStatus();
+  const result = {
+    ok: false,
+    checkedAt,
+    status,
+    api: { ok: false, status: null, errorCode: null },
+    cdn: { ok: false, status: null, errorCode: null, hostname: null },
+  };
+
+  try {
+    await fetchCurseForgeEndpoint("/minecraft/modloader");
+    result.api = { ok: true, status: 200, errorCode: null };
+  } catch (error) {
+    result.api = { ok: false, status: error?.details?.status || error?.statusCode || null, errorCode: error?.code || "CURSEFORGE_API_TEST_FAILED" };
+    result.errorCode = result.api.errorCode;
+    return { statusCode: error.statusCode || 502, body: result };
+  }
+
+  try {
+    const search = await fetchCurseForgeEndpoint("/mods/search", {
+      gameId: 432,
+      classId: 4471,
+      pageSize: 1,
+      sortField: 2,
+      sortOrder: "desc",
+    });
+    const project = Array.isArray(search.body?.data) ? search.body.data[0] : null;
+    const fileIndex = Array.isArray(project?.latestFilesIndexes) ? project.latestFilesIndexes[0] : null;
+    const projectId = project?.id;
+    const fileId = fileIndex?.fileId || fileIndex?.fileID;
+    if (!projectId || !fileId) {
+      throw new CurseForgeProxyError("CurseForge CDN probe did not find a probe file.", "CURSEFORGE_CDN_PROBE_UNAVAILABLE", {}, 502);
+    }
+    const download = await fetchCurseForgeEndpoint(`/mods/${projectId}/files/${fileId}/download-url`);
+    const downloadUrl = typeof download.body?.data === "string" ? download.body.data : "";
+    const response = await fetchDownloadWithRedirects(downloadUrl, requireApiKey().key, { projectId, fileId, range: "bytes=0-0" });
+    response.body?.cancel?.();
+    if (!response.ok && response.status !== 206) {
+      throw new CurseForgeProxyError("CurseForge CDN probe failed.", "CURSEFORGE_CDN_PROBE_FAILED", {
+        status: response.status,
+        hostname: response.finalHostname || null,
+      }, response.status);
+    }
+    result.cdn = { ok: true, status: response.status, errorCode: null, hostname: response.finalHostname || null };
+    result.ok = true;
+    return { statusCode: 200, body: result };
+  } catch (error) {
+    result.cdn = {
+      ok: false,
+      status: error?.details?.status || error?.statusCode || null,
+      errorCode: error?.code || "CURSEFORGE_CDN_TEST_FAILED",
+      hostname: error?.details?.hostname || null,
+    };
+    result.errorCode = result.cdn.errorCode;
+    return { statusCode: error.statusCode || 502, body: result };
+  }
+}
+
 async function routeExplicitEndpoint(request, url) {
   const pathname = url.pathname;
   const projectMatch = pathname.match(/^\/api\/v1\/marketplace\/curseforge\/projects\/(\d+)$/);
@@ -350,6 +411,9 @@ async function handleCurseForgeProxy(request, url) {
   try {
     if (request.method === "GET" && url.pathname === "/api/v1/marketplace/curseforge/status") {
       return { statusCode: 200, body: getCurseForgeProxyStatus() };
+    }
+    if ((request.method === "GET" || request.method === "POST") && url.pathname === "/api/v1/marketplace/curseforge/test") {
+      return await testCurseForgeConnectivity();
     }
     if (request.method === "GET" && url.pathname === "/api/v1/marketplace/curseforge/search") {
       return await fetchCurseForgeEndpoint("/mods/search", getSearchParams(url, ["gameId", "classId", "searchFilter", "gameVersion", "modLoaderType", "sortField", "sortOrder", "index", "pageSize"]));

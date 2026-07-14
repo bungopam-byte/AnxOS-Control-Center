@@ -431,6 +431,7 @@ const marketplaceConfigTestButton = document.querySelector('[data-marketplace-co
 const marketplaceConfigPill = document.querySelector("[data-marketplace-config-pill]");
 const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
+const curseForgeDiagnosticFields = document.querySelectorAll("[data-curseforge-diagnostic]");
 const updateModal = document.querySelector("[data-update-modal]");
 const devUpdateModal = document.querySelector("[data-dev-update-modal]");
 const devUpdateMessage = document.querySelector("[data-dev-update-message]");
@@ -26804,6 +26805,27 @@ function renderMarketplaceSettings(settingsPayload) {
   if (marketplaceConfigSource) {
     marketplaceConfigSource.textContent = `Source: ${diagnostics.keySource || mode}. Proxy: ${diagnostics.hostedProxyConfigured ? "configured" : "not configured"}. Agent proxy: ${diagnostics.agentProxyEligible ? "eligible" : "not active"}.`;
   }
+  renderCurseForgeDiagnostics(diagnostics);
+}
+
+function setCurseForgeDiagnosticField(name, value) {
+  curseForgeDiagnosticFields.forEach((field) => {
+    if (field.dataset.curseforgeDiagnostic === name) {
+      field.textContent = value || "Unknown";
+    }
+  });
+}
+
+function renderCurseForgeDiagnostics(diagnostics = {}) {
+  setCurseForgeDiagnosticField("agent", diagnostics.selectedAgentName || diagnostics.agentNodeLabel || diagnostics.selectedAgentId || "Unknown");
+  setCurseForgeDiagnosticField("reachable", diagnostics.agentReachable === true ? "Yes" : diagnostics.agentReachable === false ? "No" : "Unknown");
+  setCurseForgeDiagnosticField("configured", diagnostics.configured === true ? "Yes" : diagnostics.configured === false ? "No" : "Unknown");
+  setCurseForgeDiagnosticField("source", diagnostics.source || diagnostics.keySource || diagnostics.mode || "Unknown");
+  setCurseForgeDiagnosticField("fingerprint", diagnostics.fingerprint || diagnostics.keyFingerprint || "Unavailable");
+  setCurseForgeDiagnosticField("api", diagnostics.apiConnectivity || diagnostics.browsing || "Not tested");
+  setCurseForgeDiagnosticField("cdn", diagnostics.cdnAuthenticationConnectivity || diagnostics.fileDownloadAuthentication || "Not tested");
+  setCurseForgeDiagnosticField("lastTest", diagnostics.lastTestTime || diagnostics.checkedAt || "Never");
+  setCurseForgeDiagnosticField("error", diagnostics.errorCode || "None");
 }
 
 function setSettingsStatus(message, tone = "neutral") {
@@ -27637,6 +27659,7 @@ async function testCurseForgeConnection() {
       showToast(`CurseForge test failed: ${result?.error?.code || "unknown"}.`);
     }
     renderMarketplaceSettings(await desktopApiState.api.settings.getMarketplaceConfig());
+    renderCurseForgeDiagnostics(diagnostics);
   } catch (error) {
     showToast(error?.message || "CurseForge diagnostics failed.");
   } finally {

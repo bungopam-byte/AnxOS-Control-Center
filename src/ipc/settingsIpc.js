@@ -8,7 +8,9 @@ const {
   readAgentSettings,
   saveAgentSettings,
   testConnection,
+  requestJson,
 } = require("../services/agentClient");
+const { getExecutionTarget, getNode, getSelectedNodeId } = require("../services/nodeService");
 const {
   getMarketplaceConfigPath,
   readMarketplaceConfig,
@@ -66,6 +68,8 @@ function getMarketplaceSettingsPayload() {
   const stored = readMarketplaceConfig();
   const status = curseforgeProvider._test.getApiKeyStatus();
   const diagnostics = curseforgeProvider._test.getConfigurationDiagnostics();
+  const selectedNodeId = getSelectedNodeId();
+  const selectedNode = getNode(selectedNodeId);
 
   return {
     stored,
@@ -73,9 +77,104 @@ function getMarketplaceSettingsPayload() {
     curseForge: {
       configured: diagnostics.configured,
       source: status.source,
-      diagnostics,
+      diagnostics: {
+        ...diagnostics,
+        selectedAgentName: selectedNode?.displayName || selectedNodeId,
+        selectedAgentId: selectedNodeId,
+      },
     },
   };
+}
+
+async function testSelectedAgentCurseForgeConnection() {
+  const selectedNodeId = getSelectedNodeId();
+  const selectedNode = getNode(selectedNodeId);
+  const executionTarget = getExecutionTarget(selectedNodeId);
+  const checkedAt = new Date().toISOString();
+  const base = {
+    selectedAgentName: selectedNode?.displayName || selectedNodeId,
+    selectedAgentId: selectedNodeId,
+    agentReachable: false,
+    configured: false,
+    source: null,
+    fingerprint: null,
+    apiConnectivity: "not-tested",
+    cdnAuthenticationConnectivity: "not-tested",
+    lastTestTime: checkedAt,
+    errorCode: null,
+  };
+
+  if (executionTarget.type !== "agent") {
+    const local = await curseforgeProvider.testConnection();
+    return {
+      ok: Boolean(local.ok),
+      provider: "curseforge",
+      diagnostics: {
+        ...base,
+        agentReachable: true,
+        configured: Boolean(local.diagnostics?.configured),
+        source: local.diagnostics?.keySource || local.diagnostics?.mode || null,
+        fingerprint: local.diagnostics?.keyFingerprint || null,
+        apiConnectivity: local.ok ? "passed" : "failed",
+        cdnAuthenticationConnectivity: "not-tested",
+        errorCode: local.error?.code || null,
+      },
+      ...(local.error ? { error: local.error } : {}),
+    };
+  }
+
+  try {
+    const status = await requestJson("/api/v1/marketplace/curseforge/status", {
+      config: executionTarget.config,
+      targetLabel: "curseforge-diagnostics-status",
+      suppressConnectionRefusedLog: true,
+    });
+    const test = await requestJson("/api/v1/marketplace/curseforge/test", {
+      config: executionTarget.config,
+      targetLabel: "curseforge-diagnostics-test",
+      suppressConnectionRefusedLog: true,
+      timeoutMs: 45000,
+    }).catch((error) => ({
+      ok: false,
+      errorCode: error?.payload?.error?.code || error?.code || "CURSEFORGE_AGENT_TEST_FAILED",
+      api: { ok: false, status: error?.status || null, errorCode: error?.payload?.error?.code || error?.code || null },
+      cdn: { ok: false, status: null, errorCode: null },
+    }));
+    return {
+      ok: Boolean(test.ok),
+      provider: "curseforge",
+      diagnostics: {
+        ...base,
+        agentReachable: true,
+        configured: Boolean(status.configured),
+        source: status.source || null,
+        fingerprint: status.fingerprint || null,
+        apiConnectivity: test.api?.ok ? "passed" : "failed",
+        cdnAuthenticationConnectivity: test.cdn?.ok ? "passed" : "failed",
+        lastTestTime: test.checkedAt || checkedAt,
+        errorCode: test.errorCode || test.api?.errorCode || test.cdn?.errorCode || null,
+      },
+      error: test.ok ? null : {
+        code: test.errorCode || test.api?.errorCode || test.cdn?.errorCode || "CURSEFORGE_TEST_FAILED",
+        message: "CurseForge connection test failed.",
+        status: test.api?.status || test.cdn?.status || null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: "curseforge",
+      diagnostics: {
+        ...base,
+        errorCode: error?.payload?.error?.code || error?.code || "AGENT_UNAVAILABLE",
+      },
+      error: {
+        code: error?.payload?.error?.code || error?.code || "AGENT_UNAVAILABLE",
+        message: error?.message || "Selected Agent is unreachable.",
+        status: error?.status || null,
+      },
+    };
+  }
 }
 
 function registerSettingsIpc() {
@@ -131,7 +230,7 @@ function registerSettingsIpc() {
   });
   ipcMain.handle("settings:testCurseForgeConnection", async () => {
     assertCanReadSettingsSecret("canManageMarketplaceSettings", "marketplace-config");
-    const result = await curseforgeProvider.testConnection();
+    const result = await testSelectedAgentCurseForgeConnection();
     audit({ action: "settings.marketplace.testCurseForge", target: "marketplace-config", reason: result.ok ? "ok" : result.error?.code || "failed" });
     return result;
   });

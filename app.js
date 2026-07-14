@@ -3897,6 +3897,8 @@ const DEPENDENCY_ATTENTION_STATES = new Set([
   "administrator-required",
   "restart-required",
   "verification-failed",
+  "installed-unavailable",
+  "detection-failed",
   "installation-failed",
   "failed",
 ]);
@@ -3983,7 +3985,12 @@ function renderDependencyStatus(result = null, options = {}) {
     item.className = "download-item";
     const state = dependency.state || "unknown";
     const packages = Array.isArray(dependency.packages) && dependency.packages.length > 0 ? dependency.packages.join(", ") : "No package mapping";
-    const tone = state === "installed" ? "status-pill--ok" : state === "unsupported" || state === "installation-failed" || state === "verification-failed" ? "status-pill--critical" : "status-pill--warning";
+    const sourceText = dependency.installationSource || dependency.packageManager || packages;
+    const tone = state === "installed"
+      ? "status-pill--ok"
+      : state === "unsupported" || state === "installation-failed" || state === "verification-failed" || state === "installed-unavailable" || state === "detection-failed"
+        ? "status-pill--critical"
+        : "status-pill--warning";
     const main = document.createElement("div");
     main.className = "download-item__main";
     const title = document.createElement("strong");
@@ -4007,10 +4014,10 @@ function renderDependencyStatus(result = null, options = {}) {
         ? `${verificationFailures.length} execution check${verificationFailures.length === 1 ? "" : "s"} failed`
         : "Execution verified"
       : dependency.installed ? "Execution check unavailable" : "Not executable from PATH";
-    packageText.textContent = [packages, versionText, verificationText, updateText, commandPaths.join(", ")].filter(Boolean).join(" • ");
+    packageText.textContent = [sourceText, packages, versionText, verificationText, updateText, commandPaths.join(", ")].filter(Boolean).join(" • ");
     const status = document.createElement("span");
     status.className = `status-pill ${tone}`;
-    status.textContent = state;
+    status.textContent = getDependencyFriendlyState(dependency);
     main.append(title, reason, packageText);
     item.append(main, status);
     dependencyList.append(item);
@@ -27209,8 +27216,10 @@ function renderOnboardingPairSecurelyStep(container) {
 
 function getDependencyFriendlyState(dependency = {}) {
   const state = String(dependency.state || "").toLowerCase();
-  if (dependency.installed === true || state === "installed" || state === "ready") return "Ready";
   if (dependency.updateAvailable === true || state === "update-required" || state === "outdated") return "Update available";
+  if (dependency.installed === true || state === "installed" || state === "ready") return "Ready";
+  if (state === "installed-unavailable" || state === "verification-failed") return "Installed but unavailable";
+  if (state === "detection-failed") return "Detection failed";
   if (state === "missing" || dependency.installed === false) return "Not installed";
   if (state === "unsupported" || dependency.supported === false) return "Not supported";
   if (state.includes("setup") || state.includes("auth")) return "Setup required";

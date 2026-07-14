@@ -226,25 +226,51 @@ function findCommand(command) {
     throw createDependencyError("DEPENDENCY_COMMAND_INVALID", "Dependency command is not allowlisted.", { command }, 400);
   }
   const paths = String(process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  const extensions = process.platform === "win32"
+    ? String(process.env.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
   for (const directory of paths) {
-    const candidate = path.join(directory, command);
-    try {
-      accessExecutable(candidate);
-      return candidate;
-    } catch {}
+    const candidates = [path.join(directory, command)];
+    if (process.platform === "win32" && !path.extname(command)) {
+      extensions.forEach((extension) => candidates.push(path.join(directory, `${command}${extension.toLowerCase()}`), path.join(directory, `${command}${extension.toUpperCase()}`)));
+    }
+    for (const candidate of candidates) {
+      try {
+        accessExecutable(candidate);
+        return candidate;
+      } catch {}
+    }
   }
   return null;
 }
 
+function getDependencyCommands(definition = {}) {
+  if (process.platform === "win32" && Array.isArray(definition.windowsCommands)) {
+    return definition.windowsCommands;
+  }
+  return Array.isArray(definition.commands) ? definition.commands : [];
+}
+
+function getVersionCommand(definition = {}) {
+  if (process.platform === "win32" && definition.windowsVersionCommand) {
+    return definition.windowsVersionCommand;
+  }
+  return definition.versionCommand || null;
+}
+
 async function detectVersion(definition, commandPath) {
-  if (!definition.versionCommand) {
+  const versionCommand = getVersionCommand(definition);
+  if (!versionCommand) {
     return { version: null, raw: null };
   }
-  const versionCommand = definition.versionCommand;
-  const command = versionCommand.command === definition.commands[0] ? commandPath : versionCommand.command;
+  let command = commandPath;
+  if (versionCommand.command && path.basename(commandPath || "") !== versionCommand.command) {
+    command = findCommand(versionCommand.command) || (versionCommand.fallbackCommand ? findCommand(versionCommand.fallbackCommand) : null) || commandPath || versionCommand.command;
+  }
   const result = await commandRunner(command, versionCommand.args || [], { timeoutMs: versionCommand.timeoutMs || DEFAULT_TIMEOUT_MS });
   const raw = versionCommand.stream === "stderr" ? result.stderr || result.stdout : result.stdout || result.stderr;
-  const match = definition.versionPattern ? String(raw || "").match(definition.versionPattern) : null;
+  const pattern = process.platform === "win32" && definition.windowsVersionPattern ? definition.windowsVersionPattern : definition.versionPattern;
+  const match = pattern ? String(raw || "").match(pattern) : null;
   return {
     version: match?.[1] || null,
     raw: trimOutput(raw),
@@ -254,12 +280,13 @@ async function detectVersion(definition, commandPath) {
 
 async function runVerificationCommands(definition, commandResults) {
   const commandPathByName = new Map(commandResults.map((result) => [result.command, result.path]));
+  const dependencyCommands = getDependencyCommands(definition);
   const checks = [];
   const verificationCommands = Array.isArray(definition.verificationCommands) && definition.verificationCommands.length > 0
     ? definition.verificationCommands
-    : definition.versionCommand
-      ? [{ ...definition.versionCommand, description: "Version command executes successfully." }]
-      : definition.commands.map((command) => ({ command, args: ["--help"], allowFailure: true, description: `${command} is available on PATH.` }));
+    : getVersionCommand(definition)
+      ? [{ ...getVersionCommand(definition), description: "Version command executes successfully." }]
+      : dependencyCommands.map((command) => ({ command, args: ["--help"], allowFailure: true, description: `${command} is available on PATH.` }));
 
   for (const check of verificationCommands) {
     const commandPath = commandPathByName.get(check.command) || findCommand(check.command);
@@ -292,6 +319,39 @@ async function runVerificationCommands(definition, commandResults) {
   }
 
   return checks;
+}
+
+async function detectWindowsRegistryDependency(definition = {}) {
+  if (process.platform !== "win32" || !definition.windowsRegistry) return null;
+  const powershell = findCommand("powershell") || findCommand("pwsh");
+  if (!powershell) {
+    return {
+      installed: false,
+      version: null,
+      verification: [{ command: "powershell", ok: false, allowFailure: false, errorCode: "COMMAND_NOT_FOUND", description: "PowerShell is required to query Windows registry runtime state." }],
+      errorCode: "DEPENDENCY_DETECTION_FAILED",
+    };
+  }
+  const registry = definition.windowsRegistry;
+  const script = `$value=(Get-ItemProperty -Path '${registry.path}' -ErrorAction Stop).'${registry.value}'; if ($value) { [Console]::Out.Write($value) }`;
+  const result = await commandRunner(powershell, ["-NoProfile", "-Command", script], { timeoutMs: 15000 });
+  const version = String(result.stdout || "").trim() || null;
+  return {
+    installed: result.ok && Boolean(version),
+    version,
+    verification: [{
+      command: "powershell",
+      args: ["-NoProfile", "-Command", "Get-ItemProperty <runtime registry key>"],
+      ok: result.ok && Boolean(version),
+      allowFailure: false,
+      exitCode: result.exitCode,
+      description: "Visual C++ runtime registry key can be queried.",
+      stdout: result.ok ? "" : result.stdout,
+      stderr: result.stderr,
+      errorMessage: result.errorMessage,
+    }],
+    errorCode: result.ok && version ? null : "DEPENDENCY_MISSING",
+  };
 }
 
 async function checkAvailableUpdate(definition, distribution, installedVersion) {
@@ -370,40 +430,71 @@ async function checkDependency(dependencyId) {
   const definition = DEPENDENCY_REGISTRY[id];
   const distribution = detectDistribution();
   const supportedByDistribution = process.platform === "linux" && definition.supportedDistributions.includes(distribution.id);
+  const supportedByPlatform = Array.isArray(definition.supportedPlatforms)
+    ? definition.supportedPlatforms.includes(process.platform)
+    : process.platform === "linux";
+  const dependencyCommands = getDependencyCommands(definition);
   const commandResults = [];
-  for (const command of definition.commands) {
+  for (const command of dependencyCommands) {
     const resolvedPath = findCommand(command);
     commandResults.push({ command, path: resolvedPath, installed: Boolean(resolvedPath) });
   }
-  const installed = commandResults.every((result) => result.installed);
-  const supported = installed || supportedByDistribution;
+  let installed = definition.commandMode === "any"
+    ? commandResults.some((result) => result.installed)
+    : dependencyCommands.length ? commandResults.every((result) => result.installed) : false;
+  let privateRuntime = null;
+  let registryDetection = null;
+  if (id === "nodejs" && !installed && process.env.ANXOS_LOCAL_AGENT_RUNTIME_ROOT) {
+    installed = true;
+    privateRuntime = {
+      source: "AnxOS managed Local Agent runtime",
+      path: process.execPath,
+    };
+    commandResults.push({ command: "node", path: process.execPath, installed: true, privateRuntime: true });
+  }
+  if (!installed && definition.windowsRegistry) {
+    registryDetection = await detectWindowsRegistryDependency(definition);
+    installed = registryDetection?.installed === true;
+  }
+  const supported = installed || (process.platform === "linux" ? supportedByDistribution : supportedByPlatform);
   let version = null;
   let versionRaw = null;
-  let verification = [];
+  let verification = registryDetection?.verification || [];
   let update = { updateAvailable: null, latestVersion: null, source: null, reason: "Dependency is not installed." };
   let state = installed ? "installed" : "missing";
   let errorCode = installed ? null : "DEPENDENCY_MISSING";
 
-  if (!supportedByDistribution && !installed) {
+  if (!supported && !installed) {
     state = "unsupported";
-    errorCode = "UNSUPPORTED_DISTRIBUTION";
+    errorCode = process.platform === "linux" ? "UNSUPPORTED_DISTRIBUTION" : "UNSUPPORTED_PLATFORM";
   }
 
   if (installed) {
-    const versionResult = await detectVersion(definition, commandResults[0].path);
-    version = versionResult.version;
-    versionRaw = versionResult.raw;
-    verification = await runVerificationCommands(definition, commandResults);
+    if (privateRuntime) {
+      version = process.version.replace(/^v/, "");
+      versionRaw = process.version;
+      verification = [{ command: "node", args: ["--version"], ok: true, allowFailure: false, description: "AnxOS managed private Node runtime is available.", privateRuntime: true }];
+    } else if (registryDetection) {
+      version = registryDetection.version;
+      versionRaw = registryDetection.version;
+    } else if (commandResults.length) {
+      const versionResult = await detectVersion(definition, commandResults.find((result) => result.installed)?.path || commandResults[0].path);
+      version = versionResult.version;
+      versionRaw = versionResult.raw;
+      verification = await runVerificationCommands(definition, commandResults);
+    }
     const failedVerification = verification.find((check) => !check.ok && !check.allowFailure);
     if (failedVerification) {
-      state = "verification-failed";
+      state = "installed-unavailable";
       errorCode = "DEPENDENCY_EXECUTION_FAILED";
     }
     if (definition.minVersion && version && compareVersions(version, definition.minVersion) < 0) {
       state = "update-required";
       errorCode = "DEPENDENCY_VERSION_TOO_OLD";
     }
-    update = await checkAvailableUpdate(definition, distribution, version);
+    update = process.platform === "linux"
+      ? await checkAvailableUpdate(definition, distribution, version)
+      : { updateAvailable: null, latestVersion: null, source: definition.installSources?.win32 || null, reason: "Windows update checks use the official installer source and are not queried automatically yet." };
   }
 
   return {
@@ -421,14 +512,16 @@ async function checkDependency(dependencyId) {
     latestVersion: update.latestVersion,
     updateSource: update.source,
     updateReason: update.reason,
+    installationSource: process.platform === "win32" ? definition.installSources?.win32 || null : distribution.packageManager,
     commands: commandResults,
     packageManager: distribution.packageManager,
-    packages: definition.packages?.[distribution.packageManager] || [],
+    packages: process.platform === "win32" ? definition.packages?.win32 || [] : definition.packages?.[distribution.packageManager] || [],
     requiresElevation: Boolean(definition.requiresElevation),
     serviceRestartRequired: Boolean(definition.serviceRestartRequired),
     restartRequired: false,
     reason: definition.reason || null,
     notes: definition.notes || null,
+    privateRuntime,
     errorCode,
     distribution,
   };
@@ -438,7 +531,38 @@ async function checkDependencies(payload = {}) {
   const dependencyIds = resolveDependencyRequestIds(payload);
   const dependencies = [];
   for (const dependencyId of dependencyIds) {
-    dependencies.push(await checkDependency(dependencyId));
+    try {
+      dependencies.push(await checkDependency(dependencyId));
+    } catch (error) {
+      const id = String(dependencyId || "unknown");
+      dependencies.push({
+        id,
+        displayName: DEPENDENCY_REGISTRY[id]?.displayName || id,
+        state: "detection-failed",
+        installed: false,
+        supported: false,
+        version: null,
+        minVersion: DEPENDENCY_REGISTRY[id]?.minVersion || null,
+        verification: [],
+        executable: false,
+        updateAvailable: null,
+        latestVersion: null,
+        updateSource: null,
+        updateReason: "Detection failed.",
+        installationSource: null,
+        commands: [],
+        packageManager: detectDistribution().packageManager,
+        packages: [],
+        requiresElevation: Boolean(DEPENDENCY_REGISTRY[id]?.requiresElevation),
+        serviceRestartRequired: Boolean(DEPENDENCY_REGISTRY[id]?.serviceRestartRequired),
+        restartRequired: false,
+        reason: DEPENDENCY_REGISTRY[id]?.reason || null,
+        notes: DEPENDENCY_REGISTRY[id]?.notes || null,
+        errorCode: error.code || "DEPENDENCY_DETECTION_FAILED",
+        errorMessage: error.message || "Dependency detection failed.",
+        distribution: detectDistribution(),
+      });
+    }
   }
   const missing = dependencies.filter((dependency) => !dependency.installed || dependency.state !== "installed");
   return {

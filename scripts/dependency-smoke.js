@@ -90,6 +90,9 @@ async function run() {
   assert(resolveTemplateDependencyIds(template("immich")).includes("docker-compose"), "Docker Compose templates should require Docker Compose.");
   assert.deepStrictEqual(dependencyIdsForGroups(["public-access"]), ["playit", "cloudflared", "tailscale"]);
   assert(dependencyIdsForGroups(["development-tools"]).includes("git"), "Development tools should include Git.");
+  assert(dependencyIdsForGroups(["windows-support"]).includes("dotnet-desktop-runtime"), "Windows support should include .NET Desktop Runtime.");
+  assert(dependencyIdsForGroups(["windows-support"]).includes("vcredist-runtime"), "Windows support should include Visual C++ runtime.");
+  assert(dependencyIdsForGroups(["media-tools"]).includes("ffmpeg"), "Media tools should include FFmpeg.");
 
   const parsed = dependencyService.parseOsRelease("ID=ubuntu\nID_LIKE=debian\nPRETTY_NAME=\"Ubuntu\"\n");
   assert.strictEqual(parsed.packageManager, "apt");
@@ -219,6 +222,10 @@ async function run() {
   assert(marketplaceServiceSource.includes("linkChildDownloadRecord") && marketplaceServiceSource.includes('source: "marketplace"'), "Marketplace dependency installs must use shared dependency child jobs and diagnostics state.");
   assert(dependenciesIpcSource.includes("diagnostics.updateRuntimeState") && dependenciesIpcSource.includes("dependencyInstall"), "Dependency IPC must publish sanitized install state into diagnostics/readiness.");
   assert(agentDependencySource.includes("windowsHide: true"), "Dependency command execution must hide Windows command windows.");
+  assert(agentDependencySource.includes("getDependencyCommands") && agentDependencySource.includes("windowsCommands"), "Dependency scanning must choose platform-aware Windows commands.");
+  assert(agentDependencySource.includes("detectWindowsRegistryDependency") && agentDependencySource.includes("windowsRegistry"), "Dependency scanning must support Windows registry-backed runtime detection.");
+  assert(agentDependencySource.includes("installed-unavailable") && agentDependencySource.includes("detection-failed"), "Dependency scanning must distinguish installed-but-unavailable and detection-failed states.");
+  assert(agentDependencySource.includes("ANXOS_LOCAL_AGENT_RUNTIME_ROOT") && agentDependencySource.includes("privateRuntime"), "Dependency scanning must honor the AnxOS managed private Local Agent runtime.");
   assert(agentDependencySource.includes("externalTerminal: false") && agentDependencySource.includes("executionBackend: \"agent\""), "Agent dependency jobs must declare backend execution without external terminals.");
   assert(agentDependencySource.includes("AUTHORIZATION_REQUIRED") && agentDependencySource.includes("VERIFICATION_FAILED"), "Dependency lifecycle must expose structured authorization and verification states.");
   assert(serviceRouterSource.includes("executionBackend: \"desktop\"") && serviceRouterSource.includes("installationMethod: \"local-noop\""), "Local Desktop dependency routing must stay owned by the Desktop backend.");
@@ -229,6 +236,9 @@ async function run() {
     "Selected node backend",
     "Retry Verification",
     "formatDependencyProgress",
+    "getDependencyFriendlyState",
+    "Installed but unavailable",
+    "Detection failed",
     "isDependencyDownload",
     "dataset.downloadType",
   ].forEach((needle) => assert(appSource.includes(needle), `Renderer dependency install interface should include ${needle}.`));

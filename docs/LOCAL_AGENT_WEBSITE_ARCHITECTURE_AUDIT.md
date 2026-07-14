@@ -75,12 +75,11 @@ The wizard now routes Local Agent install, repair, pairing, dependency scan, and
 
 ### Dependency Management
 
-The dependency registry covers Java, .NET runtime, SteamCMD, Docker, Docker Compose, Node.js, npm, Python, archive tools, Git, Bash, PowerShell, Tailscale, Cloudflared, Playit, and Wine. Detection is command/PATH based. Installation is Linux package-manager based for `apt` and `dnf`.
+The dependency registry covers Java, .NET runtime, .NET Desktop Runtime, SteamCMD, Docker, Docker Compose, Node.js, npm, Python, archive tools, Git, Bash, PowerShell, FFmpeg, Tailscale, Cloudflared, Playit, Visual C++ runtime, and Wine. Detection is command/PATH based on Linux and Windows-aware on Local Windows Agents, including Windows command extensions, alternative PowerShell commands, registry-backed Visual C++ runtime detection, and private AnxOS Node runtime awareness.
 
 Windows-specific dependencies required by the goal are incomplete:
 
-- No managed Windows installers for Java, Git, SteamCMD, .NET Runtime, .NET Desktop Runtime, FFmpeg, Tailscale, Cloudflared, Playit, Docker Desktop, or VC++ runtime.
-- No private-runtime awareness beyond command detection.
+- No managed Windows installers for Java, Git, SteamCMD, .NET Runtime, .NET Desktop Runtime, FFmpeg, Tailscale, Cloudflared, Playit, Docker Desktop, or VC++ runtime yet.
 - No checksum/signature verification model for Windows dependency installers.
 - No reboot-required detection contract.
 
@@ -241,3 +240,9 @@ Remote Agent pairing remains available through `ANXOS-PAIR` codes in Settings. L
 The setup wizard is now Local Agent first for normal users while preserving an intentional remote-only choice. The `onboarding.setupType` preference is validated and persisted, the eight requested wizard steps render from one shared modal, and actions reuse existing Agent Control and dependency APIs rather than duplicating setup logic. Local install and pairing buttons avoid raw tokens and show plain-English status cards.
 
 The implementation has source and smoke coverage only. Real Windows validation is still required for administrator prompts, service installation, progress recovery after restart, and dependency scan/install behavior.
+
+## Phase 8 Dependency Scanner Note
+
+The dependency scanner remains routed through the selected Agent and now has Windows-aware registry and PATH detection. Renderer labels map scanner states to beginner-readable statuses such as Ready, Not installed, Update available, Installed but unavailable, Unsupported, and Detection failed. Dependency rows include detected version, required version, installation source, package/source mapping, verification status, update status, and elevation requirement data where available.
+
+This phase does not install Windows dependencies. Real Windows validation is still required for Docker Desktop, Visual C++ runtime registry detection, .NET Desktop Runtime detection, and provider-specific public-access tools.

@@ -72,6 +72,8 @@ const requiredEntries = [
   "/release-build.json",
   "/assets/icon.ico",
   "/assets/icons/png/512x512.png",
+  "/config/agent.example.json",
+  "/config/marketplace-templates.json",
   "/config/ssh-profiles.json",
   "/src/shared/redaction.js",
   "/src/shared/structuredLogger.js",

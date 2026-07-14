@@ -52,7 +52,9 @@ function copyDirectory(source, target) {
 
 async function ensureSharedSourcesInAsar(context = {}) {
   const appAsar = path.join(context.appOutDir || "", "resources", "app.asar");
-  const sharedSource = path.join(context.packager?.projectDir || process.cwd(), "src", "shared");
+  const projectDir = context.packager?.projectDir || process.cwd();
+  const sharedSource = path.join(projectDir, "src", "shared");
+  const configSource = path.join(projectDir, "config");
   if (!fs.existsSync(appAsar)) {
     return;
   }
@@ -61,6 +63,8 @@ async function ensureSharedSourcesInAsar(context = {}) {
   try {
     asar.extractAll(appAsar, tempRoot);
     copyDirectory(sharedSource, path.join(tempRoot, "src", "shared"));
+    copyDirectory(path.join(configSource, "agent.example.json"), path.join(tempRoot, "config", "agent.example.json"));
+    copyDirectory(path.join(configSource, "marketplace-templates.json"), path.join(tempRoot, "config", "marketplace-templates.json"));
     fs.rmSync(appAsar, { force: true });
     await asar.createPackage(tempRoot, appAsar);
   } finally {

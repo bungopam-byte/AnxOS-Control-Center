@@ -2147,6 +2147,42 @@ function applyActiveNavigation() {
   });
 }
 
+function accountNavKeyFromHref(href) {
+  try {
+    const url = new URL(href, window.location.origin);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+    if (path === "/profile" || path === "/profile.html") return "profile";
+    if (path === "/account" || path === "/account.html") {
+      const section = String(url.searchParams.get("section") || "").toLowerCase();
+      if (section === "devices") return "devices";
+      if (section === "security") return "security";
+      return "overview";
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function applyAccountNavigationState() {
+  const route = getCurrentRoute();
+  const section = String(getRouteParams().get("section") || "").toLowerCase();
+  const currentKey = route === "profile"
+    ? "profile"
+    : section === "devices" || section === "security"
+      ? section
+      : "overview";
+  document.querySelectorAll(".account-nav__item").forEach((link) => {
+    const isCurrent = accountNavKeyFromHref(link.getAttribute("href") || "") === currentKey;
+    link.classList.toggle("is-active", isCurrent);
+    if (isCurrent) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+}
+
 function bindSiteNavigation() {
   const nav = document.querySelector("[data-site-nav]");
   const toggle = document.querySelector("[data-site-menu-toggle]");
@@ -2192,6 +2228,7 @@ async function applyRouteState() {
     setProfileDirty(false);
   }
   applyActiveNavigation();
+  applyAccountNavigationState();
   if (activeRoute === "profile" && authState === "signed-out") {
     redirectToSignInForCurrentRoute();
     return;
@@ -2233,6 +2270,7 @@ function initializeWebsite() {
     applyDownloads().catch((error) => showDownloadStartupFallback(error));
     applyReleaseNotes();
     applyActiveNavigation();
+    applyAccountNavigationState();
     bindSiteNavigation();
     bindDownloadControls();
     bindAccountForms();

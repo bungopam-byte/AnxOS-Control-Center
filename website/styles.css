@@ -1450,6 +1450,7 @@ a[aria-disabled="true"] {
 }
 
 .account-nav__item.is-active,
+.account-nav__item[aria-current="page"],
 .account-nav__item:hover,
 .account-nav__item:focus-visible {
   border-color: rgba(197, 129, 255, 0.5);

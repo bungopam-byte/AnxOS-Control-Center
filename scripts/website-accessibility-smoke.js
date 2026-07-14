@@ -45,6 +45,7 @@ assert(site.includes("setDownloadLinksLoading()") && site.includes("applyDownloa
 assert(releaseService.includes("preferredAssetForPlatform") && releaseService.includes("detectPlatform"), "Download platform detection must be presentation-only code, not a hard restriction.");
 
 assert(styles.includes("a:focus-visible") && styles.includes(".button:focus-visible") && styles.includes(".site-nav a:focus-visible"), "CSS must expose visible focus states for links, buttons, and navigation.");
+assert(styles.includes(".account-form select") && styles.includes(".account-form textarea") && styles.includes(".account-form textarea:focus-visible"), "Website forms must style select and textarea controls with visible focus states.");
 assert(/\.button\s*\{[\s\S]*min-height:\s*44px/.test(styles), "Primary buttons must meet a 44px touch target.");
 assert(/\.site-menu-button\s*\{[\s\S]*min-height:\s*44px/.test(styles), "Mobile menu button must meet a 44px touch target.");
 assert(styles.includes("@media (max-width: 640px)") && styles.includes(".download-primary__actions") && styles.includes("grid-template-columns: 1fr"), "CSS must stack download actions on small screens.");

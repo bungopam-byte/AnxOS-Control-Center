@@ -1393,7 +1393,9 @@ a[aria-disabled="true"] {
   text-transform: uppercase;
 }
 
-.account-form input {
+.account-form input,
+.account-form select,
+.account-form textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--anx-radius-md);
@@ -1401,6 +1403,11 @@ a[aria-disabled="true"] {
   background: rgba(3, 1, 7, 0.58);
   color: var(--text);
   font: inherit;
+}
+
+.account-form textarea {
+  min-height: 108px;
+  resize: vertical;
 }
 
 .account-form button:disabled,
@@ -1793,7 +1800,9 @@ a[aria-disabled="true"] {
   line-height: 1.45;
 }
 
-.account-form input:focus {
+.account-form input:focus-visible,
+.account-form select:focus-visible,
+.account-form textarea:focus-visible {
   outline: 2px solid rgba(197, 129, 255, 0.42);
   outline-offset: 2px;
   box-shadow: var(--anx-focus-ring);

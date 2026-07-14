@@ -2117,6 +2117,14 @@ function getFriendlyErrorMessage(error = {}, fallback = "Request failed.") {
   return definition?.message || normalizeIpcErrorMessage(error, fallback);
 }
 
+function getFriendlyStatusFailureMessage(error = {}, context = "Status could not be refreshed.", recovery = "Try again or open diagnostics for more detail.") {
+  const friendly = normalizeFriendlyError(error, context);
+  if (friendly.id && friendly.id !== "unexpected") {
+    return `${friendly.message} ${friendly.suggestion}`.trim();
+  }
+  return `${context} ${recovery}`.trim();
+}
+
 function readStoredSettings() {
   try {
     const storedSettings = JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
@@ -16495,7 +16503,9 @@ function createOperationNotification(operation = {}) {
     category: getOperationNotificationCategory(operation),
     severity: failed ? "error" : status === "canceled" ? "warning" : "success",
     title: failed ? `${operation.title || "Operation"} failed` : `${operation.title || "Operation"} ${status}`,
-    message: failed ? operation.error || operation.step || "Operation failed." : operation.step || operationStatusLabel(status),
+    message: failed
+      ? operation.error || operation.step || "Operation stopped before a final result was reported. Open Operations details or diagnostics for the recorded steps."
+      : operation.step || operationStatusLabel(status),
     dedupKey: `operation:${operation.id}:${status}`,
     relatedOperationId: operation.id,
     relatedWorkspace: "operations",
@@ -16810,7 +16820,7 @@ function finishOperation(id, ok, message) {
     status: ok ? "completed" : "failed",
     percent: ok ? 100 : undefined,
     step: message || (ok ? "Completed" : "Failed"),
-    error: ok ? "" : message || "Operation failed.",
+    error: ok ? "" : message || "Operation stopped before a final result was reported. Open Operations details or diagnostics for the recorded steps.",
   });
   if (operation) createOperationNotification(operation);
   return operation;
@@ -17049,7 +17059,9 @@ function renderMaintenanceDetail(category = getMaintenanceCategory(maintenanceSt
   maintenanceDetail.append(list);
   if (Array.isArray(category.errors) && category.errors.length > 0) {
     const errors = document.createElement("pre");
-    errors.textContent = category.errors.map((error) => `${error.code || "ERROR"}: ${error.message || "Unknown error"}`).join("\n");
+    errors.textContent = category.errors
+      .map((error) => `${error.code || "MAINTENANCE_CHECK"}: ${error.message || "Maintenance could not inspect this item. Run Scan again or open diagnostics if it repeats."}`)
+      .join("\n");
     maintenanceDetail.append(errors);
   }
 }
@@ -20357,7 +20369,15 @@ async function refreshAmpDashboard(options = {}) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    const message = `AMP IPC request failed: ${error?.message || "Unknown error"}`;
+    console.warn("[AMP] Status refresh failed.", {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    });
+    const message = getFriendlyStatusFailureMessage(
+      error,
+      "AMP status could not be refreshed.",
+      "Check the selected system or Agent connection, then refresh AMP.",
+    );
     latestAmpSnapshot = null;
     updateAmpPanelLink(null);
     setField("ampConnection", message);
@@ -20458,7 +20478,15 @@ async function refreshPlayitStatus() {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    renderPlayitUnavailable(`Public access status request failed: ${error?.message || "Unknown error"}`);
+    console.warn("[Public Access] Status refresh failed.", {
+      message: error?.message || String(error),
+      stack: error?.stack || null,
+    });
+    renderPlayitUnavailable(getFriendlyStatusFailureMessage(
+      error,
+      "Public Access status could not be refreshed.",
+      "Check the selected system or provider setup, then refresh Public Access.",
+    ));
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
       playitRequestInFlight = false;
@@ -23872,9 +23900,13 @@ async function loadSshProfiles(options = {}) {
     renderSshView();
     renderFilesView();
   } catch (error) {
-    setSshStatus("Disconnected", `SSH profiles unavailable: ${error?.message || "Unknown error"}`);
+    setSshStatus("Disconnected", getFriendlyStatusFailureMessage(
+      error,
+      "SSH profiles could not be loaded.",
+      "Review storage permissions or reconnect the selected system before trying again.",
+    ));
     console.error("[SSH] Profile load failed.", {
-      message: error?.message || "Unknown error",
+      message: error?.message || String(error),
     });
     renderSshView();
     renderFilesView();

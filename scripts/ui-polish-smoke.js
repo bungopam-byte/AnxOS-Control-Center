@@ -113,6 +113,8 @@ assert(app.includes("Connect a supported system to browse its files.") && app.in
 assert(index.includes("No backups yet") && app.includes("Create a backup before making major server changes."), "Backups empty state must be calm and actionable.");
 assert(app.includes("No access services created yet") && app.includes("Choose a provider to securely access supported services."), "Public Access empty state must explain provider setup without stale data.");
 assert(app.includes("No security issues found."), "Security Center empty state must avoid warning styling for a clean state.");
+assert(app.includes("function getFriendlyStatusFailureMessage") && app.includes("AMP status could not be refreshed.") && app.includes("Public Access status could not be refreshed."), "Workspace status failures must use friendly contextual messages.");
+assert(app.includes("SSH profiles could not be loaded.") && app.includes("Maintenance could not inspect this item.") && app.includes("Operation stopped before a final result was reported."), "Loading, error, and failed-operation states must avoid vague Unknown error fallbacks.");
 assert(styles.includes(".node-card__actions") && styles.includes(".node-details-drawer") && styles.includes("@keyframes nodeDrawerIn"), "Nodes polish CSS must include compact cards, drawer, and subtle animation.");
 assert(pageMarkup("operations").includes("data-operation-list") && pageMarkup("operations").includes('data-operation-filter="running"'), "Operations Center must expose filterable operation history.");
 assert(pageMarkup("operations").includes('data-operation-action="clear-completed"') && pageMarkup("operations").includes("data-operation-detail"), "Operations Center must expose history cleanup and details.");

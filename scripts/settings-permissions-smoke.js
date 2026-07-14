@@ -128,4 +128,29 @@ assert(
   "Renderer must refresh permissions and filter Owner-only setting writes.",
 );
 
+{
+  const start = app.indexOf("async function resetSettings");
+  assert(start >= 0, "Renderer must define resetSettings.");
+  const open = app.indexOf("{", start);
+  let depth = 0;
+  let body = "";
+  for (let index = open; index < app.length; index += 1) {
+    const char = app[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        body = app.slice(start, index + 1);
+        break;
+      }
+    }
+  }
+  assert(
+    body.includes("Saved preferences for this scope will return to their defaults.") &&
+      body.includes("await desktopApiState.api.settings.resetPreferences(category)") &&
+      !/window\.confirm|confirm\(/.test(body),
+    "Settings reset must use the in-app confirmation while preserving resetPreferences.",
+  );
+}
+
 console.log("Settings permission smoke checks passed.");

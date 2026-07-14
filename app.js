@@ -28268,7 +28268,11 @@ async function saveSettings() {
 
 async function resetSettings(category = null) {
   const label = category ? `${category} settings` : "all settings";
-  if (!window.confirm(`Reset ${label}?`)) return;
+  if (!(await createSecurityConfirmation({
+    title: `Reset ${label}?`,
+    message: "Saved preferences for this scope will return to their defaults. Accounts, credentials, server files, backups, and instance data are not removed.",
+    confirmLabel: "Reset",
+  }))) return;
   const desktopApiState = getDesktopApiState();
   let settings = { ...DEFAULT_SETTINGS };
   if (desktopApiState.hasPreferences) {

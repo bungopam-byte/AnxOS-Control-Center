@@ -130,6 +130,9 @@ const desktopApi = {
   },
   publicAccess: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("publicAccess:getSnapshot", payload),
+    listServices: (payload = {}) => ipcRenderer.invoke("publicAccess:listServices", payload),
+    createService: (payload = {}) => ipcRenderer.invoke("publicAccess:createService", payload),
+    deleteService: (payload = {}) => ipcRenderer.invoke("publicAccess:deleteService", payload),
   },
   docker: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("docker:getSnapshot", payload),

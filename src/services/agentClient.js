@@ -1307,6 +1307,28 @@ async function getPublicAccessSnapshot(configOverride = null) {
   });
 }
 
+async function listPublicAccessServices(payload = {}, configOverride = null) {
+  const query = payload.nodeId ? `?nodeId=${encodeURIComponent(payload.nodeId)}` : "";
+  return requestJson(`/api/v1/public-access/services${query}`, {
+    config: configOverride,
+  });
+}
+
+async function createPublicAccessService(payload = {}, configOverride = null) {
+  return requestJson("/api/v1/public-access/services", {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function deletePublicAccessService(serviceId, configOverride = null) {
+  return requestJson(`/api/v1/public-access/services/${encodeURIComponent(String(serviceId || ""))}`, {
+    config: configOverride,
+    method: "DELETE",
+  });
+}
+
 function safeNumber(value) {
   if (value === null || value === undefined || typeof value === "boolean" || value === "" || Array.isArray(value)) {
     return null;
@@ -2465,7 +2487,9 @@ module.exports = {
   createBackup,
   createDockerContainer,
   createDockerNetwork,
+  createPublicAccessService,
   deleteDockerImage,
+  deletePublicAccessService,
   downloadFile,
   downloadBackup,
   createInstance,
@@ -2523,6 +2547,7 @@ module.exports = {
   listDockerComposeProjects,
   listDockerNetworks,
   listDockerVolumes,
+  listPublicAccessServices,
   connectDockerNetwork,
   listInstanceFiles,
   listInstances,

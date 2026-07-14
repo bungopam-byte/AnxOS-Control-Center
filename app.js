@@ -5469,6 +5469,14 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
   const hasLocalEndpoint = Boolean(service.localPort || latestPlayitSnapshot?.localPort);
   const actions = [
     {
+      action: "create-access-service",
+      label: "Create Access Service",
+      supported: provider.id === "playit" && provider.installed === true,
+      reason: provider.id === "playit"
+        ? "Install and start Playit.gg before creating an access service."
+        : "Access service creation is not supported by this provider yet.",
+    },
+    {
       action: "install-dependency",
       label: `Install ${provider.name || "provider"}`,
       supported: Boolean(provider.dependencyId && provider.installed !== true && provider.lifecycleState !== "disabled"),
@@ -5568,9 +5576,65 @@ function openPublicAccessTunnelConfiguration() {
   document.querySelector('[data-setting="playit.address"]')?.focus();
 }
 
+function normalizePublicAccessPortInput(value) {
+  const text = String(value ?? "").trim();
+  if (!/^\d+$/.test(text)) {
+    throw Object.assign(new Error("Service port must be a whole number from 1 to 65535."), {
+      code: "INVALID_SERVICE_PORT",
+    });
+  }
+  const port = Number(text);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw Object.assign(new Error("Service port must be a whole number from 1 to 65535."), {
+      code: "INVALID_SERVICE_PORT",
+    });
+  }
+  return port;
+}
+
+async function createPlayitAccessService() {
+  const provider = getSelectedPublicAccessProvider();
+  if (provider?.id !== "playit") {
+    showToast("Access service creation is not supported by this provider yet.", "warning");
+    return null;
+  }
+  const requestContext = createNodeActionContext("public-access");
+  const defaultPort = getSelectedPublicAccessService()?.localPort || latestPlayitSnapshot?.localPort || "";
+  const name = window.prompt("Access service name", getSelectedPublicAccessService()?.name || "Playit Access Service");
+  if (name === null) return null;
+  const portInput = window.prompt("Local service port", defaultPort ? String(defaultPort) : "25565");
+  if (portInput === null) return null;
+  const protocolInput = window.prompt("Protocol: tcp or udp", getSelectedPublicAccessService()?.protocol || latestPlayitSnapshot?.protocol || "tcp");
+  if (protocolInput === null) return null;
+  const protocol = String(protocolInput || "tcp").trim().toLowerCase();
+  if (!["tcp", "udp"].includes(protocol)) {
+    throw Object.assign(new Error("Protocol must be tcp or udp for Playit access services."), { code: "INVALID_PROTOCOL" });
+  }
+  const payload = {
+    nodeId: requestContext.nodeId,
+    providerId: "playit",
+    providerName: "Playit.gg",
+    accessType: "public-internet",
+    name,
+    localHost: "127.0.0.1",
+    localPort: normalizePublicAccessPortInput(portInput),
+    protocol,
+  };
+  const result = await getDesktopApiState().api.publicAccess.createService(payload);
+  if (result?.ok === false) {
+    throw Object.assign(new Error(result.error?.message || "Access service could not be created."), {
+      code: result.error?.code || "PUBLIC_ACCESS_REQUEST_FAILED",
+    });
+  }
+  await refreshPlayitStatus();
+  showToast("Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
+  return result;
+}
+
 async function runPublicAccessAction(action) {
   if (action === "refresh") return refreshPlayitStatus();
   if (action === "open-logs") return runDiagnosticsAction("open");
+  if (action === "create-access-service") return createPlayitAccessService();
   if (action === "install-dependency") {
     const provider = getSelectedPublicAccessProvider();
     if (!provider?.dependencyId) {

@@ -1,5 +1,6 @@
 const assert = require("assert");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
@@ -14,6 +15,7 @@ const ipcPath = path.join(root, "src", "ipc", "publicAccessIpc.js");
 
 const publicAccess = require("../src/services/publicAccessProviderService");
 const detection = require("../src/shared/publicAccessProviderDetection");
+const registry = require("../src/shared/publicAccessServiceRegistry");
 const serviceSource = fs.readFileSync(servicePath, "utf8");
 const sharedDetectionSource = fs.readFileSync(sharedDetectionPath, "utf8");
 const agentRouteSource = fs.readFileSync(agentRoutePath, "utf8");
@@ -48,6 +50,48 @@ const playitProvider = publicAccess._test.buildPlayitProviderState({
 });
 assert.strictEqual(playitProvider.health, "healthy");
 assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
+
+{
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-public-access-registry-"));
+  const service = registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "playit",
+    providerName: "Playit.gg",
+    name: "Palworld",
+    localHost: "127.0.0.1",
+    localPort: "8211",
+    protocol: "udp",
+    linkedInstanceId: "palworld",
+  }, { configDir: tempRoot });
+  assert.strictEqual(service.nodeId, "anxlab", "Access service must preserve selected node.");
+  assert.strictEqual(service.providerId, "playit", "Access service must preserve provider id.");
+  assert.strictEqual(service.localPort, 8211, "Access service port must normalize to a number.");
+  assert.strictEqual(service.protocol, "udp", "Access service protocol must normalize.");
+  assert.strictEqual(registry.listAccessServices({ configDir: tempRoot, nodeId: "anxlab" }).length, 1, "Access service must persist.");
+  assert.throws(() => registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "playit",
+    localHost: "127.0.0.1",
+    localPort: 8211,
+    protocol: "udp",
+  }, { configDir: tempRoot }), /already exists/, "Duplicate access services must be rejected.");
+  const reconciled = registry.reconcileAccessServices([service], {
+    checkedAt: "2026-01-01T00:00:00.000Z",
+    services: [{
+      providerId: "playit",
+      localPort: 8211,
+      protocol: "udp",
+      publicAddress: "palworld.playit.fan",
+      tunnelId: "tun-1",
+      status: "Public",
+    }],
+  });
+  assert.strictEqual(reconciled[0].publicAddress, "palworld.playit.fan", "Access service reconciliation must adopt matching Playit public address.");
+  assert.strictEqual(reconciled[0].state, "running", "Access service reconciliation must mark matched public Playit service running.");
+  registry.deleteAccessService(service.id, { configDir: tempRoot });
+  assert.strictEqual(registry.listAccessServices({ configDir: tempRoot }).length, 0, "Access service delete must persist.");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}
 
 const readiness = publicAccess._test.summarizePublicAccessReadiness({
   providers: [
@@ -161,6 +205,8 @@ assert(sharedDetectionSource.includes('runCommand("cloudflared", ["--version"])'
 assert(sharedDetectionSource.includes("redactOutput"), "Provider diagnostics must redact token-like output.");
 assert(serviceSource.includes("summarizePublicAccessReadiness"), "Public Access snapshots must include readiness summaries.");
 assert(serviceSource.includes("agentClient.getPublicAccessSnapshot") && agentRouteSource.includes("/api/v1/public-access/snapshot") && agentServerSource.includes("handlePublicAccess"), "Remote Public Access detection must route through the selected Agent.");
+assert(serviceSource.includes("createPublicAccessService") && serviceSource.includes("deletePublicAccessService"), "Desktop Public Access service lifecycle must route through the selected backend.");
+assert(agentRouteSource.includes("/api/v1/public-access/services") && agentServerSource.includes("pathname.startsWith(\"/api/v1/public-access/services/\")"), "Agent must register Public Access service lifecycle routes.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
 assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
 assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");
@@ -179,6 +225,8 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
   "function getPublicAccessActionDefinitions",
   "function renderPublicAccessActionButtons",
   "function runPublicAccessAction",
+  "create-access-service",
+  "api.publicAccess.createService",
   "install-dependency",
   "dependencyIds: [provider.dependencyId]",
   "copy-public-address",
@@ -193,6 +241,8 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
 ].forEach((needle) => assert(appSource.includes(needle), `Public Access UX should include ${needle}.`));
 assert(!indexSource.includes('data-public-access-action="disable" disabled') && !indexSource.includes('data-public-access-action="restart" disabled'), "Public Access must not render dead disabled action buttons.");
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");
+assert(preloadSource.includes("publicAccess:createService") && ipcSource.includes("publicAccess:createService"), "Public Access service creation IPC bridge must remain wired.");
+assert(preloadSource.includes("publicAccess:deleteService") && ipcSource.includes("publicAccess:deleteService"), "Public Access service deletion IPC bridge must remain wired.");
 
 assertDetectionCases().then(() => {
   console.log("Public Access smoke checks passed.");

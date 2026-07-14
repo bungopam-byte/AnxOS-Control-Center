@@ -204,6 +204,10 @@ async function routeRequest(request, url) {
     return handleFilesMutate(request);
   }
 
+  if (pathname === "/api/v1/public-access/snapshot" || pathname === "/api/v1/public-access/services" || pathname.startsWith("/api/v1/public-access/services/")) {
+    return handlePublicAccess(request, url);
+  }
+
   if (request.method !== "GET") {
     return {
       statusCode: 405,
@@ -233,10 +237,6 @@ async function routeRequest(request, url) {
 
   if (pathname === "/api/v1/playit/status") {
     return handlePlayitStatus();
-  }
-
-  if (pathname === "/api/v1/public-access/snapshot") {
-    return handlePublicAccess(request, url);
   }
 
   if (pathname === "/api/v1/amp/snapshot") {

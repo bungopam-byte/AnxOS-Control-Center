@@ -1,8 +1,16 @@
 const { execFile } = require("child_process");
+const path = require("path");
+const { app } = require("electron");
 const agentClient = require("./agentClient");
 const { getPlayitSnapshot } = require("./serviceRouter");
 const { summarizePublicAccessReadiness } = require("./readinessService");
 const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
+const {
+  createAccessService,
+  deleteAccessService,
+  listAccessServices,
+  reconcileAccessServices,
+} = require("../shared/publicAccessServiceRegistry");
 const {
   PUBLIC_ACCESS_PROVIDERS,
   buildPlayitProviderState,
@@ -15,6 +23,16 @@ const {
 } = require("../shared/publicAccessProviderDetection");
 
 const COMMAND_TIMEOUT_MS = 2200;
+
+function getConfigDirectory() {
+  if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR;
+  try { return app ? path.join(app.getPath("userData"), "config") : path.join(process.cwd(), "config"); }
+  catch { return path.join(process.cwd(), "config"); }
+}
+
+function registryOptions() {
+  return { configDir: getConfigDirectory() };
+}
 
 function runCommand(command, args = []) {
   return new Promise((resolve) => {
@@ -52,6 +70,14 @@ function normalizeProviderContext(provider, context = {}) {
 
 function normalizeSnapshotContext(snapshot = {}, context = {}) {
   const checkedAt = snapshot.checkedAt || context.checkedAt || new Date().toISOString();
+  const discoveredServices = Array.isArray(snapshot.services) ? snapshot.services : [];
+  const persistedServices = Array.isArray(snapshot.persistedServices)
+    ? reconcileAccessServices(snapshot.persistedServices, { ...snapshot, services: discoveredServices, checkedAt })
+    : [];
+  const mergedServices = [
+    ...discoveredServices,
+    ...persistedServices.filter((service) => !discoveredServices.some((entry) => entry.id === service.id)),
+  ];
   const normalized = {
     ...snapshot,
     nodeId: context.nodeId || snapshot.nodeId || null,
@@ -60,13 +86,12 @@ function normalizeSnapshotContext(snapshot = {}, context = {}) {
     providers: Array.isArray(snapshot.providers)
       ? snapshot.providers.map((provider) => normalizeProviderContext(provider, { ...context, checkedAt }))
       : [],
-    services: Array.isArray(snapshot.services)
-      ? snapshot.services.map((service) => ({
+    services: mergedServices
+      .map((service) => ({
           ...service,
           nodeId: context.nodeId || service.nodeId || null,
           lastCheckedAt: service.lastCheckedAt || checkedAt,
-        }))
-      : [],
+        })),
   };
   return {
     ...normalized,
@@ -83,6 +108,7 @@ async function getLocalPublicAccessSnapshot(options = {}) {
     nodeId,
     platform,
   });
+  snapshot.persistedServices = listAccessServices({ ...registryOptions(), nodeId });
   return normalizeSnapshotContext(snapshot, { nodeId, platform });
 }
 
@@ -102,13 +128,45 @@ async function getPublicAccessSnapshot(options = {}) {
     : getRemotePublicAccessSnapshot({ ...options, nodeId });
 }
 
+async function createPublicAccessService(payload = {}) {
+  const nodeId = payload.nodeId || getSelectedNodeId();
+  const target = getExecutionTarget(nodeId);
+  if (target.type === "application-host") {
+    const service = createAccessService({ ...payload, nodeId }, registryOptions());
+    return { success: true, service, services: listAccessServices({ ...registryOptions(), nodeId }) };
+  }
+  return agentClient.createPublicAccessService({ ...payload, nodeId }, target.config);
+}
+
+async function listPublicAccessServices(options = {}) {
+  const nodeId = options.nodeId || getSelectedNodeId();
+  const target = getExecutionTarget(nodeId);
+  if (target.type === "application-host") {
+    return { services: listAccessServices({ ...registryOptions(), nodeId }) };
+  }
+  return agentClient.listPublicAccessServices({ nodeId }, target.config);
+}
+
+async function deletePublicAccessService(payload = {}) {
+  const nodeId = payload.nodeId || getSelectedNodeId();
+  const serviceId = payload.serviceId || payload.id;
+  const target = getExecutionTarget(nodeId);
+  if (target.type === "application-host") {
+    return deleteAccessService(serviceId, registryOptions());
+  }
+  return agentClient.deletePublicAccessService(serviceId, target.config);
+}
+
 module.exports = {
   PUBLIC_ACCESS_PROVIDERS,
   PlayitProvider: PUBLIC_ACCESS_PROVIDERS[0],
   CloudflareTunnelProvider: PUBLIC_ACCESS_PROVIDERS[1],
   TailscaleProvider: PUBLIC_ACCESS_PROVIDERS[2],
   AnxOSRelayProvider: PUBLIC_ACCESS_PROVIDERS[3],
+  createPublicAccessService,
+  deletePublicAccessService,
   getPublicAccessSnapshot,
+  listPublicAccessServices,
   _test: {
     buildPlayitProviderState,
     buildServiceFromPlayitSnapshot,
@@ -116,6 +174,7 @@ module.exports = {
     detectCloudflareProvider,
     detectTailscaleProvider,
     normalizeSnapshotContext,
+    registryOptions,
     redactOutput,
     runCommand,
     summarizePublicAccessReadiness,

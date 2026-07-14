@@ -7,12 +7,14 @@ These limitations are acceptable for Private Alpha if they are clearly communica
 - AnxOS Control Center is Private Alpha.
 - Do not present it as public beta, stable, or v1.0-ready.
 - No version bump, tag, or GitHub Release should be created for readiness-only documentation changes.
+- Build 146 source contains Local Agent release-path work, but the public release repository currently advertises build 145 as the latest downloadable release.
 
 ## Desktop
 
 - Development mode via `npm start` is the primary validation path.
 - Packaged builds may require separate signing and installer validation.
 - Some Windows service registration actions require Administrator elevation and should be blocked or explained when not elevated.
+- The beginner Local Agent flow is designed for Windows and still needs full real-machine installer, service, reboot, SmartScreen, and antivirus validation.
 
 ## Agent
 
@@ -20,6 +22,7 @@ These limitations are acceptable for Private Alpha if they are clearly communica
 - New desktop features may require updating and restarting the Agent.
 - Linux package availability depends on distribution repositories and host permissions.
 - Do not run the Agent as root just to bypass file, Docker, or provider permissions.
+- Local Agent automatic pairing is separate from remote Agent token workflows. Do not ask normal users to copy Local Agent tokens.
 
 ## Marketplace
 
@@ -66,3 +69,4 @@ These limitations are acceptable for Private Alpha if they are clearly communica
 - The website download page uses a public release-only GitHub repository for release assets.
 - If no published release asset exists, the page should show unavailable download metadata.
 - Do not expose private source repository links or GitHub tokens in browser code.
+- Static website metadata must not advertise a build number unless the matching release tag and downloadable artifact exist.

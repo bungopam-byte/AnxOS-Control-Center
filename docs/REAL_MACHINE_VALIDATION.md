@@ -50,6 +50,33 @@ Before starting, capture `git status --short --branch`, `git rev-parse HEAD`, No
 19. Trigger an external URL action. Confirm expected URLs open and unsafe or unsupported URLs are blocked with a diagnostic event.
 20. For any failure, create a bug report using the template below with logs and operation IDs.
 
+## Windows Local Agent Validation
+
+Do not mark these checks passed unless they were performed on a real Windows machine or clearly identified Windows VM.
+
+1. Install AnxOS from the Windows installer, not from `npm start`.
+2. Launch AnxOS and choose `Use This PC`.
+3. Confirm the missing-Agent message explains what the Local Agent does and offers Install Local Agent, Learn More, and Use Remote Agent Instead.
+4. Install the Local Agent without installing Node.js manually.
+5. Approve administrator permission only when requested by Windows.
+6. Confirm the bundled runtime is copied to the managed install location.
+7. Confirm configuration, logs, instance storage, backup storage, and temporary download directories are created.
+8. Confirm the Windows service is installed once, starts automatically, and does not create duplicate Agent processes.
+9. Reboot Windows and confirm the service starts before opening the desktop app.
+10. Confirm automatic pairing completes without copying tokens or editing JSON.
+11. Rotate credentials and confirm re-pairing succeeds.
+12. Break or remove service registration, then use Repair Service.
+13. Break pairing, then use Repair Pairing.
+14. Run dependency scanning for Java, Docker, Git, SteamCMD, .NET, PowerShell, FFmpeg, Tailscale, Cloudflared, Playit, and Visual C++ runtime.
+15. Install at least one supported dependency through AnxOS and confirm re-scan.
+16. Install a supported Marketplace server on `This PC`.
+17. Start, stop, restart, kill, rename, open folder, view console, send command, view logs, and delete the test instance.
+18. Create and restore a backup with a safety snapshot.
+19. Validate Files shortcuts for Instances, Backups, Desktop, Documents, Downloads, AppData, ProgramData, and Steam Libraries where available.
+20. Validate Public Access provider state and Windows Firewall consent.
+21. Uninstall or remove the service and confirm instances/backups are preserved unless explicitly selected.
+22. Inspect diagnostics export and confirm no full tokens, API keys, private environment variables, or owner secrets are present.
+
 ## Debian Agent Validation
 
 1. Confirm Debian version, architecture, Node.js version, npm version, package manager, and current Agent commit.
@@ -145,3 +172,5 @@ AnxOS may move from pre-alpha to limited private alpha only when all of these ar
 - Recovery instructions exist for common failures: Agent offline, token mismatch, dependency failure, port conflict, Playit unavailable, auth restoration failure.
 
 If any gate fails, keep the project in pre-alpha and create focused fixes before broadening testers.
+
+For the Local Agent stable release path, build 146 remains blocked until Windows Local Agent validation above is completed and the matching build assets exist in the public release repository.

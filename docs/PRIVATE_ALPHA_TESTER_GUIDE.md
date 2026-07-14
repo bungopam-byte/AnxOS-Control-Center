@@ -1,6 +1,6 @@
 # Private Alpha Tester Guide
 
-This guide is for trusted testers validating AnxOS Control Center before any public beta. It assumes a Windows 11 desktop app and, when available, a Debian Agent node such as Anxlab.
+This guide is for trusted testers validating AnxOS Control Center before any public beta. It assumes a Windows 11 desktop app, the Local Agent path for `This PC`, and, when available, a Debian Agent node such as Anxlab.
 
 Do not share secrets in reports. Never paste Agent tokens, pairing codes, Supabase tokens, passwords, private URLs, config files, or unredacted logs.
 
@@ -15,38 +15,43 @@ Do not share secrets in reports. Never paste Agent tokens, pairing codes, Supaba
 ## Recommended Test Order
 
 1. Start the desktop app.
-2. Confirm the local Windows desktop appears as a managed application host.
-3. Connect or select the Debian Agent node.
-4. Open Diagnostics and run a snapshot.
-5. Open Nodes and Node Details.
-6. Run dependency checks for the selected node.
-7. Install one Marketplace template.
-8. Start, stop, restart, and remove the test instance.
-9. Open Files and verify local and remote profiles stay separate.
-10. Open Public Access and verify provider status.
-11. Open Operations and confirm recent actions are recorded.
-12. Export diagnostics only if a bug needs logs.
+2. Choose `Use This PC` and install the Local Agent if it is missing.
+3. Confirm `This PC` appears as the Local Agent node.
+4. Run dependency checks for `This PC`.
+5. Install one Marketplace template on `This PC`.
+6. Start, stop, restart, back up, and remove the test instance.
+7. Open Files and verify local shortcuts and allowed roots.
+8. Open Public Access and verify provider status.
+9. Connect or select the Debian Agent node if available.
+10. Switch between local and remote nodes and confirm actions target the selected node.
+11. Open Diagnostics and run a snapshot.
+12. Open Operations and confirm recent actions are recorded.
+13. Export diagnostics only if a bug needs logs.
 
 ## Windows Desktop Setup
 
-Install dependencies once:
+Normal testers should use the Windows installer from the website. Do not ask normal testers to install Node.js, run terminal commands, edit JSON, configure localhost, or copy Agent tokens.
 
-```powershell
-npm install
-```
-
-Start the app in development mode:
-
-```powershell
-npm start
-```
+Developers may still use `npm install` and `npm start` for development-mode validation.
 
 Expected first-run behavior:
 
-- Local Application Host appears even when no Agent is connected.
+- `This PC` appears after the Local Agent is installed and paired.
 - Empty pages explain why they are empty and how to begin.
 - Protected owner-only actions require owner access.
 - Unsupported features show unavailable states instead of fake data.
+
+## Local Agent Setup
+
+Expected behavior:
+
+- Missing Agent state explains what the Local Agent does.
+- Install Local Agent uses the bundled runtime.
+- Windows service installation requests administrator permission only when required.
+- Pairing completes automatically without token copying.
+- Dependency scan runs after pairing.
+- Service repair and pairing repair are available from diagnostics.
+- Uninstall or service removal does not delete instances or backups unless explicitly selected.
 
 ## Debian Agent Setup
 
@@ -156,10 +161,9 @@ Attach:
 
 Agent unavailable:
 
-- Confirm the Agent process is running.
-- Confirm the Agent URL and port.
-- Repair pairing if authentication fails.
-- Restart the Agent after config changes.
+- For `This PC`, use Start Service, Restart Agent, Repair Service, or Repair Pairing.
+- For remote nodes, confirm the remote Agent process, URL, port, and token state.
+- Do not edit Local Agent JSON or copy Local Agent tokens during normal testing.
 
 Marketplace failure:
 

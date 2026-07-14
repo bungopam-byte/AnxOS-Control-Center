@@ -1103,10 +1103,26 @@ a[aria-disabled="true"] {
 
 .install-layout {
   display: grid;
-  grid-template-columns: minmax(240px, 0.45fr) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(320px, 0.82fr) minmax(560px, 1.18fr);
+  gap: 36px;
   align-items: start;
-  padding-top: 44px;
+  padding-top: 58px;
+}
+
+.install-hero-copy {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+
+#windows-installation-page .install-hero-copy h1 {
+  max-width: 620px;
+  font-size: clamp(3.6rem, 6vw, 5.8rem);
+  line-height: 0.92;
+}
+
+#windows-installation-page .section-copy {
+  max-width: 31rem;
 }
 
 .section-copy {
@@ -1122,25 +1138,52 @@ a[aria-disabled="true"] {
 
 .steps article {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  min-height: 82px;
+  padding: 16px;
 }
 
 .steps--detailed {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .steps span {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius);
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 900;
+}
+
+.steps article p {
+  margin: 0;
+}
+
+.install-links {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 390px);
+  margin-top: 8px;
+  padding: 14px;
+}
+
+.install-links a {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.install-links a:hover,
+.install-links a:focus-visible {
+  color: var(--text);
 }
 
 .safety-card {

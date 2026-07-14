@@ -42,15 +42,24 @@ assert(
   permissions.includes("canManageMarketplaceSettings") &&
     permissions.includes("canManageDeveloperSettings") &&
     permissions.includes("canManageAgentConfiguration") &&
-    permissions.includes("requireOwner(target)"),
+    permissions.includes("requireOwner(target)") &&
+    permissions.includes('error.code = "FORBIDDEN"'),
   "Settings permission service must map Owner-only capabilities through Owner authorization.",
 );
 
 assert(
   index.includes('data-settings-capability="canManageMarketplaceSettings"') &&
     index.includes('data-settings-capability="canManageDeveloperSettings"') &&
-    index.includes('data-settings-capability="canViewDiagnostics"'),
+    index.includes('data-settings-capability="canViewDiagnostics"') &&
+    index.includes('data-settings-category-target="marketplace-admin"') &&
+    index.includes('data-settings-category="marketplace-admin"'),
   "Sensitive Settings cards must declare required capabilities in markup.",
+);
+
+assert(
+  index.includes('data-page="marketplace"') &&
+    index.includes('data-settings-category-target="marketplace-admin"'),
+  "Marketplace administration must be separate from the main Marketplace workspace.",
 );
 
 assert(

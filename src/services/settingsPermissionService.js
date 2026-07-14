@@ -71,7 +71,16 @@ function requireSettingsCapability(capability, target = "settings") {
     error.code = "UNKNOWN_SETTINGS_CAPABILITY";
     throw error;
   }
-  return requireOwner(target);
+  try {
+    return requireOwner(target);
+  } catch (error) {
+    if (error?.code === "OWNER_REQUIRED") {
+      error.code = "FORBIDDEN";
+      error.capability = capability;
+      error.target = target;
+    }
+    throw error;
+  }
 }
 
 function assertCanReadSettingsSecret(capability, target) {

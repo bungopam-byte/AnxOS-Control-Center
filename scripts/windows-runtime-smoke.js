@@ -118,6 +118,8 @@ async function main() {
     assert(agentControlSource.includes("getWindowsElevationState") && agentControlSource.includes("ELEVATION_REQUIRED"), "Windows Agent service changes must detect and report elevation requirements before modification.");
     assert(agentControlSource.includes("registrationStatus") && agentControlSource.includes("unverifiable") && agentControlSource.includes("invalid"), "Windows Agent service registration must distinguish valid, invalid, missing, and unverifiable states.");
     assert(agentControlSource.includes("SERVICE_VERIFICATION_FAILED"), "Windows Agent service registration must be verified after install or repair.");
+    assert(agentControlSource.includes("sc.exe") && agentControlSource.includes("windows-service"), "Windows Agent background startup must use the Windows Service Control Manager.");
+    assert(agentControlSource.includes("failure") && agentControlSource.includes("restart/60000"), "Windows Agent service should configure crash recovery actions.");
     assert(appSource.includes("serviceNeedsElevation") && appSource.includes("Administrator required"), "Agent Control UI must disable or relabel service actions when elevation is required.");
 
     const devUpdaterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "developerGitUpdater.js"), "utf8");

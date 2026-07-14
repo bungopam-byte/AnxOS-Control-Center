@@ -24,7 +24,7 @@ async function main() {
   assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");
   assert(serviceSource.includes("runtime-payload-shape"), "Development diagnostics should log sanitized runtime payload shapes.");
   assert(serviceSource.includes("getWindowsElevationState"), "Agent Control must detect Windows elevation before privileged registration changes.");
-  assert(serviceSource.includes("validateWindowsTaskRegistration"), "Agent Control must validate Windows startup registration before reporting it as passed.");
+  assert(serviceSource.includes("validateWindowsServiceRegistration"), "Agent Control must validate Windows service registration before reporting it as passed.");
   assert(serviceSource.includes("SERVICE_VERIFICATION_FAILED"), "Agent Control service install must verify registration after modification.");
   assert(serviceSource.includes("ensureLocalAgentBackendSelected"), "Starting the bundled local Agent must select the local Agent backend for first-time packaged users.");
   assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
@@ -48,10 +48,10 @@ async function main() {
   assert(htmlSource.includes("data-agent-beginner-summary") && htmlSource.includes("Agent Control Summary"), "Agent Control must include the beginner-friendly summary panel.");
   assert(htmlSource.includes("data-agent-local-host-list") && htmlSource.includes("Local Systems"), "Agent Control must expose a local systems panel.");
   const control = require("../src/services/agentControlService");
-  const validTask = control._test.validateWindowsTaskRegistration(`Task To Run: ${control._test.expectedWindowsTaskCommand(control.readConfig())}\nStatus: Ready`, control.readConfig());
-  assert.strictEqual(validTask.valid, true, "Matching Windows scheduled task command should validate.");
-  const invalidTask = control._test.validateWindowsTaskRegistration("Task To Run: C:\\\\old\\\\agent.exe\nStatus: Ready", control.readConfig());
-  assert.strictEqual(invalidTask.valid, false, "Mismatched Windows scheduled task command should not validate.");
+  const validService = control._test.validateWindowsServiceRegistration(`BINARY_PATH_NAME   : ${control._test.expectedWindowsServiceCommand(control.readConfig())}\nSTATE              : 1  STOPPED`, control.readConfig());
+  assert.strictEqual(validService.valid, true, "Matching Windows service binary path should validate.");
+  const invalidService = control._test.validateWindowsServiceRegistration("BINARY_PATH_NAME   : C:\\\\old\\\\agent.exe\nSTATE              : 1  STOPPED", control.readConfig());
+  assert.strictEqual(invalidService.valid, false, "Mismatched Windows service binary path should not validate.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: true, valid: false }), "invalid", "Invalid registration must not be reported as passed.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: false, verification: { state: "unverifiable" } }), "unverifiable", "Unverifiable registration must remain distinct from missing.");
   try {

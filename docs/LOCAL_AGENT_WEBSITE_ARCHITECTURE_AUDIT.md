@@ -59,7 +59,7 @@ The app can start the Agent from the packaged Electron runtime, but there is no 
 
 ### Windows Service Support
 
-Windows background startup is implemented as a scheduled task named `AnxOSAgent`, not as a proper Windows service. It uses `schtasks.exe /Create /SC ONLOGON /RL LIMITED`, so it starts on logon rather than at Windows boot and is tied to the user session. There is no Service Control Manager integration, service recovery configuration, crash restart policy at the Windows service level, or service log redirection contract.
+Windows background startup was implemented as a scheduled task named `AnxOSAgent` during the Phase 1 audit. Phase 5 replaces the Windows path with Service Control Manager commands, but real Windows service validation still requires testing on Windows.
 
 ### Local Pairing
 
@@ -135,8 +135,7 @@ Diagnostics are already a strong foundation, with sanitized logs, latest-error/r
 
 ## Windows-Specific Limitations
 
-- Local Agent service management is not a real Windows service; it is scheduled-task based.
-- The scheduled task starts on logon and does not guarantee operation when the Desktop app is closed before a user logs in.
+- Local Agent Windows service management uses SCM commands after Phase 5, but real-machine validation is still required.
 - Elevation handling currently tells users to run the app as Administrator instead of requesting elevation only when needed.
 - Dependency install support is Linux package-manager oriented.
 - Network counters in Agent system stats are Linux-only.
@@ -221,4 +220,10 @@ Packaged builds now include an unpacked `local-agent-runtime` resource through `
 
 Agent Control now exposes an in-app `Install Local Agent` action. The trusted main process validates the bundled runtime, creates managed config/data/logs/instances/backups/temp directories, writes runtime configuration, rotates the shared local Agent credential without returning the raw token, attempts background-startup registration, starts the bundled Agent, verifies the local connection, refreshes nodes, and reports beginner-readable installer steps.
 
-The installer handles missing runtime, busy operations, service elevation blocks, and failed verification with structured step states. It still uses the current scheduled-task/systemd startup layer; a proper Windows service backend, installer rollback, antivirus-specific recovery, disk-space preflight, and full interrupted-install resume remain later-phase work.
+The installer handles missing runtime, busy operations, service elevation blocks, and failed verification with structured step states. Installer rollback, antivirus-specific recovery, disk-space preflight, and full interrupted-install resume remain later-phase work.
+
+## Phase 5 Windows Service Note
+
+Windows background startup now uses the Windows Service Control Manager path (`sc.exe`) instead of scheduled tasks. The service manager can query, create, start, stop, disable, delete, and validate the `AnxOSAgent` Windows service, configures automatic startup, writes service environment values under the service registry key, and configures restart-on-failure recovery actions. Linux systemd user service behavior is preserved.
+
+This phase updates source-level validation and Linux smoke coverage. It does not claim real Windows SCM validation because these checks were run from the current Linux development environment.

@@ -72,7 +72,7 @@ function agentEnvironment(config) {
   return { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_ENV: "production", AGENT_HOST: config.host, AGENT_PORT: String(config.port), AGENT_FILE_ROOTS: config.allowedFolders.join(path.delimiter), AGENT_INSTANCE_ROOT: getAgentInstancesDirectory(), AGENT_BACKUP_ROOT: getAgentBackupsDirectory(), AGENT_LOG_DIR: getAgentLogsDirectory(), AGENT_TEMP_DIR: getAgentTempDirectory(), AGENT_IDENTITY_PATH: path.join(getAgentDataDirectory(), "device-identity.json"), ANXHUB_CONFIG_DIR: getConfigDirectory(), ANXOS_LOCAL_AGENT_RUNTIME_ROOT: runtime.runtimeRoot, ANXOS_LOCAL_AGENT_RUNTIME_MANIFEST: runtime.manifestPath };
 }
 function isWindowsAccessDenied(result = {}) { return /access is denied|administrator|elevat/i.test(`${result.stderr || ""}\n${result.stdout || ""}\n${result.code || ""}`); }
-function createWindowsElevationError(action = "modify") { return Object.assign(new Error(`Windows requires administrator permission to ${action} the Agent startup task. Run AnxOS Control Center as Administrator, then install the Agent service again.`), { code: "ELEVATION_REQUIRED", recoverySuggestion: "Close AnxOS Control Center, right-click it, choose Run as administrator, then retry the Agent service action." }); }
+function createWindowsElevationError(action = "modify") { return Object.assign(new Error(`Windows requires administrator permission to ${action} the Agent service. Run AnxOS Control Center as Administrator, then retry the Agent service action.`), { code: "ELEVATION_REQUIRED", recoverySuggestion: "Close AnxOS Control Center, right-click it, choose Run as administrator, then retry the Agent service action." }); }
 
 async function getWindowsElevationState() {
   if (process.platform !== "win32") return { supported: false, elevated: false, state: "not-applicable" };
@@ -82,42 +82,43 @@ async function getWindowsElevationState() {
   return { supported: true, elevated: null, state: "unverifiable", errorCode: result.code, message: result.stderr || result.stdout || "Could not verify administrator state." };
 }
 
-function expectedWindowsTaskCommand(config = readConfig()) {
-  return `cmd.exe /d /s /c "set ELECTRON_RUN_AS_NODE=1&&\"${process.execPath}\" \"${getAgentScript()}\""`;
+function expectedWindowsServiceCommand(config = readConfig()) {
+  void config;
+  return `"${process.execPath}" "${getAgentScript()}"`;
 }
 
 function normalizeCommandForComparison(value) {
   return String(value || "").replace(/\s+/g, " ").replace(/\\/g, "/").toLowerCase();
 }
 
-function getWindowsTaskRunCommand(stdout = "") {
-  const match = String(stdout || "").match(/^Task To Run:\s*(.+)$/im);
+function getWindowsServiceBinaryPath(stdout = "") {
+  const match = String(stdout || "").match(/BINARY_PATH_NAME\s*:\s*(.+)$/im);
   return match ? match[1].trim() : "";
 }
 
-function validateWindowsTaskRegistration(stdout = "", config = readConfig()) {
-  const taskCommand = getWindowsTaskRunCommand(stdout);
-  const normalizedTask = normalizeCommandForComparison(taskCommand);
+function getWindowsServiceState(stdout = "") {
+  const match = String(stdout || "").match(/STATE\s*:\s*\d+\s+([A-Z_]+)/im);
+  return match ? match[1].trim().toLowerCase().replace(/_/g, "-") : "";
+}
+
+function validateWindowsServiceRegistration(stdout = "", config = readConfig()) {
+  const serviceCommand = getWindowsServiceBinaryPath(stdout);
+  const normalizedService = normalizeCommandForComparison(serviceCommand);
   const expectedProcess = normalizeCommandForComparison(process.execPath);
   const expectedScript = normalizeCommandForComparison(getAgentScript());
-  const expectedPort = `agent_port=${config.port}`;
   const valid = Boolean(
-    taskCommand &&
-    normalizedTask.includes(expectedProcess) &&
-    normalizedTask.includes(expectedScript) &&
-    normalizedTask.includes("electron_run_as_node=1")
+    serviceCommand &&
+    normalizedService.includes(expectedProcess) &&
+    normalizedService.includes(expectedScript)
   );
-  const portMatches = !normalizedTask.includes("agent_port=") || normalizedTask.includes(expectedPort);
   return {
-    valid: valid && portMatches,
-    command: taskCommand || null,
-    expected: expectedWindowsTaskCommand(config),
+    valid,
+    command: serviceCommand || null,
+    expected: expectedWindowsServiceCommand(config),
     issues: [
-      taskCommand ? null : "Task command could not be read.",
-      normalizedTask.includes(expectedProcess) ? null : "Task does not point at the current AnxOS runtime.",
-      normalizedTask.includes(expectedScript) ? null : "Task does not point at the bundled Agent server.",
-      normalizedTask.includes("electron_run_as_node=1") ? null : "Task does not configure Electron node execution.",
-      portMatches ? null : "Task uses an older Agent port.",
+      serviceCommand ? null : "Service binary path could not be read.",
+      normalizedService.includes(expectedProcess) ? null : "Service does not point at the current AnxOS runtime.",
+      normalizedService.includes(expectedScript) ? null : "Service does not point at the bundled Agent server.",
     ].filter(Boolean),
   };
 }
@@ -181,7 +182,7 @@ async function start() {
       });
     }
     if (service.installed && service.valid !== false) {
-      const result = process.platform === "linux" ? await command("systemctl", ["--user", "start", "anxos-agent.service"]) : await command("schtasks.exe", ["/Run", "/TN", SERVICE_NAME]);
+      const result = process.platform === "linux" ? await command("systemctl", ["--user", "start", "anxos-agent.service"]) : await command("sc.exe", ["start", SERVICE_NAME]);
       if (!result.ok) throw Object.assign(new Error(result.stderr || "Background Agent could not be started."), { code: "SERVICE_START_FAILED" });
       await new Promise((resolve) => setTimeout(resolve, 800));
       ensureLocalAgentBackendSelected(config);
@@ -208,7 +209,7 @@ async function start() {
 async function stop({ force = false } = {}) {
   if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
   operationInFlight = "stop";
-  try { const config = readConfig(); const service = await getServiceState(); if (service.installed && service.active) { const result = process.platform === "linux" ? await command("systemctl", ["--user", "stop", "anxos-agent.service"]) : await command("schtasks.exe", ["/End", "/TN", SERVICE_NAME]); if (!result.ok && !force) throw Object.assign(new Error(result.stderr || "Background Agent could not be stopped."), { code: "SERVICE_STOP_FAILED" }); } if (managedProcess && !managedProcess.killed) { const child = managedProcess; child.kill(force ? "SIGKILL" : "SIGTERM"); await new Promise((resolve) => { const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); resolve(); }, 5000); child.once("exit", () => { clearTimeout(timer); resolve(); }); }); } managedProcess = null; await waitForLocalAgentStopped(config).catch(() => false); lastRestartReason = force ? "Force stopped from AnxOS" : "Stopped from AnxOS"; return getStatus(); }
+  try { const config = readConfig(); const service = await getServiceState(); if (service.installed && service.active) { const result = process.platform === "linux" ? await command("systemctl", ["--user", "stop", "anxos-agent.service"]) : await command("sc.exe", ["stop", SERVICE_NAME]); if (!result.ok && !force && !/not been started|not running/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || "Background Agent could not be stopped."), { code: "SERVICE_STOP_FAILED" }); } if (managedProcess && !managedProcess.killed) { const child = managedProcess; child.kill(force ? "SIGKILL" : "SIGTERM"); await new Promise((resolve) => { const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); resolve(); }, 5000); child.once("exit", () => { clearTimeout(timer); resolve(); }); }); } managedProcess = null; await waitForLocalAgentStopped(config).catch(() => false); lastRestartReason = force ? "Force stopped from AnxOS" : "Stopped from AnxOS"; return getStatus(); }
   finally { operationInFlight = null; }
 }
 async function restart({ force = false } = {}) { await stop({ force }); lastRestartReason = force ? "Force restarted from AnxOS" : "Restarted from AnxOS"; return start(); }
@@ -238,14 +239,17 @@ async function getServiceState() {
     return service;
   }
   if (process.platform === "win32") {
-    const result = await command("schtasks.exe", ["/Query", "/TN", SERVICE_NAME, "/FO", "LIST", "/V"]);
-    const active = /Status:\s*Running/i.test(result.stdout);
+    const result = await command("sc.exe", ["query", SERVICE_NAME]);
+    const qc = await command("sc.exe", ["qc", SERVICE_NAME]);
+    const combined = `${result.stdout}\n${result.stderr}\n${qc.stdout}\n${qc.stderr}`;
+    const serviceState = getWindowsServiceState(result.stdout);
+    const active = serviceState === "running" || serviceState === "start-pending";
     const privilege = await getWindowsElevationState();
-    if (!result.ok) {
+    if (!result.ok || /does not exist|1060/i.test(combined)) {
       const unverifiable = isWindowsAccessDenied(result);
       return {
         supported: true,
-        type: "windows-scheduled-task",
+        type: "windows-service",
         installed: false,
         valid: false,
         enabled: false,
@@ -254,7 +258,7 @@ async function getServiceState() {
         registrationStatus: unverifiable ? "unverifiable" : "missing",
         verification: {
           state: unverifiable ? "unverifiable" : "missing",
-          issues: unverifiable ? ["Windows denied scheduled-task verification."] : [],
+          issues: unverifiable ? ["Windows denied service verification."] : [],
           errorCode: result.code,
           message: result.stderr || result.stdout || null,
         },
@@ -262,17 +266,18 @@ async function getServiceState() {
         requiresElevation: privilege.elevated !== true,
       };
     }
-    const verification = validateWindowsTaskRegistration(result.stdout, readConfig());
+    const verification = validateWindowsServiceRegistration(qc.stdout, readConfig());
+    const enabled = !/START_TYPE\s*:\s*\d+\s+DISABLED/i.test(qc.stdout);
     const service = {
       supported: true,
-      type: "windows-scheduled-task",
+      type: "windows-service",
       installed: true,
       valid: verification.valid,
-      enabled: !/Disabled/i.test(result.stdout),
+      enabled,
       active: active || Boolean(managedProcess),
-      state: active ? "running" : verification.valid ? "registered" : "invalid",
+      state: active ? "running" : verification.valid ? serviceState || "stopped" : "invalid",
       registrationStatus: verification.valid ? "valid" : "invalid",
-      verification: { state: verification.valid ? "valid" : "invalid", ...verification },
+      verification: { state: verification.valid ? "valid" : "invalid", serviceState, ...verification },
       privilege,
       requiresElevation: privilege.elevated !== true,
     };
@@ -291,18 +296,25 @@ async function installService() {
       return getStatus();
     }
     if (current.privilege?.elevated !== true) throw createWindowsElevationError(current.installed ? "repair" : "install");
-    const taskCommand = expectedWindowsTaskCommand(config);
-    const result = await command("schtasks.exe", ["/Create", "/F", "/SC", "ONLOGON", "/RL", "LIMITED", "/TN", SERVICE_NAME, "/TR", taskCommand]);
-    if (!result.ok) throw (result.code === "EACCES" || isWindowsAccessDenied(result)) ? createWindowsElevationError(current.installed ? "repair" : "install") : Object.assign(new Error(result.stderr || "Could not install Agent startup task."), { code: "SERVICE_INSTALL_FAILED" });
+    if (current.installed) {
+      await command("sc.exe", ["delete", SERVICE_NAME], { timeout: 30000 });
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    const serviceCommand = expectedWindowsServiceCommand(config);
+    const result = await command("sc.exe", ["create", SERVICE_NAME, "binPath=", serviceCommand, "start=", "auto", "DisplayName=", "AnxOS Local Agent"], { timeout: 30000 });
+    if (!result.ok) throw (result.code === "EACCES" || isWindowsAccessDenied(result)) ? createWindowsElevationError(current.installed ? "repair" : "install") : Object.assign(new Error(result.stderr || "Could not install Agent Windows service."), { code: "SERVICE_INSTALL_FAILED" });
+    await command("sc.exe", ["description", SERVICE_NAME, "Runs the AnxOS Local Agent for managing local servers, files, backups, dependencies, and services."], { timeout: 15000 });
+    await command("sc.exe", ["failure", SERVICE_NAME, "reset=", "86400", "actions=", "restart/60000/restart/60000/none/0"], { timeout: 15000 });
+    await command("reg.exe", ["add", `HKLM\\SYSTEM\\CurrentControlSet\\Services\\${SERVICE_NAME}`, "/v", "Environment", "/t", "REG_MULTI_SZ", "/d", `ELECTRON_RUN_AS_NODE=1\\0NODE_ENV=production\\0ANXHUB_CONFIG_DIR=${getConfigDirectory()}\\0AGENT_HOST=${config.host}\\0AGENT_PORT=${config.port}\\0AGENT_FILE_ROOTS=${config.allowedFolders.join(path.delimiter)}\\0AGENT_INSTANCE_ROOT=${getAgentInstancesDirectory()}\\0AGENT_BACKUP_ROOT=${getAgentBackupsDirectory()}\\0AGENT_LOG_DIR=${getAgentLogsDirectory()}\\0AGENT_TEMP_DIR=${getAgentTempDirectory()}\\0AGENT_IDENTITY_PATH=${path.join(getAgentDataDirectory(), "device-identity.json")}`, "/f"], { timeout: 15000 });
     const verified = await getServiceState();
-    if (!verified.installed || !verified.valid) throw Object.assign(new Error("Agent startup task was created but did not pass validation."), { code: "SERVICE_VERIFICATION_FAILED", details: verified.verification });
+    if (!verified.installed || !verified.valid) throw Object.assign(new Error("Agent Windows service was created but did not pass validation."), { code: "SERVICE_VERIFICATION_FAILED", details: verified.verification });
   }
   else throw Object.assign(new Error("Agent background service management is not supported on this platform."), { code: "PLATFORM_UNSUPPORTED" });
   saveConfig({ ...config, autoStart: true }); diagnostics.log("info", "service-manager", "install", "Agent background startup installed", { platform: process.platform }, { file: "service-manager" }); return getStatus();
 }
 
-async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.privilege?.elevated !== true) throw createWindowsElevationError("remove"); const result = await command("schtasks.exe", ["/Delete", "/F", "/TN", SERVICE_NAME]); if (!result.ok && !/cannot find|does not exist/i.test(`${result.stdout}\n${result.stderr}`)) throw isWindowsAccessDenied(result) ? createWindowsElevationError("remove") : Object.assign(new Error(result.stderr || "Could not remove Agent startup task."), { code: "SERVICE_UNINSTALL_FAILED" }); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
-async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.privilege?.elevated !== true) throw createWindowsElevationError(enabled ? "enable" : "disable"); const result = await command("schtasks.exe", ["/Change", "/TN", SERVICE_NAME, enabled ? "/ENABLE" : "/DISABLE"]); if (!result.ok) throw isWindowsAccessDenied(result) ? createWindowsElevationError(enabled ? "enable" : "disable") : Object.assign(new Error(result.stderr || "Could not update Agent startup task."), { code: "SERVICE_UPDATE_FAILED" }); } saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
+async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.privilege?.elevated !== true) throw createWindowsElevationError("remove"); if (service.installed && service.active) await command("sc.exe", ["stop", SERVICE_NAME], { timeout: 30000 }); const result = await command("sc.exe", ["delete", SERVICE_NAME], { timeout: 30000 }); if (!result.ok && !/does not exist|1060/i.test(`${result.stdout}\n${result.stderr}`)) throw isWindowsAccessDenied(result) ? createWindowsElevationError("remove") : Object.assign(new Error(result.stderr || "Could not remove Agent Windows service."), { code: "SERVICE_UNINSTALL_FAILED" }); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
+async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.privilege?.elevated !== true) throw createWindowsElevationError(enabled ? "enable" : "disable"); const result = await command("sc.exe", ["config", SERVICE_NAME, "start=", enabled ? "auto" : "disabled"], { timeout: 15000 }); if (!result.ok) throw isWindowsAccessDenied(result) ? createWindowsElevationError(enabled ? "enable" : "disable") : Object.assign(new Error(result.stderr || "Could not update Agent Windows service startup."), { code: "SERVICE_UPDATE_FAILED" }); } saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
 
 function installerStep(id, label, state = "pending", message = "") {
   return { id, label, state, message, at: new Date().toISOString() };
@@ -915,9 +927,9 @@ async function openDataFolder() { fs.mkdirSync(getAgentDataDirectory(), { recurs
 
 module.exports = {
   _test: {
-    expectedWindowsTaskCommand,
+    expectedWindowsServiceCommand,
     getRegistrationStatusFromServiceState,
-    validateWindowsTaskRegistration,
+    validateWindowsServiceRegistration,
   },
   captureRemoteDiagnostics,
   getAgentDataDirectory,

@@ -44,6 +44,7 @@ assert(index.includes('aria-live="polite" aria-atomic="true"'), "Toast feedback 
 assert(index.includes("settings-workspace") && index.includes("data-settings-category-target=\"general\"") && index.includes("data-settings-search"), "Settings workspace must expose category navigation and search.");
 assert(index.includes("data-settings-category=\"updates\"") && index.includes("data-settings-category=\"integrations\""), "Settings workspace must separate Updates and Integrations categories.");
 assert(app.includes("setActiveSettingsCategory") && app.includes("renderSettingsSearch") && app.includes("settingsSearchInput"), "Renderer must wire Settings category switching and search.");
+assert(!/window\.prompt|prompt\(|window\.alert|alert\(|window\.confirm|confirm\(/.test(app), "Renderer workflows must not use browser prompt, alert, or confirm dialogs.");
 assert(preload.includes("settings:getPreferences") && preload.includes("settings:savePreferences") && preload.includes("settings:resetPreferences"), "Preload must expose centralized settings preference IPC.");
 assert(preload.includes("dependencies:plan") && app.includes("typeof api?.dependencies?.plan === \"function\""), "Dependency preparation planning must be exposed before install actions.");
 assert(main.includes("registerSettingsIpc"), "Main process must register settings IPC.");
@@ -97,7 +98,7 @@ assert(app.includes("startAgentControlPolling") && app.includes("agentControlRef
 assert(app.includes("remoteDiagnosticsInFlight") && app.includes("Remote diagnostics were just captured."), "Remote Agent diagnostics capture must be guarded against repeated exports.");
 assert(app.includes("function summarizeDependencyStatus") && app.includes("dependencyOperationState") && app.includes("latestDependencyNodeId"), "Prepare Node status must aggregate from current dependency snapshot and node scope.");
 assert(app.includes("summary.state === \"ready\" ? \"Healthy\"") && app.includes("optional === true"), "Dependency health must treat installed required dependencies as ready and skip optional dependencies.");
-assert(app.includes("function isInstanceRunningError") && app.includes("Stop it and delete it after it stops?") && app.includes("Instance stopped and deleted."), "Instance delete must offer a guarded stop-then-delete retry for running instances.");
+assert(app.includes("function isInstanceRunningError") && app.includes("Stop and delete this running server?") && app.includes("Stop and Delete") && app.includes("Instance stopped and deleted."), "Instance delete must offer a guarded stop-then-delete retry for running instances.");
 assert(app.includes("instancesForceKillButtons") && app.includes('actionName === "forceKill" && !canStopInstance(selectedInstance)') && app.includes("Instance is already stopped. Use Delete or Forget to remove it."), "Instance force-kill controls must be disabled and guarded for stopped instances.");
 assert(app.includes("instancesForgetButtons") && app.includes('actionName === "forget"') && app.includes("Files may remain on disk."), "Instance UI must expose a separate metadata-only Forget fallback.");
 assert(index.includes('data-instance-detail="failureReason"') && index.includes('data-instance-detail="command"'), "Instance inspector must expose failure reason and startup command details.");

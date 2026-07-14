@@ -7307,6 +7307,14 @@ body.is-resizing-files * {
   resize: vertical;
 }
 
+.settings-field-error {
+  display: block;
+  margin-top: -4px;
+  color: #ff9fb3;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .settings-field input[type="color"] {
   padding: 4px;
 }

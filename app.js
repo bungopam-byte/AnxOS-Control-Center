@@ -4970,12 +4970,16 @@ function getDiagnosticsSupportBundleCategories() {
   ];
 }
 
-function confirmDiagnosticsSupportBundleExport() {
+async function confirmDiagnosticsSupportBundleExport() {
   renderDiagnosticsSupportPreview();
   const preview = getDiagnosticsSupportBundleCategories()
     .map(([label, value]) => `- ${label}: ${value}`)
     .join("\n");
-  return window.confirm(`Export a redacted diagnostics support bundle?\n\nIncluded categories:\n${preview}\n\nThe export uses the trusted main-process diagnostics service and excludes tokens, cookies, API keys, and raw secrets.`);
+  return createSecurityConfirmation({
+    title: "Export diagnostics support bundle?",
+    message: `Included categories:\n${preview}\n\nThe export uses the trusted main-process diagnostics service and excludes tokens, cookies, API keys, and raw secrets.`,
+    confirmLabel: "Export Bundle",
+  });
 }
 
 function formatDiagnosticLogLine(entry = {}) {
@@ -10079,7 +10083,7 @@ async function openInstanceTextFile(filePath) {
     return;
   }
 
-  if (!confirmDiscardInstanceFile("open another file")) {
+  if (!(await confirmDiscardInstanceFile("open another file"))) {
     return;
   }
 
@@ -10117,8 +10121,13 @@ function hasDirtyInstanceFile() {
   return Boolean(openedInstanceFilePath && instanceFileEditor && instanceFileEditor.value !== openedInstanceFileSavedContent);
 }
 
-function confirmDiscardInstanceFile(actionLabel = "continue") {
-  return !hasDirtyInstanceFile() || window.confirm(`Discard unsaved file changes and ${actionLabel}?`);
+async function confirmDiscardInstanceFile(actionLabel = "continue") {
+  if (!hasDirtyInstanceFile()) return true;
+  return createSecurityConfirmation({
+    title: "Discard unsaved file changes?",
+    message: `Discard the open file changes and ${actionLabel}? Unsaved edits will be lost.`,
+    confirmLabel: "Discard Changes",
+  });
 }
 
 function syncInstanceFileDirtyState() {
@@ -10275,7 +10284,8 @@ async function verifyJavaJarBeforeLaunch(instance, context = getNodeRequestConte
       await repairInstanceServerJar(instance, repairedJar, context);
       return true;
     }
-    window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
+    showToast("No server JAR is configured. Upload a server JAR in Files or install this server from the Marketplace.", "warning");
+    await focusMissingJarInFiles(instance, "server.jar");
     return false;
   }
 
@@ -10295,8 +10305,6 @@ async function verifyJavaJarBeforeLaunch(instance, context = getNodeRequestConte
         await repairInstanceServerJar(instance, repairedJar, context);
         return true;
       }
-      const message = `${getFileNameFromPath(jarPath)} was not found in this instance.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`;
-      window.alert(message);
       showToast(`${getFileNameFromPath(jarPath)} was not found. Upload it in Files or use Marketplace.`, "warning");
       await focusMissingJarInFiles(instance, jarPath);
       return false;
@@ -14893,7 +14901,14 @@ async function runInstanceAction(actionName) {
   let renameDisplayName = null;
   let duplicateConfig = null;
   if (actionName === "rename") {
-    renameDisplayName = window.prompt("Rename server", label);
+    renameDisplayName = await createSecurityTextPrompt({
+      title: "Rename server",
+      message: "Enter a display name for this server.",
+      label: "Server name",
+      initialValue: label,
+      confirmLabel: "Rename",
+      validate: (value) => value.trim() ? "" : "Server name cannot be empty.",
+    });
     if (!renameDisplayName || !renameDisplayName.trim()) {
       showToast("Rename canceled.");
       updateInstanceActionButtons();
@@ -14905,7 +14920,14 @@ async function runInstanceAction(actionName) {
       updateInstanceActionButtons();
       return;
     }
-    const nextId = window.prompt("Duplicate server ID", `${targetInstanceId}-copy`);
+    const nextId = await createSecurityTextPrompt({
+      title: "Duplicate server",
+      message: "Enter a unique ID for the copied server.",
+      label: "Server ID",
+      initialValue: `${targetInstanceId}-copy`,
+      confirmLabel: "Duplicate",
+      validate: (value) => value.trim() ? "" : "Server ID cannot be empty.",
+    });
     if (!nextId || !nextId.trim()) {
       showToast("Duplicate canceled.");
       updateInstanceActionButtons();
@@ -15054,7 +15076,11 @@ async function runInstanceAction(actionName) {
         return;
       }
       if (actionName === "delete" && isInstanceRunningError(error)) {
-        const stopThenDelete = window.confirm(`${label} is still running. Stop it and delete it after it stops? This cannot be undone.`);
+        const stopThenDelete = await confirmDestructiveAction({
+          title: "Stop and delete this running server?",
+          message: `${label} is still running. AnxOS will stop it first, then delete it after it stops. This cannot be undone.`,
+          confirmLabel: "Stop and Delete",
+        });
         if (stopThenDelete && isNodeActionStillCurrent(requestContext)) {
           try {
             showToast(`Stopping ${label} before delete...`);
@@ -15080,7 +15106,11 @@ async function runInstanceAction(actionName) {
         } else {
           showToast("Delete canceled. Stop the instance before deleting it.", "warning");
         }
-      } else if (actionName === "delete" && desktopApiState.api.instances.forget && window.confirm(`Could not delete all files for ${label}. Remove the saved instance record from AnxOS Control Center anyway? Files may remain on disk.`)) {
+      } else if (actionName === "delete" && desktopApiState.api.instances.forget && await confirmDestructiveAction({
+        title: "Remove server record only?",
+        message: `AnxOS could not delete all files for ${label}. Remove the saved instance record from AnxOS Control Center anyway? Files may remain on disk.`,
+        confirmLabel: "Forget Server",
+      })) {
         try {
           const forgetResult = await desktopApiState.api.instances.forget(targetInstanceId, getNodeScopedPayload(requestContext));
           instanceRemovalAllowedIds.add(targetInstanceId);
@@ -15227,11 +15257,11 @@ function hasOpenFileEditorDocument() {
   return Boolean(latestFileDocument?.path);
 }
 
-function setFilesViewMode(mode) {
+async function setFilesViewMode(mode) {
   const nextMode = mode === "edit" && hasOpenFileEditorDocument() ? "edit" : "browse";
 
   if (nextMode === "browse" && filesViewMode === "edit" && hasOpenFileEditorDocument()) {
-    if (!confirmDiscardFileEditor("return to Browse Mode")) {
+    if (!(await confirmDiscardFileEditor("return to Browse Mode"))) {
       renderFilesView();
       return;
     }
@@ -15699,13 +15729,13 @@ function getSelectedFileEntry(entries) {
   return entries.find((entry) => entry.path && entry.path === selectedFileEntryPath) || entries[0] || null;
 }
 
-function selectFileEntry(entry) {
+async function selectFileEntry(entry) {
   const nextPath = entry?.path || null;
   const shouldClearEditor = !entry || entry.isDirectory || (latestFileDocument?.path && latestFileDocument.path !== nextPath);
 
-  if (shouldClearEditor && hasDirtyFileEditor() && !confirmDiscardFileEditor(entry?.isDirectory ? `select ${entry.name}` : "select another item")) {
+  if (shouldClearEditor && hasDirtyFileEditor() && !(await confirmDiscardFileEditor(entry?.isDirectory ? `select ${entry.name}` : "select another item"))) {
     renderFileRows(latestFilesListing?.entries || []);
-    selectFileEntry(getSelectedFileEntry(latestFilesListing?.entries || []));
+    await selectFileEntry(getSelectedFileEntry(latestFilesListing?.entries || []));
     return;
   }
 
@@ -17804,7 +17834,7 @@ async function runDiagnosticsAction(action) {
     showToast("Diagnostics are unavailable in this build.", "warning");
     return;
   }
-  if (action === "export" && !confirmDiagnosticsSupportBundleExport()) return;
+  if (action === "export" && !(await confirmDiagnosticsSupportBundleExport())) return;
   const operationId = startOperation({
     type: "Diagnostics",
     title: {
@@ -19145,7 +19175,11 @@ async function deleteSelectedStorageConnection() {
   const selected = getSelectedStorageConnection();
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasFiles || !selected || selected.id === "local") return;
-  if (!window.confirm(`Delete storage connection ${storageConnectionLabel(selected)}?`)) return;
+  if (!(await confirmDestructiveAction({
+    title: "Delete storage connection?",
+    message: `${storageConnectionLabel(selected)} will be removed from AnxOS. Files on the remote system are not deleted.`,
+    confirmLabel: "Delete Connection",
+  }))) return;
   try {
     storageConnectionsState = await desktopApiState.api.files.deleteConnection(selected.id);
     selectedStorageId = storageConnectionsState.defaultConnectionId || "local";
@@ -21361,12 +21395,16 @@ function hasDirtyFileEditor() {
   return Boolean(latestFileDocument?.supported && latestFileDocument?.dirty);
 }
 
-function confirmDiscardFileEditor(actionLabel = "continue") {
+async function confirmDiscardFileEditor(actionLabel = "continue") {
   if (!hasDirtyFileEditor()) {
     return true;
   }
 
-  return window.confirm(`You have unsaved file changes. Discard them and ${actionLabel}?`);
+  return createSecurityConfirmation({
+    title: "Discard unsaved file changes?",
+    message: `Discard the open file changes and ${actionLabel}? Unsaved edits will be lost.`,
+    confirmLabel: "Discard Changes",
+  });
 }
 
 async function refreshFileListing(options = {}) {
@@ -21491,7 +21529,7 @@ async function performConnectFilesSession(options = {}) {
     return;
   }
 
-  if (switchingProfiles && !confirmDiscardFileEditor(`switch to ${profile.displayName || profile.host}`)) {
+  if (switchingProfiles && !(await confirmDiscardFileEditor(`switch to ${profile.displayName || profile.host}`))) {
     return;
   }
 
@@ -21558,7 +21596,7 @@ async function disconnectFilesSession() {
     return;
   }
 
-  if (!confirmDiscardFileEditor("disconnect")) {
+  if (!(await confirmDiscardFileEditor("disconnect"))) {
     return;
   }
 
@@ -21589,7 +21627,7 @@ async function navigateRemoteDirectory(remotePath) {
 
   const nextPath = normalizeFilesPathValue(remotePath, filesConnectionState.currentPath || filesConnectionState.homePath || "/");
 
-  if (nextPath !== (filesConnectionState.currentPath || filesConnectionState.homePath || "/") && !confirmDiscardFileEditor(`open ${nextPath}`)) {
+  if (nextPath !== (filesConnectionState.currentPath || filesConnectionState.homePath || "/") && !(await confirmDiscardFileEditor(`open ${nextPath}`))) {
     return;
   }
 
@@ -21620,7 +21658,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
     return;
   }
 
-  if (latestFileDocument?.path !== entry.path && !confirmDiscardFileEditor(`open ${entry.name}`)) {
+  if (latestFileDocument?.path !== entry.path && !(await confirmDiscardFileEditor(`open ${entry.name}`))) {
     return;
   }
 
@@ -22128,7 +22166,7 @@ async function deleteRemoteEntry() {
     return;
   }
 
-  if (latestFileDocument?.path === entry.path && !confirmDiscardFileEditor(`delete ${entry.name}`)) {
+  if (latestFileDocument?.path === entry.path && !(await confirmDiscardFileEditor(`delete ${entry.name}`))) {
     return;
   }
 
@@ -23111,7 +23149,8 @@ async function verifyConsoleJavaJarBeforeLaunch(instance, context = getNodeReque
       await repairInstanceServerJar(instance, repairedJar, context);
       return true;
     }
-    window.alert("No server JAR is configured for this instance.\nUpload a server JAR to the data folder or install this server from the Marketplace.");
+    showToast("No server JAR is configured. Upload a server JAR in Files or install this server from the Marketplace.", "warning");
+    await focusMissingJarInFiles(instance, "server.jar");
     return false;
   }
 
@@ -23126,7 +23165,8 @@ async function verifyConsoleJavaJarBeforeLaunch(instance, context = getNodeReque
         await repairInstanceServerJar(instance, repairedJar, context);
         return true;
       }
-      window.alert(`${getFileNameFromPath(jarPath)} was not found.\nUpload a Paper server JAR to the data folder or install this server from the Marketplace.`);
+      showToast(`${getFileNameFromPath(jarPath)} was not found. Upload it in Files or use Marketplace.`, "warning");
+      await focusMissingJarInFiles(instance, jarPath);
       return false;
     }
     if (isInstanceNotFoundError(error)) {
@@ -25275,18 +25315,15 @@ async function confirmDestructiveAction({ title, message, confirmLabel = "Contin
   if (settings["general.confirmDestructiveActions"] === false && !isGuidedModeEnabled(settings) && !phrase) {
     return true;
   }
-  if (isGuidedModeEnabled(settings) || phrase) {
-    return Boolean(await createSecurityConfirmation({
-      title,
-      message,
-      phrase,
-      confirmLabel,
-    }));
-  }
-  return window.confirm(`${title || "Confirm action"}\n\n${message || "This action may permanently change data."}`);
+  return Boolean(await createSecurityConfirmation({
+    title,
+    message,
+    phrase,
+    confirmLabel,
+  }));
 }
 
-function createSecurityTextPrompt({ title, message, label = "Value", initialValue = "", confirmLabel = "Save" } = {}) {
+function createSecurityTextPrompt({ title, message, label = "Value", initialValue = "", confirmLabel = "Save", validate = null } = {}) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "app-modal-backdrop";
@@ -25317,6 +25354,8 @@ function createSecurityTextPrompt({ title, message, label = "Value", initialValu
     input.dataset.promptValue = "";
     input.value = initialValue || "";
     field.append(createTextElement("span", label), input);
+    const error = createTextElement("span", "", "settings-field-error");
+    error.hidden = true;
     const actions = document.createElement("div");
     actions.className = "settings-actions";
     const confirm = document.createElement("button");
@@ -25330,7 +25369,7 @@ function createSecurityTextPrompt({ title, message, label = "Value", initialValu
     cancel.dataset.promptCancel = "";
     cancel.textContent = "Cancel";
     actions.append(confirm, cancel);
-    dialog.append(closeButton, header, field, actions);
+    dialog.append(closeButton, header, field, error, actions);
     overlay.appendChild(dialog);
     const close = (value) => {
       document.removeEventListener("keydown", onKeyDown);
@@ -25338,15 +25377,26 @@ function createSecurityTextPrompt({ title, message, label = "Value", initialValu
       overlay.remove();
       resolve(value);
     };
+    const submit = () => {
+      const value = overlay.querySelector("[data-prompt-value]")?.value.trim() || "";
+      const validationMessage = typeof validate === "function" ? validate(value) : "";
+      if (validationMessage) {
+        error.textContent = validationMessage;
+        error.hidden = false;
+        input.focus();
+        return;
+      }
+      close(value || null);
+    };
     const onKeyDown = (event) => {
       if (event.key === "Escape") close(null);
       if (event.key === "Enter" && event.target?.matches?.("[data-prompt-value]")) {
-        close(event.target.value.trim() || null);
+        submit();
       }
     };
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay || event.target.closest("[data-prompt-cancel]")) close(null);
-      if (event.target.closest("[data-prompt-ok]")) close(overlay.querySelector("[data-prompt-value]")?.value.trim() || null);
+      if (event.target.closest("[data-prompt-ok]")) submit();
     });
     document.addEventListener("keydown", onKeyDown);
     document.body.appendChild(overlay);
@@ -29838,8 +29888,8 @@ filesPasswordInput?.addEventListener("keydown", (event) => {
   }
 });
 filesModeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    setFilesViewMode(button.dataset.filesMode || "browse");
+  button.addEventListener("click", async () => {
+    await setFilesViewMode(button.dataset.filesMode || "browse");
   });
 });
 filesPathInput?.addEventListener("keydown", (event) => {
@@ -30338,7 +30388,13 @@ instanceNetworkAddButton?.addEventListener("click", () => {
 document.querySelector('[data-instance-file-action="refresh"]')?.addEventListener("click", () => refreshInstanceFiles());
 document.querySelector('[data-instance-file-action="up"]')?.addEventListener("click", () => refreshInstanceFiles(getInstanceParentPath(instanceCurrentFilePath)));
 document.querySelector('[data-instance-file-action="new-folder"]')?.addEventListener("click", async () => {
-  const name = window.prompt("New folder name");
+  const name = await createSecurityTextPrompt({
+    title: "New folder",
+    message: "Create a folder in the current instance directory.",
+    label: "Folder name",
+    confirmLabel: "Create Folder",
+    validate: (value) => value.trim() ? "" : "Folder name cannot be empty.",
+  });
   const selectedInstance = findInstance();
   const requestContext = createNodeActionContext("instance-file-new-folder");
   if (!name || !selectedInstance) {
@@ -30362,7 +30418,14 @@ document.querySelector('[data-instance-file-action="rename"]')?.addEventListener
   if (!selectedInstanceFilePath || !selectedInstance) {
     return;
   }
-  const nextName = window.prompt("Rename to", selectedInstanceFilePath.split("/").pop());
+  const nextName = await createSecurityTextPrompt({
+    title: "Rename file",
+    message: "Enter the new name for this file or folder.",
+    label: "New name",
+    initialValue: selectedInstanceFilePath.split("/").pop(),
+    confirmLabel: "Rename",
+    validate: (value) => value.trim() ? "" : "Name cannot be empty.",
+  });
   if (!nextName) {
     return;
   }
@@ -30386,7 +30449,14 @@ document.querySelector('[data-instance-file-action="rename"]')?.addEventListener
 document.querySelector('[data-instance-file-action="delete"]')?.addEventListener("click", async () => {
   const selectedInstance = findInstance();
   const requestContext = createNodeActionContext("instance-file-delete");
-  if (!selectedInstanceFilePath || !selectedInstance || !window.confirm(`Delete ${selectedInstanceFilePath}?`)) {
+  if (!selectedInstanceFilePath || !selectedInstance) {
+    return;
+  }
+  if (!(await confirmDestructiveAction({
+    title: "Delete this instance file?",
+    message: `${selectedInstanceFilePath} will be deleted from ${selectedInstance.displayName || selectedInstance.id}. This cannot be undone.`,
+    confirmLabel: "Delete File",
+  }))) {
     return;
   }
   try {

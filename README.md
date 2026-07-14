@@ -22,6 +22,8 @@ Private Alpha means AnxOS Control Center is intended for a small group of truste
 
 Start here:
 
+- [New User Guide](docs/NEW_USER_GUIDE.md)
+- [Onboarding Validation](docs/ONBOARDING_VALIDATION.md)
 - [Private Alpha Tester Guide](docs/PRIVATE_ALPHA_TESTER_GUIDE.md)
 - [Known Limitations](docs/KNOWN_LIMITATIONS.md)
 - [Real-Machine Validation](docs/REAL_MACHINE_VALIDATION.md)

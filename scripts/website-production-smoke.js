@@ -157,6 +157,7 @@ assert(config.includes(`siteUrl: "${officialOrigin}"`) && accountConfig.includes
 assert(rootPackage.includes(`"homepage": "${officialOrigin}"`), "Package metadata should expose the official homepage.");
 assert(index.includes(`<meta property="og:url" content="${officialOrigin}/">`) && index.includes("assets/social-preview.png"), "Homepage must expose canonical Open Graph metadata.");
 assert(releaseNotes.includes(`<meta property="og:url" content="${officialOrigin}/release-notes.html">`), "Release notes must expose page-specific Open Graph URL.");
+assert(site.includes("release-note-card--latest") && site.includes("Current release") && !site.includes("empty.innerHTML"), "Release notes must highlight the current release and render empty states with text nodes.");
 assert(index.includes('name="twitter:card" content="summary_large_image"'), "Homepage must include Twitter/X card metadata.");
 assert(fs.existsSync(path.join(websiteRoot, "favicon.ico")), "Website must include favicon.ico.");
 ["favicon.svg", "favicon-16.png", "favicon-32.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "social-preview.png"].forEach((file) => {

@@ -523,12 +523,19 @@ async function applyDownloads(options = {}) {
   }
 }
 
-function createReleaseNoteCard(release) {
+function createReleaseNoteCard(release, index = 0) {
   const card = document.createElement("article");
-  card.className = "release-note-card";
+  card.className = index === 0 ? "release-note-card release-note-card--latest" : "release-note-card";
+  if (index === 0) card.setAttribute("aria-label", "Current release");
   const heading = document.createElement("div");
   heading.className = "release-note-card__heading";
   const titleGroup = document.createElement("div");
+  if (index === 0) {
+    const current = document.createElement("span");
+    current.className = "badge badge-current";
+    current.textContent = "Current release";
+    titleGroup.append(current);
+  }
   const badge = document.createElement("span");
   badge.className = "badge";
   badge.textContent = [release.version ? `Version ${release.version}` : release.tag || "Release", release.build ? `Build ${release.build}` : "", release.channel || ""].filter(Boolean).join(" · ");
@@ -575,11 +582,15 @@ function applyReleaseNotes() {
     if (!releases.length) {
       const empty = document.createElement("article");
       empty.className = "release-note-card";
-      empty.innerHTML = "<h3>No release notes yet</h3><p>Release notes will appear here after the next website sync.</p>";
+      const heading = document.createElement("h3");
+      heading.textContent = "No release notes yet";
+      const copy = document.createElement("p");
+      copy.textContent = "Release notes will appear here after the next website sync.";
+      empty.append(heading, copy);
       container.append(empty);
       return;
     }
-    releases.forEach((release) => container.append(createReleaseNoteCard(release)));
+    releases.forEach((release, index) => container.append(createReleaseNoteCard(release, index)));
   });
 }
 

@@ -898,6 +898,13 @@ a[aria-disabled="true"] {
   padding: 18px;
 }
 
+.release-note-card--latest {
+  border-color: rgba(206, 150, 255, 0.32);
+  background:
+    linear-gradient(180deg, rgba(182, 108, 255, 0.12), rgba(255, 255, 255, 0.035)),
+    var(--anx-surface-panel);
+}
+
 .release-note-card__heading {
   display: flex;
   justify-content: space-between;
@@ -934,6 +941,10 @@ a[aria-disabled="true"] {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.badge-current {
+  color: var(--text);
 }
 
 .feature-grid {

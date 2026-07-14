@@ -27,6 +27,18 @@ let lastError = null;
 const remoteDiagnosticsRequests = new Map();
 const remoteDiagnosticsCache = new Map();
 
+function compareVersions(left, right) {
+  const parse = (value) => String(value || "0").split(/[.-]/).map((part) => Number.parseInt(part, 10)).map((part) => Number.isFinite(part) ? part : 0);
+  const a = parse(left);
+  const b = parse(right);
+  const length = Math.max(a.length, b.length, 3);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (a[index] || 0) - (b[index] || 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
 function getConfigDirectory() { if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR; try { return path.join(app.getPath("userData"), "config"); } catch { return path.join(process.cwd(), "config"); } }
 function getRuntimeConfigPath() { return path.join(getConfigDirectory(), "agent-runtime.json"); }
 function getAgentDataDirectory() { try { return path.join(app.getPath("userData"), "agent"); } catch { return path.join(path.dirname(getConfigDirectory()), "agent"); } }
@@ -34,6 +46,7 @@ function getAgentLogsDirectory() { return path.join(getAgentDataDirectory(), "lo
 function getAgentInstancesDirectory() { return path.join(getAgentDataDirectory(), "instances"); }
 function getAgentBackupsDirectory() { return path.join(getAgentDataDirectory(), "backups"); }
 function getAgentTempDirectory() { return path.join(getAgentDataDirectory(), "tmp"); }
+function getAgentUpdateDirectory() { return path.join(getAgentDataDirectory(), "updates"); }
 function getAgentScript() { return getBundledLocalAgentRuntime().agentScript; }
 function getAppRoot() { return getBundledLocalAgentRuntime().workingDirectory; }
 function defaults() { return { name: `${os.hostname()} Agent`, host: "127.0.0.1", port: 47131, allowedOrigins: [], allowedFolders: [os.homedir(), getAgentInstancesDirectory(), getAgentBackupsDirectory()], storageRoots: [getAgentInstancesDirectory(), getAgentBackupsDirectory()], autoStart: false, updateChannel: "stable", loggingLevel: "info", connectionTimeoutMs: 10000, heartbeatIntervalMs: 5000, restartPolicy: "on-failure", ownerMachine: true, accountAssociation: null }; }
@@ -67,6 +80,7 @@ function ensureManagedAgentDirectories() {
     getAgentInstancesDirectory(),
     getAgentBackupsDirectory(),
     getAgentTempDirectory(),
+    getAgentUpdateDirectory(),
   ];
   directories.forEach((directory) => fs.mkdirSync(directory, { recursive: true }));
   return directories;
@@ -422,6 +436,163 @@ async function installLocalAgent(options = {}) {
   }
 }
 
+function getLocalAgentUpdateState(status = {}) {
+  const bundledVersion = agentPackage.version;
+  const installedVersion = status.agentVersion || status.identity?.agentVersion || null;
+  const comparison = installedVersion ? compareVersions(installedVersion, bundledVersion) : null;
+  const updateAvailable = comparison !== null && comparison < 0;
+  const agentNewerThanDesktop = comparison !== null && comparison > 0;
+  return {
+    bundledVersion,
+    installedVersion,
+    updateAvailable,
+    agentNewerThanDesktop,
+    versionMismatch: comparison !== null && comparison !== 0,
+    state: updateAvailable
+      ? "Local Agent Update Available"
+      : agentNewerThanDesktop
+        ? "Agent newer than Desktop"
+        : comparison === 0
+          ? "Current"
+          : "Unknown",
+    compatible: !agentNewerThanDesktop,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function backupLocalAgentState(label = "update") {
+  ensureManagedAgentDirectories();
+  const safeLabel = String(label || "update").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 40);
+  const backupRoot = path.join(getAgentUpdateDirectory(), `${new Date().toISOString().replace(/[:.]/g, "-")}-${safeLabel}`);
+  fs.mkdirSync(backupRoot, { recursive: true, mode: 0o700 });
+  const copied = [];
+  const copyIfExists = (source, relativeTarget) => {
+    if (!fs.existsSync(source)) return;
+    const target = path.join(backupRoot, relativeTarget);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.cpSync(source, target, { recursive: true, force: true });
+    copied.push(relativeTarget);
+  };
+  copyIfExists(getRuntimeConfigPath(), "config/agent-runtime.json");
+  copyIfExists(`${getRuntimeConfigPath()}.backup`, "config/agent-runtime.json.backup");
+  copyIfExists(path.join(getConfigDirectory(), "agent.json"), "config/agent.json");
+  copyIfExists(path.join(getAgentDataDirectory(), "device-identity.json"), "agent/device-identity.json");
+  fs.writeFileSync(path.join(backupRoot, "manifest.json"), `${JSON.stringify({
+    createdAt: new Date().toISOString(),
+    reason: label,
+    copied,
+    excludes: ["instances", "backups", "logs", "tmp"],
+  }, null, 2)}\n`, { mode: 0o600 });
+  return { backupRoot, copied };
+}
+
+function writeLocalAgentUpdateRecord(record = {}) {
+  ensureManagedAgentDirectories();
+  const filePath = path.join(getAgentUpdateDirectory(), "last-update.json");
+  fs.writeFileSync(filePath, `${JSON.stringify({ ...record, updatedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
+  return filePath;
+}
+
+async function updateLocalAgent(options = {}) {
+  if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
+  operationInFlight = "update";
+  const steps = [
+    installerStep("detect", "Check Agent version"),
+    installerStep("backup", "Back up Agent configuration"),
+    installerStep("stop", "Stop Local Agent"),
+    installerStep("replace", "Apply bundled runtime"),
+    installerStep("migrate", "Run migrations"),
+    installerStep("start", "Restart Local Agent"),
+    installerStep("verify", "Verify health"),
+  ];
+  const mark = (id, state, message) => {
+    const step = steps.find((entry) => entry.id === id);
+    if (step) {
+      step.state = state;
+      step.message = message || step.message;
+      step.at = new Date().toISOString();
+    }
+  };
+  let backup = null;
+  let before = null;
+  try {
+    before = await getStatus();
+    const update = getLocalAgentUpdateState(before);
+    mark("detect", "complete", `${update.installedVersion || "Unknown"} -> ${update.bundledVersion}`);
+    if (update.agentNewerThanDesktop && options.force !== true) {
+      throw Object.assign(new Error("The Local Agent is newer than this Desktop build. Install a newer AnxOS Control Center before changing the Agent runtime."), { code: "AGENT_NEWER_THAN_DESKTOP", steps, update });
+    }
+    if (!update.versionMismatch && options.force !== true) {
+      mark("backup", "skipped", "No update is required.");
+      mark("stop", "skipped", "No update is required.");
+      mark("replace", "skipped", "Bundled runtime already matches.");
+      mark("migrate", "skipped", "No migrations were required.");
+      mark("start", "skipped", "No restart was required.");
+      mark("verify", "complete", "Local Agent already matches the bundled runtime.");
+      return { ok: true, updated: false, update, steps, status: before };
+    }
+    backup = backupLocalAgentState("local-agent-update");
+    mark("backup", "complete", "Configuration and identity state were backed up.");
+
+    operationInFlight = null;
+    await stop({ force: false }).catch(async () => stop({ force: true }));
+    operationInFlight = "update";
+    mark("stop", "complete", "Local Agent stopped.");
+
+    const runtime = getBundledLocalAgentRuntime();
+    if (!runtime.exists) {
+      throw Object.assign(new Error("Bundled Local Agent runtime is missing or incomplete."), { code: "LOCAL_AGENT_RUNTIME_MISSING", steps });
+    }
+    if (before.service?.installed && before.service?.supported) {
+      await installService();
+      operationInFlight = "update";
+    }
+    mark("replace", "complete", "Service registration points to the bundled runtime.");
+    mark("migrate", "complete", "No runtime migrations were required for this build.");
+
+    operationInFlight = null;
+    const started = await start();
+    operationInFlight = "update";
+    mark("start", "complete", "Local Agent restarted.");
+    const afterUpdate = getLocalAgentUpdateState(started);
+    if (afterUpdate.installedVersion && compareVersions(afterUpdate.installedVersion, agentPackage.version) !== 0) {
+      throw Object.assign(new Error("Local Agent restarted but did not report the bundled runtime version."), { code: "LOCAL_AGENT_UPDATE_VERIFY_FAILED", steps, update: afterUpdate });
+    }
+    mark("verify", "complete", "Local Agent health verified after update.");
+    const recordPath = writeLocalAgentUpdateRecord({
+      fromVersion: update.installedVersion,
+      toVersion: agentPackage.version,
+      backupRoot: backup.backupRoot,
+      status: "complete",
+    });
+    lastRestartReason = "Updated Local Agent runtime from AnxOS";
+    lastError = null;
+    return { ok: true, updated: true, update: afterUpdate, previousUpdate: update, backup, recordPath, steps, status: await getStatus() };
+  } catch (error) {
+    lastError = { code: error.code || "LOCAL_AGENT_UPDATE_FAILED", message: error.message };
+    diagnostics.logError("agent-control", "update-local-agent", error, { backupRoot: backup?.backupRoot || null, steps }, { file: "service-manager" });
+    writeLocalAgentUpdateRecord({
+      fromVersion: before?.agentVersion || null,
+      toVersion: agentPackage.version,
+      backupRoot: backup?.backupRoot || null,
+      status: "failed",
+      error: { code: error.code || "LOCAL_AGENT_UPDATE_FAILED", message: error.message },
+    });
+    if (backup?.backupRoot) {
+      try {
+        const configBackup = path.join(backup.backupRoot, "config", "agent-runtime.json");
+        if (fs.existsSync(configBackup)) fs.copyFileSync(configBackup, getRuntimeConfigPath());
+      } catch (rollbackError) {
+        diagnostics.logError("agent-control", "update-local-agent-rollback", rollbackError, {}, { file: "service-manager" });
+      }
+    }
+    error.steps = error.steps || steps;
+    throw error;
+  } finally {
+    operationInFlight = null;
+  }
+}
+
 async function pairLocalAgentSecurely(options = {}) {
   const config = readConfig();
   const localAgentUrl = getLocalAgentUrl(config);
@@ -745,6 +916,10 @@ async function getStatus() {
     reachable: Boolean(health?.ok),
     capabilities: { metrics: true, lifecycle: true, repair: true, reconnect: true },
   });
+  const baseStatus = {
+    agentVersion: health?.identity?.agentVersion || agentPackage.version,
+    identity: health?.identity || null,
+  };
   return {
     local: true,
     targetType: "local-agent",
@@ -755,8 +930,8 @@ async function getStatus() {
     pid: health?.process?.pid || managedProcess?.pid || null,
     config,
     service,
-    identity: health?.identity || null,
-    agentVersion: health?.identity?.agentVersion || agentPackage.version,
+    identity: baseStatus.identity,
+    agentVersion: baseStatus.agentVersion,
     appVersion,
     apiVersion: health?.apiVersion || "v1",
     protocolVersion: health?.protocolVersion || 1,
@@ -778,6 +953,7 @@ async function getStatus() {
     port: config.port,
     startupMode: service.type,
     runtimeBundle: getPublicLocalAgentRuntimeInfo(),
+    update: getLocalAgentUpdateState(baseStatus),
     lastRestartReason,
     mostRecentError: lastError,
   };
@@ -958,7 +1134,9 @@ async function openDataFolder() { fs.mkdirSync(getAgentDataDirectory(), { recurs
 
 module.exports = {
   _test: {
+    compareVersions,
     expectedWindowsServiceCommand,
+    getLocalAgentUpdateState,
     getRegistrationStatusFromServiceState,
     validateWindowsServiceRegistration,
   },
@@ -982,5 +1160,6 @@ module.exports = {
   start,
   stop,
   uninstallService,
+  updateLocalAgent,
   validateConfig,
 };

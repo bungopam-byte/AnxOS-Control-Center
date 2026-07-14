@@ -13,6 +13,7 @@ async function main() {
   const port = await freePort();
   const serviceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentControlService.js"), "utf8");
   const ipcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "agentControlIpc.js"), "utf8");
+  const preloadSource = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const rendererSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   const htmlSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(serviceSource.includes("getConfiguredAgentStatus"), "Agent Control must expose configured Agent status separately from local status.");
@@ -28,9 +29,13 @@ async function main() {
   assert(serviceSource.includes("SERVICE_VERIFICATION_FAILED"), "Agent Control service install must verify registration after modification.");
   assert(serviceSource.includes("ensureLocalAgentBackendSelected"), "Starting the bundled local Agent must select the local Agent backend for first-time packaged users.");
   assert(serviceSource.includes("pairLocalAgentSecurely") && serviceSource.includes("readLocalAgentPairingStatus"), "Agent Control must expose secure automatic Local Agent pairing.");
+  assert(serviceSource.includes("updateLocalAgent") && serviceSource.includes("backupLocalAgentState") && serviceSource.includes("Local Agent Update Available"), "Agent Control must expose a safe Local Agent update flow.");
+  assert(serviceSource.includes("AGENT_NEWER_THAN_DESKTOP") && serviceSource.includes("LOCAL_AGENT_UPDATE_VERIFY_FAILED"), "Local Agent update flow must handle version skew and verification failures.");
   assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
   assert(ipcSource.includes("runLocalLifecycle") && ipcSource.includes('start: () => control.start()'), "Local Agent lifecycle actions must be available without requiring npm or Owner-only service installation.");
   assert(ipcSource.includes("agentControl:pairLocalAgent") && ipcSource.includes("pair-local-agent"), "Local Agent pairing must use the local lifecycle IPC path.");
+  assert(ipcSource.includes("agentControl:updateLocalAgent") && ipcSource.includes("update-local-agent"), "Local Agent updates must use the local lifecycle IPC path.");
+  assert(preloadSource.includes("updateLocalAgent") && preloadSource.includes("agentControl:updateLocalAgent"), "Preload must expose Local Agent update control.");
   assert(ipcSource.includes("installService: () => control.installService()") && ipcSource.includes("runAuthorized(channel, operation)"), "Background service installation must remain Owner-authorized.");
   assert(ipcSource.includes('ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null'), "Local Agent diagnostics must remain read-only and available without owner authorization.");
   assert(ipcSource.includes('authorize("remote-diagnostics")'), "Remote Agent diagnostic capture must remain owner-authorized.");
@@ -44,6 +49,7 @@ async function main() {
   assert(rendererSource.includes("function renderAgentBeginnerSummary") && rendererSource.includes("This Computer") && rendererSource.includes("Local AnxOS Agent") && rendererSource.includes("Connected Systems"), "Agent Control must render a beginner summary that separates desktop, local Agent, and remote systems.");
   assert(rendererSource.includes("getLocalAgentFriendlyState") && rendererSource.includes("Authentication issue") && rendererSource.includes("Start the bundled local Agent"), "Agent Control beginner summary must adapt actions to the real local Agent state.");
   assert(rendererSource.includes("api.pairLocalAgent({ rotate: true") && rendererSource.includes("repair-pairing"), "Renderer must repair and rotate Local Agent pairing without manual tokens.");
+  assert(rendererSource.includes("api.updateLocalAgent") && rendererSource.includes("Update Local Agent?"), "Renderer must route Local Agent update actions through Agent Control with confirmation.");
   assert(rendererSource.includes("data-agent-summary-page") && rendererSource.includes("runAgentControlAction(action)"), "Agent Control summary actions must reuse existing page routing and Agent Control operations.");
   assert(!rendererSource.includes('subtitle: "Remote Agent"') || rendererSource.includes("renderRemoteAgents"), "Local host rendering must not label the application host as a remote Agent.");
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
@@ -57,6 +63,9 @@ async function main() {
   assert.strictEqual(invalidService.valid, false, "Mismatched Windows service binary path should not validate.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: true, valid: false }), "invalid", "Invalid registration must not be reported as passed.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: false, verification: { state: "unverifiable" } }), "unverifiable", "Unverifiable registration must remain distinct from missing.");
+  assert.strictEqual(control._test.compareVersions("1.2.3", "1.2.4"), -1, "Version comparison should detect older Agent versions.");
+  assert.strictEqual(control._test.compareVersions("1.2.4", "1.2.3"), 1, "Version comparison should detect newer Agent versions.");
+  assert.strictEqual(control._test.getLocalAgentUpdateState({ agentVersion: "0.0.1" }).updateAvailable, true, "Older Local Agent versions should report an available update.");
   try {
     const saved = control.saveConfig({ name: "Control Smoke Agent", host: "127.0.0.1", port, allowedFolders: [root], restartPolicy: "never" });
     assert.strictEqual(saved.port, port);
@@ -70,6 +79,10 @@ async function main() {
     assert(Number.isFinite(started.runtime.memory.usedBytes), "Started Agent should expose normalized RAM usage.");
     assert(Number.isFinite(started.runtime.memory.totalBytes), "Started Agent should expose normalized RAM total.");
     assert(started.runtime.capabilities.lifecycle, "Local Agent runtime should report lifecycle support.");
+    assert(started.update && started.update.bundledVersion, "Local Agent status should expose update compatibility.");
+    const currentUpdate = await control.updateLocalAgent();
+    assert.strictEqual(currentUpdate.updated, false, "Updating an already-current Local Agent should be a safe no-op.");
+    assert(currentUpdate.steps.some((step) => step.id === "verify" && step.state === "complete"), "No-op update should still report verification.");
     const connectedAgain = await control.start();
     assert(connectedAgain.running, "Starting while a healthy local Agent is already listening should reconnect instead of spawning a duplicate process.");
     assert.strictEqual(connectedAgain.pid, started.pid, "Starting an already managed Agent should not spawn a duplicate process.");

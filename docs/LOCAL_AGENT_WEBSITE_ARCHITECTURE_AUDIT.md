@@ -294,3 +294,9 @@ Restore requests require explicit overwrite confirmation from the Desktop after 
 Public Access now models Playit, Tailscale, Cloudflare Tunnel, and Manual Port Forwarding through the shared provider snapshot. Provider rows expose normalized user-facing states such as Not Installed, Signed Out, Connected, Disconnected, Degraded, and Configuration Required instead of treating a detected binary as ready.
 
 Windows snapshots include firewall guidance for providers that may require inbound rules. Manual Port Forwarding records router configuration requirements, and local desktop builds expose an audited, confirmation-gated Windows Firewall rule action that validates protocol and port before invoking `netsh advfirewall`. The action is local-Windows only; remote Debian behavior remains unchanged.
+
+## Phase 17 Local Agent Updates Note
+
+Local Agent update handling now lives in Agent Control instead of the desktop application updater. The Desktop compares the running Local Agent version with the bundled Agent runtime, reports `Local Agent Update Available` for older Agents, blocks accidental downgrades when the Agent is newer than the Desktop, and exposes an audited local lifecycle update IPC path.
+
+The update flow backs up Agent configuration and identity state, stops the Agent, repairs service registration to the bundled runtime, records migration status, restarts the Agent, verifies health and version, and writes a last-update record. Instances, backups, logs, and temporary data are not overwritten. This is source- and smoke-tested on Linux; real Windows service replacement, rollback, and elevation behavior still require real-machine validation.

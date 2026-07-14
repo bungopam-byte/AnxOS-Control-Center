@@ -4997,7 +4997,7 @@ function stopAgentControlPolling() {
 async function runAgentControlAction(action) {
   const api = getDesktopApiState().api?.agentControl;
   if (!api || agentControlBusy) return;
-  const destructive = { stop: ["Stop local Agent?", "Active Agent operations will disconnect."], forceRestart: ["Force restart local Agent?", "The Agent process will be terminated immediately."], repairAgent: ["Repair local Agent?", "Background registration will be reinstalled and the Agent restarted."], uninstallService: ["Uninstall Agent background service?", "Automatic startup will be removed."], resetConfig: ["Reset Agent configuration?", "Current settings will be backed up before defaults are restored."] }[action];
+  const destructive = { stop: ["Stop local Agent?", "Active Agent operations will disconnect."], forceRestart: ["Force restart local Agent?", "The Agent process will be terminated immediately."], repairAgent: ["Repair local Agent?", "Background registration will be reinstalled and the Agent restarted."], updateAgent: ["Update Local Agent?", "AnxOS will back up Agent configuration, stop the Local Agent, repair the bundled runtime registration, restart it, and verify health."], uninstallService: ["Uninstall Agent background service?", "Automatic startup will be removed."], resetConfig: ["Reset Agent configuration?", "Current settings will be backed up before defaults are restored."] }[action];
   if (destructive && !(await createSecurityConfirmation({ title: destructive[0], message: destructive[1], confirmLabel: "Continue" }))) return;
   if (action === "refresh") {
     await refreshAgentControl({ includeConfig: true });
@@ -5008,7 +5008,7 @@ async function runAgentControlAction(action) {
     reconnect: "Reconnect Agent",
     repairAgent: "Repair local Agent",
     checkUpdates: "Check Agent updates",
-    updateAgent: "Download Agent update",
+    updateAgent: "Update Local Agent",
     installLocalAgent: "Install Local Agent",
     learnLocalAgent: "Learn about Local Agent",
     useRemoteAgent: "Use Remote Agent",
@@ -5050,8 +5050,15 @@ async function runAgentControlAction(action) {
       document.querySelector("[data-agent-setting='agentUrl']")?.focus();
     }
     else if (action === "repairAgent") { await api.pairLocalAgent({ rotate: false, reason: "repair" }); await api.installService(); if (!(await api.status())?.running) await api.start(); }
-    else if (action === "checkUpdates") await getDesktopApiState().api.updates.check({ silent: false });
-    else if (action === "updateAgent") await getDesktopApiState().api.updates.download();
+    else if (action === "checkUpdates") {
+      const status = await api.status();
+      showToast(status?.update?.state || "Local Agent update state checked.", status?.update?.updateAvailable ? "warning" : "info");
+    }
+    else if (action === "updateAgent") {
+      const result = await api.updateLocalAgent({ force: false });
+      if (result?.updated === false) showToast("Local Agent is already current.", "info");
+      else showToast("Local Agent updated and reconnected.", "success");
+    }
     else if (action === "rotateToken") { await api.pairLocalAgent({ rotate: true, reason: "manual-rotation" }); await api.restart(); }
     else if (action === "copyUrl") { await navigator.clipboard.writeText(getAgentControlOverviewTarget()?.agentUrl || ""); showToast("Agent URL copied.", "success"); }
     else if (action === "copyId") { await navigator.clipboard.writeText(getAgentControlOverviewTarget()?.identity?.deviceId || ""); showToast("Agent ID copied.", "success"); }

@@ -119,6 +119,9 @@ assert(pageMarkup("operations").includes('data-operation-action="clear-completed
 assert(app.includes("function startOperation") && app.includes("function updateOperation") && app.includes("function renderOperationsCenter"), "Renderer must own centralized operation tracking.");
 assert(app.includes("updateMarketplaceOperationFromEvent") && app.includes("activeMarketplaceOperationId"), "Marketplace installs must feed the Operations Center from real progress events.");
 assert(styles.includes(".marketplace-readiness-strip") && styles.includes(".marketplace-readiness-strip strong"), "Marketplace readiness strip CSS must exist.");
+assert(app.includes("async function clearInstanceConsole") && app.includes("Clear logs for ${selectedInstance.displayName || selectedInstance.id}?") && app.includes("createSecurityConfirmation"), "Instance console clear must use the in-app confirmation modal.");
+assert(app.includes("async function clearConsoleRows") && app.includes("Clear console output?") && app.includes("Console logs cleared."), "Monitoring console clear must use the in-app confirmation modal.");
+assert(styles.includes(".instance-console-toolbar") && styles.includes("position: sticky") && styles.includes(".instance-console-input") && styles.includes(".console-command-row"), "Console toolbars and command rows must remain sticky during long log sessions.");
 assert(app.includes("operationId = startOperation") && app.includes("fileTransfers.set(id"), "File transfers and subsystem actions must create Operations Center entries.");
 assert(styles.includes(".operations-shell") && styles.includes("@keyframes operationIndeterminate"), "Operations Center CSS must include page layout and indeterminate progress styling.");
 assert(pageMarkup("maintenance").includes("data-maintenance-list") && pageMarkup("maintenance").includes('data-maintenance-action="scan"'), "Maintenance Center must expose real scan controls and category history.");

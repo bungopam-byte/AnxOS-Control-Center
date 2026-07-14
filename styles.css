@@ -2192,9 +2192,14 @@ h3 {
   display: grid;
   grid-template-columns: 155px 58px minmax(0, 1fr);
   gap: 10px;
+  min-width: 0;
   color: #d8d0e4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.console-log-list li > span:last-child {
+  min-width: 0;
 }
 
 .console-log-list li.is-stderr,
@@ -2221,6 +2226,9 @@ h3 {
 }
 
 .console-command-row {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
@@ -5727,6 +5735,25 @@ body.is-resizing-files * {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+}
+
+.instance-console-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  padding: 10px 0;
+  background: rgba(11, 5, 22, 0.94);
+  backdrop-filter: blur(12px);
+}
+
+.instance-console-input {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  padding: 10px 0;
+  border-top: 1px solid rgba(185, 148, 255, 0.14);
+  background: rgba(11, 5, 22, 0.94);
+  backdrop-filter: blur(12px);
 }
 
 .instance-console-toolbar input,

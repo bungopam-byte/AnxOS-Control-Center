@@ -9780,7 +9780,11 @@ async function sendInstanceConsoleCommand(event) {
 async function clearInstanceConsole() {
   const selectedInstance = findInstance();
 
-  if (!selectedInstance || !window.confirm(`Clear logs for ${selectedInstance.displayName || selectedInstance.id}?`)) {
+  if (!selectedInstance || !(await createSecurityConfirmation({
+    title: `Clear logs for ${selectedInstance.displayName || selectedInstance.id}?`,
+    message: "This clears the captured log buffer for the selected stream. It does not stop the instance.",
+    confirmLabel: "Clear Logs",
+  }))) {
     return;
   }
 
@@ -22537,6 +22541,16 @@ async function clearConsoleRows() {
   }
 
   const instance = getActiveConsoleInstance();
+  if (!(await createSecurityConfirmation({
+    title: instance ? `Clear logs for ${instance.displayName || instance.id}?` : "Clear console output?",
+    message: instance
+      ? "This clears the captured log buffer for the selected instance. It does not stop the instance."
+      : "This clears the visible console output in this workspace.",
+    confirmLabel: "Clear Logs",
+  }))) {
+    return;
+  }
+
   if (instance && getDesktopApiState().hasInstances) {
     try {
       await getDesktopApiState().api.instances.clearLogs(instance.id, { stream: "all" });

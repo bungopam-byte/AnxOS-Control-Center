@@ -25,12 +25,21 @@ Feature implementation is complete for this milestone. Static Windows packaging 
 - Users comfortable reporting bugs.
 - Users who understand this is not a stable release.
 
+## Who it is for
+
+This release is for invited Windows testers who want to run servers from their own PC while helping validate the Local Agent milestone.
+
+New installations are guided toward the Windows installer, onboarding, Use This PC, Local Agent installation, secure local pairing, dependency scanning, and Marketplace setup.
+
+Existing remote Agent users do not need to change their Debian or remote Windows Agent setup. They can keep using existing remote nodes and add `This PC` later.
+
 ## Known limitations
 
 - Windows-only limitation: the beginner Local Agent setup flow is written for Windows.
 - Windows Local Agent support is the focus of this release path. macOS Local Agent support is not documented or claimed.
 - Linux desktop packages remain available, but the beginner Local Agent flow is written for Windows.
 - No additional clean Windows installation test was completed.
+- real-machine Windows installation, service startup after reboot, Marketplace installs, backups, and Public Access were not completed for this Private Alpha gate.
 - Windows service lifecycle was not validated on a fresh Windows installation.
 - Reboot persistence was not validated.
 - Automatic pairing was not validated on a clean Windows machine.

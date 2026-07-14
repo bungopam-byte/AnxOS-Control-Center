@@ -264,3 +264,9 @@ Remote node profile behavior is unchanged. The profile is source- and smoke-test
 A healthy discovered Local Agent now becomes the default management target as `This PC` when the user has not explicitly selected an existing remote node. Explicit remote selections are preserved, and if a previously selected non-local node disappears the renderer shows a plain fallback warning instead of silently changing targets.
 
 This phase keeps all pages on the shared node-selection path rather than duplicating Local Agent views. Destructive-action destination labeling and full Marketplace/instance/files/backups validation remain later-phase work.
+
+## Phase 12 Local Windows Marketplace Note
+
+Marketplace template installation now resolves platform-specific template overlays before validation, dependency checks, downloads, installers, config generation, metadata detection, and startup configuration. Windows Local Agent installs can use Windows variants without changing the existing Debian/Linux template definitions.
+
+The Windows variants cover Forge and NeoForge `run.bat` startup, Windows TShock and FiveM archive downloads, Windows SteamCMD executable verification and startup for Valheim, Rust, CS2, and Palworld, and managed startup environment values such as `SteamAppId`. Archive installers on Windows use a PowerShell `Expand-Archive` path instead of Bash. This phase is source- and smoke-tested only; real Windows SteamCMD, FiveM, TShock, and game-server binary validation remains required before production release claims.

@@ -242,6 +242,28 @@
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
     },
+    "platforms": {
+      "windows": {
+        "postInstall": {
+          "requiredFiles": [
+            "run.bat"
+          ]
+        },
+        "startup": {
+          "executable": "cmd.exe",
+          "args": [
+            "/c",
+            "run.bat",
+            "nogui"
+          ],
+          "workingDirectory": "data",
+          "restartPolicy": "on-failure"
+        },
+        "installMetadata": {
+          "notes": "Forge generates run.bat on Windows Local Agent installs. Java is required on This PC."
+        }
+      }
+    },
     "installScript": [
       "create-instance",
       "create-folders",
@@ -309,6 +331,28 @@
       ],
       "workingDirectory": "data",
       "restartPolicy": "on-failure"
+    },
+    "platforms": {
+      "windows": {
+        "postInstall": {
+          "requiredFiles": [
+            "run.bat"
+          ]
+        },
+        "startup": {
+          "executable": "cmd.exe",
+          "args": [
+            "/c",
+            "run.bat",
+            "nogui"
+          ],
+          "workingDirectory": "data",
+          "restartPolicy": "on-failure"
+        },
+        "installMetadata": {
+          "notes": "NeoForge generates run.bat on Windows Local Agent installs. Java is required on This PC."
+        }
+      }
     },
     "installScript": [
       "create-instance",
@@ -555,6 +599,52 @@
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
+    "platforms": {
+      "windows": {
+        "hostDependencies": [
+          "dotnet-runtime"
+        ],
+        "downloadSource": {
+          "assetPattern": "(win|windows).*x64.*\\.zip$|x64.*(win|windows).*\\.zip$",
+          "fileName": "tshock-windows.zip"
+        },
+        "downloads": [
+          {
+            "type": "url",
+            "resolver": "github-release",
+            "repo": "Pryaxis/TShock",
+            "assetPattern": "(win|windows).*x64.*\\.zip$|x64.*(win|windows).*\\.zip$",
+            "destination": "data/tshock-windows.zip",
+            "fileName": "tshock-windows.zip",
+            "required": true,
+            "overwrite": true
+          }
+        ],
+        "installer": {
+          "archive": "tshock-windows.zip",
+          "verifyFiles": [
+            "server/TShock.Server.exe"
+          ]
+        },
+        "startup": {
+          "executable": "TShock.Server.exe",
+          "args": [
+            "-port",
+            "{port}",
+            "-world",
+            "Worlds\\world.wld",
+            "-autocreate",
+            "2"
+          ],
+          "workingDirectory": "data/server",
+          "restartPolicy": "on-failure"
+        },
+        "installMetadata": {
+          "source": "Pryaxis/TShock latest Windows x64 release archive",
+          "notes": "Requires the .NET runtime on This PC. TShock may ask for an initial setup token in the console on first start."
+        }
+      }
+    },
     "installMetadata": {
       "method": "github-release",
       "source": "Pryaxis/TShock latest Linux x64 release archive",
@@ -627,6 +717,42 @@
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
     },
+    "platforms": {
+      "windows": {
+        "installer": {
+          "verifyFiles": [
+            "server/valheim_server.exe"
+          ]
+        },
+        "startup": {
+          "executable": "valheim_server.exe",
+          "args": [
+            "-nographics",
+            "-batchmode",
+            "-name",
+            "{name}",
+            "-port",
+            "{port}",
+            "-world",
+            "Dedicated",
+            "-password",
+            "changeme123",
+            "-public",
+            "1",
+            "-savedir",
+            "saves"
+          ],
+          "workingDirectory": "data/server",
+          "restartPolicy": "on-failure",
+          "environment": {
+            "SteamAppId": "892970"
+          }
+        },
+        "installMetadata": {
+          "notes": "Requires SteamCMD on This PC. Change the default password before exposing the server publicly."
+        }
+      }
+    },
     "installMetadata": {
       "method": "steamcmd",
       "appId": 896660,
@@ -697,6 +823,42 @@
       ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
+    },
+    "platforms": {
+      "windows": {
+        "installer": {
+          "verifyFiles": [
+            "server/RustDedicated.exe"
+          ]
+        },
+        "startup": {
+          "executable": "RustDedicated.exe",
+          "args": [
+            "-batchmode",
+            "+server.port",
+            "{port}",
+            "+server.queryport",
+            "28016",
+            "+server.identity",
+            "anxhub",
+            "+server.hostname",
+            "{name}",
+            "+server.maxplayers",
+            "50",
+            "+server.worldsize",
+            "3500",
+            "+server.seed",
+            "12345",
+            "+server.saveinterval",
+            "300"
+          ],
+          "workingDirectory": "data/server",
+          "restartPolicy": "on-failure"
+        },
+        "installMetadata": {
+          "notes": "Requires SteamCMD on This PC. Rust Windows server support depends on the current Steam dedicated-server depot."
+        }
+      }
     },
     "configFiles": [
       {
@@ -780,6 +942,39 @@
       ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
+    },
+    "platforms": {
+      "windows": {
+        "installer": {
+          "verifyFiles": [
+            "server/game/bin/win64/cs2.exe"
+          ]
+        },
+        "startup": {
+          "executable": "cmd.exe",
+          "args": [
+            "/c",
+            "game\\bin\\win64\\cs2.exe",
+            "-dedicated",
+            "-usercon",
+            "-port",
+            "{port}",
+            "+game_type",
+            "0",
+            "+game_mode",
+            "1",
+            "+map",
+            "de_dust2",
+            "+servercfgfile",
+            "server.cfg"
+          ],
+          "workingDirectory": "data/server",
+          "restartPolicy": "on-failure"
+        },
+        "installMetadata": {
+          "notes": "Requires SteamCMD on This PC. Public Internet servers may require a Steam Game Server Login Token configured by the operator."
+        }
+      }
     },
     "configFiles": [
       {
@@ -871,6 +1066,43 @@
       "workingDirectory": "data/server",
       "restartPolicy": "never"
     },
+    "platforms": {
+      "windows": {
+        "downloadSource": {
+          "resolver": "fivem-windows",
+          "fileName": "server.zip"
+        },
+        "downloads": [
+          {
+            "type": "url",
+            "resolver": "fivem-windows",
+            "destination": "data/server.zip",
+            "fileName": "server.zip",
+            "required": true,
+            "overwrite": true
+          }
+        ],
+        "installer": {
+          "archive": "server.zip",
+          "verifyFiles": [
+            "server/FXServer.exe"
+          ]
+        },
+        "startup": {
+          "executable": "FXServer.exe",
+          "args": [
+            "+exec",
+            "server.cfg"
+          ],
+          "workingDirectory": "data/server",
+          "restartPolicy": "never"
+        },
+        "installMetadata": {
+          "source": "runtime.fivem.net Windows FXServer artifacts",
+          "notes": "A Cfx.re license key must be added to server.cfg before start."
+        }
+      }
+    },
     "configFiles": [
       {
         "path": "server/server.cfg",
@@ -960,6 +1192,31 @@
       ],
       "workingDirectory": "data/server",
       "restartPolicy": "on-failure"
+    },
+    "platforms": {
+      "windows": {
+        "installer": {
+          "verifyFiles": [
+            "server/PalServer.exe"
+          ]
+        },
+        "startup": {
+          "executable": "PalServer.exe",
+          "args": [
+            "-port={serverPort}",
+            "-players={maxPlayers}",
+            "-useperfthreads",
+            "-NoAsyncLoadingThread",
+            "-UseMultithreadForDS"
+          ],
+          "workingDirectory": "data/server",
+          "restartPolicy": "on-failure"
+        },
+        "installMetadata": {
+          "notes": "Requires SteamCMD on This PC. Edit Pal/Saved/Config/WindowsServer/PalWorldSettings.ini after first start for production settings."
+        },
+        "configNotes": "Edit Pal/Saved/Config/WindowsServer/PalWorldSettings.ini after first start for production settings."
+      }
     },
     "installMetadata": {
       "method": "steamcmd",

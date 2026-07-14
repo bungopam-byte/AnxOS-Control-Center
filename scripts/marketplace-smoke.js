@@ -191,7 +191,55 @@ function assertSteamCmdTemplates() {
     assert.notStrictEqual(payload.executable, "node", `${id} must not instantiate a placeholder Node task.`);
     assert(!payload.args.includes("-jar"), `${id} must not start through the Minecraft jar pipeline.`);
     assert(!payload.args.includes("server.jar"), `${id} must not reference server.jar.`);
+
+    const windowsTemplate = marketplaceService._test.resolveTemplateForPlatform(template, "windows");
+    assert.strictEqual(windowsTemplate.targetPlatform, "windows", `${id} should resolve a Windows platform variant.`);
+    assert(!String(windowsTemplate.startup?.executable || "").includes("bash"), `${id} Windows variant must not use Bash.`);
+    assert(
+      (windowsTemplate.installer?.verifyFiles || []).some((filePath) => /\.exe$/i.test(filePath)),
+      `${id} Windows variant must verify a Windows executable.`
+    );
   }
+}
+
+function assertWindowsMarketplaceTemplateVariants() {
+  const serviceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceService.js"), "utf8");
+  assert(serviceSource.includes("function resolveTemplateForPlatform"), "Marketplace should resolve platform-specific template overlays.");
+  assert(serviceSource.includes("buildWindowsArchiveInstallerScript"), "Windows archive Marketplace installers should avoid Bash.");
+  assert(serviceSource.includes("fivem-windows"), "FiveM resolver should support Windows artifacts.");
+  assert(serviceSource.includes("powershell.exe") && serviceSource.includes("Expand-Archive"), "Windows archive installers should use PowerShell Expand-Archive.");
+
+  const forge = marketplaceService._test.resolveTemplateForPlatform(findTemplate("minecraft-forge"), "windows");
+  assert.strictEqual(forge.startup.executable, "cmd.exe", "Forge Windows startup should use cmd.exe.");
+  assert.deepStrictEqual(forge.startup.args.slice(0, 2), ["/c", "run.bat"], "Forge Windows startup should use run.bat.");
+  assert.deepStrictEqual(forge.postInstall.requiredFiles, ["run.bat"], "Forge Windows post-install should verify run.bat.");
+
+  const neoforge = marketplaceService._test.resolveTemplateForPlatform(findTemplate("minecraft-neoforge"), "windows");
+  assert.strictEqual(neoforge.startup.executable, "cmd.exe", "NeoForge Windows startup should use cmd.exe.");
+  assert.deepStrictEqual(neoforge.postInstall.requiredFiles, ["run.bat"], "NeoForge Windows post-install should verify run.bat.");
+
+  const tshock = marketplaceService._test.resolveTemplateForPlatform(findTemplate("terraria-tshock"), "windows");
+  assert.strictEqual(tshock.downloads[0].resolver, "github-release", "TShock Windows should still use the official GitHub release resolver.");
+  assert.match(tshock.downloads[0].assetPattern, /win|windows/i, "TShock Windows should select Windows release assets.");
+  assert.strictEqual(tshock.startup.executable, "TShock.Server.exe", "TShock Windows should start the Windows executable.");
+
+  const fivem = marketplaceService._test.resolveTemplateForPlatform(findTemplate("fivem"), "windows");
+  assert.strictEqual(fivem.downloads[0].resolver, "fivem-windows", "FiveM Windows should resolve Windows artifacts.");
+  assert.strictEqual(fivem.installer.archive, "server.zip", "FiveM Windows should install the Windows zip artifact.");
+  assert.strictEqual(fivem.startup.executable, "FXServer.exe", "FiveM Windows should start FXServer.exe.");
+
+  const valheim = marketplaceService._test.resolveTemplateForPlatform(findTemplate("valheim"), "windows");
+  const valheimPayload = marketplaceService._test.buildInstancePayload(valheim, { id: "valheim-win", name: "Valheim Win", port: 2456 }, valheim.defaultPorts);
+  assert.strictEqual(valheimPayload.environment.SteamAppId, "892970", "Valheim Windows should carry SteamAppId in the managed environment.");
+
+  const cs2 = marketplaceService._test.resolveTemplateForPlatform(findTemplate("cs2"), "windows");
+  assert.strictEqual(cs2.startup.executable, "cmd.exe", "CS2 Windows should use cmd.exe for nested executable launch.");
+  assert(cs2.startup.args.includes("game\\bin\\win64\\cs2.exe"), "CS2 Windows should launch the Windows CS2 executable.");
+
+  const palworld = marketplaceService._test.resolveTemplateForPlatform(findTemplate("palworld"), "windows");
+  const palworldPayload = marketplaceService._test.buildInstancePayload(palworld, { id: "palworld-win", name: "Palworld Win", serverPort: 8211, maxPlayers: 32 }, palworld.defaultPorts);
+  assert.strictEqual(palworld.startup.executable, "PalServer.exe", "Palworld Windows should start PalServer.exe.");
+  assert(palworldPayload.args.includes("-port=8211"), "Palworld Windows startup should preserve numeric port normalization.");
 }
 
 function assertPalworldNumericValidation() {
@@ -3061,6 +3109,7 @@ async function main() {
   assertDashboardRuntimeFallbacks();
   await assertDisabledTemplatesAreBlocked();
   assertSteamCmdTemplates();
+  assertWindowsMarketplaceTemplateVariants();
   assertPalworldNumericValidation();
   assertMarketplaceInstallerRegistry();
   assertMarketplaceRuntimeSettingsReferencesAreScoped();

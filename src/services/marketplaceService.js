@@ -14,7 +14,7 @@ const {
   validateMarketplaceCatalog,
   validateMarketplaceTemplate,
 } = require("./marketplaceInstallerRegistry");
-const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
+const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 const { redactString, sanitize } = require("../shared/redaction");
 
@@ -530,6 +530,67 @@ function readTemplatesFile() {
     installScript: [],
     ...template,
   }));
+}
+
+function deepMergeTemplate(base, override) {
+  if (!override || typeof override !== "object" || Array.isArray(override)) {
+    return base;
+  }
+  return Object.entries(override).reduce((merged, [key, value]) => {
+    if (value && typeof value === "object" && !Array.isArray(value) && merged[key] && typeof merged[key] === "object" && !Array.isArray(merged[key])) {
+      merged[key] = deepMergeTemplate({ ...merged[key] }, value);
+    } else {
+      merged[key] = value;
+    }
+    return merged;
+  }, { ...base });
+}
+
+function normalizeTargetPlatform(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "win32" || normalized === "windows") return "windows";
+  if (normalized === "linux") return "linux";
+  if (normalized === "darwin" || normalized === "macos" || normalized === "mac") return "macos";
+  return normalized || "";
+}
+
+function getInstallTargetPlatform(payload = {}, agentConfig = null) {
+  const explicit = normalizeTargetPlatform(payload.platform || payload.targetPlatform || payload.options?.platform);
+  if (explicit) {
+    return explicit;
+  }
+
+  const node = getNode(payload.nodeId || getSelectedNodeId());
+  return normalizeTargetPlatform(
+    node?.profile?.platform ||
+      node?.localProfile?.platform ||
+      node?.connection?.platform ||
+      node?.platform ||
+      agentConfig?.platform ||
+      agentConfig?.os ||
+      ""
+  );
+}
+
+function resolveTemplateForPlatform(template = {}, platform = "") {
+  const targetPlatform = normalizeTargetPlatform(platform);
+  const platformConfig = targetPlatform ? template.platforms?.[targetPlatform] : null;
+  if (!platformConfig) {
+    return {
+      ...template,
+      targetPlatform: targetPlatform || null,
+      platformVariant: null,
+    };
+  }
+
+  const merged = deepMergeTemplate(template, platformConfig);
+  delete merged.platforms;
+  return {
+    ...merged,
+    targetPlatform,
+    platformVariant: targetPlatform,
+    platformNotes: platformConfig.notes || template.platformNotes || null,
+  };
 }
 
 function listTemplates() {
@@ -1921,20 +1982,25 @@ async function resolveGithubReleaseDownload(download, options = {}, context = {}
 }
 
 async function resolveFiveMDownload(download = {}, options = {}, context = {}) {
-  const listingUrl = "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/";
+  const windows = download.resolver === "fivem-windows" || download.platform === "windows";
+  const fileName = windows ? "server.zip" : "fx.tar.xz";
+  const listingUrl = windows
+    ? "https://runtime.fivem.net/artifacts/fivem/build_server_windows/master/"
+    : "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/";
   const { body: html } = await fetchTextWithDetails(listingUrl, "FiveM artifact lookup", context);
-  const hrefs = [...html.matchAll(/href="([^"]+fx\.tar\.xz)"/gi)].map((match) => match[1]);
+  const hrefPattern = windows ? /href="([^"]+server\.zip)"/gi : /href="([^"]+fx\.tar\.xz)"/gi;
+  const hrefs = [...html.matchAll(hrefPattern)].map((match) => match[1]);
   const href = hrefs[0];
   if (!href) {
     throw createMarketplaceStepError("Unable to resolve latest FiveM FXServer artifact.", "DOWNLOAD_RESOLVE_FAILED", {
       ...context,
       url: listingUrl,
       body: html,
-      message: "FiveM artifact listing did not include an fx.tar.xz download.",
+      message: `FiveM artifact listing did not include a ${fileName} download.`,
     });
   }
 
-  const version = String(href).match(/\/([^/]+)\/fx\.tar\.xz$/i)?.[1] || "latest";
+  const version = String(href).match(new RegExp(`/([^/]+)/${fileName.replace(".", "\\.")}$`, "i"))?.[1] || "latest";
   return {
     url: new URL(href, listingUrl).toString(),
     version,
@@ -2009,7 +2075,7 @@ async function resolveDownloadUrl(download, options = {}, context = {}) {
     return resolveGithubReleaseDownload(download, options, context);
   }
 
-  if (download.resolver === "fivem-linux") {
+  if (download.resolver === "fivem-linux" || download.resolver === "fivem-windows") {
     return resolveFiveMDownload(download, options, context);
   }
 
@@ -2040,11 +2106,60 @@ function shellQuote(value) {
   return `'${String(value ?? "").replace(/'/g, "'\"'\"'")}'`;
 }
 
+function psSingleQuote(value) {
+  return `'${String(value ?? "").replace(/'/g, "''")}'`;
+}
+
 function normalizeArchiveVerifyFile(filePath, extractDir) {
   const normalizedFile = normalizeInstanceFilePath(filePath);
   const normalizedExtractDir = normalizeInstanceFilePath(extractDir).replace(/\/+$/, "");
   const prefix = `${normalizedExtractDir}/`;
   return normalizedFile.startsWith(prefix) ? normalizedFile.slice(prefix.length) : normalizedFile;
+}
+
+function buildWindowsArchiveInstallerScript(installer) {
+  const archivePath = normalizeInstanceFilePath(installer.archive || getPrimaryArtifactPath(installer.template || {}, {}));
+  const extractDir = normalizeInstanceFilePath(installer.extractDir || "server");
+  if (!/\.zip$/i.test(archivePath)) {
+    throw createMarketplaceError("Windows archive installers currently require a .zip archive.", "INSTALLER_TYPE_UNSUPPORTED", {
+      installerType: "archive-download",
+      platform: "windows",
+      archive: archivePath,
+    });
+  }
+  const expectedFiles = (Array.isArray(installer.verifyFiles) ? installer.verifyFiles : [])
+    .map((filePath) => normalizeArchiveVerifyFile(filePath, extractDir))
+    .filter(Boolean);
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    `$archivePath = ${psSingleQuote(archivePath)}`,
+    `$extractDir = ${psSingleQuote(extractDir)}`,
+    "New-Item -ItemType Directory -Force -Path $extractDir | Out-Null",
+    "Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force",
+    `$expectedFiles = @(${expectedFiles.map(psSingleQuote).join(", ")})`,
+    "if ($expectedFiles.Count -gt 0) {",
+    "  $missing = $false",
+    "  foreach ($expectedFile in $expectedFiles) {",
+    "    if (-not (Test-Path -LiteralPath (Join-Path $extractDir $expectedFile))) { $missing = $true }",
+    "  }",
+    "  if ($missing) {",
+    "    $children = @(Get-ChildItem -LiteralPath $extractDir -Force)",
+    "    $directories = @($children | Where-Object { $_.PSIsContainer })",
+    "    if ($children.Count -eq 1 -and $directories.Count -eq 1) {",
+    "      $root = $directories[0].FullName",
+    "      $rootMatches = $true",
+    "      foreach ($expectedFile in $expectedFiles) {",
+    "        if (-not (Test-Path -LiteralPath (Join-Path $root $expectedFile))) { $rootMatches = $false }",
+    "      }",
+    "      if ($rootMatches) {",
+    "        Get-ChildItem -LiteralPath $root -Force | Move-Item -Destination $extractDir -Force",
+    "        Remove-Item -LiteralPath $root -Force",
+    "      }",
+    "    }",
+    "  }",
+    "}",
+    "",
+  ].join("\n");
 }
 
 function templateValue(key, template, options = {}, ports = []) {
@@ -2390,13 +2505,22 @@ function buildTemplateVersionInfo(template, values = {}) {
   };
 }
 
+function getTemplateStartupEnvironment(template = {}) {
+  return template.startup?.environment && typeof template.startup.environment === "object" && !Array.isArray(template.startup.environment)
+    ? Object.entries(template.startup.environment).reduce((environment, [key, value]) => {
+      environment[String(key)] = String(value ?? "");
+      return environment;
+    }, {})
+    : {};
+}
+
 function buildInstancePayload(template, options, ports) {
   const name = normalizeName(options.name, template.displayName || "AnxOS Instance");
   const id = slugify(options.id || name);
   const memory = normalizeName(options.memory, template.defaultRam || "");
   const isMinecraft = template.category === "Minecraft";
   const tags = normalizeTemplateTags(template, isMinecraft);
-  const environment = {};
+  const environment = getTemplateStartupEnvironment(template);
   const serverSoftware = getTemplateServerSoftware(template);
   const game = getTemplateGameFamily(template);
   const requestedVersion = options.version && String(options.version).trim() ? String(options.version).trim() : "";
@@ -2622,6 +2746,7 @@ function buildStartupPatch(template, options, ports) {
       executable: template.startup.executable || "java",
       args: resolveTemplateArgs(template.startup.args, template, options),
       workingDirectory: template.startup.workingDirectory || "data",
+      environment: getTemplateStartupEnvironment(template),
       memoryLimit: normalizeName(options.memory, template.defaultRam || ""),
       ports,
       restartPolicy: template.startup.restartPolicy || "on-failure",
@@ -3116,17 +3241,26 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
       });
     }
 
-    const script = buildTemplateInstallerScript(template);
+    const windowsArchiveInstaller = template.targetPlatform === "windows" && installerType === "archive-download";
+    const script = windowsArchiveInstaller
+      ? buildWindowsArchiveInstallerScript({
+        ...template.installer,
+        archive: normalizeInstanceFilePath(template.installer.archive || getPrimaryArtifactPath(template)),
+        template,
+      })
+      : buildTemplateInstallerScript(template);
     if (!script) {
       return createInstallerResultOk("installed", { artifacts: [] });
     }
 
-    const scriptPath = "runtime/marketplace-install.sh";
+    const scriptPath = windowsArchiveInstaller ? "runtime/marketplace-install.ps1" : "runtime/marketplace-install.sh";
     await writeInstanceText(instanceId, scriptPath, script, agentConfig);
     pushStep(progress, "Extract files", "running", `Running ${template.installer.type} installer.`);
     await agentClient.updateInstance(instanceId, {
-      executable: "bash",
-      args: [scriptPath],
+      executable: windowsArchiveInstaller ? "powershell.exe" : "bash",
+      args: windowsArchiveInstaller
+        ? ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath]
+        : [scriptPath],
       workingDirectory: "data",
       restartPolicy: "never",
       startupTimeoutMs: template.installer.timeoutMs || 600000,
@@ -3136,7 +3270,7 @@ async function runTemplateInstaller(template, options, instanceId, progress, age
       step: "Extract files",
       installerType,
       handlerName: "runTemplateInstaller",
-      command: `bash ${scriptPath}`,
+      command: windowsArchiveInstaller ? `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ${scriptPath}` : `bash ${scriptPath}`,
     });
 
     const requiredFiles = Array.isArray(template.installer.verifyFiles) ? template.installer.verifyFiles : [];
@@ -3557,7 +3691,10 @@ async function downloadToInstance(template, options, instanceId, progress, agent
 }
 
 async function installTemplate(payload = {}) {
-  const template = findTemplate(payload.templateId, payload.template);
+  const baseTemplate = findTemplate(payload.templateId, payload.template);
+  const agentConfig = resolveMarketplaceAgentConfig(payload.nodeId);
+  const targetPlatform = getInstallTargetPlatform(payload, agentConfig);
+  const template = resolveTemplateForPlatform(baseTemplate, targetPlatform);
   const progress = [];
   pushStep(progress, "Validate template", "running", `Validating ${template.id}.`);
   if (template.comingSoon || template.disabled) {
@@ -3568,7 +3705,6 @@ async function installTemplate(payload = {}) {
 
   const options = normalizeMarketplaceInstallOptions(template, payload.options || {});
   const parentRecord = createInstallTaskRecord(template, options);
-  const agentConfig = resolveMarketplaceAgentConfig(payload.nodeId);
   const ports = template.category === "Minecraft"
     ? [resolveMinecraftPort(options, template.defaultPorts)]
     : parsePorts(options.ports || options.port, template.defaultPorts);
@@ -3886,6 +4022,7 @@ module.exports = {
     normalizePalworldInstallOptions,
     normalizeTemplateDownloads,
     normalizeTemplateTags,
+    resolveTemplateForPlatform,
     parsePorts,
     resolveMarketplaceAgentConfig,
     uniqueVersionEntries,

@@ -1,8 +1,8 @@
-const childProcess = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs/promises");
 const fsSync = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 
 const { getConfig } = require("../config");
 const instanceService = require("./instances/instanceService");
@@ -11,6 +11,7 @@ const BACKUP_FORMAT = "tar.gz";
 const BACKUP_EXTENSION = ".tar.gz";
 const DEFAULT_RETENTION_COUNT = 10;
 const DEFAULT_RETENTION_DAYS = 30;
+const TAR_BLOCK_SIZE = 512;
 let schedulerStarted = false;
 
 function createBackupError(code, statusCode = 400) {
@@ -58,6 +59,264 @@ function sanitizeName(value, fallback) {
     .slice(0, 120) || "Backup";
 }
 
+function toArchivePath(value) {
+  return String(value || "")
+    .split(path.sep)
+    .join("/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/");
+}
+
+function assertSafeArchiveEntryName(name) {
+  const normalized = toArchivePath(name);
+  if (
+    !normalized ||
+    normalized.includes("\0") ||
+    normalized.includes("\\") ||
+    path.posix.isAbsolute(normalized) ||
+    path.win32.isAbsolute(normalized) ||
+    /^[a-zA-Z]:/.test(normalized)
+  ) {
+    throw createBackupError("BACKUP_ARCHIVE_PATH_UNSAFE", 400);
+  }
+
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    throw createBackupError("BACKUP_ARCHIVE_PATH_UNSAFE", 400);
+  }
+
+  return segments.join("/");
+}
+
+function writeOctal(buffer, value, offset, length) {
+  const text = Math.max(0, Number(value) || 0).toString(8).padStart(length - 1, "0").slice(-(length - 1));
+  buffer.write(`${text}\0`, offset, length, "ascii");
+}
+
+function splitTarName(name) {
+  const nameBuffer = Buffer.from(name);
+  if (nameBuffer.length <= 100) {
+    return { name, prefix: "" };
+  }
+
+  const segments = name.split("/");
+  for (let index = 1; index < segments.length; index += 1) {
+    const prefix = segments.slice(0, index).join("/");
+    const suffix = segments.slice(index).join("/");
+    if (Buffer.byteLength(prefix) <= 155 && Buffer.byteLength(suffix) <= 100) {
+      return { name: suffix, prefix };
+    }
+  }
+
+  throw createBackupError("BACKUP_PATH_TOO_LONG", 400);
+}
+
+function createTarHeader(entry) {
+  const safeName = assertSafeArchiveEntryName(entry.name);
+  const split = splitTarName(safeName);
+  const header = Buffer.alloc(TAR_BLOCK_SIZE, 0);
+  header.write(split.name, 0, 100, "utf8");
+  writeOctal(header, entry.mode || (entry.type === "directory" ? 0o755 : 0o644), 100, 8);
+  writeOctal(header, 0, 108, 8);
+  writeOctal(header, 0, 116, 8);
+  writeOctal(header, entry.type === "directory" ? 0 : entry.size || 0, 124, 12);
+  writeOctal(header, Math.floor((entry.mtime || Date.now()) / 1000), 136, 12);
+  header.fill(" ", 148, 156);
+  header.write(entry.type === "directory" ? "5" : "0", 156, 1, "ascii");
+  header.write("ustar\0", 257, 6, "ascii");
+  header.write("00", 263, 2, "ascii");
+  if (split.prefix) {
+    header.write(split.prefix, 345, 155, "utf8");
+  }
+  let checksum = 0;
+  for (const byte of header) {
+    checksum += byte;
+  }
+  const checksumText = checksum.toString(8).padStart(6, "0").slice(-6);
+  header.write(`${checksumText}\0 `, 148, 8, "ascii");
+  return header;
+}
+
+function padTarData(buffer) {
+  const remainder = buffer.length % TAR_BLOCK_SIZE;
+  return remainder === 0 ? Buffer.alloc(0) : Buffer.alloc(TAR_BLOCK_SIZE - remainder, 0);
+}
+
+async function collectArchiveEntries(instancePath, sourcePaths) {
+  const entries = [];
+
+  async function visit(relativePath) {
+    const safeRelativePath = relativePath === "." ? "." : assertSafeArchiveEntryName(toArchivePath(relativePath));
+    const absolutePath = path.resolve(instancePath, relativePath);
+    if (!isInsideRoot(absolutePath, instancePath)) {
+      throw createBackupError("PATH_NOT_ALLOWED", 403);
+    }
+
+    const stats = await fs.lstat(absolutePath);
+    if (stats.isSymbolicLink()) {
+      throw createBackupError("BACKUP_UNSUPPORTED_FILE_TYPE", 400);
+    }
+
+    if (stats.isDirectory()) {
+      const archivePath = safeRelativePath === "." ? "" : safeRelativePath.replace(/\/?$/, "/");
+      if (archivePath) {
+        entries.push({
+          name: archivePath,
+          absolutePath,
+          type: "directory",
+          size: 0,
+          mtime: stats.mtimeMs,
+          mode: stats.mode & 0o777,
+        });
+      }
+      const children = await fs.readdir(absolutePath);
+      children.sort((left, right) => left.localeCompare(right));
+      for (const child of children) {
+        await visit(relativePath === "." ? child : path.join(relativePath, child));
+      }
+      return;
+    }
+
+    if (!stats.isFile()) {
+      throw createBackupError("BACKUP_UNSUPPORTED_FILE_TYPE", 400);
+    }
+
+    entries.push({
+      name: safeRelativePath,
+      absolutePath,
+      type: "file",
+      size: stats.size,
+      mtime: stats.mtimeMs,
+      mode: stats.mode & 0o777,
+    });
+  }
+
+  for (const sourcePath of sourcePaths) {
+    await visit(sourcePath);
+  }
+
+  return entries;
+}
+
+async function writeTarGzArchive(archivePathValue, instancePath, sourcePaths) {
+  const entries = await collectArchiveEntries(instancePath, sourcePaths);
+  const chunks = [];
+  let uncompressedSize = 0;
+
+  for (const entry of entries) {
+    chunks.push(createTarHeader(entry));
+    if (entry.type === "file") {
+      const content = await fs.readFile(entry.absolutePath);
+      chunks.push(content, padTarData(content));
+      uncompressedSize += content.length;
+    }
+  }
+
+  chunks.push(Buffer.alloc(TAR_BLOCK_SIZE * 2, 0));
+  await fs.writeFile(archivePathValue, zlib.gzipSync(Buffer.concat(chunks)), { mode: 0o600 });
+  return {
+    entryCount: entries.length,
+    uncompressedSize,
+  };
+}
+
+function parseOctal(buffer, offset, length) {
+  const text = buffer.subarray(offset, offset + length).toString("ascii").replace(/\0.*$/, "").trim();
+  return text ? Number.parseInt(text, 8) : 0;
+}
+
+function readTarString(buffer, offset, length) {
+  return buffer.subarray(offset, offset + length).toString("utf8").replace(/\0.*$/, "");
+}
+
+function parseTarEntries(archiveBuffer) {
+  let tarBuffer;
+  try {
+    tarBuffer = zlib.gunzipSync(archiveBuffer);
+  } catch {
+    throw createBackupError("BACKUP_ARCHIVE_INVALID", 400);
+  }
+
+  const entries = [];
+  let offset = 0;
+  let totalSize = 0;
+
+  while (offset + TAR_BLOCK_SIZE <= tarBuffer.length) {
+    const header = tarBuffer.subarray(offset, offset + TAR_BLOCK_SIZE);
+    offset += TAR_BLOCK_SIZE;
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
+
+    const name = readTarString(header, 0, 100);
+    const prefix = readTarString(header, 345, 155);
+    const fullName = assertSafeArchiveEntryName(prefix ? `${prefix}/${name}` : name);
+    const typeFlag = readTarString(header, 156, 1) || "0";
+    const size = parseOctal(header, 124, 12);
+    if (size < 0 || offset + size > tarBuffer.length) {
+      throw createBackupError("BACKUP_ARCHIVE_INVALID", 400);
+    }
+    if (!["0", "5", ""].includes(typeFlag)) {
+      throw createBackupError("BACKUP_ARCHIVE_UNSUPPORTED_ENTRY", 400);
+    }
+
+    entries.push({
+      name: fullName,
+      type: typeFlag === "5" ? "directory" : "file",
+      size: typeFlag === "5" ? 0 : size,
+      dataStart: offset,
+      dataEnd: offset + size,
+      tarBuffer,
+    });
+    totalSize += typeFlag === "5" ? 0 : size;
+    offset += size + ((TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE);
+  }
+
+  if (entries.length === 0) {
+    throw createBackupError("BACKUP_ARCHIVE_EMPTY", 400);
+  }
+
+  return {
+    entries,
+    totalSize,
+  };
+}
+
+async function validateArchiveFile(archivePathValue) {
+  const archiveBuffer = await fs.readFile(archivePathValue);
+  const validation = parseTarEntries(archiveBuffer);
+  return {
+    entryCount: validation.entries.length,
+    uncompressedSize: validation.totalSize,
+  };
+}
+
+async function extractTarGzArchive(archivePathValue, destinationRoot) {
+  const archiveBuffer = await fs.readFile(archivePathValue);
+  const validation = parseTarEntries(archiveBuffer);
+  const realDestinationRoot = await fs.realpath(destinationRoot).catch(() => destinationRoot);
+
+  for (const entry of validation.entries) {
+    const targetPath = path.resolve(destinationRoot, ...entry.name.split("/"));
+    if (!isInsideRoot(targetPath, realDestinationRoot)) {
+      throw createBackupError("BACKUP_ARCHIVE_PATH_UNSAFE", 400);
+    }
+
+    if (entry.type === "directory") {
+      await fs.mkdir(targetPath, { recursive: true, mode: 0o700 });
+      continue;
+    }
+
+    await fs.mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
+    await fs.writeFile(targetPath, entry.tarBuffer.subarray(entry.dataStart, entry.dataEnd), { mode: 0o600 });
+  }
+
+  return {
+    entryCount: validation.entries.length,
+    uncompressedSize: validation.totalSize,
+  };
+}
+
 function metadataPath(backupId) {
   return path.join(getBackupRoot(), `${backupId}.json`);
 }
@@ -72,30 +331,6 @@ function schedulesPath() {
 
 async function ensureBackupRoot() {
   await fs.mkdir(getBackupRoot(), { recursive: true, mode: 0o700 });
-}
-
-function runFile(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = childProcess.spawn(command, args, {
-      ...options,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stderr = "";
-    child.stderr.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    child.on("error", () => reject(createBackupError("BACKUP_TOOL_UNAVAILABLE", 500)));
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      const error = createBackupError("BACKUP_TOOL_FAILED", 500);
-      error.detail = stderr.slice(0, 1000);
-      reject(error);
-    });
-  });
 }
 
 async function readJson(filePath) {
@@ -285,7 +520,7 @@ async function createBackup(payload = {}) {
 
   const backupId = `${instanceId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const archive = archivePath(backupId);
-  await runFile("tar", ["-czf", archive, ...sourcePaths], { cwd: instancePath });
+  const archiveDetails = await writeTarGzArchive(archive, instancePath, sourcePaths);
   const metadata = {
     id: backupId,
     instanceId,
@@ -294,6 +529,9 @@ async function createBackup(payload = {}) {
     createdBy: sanitizeName(payload.createdBy, "local-user"),
     type,
     size: await getFileSize(archive),
+    uncompressedSize: archiveDetails.uncompressedSize,
+    requiredDiskSpace: archiveDetails.uncompressedSize,
+    entryCount: archiveDetails.entryCount,
     compression: BACKUP_FORMAT,
     sourcePaths,
     archiveName: path.basename(archive),
@@ -336,15 +574,29 @@ async function restoreBackup(payload = {}) {
   if (instanceId !== backup.instanceId) {
     throw createBackupError("BACKUP_INSTANCE_MISMATCH");
   }
+  if (payload.confirmOverwrite !== true) {
+    throw createBackupError("RESTORE_OVERWRITE_CONFIRMATION_REQUIRED", 400);
+  }
   const instancePath = await getInstancePath(instanceId);
+  const validation = await validateArchiveFile(backup.path);
 
   await instanceService.stopInstance(instanceId).catch(() => {});
   const safety = await createSafetySnapshot(instanceId);
-  await fs.rm(instancePath, { recursive: true, force: true });
-  await fs.mkdir(instancePath, { recursive: true, mode: 0o700 });
-  await runFile("tar", ["-xzf", backup.path, "-C", instancePath]);
+  if (backup.type === "world") {
+    for (const sourcePath of Array.isArray(backup.sourcePaths) ? backup.sourcePaths : []) {
+      const targetPath = path.resolve(instancePath, sourcePath);
+      if (!isInsideRoot(targetPath, instancePath)) {
+        throw createBackupError("BACKUP_ARCHIVE_PATH_UNSAFE", 400);
+      }
+      await fs.rm(targetPath, { recursive: true, force: true });
+    }
+  } else {
+    await fs.rm(instancePath, { recursive: true, force: true });
+    await fs.mkdir(instancePath, { recursive: true, mode: 0o700 });
+  }
+  await extractTarGzArchive(backup.path, instancePath);
 
-  if (!await fs.stat(path.join(instancePath, "config.json")).then((stats) => stats.isFile(), () => false)) {
+  if (backup.type !== "world" && !await fs.stat(path.join(instancePath, "config.json")).then((stats) => stats.isFile(), () => false)) {
     throw createBackupError("RESTORE_VERIFICATION_FAILED", 500);
   }
 
@@ -352,6 +604,8 @@ async function restoreBackup(payload = {}) {
     backupId: backup.id,
     instanceId,
     safetyBackupId: safety.backup.id,
+    requiredDiskSpace: validation.uncompressedSize,
+    restoredEntries: validation.entryCount,
     restoredAt: nowIso(),
   };
 
@@ -372,6 +626,13 @@ async function importBackup(payload = {}) {
   const backupId = `${instanceId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const archive = archivePath(backupId);
   await fs.writeFile(archive, Buffer.from(content, payload.encoding === "base64" ? "base64" : "utf8"), { mode: 0o600 });
+  let archiveDetails;
+  try {
+    archiveDetails = await validateArchiveFile(archive);
+  } catch (error) {
+    await fs.rm(archive, { force: true }).catch(() => {});
+    throw error;
+  }
   const metadata = {
     id: backupId,
     instanceId,
@@ -380,6 +641,9 @@ async function importBackup(payload = {}) {
     createdBy: sanitizeName(payload.createdBy, "import"),
     type: String(payload.type || "full") === "world" ? "world" : "full",
     size: await getFileSize(archive),
+    uncompressedSize: archiveDetails.uncompressedSize,
+    requiredDiskSpace: archiveDetails.uncompressedSize,
+    entryCount: archiveDetails.entryCount,
     compression: BACKUP_FORMAT,
     sourcePaths: ["."],
     archiveName: path.basename(archive),

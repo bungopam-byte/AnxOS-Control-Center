@@ -282,3 +282,9 @@ The shared instance public model now includes `lifecycleState: "Crashed"` and `c
 The Agent filesystem service now publishes a shared capability model and safe shortcut metadata for managed instances, managed backups, common user folders, AppData, ProgramData where applicable, and Steam library candidates. Shortcuts become navigable Files-page roots only after they resolve inside the configured Agent filesystem root; unavailable or protected shortcuts remain diagnostic metadata and do not expand the allowed filesystem surface.
 
 File list responses now include the same shortcut roots, operation capabilities, and an immediate-directory storage summary while preserving the existing root-containment checks for list, read, download, upload, write, rename, copy, move, folder creation, and delete operations. Remote SFTP and desktop-local file browsing behavior remain on their existing providers.
+
+## Phase 15 Local Windows Backups Note
+
+Local Agent backups now create and restore `.tar.gz` archives through Node.js instead of shelling out to a platform `tar` binary. Archive entries are normalized with forward-slash paths, reject absolute paths, drive-letter paths, `..` traversal, unsupported entry types, and invalid gzip/tar payloads before import or restore.
+
+Restore requests require explicit overwrite confirmation from the Desktop after the user confirms the destructive action. Full restores replace the managed instance directory after creating a safety snapshot; world-only restores replace only the archived world paths and preserve the instance record. Backup metadata now records entry count, uncompressed size, and required restore disk estimate. Real locked-file handling and Windows volume free-space validation still require real-machine validation.

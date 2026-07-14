@@ -13373,7 +13373,7 @@ async function restoreSelectedBackup() {
   try {
     const restart = window.confirm("Restart after restore?");
     if (!isNodeActionStillCurrent(requestContext)) return;
-    await desktopApiState.api.backups.restore({ nodeId: requestContext.nodeId, backupId: selected.id, restart });
+    await desktopApiState.api.backups.restore({ nodeId: requestContext.nodeId, backupId: selected.id, restart, confirmOverwrite: true });
     showToast("Backup restored.");
     await refreshInstances();
     await refreshBackups();

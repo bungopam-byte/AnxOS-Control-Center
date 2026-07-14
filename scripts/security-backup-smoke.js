@@ -165,8 +165,33 @@ async function main() {
   assert(created.backup.id, "Backup should have an id.");
   assert.strictEqual(created.backup.type, "world", "World backup type should persist.");
   assert(created.backup.sourcePaths.includes("data/world"), "World backup should include world path.");
+  assert(created.backup.uncompressedSize >= 5, "Backup metadata should include uncompressed size.");
+  assert(created.backup.requiredDiskSpace >= created.backup.uncompressedSize, "Backup metadata should include required restore disk space.");
   const list = await backupService.listBackups({ instanceId });
   assert.strictEqual(list.backups.length, 1, "Backup list should include created backup.");
+  assert.strictEqual(list.backups[0].entryCount > 0, true, "Backup list should preserve archive entry count.");
+  fs.writeFileSync(path.join(instancePath, "data", "world", "level.dat"), "changed");
+  await assert.rejects(
+    () => backupService.restoreBackup({ backupId: created.backup.id }),
+    (error) => error?.code === "RESTORE_OVERWRITE_CONFIRMATION_REQUIRED",
+    "Restore should require explicit overwrite confirmation.",
+  );
+  const restored = await backupService.restoreBackup({ backupId: created.backup.id, confirmOverwrite: true });
+  assert.strictEqual(restored.restore.instanceId, instanceId, "Restore should target the original instance.");
+  assert(restored.restore.safetyBackupId, "Restore should create a safety snapshot before replacing files.");
+  assert.strictEqual(fs.readFileSync(path.join(instancePath, "data", "world", "level.dat"), "utf8"), "world", "World restore should replace changed world files.");
+  const imported = await backupService.importBackup({
+    instanceId,
+    content: fs.readFileSync(list.backups[0].path).toString("base64"),
+    encoding: "base64",
+    name: "Imported smoke backup",
+  });
+  assert.strictEqual(imported.backup.status, "imported", "Valid imported archives should be accepted.");
+  await assert.rejects(
+    () => backupService.importBackup({ instanceId, content: Buffer.from("not a tarball").toString("base64"), encoding: "base64" }),
+    (error) => error?.code === "BACKUP_ARCHIVE_INVALID",
+    "Invalid imported archives should be rejected.",
+  );
   const schedule = await backupService.saveSchedule({ instanceId, intervalHours: 24, keepLast: 3, maxAgeDays: 7, type: "world" });
   assert.strictEqual(schedule.schedule.instanceId, instanceId, "Schedule should target the instance.");
   const schedules = await backupService.listSchedules();
@@ -174,6 +199,8 @@ async function main() {
   await backupService.deleteSchedule(instanceId);
   assert.strictEqual((await backupService.listSchedules()).schedules.length, 0, "Schedule delete should remove saved schedule.");
   await backupService.deleteBackup(created.backup.id);
+  await backupService.deleteBackup(imported.backup.id);
+  await backupService.deleteBackup(restored.restore.safetyBackupId);
   const afterDelete = await backupService.listBackups({ instanceId });
   assert.strictEqual(afterDelete.backups.length, 0, "Backup delete should remove metadata and archive.");
   const staleDelete = await backupService.deleteBackup(created.backup.id);

@@ -49,6 +49,7 @@ assert(/\.button\s*\{[\s\S]*min-height:\s*44px/.test(styles), "Primary buttons m
 assert(/\.site-menu-button\s*\{[\s\S]*min-height:\s*44px/.test(styles), "Mobile menu button must meet a 44px touch target.");
 assert(styles.includes("@media (max-width: 640px)") && styles.includes(".download-primary__actions") && styles.includes("grid-template-columns: 1fr"), "CSS must stack download actions on small screens.");
 assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "CSS must respect reduced-motion preference.");
+assert(!/font-size:\s*clamp\([^;]*(?:vw|vh|vmin|vmax)/.test(styles), "CSS heading and text sizes must use breakpoints instead of viewport-scaled font sizes.");
 assert(styles.includes("overflow-wrap: anywhere") && styles.includes("white-space: normal"), "Buttons and download metadata must handle long filenames and labels.");
 assert(styles.includes(".release-meta dd") && styles.includes("text-overflow: ellipsis"), "Release metadata must avoid long filename overflow.");
 assert(styles.includes(".download-status[data-tone=\"warn\"]") && styles.includes(".download-status[data-tone=\"ok\"]"), "Download status must not rely on color alone without text state.");

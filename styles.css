@@ -5160,6 +5160,12 @@ body.is-resizing-files * {
   box-shadow: inset 3px 0 0 rgba(199, 161, 255, 0.9);
 }
 
+.instance-overview-list dd[data-instance-detail="command"],
+.instance-overview-list dd[data-instance-detail="failureReason"] {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .instance-name-cell {
   grid-template-columns: minmax(0, 1fr);
 }

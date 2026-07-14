@@ -9268,6 +9268,33 @@ function stringifyArgs(args) {
   return Array.isArray(args) ? JSON.stringify(args) : "";
 }
 
+function quoteCommandPartForDisplay(value) {
+  const text = String(value ?? "");
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(text)) {
+    return text;
+  }
+  return JSON.stringify(text);
+}
+
+function formatInstanceCommandForDisplay(instance) {
+  const parts = [
+    instance?.executable,
+    ...(Array.isArray(instance?.args) ? instance.args : []),
+  ].filter((part) => part !== null && part !== undefined && String(part) !== "");
+  return parts.length ? parts.map(quoteCommandPartForDisplay).join(" ") : "Unavailable";
+}
+
+function getInstanceFailureReason(instance) {
+  return formatInstanceValue(
+    instance?.failureReason ||
+    instance?.lastExitReason ||
+    instance?.runtime?.failureReason ||
+    instance?.restartBackoff?.reason ||
+    instance?.lastExit?.reason ||
+    instance?.lastExit?.message,
+  );
+}
+
 function parseMemoryFromArgs(instance) {
   const memoryArg = Array.isArray(instance?.args) ? instance.args.find((arg) => /^-Xmx/i.test(arg)) : null;
   return instance?.memoryLimit || (memoryArg ? memoryArg.replace(/^-Xmx/i, "") : "");
@@ -10715,6 +10742,7 @@ function setInstanceDetails(instance = null) {
     setInstanceDetail("created", "Unavailable");
     setInstanceDetail("type", "Unavailable");
     setInstanceDetail("command", "Unavailable");
+    setInstanceDetail("failureReason", "Unavailable");
     setInstanceDetail("pid", "Unavailable");
     setInstanceDetail("uptime", "Unavailable");
     setInstanceDetail("cpu", "Unavailable");
@@ -10733,7 +10761,7 @@ function setInstanceDetails(instance = null) {
     return;
   }
 
-  const command = [instance.executable, ...(Array.isArray(instance.args) ? instance.args : [])].filter(Boolean).join(" ");
+  const command = formatInstanceCommandForDisplay(instance);
   const address = formatInstanceAddressLabel(instance);
   const version = getInstanceVersionMetadata(instance);
   const primaryPort = getInstancePrimaryPort(instance);
@@ -10761,6 +10789,7 @@ function setInstanceDetails(instance = null) {
   setInstanceDetail("created", formatDateTime(instance.createdAt || instance.created || instance.metadata?.createdAt));
   setInstanceDetail("type", formatInstanceType(instance.type));
   setInstanceDetail("command", command || "Unavailable");
+  setInstanceDetail("failureReason", getInstanceFailureReason(instance));
   setInstanceDetail("pid", formatInstanceValue(instance.pid));
   setInstanceDetail("uptime", formatDuration(metrics?.uptimeSeconds));
   setInstanceDetail("cpu", formatInstanceCpu(metrics));

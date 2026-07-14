@@ -14,25 +14,33 @@ Do not share secrets in reports. Never paste Agent tokens, pairing codes, Supaba
 
 ## Recommended Test Order
 
-1. Start the desktop app.
-2. Choose `Use This PC` and install the Local Agent if it is missing.
-3. Confirm `This PC` appears as the Local Agent node.
-4. Run dependency checks for `This PC`.
-5. Install one Marketplace template on `This PC`.
-6. Start, stop, restart, back up, and remove the test instance.
-7. Open Files and verify local shortcuts and allowed roots.
-8. Open Public Access and verify provider status.
-9. Connect or select the Debian Agent node if available.
-10. Switch between local and remote nodes and confirm actions target the selected node.
-11. Open Diagnostics and run a snapshot.
-12. Open Operations and confirm recent actions are recorded.
-13. Export diagnostics only if a bug needs logs.
+1. Open the AnxOS website.
+2. Download build 146 from the Download page.
+3. Expect a visible Private Alpha warning.
+4. Install the application.
+5. Complete onboarding.
+6. Choose `Use This PC`.
+7. Install the Local Agent.
+8. Approve administrator access when Windows asks.
+9. Allow dependency scanning.
+10. Install a simple server from Marketplace.
+11. Start and stop the server.
+12. Report any errors with screenshots and exported sanitized diagnostics.
+13. Open Files and verify local shortcuts and allowed roots.
+14. Open Public Access and verify provider status.
+15. Connect or select a remote Debian Agent node if available.
+16. Switch between local and remote nodes and confirm actions target the selected node.
+17. Open Operations and confirm recent actions are recorded.
 
 ## Windows Desktop Setup
 
 Normal testers should use the Windows installer from the website. Do not ask normal testers to install Node.js, run terminal commands, edit JSON, configure localhost, or copy Agent tokens.
 
 Developers may still use `npm install` and `npm start` for development-mode validation.
+
+If Windows SmartScreen shows a blue warning, it usually means the Private Alpha installer is unsigned or not widely downloaded yet. Confirm the file is from the AnxOS website or the `v1.7-build146` GitHub release before choosing to continue. Stop and report it if the filename, version, or publisher details look wrong.
+
+Do not use this alpha release for irreplaceable production data. Back up worlds and server files before testing destructive actions such as delete, restore, or dependency cleanup.
 
 Expected first-run behavior:
 
@@ -156,6 +164,20 @@ Attach:
 - Diagnostics summary or exported bundle.
 - Final relevant installer logs for Marketplace failures.
 - Screenshot only after checking that no token or private URL is visible.
+
+Report these issues even if retry works:
+
+- Installation failures.
+- Agent offline states.
+- Service failures.
+- Pairing failures.
+- Dependency installation problems.
+- Marketplace installation failures.
+- CurseForge errors.
+- Instance start or stop issues.
+- Backup or restore issues.
+- Public Access issues.
+- Antivirus or SmartScreen interference.
 
 ## Troubleshooting Quick Checks
 

@@ -382,7 +382,7 @@ function renderDownloadPage(release) {
       actions.append(createDownloadButton(primaryAsset, release, true));
       if (windowsPortable) actions.append(createDownloadButton(windowsPortable, release, false));
       actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
-      actions.append(createDownloadSupportLink("Installation Help", "/getting-started"));
+      actions.append(createDownloadSupportLink("Installation Help", "/windows-installation"));
       actions.append(createDownloadSupportLink("System Requirements", "/system-requirements"));
       primaryTarget.append(copy, actions);
     } else {
@@ -395,7 +395,7 @@ function renderDownloadPage(release) {
       const actions = document.createElement("div");
       actions.className = "download-primary__actions";
       actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
-      actions.append(createDownloadSupportLink("Installation Help", "/getting-started"));
+      actions.append(createDownloadSupportLink("Installation Help", "/windows-installation"));
       primaryTarget.append(heading, meta, actions);
     }
   }

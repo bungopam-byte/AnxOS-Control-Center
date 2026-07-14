@@ -383,7 +383,7 @@ function renderDownloadPage(release) {
       if (windowsPortable) actions.append(createDownloadButton(windowsPortable, release, false));
       actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
       actions.append(createDownloadSupportLink("Installation Help", "/getting-started"));
-      actions.append(createDownloadSupportLink("System Requirements", "/download"));
+      actions.append(createDownloadSupportLink("System Requirements", "/system-requirements"));
       primaryTarget.append(copy, actions);
     } else {
       const heading = document.createElement("h3");

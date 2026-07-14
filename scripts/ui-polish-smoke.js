@@ -59,6 +59,7 @@ assert(styles.includes(".dashboard-setup-health") && styles.includes(".setup-hea
 assert(index.includes('data-nav-description="System overview"') && index.includes('data-nav-description="Install servers and tools"'), "Primary navigation should expose friendly expanded descriptions.");
 assert(app.includes("label.dataset.navDescription") && app.includes("PAGE_INTRODUCTIONS"), "Renderer should wire nav descriptions and page introductions.");
 assert(styles.includes(".page-introduction") && styles.includes(".nav-item[data-nav-description] .nav-item__label::after"), "Friendly navigation and page introduction CSS must exist.");
+assert(styles.includes('.page[data-page="files"].is-active') && styles.includes("grid-template-rows: auto auto minmax(0, 1fr)") && styles.includes('.page[data-page="files"] .file-manager-shell'), "Files page introduction must occupy a normal full-width row above the Files workspace.");
 assert(index.includes("Help and Learning") && index.includes("data-contextual-help-modal"), "Settings must include in-app Help and Learning with a contextual help modal.");
 assert(app.includes("CONTEXTUAL_HELP_TOPICS") && app.includes("openContextualHelp") && app.includes("dismissContextualHelpTip"), "Contextual help must render through the reusable renderer component.");
 assert(index.includes("[data-node-list]") || index.includes("data-node-list"), "Nodes workspace must expose the node card list.");

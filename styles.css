@@ -2887,10 +2887,18 @@ h3 {
 
 .page[data-page="files"].is-active {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.page[data-page="files"] .page-introduction {
+  min-width: 0;
+}
+
+.page[data-page="files"] .file-manager-shell {
+  height: auto;
 }
 
 .files-connect-bar {

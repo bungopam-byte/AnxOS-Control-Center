@@ -17083,10 +17083,12 @@ function renderGlobalSearchResults() {
 
 async function refreshCurrentFilesDirectory() {
   await refreshFilesDiscovery();
+  const target = getFilesConnectionTarget();
+  const sameTarget = Boolean(target?.key && filesConnectionState.targetKey === target.key);
   return refreshFileListing({
     profileId: getFilesRequestProfileId(),
     storageId: getFilesRequestStorageId(),
-    path: filesConnectionState.currentPath || filesConnectionState.homePath || "/",
+    path: sameTarget ? filesConnectionState.currentPath || filesConnectionState.homePath || undefined : undefined,
   });
 }
 
@@ -18668,6 +18670,7 @@ function clearFilesVisibleState(message = "Connect to browse this filesystem.") 
   latestFilesListing = null;
   latestFilesListingAt = 0;
   selectedFileEntryPath = null;
+  if (filesPathInput) filesPathInput.value = "";
   clearFileRows();
   renderFileBreadcrumbs({ connected: false, breadcrumbs: [], message });
   renderFolderRoots({ connected: false, roots: [], message });
@@ -18916,7 +18919,7 @@ function renderFileListing(listing) {
     connected: normalized.connected,
     profileId: normalized.profileId || filesSelectedProfileId,
     storageId: normalized.storageId || null,
-    currentPath: normalized.currentPath || filesConnectionState.currentPath,
+    currentPath: normalized.currentPath || null,
     homePath: normalized.homePath || filesConnectionState.homePath,
     status: normalized.status || "connected",
     nodeId: normalized.nodeId || target?.nodeId || null,
@@ -20739,7 +20742,15 @@ async function refreshFileListing(options = {}) {
     if (!isFilesRequestCurrent(requestContext)) {
       return null;
     }
-    renderFileListing(listing);
+    renderFileListing({
+      ...(listing || {}),
+      currentPath: listing?.currentPath || requestPath || null,
+      nodeId: listing?.nodeId || getFilesRequestNodeId(),
+      providerType: listing?.providerType || target.providerType,
+      storageId: listing?.storageId || storageId || null,
+      profileId: listing?.profileId || profileId || filesSelectedProfileId || null,
+      targetKey: listing?.targetKey || target.key || null,
+    });
     renderFilesView();
     setFilesPasswordPromptState(false);
     return listing;

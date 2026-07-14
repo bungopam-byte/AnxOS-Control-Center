@@ -109,6 +109,10 @@ async function main() {
     assert(appSource.includes("isPathInsideFilesIdentityRoots"), "Renderer should validate remembered paths against the current authorized root.");
     assert(appSource.includes("homeInsideFilesystemRoot ? identity?.homeDirectory"), "Renderer should use the Agent home only when it remains inside the authorized root.");
     assert(appSource.includes("isWindowsPathValue") && appSource.includes("isPathValidForFilesIdentity"), "Renderer should reject cross-platform remembered paths.");
+    assert(appSource.includes("const sameTarget = Boolean(target?.key && filesConnectionState.targetKey === target.key)") && appSource.includes("path: sameTarget ? filesConnectionState.currentPath || filesConnectionState.homePath || undefined : undefined"), "Files refresh must not send a previous target path after server/profile changes.");
+    assert(appSource.includes("if (filesPathInput) filesPathInput.value = \"\""), "Files target changes must clear the visible path immediately.");
+    assert(appSource.includes("currentPath: listing?.currentPath || requestPath || null"), "Files listing responses must bind the visible path to the resolved request path.");
+    assert(!appSource.includes("currentPath: normalized.currentPath || filesConnectionState.currentPath"), "Files renderer must not preserve stale global paths when rendering new target rows.");
     assert(!appSource.includes("path: options.path || filesConnectionState.currentPath || filesConnectionState.homePath || undefined"), "Renderer must not reuse global Files path state for list requests.");
     assert(appSource.includes("profileId: filesSelectedProfileId || null"), "Renderer request context should include the selected profile ID.");
     assert(appSource.includes("generation: filesNavigationGeneration"), "Renderer request context should include the navigation generation.");

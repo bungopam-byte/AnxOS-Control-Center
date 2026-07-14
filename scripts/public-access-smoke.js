@@ -30,6 +30,10 @@ const byId = new Map(providers.map((provider) => [provider.id, provider]));
 
 assert(byId.has("playit") && byId.has("tailscale") && byId.has("cloudflare-tunnel") && byId.has("anxos-relay"), "Public Access must declare all evaluated providers.");
 assert.strictEqual(byId.get("playit").status, "supported", "Playit must remain the supported provider.");
+assert.strictEqual(byId.get("playit").capabilities.createService, true, "Playit must support AnxOS access service record creation.");
+assert.strictEqual(byId.get("playit").capabilities.createProviderResource, false, "Playit must not claim provider tunnel creation unless the integration supports it.");
+assert.strictEqual(byId.get("playit").capabilities.tcp, true, "Playit must advertise TCP support.");
+assert.strictEqual(byId.get("playit").capabilities.udp, true, "Playit must advertise UDP support.");
 assert.strictEqual(byId.get("tailscale").exposureScope, "tailnet-only", "Tailscale must not be described as public internet exposure.");
 assert.strictEqual(byId.get("tailscale").capabilities.serviceExposure, true, "Tailscale must support private tailnet service records.");
 assert.strictEqual(byId.get("tailscale").capabilities.publicAddress, false, "Tailscale must not be treated as a public address provider.");
@@ -71,6 +75,9 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
   assert.strictEqual(service.providerId, "playit", "Access service must preserve provider id.");
   assert.strictEqual(service.localPort, 8211, "Access service port must normalize to a number.");
   assert.strictEqual(service.protocol, "udp", "Access service protocol must normalize.");
+  assert.strictEqual(service.state, "pending-provider-setup", "Playit service records must not fake provider tunnel creation.");
+  assert.strictEqual(service.status, "Pending Playit tunnel setup", "Playit service records must explain that provider setup is still pending.");
+  assert.strictEqual(service.providerResourceStatus, "not-created-by-anxos", "Playit records must mark provider resources as not created by AnxOS.");
   assert.strictEqual(registry.listAccessServices({ configDir: tempRoot, nodeId: "anxlab" }).length, 1, "Access service must persist.");
   assert.throws(() => registry.createAccessService({
     nodeId: "anxlab",
@@ -92,6 +99,7 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
   });
   assert.strictEqual(reconciled[0].publicAddress, "palworld.playit.fan", "Access service reconciliation must adopt matching Playit public address.");
   assert.strictEqual(reconciled[0].state, "running", "Access service reconciliation must mark matched public Playit service running.");
+  assert.strictEqual(reconciled[0].providerResourceStatus, "detected", "Playit reconciliation must distinguish detected provider resources from AnxOS-created records.");
   registry.deleteAccessService(service.id, { configDir: tempRoot });
   assert.strictEqual(registry.listAccessServices({ configDir: tempRoot }).length, 0, "Access service delete must persist.");
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -349,6 +357,9 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
   "function getPublicAccessActionDefinitions",
   "function renderPublicAccessActionButtons",
   "function runPublicAccessAction",
+  "createAccessServiceForInstance(instance, \"playit\")",
+  "providerResourceStatus: provider.id === \"playit\" ? \"not-created-by-anxos\"",
+  "This provider does not expose start controls through AnxOS.",
   "create-access-service",
   "api.publicAccess.createService",
   "install-dependency",

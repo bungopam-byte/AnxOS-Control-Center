@@ -5475,9 +5475,11 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
     {
       action: "create-access-service",
       label: provider.id === "tailscale" ? "Create Private Service" : provider.id === "cloudflare-tunnel" ? "Create Web Service" : "Create Access Service",
-      supported: (provider.id === "playit" && provider.installed === true) || (provider.id === "tailscale" && provider.connected === true) || (provider.id === "cloudflare-tunnel" && provider.installed === true && provider.authenticated === true),
+      supported: capabilities.createService === true && ((provider.id === "playit" && provider.installed === true) || (provider.id === "tailscale" && provider.connected === true) || (provider.id === "cloudflare-tunnel" && provider.installed === true && provider.authenticated === true)),
       reason: provider.id === "playit"
-        ? "Install and start Playit.gg before creating an access service."
+        ? provider.installed === true
+          ? (capabilities.unsupportedCreateReason || "AnxOS can save a Playit access record and reconcile it after Playit reports the tunnel.")
+          : "Install and start Playit.gg before creating an access service."
         : provider.id === "tailscale"
           ? "Tailscale must be connected before creating a private tailnet service."
           : provider.id === "cloudflare-tunnel"
@@ -5496,6 +5498,8 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
     { action: "copy-local-endpoint", label: "Copy local endpoint", supported: hasLocalEndpoint, reason: "No local endpoint has been detected for this provider." },
     { action: "tunnel-config", label: "Open tunnel configuration", supported: provider.id === "playit" || capabilities.createTunnel === true || capabilities.listTunnels === true, reason: provider.recoveryAction || "Tunnel configuration is not supported for this provider yet." },
     { action: "provider-diagnostics", label: "Open provider diagnostics", supported: capabilities.diagnostics === true, reason: "Provider diagnostics are not available for this provider." },
+    { action: "start-service", label: "Start service", supported: capabilities.startService === true, reason: capabilities.startService === false ? "This provider does not expose start controls through AnxOS." : "Start is unavailable for this provider." },
+    { action: "stop-service", label: "Stop service", supported: capabilities.stopService === true, reason: capabilities.stopService === false ? "This provider does not expose stop controls through AnxOS." : "Stop is unavailable for this provider." },
   ];
   return actions;
 }
@@ -5748,9 +5752,13 @@ function getInstanceAccessProviderUnavailableReason(provider = {}, suggestion = 
   return provider.recoveryAction || "Provider is unavailable.";
 }
 
-function chooseInstanceAccessSuggestion(instance = findInstance()) {
+function chooseInstanceAccessSuggestion(instance = findInstance(), preferredProviderId = null) {
   const suggestions = getInstanceAccessSuggestions(instance);
-  const compatible = suggestions.filter((suggestion) => suggestion.compatible !== false && suggestion.localPort);
+  const compatible = suggestions.filter((suggestion) => (
+    suggestion.compatible !== false &&
+    suggestion.localPort &&
+    (!preferredProviderId || suggestion.providerId === preferredProviderId)
+  ));
   if (compatible.length === 0) {
     const reasons = suggestions.map((suggestion) => suggestion.reason).filter(Boolean).join("\n");
     throw Object.assign(new Error(reasons || "This instance does not have a compatible port to expose."), { code: "INCOMPATIBLE_SERVICE" });
@@ -5764,7 +5772,7 @@ function chooseInstanceAccessSuggestion(instance = findInstance()) {
   return byIndex || compatible.find((suggestion) => suggestion.providerId === selectedText || suggestion.providerName.toLowerCase().includes(selectedText)) || null;
 }
 
-async function createAccessServiceForInstance(instance = findInstance()) {
+async function createAccessServiceForInstance(instance = findInstance(), preferredProviderId = null) {
   if (!instance) return null;
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasPublicAccess || typeof desktopApiState.api?.publicAccess?.createService !== "function") {
@@ -5775,7 +5783,7 @@ async function createAccessServiceForInstance(instance = findInstance()) {
     await refreshPlayitStatus();
   }
   const requestContext = createNodeActionContext("instance-expose-share");
-  const suggestion = chooseInstanceAccessSuggestion(instance);
+  const suggestion = chooseInstanceAccessSuggestion(instance, preferredProviderId);
   if (!suggestion) return null;
   const provider = getInstanceAccessProvider(suggestion.providerId);
   if (!isInstanceAccessProviderReady(provider, suggestion)) {
@@ -5800,6 +5808,10 @@ async function createAccessServiceForInstance(instance = findInstance()) {
     localHost: suggestion.localHost,
     localPort: suggestion.localPort,
     protocol: suggestion.protocol,
+    state: suggestion.providerId === "playit" ? "pending-provider-setup" : undefined,
+    status: suggestion.providerId === "playit" ? "Pending Playit tunnel setup" : undefined,
+    providerResourceStatus: suggestion.providerId === "playit" ? "not-created-by-anxos" : undefined,
+    unsupportedReason: suggestion.providerId === "playit" ? "AnxOS saved this access service, but Playit tunnel creation is not exposed by the detected integration. Create or link the matching Playit tunnel, then refresh." : undefined,
     privateAddress: suggestion.providerId === "tailscale" ? buildTailscalePrivateAddress(provider, suggestion.localPort) : null,
     publicAddress: suggestion.providerId === "cloudflare-tunnel" ? String(publicHostname).trim() : null,
     publicHostname: suggestion.providerId === "cloudflare-tunnel" ? String(publicHostname).trim() : null,
@@ -5893,6 +5905,24 @@ async function createProviderAccessService() {
     return null;
   }
   const requestContext = createNodeActionContext("public-access");
+  if (provider.id === "playit") {
+    const instances = getInstances().filter((instance) => getInstanceAccessSuggestions(instance).some((suggestion) => suggestion.providerId === "playit" && suggestion.compatible !== false && suggestion.localPort));
+    const source = instances.length
+      ? window.prompt("Create Playit access for: existing instance or custom service", "existing")
+      : "custom";
+    if (source === null) return null;
+    if (/^existing/i.test(String(source).trim())) {
+      const menu = instances.map((instance, index) => `${index + 1}. ${instance.displayName || instance.id}`).join("\n");
+      const selected = window.prompt(`Choose instance:\n${menu}`, "1");
+      if (selected === null) return null;
+      const instance = instances[Number.parseInt(String(selected).trim(), 10) - 1];
+      if (!instance) {
+        showToast("Choose a valid instance number.", "warning");
+        return null;
+      }
+      return createAccessServiceForInstance(instance, "playit");
+    }
+  }
   const defaultPort = getSelectedPublicAccessService()?.localPort || latestPlayitSnapshot?.localPort || "";
   const name = window.prompt("Access service name", getSelectedPublicAccessService()?.name || `${provider.name || "Provider"} Access Service`);
   if (name === null) return null;
@@ -5928,6 +5958,10 @@ async function createProviderAccessService() {
     localHost: "127.0.0.1",
     localPort,
     protocol,
+    state: provider.id === "playit" ? "pending-provider-setup" : undefined,
+    status: provider.id === "playit" ? "Pending Playit tunnel setup" : undefined,
+    providerResourceStatus: provider.id === "playit" ? "not-created-by-anxos" : undefined,
+    unsupportedReason: provider.id === "playit" ? "AnxOS saved this access service, but Playit tunnel creation is not exposed by the detected integration. Create or link the matching Playit tunnel, then refresh." : undefined,
     privateAddress: provider.id === "tailscale" ? buildTailscalePrivateAddress(provider, localPort) : null,
     publicAddress: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
     publicHostname: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,

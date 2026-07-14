@@ -147,6 +147,17 @@ function normalizeAccessService(input = {}, existing = {}) {
   const localPort = normalizePort(input.localPort ?? existing.localPort);
   const publicHostname = normalizePublicHostname(input.publicHostname || input.publicAddress || existing.publicHostname || existing.publicAddress, providerId);
   const localHost = normalizeHost(input.localHost || existing.localHost);
+  const hasProviderAddress = Boolean(input.publicAddress || existing.publicAddress || input.privateAddress || existing.privateAddress || publicHostname);
+  const defaultState = providerId === "playit" && !hasProviderAddress
+    ? "pending-provider-setup"
+    : providerId === "tailscale"
+      ? "available"
+      : "pending-provider-setup";
+  const defaultStatus = providerId === "playit" && !hasProviderAddress
+    ? "Pending Playit tunnel setup"
+    : providerId === "tailscale"
+      ? "Private Tailnet"
+      : "Pending provider setup";
   const now = nowIso();
   const normalized = {
     id: existing.id || null,
@@ -167,8 +178,10 @@ function normalizeAccessService(input = {}, existing = {}) {
     hostname: input.hostname || existing.hostname || null,
     IPv4: input.IPv4 || existing.IPv4 || null,
     IPv6: input.IPv6 || existing.IPv6 || null,
-    state: input.state || existing.state || "pending-provider-setup",
-    status: input.status || existing.status || "Pending provider setup",
+    state: input.state || existing.state || defaultState,
+    status: input.status || existing.status || defaultStatus,
+    providerResourceStatus: input.providerResourceStatus || existing.providerResourceStatus || (providerId === "playit" && !hasProviderAddress ? "not-created-by-anxos" : null),
+    unsupportedReason: input.unsupportedReason || existing.unsupportedReason || null,
     createdAt: existing.createdAt || now,
     updatedAt: now,
     lastCheckedAt: input.lastCheckedAt || existing.lastCheckedAt || null,
@@ -321,6 +334,8 @@ function reconcileAccessServices(services = [], snapshot = {}) {
         providerName: detected.providerName || service.providerName,
         providerResourceId: detected.providerResourceId || detected.tunnelId || service.providerResourceId,
         publicAddress: detected.publicAddress || service.publicAddress,
+        providerResourceStatus: "detected",
+        unsupportedReason: null,
         state: detected.status === "Public" ? "running" : "detected",
         status: detected.status || "Detected",
         lastCheckedAt: detected.lastCheckedAt || snapshot.checkedAt || service.lastCheckedAt,
@@ -328,8 +343,10 @@ function reconcileAccessServices(services = [], snapshot = {}) {
     }
     return {
       ...service,
-      status: service.status || "Pending provider setup",
+      status: service.providerId === "playit" ? "Pending Playit tunnel setup" : service.status || "Pending provider setup",
       state: service.state || "pending-provider-setup",
+      providerResourceStatus: service.providerResourceStatus || (service.providerId === "playit" ? "not-created-by-anxos" : null),
+      unsupportedReason: service.unsupportedReason || (service.providerId === "playit" ? "AnxOS saved this access record, but the detected Playit integration did not expose safe tunnel creation. Create or link the matching tunnel in Playit, then refresh." : null),
       lastCheckedAt: snapshot.checkedAt || service.lastCheckedAt,
     };
   });

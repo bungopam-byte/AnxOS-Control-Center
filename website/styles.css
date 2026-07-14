@@ -228,6 +228,41 @@ h3 {
   margin-top: 28px;
 }
 
+.hero-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 720px;
+  margin: 22px 0 0;
+}
+
+.hero-facts div {
+  min-width: 0;
+  border: 1px solid rgba(185, 148, 255, 0.16);
+  border-radius: var(--anx-radius-sm);
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.hero-facts dt,
+.hero-facts dd {
+  margin: 0;
+}
+
+.hero-facts dt {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.hero-facts dd {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .account-route {
   display: none;
   padding: 44px 0;
@@ -1910,6 +1945,7 @@ a[aria-disabled="true"] {
 
   .feature-grid,
   .local-agent-grid,
+  .hero-facts,
   .download-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2004,6 +2040,10 @@ a[aria-disabled="true"] {
 
   .auth-card__header h2 {
     font-size: 1.6rem;
+  }
+
+  .hero-facts {
+    grid-template-columns: 1fr;
   }
 
   .auth-form__footer {

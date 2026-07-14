@@ -18,6 +18,7 @@ try {
   assert.strictEqual(initial.settings["onboarding.started"], false, "Onboarding should not start by default.");
   assert.strictEqual(initial.settings["onboarding.completed"], false, "Onboarding should not be completed by default.");
   assert.strictEqual(initial.settings["onboarding.currentStep"], "welcome", "Onboarding should start at the welcome step.");
+  assert.strictEqual(initial.settings["onboarding.setupType"], "this-pc", "Onboarding should default to This PC setup.");
   assert.strictEqual(initial.settings["onboarding.usageSelections"], "", "Onboarding usage choices should default empty.");
   assert.strictEqual(initial.settings["onboarding.skipped"], false, "Onboarding should not be skipped by default.");
   assert.strictEqual(initial.settings["onboarding.welcomeGuidance"], true, "Welcome guidance should default on.");
@@ -32,16 +33,19 @@ try {
     "onboarding.started": false,
     "onboarding.completed": false,
     "onboarding.currentStep": "welcome",
+    "onboarding.setupType": "remote",
     "onboarding.skipped": true,
     "onboarding.welcomeGuidance": true,
     "onboarding.contextualTips": true,
   });
   assert.strictEqual(skipped.settings["onboarding.skipped"], true, "Skipped onboarding state should persist.");
+  assert.strictEqual(skipped.settings["onboarding.setupType"], "remote", "Skipped onboarding should preserve the selected setup type.");
 
   const completed = prefs.updatePreferences({
     "onboarding.started": true,
     "onboarding.completed": true,
     "onboarding.currentStep": "complete",
+    "onboarding.setupType": "both",
     "onboarding.skipped": false,
   });
   assert.strictEqual(completed.settings["onboarding.completed"], true, "Completed onboarding state should persist.");
@@ -87,21 +91,28 @@ try {
 
   [
     "ONBOARDING_STEPS",
-    "ONBOARDING_USAGE_OPTIONS",
-    "What would you like to manage?",
-    "Check this computer",
-    "Connect the local Agent",
-    "Check available tools",
-    "Optional remote systems",
-    "AnxOS is ready.",
+    "ONBOARDING_SETUP_TYPES",
+    "Use This PC",
+    "Connect a Remote Server",
+    "Configure Both",
+    "Choose Setup Type",
+    "Prepare This PC",
+    "Install Local Agent",
+    "Pair Securely",
+    "Scan Dependencies",
+    "Choose Storage",
+    "Finish Setup",
     "shouldShowOnboardingWelcome",
     "maybeOpenOnboardingWelcome",
     "setOnboardingWizardVisible",
     "renderOnboardingWizard",
-    "renderOnboardingLocalStep",
-    "renderOnboardingAgentStep",
+    "renderOnboardingSetupTypeStep",
+    "renderOnboardingPrepareThisPcStep",
+    "renderOnboardingInstallLocalAgentStep",
+    "renderOnboardingPairSecurelyStep",
     "renderOnboardingDependenciesStep",
-    "renderOnboardingRemoteStep",
+    "renderOnboardingStorageStep",
+    "renderOnboardingRemoteSummary",
     "handleOnboardingWizardFinish",
     "PAGE_INTRODUCTIONS",
     "ensurePageIntroductions",
@@ -116,6 +127,8 @@ try {
     "document.documentElement.dataset.advancedMode",
     "The Agent runs on a managed computer",
     "A system is a Windows or Linux computer connected to AnxOS.",
+    "api.pairLocalAgent({ rotate: false",
+    "api.installLocalAgent({ autoStart: true, installService: true })",
     "runDependencyAction(\"check\")",
     "setNodeModalVisible(true)",
     "handleOnboardingAction",
@@ -124,6 +137,7 @@ try {
     '"onboarding.skipped": true',
     '"onboarding.started": true',
     '"onboarding.currentStep": "welcome"',
+    '"onboarding.setupType": "this-pc"',
     "activateModal(onboardingWelcomeModal",
     "activateModal(onboardingWizardModal",
     "function getSetupHealthState",

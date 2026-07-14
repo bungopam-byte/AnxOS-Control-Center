@@ -69,7 +69,9 @@ The Agent process still needs access to the shared token through the managed Age
 
 ### Onboarding
 
-The onboarding UI exists in `index.html` and `app.js`, but it is not the requested Local Agent setup wizard. Current copy and flow still blend local desktop, remote Agent, and Debian Agent concepts. It does not provide the required setup-type choices, persisted Local Agent install progress, automatic pairing, dependency scanning, storage choice, and plain-English repair path.
+The onboarding UI exists in `index.html` and `app.js`. Phase 7 reshapes it into the requested beginner flow: Welcome, Choose Setup Type, Prepare This PC, Install Local Agent, Pair Securely, Scan Dependencies, Choose Storage, and Finish Setup. Setup type is persisted as `Use This PC`, `Connect a Remote Server`, or `Configure Both`; remote-only mode explicitly skips Local Agent installation instead of forcing it.
+
+The wizard now routes Local Agent install, repair, pairing, dependency scan, and storage review through existing Agent Control and Dependency Manager actions. It still needs real Windows validation of installer progress persistence across reboot and the later dependency-install phases before broad release.
 
 ### Dependency Management
 
@@ -233,3 +235,9 @@ This phase updates source-level validation and Linux smoke coverage. It does not
 Local Agent installation, setup repair, and token rotation now use `localAgentPairingService` rather than the remote pairing-code path. The service rejects non-loopback URLs, switches the Desktop to the localhost Agent backend, generates or rotates a strong shared token, writes an encrypted Desktop credential record, and returns only status, restart requirements, and token fingerprints to the renderer.
 
 Remote Agent pairing remains available through `ANXOS-PAIR` codes in Settings. Local Agent pairing does not require a terminal, JSON edits, or token copying. The current implementation is source- and smoke-tested on Linux; real Windows validation of secure storage and service restart behavior is still required before a production release.
+
+## Phase 7 Onboarding Note
+
+The setup wizard is now Local Agent first for normal users while preserving an intentional remote-only choice. The `onboarding.setupType` preference is validated and persisted, the eight requested wizard steps render from one shared modal, and actions reuse existing Agent Control and dependency APIs rather than duplicating setup logic. Local install and pairing buttons avoid raw tokens and show plain-English status cards.
+
+The implementation has source and smoke coverage only. Real Windows validation is still required for administrator prompts, service installation, progress recovery after restart, and dependency scan/install behavior.

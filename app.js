@@ -1116,6 +1116,7 @@ const DEFAULT_SETTINGS = {
   "onboarding.started": false,
   "onboarding.completed": false,
   "onboarding.currentStep": "welcome",
+  "onboarding.setupType": "this-pc",
   "onboarding.usageSelections": "",
   "onboarding.skipped": false,
   "onboarding.welcomeGuidance": true,
@@ -1142,44 +1143,45 @@ const ONBOARDING_STEPS = [
     description: "AnxOS helps you install, manage, monitor, and access services running on this computer or another system.",
   },
   {
-    id: "usage",
-    title: "Choose how AnxOS will be used",
-    description: "Choose what you want to manage. You can change this later.",
+    id: "setup-type",
+    title: "Choose Setup Type",
+    description: "Choose whether AnxOS should prepare this PC, connect a remote server, or do both.",
   },
   {
-    id: "local",
-    title: "Check this computer",
-    description: "AnxOS checks the desktop app and local management support.",
+    id: "prepare-this-pc",
+    title: "Prepare This PC",
+    description: "AnxOS checks the desktop app, Windows readiness, and managed Local Agent folders.",
   },
   {
-    id: "agent",
-    title: "Connect the local Agent",
-    description: "The AnxOS Agent allows the app to manage services, files, servers, containers, and system information.",
+    id: "install-local-agent",
+    title: "Install Local Agent",
+    description: "Install the Local Agent when you want AnxOS to manage servers, files, backups, and services on this computer.",
   },
   {
-    id: "dependencies",
-    title: "Check available tools",
-    description: "AnxOS checks the programs used by servers, containers, Marketplace installs, and remote access.",
+    id: "pair-securely",
+    title: "Pair Securely",
+    description: "Create a secure local connection between the desktop app and the Local Agent without copying tokens.",
   },
   {
-    id: "remote",
-    title: "Optional remote systems",
-    description: "You can connect another Windows or Linux computer later. This step is optional.",
+    id: "scan-dependencies",
+    title: "Scan Dependencies",
+    description: "Check the tools used by Marketplace templates and local server features.",
+  },
+  {
+    id: "choose-storage",
+    title: "Choose Storage",
+    description: "Review where AnxOS stores local instances, backups, logs, and temporary downloads.",
   },
   {
     id: "finish",
-    title: "AnxOS is ready.",
-    description: "Review what is ready now and what can be set up later.",
+    title: "Finish Setup",
+    description: "Review what is ready now and what can be configured later.",
   },
 ];
-const ONBOARDING_USAGE_OPTIONS = [
-  ["this-computer", "This computer"],
-  ["linux-server", "A Linux server"],
-  ["windows-computer", "A Windows computer"],
-  ["docker", "Docker containers"],
-  ["game-servers", "Game servers"],
-  ["minecraft", "Minecraft servers"],
-  ["remote-systems", "Remote systems"],
+const ONBOARDING_SETUP_TYPES = [
+  ["this-pc", "Use This PC", "Install and pair the Local Agent on this computer."],
+  ["remote", "Connect a Remote Server", "Skip Local Agent setup and add a remote Windows or Linux Agent."],
+  ["both", "Configure Both", "Prepare this computer now and keep remote servers available."],
 ];
 const PAGE_INTRODUCTIONS = {
   dashboard: ["System overview", "See connected systems, running services, and recommended next steps for the selected system / node."],
@@ -26968,6 +26970,40 @@ function onboardingSelectionSet() {
   return new Set(String(getCurrentSettings()["onboarding.usageSelections"] || "").split(",").map((entry) => entry.trim()).filter(Boolean));
 }
 
+function getOnboardingSetupType() {
+  const value = String(getCurrentSettings()["onboarding.setupType"] || "this-pc");
+  return ONBOARDING_SETUP_TYPES.some(([id]) => id === value) ? value : "this-pc";
+}
+
+function onboardingUsesLocalAgent() {
+  return getOnboardingSetupType() !== "remote";
+}
+
+function onboardingUsesRemoteAgent() {
+  return getOnboardingSetupType() !== "this-pc";
+}
+
+function getLocalAgentOnboardingStatus() {
+  const target = getAgentControlOverviewTarget(agentControlState);
+  const runtime = target ? getAgentRuntime(target) : null;
+  const service = target?.service || {};
+  const pairing = target?.pairing || {};
+  const running = Boolean(runtime?.reachable || runtime?.connected || isAgentTargetRunning(target));
+  const serviceInstalled = service.installed === true || service.registrationStatus === "valid";
+  return {
+    target,
+    runtime,
+    pairing,
+    desktopReady: Boolean(runtimeInfoState),
+    installed: Boolean(target?.runtimeBundle?.exists || service.installed || running),
+    serviceInstalled,
+    running,
+    authenticated: pairing.configured === true && pairing.localOnly === true,
+    versionCompatible: !String(target?.state || "").toLowerCase().includes("version"),
+    storageWritable: Array.isArray(target?.config?.storageRoots) && target.config.storageRoots.length > 0,
+  };
+}
+
 function onboardingStatus(label, value, tone = "planned", detail = "") {
   const row = document.createElement("article");
   row.className = "onboarding-status-card";
@@ -26994,40 +27030,50 @@ function appendOnboardingTechnicalDetails(container, title, details = []) {
   container.append(disclosure);
 }
 
-function renderOnboardingUsageStep(container) {
-  container.append(createTextElement("p", "What would you like to manage? These choices personalize setup guidance only. They do not hide features."));
-  const selections = onboardingSelectionSet();
+function renderOnboardingSetupTypeStep(container) {
+  container.append(createTextElement("p", "Most users should start with this PC. Remote servers remain optional and can be added later."));
+  const current = getOnboardingSetupType();
   const grid = document.createElement("div");
   grid.className = "onboarding-choice-grid";
-  ONBOARDING_USAGE_OPTIONS.forEach(([id, labelText]) => {
+  ONBOARDING_SETUP_TYPES.forEach(([id, labelText, description]) => {
     const label = document.createElement("label");
     label.className = "settings-check settings-check--toggle onboarding-choice";
     const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = selections.has(id);
+    input.type = "radio";
+    input.name = "onboarding-setup-type";
+    input.checked = current === id;
     input.addEventListener("change", () => {
-      const next = onboardingSelectionSet();
-      if (input.checked) next.add(id);
-      else next.delete(id);
-      updateOnboardingState({ "onboarding.usageSelections": [...next].join(",") }).catch((error) => {
-        showToast(normalizeIpcErrorMessage(error, "Setup choices could not be saved."), "error");
-      });
+      if (!input.checked) return;
+      updateOnboardingState({ "onboarding.setupType": id }).catch((error) => {
+        showToast(normalizeIpcErrorMessage(error, "Setup type could not be saved."), "error");
+      }).finally(() => renderOnboardingWizard());
     });
-    label.append(input, createTextElement("span", labelText));
+    const text = document.createElement("span");
+    text.append(createTextElement("strong", labelText), createTextElement("small", description));
+    label.append(input, text);
     grid.append(label);
   });
   container.append(grid);
 }
 
-function renderOnboardingLocalStep(container) {
+function renderOnboardingPrepareThisPcStep(container) {
   const info = runtimeInfoState || {};
   const hasRuntime = Boolean(runtimeInfoState);
+  const agent = getLocalAgentOnboardingStatus();
   const platform = info.platform || navigator.platform || "Unable to confirm";
   const status = hasRuntime ? "Ready" : "Unable to confirm";
   const message = hasRuntime
     ? "This computer is ready to use with AnxOS."
     : "Local management information is not loaded yet. Retry the check or open Diagnostics.";
-  container.append(onboardingStatus("This computer", status, hasRuntime ? "ok" : "planned", message));
+  const grid = document.createElement("div");
+  grid.className = "onboarding-status-grid";
+  grid.append(
+    onboardingStatus("Desktop application", status, hasRuntime ? "ok" : "planned", message),
+    onboardingStatus("Local Agent runtime", agent.installed ? "Ready" : "Ready to install", agent.installed ? "ok" : "planned", onboardingUsesLocalAgent() ? "The bundled runtime is managed by AnxOS." : "Skipped for remote-only setup."),
+    onboardingStatus("Windows service", agent.serviceInstalled ? "Registered" : onboardingUsesLocalAgent() ? "Not installed yet" : "Skipped", agent.serviceInstalled ? "ok" : "planned"),
+    onboardingStatus("Storage paths", agent.storageWritable ? "Writable" : "Will be created", agent.storageWritable ? "ok" : "planned"),
+  );
+  container.append(grid);
   const actions = document.createElement("div");
   actions.className = "onboarding-inline-actions";
   const retry = createTextElement("button", "Retry Check", "inline-action");
@@ -27044,7 +27090,8 @@ function renderOnboardingLocalStep(container) {
     ["Hostname", info.hostname],
     ["Application version", info.releaseLabel || info.appVersion || info.version],
     ["Architecture", info.architecture || info.arch],
-    ["Local management", hasRuntime ? "Available through the desktop application host" : "Unable to confirm"],
+    ["Setup type", getOnboardingSetupType()],
+    ["Local Agent", onboardingUsesLocalAgent() ? "Included in this setup" : "Skipped by setup choice"],
   ]);
 }
 
@@ -27073,23 +27120,90 @@ function getOnboardingAgentSummary() {
   return { status: "Unknown", tone: "planned", message: "AnxOS could not confirm the current Agent state." };
 }
 
-function renderOnboardingAgentStep(container) {
-  container.append(createTextElement("p", "The AnxOS Agent allows the app to manage services, files, servers, containers, and system information."));
+function renderOnboardingInstallLocalAgentStep(container) {
+  if (!onboardingUsesLocalAgent()) {
+    container.append(onboardingStatus("Local Agent", "Skipped", "planned", "You chose remote-only setup. AnxOS will not install the Local Agent on this PC."));
+    const actions = document.createElement("div");
+    actions.className = "onboarding-inline-actions";
+    const remote = createTextElement("button", "Add Remote Server", "primary-button");
+    remote.type = "button";
+    remote.addEventListener("click", () => { setOnboardingWizardVisible(false); showPage("nodes"); setNodeModalVisible(true); });
+    actions.append(remote);
+    container.append(actions);
+    return;
+  }
+  container.append(createTextElement("p", "AnxOS Local Agent lets AnxOS manage servers, files, backups, dependencies, and services on this computer."));
   const summary = getOnboardingAgentSummary();
-  container.append(onboardingStatus("Local Agent", summary.status, summary.tone, summary.message));
+  const agent = getLocalAgentOnboardingStatus();
+  const grid = document.createElement("div");
+  grid.className = "onboarding-status-grid";
+  grid.append(
+    onboardingStatus("Local Agent installed", agent.installed ? "Ready" : "Missing", agent.installed ? "ok" : "warning", summary.message),
+    onboardingStatus("Windows service", agent.serviceInstalled ? "Registered" : "Not installed", agent.serviceInstalled ? "ok" : "planned", "The service lets the Agent start with Windows."),
+    onboardingStatus("Agent running", agent.running ? "Running" : "Stopped", agent.running ? "ok" : "planned"),
+  );
+  container.append(grid);
+  const progress = document.createElement("div");
+  progress.className = "onboarding-status-grid";
+  [
+    "Preparing your computer...",
+    "Installing the Local Agent...",
+    "Starting the Agent...",
+    "Creating a secure connection...",
+    "Checking system dependencies...",
+    "Finalizing setup...",
+    "Your PC is ready.",
+  ].forEach((message) => progress.append(onboardingStatus(message, agent.running ? "Done" : "Pending", agent.running ? "ok" : "planned")));
+  container.append(progress);
   const actions = document.createElement("div");
   actions.className = "onboarding-inline-actions";
   [
     ["Retry Check", async () => { await refreshAgentControl({ includeConfig: true }); renderOnboardingWizard(); }],
-    ["Start Agent", async () => { await runAgentControlAction("start"); await refreshAgentControl({ includeConfig: true }); renderOnboardingWizard(); }],
+    [agent.installed ? "Repair Local Agent" : "Install Local Agent", async () => { await runAgentControlAction(agent.installed ? "repairAgent" : "installLocalAgent"); await refreshAgentControl({ includeConfig: true }); renderOnboardingWizard(); }],
     ["Open Agent Control", () => { setOnboardingWizardVisible(false); showPage("agent-control"); }],
-    ["View Diagnostics", () => { setOnboardingWizardVisible(false); showPage("agent-control"); }],
   ].forEach(([labelText, handler]) => {
-    const button = createTextElement("button", labelText, labelText === "Start Agent" ? "primary-button" : "inline-action");
+    const button = createTextElement("button", labelText, /Install|Repair/.test(labelText) ? "primary-button" : "inline-action");
     button.type = "button";
     button.addEventListener("click", handler);
     actions.append(button);
   });
+  container.append(actions);
+}
+
+function renderOnboardingPairSecurelyStep(container) {
+  if (!onboardingUsesLocalAgent()) {
+    container.append(onboardingStatus("Local pairing", "Skipped", "planned", "Remote Agent pairing stays available from Agent Connection settings."));
+    return;
+  }
+  const agent = getLocalAgentOnboardingStatus();
+  container.append(onboardingStatus("Secure local connection", agent.authenticated ? "Paired" : "Needs pairing", agent.authenticated ? "ok" : "warning", agent.authenticated ? "Credentials are stored locally and only the fingerprint is shown." : "AnxOS can repair local credentials automatically without token copying."));
+  appendOnboardingTechnicalDetails(container, "Pairing details", [
+    ["Authentication", agent.authenticated ? "Successful" : "Not paired"],
+    ["Token fingerprint", agent.pairing?.fingerprint || "Unavailable"],
+    ["Local only", agent.pairing?.localOnly ? "Yes" : "Not confirmed"],
+  ]);
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const pair = createTextElement("button", agent.authenticated ? "Repair Pairing" : "Pair Securely", "primary-button");
+  pair.type = "button";
+  pair.addEventListener("click", async () => {
+    const api = getDesktopApiState().api?.agentControl;
+    if (!api?.pairLocalAgent) throw new Error("Local Agent pairing is unavailable in this build.");
+    await api.pairLocalAgent({ rotate: false, reason: "onboarding" });
+    await refreshAgentControl({ includeConfig: true });
+    renderOnboardingWizard();
+  });
+  const rotate = createTextElement("button", "Rotate Credentials", "inline-action");
+  rotate.type = "button";
+  rotate.addEventListener("click", async () => {
+    const api = getDesktopApiState().api?.agentControl;
+    if (!api?.pairLocalAgent) throw new Error("Local Agent pairing is unavailable in this build.");
+    await api.pairLocalAgent({ rotate: true, reason: "onboarding-rotation" });
+    await api.restart?.();
+    await refreshAgentControl({ includeConfig: true });
+    renderOnboardingWizard();
+  });
+  actions.append(pair, rotate);
   container.append(actions);
 }
 
@@ -27112,7 +27226,7 @@ function renderOnboardingDependenciesStep(container) {
   container.append(createTextElement("p", intro));
   const actions = document.createElement("div");
   actions.className = "onboarding-inline-actions";
-  const check = createTextElement("button", "Check Dependencies", "primary-button");
+  const check = createTextElement("button", "Scan Dependencies", "primary-button");
   check.type = "button";
   check.addEventListener("click", async () => { await runDependencyAction("check"); renderOnboardingWizard(); });
   const install = createTextElement("button", "Install Missing", "inline-action");
@@ -27134,8 +27248,34 @@ function renderOnboardingDependenciesStep(container) {
   container.append(grid);
 }
 
-function renderOnboardingRemoteStep(container) {
-  container.append(createTextElement("p", "You can connect another Windows or Linux computer later. This step is optional."));
+function renderOnboardingStorageStep(container) {
+  const agent = getLocalAgentOnboardingStatus();
+  const config = agent.target?.config || {};
+  const storageRoots = Array.isArray(config.storageRoots) ? config.storageRoots : [];
+  const allowedFolders = Array.isArray(config.allowedFolders) ? config.allowedFolders : [];
+  container.append(createTextElement("p", onboardingUsesLocalAgent() ? "These managed folders are used for instances, backups, logs, and temporary downloads on this PC." : "Storage on this PC is skipped for remote-only setup."));
+  const grid = document.createElement("div");
+  grid.className = "onboarding-status-grid";
+  grid.append(
+    onboardingStatus("Instance storage", storageRoots[0] ? "Configured" : "Will be created", storageRoots[0] ? "ok" : "planned", storageRoots[0] || "Managed by Local Agent installer"),
+    onboardingStatus("Backup storage", storageRoots[1] ? "Configured" : "Will be created", storageRoots[1] ? "ok" : "planned", storageRoots[1] || "Managed by Local Agent installer"),
+    onboardingStatus("Writable paths", allowedFolders.length ? `${allowedFolders.length} roots` : "Default roots", allowedFolders.length ? "ok" : "planned"),
+  );
+  container.append(grid);
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const open = createTextElement("button", "Open Agent Control", "inline-action");
+  open.type = "button";
+  open.addEventListener("click", () => { setOnboardingWizardVisible(false); showPage("agent-control"); });
+  const files = createTextElement("button", "Open Files", "inline-action");
+  files.type = "button";
+  files.addEventListener("click", () => { setOnboardingWizardVisible(false); showPage("files"); });
+  actions.append(open, files);
+  container.append(actions);
+}
+
+function renderOnboardingRemoteSummary(container) {
+  container.append(createTextElement("p", onboardingUsesRemoteAgent() ? "Add a remote Windows or Linux Agent when you are ready." : "Remote servers are optional and can be added later."));
   const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
   const grid = document.createElement("div");
   grid.className = "onboarding-status-grid";
@@ -27164,17 +27304,20 @@ function renderOnboardingFinishStep(container) {
   const agent = getOnboardingAgentSummary();
   const dependencySummary = summarizeDependencyStatus(latestDependencyResult);
   const remoteCount = (nodesState.nodes || []).filter((node) => node.kind === "agent").length;
+  const setupType = getOnboardingSetupType();
   const grid = document.createElement("div");
   grid.className = "onboarding-status-grid";
   grid.append(
     onboardingStatus("Local computer", runtimeInfoState ? "Ready" : "Unable to confirm", runtimeInfoState ? "ok" : "planned"),
-    onboardingStatus("Agent", agent.status, agent.tone),
+    onboardingStatus("Local Agent", onboardingUsesLocalAgent() ? agent.status : "Skipped", onboardingUsesLocalAgent() ? agent.tone : "planned"),
     onboardingStatus("Dependencies", latestDependencyResult ? dependencySummary.label : "Optional setup remaining", latestDependencyResult && dependencySummary.state === "ready" ? "ok" : "manual"),
     onboardingStatus("Connected systems", remoteCount ? `${remoteCount} connected` : "Optional setup remaining", remoteCount ? "ok" : "planned"),
+    onboardingStatus("Setup type", setupType === "this-pc" ? "Use This PC" : setupType === "remote" ? "Connect a Remote Server" : "Configure Both", "ok"),
     onboardingStatus("Docker", dockerWorkspaceState?.ready ? "Ready" : "Optional setup remaining", dockerWorkspaceState?.ready ? "ok" : "planned"),
     onboardingStatus("Public access providers", "Optional setup remaining", "planned"),
   );
   container.append(grid);
+  if (onboardingUsesRemoteAgent()) renderOnboardingRemoteSummary(container);
   const actions = document.createElement("div");
   actions.className = "onboarding-inline-actions";
   const dashboard = createTextElement("button", "Open Dashboard", "primary-button");
@@ -27208,11 +27351,12 @@ function renderOnboardingWizard() {
   }
   onboardingWizardBody.replaceChildren();
   if (step.id === "welcome") onboardingWizardBody.append(createTextElement("p", "AnxOS helps you install, manage, monitor, and access services running on this computer or another system."));
-  else if (step.id === "usage") renderOnboardingUsageStep(onboardingWizardBody);
-  else if (step.id === "local") renderOnboardingLocalStep(onboardingWizardBody);
-  else if (step.id === "agent") renderOnboardingAgentStep(onboardingWizardBody);
-  else if (step.id === "dependencies") renderOnboardingDependenciesStep(onboardingWizardBody);
-  else if (step.id === "remote") renderOnboardingRemoteStep(onboardingWizardBody);
+  else if (step.id === "setup-type") renderOnboardingSetupTypeStep(onboardingWizardBody);
+  else if (step.id === "prepare-this-pc") renderOnboardingPrepareThisPcStep(onboardingWizardBody);
+  else if (step.id === "install-local-agent") renderOnboardingInstallLocalAgentStep(onboardingWizardBody);
+  else if (step.id === "pair-securely") renderOnboardingPairSecurelyStep(onboardingWizardBody);
+  else if (step.id === "scan-dependencies") renderOnboardingDependenciesStep(onboardingWizardBody);
+  else if (step.id === "choose-storage") renderOnboardingStorageStep(onboardingWizardBody);
   else renderOnboardingFinishStep(onboardingWizardBody);
   onboardingWizardButtons.forEach((button) => {
     const action = button.dataset.onboardingWizardAction;
@@ -27257,6 +27401,7 @@ async function handleOnboardingAction(action) {
       "onboarding.completed": false,
       "onboarding.skipped": false,
       "onboarding.currentStep": "welcome",
+      "onboarding.setupType": "this-pc",
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,
     }, { statusMessage: "Setup guide started." });
@@ -27268,6 +27413,7 @@ async function handleOnboardingAction(action) {
       "onboarding.completed": false,
       "onboarding.skipped": true,
       "onboarding.currentStep": "welcome",
+      "onboarding.setupType": "this-pc",
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,
     }, { statusMessage: "Setup guide skipped." });
@@ -27279,6 +27425,7 @@ async function handleOnboardingAction(action) {
       "onboarding.completed": false,
       "onboarding.skipped": false,
       "onboarding.currentStep": "welcome",
+      "onboarding.setupType": "this-pc",
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,
     }, { statusMessage: action === "reset" ? "Onboarding state reset." : "Setup guide restarted." });

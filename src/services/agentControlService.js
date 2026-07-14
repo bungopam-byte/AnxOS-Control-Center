@@ -107,6 +107,31 @@ function getRegistrationStatusFromServiceState(service = {}) {
   return "valid";
 }
 
+function ensureLocalAgentBackendSelected(config) {
+  const effective = agentClient.getEffectiveAgentSettings();
+  if (effective.overrides?.backendMode || effective.overrides?.agentUrl) {
+    return { changed: false, reason: "environment-override" };
+  }
+  const localAgentUrl = getLocalAgentUrl(config);
+  const currentUrl = normalizeAgentUrlForComparison(effective.agentUrl);
+  const localUrl = normalizeAgentUrlForComparison(localAgentUrl);
+  if (effective.backendMode === "agent" && currentUrl === localUrl) {
+    return { changed: false, reason: "already-selected" };
+  }
+  if (effective.backendMode === "agent" && currentUrl && currentUrl !== localUrl) {
+    return { changed: false, reason: "remote-agent-selected" };
+  }
+  const settings = agentClient.saveAgentSettings({
+    backendMode: "agent",
+    agentUrl: localAgentUrl,
+  });
+  diagnostics.log("info", "agent-control", "select-local-agent-backend", "Local Agent backend selected after starting the bundled Agent", {
+    agentUrl: localAgentUrl,
+    previousMode: effective.backendMode,
+  }, { file: "service-manager" });
+  return { changed: true, reason: "selected-local-agent", settings };
+}
+
 async function start() {
   if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
   if (managedProcess && !managedProcess.killed) return getStatus();
@@ -117,6 +142,7 @@ async function start() {
     const agentUrl = getLocalAgentUrl(config);
     const existingHealth = await agentClient.getHealth(getLocalAgentHealthConfig(config)).catch(() => null);
     if (existingHealth?.ok) {
+      ensureLocalAgentBackendSelected(config);
       lastRestartReason = "Connected to an already running local Agent";
       lastError = null;
       diagnostics.log("info", "agent-control", "start-existing-agent", "Local Agent was already listening on the configured port", {
@@ -135,6 +161,7 @@ async function start() {
       const result = process.platform === "linux" ? await command("systemctl", ["--user", "start", "anxos-agent.service"]) : await command("schtasks.exe", ["/Run", "/TN", SERVICE_NAME]);
       if (!result.ok) throw Object.assign(new Error(result.stderr || "Background Agent could not be started."), { code: "SERVICE_START_FAILED" });
       await new Promise((resolve) => setTimeout(resolve, 800));
+      ensureLocalAgentBackendSelected(config);
       lastRestartReason = "Background service started from AnxOS"; lastError = null; return getStatus();
     }
     managedProcess = spawn(process.execPath, [getAgentScript()], { cwd: getAppRoot(), env: agentEnvironment(config), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -144,6 +171,7 @@ async function start() {
     managedProcess.once("exit", (code, signal) => { diagnostics.log(code === 0 ? "info" : "error", "agent", "process-exit", "Local Agent process exited", { code, signal, restartPolicy: config.restartPolicy }, { file: "agent", correlationId }); managedProcess = null; if (code && config.restartPolicy === "always") start().catch(() => {}); });
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (managedProcess?.exitCode !== null) throw Object.assign(new Error("Agent exited during startup."), { code: "AGENT_START_FAILED" });
+    ensureLocalAgentBackendSelected(config);
     lastRestartReason = "Started from AnxOS"; lastError = null; return getStatus();
   } catch (error) { lastError = { code: error.code || "AGENT_START_FAILED", message: error.message }; diagnostics.logError("agent-control", "start", error, {}, { file: "service-manager" }); throw error; }
   finally { operationInFlight = null; }

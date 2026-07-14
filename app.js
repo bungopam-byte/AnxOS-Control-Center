@@ -4254,11 +4254,11 @@ function getLocalAgentFriendlyState(localAgent = {}) {
     };
   }
   return {
-    status: "Not installed",
+    status: "Ready to start",
     tone: "planned",
-    message: "Install the local Agent when you want AnxOS to manage files, servers, containers, and services on this computer.",
+    message: "Start the bundled local Agent when you want AnxOS to manage files, servers, containers, and services on this computer.",
     actions: [
-      { label: "Install Agent", agentAction: "installService", primary: true, disabled: Boolean(service.requiresElevation && service.privilege?.elevated !== true), title: service.requiresElevation ? "Run AnxOS Control Center as Administrator to install the service." : "" },
+      { label: "Start Agent", agentAction: "start", primary: true },
       { label: "View Diagnostics", agentAction: "runDiagnostics" },
     ],
   };
@@ -4362,7 +4362,7 @@ function renderLocalAgentSystems(payload = agentControlState) {
     agentLocalHostList.append(createAgentSystemCard({
       title: localAgent.config?.name || localAgent.hostname || "Local Agent service",
       subtitle: "Local Agent Service",
-      status: running ? "Running" : service.installed ? "Stopped" : "Not installed",
+      status: running ? "Running" : service.installed ? "Stopped" : "Ready to start",
       statusTone: running ? "ok" : "planned",
       details: [
         service.supported ? `${service.type} ${service.registrationStatus || service.state || "unknown"}` : "Service management unsupported",
@@ -26985,7 +26985,7 @@ function getOnboardingAgentSummary() {
   if (state.includes("auth")) return { status: "Authentication mismatch", tone: "critical", message: "The app and Agent need matching connection credentials." };
   if (state.includes("stopped")) return { status: "Installed but stopped", tone: "warning", message: "The Agent appears installed but is not running." };
   if (state.includes("unreachable") || state.includes("offline")) return { status: "Running but unreachable", tone: "warning", message: "The Agent could not be reached from the app." };
-  if (target?.service?.installed === false) return { status: "Not installed", tone: "planned", message: "The local Agent service is not installed yet." };
+  if (target?.service?.installed === false) return { status: "Ready to start", tone: "planned", message: "The bundled local Agent can be started from AnxOS when you need managed features." };
   return { status: "Unknown", tone: "planned", message: "AnxOS could not confirm the current Agent state." };
 }
 
@@ -26997,10 +26997,11 @@ function renderOnboardingAgentStep(container) {
   actions.className = "onboarding-inline-actions";
   [
     ["Retry Check", async () => { await refreshAgentControl({ includeConfig: true }); renderOnboardingWizard(); }],
+    ["Start Agent", async () => { await runAgentControlAction("start"); await refreshAgentControl({ includeConfig: true }); renderOnboardingWizard(); }],
     ["Open Agent Control", () => { setOnboardingWizardVisible(false); showPage("agent-control"); }],
     ["View Diagnostics", () => { setOnboardingWizardVisible(false); showPage("agent-control"); }],
   ].forEach(([labelText, handler]) => {
-    const button = createTextElement("button", labelText, labelText === "Open Agent Control" ? "primary-button" : "inline-action");
+    const button = createTextElement("button", labelText, labelText === "Start Agent" ? "primary-button" : "inline-action");
     button.type = "button";
     button.addEventListener("click", handler);
     actions.append(button);

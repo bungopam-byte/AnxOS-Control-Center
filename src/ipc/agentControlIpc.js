@@ -11,6 +11,10 @@ async function runAuthorized(operation, handler) {
   return runAudited(operation, actor, handler);
 }
 
+async function runLocalLifecycle(operation, handler) {
+  return runAudited(operation, null, handler);
+}
+
 async function runAudited(operation, actor, handler) {
   try {
     const result = await handler();
@@ -40,6 +44,9 @@ function registerAgentControlIpc() {
   ipcMain.handle("agentControl:saveConfig", (_, payload = {}) => runAuthorized("config-save", () => control.saveConfig(payload)));
   ipcMain.handle("agentControl:restoreConfig", () => runAuthorized("config-restore", () => control.restoreConfigBackup()));
   ipcMain.handle("agentControl:resetConfig", () => runAuthorized("config-reset", () => control.resetConfig()));
-  for (const [channel, operation] of Object.entries({ start: () => control.start(), stop: () => control.stop(), restart: () => control.restart(), forceRestart: () => control.restart({ force: true }), installService: () => control.installService(), uninstallService: () => control.uninstallService(), enableAutoStart: () => control.setAutoStart(true), disableAutoStart: () => control.setAutoStart(false), openLogs: () => control.openLogs(), openDataFolder: () => control.openDataFolder() })) ipcMain.handle(`agentControl:${channel}`, () => runAuthorized(channel, operation));
+  for (const [channel, operation] of Object.entries({ start: () => control.start(), stop: () => control.stop(), restart: () => control.restart(), forceRestart: () => control.restart({ force: true }) })) {
+    ipcMain.handle(`agentControl:${channel}`, () => runLocalLifecycle(channel, operation));
+  }
+  for (const [channel, operation] of Object.entries({ installService: () => control.installService(), uninstallService: () => control.uninstallService(), enableAutoStart: () => control.setAutoStart(true), disableAutoStart: () => control.setAutoStart(false), openLogs: () => control.openLogs(), openDataFolder: () => control.openDataFolder() })) ipcMain.handle(`agentControl:${channel}`, () => runAuthorized(channel, operation));
 }
 module.exports = { registerAgentControlIpc };

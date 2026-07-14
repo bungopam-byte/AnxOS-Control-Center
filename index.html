@@ -4167,6 +4167,26 @@
         </footer>
       </section>
     </div>
+    <div class="app-modal-backdrop" data-onboarding-wizard hidden>
+      <section class="app-modal app-modal--onboarding-wizard" role="dialog" aria-modal="true" aria-labelledby="onboarding-wizard-title" aria-describedby="onboarding-wizard-description" tabindex="-1">
+        <header class="app-modal__header onboarding-wizard__header">
+          <div>
+            <p class="app-modal__eyebrow" data-onboarding-wizard-progress>Step 1 of 7</p>
+            <h2 id="onboarding-wizard-title" data-onboarding-wizard-title>Welcome</h2>
+            <p id="onboarding-wizard-description" data-onboarding-wizard-description>AnxOS helps you install, manage, monitor, and access services running on this computer or another system.</p>
+          </div>
+          <button class="app-modal__close" type="button" aria-label="Skip setup guide" data-onboarding-wizard-action="skip">&times;</button>
+        </header>
+        <div class="onboarding-step-track" data-onboarding-wizard-track aria-hidden="true"></div>
+        <div class="app-modal__body onboarding-wizard__body" data-onboarding-wizard-body></div>
+        <footer class="app-modal__actions onboarding-wizard__actions">
+          <button class="inline-action" type="button" data-onboarding-wizard-action="back">Back</button>
+          <button class="inline-action" type="button" data-onboarding-wizard-action="skip">Skip</button>
+          <button class="primary-button" type="button" data-onboarding-wizard-action="continue">Continue</button>
+          <button class="primary-button" type="button" data-onboarding-wizard-action="finish" hidden>Finish</button>
+        </footer>
+      </section>
+    </div>
     <div class="app-modal-backdrop" data-fivem-setup-modal hidden>
       <section class="app-modal app-modal--fivem-setup" role="dialog" aria-modal="true" aria-labelledby="fivem-setup-title" tabindex="-1">
         <header class="app-modal__header">

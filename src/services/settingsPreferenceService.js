@@ -76,6 +76,7 @@ const SETTING_DEFINITIONS = {
   "onboarding.started": { category: "onboarding", type: "boolean", default: false },
   "onboarding.completed": { category: "onboarding", type: "boolean", default: false },
   "onboarding.currentStep": { category: "onboarding", type: "string", default: "welcome", maxLength: 40 },
+  "onboarding.usageSelections": { category: "onboarding", type: "string", default: "", maxLength: 200 },
   "onboarding.skipped": { category: "onboarding", type: "boolean", default: false },
   "onboarding.welcomeGuidance": { category: "onboarding", type: "boolean", default: true },
   "onboarding.contextualTips": { category: "onboarding", type: "boolean", default: true },

@@ -400,6 +400,13 @@ const settingsResetButton = document.querySelector("[data-settings-reset]");
 const settingsResetCategoryButtons = document.querySelectorAll("[data-settings-reset-category]");
 const onboardingWelcomeModal = document.querySelector("[data-onboarding-welcome]");
 const onboardingActionButtons = document.querySelectorAll("[data-onboarding-action]");
+const onboardingWizardModal = document.querySelector("[data-onboarding-wizard]");
+const onboardingWizardTitle = document.querySelector("[data-onboarding-wizard-title]");
+const onboardingWizardDescription = document.querySelector("[data-onboarding-wizard-description]");
+const onboardingWizardProgress = document.querySelector("[data-onboarding-wizard-progress]");
+const onboardingWizardTrack = document.querySelector("[data-onboarding-wizard-track]");
+const onboardingWizardBody = document.querySelector("[data-onboarding-wizard-body]");
+const onboardingWizardButtons = document.querySelectorAll("[data-onboarding-wizard-action]");
 settingsInputs.forEach((input) => {
   input.dataset.settingsInitiallyDisabled = input.disabled ? "true" : "false";
 });
@@ -470,6 +477,7 @@ let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
 let fivemSetupModalCleanup = null;
 let onboardingWelcomeCleanup = null;
+let onboardingWizardCleanup = null;
 let openModalCount = 0;
 let modalBackgroundWasInert = false;
 
@@ -1083,6 +1091,7 @@ const DEFAULT_SETTINGS = {
   "onboarding.started": false,
   "onboarding.completed": false,
   "onboarding.currentStep": "welcome",
+  "onboarding.usageSelections": "",
   "onboarding.skipped": false,
   "onboarding.welcomeGuidance": true,
   "onboarding.contextualTips": true,
@@ -1099,6 +1108,52 @@ let settingsPermissionState = {
   settings: { ownerOnly: ["developer.debugMode"] },
 };
 let previousSettingsOwnerState = false;
+const ONBOARDING_STEPS = [
+  {
+    id: "welcome",
+    title: "Welcome",
+    description: "AnxOS helps you install, manage, monitor, and access services running on this computer or another system.",
+  },
+  {
+    id: "usage",
+    title: "Choose how AnxOS will be used",
+    description: "Choose what you want to manage. You can change this later.",
+  },
+  {
+    id: "local",
+    title: "Check this computer",
+    description: "AnxOS checks the desktop app and local management support.",
+  },
+  {
+    id: "agent",
+    title: "Connect the local Agent",
+    description: "The AnxOS Agent allows the app to manage services, files, servers, containers, and system information.",
+  },
+  {
+    id: "dependencies",
+    title: "Check available tools",
+    description: "AnxOS checks the programs used by servers, containers, Marketplace installs, and remote access.",
+  },
+  {
+    id: "remote",
+    title: "Optional remote systems",
+    description: "You can connect another Windows or Linux computer later. This step is optional.",
+  },
+  {
+    id: "finish",
+    title: "AnxOS is ready.",
+    description: "Review what is ready now and what can be set up later.",
+  },
+];
+const ONBOARDING_USAGE_OPTIONS = [
+  ["this-computer", "This computer"],
+  ["linux-server", "A Linux server"],
+  ["windows-computer", "A Windows computer"],
+  ["docker", "Docker containers"],
+  ["game-servers", "Game servers"],
+  ["minecraft", "Minecraft servers"],
+  ["remote-systems", "Remote systems"],
+];
 
 function getCurrentSettings() {
   return currentSettings || DEFAULT_SETTINGS;
@@ -25728,7 +25783,310 @@ function setOnboardingWelcomeVisible(visible) {
 
 function maybeOpenOnboardingWelcome(settings = getCurrentSettings()) {
   if (!shouldShowOnboardingWelcome(settings)) return;
-  window.setTimeout(() => setOnboardingWelcomeVisible(true), 350);
+  window.setTimeout(() => {
+    if (settings["onboarding.started"] === true) {
+      setOnboardingWizardVisible(true);
+    } else {
+      setOnboardingWelcomeVisible(true);
+    }
+  }, 350);
+}
+
+function getOnboardingStepIndex(stepId = getCurrentSettings()["onboarding.currentStep"]) {
+  const index = ONBOARDING_STEPS.findIndex((step) => step.id === stepId);
+  return index >= 0 ? index : 0;
+}
+
+function setOnboardingWizardVisible(visible) {
+  if (!onboardingWizardModal) return;
+  if (visible) {
+    onboardingWizardModal.hidden = false;
+    renderOnboardingWizard();
+    onboardingWizardCleanup = activateModal(onboardingWizardModal, {
+      initialFocus: () => onboardingWizardModal.querySelector('[data-onboarding-wizard-action="continue"], [data-onboarding-wizard-action="finish"]'),
+    });
+  } else {
+    onboardingWizardCleanup?.();
+    onboardingWizardCleanup = null;
+    onboardingWizardModal.hidden = true;
+  }
+}
+
+function onboardingSelectionSet() {
+  return new Set(String(getCurrentSettings()["onboarding.usageSelections"] || "").split(",").map((entry) => entry.trim()).filter(Boolean));
+}
+
+function onboardingStatus(label, value, tone = "planned", detail = "") {
+  const row = document.createElement("article");
+  row.className = "onboarding-status-card";
+  const header = document.createElement("div");
+  header.append(createTextElement("strong", label), createTextElement("span", value, `status-pill status-pill--${tone}`));
+  row.append(header);
+  if (detail) row.append(createTextElement("p", detail));
+  return row;
+}
+
+function appendOnboardingTechnicalDetails(container, title, details = []) {
+  const cleanDetails = details.filter(Boolean);
+  if (!cleanDetails.length) return;
+  const disclosure = document.createElement("details");
+  disclosure.className = "onboarding-technical-details";
+  disclosure.append(createTextElement("summary", title));
+  const list = document.createElement("dl");
+  cleanDetails.forEach(([label, value]) => {
+    const row = document.createElement("div");
+    row.append(createTextElement("dt", label), createTextElement("dd", value || "Unavailable"));
+    list.append(row);
+  });
+  disclosure.append(list);
+  container.append(disclosure);
+}
+
+function renderOnboardingUsageStep(container) {
+  container.append(createTextElement("p", "What would you like to manage? These choices personalize setup guidance only. They do not hide features."));
+  const selections = onboardingSelectionSet();
+  const grid = document.createElement("div");
+  grid.className = "onboarding-choice-grid";
+  ONBOARDING_USAGE_OPTIONS.forEach(([id, labelText]) => {
+    const label = document.createElement("label");
+    label.className = "settings-check settings-check--toggle onboarding-choice";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = selections.has(id);
+    input.addEventListener("change", () => {
+      const next = onboardingSelectionSet();
+      if (input.checked) next.add(id);
+      else next.delete(id);
+      updateOnboardingState({ "onboarding.usageSelections": [...next].join(",") }).catch((error) => {
+        showToast(normalizeIpcErrorMessage(error, "Setup choices could not be saved."), "error");
+      });
+    });
+    label.append(input, createTextElement("span", labelText));
+    grid.append(label);
+  });
+  container.append(grid);
+}
+
+function renderOnboardingLocalStep(container) {
+  const info = runtimeInfoState || {};
+  const hasRuntime = Boolean(runtimeInfoState);
+  const platform = info.platform || navigator.platform || "Unable to confirm";
+  const status = hasRuntime ? "Ready" : "Unable to confirm";
+  const message = hasRuntime
+    ? "This computer is ready to use with AnxOS."
+    : "Local management information is not loaded yet. Retry the check or open Diagnostics.";
+  container.append(onboardingStatus("This computer", status, hasRuntime ? "ok" : "planned", message));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const retry = createTextElement("button", "Retry Check", "inline-action");
+  retry.type = "button";
+  retry.addEventListener("click", async () => { await loadRuntimeInfo(); renderOnboardingWizard(); });
+  const diagnostics = createTextElement("button", "View Diagnostics", "inline-action");
+  diagnostics.type = "button";
+  diagnostics.addEventListener("click", () => { setOnboardingWizardVisible(false); showPage("agent-control"); });
+  actions.append(retry, diagnostics);
+  container.append(actions);
+  appendOnboardingTechnicalDetails(container, "Technical details", [
+    ["Operating system", info.operatingSystem || info.os || platform],
+    ["Platform", platform],
+    ["Hostname", info.hostname],
+    ["Application version", info.releaseLabel || info.appVersion || info.version],
+    ["Architecture", info.architecture || info.arch],
+    ["Local management", hasRuntime ? "Available through the desktop application host" : "Unable to confirm"],
+  ]);
+}
+
+function getOnboardingAgentSummary() {
+  const target = getAgentControlOverviewTarget(agentControlState);
+  const runtime = target ? getAgentRuntime(target) : null;
+  if (!agentControlState) {
+    return {
+      status: "Unable to check",
+      tone: "planned",
+      message: "Agent state has not been checked in this session.",
+    };
+  }
+  if (runtime?.reachable || runtime?.connected || isAgentTargetRunning(target)) {
+    return {
+      status: "Connected",
+      tone: "ok",
+      message: "The Agent is reachable and ready for managed features.",
+    };
+  }
+  const state = String(target?.state || runtime?.serviceState || "unknown").toLowerCase();
+  if (state.includes("auth")) return { status: "Authentication mismatch", tone: "critical", message: "The app and Agent need matching connection credentials." };
+  if (state.includes("stopped")) return { status: "Installed but stopped", tone: "warning", message: "The Agent appears installed but is not running." };
+  if (state.includes("unreachable") || state.includes("offline")) return { status: "Running but unreachable", tone: "warning", message: "The Agent could not be reached from the app." };
+  if (target?.service?.installed === false) return { status: "Not installed", tone: "planned", message: "The local Agent service is not installed yet." };
+  return { status: "Unknown", tone: "planned", message: "AnxOS could not confirm the current Agent state." };
+}
+
+function renderOnboardingAgentStep(container) {
+  container.append(createTextElement("p", "The AnxOS Agent allows the app to manage services, files, servers, containers, and system information."));
+  const summary = getOnboardingAgentSummary();
+  container.append(onboardingStatus("Local Agent", summary.status, summary.tone, summary.message));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  [
+    ["Retry Check", async () => { await refreshAgentControl({ includeConfig: true }); renderOnboardingWizard(); }],
+    ["Open Agent Control", () => { setOnboardingWizardVisible(false); showPage("agent-control"); }],
+    ["View Diagnostics", () => { setOnboardingWizardVisible(false); showPage("agent-control"); }],
+  ].forEach(([labelText, handler]) => {
+    const button = createTextElement("button", labelText, labelText === "Open Agent Control" ? "primary-button" : "inline-action");
+    button.type = "button";
+    button.addEventListener("click", handler);
+    actions.append(button);
+  });
+  container.append(actions);
+}
+
+function getDependencyFriendlyState(dependency = {}) {
+  const state = String(dependency.state || "").toLowerCase();
+  if (dependency.installed === true || state === "installed" || state === "ready") return "Ready";
+  if (dependency.updateAvailable === true || state === "update-required" || state === "outdated") return "Update available";
+  if (state === "missing" || dependency.installed === false) return "Not installed";
+  if (state === "unsupported" || dependency.supported === false) return "Not supported";
+  if (state.includes("setup") || state.includes("auth")) return "Setup required";
+  return "Unable to check";
+}
+
+function renderOnboardingDependenciesStep(container) {
+  const result = latestDependencyResult;
+  const dependencies = Array.isArray(result?.dependencies) ? result.dependencies : [];
+  const intro = result
+    ? "Detected tools are grouped by the dependency registry used by Marketplace and Agent Control."
+    : "No dependency check has completed yet. Run a check to detect tools on the selected system.";
+  container.append(createTextElement("p", intro));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const check = createTextElement("button", "Check Dependencies", "primary-button");
+  check.type = "button";
+  check.addEventListener("click", async () => { await runDependencyAction("check"); renderOnboardingWizard(); });
+  const install = createTextElement("button", "Install Missing", "inline-action");
+  install.type = "button";
+  install.addEventListener("click", async () => { await runDependencyAction("install"); renderOnboardingWizard(); });
+  actions.append(check, install);
+  container.append(actions);
+  const grid = document.createElement("div");
+  grid.className = "onboarding-status-grid";
+  if (!dependencies.length) {
+    grid.append(onboardingStatus("Tools", "Unable to check", "planned", "Run a dependency check to see installed versions and setup requirements."));
+  } else {
+    dependencies.slice(0, 14).forEach((dependency) => {
+      const state = getDependencyFriendlyState(dependency);
+      const tone = state === "Ready" ? "ok" : state === "Not installed" || state === "Setup required" ? "warning" : state === "Not supported" ? "planned" : "manual";
+      grid.append(onboardingStatus(dependency.displayName || dependency.id || "Dependency", state, tone, dependency.version ? `Version ${dependency.version}` : dependency.reason || "Version unavailable"));
+    });
+  }
+  container.append(grid);
+}
+
+function renderOnboardingRemoteStep(container) {
+  container.append(createTextElement("p", "You can connect another Windows or Linux computer later. This step is optional."));
+  const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
+  const grid = document.createElement("div");
+  grid.className = "onboarding-status-grid";
+  if (!remoteNodes.length) {
+    grid.append(onboardingStatus("Remote systems", "Optional", "planned", "Only this computer is connected right now."));
+  } else {
+    remoteNodes.forEach((node) => {
+      const connected = getNodeVisualState(node) === "online";
+      grid.append(onboardingStatus(node.displayName || node.hostname || node.id, connected ? "Connected" : "Unable to confirm", connected ? "ok" : "planned", `${node.platform || node.operatingSystem || "Platform unavailable"} · ${node.agentUrl || node.hostname || "Address unavailable"}`));
+    });
+  }
+  container.append(grid);
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const add = createTextElement("button", "Add a Remote System", "primary-button");
+  add.type = "button";
+  add.addEventListener("click", () => { setOnboardingWizardVisible(false); showPage("nodes"); setNodeModalVisible(true); });
+  const skip = createTextElement("button", "Skip for Now", "inline-action");
+  skip.type = "button";
+  skip.addEventListener("click", () => goToOnboardingStep("finish"));
+  actions.append(add, skip);
+  container.append(actions);
+}
+
+function renderOnboardingFinishStep(container) {
+  const agent = getOnboardingAgentSummary();
+  const dependencySummary = summarizeDependencyStatus(latestDependencyResult);
+  const remoteCount = (nodesState.nodes || []).filter((node) => node.kind === "agent").length;
+  const grid = document.createElement("div");
+  grid.className = "onboarding-status-grid";
+  grid.append(
+    onboardingStatus("Local computer", runtimeInfoState ? "Ready" : "Unable to confirm", runtimeInfoState ? "ok" : "planned"),
+    onboardingStatus("Agent", agent.status, agent.tone),
+    onboardingStatus("Dependencies", latestDependencyResult ? dependencySummary.label : "Optional setup remaining", latestDependencyResult && dependencySummary.state === "ready" ? "ok" : "manual"),
+    onboardingStatus("Connected systems", remoteCount ? `${remoteCount} connected` : "Optional setup remaining", remoteCount ? "ok" : "planned"),
+    onboardingStatus("Docker", dockerWorkspaceState?.ready ? "Ready" : "Optional setup remaining", dockerWorkspaceState?.ready ? "ok" : "planned"),
+    onboardingStatus("Public access providers", "Optional setup remaining", "planned"),
+  );
+  container.append(grid);
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const dashboard = createTextElement("button", "Open Dashboard", "primary-button");
+  dashboard.type = "button";
+  dashboard.addEventListener("click", async () => {
+    await handleOnboardingWizardFinish();
+    showPage("dashboard");
+  });
+  const summary = createTextElement("button", "View Setup Summary", "inline-action");
+  summary.type = "button";
+  summary.addEventListener("click", () => showToast("Setup summary is shown in this step."));
+  actions.append(dashboard, summary);
+  container.append(actions);
+}
+
+function renderOnboardingWizard() {
+  if (!onboardingWizardBody) return;
+  const index = getOnboardingStepIndex();
+  const step = ONBOARDING_STEPS[index] || ONBOARDING_STEPS[0];
+  if (onboardingWizardTitle) onboardingWizardTitle.textContent = step.title;
+  if (onboardingWizardDescription) onboardingWizardDescription.textContent = step.description;
+  if (onboardingWizardProgress) onboardingWizardProgress.textContent = `Step ${index + 1} of ${ONBOARDING_STEPS.length}`;
+  if (onboardingWizardTrack) {
+    onboardingWizardTrack.replaceChildren();
+    ONBOARDING_STEPS.forEach((candidate, candidateIndex) => {
+      const marker = document.createElement("span");
+      marker.className = candidateIndex === index ? "is-active" : candidateIndex < index ? "is-complete" : "";
+      marker.title = candidate.title;
+      onboardingWizardTrack.append(marker);
+    });
+  }
+  onboardingWizardBody.replaceChildren();
+  if (step.id === "welcome") onboardingWizardBody.append(createTextElement("p", "AnxOS helps you install, manage, monitor, and access services running on this computer or another system."));
+  else if (step.id === "usage") renderOnboardingUsageStep(onboardingWizardBody);
+  else if (step.id === "local") renderOnboardingLocalStep(onboardingWizardBody);
+  else if (step.id === "agent") renderOnboardingAgentStep(onboardingWizardBody);
+  else if (step.id === "dependencies") renderOnboardingDependenciesStep(onboardingWizardBody);
+  else if (step.id === "remote") renderOnboardingRemoteStep(onboardingWizardBody);
+  else renderOnboardingFinishStep(onboardingWizardBody);
+  onboardingWizardButtons.forEach((button) => {
+    const action = button.dataset.onboardingWizardAction;
+    button.hidden = (action === "finish") !== (step.id === "finish") || (action === "continue" && step.id === "finish");
+    if (action === "back") button.disabled = index === 0;
+  });
+}
+
+async function goToOnboardingStep(stepId) {
+  await updateOnboardingState({
+    "onboarding.started": true,
+    "onboarding.completed": false,
+    "onboarding.skipped": false,
+    "onboarding.currentStep": stepId,
+  });
+  renderOnboardingWizard();
+}
+
+async function handleOnboardingWizardFinish() {
+  await updateOnboardingState({
+    "onboarding.started": true,
+    "onboarding.completed": true,
+    "onboarding.skipped": false,
+    "onboarding.currentStep": "complete",
+  }, { statusMessage: "Setup guide completed." });
+  setOnboardingWizardVisible(false);
+  showToast("AnxOS setup guide completed.");
 }
 
 async function updateOnboardingState(patch = {}, options = {}) {
@@ -25743,14 +26101,14 @@ async function handleOnboardingAction(action) {
   if (action === "start") {
     await updateOnboardingState({
       "onboarding.started": true,
-      "onboarding.completed": true,
+      "onboarding.completed": false,
       "onboarding.skipped": false,
-      "onboarding.currentStep": "complete",
+      "onboarding.currentStep": "welcome",
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,
-    }, { statusMessage: "Setup guide completed." });
+    }, { statusMessage: "Setup guide started." });
     setOnboardingWelcomeVisible(false);
-    showToast("AnxOS setup guide is complete. You can restart it from Settings.");
+    setOnboardingWizardVisible(true);
   } else if (action === "skip") {
     await updateOnboardingState({
       "onboarding.started": false,
@@ -25771,6 +26129,7 @@ async function handleOnboardingAction(action) {
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,
     }, { statusMessage: action === "reset" ? "Onboarding state reset." : "Setup guide restarted." });
+    setOnboardingWizardVisible(false);
     maybeOpenOnboardingWelcome(getCurrentSettings());
     showToast(action === "reset" ? "Onboarding state reset." : "Setup guide restarted.");
   }
@@ -27982,6 +28341,26 @@ onboardingActionButtons.forEach((button) => {
     handleOnboardingAction(button.dataset.onboardingAction).catch((error) => {
       showToast(normalizeIpcErrorMessage(error, "Onboarding settings could not be updated."), "error");
     });
+  });
+});
+onboardingWizardButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    const action = button.dataset.onboardingWizardAction;
+    const index = getOnboardingStepIndex();
+    try {
+      if (action === "back") {
+        await goToOnboardingStep(ONBOARDING_STEPS[Math.max(0, index - 1)]?.id || "welcome");
+      } else if (action === "continue") {
+        await goToOnboardingStep(ONBOARDING_STEPS[Math.min(ONBOARDING_STEPS.length - 1, index + 1)]?.id || "finish");
+      } else if (action === "finish") {
+        await handleOnboardingWizardFinish();
+      } else if (action === "skip") {
+        await handleOnboardingAction("skip");
+        setOnboardingWizardVisible(false);
+      }
+    } catch (error) {
+      showToast(normalizeIpcErrorMessage(error, "Setup guide could not be updated."), "error");
+    }
   });
 });
 document.querySelector('[data-page="settings"]')?.addEventListener("click", async (event) => {

@@ -7789,6 +7789,10 @@ body.has-open-modal {
   width: min(720px, 100%);
 }
 
+.app-modal--onboarding-wizard {
+  width: min(780px, 100%);
+}
+
 .onboarding-welcome__header {
   align-items: flex-start;
 }
@@ -7830,8 +7834,111 @@ body.has-open-modal {
   justify-content: flex-start;
 }
 
+.onboarding-wizard__header {
+  align-items: flex-start;
+}
+
+.onboarding-step-track {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.onboarding-step-track span {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .12);
+}
+
+.onboarding-step-track span.is-complete,
+.onboarding-step-track span.is-active {
+  background: linear-gradient(90deg, rgba(182, 108, 255, .95), rgba(115, 220, 202, .8));
+}
+
+.onboarding-choice-grid,
+.onboarding-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.onboarding-choice {
+  margin: 0;
+}
+
+.onboarding-status-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(190, 170, 220, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.onboarding-status-card > div {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding-status-card p {
+  color: var(--muted);
+  font-size: .86rem;
+  line-height: 1.45;
+}
+
+.onboarding-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
+
+.onboarding-technical-details {
+  border: 1px solid rgba(190, 170, 220, .14);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, .035);
+}
+
+.onboarding-technical-details summary {
+  cursor: pointer;
+  color: rgba(238, 234, 246, .92);
+  font-weight: 800;
+}
+
+.onboarding-technical-details dl {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.onboarding-technical-details div {
+  display: grid;
+  grid-template-columns: minmax(120px, .4fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.onboarding-technical-details dt {
+  color: var(--muted);
+}
+
+.onboarding-technical-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}
+
 @media (max-width: 720px) {
   .onboarding-feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .onboarding-choice-grid,
+  .onboarding-status-grid,
+  .onboarding-technical-details div {
     grid-template-columns: 1fr;
   }
 }

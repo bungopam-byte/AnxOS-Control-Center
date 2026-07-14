@@ -204,3 +204,9 @@ Gaps for the requested Local Agent launch:
 - Treat Windows service support as a new service-manager backend rather than extending scheduled-task semantics.
 - Make Marketplace templates declare platform support and startup variants before enabling Windows Local Agent installs.
 - Make release/website display consume an artifact manifest that is generated from actual uploaded files, not only static version metadata.
+
+## Phase 2 Discovery Note
+
+Local Agent discovery now lives in `src/services/nodeService.js` so localhost Agent detection feeds the same node registry used by remote Agents. The registry probes both `http://127.0.0.1:<configured-port>` and `http://localhost:<configured-port>`, names a discovered local Agent `This PC`, marks it with `localAgent: true`, and merges localhost entries by a temporary local identity until the Agent health endpoint returns a stable device ID.
+
+The Phase 2 implementation distinguishes local desktop presence, local Agent reachability, authentication-required health, and remote-node availability in node connection metadata. It does not yet install the Agent, create a Windows service, perform secure automatic local pairing, or verify Desktop/Agent version compatibility; those remain later-phase work.

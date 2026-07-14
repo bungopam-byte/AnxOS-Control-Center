@@ -729,6 +729,83 @@ function normalizeCpu(stats) {
   };
 }
 
+function getDiskSpaceForPath(targetPath) {
+  try {
+    fs.mkdirSync(targetPath, { recursive: true });
+    const stats = fs.statfsSync(targetPath);
+    return {
+      path: targetPath,
+      availableBytes: Number(stats.bavail) * Number(stats.bsize),
+      totalBytes: Number(stats.blocks) * Number(stats.bsize),
+    };
+  } catch (error) {
+    return {
+      path: targetPath,
+      availableBytes: null,
+      totalBytes: null,
+      errorCode: error?.code || null,
+    };
+  }
+}
+
+function getLocalAgentStorageDiagnostics() {
+  const paths = {
+    config: getConfigDirectory(),
+    data: getAgentDataDirectory(),
+    logs: getAgentLogsDirectory(),
+    instances: getAgentInstancesDirectory(),
+    backups: getAgentBackupsDirectory(),
+    temp: getAgentTempDirectory(),
+  };
+  return {
+    paths,
+    disk: {
+      data: getDiskSpaceForPath(paths.data),
+      instances: getDiskSpaceForPath(paths.instances),
+      backups: getDiskSpaceForPath(paths.backups),
+    },
+  };
+}
+
+async function getLocalAgentDependencyDiagnostics(config) {
+  const dependencyIds = ["docker", "java", "steamcmd"];
+  try {
+    const result = await agentClient.checkDependencies({ dependencyIds }, getLocalAgentHealthConfig(config));
+    const dependencies = Array.isArray(result?.dependencies) ? result.dependencies : [];
+    return {
+      checked: true,
+      dependencies: dependencies
+        .filter((dependency) => dependencyIds.includes(dependency.id))
+        .map((dependency) => ({
+          id: dependency.id,
+          name: dependency.name || dependency.displayName || dependency.id,
+          state: dependency.state || (dependency.installed ? "installed" : "missing"),
+          installed: dependency.installed === true,
+          version: dependency.version || dependency.detectedVersion || null,
+          restartRequired: dependency.restartRequired === true,
+        })),
+    };
+  } catch (error) {
+    return {
+      checked: false,
+      errorCode: error?.code || "DEPENDENCY_DIAGNOSTICS_FAILED",
+      message: error?.message || "Dependency diagnostics failed.",
+    };
+  }
+}
+
+function getRecentSanitizedAgentLogs() {
+  return diagnostics.readLogs({ sources: ["agent", "service-manager"], limit: 25 }).entries
+    .map((entry) => ({
+      timestamp: entry.timestamp || null,
+      level: entry.level || entry.severity || null,
+      source: entry.source || null,
+      operation: entry.operation || null,
+      message: entry.message || null,
+      errorCode: entry.errorCode || entry.context?.code || null,
+    }));
+}
+
 function normalizeAgentRuntimeStatus({ base = {}, health = null, stats = null, service = null, latencyMs = null, connected = false, reachable = false, capabilities = {} }) {
   const running = connected && reachable;
   const serviceState = normalizeServiceState(base.operationInFlight || service?.state || base.state, running);
@@ -1068,6 +1145,9 @@ async function runDiagnostics() {
   const localAgentOptional = effective.backendMode === "agent";
   const portUsed = await probePort(config.port);
   const registrationStatus = getRegistrationStatusFromServiceState(status.service);
+  const storage = getLocalAgentStorageDiagnostics();
+  const dependencySummary = status.running ? await getLocalAgentDependencyDiagnostics(config) : { checked: false, message: "Local Agent is not running." };
+  const update = status.update || getLocalAgentUpdateState(status);
   const serviceRequiresElevation = Boolean(status.service?.requiresElevation && ["missing", "invalid", "unverifiable"].includes(registrationStatus));
   const serviceResult = registrationStatus === "valid"
     ? "Passed"
@@ -1078,6 +1158,29 @@ async function runDiagnostics() {
         : "Warning";
   const checks = [
     {
+      id: "desktop-version",
+      label: "Desktop version",
+      result: status.appVersion ? "Passed" : "Warning",
+      explanation: `Desktop version ${status.appVersion || "unavailable"}.`,
+    },
+    {
+      id: "agent-version",
+      label: "Agent version",
+      result: update.agentNewerThanDesktop ? "Warning" : update.updateAvailable ? "Warning" : status.agentVersion ? "Passed" : "Warning",
+      explanation: update.updateAvailable
+        ? `Local Agent Update Available: ${update.installedVersion || "unknown"} -> ${update.bundledVersion}.`
+        : update.agentNewerThanDesktop
+          ? `Local Agent ${update.installedVersion} is newer than the bundled Desktop Agent ${update.bundledVersion}.`
+          : `Local Agent version ${status.agentVersion || "unavailable"}.`,
+      repairAction: update.updateAvailable ? "updateAgent" : null,
+    },
+    {
+      id: "endpoint",
+      label: "Local endpoint",
+      result: status.agentUrl ? "Passed" : "Warning",
+      explanation: status.agentUrl ? `Local endpoint ${status.agentUrl}.` : "Local Agent endpoint is not configured.",
+    },
+    {
       id: "process",
       label: "Agent process",
       result: status.running ? "Passed" : localAgentOptional ? "Not applicable" : "Warning",
@@ -1087,6 +1190,16 @@ async function runDiagnostics() {
           ? "Local Agent is stopped, but a remote Agent backend is selected."
           : "Local Agent is not currently running.",
       repairAction: status.running || localAgentOptional ? null : "start",
+    },
+    {
+      id: "running-since",
+      label: "Running since",
+      result: status.running && Number.isFinite(status.uptime) ? "Passed" : status.running ? "Warning" : "Not applicable",
+      explanation: status.running && Number.isFinite(status.uptime)
+        ? `Agent uptime is ${Math.round(status.uptime)} seconds.`
+        : status.running
+          ? "Agent is running, but uptime is unavailable."
+          : "Agent is not running.",
     },
     {
       id: "service",
@@ -1124,10 +1237,63 @@ async function runDiagnostics() {
         : "Local Agent credentials need to be paired or repaired on this computer.",
       repairAction: status.pairing?.configured && status.pairing?.localOnly ? null : "repair-pairing",
     },
+    {
+      id: "filesystem-access",
+      label: "Filesystem access",
+      result: fs.existsSync(getAgentInstancesDirectory()) && fs.existsSync(getAgentBackupsDirectory()) ? "Passed" : "Warning",
+      explanation: `Instances and backups paths are ${fs.existsSync(getAgentInstancesDirectory()) && fs.existsSync(getAgentBackupsDirectory()) ? "available" : "not fully available"}.`,
+      paths: {
+        instances: getAgentInstancesDirectory(),
+        backups: getAgentBackupsDirectory(),
+      },
+      repairAction: "repair-permissions",
+    },
+    {
+      id: "disk-space",
+      label: "Disk space",
+      result: storage.disk.instances.availableBytes === null ? "Warning" : "Passed",
+      explanation: storage.disk.instances.availableBytes === null
+        ? "Disk space could not be inspected."
+        : `Instance storage has ${Math.round(storage.disk.instances.availableBytes / 1024 / 1024)} MB available.`,
+    },
+    {
+      id: "dependencies",
+      label: "Dependency summary",
+      result: dependencySummary.checked ? "Passed" : "Warning",
+      explanation: dependencySummary.checked
+        ? dependencySummary.dependencies.map((dependency) => `${dependency.name}: ${dependency.state}`).join(", ") || "No dependency details returned."
+        : dependencySummary.message || "Dependency diagnostics unavailable.",
+      repairAction: dependencySummary.checked ? null : "rescan-dependencies",
+    },
+    {
+      id: "update-compatibility",
+      label: "Update compatibility",
+      result: update.compatible ? "Passed" : "Warning",
+      explanation: update.state || "Update compatibility unknown.",
+      repairAction: update.updateAvailable ? "updateAgent" : null,
+    },
     { id: "configuration", label: "Configuration validity", result: "Passed", explanation: `Configuration is valid for ${config.host}:${config.port}.` },
     { id: "logs", label: "Log directory", result: fs.existsSync(diagnostics.getDirectory()) ? "Passed" : "Warning", explanation: "Diagnostics directory is writable." },
   ];
-  return { status, checks, generatedAt: new Date().toISOString() };
+  return {
+    status,
+    checks,
+    summary: {
+      desktopVersion: status.appVersion,
+      agentVersion: status.agentVersion,
+      serviceStatus: status.service?.state || null,
+      localEndpoint: status.agentUrl,
+      authenticationStatus: status.pairing?.configured ? "Paired" : "Repair Required",
+      tokenFingerprint: status.pairing?.fingerprint || null,
+      portAvailable: !portUsed || status.running,
+      storagePaths: storage.paths,
+      diskSpace: storage.disk,
+      dependencySummary,
+      updateCompatibility: update,
+      recentLogs: getRecentSanitizedAgentLogs(),
+    },
+    generatedAt: new Date().toISOString(),
+  };
 }
 async function openLogs() { await diagnostics.openFolder(); return { opened: true }; }
 async function openDataFolder() { fs.mkdirSync(getAgentDataDirectory(), { recursive: true }); await shell.openPath(getAgentDataDirectory()); return { opened: true }; }

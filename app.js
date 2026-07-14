@@ -30469,6 +30469,9 @@ agentDiagnosticsList?.addEventListener("click", (event) => {
   if (action === "start") runAgentControlAction("start");
   if (action === "install-service") runAgentControlAction("installService");
   if (action === "repair-pairing") runAgentControlAction("repairAgent");
+  if (action === "repair-permissions") runAgentControlAction("repairAgent");
+  if (action === "updateAgent") runAgentControlAction("updateAgent");
+  if (action === "rescan-dependencies") { showPage("marketplace"); refreshMarketplaceDownloads(); }
   if (action === "select-port") agentConfigFields.forEach((field) => { if (field.dataset.agentConfig === "port") field.focus(); });
 });
 document.querySelectorAll("[data-diagnostics-action]").forEach((button) => button.addEventListener("click", async () => {

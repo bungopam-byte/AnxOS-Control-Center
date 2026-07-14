@@ -31,6 +31,7 @@ async function main() {
   assert(serviceSource.includes("pairLocalAgentSecurely") && serviceSource.includes("readLocalAgentPairingStatus"), "Agent Control must expose secure automatic Local Agent pairing.");
   assert(serviceSource.includes("updateLocalAgent") && serviceSource.includes("backupLocalAgentState") && serviceSource.includes("Local Agent Update Available"), "Agent Control must expose a safe Local Agent update flow.");
   assert(serviceSource.includes("AGENT_NEWER_THAN_DESKTOP") && serviceSource.includes("LOCAL_AGENT_UPDATE_VERIFY_FAILED"), "Local Agent update flow must handle version skew and verification failures.");
+  assert(serviceSource.includes("getLocalAgentStorageDiagnostics") && serviceSource.includes("getRecentSanitizedAgentLogs") && serviceSource.includes("dependencySummary"), "Local Agent diagnostics must include storage, logs, and dependency summaries.");
   assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
   assert(ipcSource.includes("runLocalLifecycle") && ipcSource.includes('start: () => control.start()'), "Local Agent lifecycle actions must be available without requiring npm or Owner-only service installation.");
   assert(ipcSource.includes("agentControl:pairLocalAgent") && ipcSource.includes("pair-local-agent"), "Local Agent pairing must use the local lifecycle IPC path.");
@@ -50,6 +51,7 @@ async function main() {
   assert(rendererSource.includes("getLocalAgentFriendlyState") && rendererSource.includes("Authentication issue") && rendererSource.includes("Start the bundled local Agent"), "Agent Control beginner summary must adapt actions to the real local Agent state.");
   assert(rendererSource.includes("api.pairLocalAgent({ rotate: true") && rendererSource.includes("repair-pairing"), "Renderer must repair and rotate Local Agent pairing without manual tokens.");
   assert(rendererSource.includes("api.updateLocalAgent") && rendererSource.includes("Update Local Agent?"), "Renderer must route Local Agent update actions through Agent Control with confirmation.");
+  assert(rendererSource.includes('action === "repair-permissions"') && rendererSource.includes('action === "rescan-dependencies"'), "Renderer must wire Local Agent diagnostics repair actions.");
   assert(rendererSource.includes("data-agent-summary-page") && rendererSource.includes("runAgentControlAction(action)"), "Agent Control summary actions must reuse existing page routing and Agent Control operations.");
   assert(!rendererSource.includes('subtitle: "Remote Agent"') || rendererSource.includes("renderRemoteAgents"), "Local host rendering must not label the application host as a remote Agent.");
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
@@ -88,6 +90,13 @@ async function main() {
     assert.strictEqual(connectedAgain.pid, started.pid, "Starting an already managed Agent should not spawn a duplicate process.");
     const diagnostics = await control.runDiagnostics();
     assert(diagnostics.checks.some((check) => check.id === "process" && check.result === "Passed"));
+    assert(diagnostics.checks.some((check) => check.id === "agent-version"), "Diagnostics should include Agent version compatibility.");
+    assert(diagnostics.checks.some((check) => check.id === "disk-space"), "Diagnostics should include disk space checks.");
+    assert(diagnostics.summary.desktopVersion && diagnostics.summary.agentVersion, "Diagnostics summary should include Desktop and Agent versions.");
+    assert(diagnostics.summary.localEndpoint && diagnostics.summary.authenticationStatus, "Diagnostics summary should include endpoint and authentication status.");
+    assert(diagnostics.summary.storagePaths.instances && diagnostics.summary.storagePaths.backups, "Diagnostics summary should include managed storage paths.");
+    assert(diagnostics.summary.dependencySummary, "Diagnostics summary should include dependency readiness.");
+    assert(Array.isArray(diagnostics.summary.recentLogs), "Diagnostics summary should include recent sanitized logs.");
     const restarted = await control.restart();
     assert(restarted.running, "Agent Control should restart the local Agent.");
     assert.strictEqual(restarted.runtime?.serviceState, "running", "Restarted Agent should remain normalized as running.");

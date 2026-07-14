@@ -300,3 +300,9 @@ Windows snapshots include firewall guidance for providers that may require inbou
 Local Agent update handling now lives in Agent Control instead of the desktop application updater. The Desktop compares the running Local Agent version with the bundled Agent runtime, reports `Local Agent Update Available` for older Agents, blocks accidental downgrades when the Agent is newer than the Desktop, and exposes an audited local lifecycle update IPC path.
 
 The update flow backs up Agent configuration and identity state, stops the Agent, repairs service registration to the bundled runtime, records migration status, restarts the Agent, verifies health and version, and writes a last-update record. Instances, backups, logs, and temporary data are not overwritten. This is source- and smoke-tested on Linux; real Windows service replacement, rollback, and elevation behavior still require real-machine validation.
+
+## Phase 18 Local Agent Diagnostics and Repair Note
+
+Agent Control diagnostics now return a dedicated Local Agent diagnostic summary with Desktop version, Agent version, service state, local endpoint, pairing status and token fingerprint, port availability, filesystem access, managed storage paths, disk-space estimates, dependency readiness for Docker/Java/SteamCMD, recent sanitized Agent logs, and update compatibility.
+
+Diagnostics continue to use existing repair actions instead of exposing raw stack traces. Repair buttons route to start, service repair, pairing repair, permission repair, dependency rescan, and Local Agent update actions where appropriate. Exported diagnostics continue to flow through the shared sanitized diagnostics service, which redacts secrets and avoids full tokens/API keys.

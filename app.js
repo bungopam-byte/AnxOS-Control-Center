@@ -5440,7 +5440,7 @@ function formatPublicAccessHealth(value) {
 
 function formatPublicAccessReachability(service = {}, provider = {}) {
   if (service.publicAddress && service.exposureScope === "public-internet") return "Public internet";
-  if (provider.tailnetAddress || service.exposureScope === "tailnet-only") return "Tailnet only";
+  if (service.privateAddress || provider.tailnetAddress || service.exposureScope === "tailnet-only" || service.accessType === "private-tailnet") return "Private tailnet";
   if (provider.connected) return "Provider connected; public address unavailable";
   return provider.recoveryAction || "No public endpoint is available.";
 }
@@ -5470,11 +5470,13 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
   const actions = [
     {
       action: "create-access-service",
-      label: "Create Access Service",
-      supported: provider.id === "playit" && provider.installed === true,
+      label: provider.id === "tailscale" ? "Create Private Service" : "Create Access Service",
+      supported: (provider.id === "playit" && provider.installed === true) || (provider.id === "tailscale" && provider.connected === true),
       reason: provider.id === "playit"
         ? "Install and start Playit.gg before creating an access service."
-        : "Access service creation is not supported by this provider yet.",
+        : provider.id === "tailscale"
+          ? "Tailscale must be connected before creating a private tailnet service."
+          : "Access service creation is not supported by this provider yet.",
     },
     {
       action: "install-dependency",
@@ -5543,6 +5545,9 @@ function renderPublicAccessProviderDetails(snapshot = latestPublicAccessSnapshot
 function getPublicAccessPublicAddress() {
   const service = getSelectedPublicAccessService();
   const provider = getSelectedPublicAccessProvider();
+  if (provider?.id === "tailscale" || service?.accessType === "private-tailnet") {
+    return service?.privateAddress || provider?.DNSName || provider?.tailnetAddress || provider?.IPv4 || provider?.IPv6 || "";
+  }
   if (provider?.id === "playit") {
     return service?.publicAddress || provider?.publicAddress || latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || getConfiguredPlayitAddress() || "";
   }
@@ -5592,15 +5597,20 @@ function normalizePublicAccessPortInput(value) {
   return port;
 }
 
-async function createPlayitAccessService() {
+function buildTailscalePrivateAddress(provider = {}, port) {
+  const host = String(provider.DNSName || provider.hostname || provider.IPv4 || provider.IPv6 || provider.tailnetAddress || "").replace(/\.$/, "");
+  return host ? `${host}:${port}` : null;
+}
+
+async function createProviderAccessService() {
   const provider = getSelectedPublicAccessProvider();
-  if (provider?.id !== "playit") {
+  if (!["playit", "tailscale"].includes(provider?.id)) {
     showToast("Access service creation is not supported by this provider yet.", "warning");
     return null;
   }
   const requestContext = createNodeActionContext("public-access");
   const defaultPort = getSelectedPublicAccessService()?.localPort || latestPlayitSnapshot?.localPort || "";
-  const name = window.prompt("Access service name", getSelectedPublicAccessService()?.name || "Playit Access Service");
+  const name = window.prompt("Access service name", getSelectedPublicAccessService()?.name || `${provider.name || "Provider"} Access Service`);
   if (name === null) return null;
   const portInput = window.prompt("Local service port", defaultPort ? String(defaultPort) : "25565");
   if (portInput === null) return null;
@@ -5608,17 +5618,22 @@ async function createPlayitAccessService() {
   if (protocolInput === null) return null;
   const protocol = String(protocolInput || "tcp").trim().toLowerCase();
   if (!["tcp", "udp"].includes(protocol)) {
-    throw Object.assign(new Error("Protocol must be tcp or udp for Playit access services."), { code: "INVALID_PROTOCOL" });
+    throw Object.assign(new Error("Protocol must be tcp or udp for access services."), { code: "INVALID_PROTOCOL" });
   }
+  const localPort = normalizePublicAccessPortInput(portInput);
   const payload = {
     nodeId: requestContext.nodeId,
-    providerId: "playit",
-    providerName: "Playit.gg",
-    accessType: "public-internet",
+    providerId: provider.id,
+    providerName: provider.name,
+    accessType: provider.id === "tailscale" ? "private-tailnet" : "public-internet",
     name,
     localHost: "127.0.0.1",
-    localPort: normalizePublicAccessPortInput(portInput),
+    localPort,
     protocol,
+    privateAddress: provider.id === "tailscale" ? buildTailscalePrivateAddress(provider, localPort) : null,
+    hostname: provider.id === "tailscale" ? provider.DNSName || provider.hostname || null : null,
+    IPv4: provider.id === "tailscale" ? provider.IPv4 || null : null,
+    IPv6: provider.id === "tailscale" ? provider.IPv6 || null : null,
   };
   const result = await getDesktopApiState().api.publicAccess.createService(payload);
   if (result?.ok === false) {
@@ -5627,14 +5642,16 @@ async function createPlayitAccessService() {
     });
   }
   await refreshPlayitStatus();
-  showToast("Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
+  showToast(provider.id === "tailscale"
+    ? "Private tailnet service saved."
+    : "Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
   return result;
 }
 
 async function runPublicAccessAction(action) {
   if (action === "refresh") return refreshPlayitStatus();
   if (action === "open-logs") return runDiagnosticsAction("open");
-  if (action === "create-access-service") return createPlayitAccessService();
+  if (action === "create-access-service") return createProviderAccessService();
   if (action === "install-dependency") {
     const provider = getSelectedPublicAccessProvider();
     if (!provider?.dependencyId) {
@@ -5741,7 +5758,7 @@ function getPublicAccessProviderLabel(provider = {}) {
 
 function renderPublicAccessProviderMetricFields(provider = {}, service = {}) {
   const providerName = provider.name || "Provider";
-  const publicAddress = service.publicAddress || provider.publicAddress || provider.tailnetAddress || "Unavailable";
+  const publicAddress = service.publicAddress || service.privateAddress || provider.publicAddress || provider.DNSName || provider.tailnetAddress || "Unavailable";
   const localHost = service.localHost || service.localIp || "Unavailable";
   const localPort = service.localPort || "Unavailable";
   const protocol = service.protocol || "Unavailable";

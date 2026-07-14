@@ -31,6 +31,8 @@ const byId = new Map(providers.map((provider) => [provider.id, provider]));
 assert(byId.has("playit") && byId.has("tailscale") && byId.has("cloudflare-tunnel") && byId.has("anxos-relay"), "Public Access must declare all evaluated providers.");
 assert.strictEqual(byId.get("playit").status, "supported", "Playit must remain the supported provider.");
 assert.strictEqual(byId.get("tailscale").exposureScope, "tailnet-only", "Tailscale must not be described as public internet exposure.");
+assert.strictEqual(byId.get("tailscale").capabilities.serviceExposure, true, "Tailscale must support private tailnet service records.");
+assert.strictEqual(byId.get("tailscale").capabilities.publicAddress, false, "Tailscale must not be treated as a public address provider.");
 assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createTunnel, false, "Cloudflare Tunnel creation must remain disabled until fully implemented.");
 assert.strictEqual(byId.get("anxos-relay").status, "disabled", "AnxOS Relay must stay disabled without a real backend.");
 
@@ -93,6 +95,37 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
+{
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-tailscale-access-registry-"));
+  const service = registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "tailscale",
+    providerName: "Tailscale",
+    accessType: "private-tailnet",
+    name: "Terraria private",
+    localHost: "127.0.0.1",
+    localPort: 7777,
+    protocol: "tcp",
+  }, { configDir: tempRoot });
+  const reconciled = registry.reconcileAccessServices([service], {
+    checkedAt: "2026-01-01T00:00:00.000Z",
+    providers: [{
+      id: "tailscale",
+      name: "Tailscale",
+      connected: true,
+      lifecycleState: "running",
+      DNSName: "anxlab.tailnet.ts.net.",
+      IPv4: "100.64.0.10",
+    }],
+    services: [],
+  });
+  assert.strictEqual(reconciled[0].accessType, "private-tailnet", "Tailscale service must stay private-tailnet.");
+  assert.strictEqual(reconciled[0].exposureScope, "tailnet-only", "Tailscale service must use tailnet-only exposure.");
+  assert.strictEqual(reconciled[0].privateAddress, "anxlab.tailnet.ts.net:7777", "Tailscale service should prefer MagicDNS private endpoint.");
+  assert.strictEqual(reconciled[0].publicAddress, null, "Tailscale service must not invent a public address.");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}
+
 const readiness = publicAccess._test.summarizePublicAccessReadiness({
   providers: [
     publicAccess._test.createProviderState(publicAccess.TailscaleProvider, {
@@ -144,6 +177,7 @@ async function assertDetectionCases() {
   assert.strictEqual(tailscale.displayState, "Installed and connected", "Connected Tailscale must not be shown as Not Installed.");
   assert.strictEqual(tailscale.IPv4, "100.64.0.10", "Tailscale IPv4 address should be captured.");
   assert.strictEqual(tailscale.DNSName, "anxlab.tailnet.ts.net.", "Tailscale MagicDNS name should be captured.");
+  assert.strictEqual(tailscale.capabilities.serviceExposure, true, "Connected Tailscale must expose private service capability.");
 
   const tailscaleLoginRequired = await detection.detectTailscaleProvider({
     nodeId: "anxlab",
@@ -208,6 +242,8 @@ assert(serviceSource.includes("agentClient.getPublicAccessSnapshot") && agentRou
 assert(serviceSource.includes("createPublicAccessService") && serviceSource.includes("deletePublicAccessService"), "Desktop Public Access service lifecycle must route through the selected backend.");
 assert(agentRouteSource.includes("/api/v1/public-access/services") && agentServerSource.includes("pathname.startsWith(\"/api/v1/public-access/services/\")"), "Agent must register Public Access service lifecycle routes.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
+assert(appSource.includes("buildTailscalePrivateAddress") && appSource.includes("private-tailnet"), "Renderer must create Tailscale services as private tailnet records.");
+assert(appSource.includes("Private tailnet") && appSource.includes("service.privateAddress"), "Renderer must display Tailscale private reachability and endpoint.");
 assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
 assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");

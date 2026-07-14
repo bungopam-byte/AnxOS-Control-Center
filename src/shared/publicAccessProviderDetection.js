@@ -51,13 +51,13 @@ const PUBLIC_ACCESS_PROVIDERS = [
     className: "TailscaleProvider",
     name: "Tailscale",
     status: "foundation",
-    description: "CLI and daemon status detection only. Tailnet-only access is not presented as public internet exposure.",
+    description: "Share services privately across your Tailscale tailnet.",
     exposureScope: "tailnet-only",
     capabilities: {
       detection: true,
       authenticationStatus: true,
       connectionStatus: true,
-      serviceExposure: false,
+      serviceExposure: true,
       createTunnel: false,
       listTunnels: false,
       startTunnel: false,
@@ -66,6 +66,9 @@ const PUBLIC_ACCESS_PROVIDERS = [
       publicAddress: false,
       healthCheck: true,
       diagnostics: true,
+      privateAddress: true,
+      serve: true,
+      funnel: false,
     },
   },
   {
@@ -203,7 +206,7 @@ function inferTailscaleState({ executable, daemonInstalled, daemonRunning, statu
       health: "healthy",
       lifecycleState: "running",
       displayState: "Installed and connected",
-      recoveryAction: "Tailscale is connected. Private tailnet service sharing will be enabled in a later phase.",
+      recoveryAction: "Tailscale is connected. You can share services privately across this tailnet.",
     };
   }
   if (executable.ok && (status.ok || backendState)) {

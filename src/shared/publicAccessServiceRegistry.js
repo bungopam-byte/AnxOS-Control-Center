@@ -86,6 +86,11 @@ function normalizeHost(value) {
   return host;
 }
 
+function normalizeEndpointAddress(value) {
+  const text = String(value || "").trim();
+  return text || null;
+}
+
 function sanitizeServiceName(value, fallback) {
   const name = String(value || "").trim().replace(/\s+/g, " ");
   return (name || fallback || "Access Service").slice(0, 80);
@@ -134,7 +139,10 @@ function normalizeAccessService(input = {}, existing = {}) {
     protocol,
     providerResourceId: input.providerResourceId || existing.providerResourceId || null,
     publicAddress: input.publicAddress || existing.publicAddress || null,
-    privateAddress: input.privateAddress || existing.privateAddress || null,
+    privateAddress: normalizeEndpointAddress(input.privateAddress || existing.privateAddress),
+    hostname: input.hostname || existing.hostname || null,
+    IPv4: input.IPv4 || existing.IPv4 || null,
+    IPv6: input.IPv6 || existing.IPv6 || null,
     state: input.state || existing.state || "pending-provider-setup",
     status: input.status || existing.status || "Pending provider setup",
     createdAt: existing.createdAt || now,
@@ -244,7 +252,26 @@ function deleteAccessService(serviceId, options = {}) {
 
 function reconcileAccessServices(services = [], snapshot = {}) {
   const detectedServices = Array.isArray(snapshot.services) ? snapshot.services : [];
+  const providers = Array.isArray(snapshot.providers) ? snapshot.providers : [];
   return services.map((service) => {
+    const provider = providers.find((entry) => entry.id === service.providerId || entry.providerId === service.providerId) || {};
+    if (service.providerId === "tailscale") {
+      const host = service.hostname || provider.DNSName || provider.hostname || provider.IPv4 || provider.IPv6 || provider.tailnetAddress || null;
+      const privateAddress = service.privateAddress || (host ? `${String(host).replace(/\.$/, "")}:${service.localPort}` : null);
+      return {
+        ...service,
+        providerName: service.providerName || provider.name || "Tailscale",
+        privateAddress,
+        hostname: service.hostname || provider.DNSName || provider.hostname || null,
+        IPv4: service.IPv4 || provider.IPv4 || null,
+        IPv6: service.IPv6 || provider.IPv6 || null,
+        accessType: "private-tailnet",
+        exposureScope: "tailnet-only",
+        state: provider.connected === true || provider.lifecycleState === "running" ? "available" : "provider-unavailable",
+        status: provider.connected === true || provider.lifecycleState === "running" ? "Private Tailnet" : "Provider unavailable",
+        lastCheckedAt: snapshot.checkedAt || service.lastCheckedAt,
+      };
+    }
     const detected = detectedServices.find((entry) => (
       entry.providerId === service.providerId &&
       Number(entry.localPort) === Number(service.localPort) &&

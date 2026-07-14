@@ -129,6 +129,39 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
 }
 
 {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-instance-access-registry-"));
+  const palworldPublic = registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "playit",
+    providerName: "Playit.gg",
+    accessType: "public-internet",
+    name: "Palworld public",
+    linkedInstanceId: "palworld",
+    localHost: "127.0.0.1",
+    localPort: 8211,
+    protocol: "udp",
+  }, { configDir: tempRoot });
+  const palworldPrivate = registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "tailscale",
+    providerName: "Tailscale",
+    accessType: "private-tailnet",
+    name: "Palworld private",
+    linkedInstanceId: "palworld",
+    localHost: "127.0.0.1",
+    localPort: 8211,
+    protocol: "udp",
+  }, { configDir: tempRoot });
+  assert.strictEqual(registry.listAccessServices({ configDir: tempRoot, nodeId: "anxlab" }).length, 2, "Instances must support multiple access providers for one service port.");
+  assert.strictEqual(palworldPublic.linkedInstanceId, "palworld", "Public access service must persist linked instance id.");
+  assert.strictEqual(palworldPrivate.accessType, "private-tailnet", "Private access service must persist private tailnet type.");
+  registry.deleteAccessService(palworldPublic.id, { configDir: tempRoot });
+  registry.deleteAccessService(palworldPrivate.id, { configDir: tempRoot });
+  assert.strictEqual(registry.listAccessServices({ configDir: tempRoot }).length, 0, "Instance access cleanup must be able to delete linked services.");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}
+
+{
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-cloudflare-access-registry-"));
   const service = registry.createAccessService({
     nodeId: "anxlab",
@@ -282,6 +315,23 @@ assert(appSource.includes("function renderPublicAccessProviders") && appSource.i
 assert(appSource.includes("buildTailscalePrivateAddress") && appSource.includes("private-tailnet"), "Renderer must create Tailscale services as private tailnet records.");
 assert(appSource.includes("Private tailnet") && appSource.includes("service.privateAddress"), "Renderer must display Tailscale private reachability and endpoint.");
 assert(appSource.includes("Create Web Service") && appSource.includes("cloudflare-tunnel") && appSource.includes("Public hostname"), "Renderer must expose Cloudflare web-service setup without raw game-port compatibility.");
+assert(indexSource.includes('data-instance-action="expose-share"') && indexSource.includes('data-instance-action="copy-access-address"') && indexSource.includes('data-instance-action="manage-access"'), "Instances must expose provider sharing, copy, and manage actions.");
+[
+  "function getInstanceAccessSuggestions",
+  "function createAccessServiceForInstance",
+  "function copyInstanceAccessAddress",
+  "function deleteAccessServicesForInstance",
+  "linkedInstanceId: instance.id",
+  "Public via Playit",
+  "Private via Tailscale",
+  "Web via Cloudflare",
+  "Cloudflare Tunnel supports HTTP and HTTPS services, not Palworld UDP ports.",
+  "Cloudflare Tunnel supports HTTP and HTTPS services, not Terraria TCP game ports.",
+  "Cloudflare Tunnel supports HTTP and HTTPS services, not Minecraft TCP game ports.",
+  "runInstanceAction(\"expose-share\")",
+  "runInstanceAction(\"copy-access-address\")",
+  "runInstanceAction(\"manage-access\")",
+].forEach((needle) => assert(appSource.includes(needle), `Instances Public Access integration should include ${needle}.`));
 assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
 assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");

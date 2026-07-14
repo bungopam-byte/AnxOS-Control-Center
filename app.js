@@ -5604,6 +5604,284 @@ function buildTailscalePrivateAddress(provider = {}, port) {
   return host ? `${host}:${port}` : null;
 }
 
+function getInstanceAccessServices(instance = findInstance(), snapshot = latestPublicAccessSnapshot) {
+  if (!instance?.id) return [];
+  return (Array.isArray(snapshot?.services) ? snapshot.services : [])
+    .filter((service) => service?.linkedInstanceId === instance.id);
+}
+
+function getInstanceAccessProviderLabel(providerId) {
+  if (providerId === "playit") return "Playit.gg";
+  if (providerId === "tailscale") return "Tailscale";
+  if (providerId === "cloudflare-tunnel") return "Cloudflare Tunnel";
+  return "Provider";
+}
+
+function getInstanceAccessBadgeLabel(service = {}) {
+  if (service.providerId === "playit") return "Public via Playit";
+  if (service.providerId === "tailscale" || service.accessType === "private-tailnet") return "Private via Tailscale";
+  if (service.providerId === "cloudflare-tunnel") return "Web via Cloudflare";
+  return `${service.providerName || "Access"} linked`;
+}
+
+function getInstanceAccessAddress(service = {}) {
+  return service.publicAddress || service.privateAddress || service.publicHostname || "";
+}
+
+function getInstanceAccessProvider(providerId, snapshot = latestPublicAccessSnapshot) {
+  return (Array.isArray(snapshot?.providers) ? snapshot.providers : [])
+    .find((provider) => provider?.id === providerId) || null;
+}
+
+function getInstanceSearchText(instance = null) {
+  return [
+    instance?.id,
+    instance?.displayName,
+    instance?.type,
+    instance?.templateId,
+    instance?.game,
+    instance?.serverSoftware,
+    instance?.metadata?.templateId,
+    instance?.metadata?.game,
+    instance?.metadata?.serverSoftware,
+    instance?.marketplace?.templateId,
+    instance?.marketplace?.game,
+    instance?.marketplace?.serverSoftware,
+    ...(Array.isArray(instance?.tags) ? instance.tags : []),
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function getInstanceAccessGameKind(instance = null) {
+  const text = getInstanceSearchText(instance);
+  if (text.includes("palworld")) return "palworld";
+  if (text.includes("terraria") || text.includes("tshock")) return "terraria";
+  if (isMinecraftInstance(instance) || /minecraft|paper|purpur|fabric|forge|neoforge|vanilla/.test(text)) return "minecraft";
+  if (text.includes("fivem") || text.includes("fxserver")) return "fivem";
+  if (/\b(http|https|web|website|dashboard|panel|api)\b/.test(text)) return "http";
+  return "custom";
+}
+
+function getInstanceAccessDefaultPort(instance = null, fallbackPort = null) {
+  return getInstancePrimaryPort(instance) || fallbackPort;
+}
+
+function getInstanceAccessSuggestions(instance = findInstance()) {
+  if (!instance) return [];
+  const kind = getInstanceAccessGameKind(instance);
+  const configuredPort = getInstancePrimaryPort(instance);
+  const defaultName = instance.displayName || instance.id || "Instance";
+  const makeSuggestion = (providerId, overrides = {}) => ({
+    providerId,
+    providerName: getInstanceAccessProviderLabel(providerId),
+    name: `${defaultName} ${providerId === "tailscale" ? "Private" : providerId === "cloudflare-tunnel" ? "Web" : "Public"}`,
+    accessType: providerId === "tailscale" ? "private-tailnet" : "public-internet",
+    localHost: "127.0.0.1",
+    localPort: configuredPort,
+    protocol: "tcp",
+    compatible: true,
+    reason: "",
+    ...overrides,
+  });
+
+  if (kind === "palworld") {
+    const port = getInstanceAccessDefaultPort(instance, 8211);
+    return [
+      makeSuggestion("playit", { localPort: port, protocol: "udp" }),
+      makeSuggestion("tailscale", { localPort: port, protocol: "udp" }),
+      makeSuggestion("cloudflare-tunnel", { localPort: port, protocol: "udp", compatible: false, reason: "Cloudflare Tunnel supports HTTP and HTTPS services, not Palworld UDP ports." }),
+    ];
+  }
+
+  if (kind === "terraria") {
+    const port = getInstanceAccessDefaultPort(instance, 7777);
+    return [
+      makeSuggestion("playit", { localPort: port, protocol: "tcp" }),
+      makeSuggestion("tailscale", { localPort: port, protocol: "tcp" }),
+      makeSuggestion("cloudflare-tunnel", { localPort: port, protocol: "tcp", compatible: false, reason: "Cloudflare Tunnel supports HTTP and HTTPS services, not Terraria TCP game ports." }),
+    ];
+  }
+
+  if (kind === "minecraft") {
+    const port = getInstanceAccessDefaultPort(instance, 25565);
+    return [
+      makeSuggestion("playit", { localPort: port, protocol: "tcp" }),
+      makeSuggestion("tailscale", { localPort: port, protocol: "tcp" }),
+      makeSuggestion("cloudflare-tunnel", { localPort: port, protocol: "tcp", compatible: false, reason: "Cloudflare Tunnel supports HTTP and HTTPS services, not Minecraft TCP game ports." }),
+    ];
+  }
+
+  if (kind === "http" || [80, 443, 3000, 5173, 8080, 8081, 8443].includes(configuredPort)) {
+    const port = getInstanceAccessDefaultPort(instance, 8080);
+    return [
+      makeSuggestion("cloudflare-tunnel", { localPort: port, protocol: port === 443 || port === 8443 ? "https" : "http", requiresPublicHostname: true }),
+      makeSuggestion("tailscale", { localPort: port, protocol: "tcp" }),
+      makeSuggestion("playit", { localPort: port, protocol: "tcp" }),
+    ];
+  }
+
+  const port = getInstanceAccessDefaultPort(instance, null);
+  if (!port) return [];
+  return [
+    makeSuggestion("playit", { localPort: port, protocol: "tcp" }),
+    makeSuggestion("tailscale", { localPort: port, protocol: "tcp" }),
+    makeSuggestion("cloudflare-tunnel", { localPort: port, protocol: "tcp", compatible: false, reason: "Cloudflare Tunnel supports HTTP and HTTPS services only." }),
+  ];
+}
+
+function isInstanceAccessProviderReady(provider = {}, suggestion = {}) {
+  if (!provider) return false;
+  if (suggestion.providerId === "playit") return provider.installed === true;
+  if (suggestion.providerId === "tailscale") return provider.connected === true;
+  if (suggestion.providerId === "cloudflare-tunnel") return provider.installed === true && provider.authenticated === true;
+  return false;
+}
+
+function getInstanceAccessProviderUnavailableReason(provider = {}, suggestion = {}) {
+  if (!provider) return `${suggestion.providerName || "Provider"} is not available on the selected node.`;
+  if (suggestion.providerId === "playit") return provider.recoveryAction || "Install and start Playit.gg on this node first.";
+  if (suggestion.providerId === "tailscale") return provider.recoveryAction || "Sign in to Tailscale on this node first.";
+  if (suggestion.providerId === "cloudflare-tunnel") return provider.recoveryAction || "Authenticate cloudflared and configure a tunnel first.";
+  return provider.recoveryAction || "Provider is unavailable.";
+}
+
+function chooseInstanceAccessSuggestion(instance = findInstance()) {
+  const suggestions = getInstanceAccessSuggestions(instance);
+  const compatible = suggestions.filter((suggestion) => suggestion.compatible !== false && suggestion.localPort);
+  if (compatible.length === 0) {
+    const reasons = suggestions.map((suggestion) => suggestion.reason).filter(Boolean).join("\n");
+    throw Object.assign(new Error(reasons || "This instance does not have a compatible port to expose."), { code: "INCOMPATIBLE_SERVICE" });
+  }
+  if (compatible.length === 1) return compatible[0];
+  const menu = compatible.map((suggestion, index) => `${index + 1}. ${suggestion.providerName} (${suggestion.protocol.toUpperCase()} ${suggestion.localPort})`).join("\n");
+  const selected = window.prompt(`Choose access provider:\n${menu}`, "1");
+  if (selected === null) return null;
+  const selectedText = String(selected).trim().toLowerCase();
+  const byIndex = compatible[Number.parseInt(selectedText, 10) - 1];
+  return byIndex || compatible.find((suggestion) => suggestion.providerId === selectedText || suggestion.providerName.toLowerCase().includes(selectedText)) || null;
+}
+
+async function createAccessServiceForInstance(instance = findInstance()) {
+  if (!instance) return null;
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasPublicAccess || typeof desktopApiState.api?.publicAccess?.createService !== "function") {
+    showToast("Public Access service creation is unavailable.", "warning");
+    return null;
+  }
+  if (!latestPublicAccessSnapshot) {
+    await refreshPlayitStatus();
+  }
+  const requestContext = createNodeActionContext("instance-expose-share");
+  const suggestion = chooseInstanceAccessSuggestion(instance);
+  if (!suggestion) return null;
+  const provider = getInstanceAccessProvider(suggestion.providerId);
+  if (!isInstanceAccessProviderReady(provider, suggestion)) {
+    showToast(getInstanceAccessProviderUnavailableReason(provider, suggestion), "warning");
+    return null;
+  }
+  let publicHostname = "";
+  if (suggestion.providerId === "cloudflare-tunnel") {
+    publicHostname = window.prompt("Cloudflare public hostname", `${instance.id || "service"}.example.com`);
+    if (publicHostname === null) return null;
+    if (!String(publicHostname || "").trim()) {
+      throw Object.assign(new Error("Cloudflare services require a public hostname."), { code: "INVALID_PUBLIC_HOSTNAME" });
+    }
+  }
+  const payload = {
+    nodeId: requestContext.nodeId,
+    providerId: suggestion.providerId,
+    providerName: provider?.name || suggestion.providerName,
+    accessType: suggestion.accessType,
+    name: suggestion.name,
+    linkedInstanceId: instance.id,
+    localHost: suggestion.localHost,
+    localPort: suggestion.localPort,
+    protocol: suggestion.protocol,
+    privateAddress: suggestion.providerId === "tailscale" ? buildTailscalePrivateAddress(provider, suggestion.localPort) : null,
+    publicAddress: suggestion.providerId === "cloudflare-tunnel" ? String(publicHostname).trim() : null,
+    publicHostname: suggestion.providerId === "cloudflare-tunnel" ? String(publicHostname).trim() : null,
+    localServiceUrl: suggestion.providerId === "cloudflare-tunnel" ? `${suggestion.protocol}://${suggestion.localHost}:${suggestion.localPort}` : null,
+    hostname: suggestion.providerId === "tailscale" ? provider?.DNSName || provider?.hostname || null : null,
+    IPv4: suggestion.providerId === "tailscale" ? provider?.IPv4 || null : null,
+    IPv6: suggestion.providerId === "tailscale" ? provider?.IPv6 || null : null,
+  };
+  if (!isNodeActionStillCurrent(requestContext)) return null;
+  const result = await desktopApiState.api.publicAccess.createService(payload);
+  if (result?.ok === false) {
+    throw Object.assign(new Error(result.error?.message || "Access service could not be created."), {
+      code: result.error?.code || "PUBLIC_ACCESS_REQUEST_FAILED",
+    });
+  }
+  await refreshPlayitStatus();
+  renderInstanceRows(getInstances());
+  setInstanceDetails(findInstance(instance.id));
+  showToast(suggestion.providerId === "tailscale"
+    ? "Private tailnet access linked to the instance."
+    : suggestion.providerId === "cloudflare-tunnel"
+      ? "Cloudflare web access linked to the instance. Verify DNS and tunnel routing before relying on it."
+      : "Public access linked to the instance.", "success");
+  return result;
+}
+
+async function copyInstanceAccessAddress(instance = findInstance()) {
+  const services = getInstanceAccessServices(instance);
+  if (services.length === 0) {
+    showToast("No access service is linked to this instance yet.", "warning");
+    return;
+  }
+  const choices = services
+    .map((service) => ({ service, address: getInstanceAccessAddress(service) }))
+    .filter((entry) => entry.address);
+  if (choices.length === 0) {
+    showToast("Linked access services do not have a copyable address yet.", "warning");
+    return;
+  }
+  let selected = choices[0];
+  if (choices.length > 1) {
+    const menu = choices.map((entry, index) => `${index + 1}. ${getInstanceAccessBadgeLabel(entry.service)}: ${entry.address}`).join("\n");
+    const response = window.prompt(`Choose address to copy:\n${menu}`, "1");
+    if (response === null) return;
+    selected = choices[Number.parseInt(String(response).trim(), 10) - 1] || selected;
+  }
+  await copyPublicAccessValue(selected.address, "Access address copied.", "No access address is available to copy.");
+}
+
+function openInstanceAccessManager(instance = findInstance()) {
+  if (instance?.id) {
+    const service = getInstanceAccessServices(instance)[0];
+    if (service?.providerId) {
+      selectedPublicAccessProviderId = service.providerId;
+    }
+    if (service?.id) {
+      selectedPublicAccessServiceId = service.id;
+    }
+  }
+  showPage("playit");
+  renderPublicAccessProviderDetails(latestPublicAccessSnapshot);
+}
+
+async function deleteAccessServicesForInstance(instance = null) {
+  const desktopApiState = getDesktopApiState();
+  if (!instance?.id || !desktopApiState.hasPublicAccess || typeof desktopApiState.api?.publicAccess?.deleteService !== "function") {
+    return;
+  }
+  const services = getInstanceAccessServices(instance);
+  if (services.length === 0) return;
+  const requestContext = createNodeActionContext("instance-access-cleanup");
+  for (const service of services) {
+    if (!isNodeActionStillCurrent(requestContext)) return;
+    try {
+      await desktopApiState.api.publicAccess.deleteService({ serviceId: service.id, nodeId: requestContext.nodeId });
+    } catch (error) {
+      console.warn("[Instances] Linked access service cleanup failed.", {
+        instanceId: instance.id,
+        serviceId: service.id,
+        code: getAgentErrorCode(error),
+      });
+    }
+  }
+  await refreshPlayitStatus();
+}
+
 async function createProviderAccessService() {
   const provider = getSelectedPublicAccessProvider();
   if (!["playit", "tailscale", "cloudflare-tunnel"].includes(provider?.id)) {
@@ -5865,6 +6143,8 @@ function renderPublicAccessSnapshot(snapshot = {}) {
     setField("publicAccessActivity", snapshot.recentActivity?.[0]?.label || "Status checked");
   }
   renderPublicAccessProviderDetails(snapshot);
+  renderInstanceRows(getInstances());
+  renderInstanceNetwork(findInstance());
 }
 
 function renderPlayitUnavailable(message = "Public Access status unavailable.") {
@@ -7828,17 +8108,26 @@ function renderInstanceNetworkSummary(instance) {
 
   const isMinecraft = isMinecraftInstance(instance);
   instanceNetworkSummary.hidden = !instance;
+  const accessServices = getInstanceAccessServices(instance);
+  const primaryAccess = accessServices.find((service) => getInstanceAccessAddress(service)) || accessServices[0] || null;
   const ports = Array.isArray(instance?.ports) ? instance.ports : [];
   const configuredPort = ports[0] || latestMinecraftProperties["server-port"] || "Unavailable";
   const tunnelAddress = latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || "Unavailable";
   const localIp = latestPlayitSnapshot?.localIp || "127.0.0.1";
   const localPort = latestPlayitSnapshot?.localPort || configuredPort;
+  const accessAddress = primaryAccess ? getInstanceAccessAddress(primaryAccess) || "Pending provider address" : tunnelAddress;
+  const accessSummary = accessServices.length > 0
+    ? accessServices.map(getInstanceAccessBadgeLabel).join(", ")
+    : isMinecraft ? tunnelAddress : "Shared Public Access workspace";
+  const runningLinkedServices = accessServices.filter((service) => ["running", "available"].includes(String(service.state || "").toLowerCase()));
 
   setInstanceNetworkDetail("localAddress", localPort === "Unavailable" ? "Unavailable" : `${localIp}:${localPort}`);
-  setInstanceNetworkDetail("publicAddress", tunnelAddress);
+  setInstanceNetworkDetail("publicAddress", accessAddress || "Unavailable");
   setInstanceNetworkDetail("configuredPort", formatInstanceValue(configuredPort));
-  setInstanceNetworkDetail("playitTunnel", isMinecraft ? tunnelAddress : "Shared Public Access workspace");
-  setInstanceNetworkDetail("tunnelStatus", latestPlayitSnapshot?.connected ? "Connected" : "Unavailable");
+  setInstanceNetworkDetail("playitTunnel", accessSummary || "Unavailable");
+  setInstanceNetworkDetail("tunnelStatus", accessServices.length > 0
+    ? `${runningLinkedServices.length}/${accessServices.length} linked`
+    : latestPlayitSnapshot?.connected ? "Connected" : "Unavailable");
 }
 
 async function updateInstancePorts(ports) {
@@ -8603,6 +8892,20 @@ function updateInstanceActionButtons() {
     button.disabled = busy || !hasInstancesBridge || !isFiveMSetupRequired(selectedInstance);
   });
 
+  document.querySelectorAll('[data-instance-action="expose-share"]').forEach((button) => {
+    const hasCompatibleSuggestion = getInstanceAccessSuggestions(selectedInstance).some((suggestion) => suggestion.compatible !== false && suggestion.localPort);
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance || !hasCompatibleSuggestion || !getDesktopApiState().hasPublicAccess;
+  });
+
+  document.querySelectorAll('[data-instance-action="copy-access-address"]').forEach((button) => {
+    const hasAddress = getInstanceAccessServices(selectedInstance).some((service) => Boolean(getInstanceAccessAddress(service)));
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance || !hasAddress;
+  });
+
+  document.querySelectorAll('[data-instance-action="manage-access"]').forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance || !getDesktopApiState().hasPublicAccess;
+  });
+
   document.querySelectorAll(".instance-quick-actions [data-instance-action='start']").forEach((button) => {
     button.hidden = Boolean(selectedInstance && isInstanceRunning(selectedInstance));
   });
@@ -8651,6 +8954,26 @@ function buildInstanceNameCell(instance) {
   const meta = document.createElement("span");
   meta.textContent = instance?.id || "missing-id";
   wrapper.append(title, meta);
+  const accessServices = getInstanceAccessServices(instance);
+  if (accessServices.length > 0) {
+    const badges = document.createElement("div");
+    badges.className = "instance-tags-cell instance-access-badges";
+    accessServices.slice(0, 3).forEach((service) => {
+      const badge = document.createElement("span");
+      badge.textContent = getInstanceAccessBadgeLabel(service);
+      const address = getInstanceAccessAddress(service);
+      if (address) {
+        badge.title = address;
+      }
+      badges.appendChild(badge);
+    });
+    if (accessServices.length > 3) {
+      const more = document.createElement("span");
+      more.textContent = `+${accessServices.length - 3}`;
+      badges.appendChild(more);
+    }
+    wrapper.appendChild(badges);
+  }
   return wrapper;
 }
 
@@ -8754,6 +9077,7 @@ function buildInstanceActionCell(instance) {
     { label: isFiveMSetupRequired(instance) ? "Configure" : "Start", action: "start", disabled: !canStartInstance(instance) },
     { label: "Stop", action: "stop", disabled: !canStopInstance(instance) },
     { label: "Restart", action: "restart", disabled: !canRestartInstance(instance) },
+    { label: "Expose", action: "expose-share", disabled: !getInstanceAccessSuggestions(instance).some((suggestion) => suggestion.compatible !== false && suggestion.localPort) },
   ];
 
   actions.forEach((item) => {
@@ -12686,6 +13010,30 @@ async function runInstanceAction(actionName) {
     return;
   }
 
+  if (actionName === "expose-share") {
+    try {
+      await createAccessServiceForInstance(selectedInstance);
+    } catch (error) {
+      console.warn("[Instances] Expose/share failed.", { code: getAgentErrorCode(error) });
+      showToast(getAgentErrorMessage(error, "Access service could not be created."));
+    } finally {
+      updateInstanceActionButtons();
+    }
+    return;
+  }
+
+  if (actionName === "copy-access-address") {
+    await copyInstanceAccessAddress(selectedInstance);
+    updateInstanceActionButtons();
+    return;
+  }
+
+  if (actionName === "manage-access") {
+    openInstanceAccessManager(selectedInstance);
+    updateInstanceActionButtons();
+    return;
+  }
+
   if (actionName === "forceKill" && !canStopInstance(selectedInstance)) {
     showToast("Instance is already stopped. Use Delete or Forget to remove it.", "warning");
     updateInstanceActionButtons();
@@ -12736,6 +13084,7 @@ async function runInstanceAction(actionName) {
     showToast(actionName === "delete" ? formatInstanceDeletionResult(actionResult, "Instance deleted.") : actionName === "forget" ? formatInstanceDeletionResult(actionResult, "Instance removed from list.") : `Instance ${actionName} request completed.`);
 
     if (actionName === "delete" || actionName === "forget") {
+      await deleteAccessServicesForInstance(selectedInstance);
       selectedInstanceId = null;
       latestInstanceMetrics = null;
       clearInstanceLogs();
@@ -12756,6 +13105,7 @@ async function runInstanceAction(actionName) {
     if (isInstanceNotFoundError(error)) {
       if (actionName === "delete" || actionName === "forget") {
         instanceRemovalAllowedIds.add(targetInstanceId);
+        await deleteAccessServicesForInstance(selectedInstance);
         selectedInstanceId = null;
         latestInstanceMetrics = null;
         storeLastInstanceId(null);
@@ -12786,6 +13136,7 @@ async function runInstanceAction(actionName) {
             showToast(`Deleting ${label}...`);
             await desktopApiState.api.instances.delete(targetInstanceId, getNodeScopedPayload(requestContext));
             instanceRemovalAllowedIds.add(targetInstanceId);
+            await deleteAccessServicesForInstance(selectedInstance);
             selectedInstanceId = null;
             latestInstanceMetrics = null;
             storeLastInstanceId(null);
@@ -12806,6 +13157,7 @@ async function runInstanceAction(actionName) {
         try {
           const forgetResult = await desktopApiState.api.instances.forget(targetInstanceId, getNodeScopedPayload(requestContext));
           instanceRemovalAllowedIds.add(targetInstanceId);
+          await deleteAccessServicesForInstance(selectedInstance);
           selectedInstanceId = null;
           latestInstanceMetrics = null;
           storeLastInstanceId(null);
@@ -26919,6 +27271,15 @@ instancesForceKillButtons.forEach((button) => {
 });
 document.querySelectorAll('[data-instance-action="configure-fivem"]').forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("configure-fivem"));
+});
+document.querySelectorAll('[data-instance-action="expose-share"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("expose-share"));
+});
+document.querySelectorAll('[data-instance-action="copy-access-address"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("copy-access-address"));
+});
+document.querySelectorAll('[data-instance-action="manage-access"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("manage-access"));
 });
 document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);
 document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);

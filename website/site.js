@@ -122,6 +122,16 @@ function assetLabel(asset) {
   return [asset.fileName, asset.architecture, asset.fileSizeLabel].filter(Boolean).join(" · ");
 }
 
+function assetFacts(asset, detectedPlatform) {
+  const facts = [
+    asset.fileName,
+    asset.fileSizeLabel,
+    asset.architecture,
+    detectedPlatform === "windows" ? "Windows detected" : null,
+  ];
+  return facts.filter(Boolean);
+}
+
 function findDownloadAsset(release, key) {
   const artifactKey = downloadKeyToArtifactKey(key);
   return (release?.assets || []).find((asset) => asset.key === artifactKey) || null;
@@ -367,16 +377,21 @@ function renderDownloadPage(release) {
     primaryTarget.replaceChildren();
     if (primaryAsset) {
       const copy = document.createElement("div");
+      copy.className = "download-primary__content";
       const heading = document.createElement("h3");
       heading.textContent = windowsSetup ? "Windows installer ready" : `Recommended for ${platformLabel(detectedPlatform)}`;
       const meta = document.createElement("p");
-      const detectedNote = detectedPlatform === "windows"
-        ? "Windows detected."
-        : detectedPlatform === "unknown"
-          ? "Manual platform options remain visible below."
-          : `${platformLabel(detectedPlatform)} detected; Windows remains available for manual download.`;
-      meta.textContent = `${primaryAsset.installerType} · ${assetLabel(primaryAsset)} · ${detectedNote}`;
-      copy.append(heading, meta);
+      meta.textContent = primaryAsset.platform === "windows"
+        ? "Recommended setup for Windows 10 and Windows 11 x64. Downloads only start when you choose a button."
+        : "Recommended package for this device. Windows downloads remain available below.";
+      const facts = document.createElement("ul");
+      facts.className = "download-primary__facts";
+      assetFacts(primaryAsset, detectedPlatform).forEach((fact) => {
+        const item = document.createElement("li");
+        item.textContent = fact;
+        facts.append(item);
+      });
+      copy.append(heading, meta, facts);
       const actions = document.createElement("div");
       actions.className = "download-primary__actions";
       actions.append(createDownloadButton(primaryAsset, release, true));

@@ -1125,6 +1125,37 @@ a[aria-disabled="true"] {
   max-width: 31rem;
 }
 
+#getting-started-page .install-layout {
+  grid-template-columns: minmax(340px, 0.78fr) minmax(560px, 1.22fr);
+}
+
+#getting-started-page .install-hero-copy h1 {
+  max-width: 590px;
+  font-size: clamp(3.7rem, 6vw, 5.7rem);
+  line-height: 0.94;
+}
+
+#getting-started-page .section-copy {
+  max-width: 32rem;
+}
+
+.getting-started-hero .steps--detailed article {
+  min-height: 86px;
+}
+
+.getting-started-install {
+  align-items: center;
+  padding-top: 52px;
+}
+
+.getting-started-install .steps {
+  gap: 12px;
+}
+
+.getting-started-install .steps article {
+  min-height: 64px;
+}
+
 .section-copy {
   max-width: 38rem;
   color: var(--muted);

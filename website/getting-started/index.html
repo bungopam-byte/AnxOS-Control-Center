@@ -52,8 +52,8 @@
       </nav>
     </header>
     <main id="getting-started-page">
-      <section id="getting-started" class="section-shell install-layout">
-        <div>
+      <section id="getting-started" class="section-shell install-layout getting-started-hero">
+        <div class="install-hero-copy">
           <p class="eyebrow">Getting Started</p>
           <h1>First server workflow</h1>
           <p class="section-copy">These steps match the current desktop workflow. AnxOS does not install unsupported runtimes or approve remote access without your action.</p>
@@ -67,15 +67,15 @@
           <article><span>6</span><p>Install your first Marketplace server after dependency checks pass.</p></article>
           <article><span>7</span><p>Monitor the server through Operations, Diagnostics, Files, and Node Health.</p></article>
         </div>
-        <div class="download-help">
+        <div class="download-help install-links">
           <a data-download="windows" href="/download">Windows download</a>
           <a data-download="linuxDeb" href="/download">Linux download</a>
           <a data-config-href="releaseUrl" href="/download">GitHub releases</a>
         </div>
       </section>
 
-      <section id="install" class="section-shell install-layout">
-        <div>
+      <section id="install" class="section-shell install-layout getting-started-install">
+        <div class="install-hero-copy">
           <p class="eyebrow">Install Guide</p>
           <h2>Install in a few steps</h2>
         </div>
@@ -98,7 +98,11 @@
         <a href="/security-privacy">Security</a>
         <a href="/faq">FAQ</a>
         <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center-Releases">GitHub</a>
-      <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a><a href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a><a href="/profile" data-auth-nav="signed-in" hidden>Profile</a><button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button></nav>
+        <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a>
+        <a href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a>
+        <a href="/profile" data-auth-nav="signed-in" hidden>Profile</a>
+        <button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button>
+      </nav>
     </footer>
   </body>
 </html>

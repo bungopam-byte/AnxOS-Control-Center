@@ -27,6 +27,15 @@ a {
   text-decoration: none;
 }
 
+p,
+li,
+dd,
+small,
+span,
+strong {
+  min-width: 0;
+}
+
 a:focus-visible {
   outline: 2px solid rgba(206, 150, 255, 0.88);
   outline-offset: 2px;
@@ -182,7 +191,7 @@ p {
 
 h1 {
   margin-bottom: 14px;
-  font-size: 8rem;
+  font-size: clamp(4rem, 11vw, 8rem);
   line-height: 0.9;
   letter-spacing: 0;
 }
@@ -438,6 +447,7 @@ h3 {
   overflow-wrap: anywhere;
   text-align: center;
   white-space: normal;
+  text-decoration: none;
   transition:
     border-color 160ms ease,
     background 160ms ease,
@@ -463,6 +473,11 @@ h3 {
   box-shadow: var(--anx-glow-sm);
   transform: translateY(-1px);
   outline: none;
+}
+
+.button:focus-visible {
+  outline: 2px solid rgba(206, 150, 255, 0.88);
+  outline-offset: 3px;
 }
 
 .button.is-disabled,
@@ -500,10 +515,12 @@ a[aria-disabled="true"] {
 .download-card,
 .steps article,
 .safety-card {
+  min-width: 0;
   border: 1px solid var(--anx-color-border-soft);
   border-radius: var(--anx-radius-md);
   background: var(--anx-surface-panel);
   box-shadow: var(--anx-shadow-panel), var(--anx-shadow-inset);
+  overflow: hidden;
 }
 
 .account-unavailable,
@@ -728,8 +745,8 @@ a[aria-disabled="true"] {
   display: grid;
   gap: 6px;
   align-items: start;
-  margin-bottom: 16px;
-  padding-top: 44px;
+  margin-bottom: 18px;
+  padding-top: clamp(38px, 6vw, 58px);
 }
 
 .section-heading h1 {
@@ -900,6 +917,12 @@ a[aria-disabled="true"] {
   align-content: start;
   min-height: 210px;
   padding: 16px;
+}
+
+.feature-card h3,
+.download-card h3,
+.release-card h3 {
+  overflow-wrap: anywhere;
 }
 
 .feature-card svg {

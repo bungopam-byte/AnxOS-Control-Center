@@ -8,6 +8,20 @@ const DEFAULT_TEXT_READ_LIMIT_BYTES = 1024 * 1024;
 const BINARY_SAMPLE_BYTES = 4096;
 const TEXT_DECODER = new TextDecoder("utf-8", { fatal: true });
 const RESTART_REQUIRED_SKEW_MS = 1000;
+const FILE_CAPABILITIES = {
+  upload: true,
+  download: true,
+  rename: true,
+  delete: true,
+  copy: true,
+  move: true,
+  createFolder: true,
+  editText: true,
+  dragDrop: true,
+  search: true,
+  sort: true,
+  storageUsage: true,
+};
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
@@ -252,9 +266,201 @@ async function getAllowedRoots() {
   return (await getRootValidationReport()).validRoots;
 }
 
+function getBackupRootPath() {
+  const config = getConfig();
+  return path.resolve(process.env.AGENT_BACKUP_ROOT || path.join(path.dirname(config.instanceRoot), "backups"));
+}
+
+function getKnownUserFolder(name) {
+  const homeDirectory = os.homedir() || "";
+  return homeDirectory ? path.join(homeDirectory, name) : null;
+}
+
+function addShortcut(candidates, id, name, candidatePath, options = {}) {
+  if (!candidatePath) {
+    return;
+  }
+  candidates.push({
+    id,
+    name,
+    path: candidatePath,
+    kind: options.kind || "folder",
+    protected: Boolean(options.protected),
+    warning: options.warning || null,
+  });
+}
+
+function getSteamLibraryCandidates() {
+  const candidates = [];
+  const homeDirectory = os.homedir() || "";
+
+  if (process.platform === "win32") {
+    [
+      process.env.STEAM_LIBRARY,
+      process.env.STEAM_LIBRARY_PATH,
+      process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "Steam", "steamapps") : null,
+      process.env["ProgramFiles(x86)"] ? path.join(process.env["ProgramFiles(x86)"], "Steam", "steamapps") : null,
+      process.env.PROGRAMW6432 ? path.join(process.env.PROGRAMW6432, "Steam", "steamapps") : null,
+      homeDirectory ? path.join(homeDirectory, "Steam", "steamapps") : null,
+    ].filter(Boolean).forEach((candidate) => candidates.push(candidate));
+  } else {
+    [
+      process.env.STEAM_LIBRARY,
+      process.env.STEAM_LIBRARY_PATH,
+      homeDirectory ? path.join(homeDirectory, ".steam", "steam", "steamapps") : null,
+      homeDirectory ? path.join(homeDirectory, ".local", "share", "Steam", "steamapps") : null,
+    ].filter(Boolean).forEach((candidate) => candidates.push(candidate));
+  }
+
+  return unique(candidates.map((candidate) => path.resolve(candidate)));
+}
+
+function buildShortcutCandidates() {
+  const homeDirectory = os.homedir() || "";
+  const config = getConfig();
+  const candidates = [];
+
+  addShortcut(candidates, "anxos-instances", "AnxOS Instances", config.instanceRoot, { kind: "managed" });
+  addShortcut(candidates, "anxos-backups", "AnxOS Backups", getBackupRootPath(), { kind: "managed" });
+  addShortcut(candidates, "desktop", "Desktop", getKnownUserFolder("Desktop"));
+  addShortcut(candidates, "documents", "Documents", getKnownUserFolder("Documents"));
+  addShortcut(candidates, "downloads", "Downloads", getKnownUserFolder("Downloads"));
+  addShortcut(candidates, "pictures", "Pictures", getKnownUserFolder("Pictures"));
+  addShortcut(candidates, "videos", "Videos", getKnownUserFolder("Videos"));
+  addShortcut(candidates, "music", "Music", getKnownUserFolder("Music"));
+  addShortcut(candidates, "user-profile", "User Profile", homeDirectory);
+
+  if (process.platform === "win32") {
+    addShortcut(candidates, "app-data", "AppData", process.env.APPDATA || (homeDirectory ? path.join(homeDirectory, "AppData", "Roaming") : null), {
+      kind: "system",
+      protected: true,
+      warning: "AppData can contain application settings. Edit files here only when you know which application owns them.",
+    });
+    addShortcut(candidates, "program-data", "ProgramData", process.env.PROGRAMDATA || "C:\\ProgramData", {
+      kind: "system",
+      protected: true,
+      warning: "ProgramData can contain shared application data and service configuration.",
+    });
+  } else {
+    addShortcut(candidates, "app-data", "AppData", process.env.XDG_CONFIG_HOME || (homeDirectory ? path.join(homeDirectory, ".config") : null), {
+      kind: "system",
+      protected: true,
+      warning: "Application data can contain settings. Edit files here only when you know which application owns them.",
+    });
+  }
+
+  getSteamLibraryCandidates().forEach((steamPath, index) => {
+    addShortcut(candidates, index === 0 ? "steam-libraries" : `steam-libraries-${index + 1}`, index === 0 ? "Steam Libraries" : `Steam Library ${index + 1}`, steamPath, {
+      kind: "library",
+    });
+  });
+
+  return candidates;
+}
+
+async function resolveShortcut(candidate, rootReport) {
+  const normalizedPath = path.resolve(candidate.path);
+  const rootMatch = rootReport.validRoots.find((root) => isInsideRoot(normalizedPath, root));
+  const base = {
+    id: candidate.id,
+    name: candidate.name,
+    path: normalizedPath,
+    type: "directory",
+    isDirectory: true,
+    kind: candidate.kind,
+    protected: candidate.protected,
+    warning: candidate.warning,
+    available: false,
+    outsideAllowedRoots: !rootMatch,
+    reason: null,
+  };
+
+  if (!rootMatch) {
+    return {
+      ...base,
+      reason: "outside_allowed_roots",
+    };
+  }
+
+  try {
+    const realPath = await fsPromises.realpath(normalizedPath);
+    const stats = await fsPromises.stat(realPath);
+    if (!stats.isDirectory()) {
+      return {
+        ...base,
+        path: realPath,
+        reason: "not_directory",
+      };
+    }
+    if (!isInsideRoot(realPath, rootMatch)) {
+      return {
+        ...base,
+        path: realPath,
+        outsideAllowedRoots: true,
+        reason: "resolves_outside_allowed_roots",
+      };
+    }
+    await fsPromises.access(realPath, fs.constants.R_OK | fs.constants.X_OK);
+    return {
+      ...base,
+      path: realPath,
+      root: rootMatch,
+      available: true,
+      outsideAllowedRoots: false,
+      reason: null,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      reason: error?.code === "ENOENT" ? "missing" : error?.code === "EACCES" || error?.code === "EPERM" ? "unreadable" : "unavailable",
+      errorCode: error?.code || null,
+    };
+  }
+}
+
+async function getFilesystemShortcuts(rootReport = null) {
+  const report = rootReport || await getRootValidationReport();
+  const shortcuts = await Promise.all(buildShortcutCandidates().map((candidate) => resolveShortcut(candidate, report)));
+  const seen = new Set();
+  return shortcuts.filter((shortcut) => {
+    const key = `${shortcut.id}:${String(shortcut.path || "").toLowerCase()}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildRootEntries(rootReport, shortcuts = []) {
+  const rootEntries = rootReport.validRoots.map((rootPath) => ({
+    name: path.basename(rootPath) || rootPath,
+    path: rootPath,
+    type: "directory",
+    isDirectory: true,
+    kind: "root",
+    available: true,
+  }));
+
+  const seen = new Set(rootEntries.map((entry) => String(entry.path).toLowerCase()));
+  shortcuts
+    .filter((shortcut) => shortcut.available)
+    .forEach((shortcut) => {
+      const key = String(shortcut.path || "").toLowerCase();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      rootEntries.push(shortcut);
+    });
+
+  return rootEntries;
+}
+
 async function getFilesystemIdentity() {
   const homeDirectory = os.homedir() || process.cwd();
   const rootReport = await getRootValidationReport();
+  const shortcuts = await getFilesystemShortcuts(rootReport);
   const homeRealPath = await fsPromises.realpath(homeDirectory).catch(() => null);
   const homeInsideRoot = Boolean(homeRealPath && rootReport.validRoots.some((root) => isInsideRoot(homeRealPath, root)));
   const rootIsUsable = Boolean(rootReport.effectiveRoot && rootReport.primaryStatus?.status === "valid" && rootReport.primaryStatus.readable);
@@ -273,7 +479,10 @@ async function getFilesystemIdentity() {
     homeInsideFilesystemRoot: homeInsideRoot,
     initialPath,
     pathSeparator: path.sep,
-    roots: rootReport.validRoots,
+    roots: buildRootEntries(rootReport, shortcuts),
+    shortcuts,
+    fileShortcuts: shortcuts,
+    capabilities: FILE_CAPABILITIES,
     configSourceType: rootReport.configSourceType,
     restartRequired: rootReport.restartRequired,
   };
@@ -478,17 +687,34 @@ async function listFiles(requestedPath) {
       };
     }
   }));
+  const rootReport = await getRootValidationReport();
+  const shortcuts = await getFilesystemShortcuts(rootReport);
+  const sortedEntries = files.sort((left, right) => {
+    if (left.type !== right.type) {
+      return left.type === "directory" ? -1 : 1;
+    }
+
+    return left.name.localeCompare(right.name);
+  });
+  const fileCount = sortedEntries.filter((entry) => entry.type !== "directory").length;
+  const directoryCount = sortedEntries.filter((entry) => entry.type === "directory").length;
+  const immediateFileBytes = sortedEntries.reduce((total, entry) => total + (entry.type === "file" && Number.isFinite(entry.size) ? entry.size : 0), 0);
 
   return {
     path: resolvedPath.path,
+    currentPath: resolvedPath.path,
     root: resolvedPath.root,
-    entries: files.sort((left, right) => {
-      if (left.type !== right.type) {
-        return left.type === "directory" ? -1 : 1;
-      }
-
-      return left.name.localeCompare(right.name);
-    }),
+    roots: buildRootEntries(rootReport, shortcuts),
+    shortcuts,
+    capabilities: FILE_CAPABILITIES,
+    entries: sortedEntries,
+    summary: {
+      directoryCount,
+      fileCount,
+      totalCount: sortedEntries.length,
+      immediateFileBytes,
+      storageUsageScope: "current-directory",
+    },
   };
 }
 

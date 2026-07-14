@@ -2044,9 +2044,13 @@ function normalizeFileListing(payload, configOverride = null) {
     message,
     currentPath,
     roots,
+    shortcuts: Array.isArray(candidate.shortcuts) ? candidate.shortcuts : [],
+    fileShortcuts: Array.isArray(candidate.fileShortcuts) ? candidate.fileShortcuts : Array.isArray(candidate.shortcuts) ? candidate.shortcuts : [],
+    capabilities: candidate.capabilities && typeof candidate.capabilities === "object" ? candidate.capabilities : {},
     breadcrumbs,
     entries,
     summary: {
+      ...(candidate.summary && typeof candidate.summary === "object" ? candidate.summary : {}),
       directoryCount,
       fileCount,
       totalCount: entries.length,

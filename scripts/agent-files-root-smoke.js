@@ -48,6 +48,8 @@ async function main() {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "anx-agent-files-root-"));
   const originalEnv = {
     AGENT_FILE_ROOTS: process.env.AGENT_FILE_ROOTS,
+    AGENT_INSTANCE_ROOT: process.env.AGENT_INSTANCE_ROOT,
+    AGENT_BACKUP_ROOT: process.env.AGENT_BACKUP_ROOT,
     ANXOS_AGENT_RUNTIME_CONFIG: process.env.ANXOS_AGENT_RUNTIME_CONFIG,
     ANXHUB_CONFIG_DIR: process.env.ANXHUB_CONFIG_DIR,
   };
@@ -60,7 +62,13 @@ async function main() {
     await fs.mkdir(homeRoot, { recursive: true });
     await fs.mkdir(similarPrefix, { recursive: true });
     await fs.mkdir(outsideRoot, { recursive: true });
+    const instanceRoot = path.join(homeRoot, "AnxOS Instances");
+    const backupRoot = path.join(homeRoot, "AnxOS Backups");
+    await fs.mkdir(instanceRoot, { recursive: true });
+    await fs.mkdir(backupRoot, { recursive: true });
     await fs.writeFile(path.join(homeRoot, "inside.txt"), "inside", "utf8");
+    process.env.AGENT_INSTANCE_ROOT = instanceRoot;
+    process.env.AGENT_BACKUP_ROOT = backupRoot;
 
     setRoot(homeRoot);
     assert.strictEqual((await fileService.resolveAllowedPath(homeRoot)).path, homeRoot, "The root path itself must be allowed.");
@@ -128,6 +136,14 @@ async function main() {
     assert.strictEqual(identity.filesystemRootExists, true, "Identity should expose root existence.");
     assert.strictEqual(identity.filesystemRootReadable, true, "Identity should expose root readability.");
     assert.strictEqual(identity.configSourceType, "runtime-config", "Identity should expose a safe config source type.");
+    assert(identity.capabilities?.upload && identity.capabilities?.editText && identity.capabilities?.storageUsage, "Identity should expose local filesystem capabilities.");
+    assert(Array.isArray(identity.shortcuts), "Identity should expose safe filesystem shortcuts.");
+    const instanceShortcut = identity.shortcuts.find((shortcut) => shortcut.id === "anxos-instances");
+    const backupShortcut = identity.shortcuts.find((shortcut) => shortcut.id === "anxos-backups");
+    assert.strictEqual(instanceShortcut?.available, true, "Managed instance shortcut should be available inside the configured root.");
+    assert.strictEqual(backupShortcut?.available, true, "Managed backup shortcut should be available inside the configured root.");
+    assert(identity.roots.some((root) => root.name === "AnxOS Instances" && root.path === instanceRoot), "Available managed shortcuts should be exposed as navigable roots.");
+    assert(identity.roots.some((root) => root.name === "AnxOS Backups" && root.path === backupRoot), "Available backup shortcuts should be exposed as navigable roots.");
 
     const appSource = await fs.readFile(path.join(rootDir, "app.js"), "utf8");
     assert(appSource.includes("isPathInsideFilesIdentityRoots"), "Renderer should validate remembered paths against the Agent filesystem root.");
@@ -153,6 +169,8 @@ async function main() {
         AGENT_PORT: String(port),
         AGENT_TOKEN: token,
         AGENT_FILE_ROOTS: homeParent,
+        AGENT_INSTANCE_ROOT: instanceRoot,
+        AGENT_BACKUP_ROOT: backupRoot,
         ANXOS_AGENT_RUNTIME_CONFIG: "",
         ANXHUB_CONFIG_DIR: authConfigDir,
         ANXHUB_AGENT_CONFIG_PATH: path.join(authConfigDir, "agent.json"),
@@ -169,11 +187,16 @@ async function main() {
       assert.strictEqual(endpointIdentity.filesystemRoot, homeParent, "Identity endpoint should use the configured root.");
       assert.strictEqual(endpointIdentity.homeInsideFilesystemRoot, false, "The real process home is outside the temporary smoke root.");
       assert.strictEqual(endpointIdentity.initialPath, homeParent, "Identity should fall back to the authorized root when home is outside it.");
+      assert(endpointIdentity.capabilities?.download && endpointIdentity.capabilities?.createFolder, "Identity endpoint should expose file capabilities.");
+      assert(endpointIdentity.shortcuts.some((shortcut) => shortcut.id === "anxos-instances" && shortcut.available), "Identity endpoint should expose the managed instance shortcut.");
 
       const listResponse = await fetch(`${url}/api/v1/files/list?path=${encodeURIComponent(endpointIdentity.initialPath)}`, { headers });
       assert.strictEqual(listResponse.status, 200, "List endpoint should accept the identity-selected initial path.");
       const listPayload = await listResponse.json();
       assert.strictEqual(listPayload.root, homeParent, "List endpoint should use the same effective root as identity.");
+      assert(listPayload.capabilities?.upload && listPayload.capabilities?.sort, "List endpoint should expose file capabilities.");
+      assert.strictEqual(listPayload.summary.totalCount, listPayload.entries.length, "List endpoint should expose immediate directory storage summary.");
+      assert(listPayload.roots.some((root) => root.name === "AnxOS Instances" && root.path === instanceRoot), "List endpoint should expose available shortcuts as roots.");
 
       const outsideResponse = await fetch(`${url}/api/v1/files/list?path=${encodeURIComponent(outsideRoot)}`, { headers });
       assert.strictEqual(outsideResponse.status, 403, "List endpoint should reject paths outside the configured root.");

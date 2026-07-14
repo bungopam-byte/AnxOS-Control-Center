@@ -276,3 +276,9 @@ The Windows variants cover Forge and NeoForge `run.bat` startup, Windows TShock 
 Instance management now exposes explicit instance rename, duplicate, and local open-folder actions through the shared Agent, service-router, IPC, and preload layers. Duplicate operations copy stopped managed instance data, reset runtime fields, preserve source metadata, and refuse to overwrite existing instance IDs. The renderer adds Rename, Duplicate, and Open Folder actions to the existing Instances action bar; Open Folder is limited to Local Agent or desktop-local targets.
 
 The shared instance public model now includes `lifecycleState: "Crashed"` and `crashed: true` for failed process exits while preserving the existing `state: "Failed"` value for backward compatibility. Real Windows process lifecycle validation remains required before production release claims.
+
+## Phase 14 Local Windows Filesystem Note
+
+The Agent filesystem service now publishes a shared capability model and safe shortcut metadata for managed instances, managed backups, common user folders, AppData, ProgramData where applicable, and Steam library candidates. Shortcuts become navigable Files-page roots only after they resolve inside the configured Agent filesystem root; unavailable or protected shortcuts remain diagnostic metadata and do not expand the allowed filesystem surface.
+
+File list responses now include the same shortcut roots, operation capabilities, and an immediate-directory storage summary while preserving the existing root-containment checks for list, read, download, upload, write, rename, copy, move, folder creation, and delete operations. Remote SFTP and desktop-local file browsing behavior remain on their existing providers.

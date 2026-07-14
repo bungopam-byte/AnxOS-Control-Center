@@ -660,6 +660,9 @@ class FileService extends EventEmitter {
           restartRequired: Boolean(identity.restartRequired),
           pathSeparator: identity.pathSeparator || "/",
           roots: Array.isArray(identity.roots) ? identity.roots : [],
+          shortcuts: Array.isArray(identity.shortcuts) ? identity.shortcuts : [],
+          fileShortcuts: Array.isArray(identity.fileShortcuts) ? identity.fileShortcuts : Array.isArray(identity.shortcuts) ? identity.shortcuts : [],
+          capabilities: identity.capabilities && typeof identity.capabilities === "object" ? identity.capabilities : {},
         };
       } catch (error) {
         throw mapAgentFileOperationError(error, "Node filesystem identity failed.");
@@ -690,6 +693,9 @@ class FileService extends EventEmitter {
         restartRequired: false,
         pathSeparator: path.sep,
         roots: [path.parse(homeDirectory).root || path.sep],
+        shortcuts: [],
+        fileShortcuts: [],
+        capabilities: {},
       };
     }
     const providerProfile = this.getProviderProfile(options);
@@ -718,6 +724,9 @@ class FileService extends EventEmitter {
       restartRequired: false,
       pathSeparator: "/",
       roots: [homeDirectory],
+      shortcuts: [],
+      fileShortcuts: [],
+      capabilities: {},
     };
   }
 

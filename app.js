@@ -13643,6 +13643,31 @@ function renderBackups() {
   });
 }
 
+async function promptBackupText({ title, message, label, initialValue = "", confirmLabel = "Continue" } = {}) {
+  return createSecurityTextPrompt({ title, message, label, initialValue, confirmLabel });
+}
+
+async function chooseBackupType(title = "Create world-only backup?") {
+  const worldOnly = await createSecurityConfirmation({
+    title,
+    message: "Choose World Backup for world-only data, or Cancel to create a full instance backup.",
+    confirmLabel: "World Backup",
+  });
+  return worldOnly ? "world" : "full";
+}
+
+function parseBackupWholeNumber(value, fallback, fieldLabel) {
+  const raw = String(value || fallback || "").trim();
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${fieldLabel} must be a whole number.`);
+  }
+  const number = Number.parseInt(raw, 10);
+  if (!Number.isFinite(number) || number < 1) {
+    throw new Error(`${fieldLabel} must be greater than zero.`);
+  }
+  return number;
+}
+
 async function refreshBackups() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasBackups) {
@@ -13723,11 +13748,17 @@ async function createBackupForInstance(instanceId = null) {
   }
 
   const selectedInstance = instanceId ? findInstance(instanceId) : findInstance();
-  const targetInstanceId = instanceId || selectedInstance?.id || window.prompt("Instance ID to back up", selectedInstanceId || "");
+  const targetInstanceId = instanceId || selectedInstance?.id || await promptBackupText({
+    title: "Create Backup",
+    message: "Enter the instance ID to back up.",
+    label: "Instance ID",
+    initialValue: selectedInstanceId || "",
+    confirmLabel: "Continue",
+  });
   if (!targetInstanceId) {
     return;
   }
-  const type = window.confirm("Create a world-only backup? Choose Cancel for a full instance backup.") ? "world" : "full";
+  const type = await chooseBackupType("Create world-only backup?");
   backupRequestInFlight = true;
   renderBackups();
   try {
@@ -13764,7 +13795,11 @@ async function restoreSelectedBackup() {
     return;
   }
   try {
-    const restart = window.confirm("Restart after restore?");
+    const restart = Boolean(await createSecurityConfirmation({
+      title: "Restart after restore?",
+      message: "Choose Restart to start the instance again after restore completes, or Cancel to leave it stopped.",
+      confirmLabel: "Restart",
+    }));
     if (!isNodeActionStillCurrent(requestContext)) return;
     await desktopApiState.api.backups.restore({ nodeId: requestContext.nodeId, backupId: selected.id, restart, confirmOverwrite: true });
     showToast("Backup restored.");
@@ -13828,7 +13863,13 @@ async function importBackupForInstance() {
   if (!desktopApiState.hasBackups) {
     return;
   }
-  const instanceId = window.prompt("Instance ID for imported backup", selectedInstanceId || "");
+  const instanceId = await promptBackupText({
+    title: "Import Backup",
+    message: "Enter the instance ID that should own the imported backup.",
+    label: "Instance ID",
+    initialValue: selectedInstanceId || "",
+    confirmLabel: "Import",
+  });
   if (!instanceId) {
     return;
   }
@@ -13849,21 +13890,50 @@ async function configureBackupSchedule(instanceId) {
     showToast("Backup scheduling is unavailable.");
     return;
   }
-  const interval = window.prompt("Run backup every how many hours?", "24");
+  const interval = await promptBackupText({
+    title: "Backup Schedule",
+    message: "How often should AnxOS run this backup?",
+    label: "Interval hours",
+    initialValue: "24",
+    confirmLabel: "Continue",
+  });
   if (!interval) {
     return;
   }
-  const keepLast = window.prompt("Keep last how many backups?", "10") || "10";
-  const maxAgeDays = window.prompt("Delete backups older than how many days?", "30") || "30";
-  const type = window.confirm("Schedule world-only backups? Choose Cancel for full instance backups.") ? "world" : "full";
+  const keepLast = await promptBackupText({
+    title: "Backup Retention",
+    message: "How many recent backups should be kept?",
+    label: "Keep last",
+    initialValue: "10",
+    confirmLabel: "Continue",
+  }) || "10";
+  const maxAgeDays = await promptBackupText({
+    title: "Backup Retention",
+    message: "Delete backups older than how many days?",
+    label: "Maximum age in days",
+    initialValue: "30",
+    confirmLabel: "Continue",
+  }) || "30";
+  let intervalHours;
+  let retentionCount;
+  let retentionAgeDays;
+  try {
+    intervalHours = parseBackupWholeNumber(interval, "24", "Interval hours");
+    retentionCount = parseBackupWholeNumber(keepLast, "10", "Retention count");
+    retentionAgeDays = parseBackupWholeNumber(maxAgeDays, "30", "Retention age");
+  } catch (error) {
+    showToast(error?.message || "Backup schedule values are invalid.", "warning");
+    return;
+  }
+  const type = await chooseBackupType("Schedule world-only backups?");
   try {
     if (!isNodeActionStillCurrent(requestContext)) return;
     await desktopApiState.api.backups.saveSchedule({
       nodeId: requestContext.nodeId,
       instanceId,
-      intervalHours: Number.parseInt(interval, 10),
-      keepLast: Number.parseInt(keepLast, 10),
-      maxAgeDays: Number.parseInt(maxAgeDays, 10),
+      intervalHours,
+      keepLast: retentionCount,
+      maxAgeDays: retentionAgeDays,
       type,
       enabled: true,
     });

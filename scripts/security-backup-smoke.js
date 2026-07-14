@@ -206,6 +206,40 @@ async function main() {
   const staleDelete = await backupService.deleteBackup(created.backup.id);
   assert.strictEqual(staleDelete.alreadyDeleted, true, "Deleting a stale backup should be idempotent.");
 
+  const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  [
+    "function promptBackupText",
+    "function chooseBackupType",
+    "function parseBackupWholeNumber",
+    "createSecurityTextPrompt({ title, message, label, initialValue, confirmLabel })",
+    "Restart after restore?",
+    "Backup schedule values are invalid.",
+  ].forEach((needle) => assert(appSource.includes(needle), `Backup renderer modal guard missing: ${needle}`));
+  [
+    "createBackupForInstance",
+    "restoreSelectedBackup",
+    "importBackupForInstance",
+    "configureBackupSchedule",
+  ].forEach((functionName) => {
+    const start = appSource.indexOf(`async function ${functionName}`);
+    assert(start >= 0, `Renderer should define ${functionName}.`);
+    const open = appSource.indexOf("{", start);
+    let depth = 0;
+    let body = "";
+    for (let index = open; index < appSource.length; index += 1) {
+      const char = appSource[index];
+      if (char === "{") depth += 1;
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          body = appSource.slice(start, index + 1);
+          break;
+        }
+      }
+    }
+    assert(!/window\.prompt|prompt\(|window\.confirm|confirm\(/.test(body), `${functionName} should use AnxOS modals instead of browser dialogs.`);
+  });
+
   fs.rmSync(root, { recursive: true, force: true });
   console.log("Security and backup smoke checks passed.");
 }

@@ -2646,6 +2646,13 @@ function updateFilesStickyOffsets() {
   fileManagerShell.style.setProperty("--files-sticky-offset", `${connectHeight + passwordHeight}px`);
 }
 
+function syncFilesResizeSeparator(separator, value, min, max) {
+  if (!separator) return;
+  separator.setAttribute("aria-valuemin", String(min));
+  separator.setAttribute("aria-valuemax", String(max));
+  separator.setAttribute("aria-valuenow", String(Math.round(value)));
+}
+
 function setFilesExplorerWidth(value, options = {}) {
   const nextWidth = Math.min(Math.max(Number(value) || DEFAULT_FILES_EXPLORER_WIDTH, MIN_FILES_EXPLORER_WIDTH), MAX_FILES_EXPLORER_WIDTH);
   filesExplorerWidth = nextWidth;
@@ -2653,6 +2660,7 @@ function setFilesExplorerWidth(value, options = {}) {
   if (fileManagerShell) {
     fileManagerShell.style.setProperty("--files-explorer-width", `${nextWidth}px`);
   }
+  syncFilesResizeSeparator(filesDivider, nextWidth, MIN_FILES_EXPLORER_WIDTH, MAX_FILES_EXPLORER_WIDTH);
 
   if (options.persist !== false) {
     try {
@@ -2669,6 +2677,7 @@ function setFilesStorageWidth(value, options = {}) {
   const nextWidth = Math.min(Math.max(Number(value) || DEFAULT_FILES_STORAGE_WIDTH, MIN_FILES_STORAGE_WIDTH), MAX_FILES_STORAGE_WIDTH);
   filesStorageWidth = nextWidth;
   fileManagerShell?.style.setProperty("--files-storage-width", `${nextWidth}px`);
+  syncFilesResizeSeparator(filesStorageDivider, nextWidth, MIN_FILES_STORAGE_WIDTH, MAX_FILES_STORAGE_WIDTH);
   if (options.persist !== false) {
     try {
       window.localStorage.setItem(FILES_STORAGE_WIDTH_STORAGE_KEY, String(nextWidth));
@@ -2680,6 +2689,7 @@ function setFilesDetailsWidth(value, options = {}) {
   const nextWidth = Math.min(Math.max(Number(value) || DEFAULT_FILES_DETAILS_WIDTH, MIN_FILES_DETAILS_WIDTH), MAX_FILES_DETAILS_WIDTH);
   filesDetailsWidth = nextWidth;
   fileManagerShell?.style.setProperty("--files-details-width", `${nextWidth}px`);
+  syncFilesResizeSeparator(filesDetailsDivider, nextWidth, MIN_FILES_DETAILS_WIDTH, MAX_FILES_DETAILS_WIDTH);
   if (options.persist !== false) {
     try {
       window.localStorage.setItem(FILES_DETAILS_WIDTH_STORAGE_KEY, String(nextWidth));
@@ -2754,6 +2764,26 @@ function stopFilesDividerDrag() {
   filesDivider?.classList.remove("is-dragging");
   document.body.classList.remove("is-resizing-files");
   setFilesExplorerWidth(filesExplorerWidth);
+}
+
+function handleFilesResizeSeparatorKeydown(kind, event) {
+  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+  if (!keys.includes(event.key)) return;
+  event.preventDefault();
+  const step = event.shiftKey ? 80 : 24;
+  if (kind === "storage") {
+    if (event.key === "Home") setFilesStorageWidth(MIN_FILES_STORAGE_WIDTH);
+    else if (event.key === "End") setFilesStorageWidth(MAX_FILES_STORAGE_WIDTH);
+    else setFilesStorageWidth(filesStorageWidth + (event.key === "ArrowRight" ? step : -step));
+  } else if (kind === "details") {
+    if (event.key === "Home") setFilesDetailsWidth(MIN_FILES_DETAILS_WIDTH);
+    else if (event.key === "End") setFilesDetailsWidth(MAX_FILES_DETAILS_WIDTH);
+    else setFilesDetailsWidth(filesDetailsWidth + (event.key === "ArrowRight" ? step : -step));
+  } else if (kind === "explorer") {
+    if (event.key === "Home") setFilesExplorerWidth(MIN_FILES_EXPLORER_WIDTH);
+    else if (event.key === "End") setFilesExplorerWidth(MAX_FILES_EXPLORER_WIDTH);
+    else setFilesExplorerWidth(filesExplorerWidth + (event.key === "ArrowRight" ? step : -step));
+  }
 }
 
 function isLikelySecretFile(entry) {
@@ -28715,11 +28745,13 @@ function renderDevelopmentBadge(state = developerUpdateState) {
     return;
   }
   const visible = Boolean(canUseSettingsCapability("canManageDeveloperSettings") && state?.eligible && state?.available !== false);
+  const label = getDeveloperBadgeLabel(state);
   developmentBadge.hidden = !visible;
   developmentBadge.dataset.devState = state?.status || "up-to-date";
   developmentBadge.title = visible ? "Open Developer Update status" : "";
+  developmentBadge.setAttribute("aria-label", visible ? `${label}. Open Developer Update status.` : "Developer Update status");
   if (developmentBadgeLabel) {
-    developmentBadgeLabel.textContent = getDeveloperBadgeLabel(state);
+    developmentBadgeLabel.textContent = label;
   }
 }
 
@@ -29826,9 +29858,15 @@ filesStorageDivider?.addEventListener("mousedown", (event) => {
   event.preventDefault();
   startFilesPanelResize("storage", event.clientX);
 });
+filesStorageDivider?.addEventListener("keydown", (event) => {
+  handleFilesResizeSeparatorKeydown("storage", event);
+});
 filesDetailsDivider?.addEventListener("mousedown", (event) => {
   event.preventDefault();
   startFilesPanelResize("details", event.clientX);
+});
+filesDetailsDivider?.addEventListener("keydown", (event) => {
+  handleFilesResizeSeparatorKeydown("details", event);
 });
 filesSearchInput?.addEventListener("input", debounce(() => {
   getFilesProfileState().searchQuery = filesSearchInput?.value || "";
@@ -29879,6 +29917,9 @@ fileEditorHeightInput?.addEventListener("input", () => {
 filesDivider?.addEventListener("mousedown", (event) => {
   event.preventDefault();
   startFilesDividerDrag(event.clientX);
+});
+filesDivider?.addEventListener("keydown", (event) => {
+  handleFilesResizeSeparatorKeydown("explorer", event);
 });
 filesDivider?.addEventListener("dblclick", () => {
   setFilesExplorerWidth(DEFAULT_FILES_EXPLORER_WIDTH);

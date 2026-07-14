@@ -72,6 +72,7 @@ assert(app.includes("isNodeSwitching() || document.hidden"), "Background polling
 assert(app.includes("renderNodeSummary") && app.includes("startNodeRefreshPolling"), "Nodes workspace must render summary stats and page-scoped live refresh.");
 assert(app.includes("setNodeModalVisible") && app.includes("openNodeDetails") && app.includes("handleNodeCardAction"), "Nodes modal, details, and quick actions must be wired.");
 assert(index.indexOf("data-development-badge") < index.indexOf("data-titlebar-connection"), "Developer Mode badge must sit beside and before the Connected badge.");
+assert(index.includes('data-development-badge aria-label="Open Developer Update status"') && app.includes('developmentBadge.setAttribute("aria-label"'), "Developer update badge must keep an explicit accessible name.");
 assert(app.includes('item.hidden || item.getAttribute("aria-disabled") === "true"'), "Navigation clicks must ignore hidden or disabled shell items.");
 assert(app.includes('button.setAttribute("aria-current", "page")') && app.includes("owner-nav-page"), "Owner Workspace sidebar links must expose current-page state.");
 assert(styles.includes("@media (max-width: 1180px)") && styles.includes(".app-titlebar__search kbd") && styles.includes("display: none"), "Titlebar shortcuts must collapse before shell controls clip.");
@@ -126,6 +127,7 @@ assert(app.includes("async function clearConsoleRows") && app.includes("Clear co
 assert(styles.includes(".instance-console-toolbar") && styles.includes("position: sticky") && styles.includes(".instance-console-input") && styles.includes(".console-command-row"), "Console toolbars and command rows must remain sticky during long log sessions.");
 assert(app.includes("operationId = startOperation") && app.includes("fileTransfers.set(id"), "File transfers and subsystem actions must create Operations Center entries.");
 assert(styles.includes(".operations-shell") && styles.includes("@keyframes operationIndeterminate"), "Operations Center CSS must include page layout and indeterminate progress styling.");
+assert(index.includes('data-files-resizer="storage" role="separator"') && index.includes('tabindex="0" aria-valuemin="220"') && app.includes("function handleFilesResizeSeparatorKeydown") && app.includes('handleFilesResizeSeparatorKeydown("explorer", event)'), "Files splitters must be keyboard-focusable and arrow-key resizable.");
 assert(pageMarkup("maintenance").includes("data-maintenance-list") && pageMarkup("maintenance").includes('data-maintenance-action="scan"'), "Maintenance Center must expose real scan controls and category history.");
 assert(pageMarkup("maintenance").includes('data-maintenance-action="clear-selected"') && pageMarkup("maintenance").includes('data-maintenance-action="reset-ui"'), "Maintenance Center must expose supported cleanup and UI reset actions.");
 assert(app.includes("function scanMaintenanceStorage") && app.includes("function clearMaintenanceCategories") && app.includes("function resetRendererUiState"), "Renderer must wire Maintenance scan, cleanup, and safe UI state reset.");

@@ -13,9 +13,8 @@ const DEFAULT_DEVICE_LOGIN_TTL_MS = 10 * 60 * 1000;
 const MAX_POLL_MS = 10 * 60 * 1000;
 const APPROVED_AUTH_HOSTS = new Set([
   OFFICIAL_SITE_HOSTNAME,
-  "localhost",
-  "127.0.0.1",
 ]);
+const LOCAL_ACCOUNT_HOSTS = new Set(["localhost", "127.0.0.1"]);
 const LEGACY_ACCOUNT_HOSTS = new Set([
   "anxos-control-center.pages.dev",
 ]);
@@ -199,6 +198,14 @@ function canonicalizeAccountWebsiteUrl(rawUrl) {
   return parsed.toString();
 }
 
+function isLocalAccountHost(hostname) {
+  return LOCAL_ACCOUNT_HOSTS.has(String(hostname || "").toLowerCase());
+}
+
+function isDevelopmentAccountHostAllowed(hostname) {
+  return isLocalAccountHost(hostname) && app?.isPackaged !== true;
+}
+
 function getAccountApiUrl() {
   return normalizeBaseUrl(getAccountConfig().accountApiUrl, "");
 }
@@ -237,15 +244,20 @@ function assertApprovedExternalUrl(rawUrl, purpose = "account") {
     throw error;
   }
 
-  const isLocal = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-  if (parsed.protocol !== "https:" && !(isLocal && parsed.protocol === "http:")) {
+  const isLocalDevelopmentHost = isDevelopmentAccountHostAllowed(parsed.hostname);
+  if (parsed.protocol !== "https:" && !(isLocalDevelopmentHost && parsed.protocol === "http:")) {
     const error = new Error("AnxOS account sign-in requires HTTPS outside local development.");
     error.code = "ACCOUNT_HTTPS_REQUIRED";
     throw error;
   }
+  if (isLocalAccountHost(parsed.hostname) && !isLocalDevelopmentHost) {
+    const error = new Error("Packaged AnxOS builds cannot use local account or device-login URLs.");
+    error.code = "ACCOUNT_LOCALHOST_NOT_ALLOWED";
+    throw error;
+  }
   const isApprovedSupabaseFunction = APPROVED_SUPABASE_FUNCTION_HOST.test(parsed.hostname);
   const isApprovedSupabaseAuth = APPROVED_SUPABASE_AUTH_HOST.test(parsed.hostname);
-  if (!APPROVED_AUTH_HOSTS.has(parsed.hostname) && !isApprovedSupabaseFunction && !isApprovedSupabaseAuth && !process.env.ANXOS_ACCOUNT_ALLOW_UNTRUSTED_HOSTS) {
+  if (!APPROVED_AUTH_HOSTS.has(parsed.hostname) && !isLocalDevelopmentHost && !isApprovedSupabaseFunction && !isApprovedSupabaseAuth && !process.env.ANXOS_ACCOUNT_ALLOW_UNTRUSTED_HOSTS) {
     const error = new Error(`Refusing to open unapproved ${purpose} URL.`);
     error.code = "ACCOUNT_URL_NOT_APPROVED";
     throw error;

@@ -51,6 +51,8 @@ assert(mainSource.includes("release-build.json") && mainSource.includes("buildDa
 assert(builderSource.includes("release-build.json") && builderSource.includes("supportedOperatingSystems") && builderSource.includes("minimumArchitecture"), "Packaging must generate release metadata for bundled builds.");
 assert(manifestSource.includes("supportedOperatingSystems") && manifestSource.includes("minimumArchitecture") && manifestSource.includes("updateSource"), "Updater metadata must publish platform and update-source details.");
 assert(updateManagerSource.includes("AnxOS-Control-Center-Releases"), "Updater must default to the public release-only repository.");
+assert(updateManagerSource.includes("DEFAULT_UPDATE_REPOSITORY") && updateManagerSource.includes("normalizeUpdateRepository(process.env.ANXOS_UPDATE_REPOSITORY)"), "Updater repository overrides must be validated before use.");
+assert(updateManagerSource.includes("isProductionSafeMetadataUrl") && updateManagerSource.includes("app?.isPackaged !== true") && updateManagerSource.includes('parsed.protocol === "https:"'), "Packaged builds must ignore local or non-HTTPS update metadata overrides.");
 assert(!updateManagerSource.includes("192.168.1.134:8766"), "Updater must not ship a hardcoded local-network manifest fallback.");
 assert(websiteConfig.includes(`latestVersion: "${release.version}"`) && websiteConfig.includes(`build: "${release.build}"`) && websiteConfig.includes(`channel: "${release.channel}"`), "Website download metadata must display the public release model.");
 assert(!websiteConfig.includes("packageVersion"), "Website public metadata must not expose the internal package SemVer.");

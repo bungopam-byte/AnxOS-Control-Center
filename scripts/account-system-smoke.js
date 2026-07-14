@@ -171,6 +171,7 @@ function assertDesktopIntegration() {
   assert(service.includes("LEGACY_ACCOUNT_HOSTS") && service.includes("anxos-control-center.pages.dev"), "Desktop should recognize the legacy account website host for safe canonicalization.");
   assert(service.includes("canonicalizeAccountWebsiteUrl") && service.includes("OFFICIAL_SITE_ORIGIN"), "Desktop should canonicalize stale account website URLs to the official origin.");
   assert(service.includes("verificationUrl: canonicalizeAccountWebsiteUrl"), "Desktop should canonicalize remote device verification URLs before exposing them.");
+  assert(service.includes("LOCAL_ACCOUNT_HOSTS") && service.includes("app?.isPackaged !== true") && service.includes("ACCOUNT_LOCALHOST_NOT_ALLOWED"), "Packaged desktop account/device flows must reject localhost URLs while preserving local development.");
   assert(packageJson.includes("\"website/account-config.js\""), "Packaged Electron builds should include public account configuration.");
   assert(service.includes("/api/auth/device/start") && service.includes("/api/auth/device/poll"), "Desktop should use device authorization endpoints.");
   assert(service.includes("/api/auth/refresh") && service.includes("/api/auth/logout"), "Desktop should refresh and revoke account sessions.");

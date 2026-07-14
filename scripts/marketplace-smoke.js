@@ -423,6 +423,18 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
     assert.strictEqual(installCalls, 1, "autoInstallDependencies should invoke the Agent dependency installer once.");
     assert.strictEqual(createCalls, 1, "Install should resume and create the instance after dependencies pass.");
     assert.strictEqual(result.instance.id, "dependency-resume-smoke", "Resumed install should return the created instance.");
+    const dependencyResumeDownloads = marketplaceService.getDownloads().downloads;
+    const dependencyResumeParent = dependencyResumeDownloads.find((download) => (
+      download.templateId === "discord-js" &&
+      Array.isArray(download.childTaskIds) &&
+      download.childTaskIds.some((id) => dependencyResumeDownloads.some((child) => child.id === id && child.type === "Dependency"))
+    ));
+    const dependencyResumeChildren = dependencyResumeDownloads.filter((download) => download.parentTaskId === dependencyResumeParent?.id);
+    assert(dependencyResumeChildren.some((download) => download.type === "Dependency" && download.status === "complete"), "Marketplace auto-install dependencies must create shared dependency job records.");
+    assert(
+      dependencyResumeParent?.childTaskIds?.some((id) => dependencyResumeChildren.some((download) => download.id === id)),
+      "Marketplace parent task must retain dependency child task linkage."
+    );
   } finally {
     patchedAgentMethods.forEach((name) => {
       agentClient[name] = originalAgent[name];

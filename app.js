@@ -3214,6 +3214,10 @@ function renderDependencyStatus(result = null, options = {}) {
     latestDependencyResult = result;
     latestDependencyResultAt = result ? Date.now() : 0;
     latestDependencyNodeId = result ? getSelectedNodeId() : null;
+    getDesktopApiState().api?.diagnostics?.capture?.({
+      dependencyCheck: result || null,
+      dependencyPlan: options.plan || null,
+    }).catch(() => {});
     refreshNodeHealth({ notify: false });
   }
   dependencyList.replaceChildren();
@@ -5975,9 +5979,22 @@ async function runPublicAccessAction(action) {
         code: result.error?.code || "DEPENDENCY_INSTALL_FAILED",
       });
     }
+    const dependencyCheck = await getDesktopApiState().api.dependencies.check({
+      nodeId: requestContext.nodeId,
+      dependencyIds: [provider.dependencyId],
+    }).catch(() => null);
+    if (dependencyCheck && dependencyCheck.ok !== false && isNodeActionStillCurrent(requestContext)) {
+      renderDependencyStatus(dependencyCheck);
+    }
     await refreshMarketplaceDownloads();
     await refreshPlayitStatus();
-    showToast(`${provider.name} dependency check complete.`);
+    const refreshedProvider = getSelectedPublicAccessProvider();
+    const nextMessage = provider.id === "tailscale" && refreshedProvider?.lifecycleState === "auth-required"
+      ? "Tailscale installed successfully. Sign in to Tailscale on this node next."
+      : provider.id === "cloudflare-tunnel" && ["auth-required", "setup-required"].includes(refreshedProvider?.lifecycleState)
+        ? "cloudflared installed successfully. Authenticate Cloudflare or configure a tunnel next."
+        : `${provider.name} dependency check complete.`;
+    showToast(nextMessage);
     return result;
   }
   if (action === "copy-public-address") return copyPublicAccessValue(getPublicAccessPublicAddress(), "Public address copied.", "No public address is available to copy.");

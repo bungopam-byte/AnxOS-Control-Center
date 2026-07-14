@@ -216,6 +216,8 @@ async function run() {
 
   assert(dependenciesIpcSource.includes("progressMode: \"indeterminate\"") && !dependenciesIpcSource.includes("progress: 25"), "Dependency IPC must not seed fake progress percentages.");
   assert(marketplaceServiceSource.includes("dependencyJobs") && marketplaceServiceSource.includes("progressMode: \"indeterminate\""), "Dependency Download Manager records must preserve job summaries and progress mode.");
+  assert(marketplaceServiceSource.includes("linkChildDownloadRecord") && marketplaceServiceSource.includes('source: "marketplace"'), "Marketplace dependency installs must use shared dependency child jobs and diagnostics state.");
+  assert(dependenciesIpcSource.includes("diagnostics.updateRuntimeState") && dependenciesIpcSource.includes("dependencyInstall"), "Dependency IPC must publish sanitized install state into diagnostics/readiness.");
   assert(agentDependencySource.includes("windowsHide: true"), "Dependency command execution must hide Windows command windows.");
   assert(agentDependencySource.includes("externalTerminal: false") && agentDependencySource.includes("executionBackend: \"agent\""), "Agent dependency jobs must declare backend execution without external terminals.");
   assert(agentDependencySource.includes("AUTHORIZATION_REQUIRED") && agentDependencySource.includes("VERIFICATION_FAILED"), "Dependency lifecycle must expose structured authorization and verification states.");

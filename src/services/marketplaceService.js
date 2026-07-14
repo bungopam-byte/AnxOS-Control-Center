@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const agentClient = require("./agentClient");
+const diagnostics = require("./diagnosticsService");
 const {
   applyMinecraftServerProperties,
   buildMinecraftProperties: buildMinecraftServerProperties,
@@ -142,7 +143,18 @@ function summarizeUnsatisfiedDependencies(dependencies = []) {
     }));
 }
 
-async function ensureTemplateDependencies(template, options = {}, agentConfig = null, progress = []) {
+function linkChildDownloadRecord(parentRecord, childRecord) {
+  if (!parentRecord?.id || !childRecord?.id) return;
+  if (!Array.isArray(parentRecord.childTaskIds)) {
+    parentRecord.childTaskIds = [];
+  }
+  if (!parentRecord.childTaskIds.includes(childRecord.id)) {
+    parentRecord.childTaskIds.push(childRecord.id);
+    downloads.set(parentRecord.id, parentRecord);
+  }
+}
+
+async function ensureTemplateDependencies(template, options = {}, agentConfig = null, progress = [], parentRecord = null) {
   const dependencyIds = resolveTemplateDependencyIds(template);
   if (dependencyIds.length === 0 || agentConfig?.backendMode === "local") {
     return { ok: true, dependencyIds, dependencies: [] };
@@ -158,7 +170,60 @@ async function ensureTemplateDependencies(template, options = {}, agentConfig = 
   const missing = summarizeUnsatisfiedDependencies(check.dependencies);
   if (options.autoInstallDependencies === true) {
     pushStep(progress, "Install dependencies", "running", `Installing ${missing.map((dependency) => dependency.displayName).join(", ")}.`);
-    const install = await agentClient.installDependencies({ dependencyIds: missing.map((dependency) => dependency.id) }, agentConfig);
+    const missingDependencyIds = missing.map((dependency) => dependency.id);
+    const dependencyRecord = createDependencyInstallRecord({
+      nodeId: options.nodeId || agentConfig?.nodeId || null,
+      dependencyIds: missingDependencyIds,
+    }, {
+      installableActions: missing.map((dependency) => ({
+        id: dependency.id,
+        displayName: dependency.displayName || dependency.id,
+      })),
+      missingDependencyIds,
+    }, {
+      parentTaskId: parentRecord?.id || null,
+      installSessionId: parentRecord?.installSessionId || null,
+    });
+    linkChildDownloadRecord(parentRecord, dependencyRecord);
+    updateDependencyInstallRecord(dependencyRecord.id, {
+      status: "running",
+      stage: "Installing files",
+      body: `Installing ${missing.map((dependency) => dependency.displayName || dependency.id).join(", ")} for ${template.displayName || template.id}.`,
+      logs: [{ step: "Install dependencies", message: "Marketplace dependency installation is running through the shared dependency job system." }],
+    });
+    let install;
+    try {
+      install = await agentClient.installDependencies({ dependencyIds: missingDependencyIds }, agentConfig);
+      finalizeDependencyInstallRecord(dependencyRecord.id, install, null);
+      diagnostics.updateRuntimeState({
+        dependencyInstall: {
+          state: install?.degraded ? "degraded" : install?.ok === false ? "failed" : "completed",
+          nodeId: options.nodeId || agentConfig?.nodeId || null,
+          dependencyIds: missingDependencyIds,
+          jobs: Array.isArray(install?.jobs) ? install.jobs : [],
+          source: "marketplace",
+          templateId: template.id,
+          completedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      finalizeDependencyInstallRecord(dependencyRecord.id, null, error);
+      diagnostics.updateRuntimeState({
+        dependencyInstall: {
+          state: "failed",
+          nodeId: options.nodeId || agentConfig?.nodeId || null,
+          dependencyIds: missingDependencyIds,
+          source: "marketplace",
+          templateId: template.id,
+          error: {
+            code: error?.code || "DEPENDENCY_INSTALL_FAILED",
+            message: error?.message || "Dependency installation failed.",
+          },
+          completedAt: new Date().toISOString(),
+        },
+      });
+      throw error;
+    }
     const recheck = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
     if (recheck.ok) {
       pushStep(progress, "Install dependencies", "complete", "Node dependencies installed and verified.");
@@ -987,7 +1052,7 @@ function createInstallTaskRecord(template, options = {}) {
   return record;
 }
 
-function createDependencyInstallRecord(payload = {}, plan = null) {
+function createDependencyInstallRecord(payload = {}, plan = null, options = {}) {
   const dependencyIds = Array.isArray(payload.dependencyIds) && payload.dependencyIds.length
     ? payload.dependencyIds
     : Array.isArray(plan?.missingDependencyIds) && plan.missingDependencyIds.length
@@ -1000,7 +1065,7 @@ function createDependencyInstallRecord(payload = {}, plan = null) {
   const now = new Date().toISOString();
   const record = {
     id,
-    installSessionId: id,
+    installSessionId: options.installSessionId || id,
     templateId: "dependency",
     type: "Dependency",
     name: dependencyNames.length === 1 ? `Installing ${dependencyNames[0]}` : `Installing ${dependencyNames.length} dependencies`,
@@ -1022,7 +1087,7 @@ function createDependencyInstallRecord(payload = {}, plan = null) {
     updatedAt: now,
     canRetry: false,
     canCancel: false,
-    parentTaskId: null,
+    parentTaskId: options.parentTaskId || null,
     childTaskIds: [],
     errorCode: null,
     retryContext: null,
@@ -3512,7 +3577,7 @@ async function installTemplate(payload = {}) {
 
   try {
     updateDownload(parentRecord, { stage: "Check dependencies", progress: 10 });
-    await ensureTemplateDependencies(template, options, agentConfig, progress);
+    await ensureTemplateDependencies(template, { ...options, nodeId: payload.nodeId || null }, agentConfig, progress, parentRecord);
   } catch (error) {
     const message = mapMarketplaceError(error, "Marketplace dependency check failed.");
     finalizeInstallTaskRecord(parentRecord, "failed", message, {
@@ -3616,7 +3681,10 @@ async function installTemplate(payload = {}) {
     updateDownload(parentRecord, {
       stage: installerStageLabel,
       progress: Math.max(Number(parentRecord.progress) || 0, downloadResult.downloaded ? 55 : 40),
-      childTaskIds: downloadResult.records.map((record) => record.id),
+      childTaskIds: Array.from(new Set([
+        ...(Array.isArray(parentRecord.childTaskIds) ? parentRecord.childTaskIds : []),
+        ...downloadResult.records.map((record) => record.id),
+      ])),
     });
     if (downloadResult.metadata && Object.keys(downloadResult.metadata).length > 0) {
       pushStep(progress, "Detecting version", "running", "Saving resolved server version metadata.");

@@ -6,10 +6,15 @@
     "tag": "v1.7-build143",
     "date": "July 13, 2026",
     "datetime": "2026-07-14",
-    "title": "AnxOS Version 1.7",
-    "summary": "Latest AnxOS-Control-Center release.",
+    "title": "Private Alpha packaged release candidate",
+    "summary": "This release prepares AnxOS Control Center for packaged private-alpha validation with hardened production configuration, installer artifacts, onboarding, and broad smoke coverage.",
     "changes": [
-      "Updated application build, website metadata, and downloadable release assets."
+      "Generated Windows installer, Windows portable, Linux AppImage, and Debian package artifacts for build 143 validation.",
+      "Added packaged build metadata with build date, commit, release channel, public release repository, supported operating systems, and update source.",
+      "Fixed Files page onboarding layout and target-state regressions so Windows and Linux paths cannot mix after profile changes.",
+      "Hardened packaged account and updater configuration so production builds do not use localhost account URLs or local update metadata sources.",
+      "Normalized Linux package permissions so desktop entries, icons, app.asar, and unpacked resources are readable after installation.",
+      "Added private-alpha installer guidance, artifact reports, and packaged application smoke validation notes."
     ],
     "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build143"
   },

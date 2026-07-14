@@ -3647,10 +3647,12 @@
                 </label>
                 <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="general.restorePreviousPage"><span>Restore previous page on launch</span></label>
                 <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="general.confirmDestructiveActions"><span>Confirm before destructive actions</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="onboarding.welcomeGuidance"><span>Enable welcome guidance</span></label>
+                <label class="settings-check settings-check--toggle"><input type="checkbox" data-setting="onboarding.contextualTips"><span>Enable contextual tips</span></label>
                 <label class="settings-field"><span>Language</span><select data-setting="general.language" disabled title="English is the only bundled language."><option value="en">English only</option></select></label>
                 <label class="settings-field"><span>External links</span><select data-setting="general.openExternalLinks"><option value="system">Open in system browser</option></select></label>
               </div>
-              <div class="settings-actions"><button class="inline-action" type="button" data-settings-reset-category="general">Reset General</button><span class="settings-inline-status" data-settings-status>Preferences are saved automatically.</span></div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-onboarding-action="restart">Restart Setup Guide</button><button class="inline-action" type="button" data-settings-reset-category="general">Reset General</button><span class="settings-inline-status" data-settings-status>Preferences are saved automatically.</span></div>
             </section>
 
             <section class="settings-section settings-section--appearance" data-settings-category="appearance" data-settings-keywords="appearance theme accent color compact density font animation motion transparency">
@@ -3888,6 +3890,7 @@
                 </label>
                 <button class="inline-action" type="button" data-settings-action="open-logs" disabled>Open Logs</button>
                 <button class="inline-action" type="button" data-settings-action="export-logs" disabled>Export Logs</button>
+                <button class="inline-action" type="button" data-onboarding-action="reset">Reset Onboarding State</button>
                 <button class="inline-action" type="button" data-settings-reset>Reset Settings</button>
               </div>
             </section>
@@ -4130,6 +4133,37 @@
           <button class="inline-action" type="button" data-dev-update-action="check">Check for Updates</button>
           <button class="inline-action" type="button" data-dev-update-action="changes">View Changes</button>
           <button class="primary-button" type="button" data-dev-update-action="update">Update Now</button>
+        </footer>
+      </section>
+    </div>
+    <div class="app-modal-backdrop" data-onboarding-welcome hidden>
+      <section class="app-modal app-modal--welcome" role="dialog" aria-modal="true" aria-labelledby="onboarding-welcome-title" aria-describedby="onboarding-welcome-description" tabindex="-1">
+        <header class="app-modal__header onboarding-welcome__header">
+          <div>
+            <p class="app-modal__eyebrow">First launch</p>
+            <h2 id="onboarding-welcome-title">Welcome to AnxOS Control Center</h2>
+          </div>
+        </header>
+        <div class="app-modal__body onboarding-welcome__body">
+          <p id="onboarding-welcome-description">Manage your servers, applications, files, containers, remote systems, and public access from one place.</p>
+          <div class="onboarding-feature-grid" aria-label="AnxOS feature highlights">
+            <article>
+              <strong>Manage local and remote systems</strong>
+              <span>Work with this computer or connected Windows and Linux systems.</span>
+            </article>
+            <article>
+              <strong>Install and control servers</strong>
+              <span>Create game servers, apps, and services from the Marketplace.</span>
+            </article>
+            <article>
+              <strong>Monitor health and services</strong>
+              <span>Check status, dependencies, logs, files, and recovery actions.</span>
+            </article>
+          </div>
+        </div>
+        <footer class="app-modal__actions onboarding-welcome__actions">
+          <button class="primary-button" type="button" data-onboarding-action="start">Set Up AnxOS</button>
+          <button class="inline-action" type="button" data-onboarding-action="skip">Explore on My Own</button>
         </footer>
       </section>
     </div>

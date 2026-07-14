@@ -7785,6 +7785,57 @@ body.has-open-modal {
   width: min(620px, 100%);
 }
 
+.app-modal--welcome {
+  width: min(720px, 100%);
+}
+
+.onboarding-welcome__header {
+  align-items: flex-start;
+}
+
+.onboarding-welcome__body > p {
+  color: rgba(237, 230, 247, .88);
+  font-size: 1rem;
+}
+
+.onboarding-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.onboarding-feature-grid article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(182, 108, 255, .22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .045);
+}
+
+.onboarding-feature-grid strong {
+  color: var(--text);
+  font-size: .95rem;
+  line-height: 1.25;
+}
+
+.onboarding-feature-grid span {
+  color: var(--muted);
+  font-size: .86rem;
+  line-height: 1.45;
+}
+
+.onboarding-welcome__actions {
+  justify-content: flex-start;
+}
+
+@media (max-width: 720px) {
+  .onboarding-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .app-modal__meta--developer div {
   flex-basis: 220px;
 }

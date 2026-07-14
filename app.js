@@ -398,6 +398,8 @@ const settingsSearchResults = document.querySelector("[data-settings-search-resu
 const accentSwatchButtons = document.querySelectorAll("[data-accent-swatch]");
 const settingsResetButton = document.querySelector("[data-settings-reset]");
 const settingsResetCategoryButtons = document.querySelectorAll("[data-settings-reset-category]");
+const onboardingWelcomeModal = document.querySelector("[data-onboarding-welcome]");
+const onboardingActionButtons = document.querySelectorAll("[data-onboarding-action]");
 settingsInputs.forEach((input) => {
   input.dataset.settingsInitiallyDisabled = input.disabled ? "true" : "false";
 });
@@ -467,6 +469,7 @@ let agentLogEntries = [];
 let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
 let fivemSetupModalCleanup = null;
+let onboardingWelcomeCleanup = null;
 let openModalCount = 0;
 let modalBackgroundWasInert = false;
 
@@ -1077,6 +1080,13 @@ const DEFAULT_SETTINGS = {
   "amp.username": "",
   "minecraft.defaultAddress": "",
   "playit.address": "",
+  "onboarding.started": false,
+  "onboarding.completed": false,
+  "onboarding.currentStep": "welcome",
+  "onboarding.skipped": false,
+  "onboarding.welcomeGuidance": true,
+  "onboarding.contextualTips": true,
+  "onboarding.version": 1,
   "developer.debugMode": false,
 };
 let currentSettings = { ...DEFAULT_SETTINGS };
@@ -25664,6 +25674,108 @@ function setSettingsStatus(message, tone = "neutral") {
   });
 }
 
+async function saveSettingsPatch(patch = {}, { statusMessage = null } = {}) {
+  const settings = { ...DEFAULT_SETTINGS, ...getCurrentSettings(), ...(patch || {}) };
+  writeStoredSettings(settings);
+  applySettings(settings);
+  settingsInputs.forEach((input) => {
+    if (Object.prototype.hasOwnProperty.call(patch, input.dataset.setting)) {
+      setSettingInputValue(input, settings[input.dataset.setting]);
+    }
+  });
+  const desktopApiState = getDesktopApiState();
+  if (desktopApiState.hasPreferences) {
+    try {
+      const payload = await desktopApiState.api.settings.savePreferences(Object.fromEntries(
+        Object.entries(settings).filter(([key]) => isSettingKeyAuthorized(key)),
+      ));
+      const saved = { ...DEFAULT_SETTINGS, ...(payload?.settings || settings) };
+      writeStoredSettings(saved);
+      applySettings(saved);
+      settingsInputs.forEach((input) => {
+        if (Object.prototype.hasOwnProperty.call(patch, input.dataset.setting)) {
+          setSettingInputValue(input, saved[input.dataset.setting]);
+        }
+      });
+    } catch (error) {
+      setSettingsStatus(normalizeIpcErrorMessage(error, "Settings could not be saved."), "error");
+      throw error;
+    }
+  }
+  if (statusMessage) setSettingsStatus(statusMessage);
+  return settings;
+}
+
+function shouldShowOnboardingWelcome(settings = getCurrentSettings()) {
+  return settings["onboarding.welcomeGuidance"] !== false &&
+    settings["onboarding.completed"] !== true &&
+    settings["onboarding.skipped"] !== true;
+}
+
+function setOnboardingWelcomeVisible(visible) {
+  if (!onboardingWelcomeModal) return;
+  if (visible) {
+    onboardingWelcomeModal.hidden = false;
+    onboardingWelcomeCleanup = activateModal(onboardingWelcomeModal, {
+      initialFocus: () => onboardingWelcomeModal.querySelector('[data-onboarding-action="start"]'),
+    });
+  } else {
+    onboardingWelcomeCleanup?.();
+    onboardingWelcomeCleanup = null;
+    onboardingWelcomeModal.hidden = true;
+  }
+}
+
+function maybeOpenOnboardingWelcome(settings = getCurrentSettings()) {
+  if (!shouldShowOnboardingWelcome(settings)) return;
+  window.setTimeout(() => setOnboardingWelcomeVisible(true), 350);
+}
+
+async function updateOnboardingState(patch = {}, options = {}) {
+  const nextPatch = {
+    "onboarding.version": DEFAULT_SETTINGS["onboarding.version"],
+    ...patch,
+  };
+  return saveSettingsPatch(nextPatch, options);
+}
+
+async function handleOnboardingAction(action) {
+  if (action === "start") {
+    await updateOnboardingState({
+      "onboarding.started": true,
+      "onboarding.completed": true,
+      "onboarding.skipped": false,
+      "onboarding.currentStep": "complete",
+      "onboarding.welcomeGuidance": true,
+      "onboarding.contextualTips": true,
+    }, { statusMessage: "Setup guide completed." });
+    setOnboardingWelcomeVisible(false);
+    showToast("AnxOS setup guide is complete. You can restart it from Settings.");
+  } else if (action === "skip") {
+    await updateOnboardingState({
+      "onboarding.started": false,
+      "onboarding.completed": false,
+      "onboarding.skipped": true,
+      "onboarding.currentStep": "welcome",
+      "onboarding.welcomeGuidance": true,
+      "onboarding.contextualTips": true,
+    }, { statusMessage: "Setup guide skipped." });
+    setOnboardingWelcomeVisible(false);
+    showToast("Setup guide skipped. Contextual guidance stays enabled.");
+  } else if (action === "restart" || action === "reset") {
+    await updateOnboardingState({
+      "onboarding.started": false,
+      "onboarding.completed": false,
+      "onboarding.skipped": false,
+      "onboarding.currentStep": "welcome",
+      "onboarding.welcomeGuidance": true,
+      "onboarding.contextualTips": true,
+    }, { statusMessage: action === "reset" ? "Onboarding state reset." : "Setup guide restarted." });
+    maybeOpenOnboardingWelcome(getCurrentSettings());
+    showToast(action === "reset" ? "Onboarding state reset." : "Setup guide restarted.");
+  }
+}
+
 function canUseSettingsCapability(capability) {
   if (!capability) return true;
   return settingsPermissionState?.capabilities?.[capability] === true;
@@ -25881,6 +25993,7 @@ async function loadSettings() {
   const storedCategory = (() => { try { return window.sessionStorage.getItem("anxos-settings-category"); } catch { return null; } })();
   const routeCategory = readRequestedSettingsCategoryFromLocation();
   setActiveSettingsCategory(routeCategory || storedCategory || activeSettingsCategory || "general");
+  maybeOpenOnboardingWelcome(settings);
 }
 
 async function saveSettings() {
@@ -27864,6 +27977,13 @@ accentSwatchButtons.forEach((button) => {
   });
 });
 settingsResetButton?.addEventListener("click", () => resetSettings());
+onboardingActionButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    handleOnboardingAction(button.dataset.onboardingAction).catch((error) => {
+      showToast(normalizeIpcErrorMessage(error, "Onboarding settings could not be updated."), "error");
+    });
+  });
+});
 document.querySelector('[data-page="settings"]')?.addEventListener("click", async (event) => {
   const categoryButton = event.target.closest("[data-settings-category-target]");
   if (categoryButton) {

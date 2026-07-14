@@ -3,6 +3,7 @@ const path = require("path");
 const { app } = require("electron");
 
 const SETTINGS_SCHEMA_VERSION = 1;
+const ONBOARDING_VERSION = 1;
 
 const SETTING_DEFINITIONS = {
   "app.displayName": { category: "general", type: "string", default: "AnxOS Control Center", maxLength: 48 },
@@ -72,6 +73,13 @@ const SETTING_DEFINITIONS = {
   "amp.username": { category: "integrations", type: "string", default: "", maxLength: 120 },
   "minecraft.defaultAddress": { category: "integrations", type: "string", default: "", maxLength: 200 },
   "playit.address": { category: "integrations", type: "string", default: "", maxLength: 200 },
+  "onboarding.started": { category: "onboarding", type: "boolean", default: false },
+  "onboarding.completed": { category: "onboarding", type: "boolean", default: false },
+  "onboarding.currentStep": { category: "onboarding", type: "string", default: "welcome", maxLength: 40 },
+  "onboarding.skipped": { category: "onboarding", type: "boolean", default: false },
+  "onboarding.welcomeGuidance": { category: "onboarding", type: "boolean", default: true },
+  "onboarding.contextualTips": { category: "onboarding", type: "boolean", default: true },
+  "onboarding.version": { category: "onboarding", type: "number", default: ONBOARDING_VERSION, min: 1, max: ONBOARDING_VERSION },
   "developer.debugMode": { category: "developer", type: "boolean", default: false },
   "developer.verboseLogging": { category: "developer", type: "boolean", default: false },
 };
@@ -186,6 +194,7 @@ function resetPreferences(category = null) {
 
 module.exports = {
   SETTINGS_SCHEMA_VERSION,
+  ONBOARDING_VERSION,
   SETTING_DEFINITIONS,
   defaultSettings,
   getSettingsPath,

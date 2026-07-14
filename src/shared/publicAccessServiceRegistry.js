@@ -135,6 +135,42 @@ function normalizePublicHostname(value, providerId) {
   return text;
 }
 
+function normalizeCloudflareLocalServiceUrl(value, protocol, localHost, localPort) {
+  const fallback = `${protocol}://${localHost}:${localPort}`;
+  const text = String(value || fallback).trim();
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw createAccessServiceError("INVALID_LOCAL_ENDPOINT", "Cloudflare local service URL must be a valid HTTP or HTTPS URL.", {
+      field: "localServiceUrl",
+      received: value,
+      expected: "http://host:port or https://host:port",
+    });
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw createAccessServiceError("INVALID_LOCAL_ENDPOINT", "Cloudflare local service URL must use HTTP or HTTPS.", {
+      field: "localServiceUrl",
+      received: value,
+      expected: "HTTP or HTTPS URL",
+    });
+  }
+  return parsed.toString().replace(/\/$/, "");
+}
+
+function normalizeCloudflarePath(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  if (!text.startsWith("/") || text.includes("..")) {
+    throw createAccessServiceError("INVALID_CLOUDFLARE_PATH", "Cloudflare ingress path must start with / and cannot contain traversal segments.", {
+      field: "path",
+      received: value,
+      expected: "/path",
+    });
+  }
+  return text;
+}
+
 function sanitizeServiceName(value, fallback) {
   const name = String(value || "").trim().replace(/\s+/g, " ");
   return (name || fallback || "Access Service").slice(0, 80);
@@ -178,6 +214,12 @@ function normalizeAccessService(input = {}, existing = {}) {
   const localPort = normalizePort(input.localPort ?? existing.localPort);
   const publicHostname = normalizePublicHostname(input.publicHostname || input.publicAddress || existing.publicHostname || existing.publicAddress, providerId);
   const localHost = normalizeHost(input.localHost || existing.localHost);
+  const cloudflareLocalServiceUrl = providerId === "cloudflare-tunnel"
+    ? normalizeCloudflareLocalServiceUrl(input.localServiceUrl || existing.localServiceUrl, protocol, localHost, localPort)
+    : input.localServiceUrl || existing.localServiceUrl || null;
+  const cloudflarePath = providerId === "cloudflare-tunnel"
+    ? normalizeCloudflarePath(input.path || input.ingressPath || existing.path || existing.ingressPath)
+    : input.path || existing.path || null;
   const hasProviderAddress = Boolean(input.publicAddress || existing.publicAddress || input.privateAddress || existing.privateAddress || publicHostname);
   const defaultState = providerId === "playit" && !hasProviderAddress
     ? "pending-provider-setup"
@@ -204,7 +246,11 @@ function normalizeAccessService(input = {}, existing = {}) {
     providerResourceId: input.providerResourceId || existing.providerResourceId || null,
     publicAddress: providerId === "cloudflare-tunnel" ? publicHostname : input.publicAddress || existing.publicAddress || null,
     publicHostname,
-    localServiceUrl: input.localServiceUrl || existing.localServiceUrl || null,
+    localServiceUrl: cloudflareLocalServiceUrl,
+    path: cloudflarePath,
+    tunnelName: providerId === "cloudflare-tunnel" ? input.tunnelName || existing.tunnelName || null : input.tunnelName || existing.tunnelName || null,
+    tunnelId: providerId === "cloudflare-tunnel" ? input.tunnelId || existing.tunnelId || input.providerResourceId || existing.providerResourceId || null : input.tunnelId || existing.tunnelId || null,
+    ingressStatus: providerId === "cloudflare-tunnel" ? input.ingressStatus || existing.ingressStatus || "pending-config" : input.ingressStatus || existing.ingressStatus || null,
     privateAddress: normalizeEndpointAddress(input.privateAddress || existing.privateAddress),
     hostname: input.hostname || existing.hostname || null,
     IPv4: input.IPv4 || existing.IPv4 || null,
@@ -236,6 +282,16 @@ function endpointKey(service) {
     service.localHost,
     String(service.localPort),
     service.protocol,
+  ].join("|").toLowerCase();
+}
+
+function cloudflareIngressKey(service) {
+  if (service.providerId !== "cloudflare-tunnel" || !service.publicHostname) return null;
+  return [
+    service.nodeId,
+    service.providerId,
+    service.publicHostname,
+    service.path || "/",
   ].join("|").toLowerCase();
 }
 
@@ -288,6 +344,17 @@ function createAccessService(input = {}, options = {}) {
       protocol: service.protocol,
     }, 409);
   }
+  const ingressKey = cloudflareIngressKey(service);
+  const duplicateIngress = ingressKey ? state.services.find((entry) => cloudflareIngressKey(entry) === ingressKey) : null;
+  if (duplicateIngress) {
+    throw createAccessServiceError("DUPLICATE_ACCESS_SERVICE", "A Cloudflare ingress route already exists for this hostname and path.", {
+      existingServiceId: duplicateIngress.id,
+      providerId: service.providerId,
+      nodeId: service.nodeId,
+      publicHostname: service.publicHostname,
+      path: service.path || "/",
+    }, 409);
+  }
   const next = writeRegistry({ ...state, services: [...state.services, service] }, options);
   return next.services.find((entry) => entry.id === service.id);
 }
@@ -303,6 +370,15 @@ function updateAccessService(serviceId, patch = {}, options = {}) {
   if (duplicate) {
     throw createAccessServiceError("DUPLICATE_ACCESS_SERVICE", "Another access service already uses this provider and local endpoint.", {
       existingServiceId: duplicate.id,
+    }, 409);
+  }
+  const ingressKey = cloudflareIngressKey(service);
+  const duplicateIngress = ingressKey ? state.services.find((entry, entryIndex) => entryIndex !== index && cloudflareIngressKey(entry) === ingressKey) : null;
+  if (duplicateIngress) {
+    throw createAccessServiceError("DUPLICATE_ACCESS_SERVICE", "Another Cloudflare access service already uses this hostname and path.", {
+      existingServiceId: duplicateIngress.id,
+      publicHostname: service.publicHostname,
+      path: service.path || "/",
     }, 409);
   }
   const services = [...state.services];
@@ -360,6 +436,13 @@ function reconcileAccessServices(services = [], snapshot = {}) {
         exposureScope: "public-internet",
         publicAddress,
         publicHostname: service.publicHostname || publicAddress,
+        providerResourceId: service.providerResourceId || service.tunnelId || null,
+        tunnelId: service.tunnelId || service.providerResourceId || null,
+        ingressStatus: service.ingressStatus || "pending-config",
+        providerResourceStatus: service.providerResourceId || service.tunnelId ? "linked" : "not-created-by-anxos",
+        unsupportedReason: service.providerResourceId || service.tunnelId
+          ? null
+          : "AnxOS saved this Cloudflare web service record, but tunnel and DNS resources must be created or linked through a supported cloudflared workflow before traffic will route.",
         state: provider.running === true || provider.lifecycleState === "running" ? "available" : service.state || "pending-provider-setup",
         status: provider.running === true || provider.lifecycleState === "running" ? "Web Tunnel" : service.status || "Pending tunnel setup",
         lastCheckedAt: snapshot.checkedAt || service.lastCheckedAt,

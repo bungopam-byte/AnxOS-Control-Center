@@ -189,6 +189,20 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
   }, { configDir: tempRoot });
   assert.strictEqual(service.publicAddress, "panel.example.com", "Cloudflare service must persist the public hostname.");
   assert.strictEqual(service.protocol, "http", "Cloudflare service must keep HTTP protocol.");
+  assert.strictEqual(service.localServiceUrl, "http://127.0.0.1:8080", "Cloudflare service must persist a normalized HTTP local service URL.");
+  assert.strictEqual(service.ingressStatus, "pending-config", "Cloudflare service must distinguish saved metadata from configured ingress.");
+  assert.throws(() => registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "cloudflare-tunnel",
+    providerName: "Cloudflare Tunnel",
+    accessType: "public-internet",
+    name: "Duplicate Panel",
+    localHost: "127.0.0.1",
+    localPort: 8081,
+    protocol: "http",
+    publicHostname: "panel.example.com",
+    localServiceUrl: "http://127.0.0.1:8081",
+  }, { configDir: tempRoot }), /ingress route already exists/, "Cloudflare must reject duplicate hostname/path ingress records.");
   assert.throws(() => registry.createAccessService({
     nodeId: "anxlab",
     providerId: "cloudflare-tunnel",
@@ -205,6 +219,15 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
     protocol: "http",
     publicHostname: "not a hostname",
   }, { configDir: tempRoot }), /valid DNS hostname/, "Cloudflare must reject invalid hostnames.");
+  assert.throws(() => registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "cloudflare-tunnel",
+    localHost: "127.0.0.1",
+    localPort: 8082,
+    protocol: "http",
+    publicHostname: "bad-url.example.com",
+    localServiceUrl: "tcp://127.0.0.1:8082",
+  }, { configDir: tempRoot }), /HTTP or HTTPS/, "Cloudflare must reject non-HTTP local service URLs.");
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
@@ -363,7 +386,7 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
   "function renderPublicAccessActionButtons",
   "function runPublicAccessAction",
   "createAccessServiceForInstance(instance, \"playit\")",
-  "providerResourceStatus: provider.id === \"playit\" ? \"not-created-by-anxos\"",
+  "providerResourceStatus: provider.id === \"cloudflare-tunnel\" ? \"not-created-by-anxos\"",
   "This provider does not expose start controls through AnxOS.",
   "create-access-service",
   "api.publicAccess.createService",

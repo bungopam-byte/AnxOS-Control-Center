@@ -1007,7 +1007,8 @@ function createDependencyInstallRecord(payload = {}, plan = null) {
     url: "",
     status: "running",
     stage: "Preparing installation",
-    progress: 0,
+    progress: null,
+    progressMode: "indeterminate",
     body: `Dependency installation started for ${payload.nodeId || "selected node"}.`,
     metadataText: dependencyIds.join(", "),
     actionText: "Progress stays inside AnxOS. Raw package-manager output is available in sanitized logs.",
@@ -1024,6 +1025,7 @@ function createDependencyInstallRecord(payload = {}, plan = null) {
     childTaskIds: [],
     errorCode: null,
     retryContext: null,
+    dependencyJobs: [],
     logs: [{
       at: now,
       level: "info",
@@ -1046,6 +1048,7 @@ function updateDependencyInstallRecord(downloadId, patch = {}) {
     status: patch.status || record.status,
     stage: patch.stage || record.stage,
     progress: patch.progress ?? record.progress,
+    progressMode: patch.progressMode || record.progressMode || "indeterminate",
     body: patch.body || record.body,
     metadataText: patch.metadataText || record.metadataText,
     actionText: patch.actionText || record.actionText,
@@ -1060,6 +1063,24 @@ function finalizeDependencyInstallRecord(downloadId, installResult = null, error
   const record = downloads.get(downloadId);
   if (!record) return null;
   const jobs = Array.isArray(installResult?.jobs) ? installResult.jobs : [];
+  const dependencyJobs = jobs.map((job) => ({
+    id: job.id || null,
+    dependencyId: job.dependencyId || null,
+    dependencyName: job.dependencyName || job.dependencyId || "Dependency",
+    nodeId: job.nodeId || record.nodeId || null,
+    platform: job.platform || null,
+    state: job.state || null,
+    stage: job.stage || null,
+    progressMode: job.progressMode || null,
+    progressPercent: job.progressPercent ?? null,
+    message: job.message || null,
+    startedAt: job.startedAt || null,
+    completedAt: job.completedAt || null,
+    exitCode: job.exitCode ?? null,
+    restartRequired: job.restartRequired === true,
+    authenticationRequired: job.authenticationRequired === true,
+    error: job.error || null,
+  }));
   const failed = Boolean(error) || installResult?.ok === false;
   const jobLogs = jobs.flatMap((job) => [
     ...(Array.isArray(job.events) ? job.events.map((event) => ({
@@ -1081,6 +1102,7 @@ function finalizeDependencyInstallRecord(downloadId, installResult = null, error
     status: failed ? "failed" : "complete",
     stage: failed ? "Failed" : "Installation complete",
     progress: failed ? Math.min(Number(record.progress) || 0, 99) : 100,
+    progressMode: "determinate",
     body: failed
       ? error?.message || "Dependency installation failed."
       : "Dependency installation completed and verification succeeded.",
@@ -1091,6 +1113,7 @@ function finalizeDependencyInstallRecord(downloadId, installResult = null, error
       : "Dependency state has been refreshed for the selected node.",
     canRetry: false,
     canCancel: false,
+    dependencyJobs,
   }));
 }
 

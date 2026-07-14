@@ -36,10 +36,11 @@ function registerDependenciesIpc() {
     const download = createDependencyInstallRecord(payload, plan);
     updateDependencyInstallRecord(download.id, {
       status: "running",
-      stage: "Installing files",
-      progress: 25,
+      stage: "Preparing installation",
+      progress: null,
+      progressMode: "indeterminate",
       body: "Installing selected dependencies on the selected node.",
-      logs: [{ step: "Installing files", message: "Dependency installation is running through the selected backend." }],
+      logs: [{ step: "Preparing installation", message: "Dependency installation is running through the selected backend." }],
     });
     try {
       const result = await installDependencies(payload);

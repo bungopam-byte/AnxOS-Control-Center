@@ -8740,6 +8740,84 @@ body.has-open-modal {
   background: rgba(12, 4, 24, 0.6);
 }
 
+.download-item--dependency {
+  border-color: rgba(82, 211, 255, 0.24);
+  background:
+    linear-gradient(180deg, rgba(16, 42, 55, 0.34), rgba(12, 4, 24, 0.68)),
+    rgba(12, 4, 24, 0.62);
+}
+
+.download-progress.is-indeterminate {
+  overflow: hidden;
+}
+
+.download-progress.is-indeterminate span {
+  width: 38% !important;
+  animation: dependency-progress-sweep 1.4s ease-in-out infinite;
+}
+
+.dependency-install-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(82, 211, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(4, 18, 28, 0.46);
+}
+
+.dependency-install-panel__heading {
+  display: grid;
+  gap: 2px;
+}
+
+.dependency-install-panel__heading span,
+.dependency-install-panel__message {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.dependency-install-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.dependency-install-panel__metrics > div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(185, 148, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(8, 10, 15, 0.28);
+}
+
+.dependency-install-panel__metrics dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.dependency-install-panel__metrics dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.dependency-install-panel__message {
+  margin: 0;
+}
+
+@keyframes dependency-progress-sweep {
+  0% {
+    transform: translateX(-115%);
+  }
+  50% {
+    transform: translateX(35%);
+  }
+  100% {
+    transform: translateX(245%);
+  }
+}
+
 .download-item[data-status="failed"] {
   border-color: rgba(248, 113, 113, 0.45);
   background: rgba(65, 18, 28, 0.55);

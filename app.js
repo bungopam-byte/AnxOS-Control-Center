@@ -11517,6 +11517,80 @@ function rememberImportedMarketplaceDownload(template, manualDownload = {}, opti
   }];
 }
 
+function isDependencyDownload(download = {}) {
+  return download.type === "Dependency" || download.templateId === "dependency";
+}
+
+function formatDependencyJobState(value = "") {
+  const normalized = String(value || "queued").replace(/[-_]/g, " ");
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function formatDependencyProgress(download = {}) {
+  const jobs = Array.isArray(download.dependencyJobs) ? download.dependencyJobs : [];
+  const determinateJob = jobs.find((job) => job.progressMode === "determinate" && Number.isFinite(Number(job.progressPercent)));
+  if (determinateJob) {
+    return `${Math.max(0, Math.min(100, Number(determinateJob.progressPercent))).toFixed(0)}%`;
+  }
+  if (download.progressMode === "determinate" && Number.isFinite(Number(download.progress))) {
+    return `${Math.max(0, Math.min(100, Number(download.progress))).toFixed(0)}%`;
+  }
+  if (["complete", "completed"].includes(String(download.status || "").toLowerCase())) return "100%";
+  return "Indeterminate";
+}
+
+function formatDependencyElapsed(download = {}) {
+  const started = Date.parse(download.startedAt || "");
+  if (!Number.isFinite(started)) return "Not started";
+  const ended = Date.parse(download.completedAt || download.updatedAt || "");
+  const endTime = Number.isFinite(ended) && ["complete", "failed", "cancelled"].includes(String(download.status || "").toLowerCase())
+    ? ended
+    : Date.now();
+  return formatDuration(Math.max(0, Math.floor((endTime - started) / 1000)));
+}
+
+function appendDependencyMetric(container, label, value) {
+  const item = document.createElement("div");
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const description = document.createElement("dd");
+  description.textContent = value || "Unavailable";
+  item.append(term, description);
+  container.appendChild(item);
+}
+
+function buildDependencyInstallPanel(download = {}) {
+  const jobs = Array.isArray(download.dependencyJobs) ? download.dependencyJobs : [];
+  const currentJob = jobs.find((job) => !["completed", "failed", "cancelled"].includes(String(job.state || "").toLowerCase())) || jobs[0] || null;
+  const panel = document.createElement("section");
+  panel.className = "dependency-install-panel";
+  panel.setAttribute("aria-label", "Install Dependency");
+
+  const heading = document.createElement("div");
+  heading.className = "dependency-install-panel__heading";
+  const title = document.createElement("strong");
+  title.textContent = "Install Dependency";
+  const subtitle = document.createElement("span");
+  subtitle.textContent = currentJob?.dependencyName || download.fileName || download.metadataText || "Selected dependency";
+  heading.append(title, subtitle);
+
+  const metrics = document.createElement("dl");
+  metrics.className = "dependency-install-panel__metrics";
+  appendDependencyMetric(metrics, "Target", currentJob?.nodeId || download.nodeId || "Selected node");
+  appendDependencyMetric(metrics, "Platform", currentJob?.platform || "Selected node platform");
+  appendDependencyMetric(metrics, "State", formatDependencyJobState(currentJob?.state || download.status));
+  appendDependencyMetric(metrics, "Current step", currentJob?.stage || download.stage || "Preparing installation");
+  appendDependencyMetric(metrics, "Progress", formatDependencyProgress(download));
+  appendDependencyMetric(metrics, "Elapsed", formatDependencyElapsed(download));
+
+  const message = document.createElement("p");
+  message.className = "dependency-install-panel__message";
+  message.textContent = currentJob?.message || download.body || "Dependency installation is managed inside AnxOS.";
+
+  panel.append(heading, metrics, message);
+  return panel;
+}
+
 function renderMarketplaceDownloads(downloads = []) {
   if (!downloadList) {
     return;
@@ -11538,9 +11612,13 @@ function renderMarketplaceDownloads(downloads = []) {
   }
 
   visibleDownloads.forEach((download) => {
+    const dependencyDownload = isDependencyDownload(download);
     const item = document.createElement("article");
-    item.className = "download-item";
+    item.className = dependencyDownload ? "download-item download-item--dependency" : "download-item";
     item.dataset.status = download.status || "queued";
+    if (dependencyDownload) {
+      item.dataset.downloadType = "dependency";
+    }
     const header = document.createElement("div");
     header.className = "download-item__header";
     const name = document.createElement("strong");
@@ -11551,10 +11629,11 @@ function renderMarketplaceDownloads(downloads = []) {
     header.append(name, status);
 
     const bar = document.createElement("div");
-    bar.className = "download-progress";
+    const indeterminate = dependencyDownload && download.progressMode !== "determinate" && !["complete", "failed", "cancelled"].includes(String(download.status || "").toLowerCase());
+    bar.className = indeterminate ? "download-progress is-indeterminate" : "download-progress";
     const fill = document.createElement("span");
     const rawProgress = Math.max(0, Math.min(Number(download.progress) || 0, 100));
-    const renderedProgress = download.status === "failed" ? Math.min(rawProgress, 96) : rawProgress;
+    const renderedProgress = indeterminate ? 40 : download.status === "failed" ? Math.min(rawProgress, 96) : rawProgress;
     fill.style.width = `${renderedProgress}%`;
     bar.append(fill);
 
@@ -11578,7 +11657,9 @@ function renderMarketplaceDownloads(downloads = []) {
     const logs = document.createElement("details");
     logs.className = "download-item__logs";
     const summary = document.createElement("summary");
-    summary.textContent = download.installerType === "steamcmd-native" || /steamcmd/i.test(String(download.error || download.body || ""))
+    summary.textContent = dependencyDownload
+      ? "Installation Details"
+      : download.installerType === "steamcmd-native" || /steamcmd/i.test(String(download.error || download.body || ""))
       ? "View installer logs"
       : "Logs";
     logs.append(summary);
@@ -11648,7 +11729,11 @@ function renderMarketplaceDownloads(downloads = []) {
     retry.addEventListener("click", () => retryMarketplaceDownload(download.id));
     actions.append(cancel, retry);
 
-    item.append(header, bar, meta, metadata, actionText, logs, actions);
+    if (dependencyDownload) {
+      item.append(header, bar, buildDependencyInstallPanel(download), meta, metadata, actionText, logs, actions);
+    } else {
+      item.append(header, bar, meta, metadata, actionText, logs, actions);
+    }
     downloadList.append(item);
   });
 }

@@ -10,6 +10,10 @@ const dependencyService = require("../agent/src/services/dependencyService");
 const marketplaceService = require("../src/services/marketplaceService");
 
 const templates = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "config", "marketplace-templates.json"), "utf8"));
+const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const stylesSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+const dependenciesIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "dependenciesIpc.js"), "utf8");
+const marketplaceServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceService.js"), "utf8");
 
 function template(id) {
   const found = templates.find((entry) => entry.id === id);
@@ -142,17 +146,53 @@ async function run() {
     installableActions: [{ id: "tailscale", displayName: "Tailscale" }],
   });
   assert(download.id && download.type === "Dependency", "Dependency installs should create Download Manager dependency records.");
+  assert.strictEqual(download.progressMode, "indeterminate", "Running dependency installs must use indeterminate progress until real progress exists.");
+  assert.strictEqual(download.progress, null, "Dependency install records must not invent a fake running percentage.");
   marketplaceService.updateDependencyInstallRecord(download.id, {
     stage: "Verifying installation",
-    progress: 75,
+    progress: null,
+    progressMode: "indeterminate",
     logs: [{ step: "Verifying installation", message: "Checking Tailscale." }],
   });
   const finalized = marketplaceService.finalizeDependencyInstallRecord(download.id, {
     ok: true,
-    jobs: [{ events: [{ state: "completed", stage: "Installation complete", message: "Tailscale verified." }], output: [] }],
+    jobs: [{
+      id: "dep-tailscale-smoke",
+      dependencyId: "tailscale",
+      dependencyName: "Tailscale",
+      nodeId: "agent-smoke",
+      platform: "linux",
+      state: "completed",
+      stage: "Installation complete",
+      progressMode: "determinate",
+      progressPercent: 100,
+      message: "Tailscale verified.",
+      events: [{ state: "completed", stage: "Installation complete", message: "Tailscale verified." }],
+      output: [],
+    }],
   });
   assert.strictEqual(finalized.status, "complete", "Dependency Download Manager record should complete after verification.");
   assert.strictEqual(finalized.progress, 100, "Completed dependency records should report 100% progress.");
+  assert.strictEqual(finalized.progressMode, "determinate", "Completed dependency records should report determinate progress.");
+  assert.strictEqual(finalized.dependencyJobs[0].nodeId, "agent-smoke", "Dependency job summaries must preserve target node ownership.");
+  assert.strictEqual(finalized.dependencyJobs[0].dependencyName, "Tailscale", "Dependency job summaries must preserve dependency identity.");
+
+  assert(dependenciesIpcSource.includes("progressMode: \"indeterminate\"") && !dependenciesIpcSource.includes("progress: 25"), "Dependency IPC must not seed fake progress percentages.");
+  assert(marketplaceServiceSource.includes("dependencyJobs") && marketplaceServiceSource.includes("progressMode: \"indeterminate\""), "Dependency Download Manager records must preserve job summaries and progress mode.");
+  [
+    "function buildDependencyInstallPanel",
+    "Install Dependency",
+    "Installation Details",
+    "formatDependencyProgress",
+    "isDependencyDownload",
+    "dataset.downloadType",
+  ].forEach((needle) => assert(appSource.includes(needle), `Renderer dependency install interface should include ${needle}.`));
+  [
+    ".download-item--dependency",
+    ".dependency-install-panel",
+    ".download-progress.is-indeterminate",
+    "@keyframes dependency-progress-sweep",
+  ].forEach((needle) => assert(stylesSource.includes(needle), `Dependency install UI styles should include ${needle}.`));
 
   dependencyService.__setTestHooks();
   console.log("Dependency smoke passed.");

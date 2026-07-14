@@ -209,7 +209,7 @@ async function routeRequest(request, url) {
     return handlePublicAccess(request, url);
   }
 
-  if (pathname === "/api/v1/marketplace/curseforge/status" || pathname === "/api/v1/marketplace/curseforge/api" || pathname === "/api/v1/marketplace/curseforge/download") {
+  if (pathname === "/api/v1/marketplace/curseforge/status" || pathname === "/api/v1/marketplace/curseforge/api" || pathname === "/api/v1/marketplace/curseforge/download" || pathname.startsWith("/api/v1/marketplace/curseforge/")) {
     return handleCurseForgeProxy(request, url);
   }
 

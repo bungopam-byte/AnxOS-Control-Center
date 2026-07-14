@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const fs = require("fs");
+const { Readable } = require("stream");
 
 const CURSEFORGE_API = "https://api.curseforge.com/v1";
 const USER_AGENT = "AnxOS-Agent/0.1 (+https://anxos.local)";
@@ -20,6 +21,9 @@ const ALLOWED_DOWNLOAD_HOSTS = new Set([
   "mediafilez.forgecdn.net",
   "media.forgecdn.net",
 ]);
+const DEFAULT_TIMEOUT_MS = 30000;
+const MAX_JSON_BYTES = 2 * 1024 * 1024;
+const RETRY_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 class CurseForgeProxyError extends Error {
   constructor(message, code = "CURSEFORGE_PROXY_ERROR", details = {}, statusCode = 500) {
@@ -63,6 +67,56 @@ function resolveApiKey() {
 
 function fingerprint(value) {
   return value ? crypto.createHash("sha256").update(value).digest("hex").slice(0, 12) : null;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readJsonBody(request) {
+  if (!request.body) return {};
+  try {
+    return JSON.parse(request.body);
+  } catch {
+    throw new CurseForgeProxyError("Request body must be valid JSON.", "CURSEFORGE_INVALID_REQUEST_BODY", {}, 400);
+  }
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const { timeoutMs: _timeoutMs, ...fetchOptions } = options;
+    return await fetch(url, { ...fetchOptions, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function withRetry(operation, context = {}) {
+  const attempts = Math.max(1, Number(context.attempts) || 3);
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const result = await operation(attempt);
+      if (!RETRY_STATUSES.has(Number(result?.status)) || attempt >= attempts) {
+        return result;
+      }
+      lastError = new CurseForgeProxyError("CurseForge request returned a transient status.", "CURSEFORGE_TRANSIENT_STATUS", {
+        status: result.status,
+        path: context.path || null,
+        attempt,
+      }, result.status);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts || !["AbortError", "TimeoutError"].includes(error?.name)) {
+        throw error;
+      }
+    }
+    await delay((Number(context.delayMs) || 500) * attempt);
+  }
+  throw lastError;
 }
 
 function getCurseForgeProxyStatus() {
@@ -113,6 +167,22 @@ function buildApiUrl(url) {
   return target;
 }
 
+function buildEndpointApiUrl(pathname, params = {}) {
+  const target = new URL(`${CURSEFORGE_API}${assertAllowedApiPath(pathname)}`);
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      target.searchParams.set(key, String(value));
+    }
+  });
+  return target;
+}
+
+function getSearchParams(url, allowedKeys = []) {
+  return Object.fromEntries(allowedKeys
+    .map((key) => [key, url.searchParams.get(key)])
+    .filter(([, value]) => value !== null && value !== ""));
+}
+
 function validateDownloadUrl(value) {
   let parsed;
   try {
@@ -131,7 +201,7 @@ async function fetchDownloadWithRedirects(url, apiKey, context = {}) {
   let current = validateDownloadUrl(url);
   const maxRedirects = 5;
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-    const response = await fetch(current, {
+    const response = await fetchWithTimeout(current, {
       redirect: "manual",
       headers: {
         "User-Agent": USER_AGENT,
@@ -163,14 +233,24 @@ async function fetchDownloadWithRedirects(url, apiKey, context = {}) {
 async function fetchCurseForgeApi(url) {
   const resolved = requireApiKey();
   const target = buildApiUrl(url);
-  const response = await fetch(target, {
+  return fetchCurseForgeApiUrl(target, resolved);
+}
+
+async function fetchCurseForgeApiUrl(target, resolved = requireApiKey()) {
+  const response = await withRetry(() => fetchWithTimeout(target, {
     headers: {
       Accept: "application/json",
       "User-Agent": USER_AGENT,
       "x-api-key": resolved.key,
     },
-  });
+  }), { path: target.pathname });
   const body = await response.text();
+  if (Buffer.byteLength(body || "", "utf8") > MAX_JSON_BYTES) {
+    throw new CurseForgeProxyError("CurseForge API response exceeded the Agent size limit.", "CURSEFORGE_RESPONSE_TOO_LARGE", {
+      path: target.pathname,
+      maxBytes: MAX_JSON_BYTES,
+    }, 502);
+  }
   if (!response.ok) {
     throw new CurseForgeProxyError("CurseForge API request failed.", "CURSEFORGE_REQUEST_FAILED", {
       status: response.status,
@@ -182,6 +262,10 @@ async function fetchCurseForgeApi(url) {
     statusCode: 200,
     body: JSON.parse(body),
   };
+}
+
+async function fetchCurseForgeEndpoint(pathname, params = {}) {
+  return fetchCurseForgeApiUrl(buildEndpointApiUrl(pathname, params));
 }
 
 async function fetchCurseForgeDownload(url) {
@@ -200,10 +284,11 @@ async function fetchCurseForgeDownload(url) {
     fileId: context.fileId,
     authenticated: true,
   });
-  const buffer = Buffer.from(await response.arrayBuffer());
   if (!response.ok) {
+    const body = await response.text().catch(() => "");
     throw new CurseForgeProxyError("CurseForge download request failed.", "CURSEFORGE_DOWNLOAD_FAILED", {
       status: response.status,
+      body: body.slice(0, 1000),
       hostname: response.finalHostname || target.hostname,
       redirectCount: response.redirectCount || 0,
       projectId: context.projectId,
@@ -212,12 +297,53 @@ async function fetchCurseForgeDownload(url) {
   }
   return {
     statusCode: 200,
-    rawBody: buffer,
+    stream: Readable.fromWeb(response.body),
     headers: {
       "Content-Type": response.headers.get("content-type") || "application/octet-stream",
+      ...(response.headers.get("content-length") ? { "Content-Length": response.headers.get("content-length") } : {}),
       "X-AnxOS-CurseForge-Authenticated": "true",
     },
   };
+}
+
+async function fetchCurseForgeDownloadPost(request) {
+  const body = readJsonBody(request);
+  let downloadUrl = cleanSecretValue(body.url || body.downloadUrl);
+  const projectId = String(body.projectId || "");
+  const fileId = String(body.fileId || "");
+  if (!downloadUrl && projectId && fileId) {
+    const payload = await fetchCurseForgeEndpoint(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download-url`);
+    downloadUrl = typeof payload.body?.data === "string" ? payload.body.data : "";
+  }
+  const url = new URL("http://agent.local/api/v1/marketplace/curseforge/download");
+  url.searchParams.set("url", downloadUrl);
+  if (projectId) url.searchParams.set("projectId", projectId);
+  if (fileId) url.searchParams.set("fileId", fileId);
+  return fetchCurseForgeDownload(url);
+}
+
+async function routeExplicitEndpoint(request, url) {
+  const pathname = url.pathname;
+  const projectMatch = pathname.match(/^\/api\/v1\/marketplace\/curseforge\/projects\/(\d+)$/);
+  if (request.method === "GET" && projectMatch) {
+    return fetchCurseForgeEndpoint(`/mods/${projectMatch[1]}`);
+  }
+
+  const filesMatch = pathname.match(/^\/api\/v1\/marketplace\/curseforge\/projects\/(\d+)\/files$/);
+  if (request.method === "GET" && filesMatch) {
+    return fetchCurseForgeEndpoint(`/mods/${filesMatch[1]}/files`, getSearchParams(url, ["gameVersion", "modLoaderType", "pageSize", "index"]));
+  }
+
+  const fileMatch = pathname.match(/^\/api\/v1\/marketplace\/curseforge\/files\/(\d+)$/);
+  if (request.method === "GET" && fileMatch) {
+    const projectId = url.searchParams.get("projectId");
+    if (!/^\d+$/.test(String(projectId || ""))) {
+      throw new CurseForgeProxyError("CurseForge file lookup requires a numeric projectId.", "CURSEFORGE_PROJECT_ID_REQUIRED", {}, 400);
+    }
+    return fetchCurseForgeEndpoint(`/mods/${projectId}/files/${fileMatch[1]}`);
+  }
+
+  return null;
 }
 
 async function handleCurseForgeProxy(request, url) {
@@ -225,11 +351,21 @@ async function handleCurseForgeProxy(request, url) {
     if (request.method === "GET" && url.pathname === "/api/v1/marketplace/curseforge/status") {
       return { statusCode: 200, body: getCurseForgeProxyStatus() };
     }
+    if (request.method === "GET" && url.pathname === "/api/v1/marketplace/curseforge/search") {
+      return await fetchCurseForgeEndpoint("/mods/search", getSearchParams(url, ["gameId", "classId", "searchFilter", "gameVersion", "modLoaderType", "sortField", "sortOrder", "index", "pageSize"]));
+    }
+    const endpointResult = await routeExplicitEndpoint(request, url);
+    if (endpointResult) {
+      return endpointResult;
+    }
     if (request.method === "GET" && url.pathname === "/api/v1/marketplace/curseforge/api") {
       return await fetchCurseForgeApi(url);
     }
     if (request.method === "GET" && url.pathname === "/api/v1/marketplace/curseforge/download") {
       return await fetchCurseForgeDownload(url);
+    }
+    if (request.method === "POST" && url.pathname === "/api/v1/marketplace/curseforge/download") {
+      return await fetchCurseForgeDownloadPost(request);
     }
     return { statusCode: 404, body: { error: { code: "NOT_FOUND", message: "Request failed." } } };
   } catch (error) {

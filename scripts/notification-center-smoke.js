@@ -68,9 +68,12 @@ function requireStyle(needle, message) {
 ].forEach((needle) => requireApp(needle, `Notification action allowlist missing ${needle}.`));
 
 assert(app.includes("createOperationNotification(operation)"), "Finished Operations must create linked Notification Center records.");
-assert(app.includes("shouldPersistToastNotification(message, nextTone)"), "Important warning/error toasts must be eligible for durable notification history.");
-assert(app.includes("settings[\"notifications.enabled\"] === false"), "Toast visibility preference must be enforced.");
-assert(app.includes("settings[\"notifications.persistHistory\"] === false"), "Notification persistence preference must be enforced.");
+assert(app.includes("shouldPersistToastNotification(displayMessage, nextTone)"), "Important warning/error toasts must be eligible for durable notification history.");
+assert(app.includes("FRIENDLY_ERROR_DEFINITIONS") && app.includes("normalizeFriendlyError") && app.includes("formatFriendlyToastMessage"), "Friendly error mappings must centralize user-facing recovery messages.");
+assert(app.includes("The Agent is not responding.") && app.includes("Docker is not available on this system.") && app.includes("SteamCMD is required for this game server."), "Common backend failures must map to friendly recovery messages.");
+assert(app.includes("technicalDetails") && app.includes("Copy Technical Details"), "Notifications must preserve sanitized technical details and expose a copy action.");
+assert(app.includes('getCurrentSettings()["notifications.enabled"] === false'), "Toast visibility preference must be enforced.");
+assert(app.includes('getCurrentSettings()["notifications.persistHistory"] === false'), "Notification persistence preference must be enforced.");
 assert(app.includes("notification.severity === \"critical\" && notification.resolved === false"), "Unresolved critical notifications must be protected from ordinary clear actions.");
 assert(app.includes("notification.occurrenceCount") && app.includes("occurrences = [") && app.includes("slice(-NOTIFICATION_OCCURRENCE_LIMIT)"), "Repeated notifications must be grouped with bounded occurrence history.");
 assert(app.includes("window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY") && app.includes("window.localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY)"), "Notification history must be bounded localStorage with corrupted-history recovery/reset support.");

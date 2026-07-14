@@ -1768,6 +1768,155 @@ function normalizeIpcErrorMessage(error, fallback = "Request failed.") {
   return message || fallback;
 }
 
+const FRIENDLY_ERROR_DEFINITIONS = [
+  {
+    id: "agent-unreachable",
+    codes: ["AGENT_UNAVAILABLE", "ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND"],
+    pattern: /agent.*(unavailable|unreachable|not responding)|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed/i,
+    message: "The Agent is not responding.",
+    suggestion: "Check that the Agent is running, then try again.",
+    actions: ["Retry", "Open Agent Control", "View Diagnostics"],
+  },
+  {
+    id: "agent-auth",
+    codes: ["UNAUTHORIZED", "FORBIDDEN", "AGENT_TOKEN_INVALID", "AGENT_TOKEN_MISMATCH"],
+    pattern: /unauthorized|forbidden|token.*(mismatch|invalid|rejected)|authentication mismatch/i,
+    message: "The app and Agent are using different connection credentials.",
+    suggestion: "Repair the Agent connection or rotate the shared Agent token from Security or Agent Control.",
+    actions: ["Open Agent Control", "View Diagnostics"],
+  },
+  {
+    id: "docker-unavailable",
+    codes: ["DOCKER_UNAVAILABLE", "DOCKER_DAEMON_UNAVAILABLE", "DOCKER_NOT_INSTALLED", "DOCKER_SOCKET_PERMISSION_DENIED"],
+    pattern: /docker.*(unavailable|not installed|daemon|permission)|docker socket/i,
+    message: "Docker is not available on this system.",
+    suggestion: "Install or start Docker on the selected system, then refresh Docker.",
+    actions: ["Retry", "Open Agent Control"],
+  },
+  {
+    id: "missing-java",
+    codes: ["JAVA_NOT_FOUND", "MISSING_JAVA", "JAVA_REQUIRED"],
+    pattern: /\b(java|jdk)\b.*(not found|required|missing)|missing java/i,
+    message: "Java is required before this server can be installed.",
+    suggestion: "Install the required Java runtime through dependency preparation, then retry.",
+    actions: ["Install Dependency", "Retry"],
+  },
+  {
+    id: "missing-dotnet",
+    codes: ["DOTNET_NOT_FOUND", "MISSING_DOTNET", "DOTNET_REQUIRED"],
+    pattern: /\.net|dotnet.*(not found|required|missing)|missing dotnet/i,
+    message: ".NET is required before this server can be installed.",
+    suggestion: "Install the required .NET runtime through dependency preparation, then retry.",
+    actions: ["Install Dependency", "Retry"],
+  },
+  {
+    id: "missing-steamcmd",
+    codes: ["STEAMCMD_NOT_FOUND", "STEAMCMD_REQUIRED"],
+    pattern: /steamcmd.*(not found|required|missing)|missing steamcmd/i,
+    message: "SteamCMD is required for this game server.",
+    suggestion: "Install SteamCMD on the selected system, then retry the installation.",
+    actions: ["Install Dependency", "Retry"],
+  },
+  {
+    id: "permission-denied",
+    codes: ["EACCES", "EPERM", "PERMISSION_DENIED", "ACCESS_DENIED"],
+    pattern: /permission denied|access is denied|EACCES|EPERM/i,
+    message: "AnxOS does not have permission to complete this action.",
+    suggestion: "Check file, service, or administrator permissions on the selected system.",
+    actions: ["View Diagnostics"],
+  },
+  {
+    id: "invalid-path",
+    codes: ["PATH_NOT_FOUND", "INVALID_PATH", "ROOT_DELETE_FORBIDDEN", "FILESYSTEM_PATH_OUTSIDE_ROOT"],
+    pattern: /path.*(not found|invalid|outside root)|file location|root.*forbidden/i,
+    message: "This file location is not available on the selected system.",
+    suggestion: "Choose a valid path inside the selected filesystem profile, then retry.",
+    actions: ["Open Files", "View Diagnostics"],
+  },
+  {
+    id: "node-offline",
+    codes: ["NODE_OFFLINE", "AGENT_OFFLINE", "REMOTE_NODE_OFFLINE"],
+    pattern: /selected system is offline|node.*offline|remote.*offline|unreachable/i,
+    message: "The selected system is offline or unreachable.",
+    suggestion: "Reconnect the system or select another available system.",
+    actions: ["Retry", "Open Agent Control"],
+  },
+  {
+    id: "install-failure",
+    codes: ["INSTALL_COMMAND_FAILED", "MARKETPLACE_INSTALL_FAILED", "STEAMCMD_INSTALL_FAILED", "DOWNLOAD_FAILED", "PROCESS_EXITED"],
+    pattern: /install.*failed|download.*failed|process exited|template installer failed/i,
+    message: "Installation did not complete successfully.",
+    suggestion: "Open the installer logs, review the technical details, then retry when the underlying issue is fixed.",
+    actions: ["Retry", "Open Operations", "View Diagnostics"],
+  },
+  {
+    id: "timeout",
+    codes: ["TIMEOUT", "REQUEST_TIMEOUT", "OPERATION_TIMEOUT", "TEMPLATE_INSTALL_TIMEOUT"],
+    pattern: /timed? out|timeout|took longer than expected/i,
+    message: "This operation took longer than expected.",
+    suggestion: "Wait a moment, then retry. If it repeats, open diagnostics for the selected system.",
+    actions: ["Retry", "View Diagnostics"],
+  },
+];
+
+function getFriendlyErrorCode(error = {}, message = "") {
+  return String(
+    error?.details?.code ||
+    error?.payload?.error?.code ||
+    error?.code ||
+    String(message || "").match(/\b[A-Z][A-Z0-9_]{2,}\b/)?.[0] ||
+    "",
+  ).trim();
+}
+
+function findFriendlyErrorDefinition(error = {}, fallback = "") {
+  const message = normalizeIpcErrorMessage(error, fallback);
+  const code = getFriendlyErrorCode(error, message).toUpperCase();
+  return FRIENDLY_ERROR_DEFINITIONS.find((definition) => {
+    return definition.codes?.includes(code) || definition.pattern?.test(`${code} ${message}`);
+  }) || null;
+}
+
+function getFriendlyErrorTechnicalDetails(error = {}, fallback = "Request failed.") {
+  const rawMessage = normalizeIpcErrorMessage(error, fallback);
+  const details = error?.details || error?.payload?.error?.details || {};
+  return {
+    code: getFriendlyErrorCode(error, rawMessage) || "UNKNOWN_ERROR",
+    endpoint: details.url || details.endpoint || error?.url || "",
+    method: details.method || error?.method || "",
+    target: details.targetLabel || details.target || error?.targetLabel || "",
+    requestId: details.requestId || error?.requestId || "",
+    timestamp: new Date().toISOString(),
+    originalMessage: rawMessage,
+  };
+}
+
+function normalizeFriendlyError(error = {}, fallback = "AnxOS encountered an unexpected problem.") {
+  const definition = findFriendlyErrorDefinition(error, fallback);
+  const technicalDetails = getFriendlyErrorTechnicalDetails(error, fallback);
+  if (!definition) {
+    return {
+      id: "unexpected",
+      message: "AnxOS encountered an unexpected problem.",
+      suggestion: "Open diagnostics or copy the technical details for troubleshooting.",
+      actions: ["View Diagnostics", "Copy Technical Details"],
+      technicalDetails,
+    };
+  }
+  return {
+    id: definition.id,
+    message: definition.message,
+    suggestion: definition.suggestion,
+    actions: definition.actions || [],
+    technicalDetails,
+  };
+}
+
+function getFriendlyErrorMessage(error = {}, fallback = "Request failed.") {
+  const definition = findFriendlyErrorDefinition(error, fallback);
+  return definition?.message || normalizeIpcErrorMessage(error, fallback);
+}
+
 function readStoredSettings() {
   try {
     const storedSettings = JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
@@ -14974,7 +15123,7 @@ const NOTIFICATION_ACTIONS = {
   reconnectAgent: { label: "Reconnect Agent", run: () => refreshAgentControl({ includeConfig: true }) },
   recheckDependencies: { label: "Recheck Dependencies", run: () => runDependencyAction("check") },
   checkUpdates: { label: "Check Updates", run: () => checkForUpdates({ silent: false }) },
-  copyMessage: { label: "Copy Details", run: (notification) => copyNotificationDetails(notification) },
+  copyMessage: { label: "Copy Technical Details", run: (notification) => copyNotificationDetails(notification) },
 };
 
 function sanitizeNotificationText(value = "", limit = NOTIFICATION_MAX_MESSAGE_LENGTH) {
@@ -14983,6 +15132,24 @@ function sanitizeNotificationText(value = "", limit = NOTIFICATION_MAX_MESSAGE_L
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, limit);
+}
+
+function formatFriendlyToastMessage(message, tone = null) {
+  const normalizedTone = inferToastTone(message, tone);
+  if (!["warning", "error", "critical"].includes(normalizeNotificationSeverity(normalizedTone))) {
+    return { message: String(message || ""), originalMessage: "", friendly: null };
+  }
+  const originalMessage = String(message || "");
+  const friendly = normalizeFriendlyError({ message: originalMessage }, originalMessage);
+  const known = friendly.id && friendly.id !== "unexpected";
+  if (!known || friendly.message === originalMessage) {
+    return { message: originalMessage, originalMessage: "", friendly: known ? friendly : null };
+  }
+  return {
+    message: `${friendly.message} ${friendly.suggestion}`,
+    originalMessage,
+    friendly,
+  };
 }
 
 function normalizeNotificationSeverity(severity = "info") {
@@ -15046,6 +15213,7 @@ function serializeNotification(notification) {
     relatedOperationId: notification.relatedOperationId ? sanitizeNotificationText(notification.relatedOperationId, 160) : "",
     relatedDiagnosticCode: notification.relatedDiagnosticCode ? sanitizeNotificationText(notification.relatedDiagnosticCode, 80) : "",
     relatedWorkspace: notification.relatedWorkspace ? sanitizeNotificationText(notification.relatedWorkspace, 80) : "",
+    technicalDetails: notification.technicalDetails ? sanitizeNotificationText(notification.technicalDetails, 900) : "",
     actions: Array.isArray(notification.actions) ? notification.actions.filter((action) => NOTIFICATION_ACTIONS[action]).slice(0, 4) : [],
     occurrences: Array.isArray(notification.occurrences)
       ? notification.occurrences.slice(-NOTIFICATION_OCCURRENCE_LIMIT).map((entry) => ({
@@ -15143,6 +15311,7 @@ function createNotification(input = {}) {
     existing.lastSeen = now;
     existing.read = false;
     existing.resolved = input.resolved !== false;
+    existing.technicalDetails = input.technicalDetails ? sanitizeNotificationText(input.technicalDetails, 900) : existing.technicalDetails || "";
     existing.occurrenceCount = Math.max(1, Number(existing.occurrenceCount || 1) + 1);
     existing.occurrences = [...(existing.occurrences || []), { timestamp: now, message }].slice(-NOTIFICATION_OCCURRENCE_LIMIT);
     if (severity === "critical") existing.pinned = true;
@@ -15164,6 +15333,7 @@ function createNotification(input = {}) {
       relatedOperationId: input.relatedOperationId || "",
       relatedDiagnosticCode: input.relatedDiagnosticCode || "",
       relatedWorkspace: input.relatedWorkspace || "",
+      technicalDetails: input.technicalDetails || "",
       actions: input.actions || [],
       occurrences: [{ timestamp: now, message }],
     }));
@@ -15408,7 +15578,8 @@ async function copyNotificationDetails(notification) {
     `Last seen: ${formatDateTime(notification.lastSeen)}`,
     `Occurrences: ${notification.occurrenceCount}`,
     `Message: ${notification.message}`,
-  ].join("\n");
+    notification.technicalDetails ? `Technical details: ${notification.technicalDetails}` : "",
+  ].filter(Boolean).join("\n");
   await navigator.clipboard.writeText(text);
   showToast("Notification details copied.", "success");
 }
@@ -20853,22 +21024,25 @@ function inferToastTone(message, tone) {
 }
 
 function showToast(message, tone = null) {
-  const nextTone = inferToastTone(message, tone);
-  if (shouldPersistToastNotification(message, nextTone)) {
+  const formatted = formatFriendlyToastMessage(message, tone);
+  const displayMessage = formatted.message || String(message || "");
+  const nextTone = inferToastTone(displayMessage, tone);
+  if (shouldPersistToastNotification(displayMessage, nextTone)) {
     createNotification({
-      category: inferNotificationCategoryFromText(message),
+      category: inferNotificationCategoryFromText(`${displayMessage} ${formatted.originalMessage || ""}`),
       severity: nextTone,
       title: nextTone === "error" ? "Action failed" : "Action needs attention",
-      message,
-      dedupKey: `toast:${nextTone}:${inferNotificationCategoryFromText(message)}:${sanitizeNotificationText(message, 120)}`,
-      relatedDiagnosticCode: /\b[A-Z][A-Z0-9_]{3,}\b/.exec(String(message || ""))?.[0] || "",
+      message: displayMessage,
+      dedupKey: `toast:${nextTone}:${inferNotificationCategoryFromText(displayMessage)}:${sanitizeNotificationText(displayMessage, 120)}`,
+      relatedDiagnosticCode: formatted.friendly?.technicalDetails?.code || /\b[A-Z][A-Z0-9_]{3,}\b/.exec(String(message || ""))?.[0] || "",
       relatedWorkspace: "notifications",
+      technicalDetails: formatted.originalMessage || "",
       actions: nextTone === "error" ? ["openDiagnostics", "copyMessage"] : ["copyMessage"],
       resolved: nextTone !== "error",
     });
   }
   if (getCurrentSettings()["notifications.enabled"] === false || !toast) return;
-  toast.textContent = message;
+  toast.textContent = displayMessage;
   toast.dataset.tone = nextTone;
   toast.setAttribute("role", nextTone === "error" ? "alert" : "status");
   toast.classList.add("is-visible");

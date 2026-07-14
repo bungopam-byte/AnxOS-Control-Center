@@ -537,6 +537,33 @@ a[aria-disabled="true"] {
   line-height: 1.45;
 }
 
+.release-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin: 0 0 12px;
+  padding: 4px 10px;
+  border: 1px solid rgba(245, 196, 81, 0.36);
+  border-radius: 999px;
+  background: rgba(245, 196, 81, 0.1);
+  color: #f4d887;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.alpha-warning {
+  max-width: 760px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 196, 81, 0.32);
+  border-radius: var(--anx-radius-md);
+  background: rgba(245, 196, 81, 0.08);
+  color: #f4d887;
+  line-height: 1.5;
+}
+
 .download-status[data-tone="ok"] {
   border-color: rgba(69, 224, 143, 0.28);
   color: #a7f5c8;

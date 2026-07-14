@@ -2,17 +2,25 @@
 
 Date: 2026-07-14
 Branch: `dev`
-Commit evaluated: `c944c8d`
+Commit evaluated: `37a0a64`
 
 Additional production-artifact gate rerun: 2026-07-14 against `origin/dev` at `3ec595e`.
 
+## Release Classification
+
+Private Alpha
+
+This milestone is approved for invited Private Alpha testers only with accepted validation risk. It is not stable, production-ready, fully validated, generally available, or recommended for irreplaceable production data.
+
+Feature implementation is complete for this milestone. Static Windows packaging validation passed, website and release-route validation passed, versioning and artifact smoke tests passed, and the Local Agent runtime metadata is prepared for build 146. Additional clean Windows real-machine validation was not completed. Users should expect bugs and report issues.
+
 ## Release Recommendation
 
-Do not tag or publish a stable production release.
+Approved for invited Private Alpha testers only. Not recommended for stable or public production release.
 
-The Local Agent implementation and website/release source work have broad smoke-test coverage, but the final readiness gate is blocked by missing build 146 release assets and missing real Windows machine validation.
+The Local Agent implementation and website/release source work have broad smoke-test coverage. The missing clean Windows validation is accepted only for this controlled Private Alpha release.
 
-The exact production website download links currently resolve to build 145 artifacts. Those are not the Local Agent build 146 release candidate and their published `update-manifest.json` does not include the build 146 Local Agent runtime metadata contract.
+The exact production website download links currently resolve to build 145 artifacts. Publishing build 146 must replace those links with build 146 assets and matching update metadata.
 
 ## Passed Checks
 
@@ -31,7 +39,13 @@ The exact production website download links currently resolve to build 145 artif
 - Website production, download, accessibility, and responsive smokes passed.
 - Versioning smoke passed.
 - Windows packaging artifact smoke passed for build 146.
+- `npm run website:smoke` passed.
+- `node scripts/versioning-smoke.js` passed.
+- `node scripts/packaging-artifact-smoke.js --platform=win` passed for build 146.
 - The rebuilt Windows package contains `resources/local-agent-runtime`.
+- Static package inspection confirmed the required build structure.
+- Local Agent runtime metadata is prepared for build 146.
+- Secret and development-configuration exclusions passed where currently covered.
 - Stable website download endpoints redirect to real build 145 release assets.
 - Documentation set for architecture, setup, security, troubleshooting, release checklist, website validation, real-machine validation, limitations, and tester guidance is present.
 
@@ -43,17 +57,16 @@ The exact production website download links currently resolve to build 145 artif
 - Full unfiltered packaging smoke was not passed for build 146 because matching local Linux build 146 AppImage and deb artifacts were not rebuilt in this pass.
 - Production site deployment of the source correction from build 146 website metadata to build 145 was not confirmed after the commit.
 
-## Blockers
+## Accepted Risks
 
-- Build 146 Windows and Linux release assets are not published in `AnxOS-Control-Center-Releases`.
-- Exact production Windows artifacts are build 145 and cannot be used to validate the build 146 Local Agent release.
+- No additional clean Windows installation test was completed.
+- Windows service lifecycle was not validated on a fresh Windows installation.
+- Reboot persistence was not validated.
+- Automatic pairing was not validated on a clean Windows machine.
+- Dependency installation was not fully validated on a clean Windows machine.
+- Marketplace, CurseForge, Files, Backups, and Public Access were not fully exercised from the final production artifact on a clean Windows machine.
+- Tester-discovered bugs are expected.
 - No real clean Windows environment is available from this Debian host. Wine is installed but was not used as a substitute for the required clean Windows validation.
-- Real Windows installer validation is incomplete.
-- Windows service install/start/stop/restart/repair/remove and startup-after-reboot validation is incomplete.
-- Automatic pairing, credential rotation, and repair after reinstall have not been validated on a real Windows install.
-- Real dependency installation for Java, Docker Desktop, SteamCMD, .NET, PowerShell, FFmpeg, Tailscale, Cloudflared, Playit, and Visual C++ runtime is incomplete.
-- Real Marketplace install/start/stop for a supported game server on `This PC` is incomplete.
-- Real Files, Backups, Public Access, Windows Firewall, SmartScreen, antivirus, and reboot behavior are incomplete.
 - Existing remote Debian Agent compatibility was smoke-tested but not revalidated against a live Debian host during the final gate.
 
 ## Warnings
@@ -62,7 +75,7 @@ The exact production website download links currently resolve to build 145 artif
 - The local Windows build 146 artifact was inspected statically and through package structure checks, not executed on Windows.
 - The production build 145 update manifest is internally consistent for build 145 but does not prove Local Agent release readiness.
 - CurseForge coverage remains smoke/mocked; production API-key and live provider behavior were not validated.
-- Stable release should wait until website production deployment is confirmed after source changes.
+- Stable release should wait until real Windows validation and broader tester feedback are complete.
 
 ## Real-Machine Tests Completed
 

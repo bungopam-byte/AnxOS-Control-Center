@@ -5612,6 +5612,31 @@ function buildTailscalePrivateAddress(provider = {}, port) {
   return host ? `${host}:${port}` : null;
 }
 
+function getTailscaleEndpointOptions(provider = {}, port) {
+  const options = [];
+  const seen = new Set();
+  const add = (type, label, host) => {
+    const cleanHost = String(host || "").trim().replace(/\.$/, "");
+    if (!cleanHost || seen.has(`${type}:${cleanHost}`)) return;
+    seen.add(`${type}:${cleanHost}`);
+    options.push({ type, label, host: cleanHost, address: `${cleanHost}:${port}` });
+  };
+  add("magicdns", "MagicDNS", provider.DNSName || provider.hostname);
+  add("ipv4", "Tailscale IPv4", provider.IPv4 || provider.tailnetAddress);
+  add("ipv6", "Tailscale IPv6", provider.IPv6);
+  return options;
+}
+
+function chooseTailscaleEndpoint(provider = {}, port) {
+  const options = getTailscaleEndpointOptions(provider, port);
+  if (options.length <= 1) return options[0] || null;
+  const menu = options.map((option, index) => `${index + 1}. ${option.label}: ${option.address}`).join("\n");
+  const selected = window.prompt(`Choose Tailscale private address:\n${menu}`, "1");
+  if (selected === null) return null;
+  const text = String(selected).trim().toLowerCase();
+  return options[Number.parseInt(text, 10) - 1] || options.find((option) => option.type === text || option.label.toLowerCase().includes(text)) || null;
+}
+
 function getInstanceAccessServices(instance = findInstance(), snapshot = latestPublicAccessSnapshot) {
   if (!instance?.id) return [];
   return (Array.isArray(snapshot?.services) ? snapshot.services : [])
@@ -5798,6 +5823,13 @@ async function createAccessServiceForInstance(instance = findInstance(), preferr
       throw Object.assign(new Error("Cloudflare services require a public hostname."), { code: "INVALID_PUBLIC_HOSTNAME" });
     }
   }
+  const tailscaleEndpoint = suggestion.providerId === "tailscale"
+    ? chooseTailscaleEndpoint(provider, suggestion.localPort)
+    : null;
+  if (suggestion.providerId === "tailscale" && !tailscaleEndpoint) return null;
+  const tailscaleEndpointOptions = suggestion.providerId === "tailscale"
+    ? getTailscaleEndpointOptions(provider, suggestion.localPort)
+    : [];
   const payload = {
     nodeId: requestContext.nodeId,
     providerId: suggestion.providerId,
@@ -5812,13 +5844,15 @@ async function createAccessServiceForInstance(instance = findInstance(), preferr
     status: suggestion.providerId === "playit" ? "Pending Playit tunnel setup" : undefined,
     providerResourceStatus: suggestion.providerId === "playit" ? "not-created-by-anxos" : undefined,
     unsupportedReason: suggestion.providerId === "playit" ? "AnxOS saved this access service, but Playit tunnel creation is not exposed by the detected integration. Create or link the matching Playit tunnel, then refresh." : undefined,
-    privateAddress: suggestion.providerId === "tailscale" ? buildTailscalePrivateAddress(provider, suggestion.localPort) : null,
+    privateAddress: suggestion.providerId === "tailscale" ? tailscaleEndpoint?.address || buildTailscalePrivateAddress(provider, suggestion.localPort) : null,
     publicAddress: suggestion.providerId === "cloudflare-tunnel" ? String(publicHostname).trim() : null,
     publicHostname: suggestion.providerId === "cloudflare-tunnel" ? String(publicHostname).trim() : null,
     localServiceUrl: suggestion.providerId === "cloudflare-tunnel" ? `${suggestion.protocol}://${suggestion.localHost}:${suggestion.localPort}` : null,
     hostname: suggestion.providerId === "tailscale" ? provider?.DNSName || provider?.hostname || null : null,
     IPv4: suggestion.providerId === "tailscale" ? provider?.IPv4 || null : null,
     IPv6: suggestion.providerId === "tailscale" ? provider?.IPv6 || null : null,
+    addressPreference: suggestion.providerId === "tailscale" ? tailscaleEndpoint?.type || "magicdns" : null,
+    endpointOptions: tailscaleEndpointOptions,
   };
   if (!isNodeActionStillCurrent(requestContext)) return null;
   const result = await desktopApiState.api.publicAccess.createService(payload);
@@ -5948,6 +5982,9 @@ async function createProviderAccessService() {
   if (provider.id === "cloudflare-tunnel" && !String(publicHostname || "").trim()) {
     throw Object.assign(new Error("Public hostname is required for Cloudflare Tunnel services."), { code: "INVALID_PUBLIC_HOSTNAME" });
   }
+  const tailscaleEndpoint = provider.id === "tailscale" ? chooseTailscaleEndpoint(provider, localPort) : null;
+  if (provider.id === "tailscale" && !tailscaleEndpoint) return null;
+  const tailscaleEndpointOptions = provider.id === "tailscale" ? getTailscaleEndpointOptions(provider, localPort) : [];
   const localServiceUrl = provider.id === "cloudflare-tunnel" ? `${protocol}://127.0.0.1:${localPort}` : null;
   const payload = {
     nodeId: requestContext.nodeId,
@@ -5962,13 +5999,15 @@ async function createProviderAccessService() {
     status: provider.id === "playit" ? "Pending Playit tunnel setup" : undefined,
     providerResourceStatus: provider.id === "playit" ? "not-created-by-anxos" : undefined,
     unsupportedReason: provider.id === "playit" ? "AnxOS saved this access service, but Playit tunnel creation is not exposed by the detected integration. Create or link the matching Playit tunnel, then refresh." : undefined,
-    privateAddress: provider.id === "tailscale" ? buildTailscalePrivateAddress(provider, localPort) : null,
+    privateAddress: provider.id === "tailscale" ? tailscaleEndpoint?.address || buildTailscalePrivateAddress(provider, localPort) : null,
     publicAddress: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
     publicHostname: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
     localServiceUrl,
     hostname: provider.id === "tailscale" ? provider.DNSName || provider.hostname || null : null,
     IPv4: provider.id === "tailscale" ? provider.IPv4 || null : null,
     IPv6: provider.id === "tailscale" ? provider.IPv6 || null : null,
+    addressPreference: provider.id === "tailscale" ? tailscaleEndpoint?.type || "magicdns" : null,
+    endpointOptions: tailscaleEndpointOptions,
   };
   const result = await getDesktopApiState().api.publicAccess.createService(payload);
   if (result?.ok === false) {

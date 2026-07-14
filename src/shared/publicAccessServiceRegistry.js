@@ -91,6 +91,37 @@ function normalizeEndpointAddress(value) {
   return text || null;
 }
 
+function normalizeTailscaleEndpoint(value) {
+  const text = String(value || "").trim().toLowerCase();
+  return ["magicdns", "ipv4", "ipv6"].includes(text) ? text : null;
+}
+
+function buildTailscaleEndpointOptions(service = {}, provider = {}) {
+  const options = [];
+  const seen = new Set();
+  const add = (type, label, host) => {
+    const cleanHost = String(host || "").trim().replace(/\.$/, "");
+    if (!cleanHost || seen.has(`${type}:${cleanHost}`)) return;
+    seen.add(`${type}:${cleanHost}`);
+    options.push({
+      type,
+      label,
+      host: cleanHost,
+      address: `${cleanHost}:${service.localPort}`,
+    });
+  };
+  add("magicdns", "MagicDNS", service.hostname || provider.DNSName || provider.hostname);
+  add("ipv4", "Tailscale IPv4", service.IPv4 || provider.IPv4);
+  add("ipv6", "Tailscale IPv6", service.IPv6 || provider.IPv6);
+  return options;
+}
+
+function selectTailscaleEndpoint(service = {}, provider = {}) {
+  const options = buildTailscaleEndpointOptions(service, provider);
+  const preference = normalizeTailscaleEndpoint(service.addressPreference || service.endpointPreference);
+  return options.find((option) => option.type === preference) || options[0] || null;
+}
+
 function normalizePublicHostname(value, providerId) {
   const text = String(value || "").trim().toLowerCase();
   if (providerId !== "cloudflare-tunnel") return text || null;
@@ -178,6 +209,14 @@ function normalizeAccessService(input = {}, existing = {}) {
     hostname: input.hostname || existing.hostname || null,
     IPv4: input.IPv4 || existing.IPv4 || null,
     IPv6: input.IPv6 || existing.IPv6 || null,
+    addressPreference: providerId === "tailscale"
+      ? normalizeTailscaleEndpoint(input.addressPreference || existing.addressPreference) || "magicdns"
+      : input.addressPreference || existing.addressPreference || null,
+    endpointOptions: Array.isArray(input.endpointOptions)
+      ? input.endpointOptions
+      : Array.isArray(existing.endpointOptions)
+        ? existing.endpointOptions
+        : [],
     state: input.state || existing.state || defaultState,
     status: input.status || existing.status || defaultStatus,
     providerResourceStatus: input.providerResourceStatus || existing.providerResourceStatus || (providerId === "playit" && !hasProviderAddress ? "not-created-by-anxos" : null),
@@ -293,8 +332,9 @@ function reconcileAccessServices(services = [], snapshot = {}) {
   return services.map((service) => {
     const provider = providers.find((entry) => entry.id === service.providerId || entry.providerId === service.providerId) || {};
     if (service.providerId === "tailscale") {
-      const host = service.hostname || provider.DNSName || provider.hostname || provider.IPv4 || provider.IPv6 || provider.tailnetAddress || null;
-      const privateAddress = service.privateAddress || (host ? `${String(host).replace(/\.$/, "")}:${service.localPort}` : null);
+      const endpointOptions = buildTailscaleEndpointOptions(service, provider);
+      const selectedEndpoint = selectTailscaleEndpoint(service, provider);
+      const privateAddress = service.privateAddress || selectedEndpoint?.address || null;
       return {
         ...service,
         providerName: service.providerName || provider.name || "Tailscale",
@@ -302,6 +342,8 @@ function reconcileAccessServices(services = [], snapshot = {}) {
         hostname: service.hostname || provider.DNSName || provider.hostname || null,
         IPv4: service.IPv4 || provider.IPv4 || null,
         IPv6: service.IPv6 || provider.IPv6 || null,
+        addressPreference: normalizeTailscaleEndpoint(service.addressPreference) || selectedEndpoint?.type || "magicdns",
+        endpointOptions,
         accessType: "private-tailnet",
         exposureScope: "tailnet-only",
         state: provider.connected === true || provider.lifecycleState === "running" ? "available" : "provider-unavailable",
@@ -364,4 +406,8 @@ module.exports = {
   reconcileAccessServices,
   registryPath,
   updateAccessService,
+  _test: {
+    buildTailscaleEndpointOptions,
+    selectTailscaleEndpoint,
+  },
 };

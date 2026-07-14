@@ -132,7 +132,11 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
   assert.strictEqual(reconciled[0].accessType, "private-tailnet", "Tailscale service must stay private-tailnet.");
   assert.strictEqual(reconciled[0].exposureScope, "tailnet-only", "Tailscale service must use tailnet-only exposure.");
   assert.strictEqual(reconciled[0].privateAddress, "anxlab.tailnet.ts.net:7777", "Tailscale service should prefer MagicDNS private endpoint.");
+  assert.strictEqual(reconciled[0].addressPreference, "magicdns", "Tailscale service should persist a MagicDNS endpoint preference.");
+  assert.deepStrictEqual(reconciled[0].endpointOptions.map((option) => option.type), ["magicdns", "ipv4"], "Tailscale service should expose concrete private endpoint choices.");
   assert.strictEqual(reconciled[0].publicAddress, null, "Tailscale service must not invent a public address.");
+  const ipv4Preferred = registry._test.selectTailscaleEndpoint({ ...reconciled[0], privateAddress: null, addressPreference: "ipv4" }, {});
+  assert.strictEqual(ipv4Preferred.address, "100.64.0.10:7777", "Tailscale IPv4 preference should produce a private IPv4 endpoint.");
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
@@ -321,6 +325,7 @@ assert(serviceSource.includes("createPublicAccessService") && serviceSource.incl
 assert(agentRouteSource.includes("/api/v1/public-access/services") && agentServerSource.includes("pathname.startsWith(\"/api/v1/public-access/services/\")"), "Agent must register Public Access service lifecycle routes.");
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
 assert(appSource.includes("buildTailscalePrivateAddress") && appSource.includes("private-tailnet"), "Renderer must create Tailscale services as private tailnet records.");
+assert(appSource.includes("chooseTailscaleEndpoint") && appSource.includes("Choose Tailscale private address"), "Renderer must let users choose real Tailscale endpoint types when available.");
 assert(appSource.includes("Private tailnet") && appSource.includes("service.privateAddress"), "Renderer must display Tailscale private reachability and endpoint.");
 assert(appSource.includes("Create Web Service") && appSource.includes("cloudflare-tunnel") && appSource.includes("Public hostname"), "Renderer must expose Cloudflare web-service setup without raw game-port compatibility.");
 assert(indexSource.includes('data-instance-action="expose-share"') && indexSource.includes('data-instance-action="copy-access-address"') && indexSource.includes('data-instance-action="manage-access"'), "Instances must expose provider sharing, copy, and manage actions.");

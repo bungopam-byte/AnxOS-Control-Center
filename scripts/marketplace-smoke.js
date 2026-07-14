@@ -1015,13 +1015,16 @@ function assertFiveMStartupSafety() {
   assert.strictEqual(fivem.manualStartRequired, true, "FiveM should require manual start after license setup.");
 
   const instanceSource = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "instances", "instanceServiceCore.js"), "utf8");
-  assert(instanceSource.includes("FIVEM_LICENSE_REQUIRED"), "Shared instance service should expose a FiveM license-required failure reason.");
+  assert(instanceSource.includes("FIVEM_SETUP_REQUIRED"), "Shared instance service should expose a FiveM setup-required lifecycle error.");
+  assert(instanceSource.includes("SETUP_REQUIRED"), "Shared instance states should include setup-required lifecycle support.");
   assert(instanceSource.includes("Invalid key format specified|Could not authenticate server license key|HTTP 429"), "Shared instance service should detect FiveM license/auth log failures.");
   assert(instanceSource.includes("suppressRestart"), "Shared instance service should suppress restart loops for known FiveM license failures.");
   assert(instanceSource.includes("detectFromMinecraftStatus"), "Shared instance service should keep a Minecraft status-query fallback for version detection.");
+  const appSource = fs.readFileSync(appPath, "utf8");
+  assert(appSource.includes("Configure FiveM") && appSource.includes("saveFiveMLicenseKey"), "Renderer should expose a guided FiveM setup action.");
 }
 
-async function assertFiveMPlaceholderStartIsBlocked() {
+async function assertFiveMSetupLifecycle() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-fivem-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
   process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
@@ -1045,14 +1048,34 @@ async function assertFiveMPlaceholderStartIsBlocked() {
     await instanceService.writeInstanceFile(
       "fivem-license-smoke",
       "server/server.cfg",
-      'sv_licenseKey "CHANGE_ME_FIVEM_LICENSE_KEY"\n'
+      [
+        'endpoint_add_udp "0.0.0.0:30120"',
+        'sv_hostname "Smoke"',
+        '# sv_licenseKey "commented-out-key"',
+        'sv_licenseKey "CHANGE_ME_FIVEM_LICENSE_KEY"',
+        'sv_licenseKey "DUPLICATE_PLACEHOLDER"',
+        "",
+      ].join("\n")
     );
     await assert.rejects(
       () => instanceService.startInstance("fivem-license-smoke"),
-      (error) => error?.code === "FIVEM_LICENSE_REQUIRED" && /valid license key/i.test(error.message || "")
+      (error) => error?.code === "FIVEM_SETUP_REQUIRED" && /setup is required/i.test(error.message || "")
     );
     const status = await instanceService.getStatus("fivem-license-smoke");
-    assert.strictEqual(status.failureReason, "FIVEM_LICENSE_REQUIRED", "FiveM placeholder start should set a license failure reason.");
+    assert.strictEqual(status.state, "Setup Required", "FiveM placeholder start should set setup-required lifecycle state.");
+    assert(status.setupRequired?.requiredField === "sv_licenseKey", "FiveM setup state should identify sv_licenseKey.");
+    const listing = await instanceService.listInstanceFiles("fivem-license-smoke", "server");
+    assert(listing.entries.some((entry) => entry.name === "server.cfg"), "FiveM server.cfg should remain accessible after setup-required start block.");
+    const saveResult = await instanceService.saveFiveMLicenseKey("fivem-license-smoke", "cfxk_valid_smoke_key_12345");
+    assert.strictEqual(saveResult.readiness.ready, true, "Saving a valid FiveM key should make readiness ready.");
+    const updated = await instanceService.readInstanceFile("fivem-license-smoke", "server/server.cfg");
+    assert(updated.content.includes('endpoint_add_udp "0.0.0.0:30120"'), "Saving FiveM key should preserve unrelated server.cfg content.");
+    assert(updated.content.includes('# sv_licenseKey "commented-out-key"'), "Saving FiveM key should preserve commented license examples.");
+    assert.strictEqual((updated.content.match(/^\s*sv_licenseKey\b/gm) || []).length, 1, "Saving FiveM key should avoid duplicate active sv_licenseKey entries.");
+    assert(!JSON.stringify(saveResult).includes("cfxk_valid_smoke_key_12345"), "FiveM save result must not expose the full license key.");
+    const readyStatus = await instanceService.getStatus("fivem-license-smoke");
+    assert.strictEqual(readyStatus.state, "Stopped", "FiveM readiness should return to Stopped after setup is complete.");
+    assert.strictEqual(readyStatus.setupRequired, null, "FiveM setupRequired metadata should clear after valid configuration.");
   } finally {
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;
@@ -1761,6 +1784,7 @@ async function assertSharedTemplateInstallFlowMatrix() {
     "updateInstance",
     "startInstance",
     "getInstanceStatus",
+    "getFiveMReadiness",
     "getInstanceLogs",
     "getSystemStats",
     "listInstances",
@@ -1897,6 +1921,33 @@ async function assertSharedTemplateInstallFlowMatrix() {
       return { instance: instances.get(instanceId) };
     };
     agentClient.getInstanceStatus = async (instanceId) => ({ instance: { ...(instances.get(instanceId) || {}), state: "Stopped", exitCode: 0 } });
+    agentClient.getFiveMReadiness = async (instanceId) => {
+      const instance = instances.get(instanceId) || {};
+      const content = files.get(`${instanceId}:server/server.cfg`) || "";
+      const setupRequired = /CHANGE_ME_FIVEM_LICENSE_KEY/.test(content);
+      const state = setupRequired ? "Setup Required" : "Stopped";
+      instances.set(instanceId, {
+        ...instance,
+        state,
+        setupRequired: setupRequired ? {
+          code: "FIVEM_LICENSE_REQUIRED",
+          requiredField: "sv_licenseKey",
+          message: "FiveM setup requires a license key before startup.",
+          configPath: "server/server.cfg",
+        } : null,
+      });
+      return {
+        instance: instances.get(instanceId),
+        readiness: {
+          ready: !setupRequired,
+          setupRequired,
+          reasonCode: setupRequired ? "LICENSE_PLACEHOLDER" : "READY",
+          requiredField: setupRequired ? "sv_licenseKey" : null,
+          configPath: "server/server.cfg",
+          message: setupRequired ? "FiveM setup requires a license key before startup." : "FiveM setup is complete.",
+        },
+      };
+    };
     agentClient.getInstanceLogs = async (instanceId, options = {}) => ({
       id: instanceId,
       entries: [
@@ -1934,6 +1985,15 @@ async function assertSharedTemplateInstallFlowMatrix() {
     const terrariaInstance = instances.get("terraria-flow-smoke");
     assert(!terrariaInstance?.args?.[1]?.includes("required_command in 'dotnet'"), "Terraria startup should not use the old raw-command dependency wrapper.");
     assert(!terrariaInstance?.args?.[1]?.includes("Missing required runtime dependency"), "Missing dependencies should be handled by shared preflight, not startup shell snippets.");
+    const fivemInstance = instances.get("fivem-flow-smoke");
+    assert.strictEqual(fivemInstance?.state, "Setup Required", "FiveM install should create an instance and persist setup-required state.");
+    assert.strictEqual(fivemInstance?.setupRequired?.requiredField, "sv_licenseKey", "FiveM setup-required state should identify the missing license field.");
+    const fivemDownload = marketplaceService.getDownloads().downloads.find((download) => download.templateId === "fivem" && !download.parentTaskId);
+    assert(fivemDownload, "FiveM install should create a Download Manager record.");
+    assert.strictEqual(fivemDownload.status, "complete", "FiveM missing license should not fail the Download Manager job.");
+    assert.strictEqual(fivemDownload.stage, "Installed — setup required", "FiveM Download Manager should show Installed — setup required.");
+    assert.strictEqual(fivemDownload.canRetry, false, "FiveM setup-required jobs should not offer reinstall retry.");
+    assert.match(fivemDownload.body || "", /installed successfully/i, "FiveM Download Manager should explain that files installed successfully.");
     const palworldInstallerPatch = updatePatches.find(({ instanceId, patch }) => instanceId === "palworld-flow-smoke" && patch.executable === "steamcmd");
     assert(palworldInstallerPatch, "Palworld should temporarily switch to SteamCMD for installation.");
     const forceInstallDirIndex = palworldInstallerPatch.patch.args.indexOf("+force_install_dir");
@@ -2979,7 +3039,7 @@ async function main() {
   assertPackagedStartupSafe();
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
-  await assertFiveMPlaceholderStartIsBlocked();
+  await assertFiveMSetupLifecycle();
   await assertStoppedAndStaleInstancesCanBeDeleted();
   await assertScriptMarketplaceStartupIsNotJarWrapped();
   await assertPaperMetadataBackfill();

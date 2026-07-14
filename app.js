@@ -172,6 +172,14 @@ const instanceBackupTitle = document.querySelector("[data-instance-backup-title]
 const instanceBackupDescription = document.querySelector("[data-instance-backup-description]");
 const instanceBackupEmptyTitle = document.querySelector("[data-instance-backup-empty-title]");
 const instanceBackupEmptyMessage = document.querySelector("[data-instance-backup-empty-message]");
+const fivemSetupCard = document.querySelector("[data-fivem-setup-card]");
+const fivemSetupMessage = document.querySelector("[data-fivem-setup-message]");
+const fivemSetupModal = document.querySelector("[data-fivem-setup-modal]");
+const fivemSetupForm = document.querySelector("[data-fivem-setup-form]");
+const fivemLicenseInput = document.querySelector("[data-fivem-license-key]");
+const fivemLicenseToggle = document.querySelector("[data-fivem-license-toggle]");
+const fivemSetupStatus = document.querySelector("[data-fivem-setup-status]");
+const fivemSetupDetail = document.querySelector("[data-fivem-setup-detail]");
 const marketplaceSearchInput = document.querySelector("[data-marketplace-search]");
 const marketplaceCategories = document.querySelector("[data-marketplace-categories]");
 const marketplaceRefreshButton = document.querySelector("[data-marketplace-refresh]");
@@ -455,6 +463,7 @@ let dependencyLastError = null;
 let agentLogEntries = [];
 let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
+let fivemSetupModalCleanup = null;
 let openModalCount = 0;
 let modalBackgroundWasInert = false;
 
@@ -1179,7 +1188,9 @@ function getDesktopApiState() {
       typeof api?.instances?.createFolder === "function" &&
       typeof api?.instances?.renameFile === "function" &&
       typeof api?.instances?.getMinecraftProperties === "function" &&
-      typeof api?.instances?.saveMinecraftProperties === "function",
+      typeof api?.instances?.saveMinecraftProperties === "function" &&
+      typeof api?.instances?.getFiveMReadiness === "function" &&
+      typeof api?.instances?.saveFiveMLicenseKey === "function",
     hasActions: typeof api?.actions?.executeAction === "function",
     hasFiles:
       typeof api?.files?.listConnections === "function" &&
@@ -7044,15 +7055,37 @@ function formatInstanceDisk(metrics) {
 }
 
 function getInstanceStateClass(state) {
-  return String(state || "stopped").trim().toLowerCase();
+  return String(state || "stopped").trim().toLowerCase().replace(/\s+/g, "-");
 }
 
 function isInstanceRunning(instance) {
   return ["running", "starting", "restarting"].includes(getInstanceStateClass(instance?.state));
 }
 
+function isFiveMInstance(instance = null) {
+  const searchable = [
+    instance?.templateId,
+    instance?.game,
+    instance?.serverSoftware,
+    instance?.type,
+    instance?.id,
+    instance?.displayName,
+    ...(Array.isArray(instance?.tags) ? instance.tags : []),
+    ...(Array.isArray(instance?.args) ? instance.args : []),
+  ].join(" ").toLowerCase();
+  return searchable.includes("fivem") || searchable.includes("fxserver");
+}
+
+function isFiveMSetupRequired(instance = null) {
+  return Boolean(isFiveMInstance(instance) && (
+    getInstanceStateClass(instance?.state) === "setup-required" ||
+    instance?.setupRequired ||
+    instance?.setupReadiness?.setupRequired
+  ));
+}
+
 function canStartInstance(instance) {
-  return instance && ["stopped", "failed"].includes(getInstanceStateClass(instance.state));
+  return instance && (isFiveMSetupRequired(instance) || ["stopped", "failed"].includes(getInstanceStateClass(instance.state)));
 }
 
 function canStopInstance(instance) {
@@ -8341,6 +8374,7 @@ function updateInstanceActionButtons() {
 
   instancesStartButtons.forEach((button) => {
     button.disabled = busy || !hasInstancesBridge || !canStartInstance(selectedInstance);
+    button.textContent = isFiveMSetupRequired(selectedInstance) ? "Configure FiveM" : "Start";
   });
 
   instancesStopButtons.forEach((button) => {
@@ -8381,6 +8415,11 @@ function updateInstanceActionButtons() {
 
   document.querySelectorAll("[data-instance-row-action]").forEach((button) => {
     button.disabled = busy || !hasInstancesBridge || button.dataset.instanceRowDisabled === "true";
+  });
+
+  document.querySelectorAll('[data-instance-action="configure-fivem"]').forEach((button) => {
+    button.hidden = !isFiveMSetupRequired(selectedInstance);
+    button.disabled = busy || !hasInstancesBridge || !isFiveMSetupRequired(selectedInstance);
   });
 
   document.querySelectorAll(".instance-quick-actions [data-instance-action='start']").forEach((button) => {
@@ -8531,7 +8570,7 @@ function buildInstanceActionCell(instance) {
   const wrapper = document.createElement("div");
   wrapper.className = "instance-row-actions";
   const actions = [
-    { label: "Start", action: "start", disabled: !canStartInstance(instance) },
+    { label: isFiveMSetupRequired(instance) ? "Configure" : "Start", action: "start", disabled: !canStartInstance(instance) },
     { label: "Stop", action: "stop", disabled: !canStopInstance(instance) },
     { label: "Restart", action: "restart", disabled: !canRestartInstance(instance) },
   ];
@@ -8614,6 +8653,106 @@ function renderInstanceSummary(instances) {
   setField("instancesTotalRam", aggregateMetrics.memoryCount > 0 ? formatBytes(aggregateMetrics.memory) : "Unavailable");
 }
 
+function getFiveMSetupMessage(instance = null) {
+  return instance?.setupRequired?.message ||
+    instance?.setupReadiness?.message ||
+    "FiveM setup is required before this server can start.";
+}
+
+function renderFiveMSetupCard(instance = null) {
+  const visible = isFiveMSetupRequired(instance);
+  if (fivemSetupCard) {
+    fivemSetupCard.hidden = !visible;
+  }
+  if (fivemSetupMessage) {
+    fivemSetupMessage.textContent = visible
+      ? `${getFiveMSetupMessage(instance)} Use Configure FiveM or edit server.cfg from Files.`
+      : "";
+  }
+  document.querySelectorAll('[data-instance-action="configure-fivem"]').forEach((button) => {
+    button.hidden = !visible;
+    button.disabled = !visible || instanceActionRequestInFlight;
+  });
+}
+
+function setFiveMSetupModalVisible(isVisible) {
+  if (!fivemSetupModal) return;
+  fivemSetupModal.hidden = !isVisible;
+  if (isVisible && !fivemSetupModalCleanup) {
+    fivemSetupModalCleanup = activateModal(fivemSetupModal, { initialFocus: () => fivemLicenseInput });
+  } else if (!isVisible && fivemSetupModalCleanup) {
+    fivemSetupModalCleanup();
+    fivemSetupModalCleanup = null;
+  }
+}
+
+async function openFiveMSetup(instance = findInstance(), options = {}) {
+  if (!instance || !isFiveMInstance(instance)) {
+    showToast("FiveM setup is only available for FiveM instances.", "warning");
+    return;
+  }
+  selectInstance(instance.id, { refreshMetrics: false });
+  if (fivemLicenseInput) {
+    fivemLicenseInput.value = "";
+    fivemLicenseInput.type = fivemLicenseToggle?.checked ? "text" : "password";
+  }
+  if (fivemSetupStatus) {
+    fivemSetupStatus.textContent = options.message || "Paste a Cfx.re Keymaster license key. The key will be masked from logs and diagnostics.";
+  }
+  if (fivemSetupDetail) {
+    fivemSetupDetail.textContent = "FiveM requires a server license key before FXServer can start. Generate one through the official Cfx.re Keymaster service, then paste it here.";
+  }
+  setFiveMSetupModalVisible(true);
+}
+
+function closeFiveMSetup() {
+  if (fivemLicenseInput) {
+    fivemLicenseInput.value = "";
+  }
+  setFiveMSetupModalVisible(false);
+}
+
+async function saveFiveMSetup() {
+  const instance = findInstance();
+  const licenseKey = fivemLicenseInput?.value || "";
+  const requestContext = createNodeActionContext("fivem-save-license");
+  if (!instance || !isFiveMInstance(instance) || instanceActionRequestInFlight) {
+    return;
+  }
+  if (!licenseKey.trim()) {
+    if (fivemSetupStatus) fivemSetupStatus.textContent = "Paste a FiveM license key before saving.";
+    fivemLicenseInput?.focus();
+    return;
+  }
+  instanceActionRequestInFlight = true;
+  updateInstanceActionButtons();
+  if (fivemSetupStatus) fivemSetupStatus.textContent = "Saving FiveM configuration...";
+  try {
+    await getDesktopApiState().api.instances.saveFiveMLicenseKey(instance.id, licenseKey, getNodeScopedPayload(requestContext));
+    if (fivemLicenseInput) fivemLicenseInput.value = "";
+    showToast("FiveM configuration saved.");
+    closeFiveMSetup();
+    await refreshInstances({ refreshMetrics: false });
+    selectInstance(instance.id, { refreshMetrics: false });
+  } catch (error) {
+    console.warn("[Instances] FiveM setup save failed.", { code: getAgentErrorCode(error) });
+    if (fivemSetupStatus) {
+      fivemSetupStatus.textContent = getAgentErrorMessage(error, "FiveM configuration could not be saved.");
+    }
+  } finally {
+    instanceActionRequestInFlight = false;
+    updateInstanceActionButtons();
+  }
+}
+
+async function openFiveMServerConfig() {
+  const instance = findInstance();
+  if (!instance) return;
+  closeFiveMSetup();
+  setActiveInstanceTab("files");
+  await openInstanceTextFile("server/server.cfg");
+}
+
 function setInstanceDetails(instance = null) {
   const metrics = instance ? getInstanceMetrics(instance.id) : null;
   if (instancesDetailsPanel) {
@@ -8625,6 +8764,9 @@ function setInstanceDetails(instance = null) {
 
   if (!instance) {
     setField("instanceDetailState", "None");
+    document.querySelectorAll('[data-field="instanceDetailState"]').forEach((field) => {
+      field.className = "instance-state";
+    });
     setField("instancesSelectedCpu", "Unavailable");
     setField("instancesSelectedMemory", "Unavailable");
     setInstanceDetail("name", "None selected");
@@ -8652,6 +8794,7 @@ function setInstanceDetails(instance = null) {
     setInstanceDetail("tags", "Unavailable");
     setInstanceDetail("workingDirectory", "Unavailable");
     renderInstanceWorkspaceProfile(null);
+    renderFiveMSetupCard(null);
     populateInstanceConfigForm(null);
     renderInstanceNetwork(null);
     if (instanceAddressCopyButton) {
@@ -8667,6 +8810,9 @@ function setInstanceDetails(instance = null) {
   const ports = getInstancePorts(instance);
   const rconPort = ports.find((port) => port !== primaryPort) || null;
   setField("instanceDetailState", instance.state || "Unavailable");
+  document.querySelectorAll('[data-field="instanceDetailState"]').forEach((field) => {
+    field.className = `instance-state is-${getInstanceStateClass(instance.state)}`;
+  });
   setField("instancesSelectedCpu", formatInstanceCpu(metrics));
   setField("instancesSelectedMemory", formatInstanceMemory(metrics));
   setInstanceDetail("name", formatInstanceValue(instance.displayName));
@@ -8694,6 +8840,7 @@ function setInstanceDetails(instance = null) {
   setInstanceDetail("tags", formatInstanceList(instance.tags));
   setInstanceDetail("workingDirectory", formatInstanceValue(instance.workingDirectory));
   renderInstanceWorkspaceProfile(instance);
+  renderFiveMSetupCard(instance);
   renderMinecraftWorkspaceSummary(instance, metrics);
   populateInstanceConfigForm(instance);
   renderInstanceNetwork(instance);
@@ -8955,6 +9102,8 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     STARTUP_CONFIGURATION_FAILED: "The startup command could not be configured.",
     MARKETPLACE_INSTALL_FAILED: "Template install failed.",
     FIVEM_LICENSE_REQUIRED: "FiveM needs a valid license key in server.cfg before it can start.",
+    FIVEM_SETUP_REQUIRED: "FiveM setup is required before this server can start.",
+    INVALID_FIVEM_LICENSE_KEY: "Enter a valid FiveM license key from Cfx.re Keymaster.",
   };
 
   if (friendlyMessages[effectiveCode]) {
@@ -12342,6 +12491,20 @@ async function runInstanceAction(actionName) {
   const label = selectedInstance.displayName || selectedInstance.id;
   const targetInstanceId = selectedInstance.id;
 
+  if ((actionName === "start" || actionName === "restart") && isFiveMSetupRequired(selectedInstance)) {
+    await openFiveMSetup(selectedInstance, {
+      message: "FiveM setup is required before this server can start.",
+    });
+    updateInstanceActionButtons();
+    return;
+  }
+
+  if (actionName === "configure-fivem") {
+    await openFiveMSetup(selectedInstance);
+    updateInstanceActionButtons();
+    return;
+  }
+
   if (actionName === "forceKill" && !canStopInstance(selectedInstance)) {
     showToast("Instance is already stopped. Use Delete or Forget to remove it.", "warning");
     updateInstanceActionButtons();
@@ -12425,6 +12588,13 @@ async function runInstanceAction(actionName) {
       }
     } else {
       console.warn(`[Instances] ${actionName} failed.`, error);
+      if ((actionName === "start" || actionName === "restart") && getAgentErrorCode(error) === "FIVEM_SETUP_REQUIRED") {
+        await openFiveMSetup(selectedInstance, {
+          message: "FiveM setup is required before this server can start.",
+        });
+        await refreshInstances({ refreshMetrics: false });
+        return;
+      }
       if (actionName === "delete" && isInstanceRunningError(error)) {
         const stopThenDelete = window.confirm(`${label} is still running. Stop it and delete it after it stops? This cannot be undone.`);
         if (stopThenDelete && isNodeActionStillCurrent(requestContext)) {
@@ -12471,7 +12641,7 @@ async function runInstanceAction(actionName) {
       } else {
         showToast(getAgentErrorMessage(error, `Instance ${actionName} failed.`));
       }
-      if (actionName === "start" || actionName === "restart") {
+      if ((actionName === "start" || actionName === "restart") && getAgentErrorCode(error) !== "FIVEM_SETUP_REQUIRED") {
         updateInstanceSnapshot(targetInstanceId, {
           state: "Failed",
           failureReason: getAgentErrorMessage(error, `Instance ${actionName} failed.`),
@@ -26566,6 +26736,9 @@ instancesForgetButtons.forEach((button) => {
 instancesForceKillButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("forceKill"));
 });
+document.querySelectorAll('[data-instance-action="configure-fivem"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("configure-fivem"));
+});
 document.querySelector('[data-instance-action="clear-console"]')?.addEventListener("click", clearInstanceConsole);
 document.querySelector('[data-instance-action="copy-console"]')?.addEventListener("click", copyInstanceConsole);
 instancesDownloadLogButtons.forEach((button) => {
@@ -27009,6 +27182,23 @@ developmentBadge?.addEventListener("click", openDeveloperUpdateModal);
 devUpdateButtons.forEach((button) => {
   button.addEventListener("click", () => runDeveloperUpdateAction(button.dataset.devUpdateAction));
 });
+fivemSetupForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveFiveMSetup();
+});
+document.querySelectorAll("[data-fivem-setup-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.fivemSetupAction;
+    if (action === "cancel") closeFiveMSetup();
+    else if (action === "save") saveFiveMSetup();
+    else if (action === "open-files") openFiveMServerConfig();
+  });
+});
+fivemLicenseToggle?.addEventListener("change", () => {
+  if (fivemLicenseInput) {
+    fivemLicenseInput.type = fivemLicenseToggle.checked ? "text" : "password";
+  }
+});
 
 updateModal?.addEventListener("click", (event) => {
   if (event.target === updateModal) setUpdateModalVisible(false);
@@ -27027,6 +27217,15 @@ devUpdateModal?.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
     setDevUpdateModalVisible(false);
+  }
+});
+fivemSetupModal?.addEventListener("click", (event) => {
+  if (event.target === fivemSetupModal) closeFiveMSetup();
+});
+fivemSetupModal?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeFiveMSetup();
   }
 });
 securityForm?.addEventListener("submit", submitSecurityForm);

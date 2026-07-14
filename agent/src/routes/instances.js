@@ -14,8 +14,10 @@ const {
   readInstanceFile,
   readLogs,
   readMinecraftProperties,
+  refreshFiveMReadiness,
   renameInstanceFile,
   restartInstance,
+  saveFiveMLicenseKey,
   startInstance,
   stopInstance,
   updateInstance,
@@ -94,6 +96,15 @@ function getRuntimeErrorDetails(error) {
       suggestion: "Stop the conflicting process or choose different ports before starting this instance.",
     };
   }
+  if (error?.code === "FIVEM_SETUP_REQUIRED") {
+    return {
+      code: error.code,
+      setupRequired: true,
+      readiness: error.readiness || null,
+      userMessage: "FiveM setup is required before this server can start.",
+      suggestion: "Open Configure FiveM and add a license key from the official Cfx.re Keymaster service.",
+    };
+  }
   return undefined;
 }
 
@@ -118,6 +129,12 @@ function getValidationErrorDetails(error) {
       expected: error?.expected || "positive integer within the allowed range",
       userMessage: numericFieldMessages[error?.field || "number"] || `${error?.field || "Value"} must be a valid whole number.`,
       suggestion: "Check the generated install settings and retry with a whole number inside the allowed range.",
+    },
+    INVALID_FIVEM_LICENSE_KEY: {
+      field: error?.field || "sv_licenseKey",
+      expected: error?.expected || "a valid Cfx.re FiveM server license key",
+      userMessage: "Enter a valid FiveM license key.",
+      suggestion: error?.suggestion || "Generate a key through the official Cfx.re Keymaster service, then paste it here.",
     },
     INVALID_RESTART_POLICY: { field: "restartPolicy", expected: "never, on-failure, or always", userMessage: "The restart policy is invalid." },
     RUNTIME_FIELDS_READ_ONLY: { field: "state", expected: "runtime fields omitted from create/update requests", userMessage: "Runtime-only fields cannot be changed by install requests." },
@@ -288,6 +305,16 @@ async function handleInstances(request, url) {
 
     if (request.method === "PUT" && minecraftPropertiesId) {
       return result(200, await writeMinecraftProperties(minecraftPropertiesId, parseJsonBody(request).properties));
+    }
+
+    const fivemReadinessId = getInstanceIdFromPath(url.pathname, "/fivem/readiness");
+    if (request.method === "GET" && fivemReadinessId) {
+      return result(200, await refreshFiveMReadiness(fivemReadinessId));
+    }
+
+    const fivemLicenseId = getInstanceIdFromPath(url.pathname, "/fivem/license-key");
+    if (request.method === "PUT" && fivemLicenseId) {
+      return result(200, await saveFiveMLicenseKey(fivemLicenseId, parseJsonBody(request).licenseKey));
     }
 
     const startId = getInstanceIdFromPath(url.pathname, "/start");

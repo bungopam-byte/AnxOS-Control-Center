@@ -5146,7 +5146,8 @@ body.is-resizing-files * {
 
 .instance-state.is-starting,
 .instance-state.is-restarting,
-.instance-state.is-stopping {
+.instance-state.is-stopping,
+.instance-state.is-setup-required {
   border-color: rgba(245, 196, 81, 0.34);
   background: rgba(245, 196, 81, 0.1);
   color: #f5c451;
@@ -5156,6 +5157,36 @@ body.is-resizing-files * {
   border-color: rgba(255, 107, 138, 0.36);
   background: rgba(255, 107, 138, 0.1);
   color: var(--danger);
+}
+
+.instance-setup-required-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(245, 196, 81, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(245, 196, 81, 0.08);
+}
+
+.instance-setup-required-card div {
+  display: grid;
+  gap: 4px;
+}
+
+.instance-setup-required-card strong {
+  color: #f5c451;
+}
+
+.instance-setup-required-card span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.fivem-setup-form {
+  display: grid;
+  gap: 14px;
 }
 
 .instance-log-panel {

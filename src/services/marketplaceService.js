@@ -952,6 +952,11 @@ function updateDownload(record, patch) {
   return record;
 }
 
+function isFiveMTemplate(template = {}) {
+  return String(template.id || "").toLowerCase() === "fivem" ||
+    [template.startupType, template.instanceType, ...(Array.isArray(template.tags) ? template.tags : [])].join(" ").toLowerCase().includes("fivem");
+}
+
 function createInstallTaskRecord(template, options = {}) {
   const record = createDownloadRecord(template, template.displayName || template.id);
   updateDownload(record, {
@@ -3513,6 +3518,27 @@ async function installTemplate(payload = {}) {
     }
     pushStep(progress, "Write config", "complete", "Configuration files generated.");
 
+    let setupRequiredResult = null;
+    if (isFiveMTemplate(template)) {
+      setupRequiredResult = await agentClient.getFiveMReadiness(createdInstanceId, agentConfig);
+      const readiness = setupRequiredResult?.readiness || {};
+      if (readiness.setupRequired) {
+        pushStep(progress, "Setup required", "complete", "FiveM FXServer was installed successfully. Add a license key to finish setup.");
+        updateDownload(parentRecord, {
+          stage: "Setup required",
+          progress: 75,
+          canRetry: false,
+          canCancel: false,
+        });
+        appendDownloadLog(parentRecord, {
+          step: "Setup required",
+          level: "warning",
+          message: "FiveM install completed, but sv_licenseKey is not configured.",
+          failureReason: readiness.reasonCode || "FIVEM_LICENSE_REQUIRED",
+        });
+      }
+    }
+
     unwrapInstallerResult(await runTemplatePostInstall(template, options, createdInstanceId, progress, agentConfig), {
       stage: "extracting",
       handlerName: "runTemplatePostInstall",
@@ -3569,8 +3595,20 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Optional start", "skipped", needsDownloadedArtifact ? "Start skipped until the server jar is available." : "Start was disabled for this install.");
     }
 
-    pushStep(progress, "Complete", "complete", "Installation finished.");
-    finalizeInstallTaskRecord(parentRecord, "complete", "Installation finished.", { stage: "Completed" });
+    pushStep(progress, "Complete", "complete", setupRequiredResult?.readiness?.setupRequired ? "Installation finished. FiveM setup is required before startup." : "Installation finished.");
+    if (setupRequiredResult?.readiness?.setupRequired) {
+      updateDownload(parentRecord, {
+        status: "complete",
+        stage: "Installed — setup required",
+        progress: 100,
+        body: "FiveM FXServer was installed successfully. Add a license key to finish setup.",
+        actionText: "Open FiveM Setup from the instance card.",
+        canRetry: false,
+        canCancel: false,
+      });
+    } else {
+      finalizeInstallTaskRecord(parentRecord, "complete", "Installation finished.", { stage: "Completed" });
+    }
     try {
       const refreshed = await agentClient.getInstanceStatus(createdInstanceId, agentConfig);
       startedInstance = refreshed.instance || refreshed || startedInstance;

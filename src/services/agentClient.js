@@ -2288,6 +2288,24 @@ async function saveMinecraftProperties(instanceId, properties = {}, configOverri
   });
 }
 
+async function getFiveMReadiness(instanceId, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().refreshFiveMReadiness(instanceId);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/fivem/readiness`, { config: configOverride });
+}
+
+async function saveFiveMLicenseKey(instanceId, licenseKey, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().saveFiveMLicenseKey(instanceId, licenseKey);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/fivem/license-key`, {
+    config: configOverride,
+    method: "PUT",
+    body: { licenseKey },
+  });
+}
+
 async function startInstance(instanceId, configOverride = null) {
   if (shouldUseLocalInstanceService(configOverride)) {
     return getLocalInstanceService().startInstance(instanceId);
@@ -2484,6 +2502,7 @@ module.exports = {
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
+  getFiveMReadiness,
   instanceFileExists,
   getMinecraftProperties,
   getPlayitSnapshot,
@@ -2523,6 +2542,7 @@ module.exports = {
   rotateAgentSettingsToken,
   saveAgentSettings,
   saveBackupSchedule,
+  saveFiveMLicenseKey,
   saveMinecraftProperties,
   sendInstanceCommand,
   startDockerContainer,

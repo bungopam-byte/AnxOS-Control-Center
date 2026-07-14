@@ -223,6 +223,8 @@ const desktopApi = {
     renameFile: (instanceId, oldPath, newPath, options = {}) => ipcRenderer.invoke("instances:renameFile", { ...options, instanceId, oldPath, newPath }),
     getMinecraftProperties: (instanceId, options = {}) => ipcRenderer.invoke("instances:getMinecraftProperties", { ...options, instanceId }),
     saveMinecraftProperties: (instanceId, properties, options = {}) => ipcRenderer.invoke("instances:saveMinecraftProperties", { ...options, instanceId, properties }),
+    getFiveMReadiness: (instanceId, options = {}) => ipcRenderer.invoke("instances:getFiveMReadiness", { ...options, instanceId }),
+    saveFiveMLicenseKey: (instanceId, licenseKey, options = {}) => ipcRenderer.invoke("instances:saveFiveMLicenseKey", { ...options, instanceId, licenseKey }),
   },
   actions: {
     executeAction: (actionId, params = {}, options = {}) => ipcRenderer.invoke("action:execute", { actionId, params, ...options }),

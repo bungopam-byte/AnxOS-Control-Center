@@ -10,6 +10,7 @@ const {
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
+  getFiveMReadiness,
   getMinecraftProperties,
   listInstanceFiles,
   listInstances,
@@ -17,6 +18,7 @@ const {
   renameInstanceFile,
   restartInstance,
   saveMinecraftProperties,
+  saveFiveMLicenseKey,
   sendInstanceCommand,
   startInstance,
   stopInstance,
@@ -111,6 +113,13 @@ function registerInstancesIpc() {
     requirePermission("files:write", `${payload.instanceId}:server.properties`);
     audit({ action: "instance.minecraft.properties.write", target: payload.instanceId });
     return saveMinecraftProperties(payload.instanceId, payload.properties, payload);
+  }));
+  ipcMain.handle("instances:getFiveMReadiness", async (_, payload = {}) => invokeInstanceOperation(() => getFiveMReadiness(payload.instanceId, payload)));
+  ipcMain.handle("instances:saveFiveMLicenseKey", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("files:write", `${payload.instanceId}:server.cfg`);
+    checkRateLimit("fivem-license-save", 20, 60 * 1000);
+    audit({ action: "instance.fivem.license.write", target: payload.instanceId });
+    return saveFiveMLicenseKey(payload.instanceId, payload.licenseKey, payload);
   }));
 }
 

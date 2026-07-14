@@ -27,6 +27,7 @@ const INSTANCE_STATES = Object.freeze({
   STOPPING: "Stopping",
   RESTARTING: "Restarting",
   FAILED: "Failed",
+  SETUP_REQUIRED: "Setup Required",
 });
 
 const INSTANCE_TYPES = new Set([
@@ -52,9 +53,13 @@ const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
 const VERSION_CACHE_VERSION = 4;
 const FIVEM_LICENSE_MESSAGE = "FiveM needs a valid license key in server.cfg before it can start.";
+const FIVEM_CONFIG_RELATIVE_PATH = "server/server.cfg";
 const FIVEM_LICENSE_PLACEHOLDERS = new Set([
   "CHANGE_ME",
   "CHANGE_ME_FIVEM_LICENSE_KEY",
+  "YOUR_LICENSE_KEY",
+  "YOUR_FIVEM_LICENSE_KEY",
+  "LICENSE_KEY_HERE",
 ]);
 const FIVEM_LICENSE_FAILURE_PATTERN = /Invalid key format specified|Could not authenticate server license key|HTTP 429/i;
 const DEFAULT_EXECUTABLE_ROOTS = [
@@ -606,11 +611,20 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     exitCode: existingConfig?.exitCode ?? null,
     signal: existingConfig?.signal || null,
     failureReason: existingConfig?.failureReason || null,
+    setupRequired: existingConfig?.setupRequired || null,
+    setupReadiness: existingConfig?.setupReadiness || null,
   };
 
   config.versionInfo = normalizeVersionInfo(payload.versionInfo, config);
 
-  if (payload.state || payload.pid || payload.exitCode || payload.signal) {
+  if (
+    payload.state !== undefined
+    || payload.pid !== undefined
+    || payload.exitCode !== undefined
+    || payload.signal !== undefined
+    || payload.setupRequired !== undefined
+    || payload.setupReadiness !== undefined
+  ) {
     throw createInstanceError("RUNTIME_FIELDS_READ_ONLY");
   }
 
@@ -1099,14 +1113,151 @@ function isFiveMInstance(config) {
   return searchable.includes("fivem") || searchable.includes("fxserver");
 }
 
+function getFiveMConfigPath(instanceId) {
+  return path.join(instancePath(instanceId), "data", FIVEM_CONFIG_RELATIVE_PATH);
+}
+
+function getDefaultFiveMServerConfig(config = {}) {
+  const port = Array.isArray(config.ports) && config.ports[0] ? config.ports[0] : config.primaryPort || 30120;
+  const name = String(config.displayName || config.id || "AnxOS FiveM Server").replace(/"/g, "'");
+  return [
+    `endpoint_add_tcp "0.0.0.0:${port}"`,
+    `endpoint_add_udp "0.0.0.0:${port}"`,
+    `sv_hostname "${name}"`,
+    `sets sv_projectName "${name}"`,
+    'sets sv_projectDesc "Managed by AnxOS"',
+    "sv_maxclients 32",
+    'sv_licenseKey "CHANGE_ME_FIVEM_LICENSE_KEY"',
+    "",
+  ].join("\n");
+}
+
+function parseFiveMLicenseEntries(configText) {
+  return String(configText || "").split(/\r?\n/).map((line, index) => {
+    const active = !/^\s*[#;]/.test(line);
+    const match = line.match(/^\s*(?:set\s+)?sv_licenseKey\s+(.+?)\s*$/i);
+    if (!active || !match) {
+      return null;
+    }
+    const rawValue = String(match[1] || "").trim().replace(/^["']|["']$/g, "");
+    const value = rawValue.split(/\s+#|\s+;/)[0].trim().replace(/^["']|["']$/g, "");
+    return { line, index, value };
+  }).filter(Boolean);
+}
+
 function extractFiveMLicenseKey(configText) {
-  const match = String(configText || "").match(/^\s*sv_licenseKey\s+"?([^"\s#]+)"?/im);
-  return match ? match[1].trim() : "";
+  return parseFiveMLicenseEntries(configText)[0]?.value || "";
 }
 
 function isValidFiveMLicenseKey(value) {
   const key = String(value || "").trim();
-  return Boolean(key) && !FIVEM_LICENSE_PLACEHOLDERS.has(key) && /^[A-Za-z0-9_-]{8,}$/.test(key);
+  return Boolean(key) && !FIVEM_LICENSE_PLACEHOLDERS.has(key.toUpperCase()) && !/[{}<>$]/.test(key) && /^[A-Za-z0-9_-]{8,}$/.test(key);
+}
+
+function buildFiveMReadiness(reasonCode, config = {}, extra = {}) {
+  const ready = reasonCode === "READY";
+  const messages = {
+    READY: "FiveM setup is complete.",
+    NOT_FIVEM: "This instance does not use FiveM setup.",
+    CONFIG_MISSING: "FiveM server.cfg is missing.",
+    LICENSE_MISSING: "FiveM setup requires a license key before startup.",
+    LICENSE_PLACEHOLDER: "FiveM setup requires replacing the placeholder license key.",
+    LICENSE_INVALID: "FiveM setup requires a valid Cfx.re license key.",
+  };
+  return {
+    ready,
+    setupRequired: !ready && reasonCode !== "NOT_FIVEM",
+    reasonCode,
+    message: messages[reasonCode] || messages.LICENSE_MISSING,
+    requiredField: ready || reasonCode === "NOT_FIVEM" ? null : "sv_licenseKey",
+    configPath: FIVEM_CONFIG_RELATIVE_PATH,
+    suggestedAction: ready || reasonCode === "NOT_FIVEM"
+      ? null
+      : "Open Configure FiveM and paste a license key from the official Cfx.re Keymaster service.",
+    hasConfiguredLicenseKey: ready,
+    checkedAt: nowIso(),
+    templateId: config.templateId || null,
+    ...extra,
+  };
+}
+
+function getFiveMLicenseReason(configText) {
+  const entries = parseFiveMLicenseEntries(configText);
+  if (entries.length === 0) {
+    return "LICENSE_MISSING";
+  }
+  const key = entries[0].value;
+  if (!key) {
+    return "LICENSE_MISSING";
+  }
+  if (FIVEM_LICENSE_PLACEHOLDERS.has(key.toUpperCase())) {
+    return "LICENSE_PLACEHOLDER";
+  }
+  return isValidFiveMLicenseKey(key) ? "READY" : "LICENSE_INVALID";
+}
+
+async function readFiveMConfigText(config) {
+  return readTextIfExists(getFiveMConfigPath(config.id), 128 * 1024);
+}
+
+async function evaluateFiveMReadiness(config) {
+  if (!isFiveMInstance(config)) {
+    return buildFiveMReadiness("NOT_FIVEM", config);
+  }
+  const configPath = getFiveMConfigPath(config.id);
+  const exists = await pathExists(configPath);
+  if (!exists) {
+    return buildFiveMReadiness("CONFIG_MISSING", config);
+  }
+  const configText = await readFiveMConfigText(config);
+  return buildFiveMReadiness(getFiveMLicenseReason(configText), config);
+}
+
+async function persistFiveMReadiness(config, readiness) {
+  if (!isFiveMInstance(config) || readiness.reasonCode === "NOT_FIVEM") {
+    return config;
+  }
+  const hasActiveRuntimeState = [
+    INSTANCE_STATES.RUNNING,
+    INSTANCE_STATES.STARTING,
+    INSTANCE_STATES.STOPPING,
+    INSTANCE_STATES.RESTARTING,
+  ].includes(config.state);
+  const patch = readiness.ready
+    ? {
+      setupRequired: null,
+      setupReadiness: readiness,
+      failureReason: config.failureReason === "FIVEM_LICENSE_REQUIRED" || config.failureReason === "FIVEM_SETUP_REQUIRED" ? null : config.failureReason,
+      state: config.state === INSTANCE_STATES.SETUP_REQUIRED ? INSTANCE_STATES.STOPPED : config.state,
+    }
+    : {
+      setupRequired: {
+        code: "FIVEM_LICENSE_REQUIRED",
+        reasonCode: readiness.reasonCode,
+        message: readiness.message,
+        requiredField: readiness.requiredField,
+        configPath: readiness.configPath,
+        suggestedAction: readiness.suggestedAction,
+        checkedAt: readiness.checkedAt,
+      },
+      setupReadiness: readiness,
+      failureReason: null,
+      state: hasActiveRuntimeState ? config.state : INSTANCE_STATES.SETUP_REQUIRED,
+      pid: hasActiveRuntimeState ? config.pid : null,
+      lastStoppedAt: hasActiveRuntimeState ? config.lastStoppedAt : nowIso(),
+    };
+  return updateRuntimeState(config.id, patch);
+}
+
+async function refreshFiveMReadiness(instanceId) {
+  const config = await loadInstanceConfig(instanceId);
+  const readiness = await evaluateFiveMReadiness(config);
+  const updated = await persistFiveMReadiness(config, readiness);
+  return {
+    config: updated,
+    instance: publicConfig(updated),
+    readiness,
+  };
 }
 
 async function assertFiveMCanStart(config) {
@@ -1114,19 +1265,77 @@ async function assertFiveMCanStart(config) {
     return;
   }
 
-  const configText = await readTextIfExists(path.join(instancePath(config.id), "data", "server", "server.cfg"), 128 * 1024);
-  if (!isValidFiveMLicenseKey(extractFiveMLicenseKey(configText))) {
-    await appendLog(config.id, "stderr", FIVEM_LICENSE_MESSAGE);
-    await updateRuntimeState(config.id, {
-      state: INSTANCE_STATES.FAILED,
-      pid: null,
-      failureReason: "FIVEM_LICENSE_REQUIRED",
-      lastStoppedAt: nowIso(),
+  const { readiness } = await refreshFiveMReadiness(config.id);
+  if (!readiness.ready) {
+    const error = createInstanceError("FIVEM_SETUP_REQUIRED", 409, {
+      readiness,
+      setupRequired: true,
     });
-    const error = createInstanceError("FIVEM_LICENSE_REQUIRED", 409);
-    error.message = FIVEM_LICENSE_MESSAGE;
+    error.message = "FiveM setup is required before this server can start.";
     throw error;
   }
+}
+
+function normalizeFiveMLicenseInput(value) {
+  const key = String(value || "").trim().replace(/^["']|["']$/g, "");
+  if (!isValidFiveMLicenseKey(key)) {
+    const error = createInstanceError("INVALID_FIVEM_LICENSE_KEY", 400, {
+      field: "sv_licenseKey",
+      expected: "a non-placeholder Cfx.re license key containing letters, numbers, underscores, or dashes",
+      received: key ? "[provided]" : "",
+      suggestion: "Generate a key through the official Cfx.re Keymaster service, then paste it here.",
+    });
+    error.message = "Enter a valid FiveM license key.";
+    throw error;
+  }
+  return key;
+}
+
+function updateFiveMLicenseInConfig(configText, licenseKey) {
+  const lines = String(configText || "").replace(/\r\n/g, "\n").split("\n");
+  let replaced = false;
+  const nextLines = lines.map((line) => {
+    if (/^\s*[#;]/.test(line) || !/^\s*(?:set\s+)?sv_licenseKey\b/i.test(line)) {
+      return line;
+    }
+    if (!replaced) {
+      replaced = true;
+      return `sv_licenseKey "${licenseKey}"`;
+    }
+    return `# ${line.replace(/sv_licenseKey\s+.+$/i, 'sv_licenseKey "[redacted duplicate removed]"')}`;
+  });
+  if (!replaced) {
+    if (nextLines.length > 0 && nextLines[nextLines.length - 1].trim()) {
+      nextLines.push("");
+    }
+    nextLines.push(`sv_licenseKey "${licenseKey}"`);
+  }
+  return `${nextLines.join("\n").replace(/\n*$/, "")}\n`;
+}
+
+async function saveFiveMLicenseKey(instanceId, licenseKey) {
+  const config = await loadInstanceConfig(instanceId);
+  if (!isFiveMInstance(config)) {
+    throw createInstanceError("NOT_FIVEM_INSTANCE", 400);
+  }
+  const key = normalizeFiveMLicenseInput(licenseKey);
+  const filePath = getFiveMConfigPath(config.id);
+  let configText = await readTextIfExists(filePath, 128 * 1024);
+  if (!configText) {
+    configText = getDefaultFiveMServerConfig(config);
+  }
+  const nextText = updateFiveMLicenseInConfig(configText, key);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, nextText, "utf8");
+  const result = await refreshFiveMReadiness(config.id);
+  return {
+    success: true,
+    instance: result.instance,
+    readiness: result.readiness,
+    configPath: FIVEM_CONFIG_RELATIVE_PATH,
+    licenseKeySaved: true,
+    maskedLicenseKey: "********",
+  };
 }
 
 function parseMinecraftVersion(value) {
@@ -2292,7 +2501,11 @@ async function listInstances() {
 
   for (const id of ids) {
     try {
-      instances.push(await publicConfigDetailed(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(id)))));
+      let config = await reconcileConfigState(await loadInstanceConfig(id));
+      if (isFiveMInstance(config)) {
+        config = (await refreshFiveMReadiness(config.id)).config;
+      }
+      instances.push(await publicConfigDetailed(await backfillInstanceVersion(config)));
     } catch {
       continue;
     }
@@ -2319,7 +2532,14 @@ async function createInstance(payload) {
 async function updateInstance(instanceId, payload = {}) {
   const current = await loadInstanceConfig(instanceId);
 
-  if (payload.state || payload.pid || payload.exitCode || payload.signal) {
+  if (
+    payload.state !== undefined
+    || payload.pid !== undefined
+    || payload.exitCode !== undefined
+    || payload.signal !== undefined
+    || payload.setupRequired !== undefined
+    || payload.setupReadiness !== undefined
+  ) {
     throw createInstanceError("RUNTIME_FIELDS_READ_ONLY");
   }
 
@@ -3169,7 +3389,11 @@ async function restartInstance(instanceId) {
 }
 
 async function getStatus(instanceId) {
-  return publicConfigDetailed(await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId))));
+  let config = await reconcileConfigState(await loadInstanceConfig(instanceId));
+  if (isFiveMInstance(config)) {
+    config = (await refreshFiveMReadiness(config.id)).config;
+  }
+  return publicConfigDetailed(await backfillInstanceVersion(config));
 }
 
 async function readRecentLines(filePath, lineLimit) {
@@ -3348,6 +3572,9 @@ async function writeInstanceFile(instanceId, requestedPath, content, options = {
       detectedVersionAt: null,
       updatedAt: nowIso(),
     }).catch(() => {});
+  }
+  if (isFiveMInstance(config) && resolved.relativePath === FIVEM_CONFIG_RELATIVE_PATH) {
+    await refreshFiveMReadiness(config.id).catch(() => {});
   }
   return {
     id: config.id,
@@ -3583,7 +3810,10 @@ module.exports = {
   _test: {
     configuredRuntimePorts,
     discoverDetachedRuntime,
+    evaluateFiveMReadiness,
     findUnrelatedPortConflicts,
+    getFiveMLicenseReason,
+    updateFiveMLicenseInConfig,
     parseRandomSeedFromLevelDat,
     parseTpsFromMessages,
     setProcessInspectionProvider(provider) {
@@ -3611,8 +3841,10 @@ module.exports = {
   readInstanceFile,
   readLogs,
   readMinecraftProperties,
+  refreshFiveMReadiness,
   renameInstanceFile,
   restartInstance,
+  saveFiveMLicenseKey,
   startInstance,
   stopInstance,
   updateInstance,

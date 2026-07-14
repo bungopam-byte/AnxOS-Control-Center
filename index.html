@@ -1569,6 +1569,7 @@
                   <option value="all">All statuses</option>
                   <option value="running">Running</option>
                   <option value="stopped">Stopped</option>
+                  <option value="setup-required">Setup Required</option>
                   <option value="failed">Failed</option>
                 </select>
               </label>
@@ -1939,9 +1940,17 @@
                 <button class="inline-action" type="button" data-instance-action="start" disabled>Start</button>
                 <button class="inline-action" type="button" data-instance-action="stop" disabled>Stop</button>
                 <button class="inline-action" type="button" data-instance-action="restart" disabled>Restart</button>
+                <button class="inline-action" type="button" data-instance-action="configure-fivem" hidden>Configure FiveM</button>
                 <button class="inline-action instance-danger-action" type="button" data-instance-action="delete" disabled>Delete</button>
                 <button class="inline-action instance-danger-action" type="button" data-instance-action="forget" disabled>Forget</button>
               </div>
+              <section class="instance-setup-required-card" data-fivem-setup-card hidden>
+                <div>
+                  <strong>FiveM setup required</strong>
+                  <span data-fivem-setup-message>Add a Cfx.re license key before starting this server.</span>
+                </div>
+                <button class="inline-action" type="button" data-instance-action="configure-fivem">Configure FiveM</button>
+              </section>
               <div class="instance-tabs" role="tablist" aria-label="Instance workspace tabs">
                 <button class="instance-tab is-active" type="button" data-instance-tab="overview">Overview</button>
                 <button class="instance-tab" type="button" data-instance-tab="console">Console</button>
@@ -4101,6 +4110,34 @@
           <button class="inline-action" type="button" data-dev-update-action="check">Check for Updates</button>
           <button class="inline-action" type="button" data-dev-update-action="changes">View Changes</button>
           <button class="primary-button" type="button" data-dev-update-action="update">Update Now</button>
+        </footer>
+      </section>
+    </div>
+    <div class="app-modal-backdrop" data-fivem-setup-modal hidden>
+      <section class="app-modal app-modal--fivem-setup" role="dialog" aria-modal="true" aria-labelledby="fivem-setup-title" tabindex="-1">
+        <header class="app-modal__header">
+          <div>
+            <p class="app-modal__eyebrow">FiveM setup</p>
+            <h2 id="fivem-setup-title">Configure FiveM</h2>
+          </div>
+          <button class="icon-action" type="button" aria-label="Close FiveM setup" data-fivem-setup-action="cancel">&times;</button>
+        </header>
+        <form class="app-modal__body fivem-setup-form" data-fivem-setup-form>
+          <p data-fivem-setup-detail>FiveM requires a server license key before FXServer can start. Generate one through the official Cfx.re Keymaster service, then paste it here.</p>
+          <label class="ssh-field">
+            <span>FiveM License Key</span>
+            <input type="password" autocomplete="off" spellcheck="false" data-fivem-license-key>
+          </label>
+          <label class="checkbox-row">
+            <input type="checkbox" data-fivem-license-toggle>
+            <span>Show license key</span>
+          </label>
+          <p class="ssh-password-note" data-fivem-setup-status>Saved keys are written to server.cfg and masked from logs.</p>
+        </form>
+        <footer class="app-modal__actions">
+          <button class="inline-action" type="button" data-fivem-setup-action="open-files">Open server.cfg</button>
+          <button class="inline-action" type="button" data-fivem-setup-action="cancel">Cancel</button>
+          <button class="primary-button" type="button" data-fivem-setup-action="save">Save Configuration</button>
         </footer>
       </section>
     </div>

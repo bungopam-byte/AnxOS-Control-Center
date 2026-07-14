@@ -75,6 +75,7 @@
     "appId": "com.anxos.controlcenter",
     "productName": "AnxOS Control Center",
     "copyright": "Copyright © 2026 Anx",
+    "afterPack": "scripts/normalize-package-permissions.js",
     "files": [
       "main.js",
       "preload.js",

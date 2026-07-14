@@ -15,12 +15,50 @@ const builderArgs = args.filter((arg) => arg !== "--no-increment-build");
 const release = readReleaseConfig();
 const nextRelease = increment ? { ...release, build: release.build + 1 } : release;
 
+process.umask(0o022);
+
 if (increment) {
   fs.writeFileSync(getReleaseConfigPath(), `${JSON.stringify(normalizeReleaseConfig(nextRelease), null, 2)}\n`);
 }
 
 const info = buildReleaseInfo(nextRelease);
 console.log(`Packaging AnxOS Control Center ${info.compactLabel}`);
+
+function chmodSafe(filePath, mode) {
+  try {
+    fs.chmodSync(filePath, mode);
+  } catch {}
+}
+
+function normalizePackageInputPath(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const stats = fs.lstatSync(filePath);
+  if (stats.isSymbolicLink()) return;
+  if (stats.isDirectory()) {
+    chmodSafe(filePath, 0o755);
+    for (const entry of fs.readdirSync(filePath)) {
+      normalizePackageInputPath(path.join(filePath, entry));
+    }
+    return;
+  }
+  if (stats.isFile()) {
+    chmodSafe(filePath, (stats.mode & 0o111) !== 0 ? 0o755 : 0o644);
+  }
+}
+
+function normalizePackageInputs() {
+  [
+    path.join(process.cwd(), "assets"),
+    path.join(process.cwd(), "src"),
+    path.join(process.cwd(), "agent", "src"),
+    path.join(process.cwd(), "agent", "package.json"),
+    path.join(process.cwd(), "config", "agent.example.json"),
+    path.join(process.cwd(), "config", "marketplace-templates.json"),
+    path.join(process.cwd(), "config", "ssh-profiles.json"),
+    path.join(process.cwd(), "website", "account-config.js"),
+    path.join(process.cwd(), "website", "anxos-design-system.css"),
+  ].forEach(normalizePackageInputPath);
+}
 
 function getGitCommit() {
   const result = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
@@ -49,6 +87,8 @@ fs.writeFileSync(path.join(process.cwd(), "release-build.json"), `${JSON.stringi
   supportedOperatingSystems: info.supportedOperatingSystems,
   minimumArchitecture: info.minimumArchitecture,
 }, null, 2)}\n`);
+
+normalizePackageInputs();
 
 const result = spawnSync(
   process.platform === "win32" ? "electron-builder.cmd" : "electron-builder",

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 const assert = require("assert");
+const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const asar = require("@electron/asar");
@@ -87,5 +88,20 @@ assert(fs.existsSync(path.join(distDir, "win-unpacked", "AnxOS Control Center.ex
 assert(fs.existsSync(path.join(distDir, "linux-unpacked", "anxos-control-center")), "Missing Linux unpacked executable");
 assert(fs.existsSync(path.join(distDir, "win-unpacked", "resources", "app.asar.unpacked")), "Missing Windows app.asar.unpacked");
 assert(fs.existsSync(path.join(distDir, "linux-unpacked", "resources", "app.asar.unpacked")), "Missing Linux app.asar.unpacked");
+
+const linuxResources = path.join(distDir, "linux-unpacked", "resources");
+if (fs.existsSync(linuxResources)) {
+  assert((fs.statSync(linuxResources).mode & 0o755) === 0o755, "Linux resources directory must be readable and traversable after packaging.");
+  assert((fs.statSync(path.join(linuxResources, "app.asar")).mode & 0o644) === 0o644, "Linux app.asar must be readable after installation.");
+  assert((fs.statSync(path.join(linuxResources, "app.asar.unpacked")).mode & 0o755) === 0o755, "Linux app.asar.unpacked must be readable and traversable after packaging.");
+}
+
+const dpkgDeb = spawnSync("dpkg-deb", ["--contents", path.join(distDir, `AnxOS-Control-Center-${artifactVersion}.deb`)], { encoding: "utf8" });
+if (dpkgDeb.status === 0) {
+  const contents = dpkgDeb.stdout;
+  assert(/-rw-r--r--\s+0\/0\s+\d+.*\/usr\/share\/applications\/anxos-control-center\.desktop/.test(contents), "Linux desktop entry must install with world-readable permissions.");
+  assert(/-rw-r--r--\s+0\/0\s+\d+.*\/opt\/AnxOS Control Center\/resources\/app\.asar/.test(contents), "Linux app.asar must install with world-readable permissions.");
+  assert(/drwxr-xr-x\s+0\/0\s+0.*\/opt\/AnxOS Control Center\/resources\/app\.asar\.unpacked\//.test(contents), "Linux unpacked resources must install with traversable directory permissions.");
+}
 
 console.log(`Packaging artifact smoke passed for ${artifactVersion}.`);

@@ -70,7 +70,7 @@ function friendlyHttpMessage(label, status, body = "") {
     }
   })();
   const prefix = `CurseForge ${label}`;
-  if (status === 401) return `${prefix}: 401 Invalid API key. Check the saved CurseForge API key in Settings > Marketplace > CurseForge API Key${detail ? ` - ${detail}` : ""}.`;
+  if (status === 401) return `${prefix}: 401 Invalid API key${detail ? ` - ${detail}` : ""}.`;
   if (status === 403) return `${prefix}: 403 Forbidden. Your API key may not have access${detail ? ` - ${detail}` : ""}.`;
   if (status === 404) return `${prefix}: 404 Project not found${detail ? ` - ${detail}` : ""}.`;
   if (status === 429) return `${prefix}: 429 Rate limited. Try again later${detail ? ` - ${detail}` : ""}.`;
@@ -557,6 +557,15 @@ function getConfigurationDiagnostics(config = {}) {
   };
 }
 
+function ensureConfigured(config = {}) {
+  const diagnostics = getConfigurationDiagnostics(config);
+  if (diagnostics.hostedProxyConfigured || diagnostics.agentProxyEligible) {
+    return true;
+  }
+  requireApiKey(config);
+  return true;
+}
+
 async function testConnection(config = {}) {
   const diagnostics = getConfigurationDiagnostics(config);
   try {
@@ -741,27 +750,57 @@ async function requestHostedProxyJson(proxyUrl, pathname, params = {}, label = "
 }
 
 async function requestAgentProxyJson(pathname, params = {}, label = "CurseForge request", config = {}) {
+  const endpointPath = getAgentProxyApiPath(pathname, params);
+  const query = new URLSearchParams(endpointPath.params || {});
+  const requestPath = query.toString() ? `${endpointPath.pathname}?${query.toString()}` : endpointPath.pathname;
+  try {
+    return await agentClient.requestJson(requestPath, {
+      config: config.agentConfig || null,
+      timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS,
+      targetLabel: config.agentNodeLabel ? `curseforge:${config.agentNodeLabel}` : "curseforge-agent-proxy",
+      suppressConnectionRefusedLog: true,
+    });
+  } catch (error) {
+    const code = error?.payload?.error?.code || error?.code || "CURSEFORGE_AGENT_PROXY_FAILED";
+    const missing = code === "CURSEFORGE_CONFIGURATION_MISSING";
+    throw new CurseForgeProviderError(
+      missing ? "CurseForge is not configured on the selected AnxOS Agent." : error?.message || `${label}: Agent proxy request failed.`,
+      code,
+      {
+        provider: "curseforge",
+        status: error?.status || null,
+        payload: error?.payload || null,
+        source: "agent-proxy",
+        nodeId: config.agentNodeId || null,
+        nodeLabel: config.agentNodeLabel || null,
+      }
+    );
+  }
+}
+
+function getAgentProxyApiPath(pathname, params = {}) {
+  if (pathname === "/mods/search") {
+    return { pathname: "/api/v1/marketplace/curseforge/search", params };
+  }
+  const projectMatch = pathname.match(/^\/mods\/(\d+)$/);
+  if (projectMatch) {
+    return { pathname: `/api/v1/marketplace/curseforge/projects/${projectMatch[1]}`, params: {} };
+  }
+  const filesMatch = pathname.match(/^\/mods\/(\d+)\/files$/);
+  if (filesMatch) {
+    return { pathname: `/api/v1/marketplace/curseforge/projects/${filesMatch[1]}/files`, params };
+  }
+  const fileMatch = pathname.match(/^\/mods\/(\d+)\/files\/(\d+)$/);
+  if (fileMatch) {
+    return { pathname: `/api/v1/marketplace/curseforge/files/${fileMatch[2]}`, params: { projectId: fileMatch[1] } };
+  }
   const query = new URLSearchParams({ path: pathname });
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       query.set(key, String(value));
     }
   });
-  try {
-    return await agentClient.requestJson(`/api/v1/marketplace/curseforge/api?${query.toString()}`, {
-      config: config.agentConfig || null,
-      timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS,
-      targetLabel: "curseforge-agent-proxy",
-      suppressConnectionRefusedLog: true,
-    });
-  } catch (error) {
-    throw new CurseForgeProviderError(error?.message || `${label}: Agent proxy request failed.`, "CURSEFORGE_AGENT_PROXY_FAILED", {
-      provider: "curseforge",
-      status: error?.status || null,
-      payload: error?.payload || null,
-      source: "agent-proxy",
-    });
-  }
+  return { pathname: "/api/v1/marketplace/curseforge/api", params: Object.fromEntries(query.entries()) };
 }
 
 async function requestJsonViaTrustedBackend(pathname, params = {}, label = "CurseForge request", config = {}) {
@@ -810,7 +849,8 @@ async function requestAgentProxyBuffer(url, label, options = {}) {
     });
     return result.buffer;
   } catch (error) {
-    throw new CurseForgeProviderError(error?.message || `${label}: Agent proxy download failed.`, "CURSEFORGE_AGENT_PROXY_DOWNLOAD_FAILED", {
+    const code = error?.payload?.error?.code || error?.code || "CURSEFORGE_AGENT_PROXY_DOWNLOAD_FAILED";
+    throw new CurseForgeProviderError(error?.message || `${label}: Agent proxy download failed.`, code, {
       provider: "curseforge",
       status: error?.status || null,
       payload: error?.payload || null,
@@ -1315,7 +1355,7 @@ module.exports = {
   },
   CurseForgeProviderError,
   downloadFile,
-  ensureConfigured: requireApiKey,
+  ensureConfigured,
   getFile,
   getFileDownloadUrl,
   getFiles,

@@ -10798,7 +10798,7 @@ function openCurseForgeIntegrationSettings() {
 function isCurseForgeApiKeyRequiredError(error = {}) {
   const message = String(error?.message || "").trim();
   const code = error?.details?.code || error?.payload?.error?.code || error?.code;
-  return code === "CURSEFORGE_API_KEY_REQUIRED" || message === "CurseForge API key required";
+  return ["CURSEFORGE_API_KEY_REQUIRED", "CURSEFORGE_CONFIGURATION_MISSING"].includes(code) || message === "CurseForge API key required";
 }
 
 function createMarketplaceEmptyStateContent(state = {}) {
@@ -11154,11 +11154,11 @@ async function loadMarketplaceProviderPacks({ reset = false } = {}) {
     if (isCurseForgeApiKeyRequiredError(error)) {
       marketplaceProviderError = {
         title: "CurseForge temporarily unavailable",
-        message: "CurseForge integration is not configured for this build. Modrinth and other Marketplace providers are still available. Diagnostics code: CF-CONFIG-MISSING.",
+        message: "CurseForge is not configured on the selected AnxOS Agent. Modrinth and other Marketplace providers are still available. Diagnostics code: CF-CONFIG-MISSING.",
         action: "retry-provider",
         actionLabel: "Retry",
       };
-      setMarketplaceProviderStatus("CurseForge unavailable in this build", "error");
+      setMarketplaceProviderStatus("CurseForge unavailable on selected Agent", "error");
       showToast("CurseForge temporarily unavailable", "warning");
     } else {
       marketplaceProviderError = {
@@ -11718,6 +11718,7 @@ function getMarketplaceProviderQueryPayload({ reset = false } = {}) {
     loader: marketplaceProviderLoader?.value || "",
     offset: reset ? 0 : marketplaceProviderOffset,
     limit: MARKETPLACE_PROVIDER_PAGE_SIZE,
+    nodeId: getSelectedNodeId(),
   };
 }
 
@@ -11941,6 +11942,7 @@ async function loadMarketplaceVersions(template) {
         providerProjectId: template.providerProjectId,
         minecraftVersion: template.minecraftVersion || "",
         loader: template.loader || "",
+        nodeId: getSelectedNodeId(),
       })
       : await desktopApiState.api.marketplace.getMinecraftVersions(template.id);
     if (requestId !== marketplaceVersionRequestId) {

@@ -8,7 +8,7 @@ const {
   applyMinecraftServerProperties,
   resolveMinecraftPort,
 } = require("./minecraftServerConfig");
-const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
+const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 
@@ -65,6 +65,26 @@ function titleCaseProvider(provider) {
   if (normalized === "curseforge") return "CurseForge";
   if (normalized === "modrinth") return "Modrinth";
   return normalized ? normalized[0].toUpperCase() + normalized.slice(1) : "Provider";
+}
+
+function getCurseForgeAgentConfig(nodeId = null) {
+  const selectedNodeId = nodeId || getSelectedNodeId();
+  const executionTarget = getExecutionTarget(selectedNodeId);
+  const node = getNode(selectedNodeId);
+  if (executionTarget.type !== "agent") {
+    return {
+      useAgentProxy: false,
+      agentConfig: null,
+      agentNodeId: "application-host",
+      agentNodeLabel: node?.displayName || "Application Host",
+    };
+  }
+  return {
+    useAgentProxy: true,
+    agentConfig: executionTarget.config,
+    agentNodeId: executionTarget.nodeId,
+    agentNodeLabel: node?.displayName || executionTarget.nodeId,
+  };
 }
 
 function serializeError(error, context = {}) {
@@ -551,7 +571,7 @@ async function resolveCurseForgeManualProjectMetadata(context = {}) {
   }
 
   try {
-    const project = await curseforgeProvider.getMod(projectId);
+    const project = await curseforgeProvider.getMod(projectId, context.curseForgeConfig || {});
     const websiteUrl = project.websiteUrl || project.projectUrl || project.raw?.links?.websiteUrl || null;
     const enriched = {
       ...context,
@@ -1528,11 +1548,12 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
 
 async function installCurseForgePack(instanceId, payload, agentConfig, progressState) {
   const projectId = payload.providerProjectId || payload.projectId;
+  const curseForgeConfig = progressState.curseForgeConfig || getCurseForgeAgentConfig(progressState.nodeId);
   ensureProviderProjectId(projectId, "CurseForge");
   emitProgress({ ...progressState, stage: "resolving", message: "Resolving CurseForge file..." });
-  const file = await curseforgeProvider.resolveFile(projectId, payload.minecraftVersion || payload.version, payload.loader, payload.providerVersionId || payload.fileId);
+  const file = await curseforgeProvider.resolveFile(projectId, payload.minecraftVersion || payload.version, payload.loader, payload.providerVersionId || payload.fileId, curseForgeConfig);
   const serverFile = file.serverPackFileId
-    ? await curseforgeProvider.getFile(projectId, file.serverPackFileId)
+    ? await curseforgeProvider.getFile(projectId, file.serverPackFileId, curseForgeConfig)
     : file;
   ensureSupportedModpack(!file.serverPackFileId || serverFile?.id, "CurseForge", "server pack file could not be resolved");
   if (!file.serverPackFileId) {
@@ -1551,7 +1572,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       fileName: serverFile.fileName,
     });
   }
-  const downloaded = await curseforgeProvider.downloadFile(serverFile);
+  const downloaded = await curseforgeProvider.downloadFile(serverFile, "", { config: curseForgeConfig });
   const mods = [];
   const downloads = [];
   const dedupe = createDeduper();
@@ -1649,7 +1670,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       };
       emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${manifestFiles.length} mods...`, current, total: manifestFiles.length });
       try {
-        const modFile = await curseforgeProvider.getFile(manifestProjectId, manifestFileId);
+        const modFile = await curseforgeProvider.getFile(manifestProjectId, manifestFileId, curseForgeConfig);
         requirement.fileName = requirement.fileName || modFile.fileName || modFile.name || null;
         requirement.expectedDestinationPath = requirement.expectedDestinationPath || `mods/${safeArchivePath(requirement.fileName || `${manifestFileId}.jar`)}`;
         requirement.requirementId = getManualRequirementId(requirement);
@@ -1658,7 +1679,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           downloads.push({ file: requirement.expectedDestinationPath, provider: "curseforge-manual-import" });
           continue;
         }
-        const modDownload = await curseforgeProvider.downloadFile(modFile);
+        const modDownload = await curseforgeProvider.downloadFile(modFile, "", { config: curseForgeConfig });
         const target = `mods/${safeArchivePath(modDownload.fileName)}`;
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
         mods.push({ file: target, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId });
@@ -1672,6 +1693,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         if (isProviderManualDownloadRequiredError(error) && fileContext.dependencyType === "required") {
           const enrichedFileContext = await resolveCurseForgeManualProjectMetadata({
             ...fileContext,
+            curseForgeConfig,
             expectedDestinationPath: requirement.expectedDestinationPath || (fileContext.fileName ? `mods/${safeArchivePath(fileContext.fileName)}` : null),
           });
           throw createRestrictedCurseForgeFileError(error, {
@@ -1697,7 +1719,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
       }
     }
   } else {
-    const dependencyEntries = await curseforgeProvider.resolveDependencies(file, {}, null, {
+    const dependencyEntries = await curseforgeProvider.resolveDependencies(file, curseForgeConfig, null, {
       includeOptional: payload.includeOptionalDependencies === true,
     });
     const fileEntries = [
@@ -1731,7 +1753,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           downloads.push({ file: target, provider: "curseforge-manual-import" });
           continue;
         }
-        const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item);
+        const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item, "", { config: curseForgeConfig });
         emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
         mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id });
@@ -1746,6 +1768,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         if (isProviderManualDownloadRequiredError(error) && fileContext.dependencyType === "required") {
           const enrichedFileContext = await resolveCurseForgeManualProjectMetadata({
             ...fileContext,
+            curseForgeConfig,
             expectedDestinationPath: fileContext.fileName ? `mods/${safeArchivePath(fileContext.fileName)}` : null,
           });
           throw createRestrictedCurseForgeFileError(error, {
@@ -1792,6 +1815,7 @@ async function continueProviderPackInstall(context = {}) {
     instanceId,
     options,
     agentConfig,
+    curseForgeConfig = null,
     serverInfo,
     instancePayload,
     createResult,
@@ -1802,7 +1826,7 @@ async function continueProviderPackInstall(context = {}) {
   if (provider === "modrinth") {
     installRecords = await installModrinthPack(instanceId, options, agentConfig, { instanceId, manualFiles });
   } else if (provider === "curseforge") {
-    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { instanceId, manualFiles });
+    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { instanceId, manualFiles, curseForgeConfig });
   }
 
   emitProgress({ instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
@@ -1858,11 +1882,12 @@ async function installPack(payload = {}) {
   if (["modrinth", "curseforge"].includes(provider)) {
     ensureProviderProjectId(options.providerProjectId, provider === "modrinth" ? "Modrinth" : "CurseForge");
   }
-  if (provider === "curseforge") {
-    curseforgeProvider.ensureConfigured();
-  }
   const executionTarget = getExecutionTarget(payload.nodeId);
   const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
+  const curseForgeConfig = provider === "curseforge" ? getCurseForgeAgentConfig(payload.nodeId) : null;
+  if (provider === "curseforge") {
+    curseforgeProvider.ensureConfigured(curseForgeConfig || {});
+  }
   await ensureProviderPackDependencies(options, agentConfig);
   const serverInfo = await resolveServerJar(options);
   const instancePayload = buildInstancePayload(options, serverInfo);
@@ -1894,6 +1919,7 @@ async function installPack(payload = {}) {
       instanceId,
       options,
       agentConfig,
+      curseForgeConfig,
       serverInfo,
       instancePayload,
       createResult,
@@ -1921,6 +1947,7 @@ async function installPack(payload = {}) {
         instanceId,
         options,
         agentConfig,
+        curseForgeConfig,
         serverInfo,
         instancePayload,
         createResult,
@@ -2044,6 +2071,7 @@ async function resumeManualInstall(sessionId) {
       instanceId: session.instanceId,
       options: session.options,
       agentConfig: session.agentConfig,
+      curseForgeConfig: session.curseForgeConfig || null,
       serverInfo: session.serverInfo,
       instancePayload: session.instancePayload,
       createResult: session.createResult,
@@ -2070,7 +2098,14 @@ async function searchProviderPacks(payload = {}) {
   });
   let result;
   if (provider === "curseforge") {
-    result = await curseforgeProvider.searchModpacks(payload);
+    const curseForgeConfig = getCurseForgeAgentConfig(payload.nodeId);
+    result = await curseforgeProvider.searchModpacks({ ...payload, config: curseForgeConfig });
+    result.diagnostics = {
+      ...(result.diagnostics || {}),
+      nodeId: curseForgeConfig.agentNodeId,
+      nodeLabel: curseForgeConfig.agentNodeLabel,
+      agentProxy: curseForgeConfig.useAgentProxy,
+    };
   } else if (provider === "modrinth") {
     result = await modrinthProvider.searchModpacks(payload);
   } else {
@@ -2092,7 +2127,8 @@ async function getProviderPackVersions(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
   const projectId = payload.providerProjectId || payload.projectId;
   if (provider === "curseforge") {
-    const files = await curseforgeProvider.getFiles(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "");
+    const curseForgeConfig = getCurseForgeAgentConfig(payload.nodeId);
+    const files = await curseforgeProvider.getFiles(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "", curseForgeConfig);
     return { provider, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions, loaders: file.loaders || [] })) };
   }
   if (provider === "modrinth") {
@@ -2106,7 +2142,8 @@ async function getProviderPackDetails(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
   const projectId = payload.providerProjectId || payload.projectId;
   if (provider === "curseforge") {
-    return { provider, project: await curseforgeProvider.getMod(projectId) };
+    const curseForgeConfig = getCurseForgeAgentConfig(payload.nodeId);
+    return { provider, project: await curseforgeProvider.getMod(projectId, curseForgeConfig), nodeId: curseForgeConfig.agentNodeId, nodeLabel: curseForgeConfig.agentNodeLabel };
   }
   if (provider === "modrinth") {
     return { provider, project: await modrinthProvider.getProject(projectId) };

@@ -28,6 +28,22 @@ const ipcSource = fs.readFileSync(ipcPath, "utf8");
 const providers = publicAccess.PUBLIC_ACCESS_PROVIDERS;
 const byId = new Map(providers.map((provider) => [provider.id, provider]));
 
+function functionBody(source, name) {
+  const start = source.indexOf(`function ${name}`);
+  assert(start >= 0, `Missing function ${name}.`);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Could not parse function ${name}.`);
+}
+
 assert(byId.has("playit") && byId.has("tailscale") && byId.has("cloudflare-tunnel") && byId.has("manual-port-forwarding") && byId.has("anxos-relay"), "Public Access must declare all evaluated providers.");
 assert.strictEqual(byId.get("playit").status, "supported", "Playit must remain the supported provider.");
 assert.strictEqual(byId.get("playit").capabilities.createService, true, "Playit must support AnxOS access service record creation.");
@@ -411,6 +427,11 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
   "function getPublicAccessActionDefinitions",
   "function renderPublicAccessActionButtons",
   "function runPublicAccessAction",
+  "function createPublicAccessServiceModal",
+  "function submitProviderAccessService",
+  "publicAccessCreateSubmit",
+  "field-error",
+  "Create Service",
   "createAccessServiceForInstance(instance, \"playit\")",
   "providerResourceStatus: provider.id === \"cloudflare-tunnel\" ? \"not-created-by-anxos\"",
   "This provider does not expose start controls through AnxOS.",
@@ -431,6 +452,10 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
   "selectedPublicAccessProviderId",
   "selectedPublicAccessServiceId",
 ].forEach((needle) => assert(appSource.includes(needle), `Public Access UX should include ${needle}.`));
+const createProviderBody = functionBody(appSource, "createProviderAccessService");
+assert(!/window\.prompt|prompt\(/.test(createProviderBody), "Create Access Service workflow must not use browser prompt().");
+assert(createProviderBody.includes("createPublicAccessServiceModal"), "Create Access Service workflow must open the in-app modal.");
+assert(appSource.includes("function validatePublicAccessCreateForm") && appSource.includes("Port must be a whole number from 1 to 65535."), "Create Access Service modal must validate port range.");
 assert(!indexSource.includes('data-public-access-action="disable" disabled') && !indexSource.includes('data-public-access-action="restart" disabled'), "Public Access must not render dead disabled action buttons.");
 assert(preloadSource.includes("publicAccess:getSnapshot") && ipcSource.includes("getPublicAccessSnapshot"), "Public Access IPC bridge must remain wired.");
 assert(preloadSource.includes("publicAccess:createService") && ipcSource.includes("publicAccess:createService"), "Public Access service creation IPC bridge must remain wired.");

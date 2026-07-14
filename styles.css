@@ -8159,6 +8159,35 @@ body.has-open-modal {
   width: min(780px, 100%);
 }
 
+.app-modal--public-access {
+  width: min(560px, 100%);
+}
+
+.public-access-create-form {
+  display: grid;
+  gap: 12px;
+}
+
+.public-access-create-form .field-error {
+  min-height: 16px;
+  color: #ffb4c2;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.public-access-create-form [aria-invalid="true"] {
+  border-color: rgba(255, 114, 146, 0.82);
+  box-shadow: 0 0 0 3px rgba(255, 114, 146, 0.14);
+}
+
+.public-access-create-status {
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .onboarding-welcome__header {
   align-items: flex-start;
 }

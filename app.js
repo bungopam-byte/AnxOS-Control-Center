@@ -6753,6 +6753,376 @@ function chooseInstanceAccessSuggestion(instance = findInstance(), preferredProv
   return byIndex || compatible.find((suggestion) => suggestion.providerId === selectedText || suggestion.providerName.toLowerCase().includes(selectedText)) || null;
 }
 
+function getPublicAccessProtocolOptions(provider = {}) {
+  return provider.id === "cloudflare-tunnel" ? ["http", "https"] : ["tcp", "udp"];
+}
+
+function getPublicAccessDefaultProtocol(provider = {}, service = {}) {
+  const options = getPublicAccessProtocolOptions(provider);
+  const current = String(service.protocol || latestPlayitSnapshot?.protocol || "").trim().toLowerCase();
+  if (options.includes(current)) return current;
+  return options.includes("tcp") ? "tcp" : options[0] || "tcp";
+}
+
+function getPublicAccessCreateInstances(provider = {}) {
+  if (provider.id !== "playit") return [];
+  return getInstances().filter((instance) => getInstanceAccessSuggestions(instance).some((suggestion) => (
+    suggestion.providerId === "playit" &&
+    suggestion.compatible !== false &&
+    suggestion.localPort
+  )));
+}
+
+function getPublicAccessCreateDefaults(provider = {}) {
+  const service = getSelectedPublicAccessService() || {};
+  const defaultPort = service.localPort || latestPlayitSnapshot?.localPort || "";
+  return {
+    source: provider.id === "playit" && getPublicAccessCreateInstances(provider).length ? "existing" : "custom",
+    instanceId: "",
+    name: service.name || `${provider.name || "Provider"} Access Service`,
+    localHost: service.localHost || service.localIp || "127.0.0.1",
+    localPort: defaultPort ? String(defaultPort) : "25565",
+    protocol: getPublicAccessDefaultProtocol(provider, service),
+    publicHostname: "service.example.com",
+    tailscaleAddressPreference: "magicdns",
+  };
+}
+
+function validatePublicAccessCreateForm(provider = {}, values = {}) {
+  const errors = {};
+  const source = String(values.source || "custom");
+
+  if (provider.id === "playit" && source === "existing" && !String(values.instanceId || "").trim()) {
+    errors.instanceId = "Choose an instance.";
+    return errors;
+  }
+
+  if (!String(values.name || "").trim()) {
+    errors.name = "Service name is required.";
+  }
+  if (!String(values.localHost || "").trim()) {
+    errors.localHost = "Host is required.";
+  }
+  try {
+    normalizePublicAccessPortInput(values.localPort);
+  } catch {
+    errors.localPort = "Port must be a whole number from 1 to 65535.";
+  }
+
+  const protocol = String(values.protocol || "").trim().toLowerCase();
+  const validProtocols = getPublicAccessProtocolOptions(provider);
+  if (!validProtocols.includes(protocol)) {
+    errors.protocol = provider.id === "cloudflare-tunnel" ? "Use HTTP or HTTPS." : "Use TCP or UDP.";
+  }
+
+  if (provider.id === "cloudflare-tunnel" && !String(values.publicHostname || "").trim()) {
+    errors.publicHostname = "Public hostname is required.";
+  }
+
+  return errors;
+}
+
+function logPublicAccessCreateFailure(error, context = {}) {
+  const code = getAgentErrorCode(error) || error?.code || "PUBLIC_ACCESS_CREATE_FAILED";
+  console.warn("[Public Access] Create access service failed.", {
+    code,
+    providerId: context.providerId || null,
+    nodeId: context.nodeId || null,
+  });
+  getDesktopApiState().api?.diagnostics?.log?.({
+    severity: "error",
+    operation: "public-access-create-service",
+    message: "Public Access service creation failed.",
+    context: {
+      code,
+      providerId: context.providerId || null,
+      nodeId: context.nodeId || null,
+      message: error?.message || null,
+      stack: error?.stack || null,
+    },
+    file: "public-access",
+  }).catch(() => {});
+}
+
+function friendlyPublicAccessCreateError(error) {
+  const code = getAgentErrorCode(error) || error?.code || "";
+  if (code === "DUPLICATE_ACCESS_SERVICE") return "An access service already exists for this provider and local endpoint.";
+  if (code === "INVALID_SERVICE_PORT") return "Enter a port from 1 to 65535.";
+  if (code === "INVALID_PROTOCOL") return "Choose a supported protocol for this provider.";
+  if (code === "NODE_NOT_SELECTED") return "Choose a node, then create the access service again.";
+  return "Access service could not be created. Check the provider status and try again.";
+}
+
+function createPublicAccessServiceModal(provider = {}, { onSubmit } = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "app-modal-backdrop";
+    overlay.dataset.publicAccessCreateModal = "";
+    const dialog = document.createElement("section");
+    dialog.className = "app-modal app-modal--public-access";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "public-access-create-title");
+    dialog.tabIndex = -1;
+
+    const closeButton = document.createElement("button");
+    closeButton.className = "app-modal__close";
+    closeButton.type = "button";
+    closeButton.dataset.publicAccessCreateCancel = "";
+    closeButton.setAttribute("aria-label", "Close");
+    closeButton.textContent = "×";
+
+    const header = document.createElement("div");
+    header.className = "app-modal__header";
+    header.append(
+      createTextElement("p", "Public Access", "eyebrow"),
+      Object.assign(createTextElement("h2", "Create Access Service"), { id: "public-access-create-title" }),
+      createTextElement("p", `Save an access service record for ${provider.name || "the selected provider"}.`),
+    );
+
+    const form = document.createElement("form");
+    form.className = "public-access-create-form";
+    form.noValidate = true;
+
+    const instances = getPublicAccessCreateInstances(provider);
+    const defaults = getPublicAccessCreateDefaults(provider);
+    const fields = new Map();
+    const errorFields = new Map();
+    const status = createTextElement("p", "", "public-access-create-status");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+
+    const createField = ({ name, label, type = "text", value = "", options = null, hidden = false }) => {
+      const wrapper = document.createElement("label");
+      wrapper.className = "settings-field";
+      wrapper.dataset.publicAccessCreateFieldWrap = name;
+      wrapper.hidden = hidden;
+      const control = options ? document.createElement("select") : document.createElement("input");
+      control.name = name;
+      control.dataset.publicAccessCreateField = name;
+      if (options) {
+        options.forEach((option) => {
+          const node = document.createElement("option");
+          node.value = option.value;
+          node.textContent = option.label;
+          control.append(node);
+        });
+      } else {
+        control.type = type;
+        control.autocomplete = "off";
+      }
+      control.value = value;
+      const error = createTextElement("small", "", "field-error");
+      error.dataset.publicAccessCreateError = name;
+      wrapper.append(createTextElement("span", label), control, error);
+      fields.set(name, control);
+      errorFields.set(name, error);
+      return wrapper;
+    };
+
+    const sourceField = provider.id === "playit" && instances.length ? createField({
+      name: "source",
+      label: "Service Source",
+      value: defaults.source,
+      options: [
+        { value: "existing", label: "Existing instance" },
+        { value: "custom", label: "Custom service" },
+      ],
+    }) : null;
+    const instanceField = provider.id === "playit" && instances.length ? createField({
+      name: "instanceId",
+      label: "Instance",
+      value: defaults.instanceId,
+      options: [
+        { value: "", label: "Choose an instance" },
+        ...instances.map((instance) => ({ value: instance.id, label: instance.displayName || instance.id })),
+      ],
+    }) : null;
+    const tailscaleOptions = provider.id === "tailscale" ? getTailscaleEndpointOptions(provider, normalizePublicAccessPortInput(defaults.localPort)) : [];
+    const controls = [
+      sourceField,
+      instanceField,
+      createField({ name: "name", label: "Service Name", value: defaults.name }),
+      createField({ name: "localHost", label: "Local Host", value: defaults.localHost }),
+      createField({ name: "localPort", label: "Local Port", type: "number", value: defaults.localPort }),
+      createField({
+        name: "protocol",
+        label: "Protocol",
+        value: defaults.protocol,
+        options: getPublicAccessProtocolOptions(provider).map((protocol) => ({ value: protocol, label: protocol.toUpperCase() })),
+      }),
+      provider.id === "cloudflare-tunnel" ? createField({ name: "publicHostname", label: "Public Hostname", value: defaults.publicHostname }) : null,
+      provider.id === "tailscale" && tailscaleOptions.length > 1 ? createField({
+        name: "tailscaleAddressPreference",
+        label: "Tailscale Address",
+        value: tailscaleOptions[0]?.type || defaults.tailscaleAddressPreference,
+        options: tailscaleOptions.map((option) => ({ value: option.type, label: `${option.label}: ${option.address}` })),
+      }) : null,
+    ].filter(Boolean);
+    controls.forEach((control) => form.append(control));
+    form.append(status);
+
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    const submit = document.createElement("button");
+    submit.className = "inline-action inline-action--primary";
+    submit.type = "submit";
+    submit.dataset.publicAccessCreateSubmit = "";
+    submit.textContent = "Create Service";
+    const cancel = document.createElement("button");
+    cancel.className = "inline-action";
+    cancel.type = "button";
+    cancel.dataset.publicAccessCreateCancel = "";
+    cancel.textContent = "Cancel";
+    actions.append(submit, cancel);
+
+    dialog.append(closeButton, header, form, actions);
+    overlay.append(dialog);
+
+    let submitting = false;
+    const readValues = () => Object.fromEntries([...fields.entries()].map(([name, field]) => [name, field.value]));
+    const setSubmitting = (value) => {
+      submitting = Boolean(value);
+      submit.disabled = submitting;
+      cancel.disabled = submitting;
+      closeButton.disabled = submitting;
+      fields.forEach((field) => { field.disabled = submitting; });
+      submit.textContent = submitting ? "Creating..." : "Create Service";
+    };
+    const setErrors = (errors = {}) => {
+      errorFields.forEach((field, name) => {
+        field.textContent = errors[name] || "";
+      });
+      fields.forEach((field, name) => {
+        field.setAttribute("aria-invalid", errors[name] ? "true" : "false");
+      });
+    };
+    const syncVisibility = () => {
+      const source = fields.get("source")?.value || "custom";
+      const existing = provider.id === "playit" && source === "existing";
+      ["name", "localHost", "localPort", "protocol"].forEach((name) => {
+        const wrapper = overlay.querySelector(`[data-public-access-create-field-wrap="${name}"]`);
+        if (wrapper) wrapper.hidden = existing;
+      });
+      const instanceWrapper = overlay.querySelector('[data-public-access-create-field-wrap="instanceId"]');
+      if (instanceWrapper) instanceWrapper.hidden = !existing;
+    };
+    const close = (value) => {
+      document.removeEventListener("keydown", onKeyDown);
+      deactivateModal();
+      overlay.remove();
+      resolve(value);
+    };
+    const submitForm = async () => {
+      if (submitting) return;
+      const values = readValues();
+      const errors = validatePublicAccessCreateForm(provider, values);
+      setErrors(errors);
+      if (Object.keys(errors).length > 0) {
+        status.textContent = "Fix the highlighted fields.";
+        const first = [...fields.entries()].find(([name]) => errors[name])?.[1];
+        first?.focus();
+        return;
+      }
+      setSubmitting(true);
+      status.textContent = "Creating access service...";
+      try {
+        await onSubmit?.(values);
+        close(true);
+      } catch (error) {
+        logPublicAccessCreateFailure(error, { providerId: provider.id, nodeId: getSelectedNodeId() });
+        status.textContent = friendlyPublicAccessCreateError(error);
+        setSubmitting(false);
+      }
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && !submitting) close(null);
+    };
+
+    fields.get("source")?.addEventListener("change", syncVisibility);
+    fields.get("instanceId")?.addEventListener("change", () => {
+      const instance = getInstances().find((entry) => entry.id === fields.get("instanceId")?.value);
+      const suggestion = getInstanceAccessSuggestions(instance).find((entry) => entry.providerId === "playit" && entry.compatible !== false && entry.localPort);
+      if (instance && suggestion) {
+        fields.get("name").value = suggestion.name || fields.get("name").value;
+        fields.get("localHost").value = suggestion.localHost || "127.0.0.1";
+        fields.get("localPort").value = String(suggestion.localPort || "");
+        fields.get("protocol").value = suggestion.protocol || "tcp";
+      }
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitForm();
+    });
+    overlay.addEventListener("click", (event) => {
+      if ((event.target === overlay || event.target.closest("[data-public-access-create-cancel]")) && !submitting) close(null);
+    });
+    document.addEventListener("keydown", onKeyDown);
+    document.body.append(overlay);
+    syncVisibility();
+    const deactivateModal = activateModal(overlay, {
+      initialFocus: () => fields.get("source") || fields.get("name") || fields.values().next().value,
+    });
+  });
+}
+
+async function submitProviderAccessService(provider = {}, values = {}, requestContext = createNodeActionContext("public-access")) {
+  if (provider.id === "playit" && values.source === "existing") {
+    const instance = getInstances().find((entry) => entry.id === values.instanceId);
+    if (!instance) {
+      throw Object.assign(new Error("Choose a valid instance."), { code: "INVALID_INSTANCE" });
+    }
+    return createAccessServiceForInstance(instance, "playit");
+  }
+
+  const protocol = String(values.protocol || "tcp").trim().toLowerCase();
+  const localPort = normalizePublicAccessPortInput(values.localPort);
+  const localHost = String(values.localHost || "127.0.0.1").trim();
+  const publicHostname = provider.id === "cloudflare-tunnel" ? String(values.publicHostname || "").trim() : "";
+  const tailscaleEndpointOptions = provider.id === "tailscale" ? getTailscaleEndpointOptions(provider, localPort) : [];
+  const tailscaleEndpoint = provider.id === "tailscale"
+    ? tailscaleEndpointOptions.find((option) => option.type === values.tailscaleAddressPreference) || tailscaleEndpointOptions[0] || null
+    : null;
+  const localServiceUrl = provider.id === "cloudflare-tunnel" ? `${protocol}://${localHost}:${localPort}` : null;
+  const payload = {
+    nodeId: requestContext.nodeId,
+    providerId: provider.id,
+    providerName: provider.name,
+    accessType: provider.id === "tailscale" ? "private-tailnet" : "public-internet",
+    name: String(values.name || "").trim(),
+    localHost,
+    localPort,
+    protocol,
+    state: provider.id === "playit" ? "pending-provider-setup" : undefined,
+    status: provider.id === "playit" ? "Pending Playit tunnel setup" : undefined,
+    providerResourceStatus: provider.id === "cloudflare-tunnel" ? "not-created-by-anxos" : (provider.id === "playit" ? "not-created-by-anxos" : undefined),
+    unsupportedReason: provider.id === "cloudflare-tunnel" ? "Cloudflare web service metadata was saved. Create or link the named tunnel and ingress route before relying on public traffic." : (provider.id === "playit" ? "AnxOS saved this access service, but Playit tunnel creation is not exposed by the detected integration. Create or link the matching Playit tunnel, then refresh." : undefined),
+    privateAddress: provider.id === "tailscale" ? tailscaleEndpoint?.address || buildTailscalePrivateAddress(provider, localPort) : null,
+    publicAddress: provider.id === "cloudflare-tunnel" ? publicHostname : null,
+    publicHostname: provider.id === "cloudflare-tunnel" ? publicHostname : null,
+    localServiceUrl,
+    ingressStatus: provider.id === "cloudflare-tunnel" ? "pending-config" : null,
+    hostname: provider.id === "tailscale" ? provider.DNSName || provider.hostname || null : null,
+    IPv4: provider.id === "tailscale" ? provider.IPv4 || null : null,
+    IPv6: provider.id === "tailscale" ? provider.IPv6 || null : null,
+    addressPreference: provider.id === "tailscale" ? tailscaleEndpoint?.type || "magicdns" : null,
+    endpointOptions: tailscaleEndpointOptions,
+  };
+  const result = await getDesktopApiState().api.publicAccess.createService(payload);
+  if (result?.ok === false) {
+    throw Object.assign(new Error(result.error?.message || "Access service could not be created."), {
+      code: result.error?.code || "PUBLIC_ACCESS_REQUEST_FAILED",
+    });
+  }
+  await refreshPlayitStatus();
+  showToast(provider.id === "tailscale"
+    ? "Private tailnet service saved."
+    : provider.id === "cloudflare-tunnel"
+      ? "Cloudflare web service saved. Verify DNS and tunnel routing in Cloudflare before relying on it."
+      : "Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
+  return result;
+}
+
 async function createAccessServiceForInstance(instance = findInstance(), preferredProviderId = null) {
   if (!instance) return null;
   const desktopApiState = getDesktopApiState();
@@ -6913,90 +7283,9 @@ async function createProviderAccessService() {
     return null;
   }
   const requestContext = createNodeActionContext("public-access");
-  if (provider.id === "playit") {
-    const instances = getInstances().filter((instance) => getInstanceAccessSuggestions(instance).some((suggestion) => suggestion.providerId === "playit" && suggestion.compatible !== false && suggestion.localPort));
-    const source = instances.length
-      ? window.prompt("Create Playit access for: existing instance or custom service", "existing")
-      : "custom";
-    if (source === null) return null;
-    if (/^existing/i.test(String(source).trim())) {
-      const menu = instances.map((instance, index) => `${index + 1}. ${instance.displayName || instance.id}`).join("\n");
-      const selected = window.prompt(`Choose instance:\n${menu}`, "1");
-      if (selected === null) return null;
-      const instance = instances[Number.parseInt(String(selected).trim(), 10) - 1];
-      if (!instance) {
-        showToast("Choose a valid instance number.", "warning");
-        return null;
-      }
-      return createAccessServiceForInstance(instance, "playit");
-    }
-  }
-  const defaultPort = getSelectedPublicAccessService()?.localPort || latestPlayitSnapshot?.localPort || "";
-  const name = window.prompt("Access service name", getSelectedPublicAccessService()?.name || `${provider.name || "Provider"} Access Service`);
-  if (name === null) return null;
-  const portInput = window.prompt("Local service port", defaultPort ? String(defaultPort) : "25565");
-  if (portInput === null) return null;
-  const protocolInput = window.prompt(
-    provider.id === "cloudflare-tunnel" ? "Protocol: http or https" : "Protocol: tcp or udp",
-    provider.id === "cloudflare-tunnel" ? "http" : getSelectedPublicAccessService()?.protocol || latestPlayitSnapshot?.protocol || "tcp",
-  );
-  if (protocolInput === null) return null;
-  const protocol = String(protocolInput || "tcp").trim().toLowerCase();
-  const validProtocols = provider.id === "cloudflare-tunnel" ? ["http", "https"] : ["tcp", "udp"];
-  if (!validProtocols.includes(protocol)) {
-    throw Object.assign(new Error(provider.id === "cloudflare-tunnel"
-      ? "Protocol must be http or https for Cloudflare Tunnel services."
-      : "Protocol must be tcp or udp for access services."), { code: "INVALID_PROTOCOL" });
-  }
-  const localPort = normalizePublicAccessPortInput(portInput);
-  const publicHostname = provider.id === "cloudflare-tunnel"
-    ? window.prompt("Public hostname", "service.example.com")
-    : null;
-  if (provider.id === "cloudflare-tunnel" && publicHostname === null) return null;
-  if (provider.id === "cloudflare-tunnel" && !String(publicHostname || "").trim()) {
-    throw Object.assign(new Error("Public hostname is required for Cloudflare Tunnel services."), { code: "INVALID_PUBLIC_HOSTNAME" });
-  }
-  const tailscaleEndpoint = provider.id === "tailscale" ? chooseTailscaleEndpoint(provider, localPort) : null;
-  if (provider.id === "tailscale" && !tailscaleEndpoint) return null;
-  const tailscaleEndpointOptions = provider.id === "tailscale" ? getTailscaleEndpointOptions(provider, localPort) : [];
-  const localServiceUrl = provider.id === "cloudflare-tunnel" ? `${protocol}://127.0.0.1:${localPort}` : null;
-  const payload = {
-    nodeId: requestContext.nodeId,
-    providerId: provider.id,
-    providerName: provider.name,
-    accessType: provider.id === "tailscale" ? "private-tailnet" : "public-internet",
-    name,
-    localHost: "127.0.0.1",
-    localPort,
-    protocol,
-    state: provider.id === "playit" ? "pending-provider-setup" : undefined,
-    status: provider.id === "playit" ? "Pending Playit tunnel setup" : undefined,
-    providerResourceStatus: provider.id === "cloudflare-tunnel" ? "not-created-by-anxos" : (provider.id === "playit" ? "not-created-by-anxos" : undefined),
-    unsupportedReason: provider.id === "cloudflare-tunnel" ? "Cloudflare web service metadata was saved. Create or link the named tunnel and ingress route before relying on public traffic." : (provider.id === "playit" ? "AnxOS saved this access service, but Playit tunnel creation is not exposed by the detected integration. Create or link the matching Playit tunnel, then refresh." : undefined),
-    privateAddress: provider.id === "tailscale" ? tailscaleEndpoint?.address || buildTailscalePrivateAddress(provider, localPort) : null,
-    publicAddress: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
-    publicHostname: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
-    localServiceUrl,
-    ingressStatus: provider.id === "cloudflare-tunnel" ? "pending-config" : null,
-    hostname: provider.id === "tailscale" ? provider.DNSName || provider.hostname || null : null,
-    IPv4: provider.id === "tailscale" ? provider.IPv4 || null : null,
-    IPv6: provider.id === "tailscale" ? provider.IPv6 || null : null,
-    addressPreference: provider.id === "tailscale" ? tailscaleEndpoint?.type || "magicdns" : null,
-    endpointOptions: tailscaleEndpointOptions,
-  };
-  const result = await getDesktopApiState().api.publicAccess.createService(payload);
-  if (result?.ok === false) {
-    throw Object.assign(new Error(result.error?.message || "Access service could not be created."), {
-      code: result.error?.code || "PUBLIC_ACCESS_REQUEST_FAILED",
-    });
-  }
-  await refreshPlayitStatus();
-  showToast(provider.id === "tailscale"
-    ? "Private tailnet service saved."
-    : provider.id === "cloudflare-tunnel"
-      ? "Cloudflare web service saved. Verify DNS and tunnel routing in Cloudflare before relying on it."
-      : "Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
-  return result;
+  return createPublicAccessServiceModal(provider, {
+    onSubmit: (values) => submitProviderAccessService(provider, values, requestContext),
+  });
 }
 
 async function runPublicAccessAction(action) {

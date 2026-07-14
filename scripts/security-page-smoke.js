@@ -45,6 +45,25 @@ async function main() {
 
   assert(appJs.includes("createSecurityConfirmation"), "Security page should use app-native confirmation modals.");
   assert(appJs.includes("dialog.setAttribute(\"aria-modal\", \"true\")"), "Security confirmations should be built with safe DOM APIs.");
+  assert(appJs.includes("async function confirmOpenSensitiveFile") && appJs.includes("Open possible secret file?"), "Sensitive file opens should use app-native confirmation modals.");
+  {
+    const start = appJs.indexOf("async function confirmOpenSensitiveFile");
+    const open = appJs.indexOf("{", start);
+    let depth = 0;
+    let body = "";
+    for (let index = open; index < appJs.length; index += 1) {
+      const char = appJs[index];
+      if (char === "{") depth += 1;
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          body = appJs.slice(start, index + 1);
+          break;
+        }
+      }
+    }
+    assert(!/window\.confirm|confirm\(/.test(body), "Sensitive file confirmation should not use browser dialogs.");
+  }
   assert(!appJs.includes("Rotate the Agent token? Restart the agent and desktop app after rotation."), "Security page should not use browser confirm for token rotation.");
   assert(appJs.includes("SECURITY_OPERATION_ACTIONS"), "Consequential security actions should be tracked in Operations.");
   assert(appJs.includes("createSecurityActionNotification"), "Consequential security actions should create durable notifications.");

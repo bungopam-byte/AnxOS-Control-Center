@@ -2767,12 +2767,16 @@ function isLikelySecretFile(entry) {
   return hasSecretTerm || (/config/.test(fileName) && hasSecretTerm);
 }
 
-function confirmOpenSensitiveFile(entry) {
+async function confirmOpenSensitiveFile(entry) {
   if (!isLikelySecretFile(entry)) {
     return true;
   }
 
-  return window.confirm(`"${entry.name}" looks like it may contain secrets. Open it anyway?`);
+  return Boolean(await createSecurityConfirmation({
+    title: "Open possible secret file?",
+    message: `"${entry.name}" looks like it may contain tokens, keys, or credentials. Open it only if you intend to inspect sensitive content on this device.`,
+    confirmLabel: "Open File",
+  }));
 }
 
 function detectMonacoLanguage(filePath) {
@@ -21535,7 +21539,7 @@ async function openRemoteTextFile(entry = getSelectedFileEntry(latestFilesListin
     return;
   }
 
-  if (!confirmOpenSensitiveFile(entry)) {
+  if (!(await confirmOpenSensitiveFile(entry))) {
     return;
   }
 

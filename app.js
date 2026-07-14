@@ -12175,7 +12175,8 @@ function openFirstServerGuide() {
   dialog.className = "app-modal app-modal--first-server";
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-label", "Create your first server");
+  dialog.setAttribute("aria-labelledby", "first-server-guide-title");
+  dialog.setAttribute("aria-describedby", "first-server-guide-description");
   dialog.tabIndex = -1;
   const close = document.createElement("button");
   close.className = "app-modal__close";
@@ -12185,10 +12186,14 @@ function openFirstServerGuide() {
   close.textContent = "×";
   const header = document.createElement("div");
   header.className = "app-modal__header";
+  const title = createTextElement("h2", "Create Your First Server");
+  title.id = "first-server-guide-title";
+  const description = createTextElement("p", "Choose a beginner-friendly path. AnxOS will use the existing Marketplace installer, dependency preflight, selected node, and Download Manager.");
+  description.id = "first-server-guide-description";
   header.append(
     createTextElement("p", "Guided setup", "eyebrow"),
-    createTextElement("h2", "Create Your First Server"),
-    createTextElement("p", "Choose a beginner-friendly path. AnxOS will use the existing Marketplace installer, dependency preflight, selected node, and Download Manager."),
+    title,
+    description,
   );
   const body = document.createElement("div");
   body.className = "first-server-body";

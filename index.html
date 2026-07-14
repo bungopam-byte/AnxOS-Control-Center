@@ -473,15 +473,15 @@
           <span class="pulse" aria-hidden="true"></span>
           <div class="sidebar-footer__copy">
             <strong data-node-picker-label>This Device</strong>
-            <span data-node-picker-detail>Local device</span>
+            <span data-node-picker-detail>Local system</span>
           </div>
         </button>
         </aside>
 
         <div class="node-picker-popover" data-node-picker hidden role="dialog" aria-label="Select AnxOS node">
           <div class="node-picker-popover__header">
-            <strong>Switch Node</strong>
-            <span data-node-picker-status>Choose a device to manage.</span>
+            <strong>Switch System / Node</strong>
+            <span data-node-picker-status>Choose a system to manage.</span>
           </div>
           <div class="node-picker-popover__list" data-node-picker-list role="listbox" aria-label="Available nodes"></div>
         </div>
@@ -492,7 +492,7 @@
             <div>
               <p class="eyebrow">Overview</p>
               <h1>Dashboard</h1>
-              <p class="lede">Live system metrics from the selected device.</p>
+              <p class="lede">Live system metrics from the selected system.</p>
             </div>
           </header>
 
@@ -553,11 +553,11 @@
               </div>
               <button class="primary-button" type="button" data-setup-health-action="continue">Continue Setup</button>
             </div>
-            <div class="dashboard-setup-progress">
+            <div class="dashboard-setup-progress" aria-live="polite">
               <div><span>Core setup</span><strong data-setup-health="coreProgress">Checking</strong></div>
               <div><span>Optional features</span><strong data-setup-health="optionalProgress">Checking</strong></div>
             </div>
-            <div class="setup-health-groups" data-setup-health-groups>
+            <div class="setup-health-groups" data-setup-health-groups aria-live="polite">
               <div class="security-empty-state">Checking setup health.</div>
             </div>
           </section>

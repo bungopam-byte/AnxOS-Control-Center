@@ -62,7 +62,10 @@ async function main() {
     assert.strictEqual(identity.filesystemRoot, tempRoot, "Agent identity should report the authorized filesystem root.");
     assert.strictEqual(identity.filesystemRootStatus.status, "valid", "Agent identity should report root validation status.");
     assert.strictEqual(identity.initialPath, tempRoot, "Agent identity should fall back to the authorized root when home is outside it.");
-    assert(identity.roots.includes(tempRoot), "Agent identity should include allowed filesystem roots.");
+    assert(
+      identity.roots.some((root) => root.path === tempRoot && root.kind === "root" && root.available === true),
+      "Agent identity should include structured allowed filesystem roots.",
+    );
 
     const first = await agentClient.getFileListing(tempRoot, config);
     const reconnected = await agentClient.getFileListing(tempRoot, config);

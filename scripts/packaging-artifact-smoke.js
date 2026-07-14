@@ -22,6 +22,11 @@ const platformTargets = {
     requiredPaths: [
       path.join(distDir, "win-unpacked", "AnxOS Control Center.exe"),
       path.join(distDir, "win-unpacked", "resources", "app.asar.unpacked"),
+      path.join(distDir, "win-unpacked", "resources", "local-agent-runtime", "agent", "package.json"),
+      path.join(distDir, "win-unpacked", "resources", "local-agent-runtime", "agent", "src", "server.js"),
+      path.join(distDir, "win-unpacked", "resources", "local-agent-runtime", "config", "agent.example.json"),
+      path.join(distDir, "win-unpacked", "resources", "local-agent-runtime", "config", "marketplace-templates.json"),
+      path.join(distDir, "win-unpacked", "resources", "local-agent-runtime", "local-agent-runtime.json"),
     ],
   },
   linux: {
@@ -33,6 +38,11 @@ const platformTargets = {
     requiredPaths: [
       path.join(distDir, "linux-unpacked", "anxos-control-center"),
       path.join(distDir, "linux-unpacked", "resources", "app.asar.unpacked"),
+      path.join(distDir, "linux-unpacked", "resources", "local-agent-runtime", "agent", "package.json"),
+      path.join(distDir, "linux-unpacked", "resources", "local-agent-runtime", "agent", "src", "server.js"),
+      path.join(distDir, "linux-unpacked", "resources", "local-agent-runtime", "config", "agent.example.json"),
+      path.join(distDir, "linux-unpacked", "resources", "local-agent-runtime", "config", "marketplace-templates.json"),
+      path.join(distDir, "linux-unpacked", "resources", "local-agent-runtime", "local-agent-runtime.json"),
     ],
   },
 };
@@ -62,11 +72,7 @@ const requiredEntries = [
   "/release-build.json",
   "/assets/icon.ico",
   "/assets/icons/png/512x512.png",
-  "/config/agent.example.json",
-  "/config/marketplace-templates.json",
   "/config/ssh-profiles.json",
-  "/agent/package.json",
-  "/agent/src/server.js",
 ];
 
 const forbiddenEntries = [
@@ -80,6 +86,29 @@ const forbiddenEntries = [
   "/config/nodes.json",
   "/config/owner-accounts.json",
 ];
+
+const forbiddenRuntimeNames = new Set([
+  ".env",
+  ".git",
+  "agent.log",
+  "device-identity.json",
+  "application-host.json",
+  "nodes.json",
+  "owner-accounts.json",
+]);
+
+function walkFiles(directory) {
+  const entries = [];
+  if (!fs.existsSync(directory)) return entries;
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    entries.push(entryPath);
+    if (entry.isDirectory()) {
+      entries.push(...walkFiles(entryPath));
+    }
+  }
+  return entries;
+}
 
 for (const artifact of selectedTargetConfigs.flatMap((target) => target.artifacts)) {
   const artifactPath = path.join(distDir, artifact);
@@ -115,6 +144,19 @@ for (const archivePath of selectedTargetConfigs.flatMap((target) => target.asarA
 
 for (const requiredPath of selectedTargetConfigs.flatMap((target) => target.requiredPaths)) {
   assert(fs.existsSync(requiredPath), `Missing packaged path: ${path.relative(rootDir, requiredPath)}`);
+}
+
+for (const target of selectedTargets) {
+  const resourcesDir = target === "win"
+    ? path.join(distDir, "win-unpacked", "resources")
+    : path.join(distDir, "linux-unpacked", "resources");
+  const runtimeRoot = path.join(resourcesDir, "local-agent-runtime");
+  if (!fs.existsSync(runtimeRoot)) continue;
+  for (const entryPath of walkFiles(runtimeRoot)) {
+    const name = path.basename(entryPath);
+    assert(!forbiddenRuntimeNames.has(name), `Local Agent runtime must not include ${path.relative(rootDir, entryPath)}`);
+    assert(!entryPath.endsWith(".map"), `Local Agent runtime must not include source maps: ${path.relative(rootDir, entryPath)}`);
+  }
 }
 
 const linuxResources = path.join(distDir, "linux-unpacked", "resources");

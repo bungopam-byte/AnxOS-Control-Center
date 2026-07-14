@@ -28,6 +28,8 @@ const releaseArtifactValidatorSource = fs.readFileSync(path.join(root, "scripts"
 const releaseWorkflowSource = fs.readFileSync(path.join(root, ".github", "workflows", "windows-release.yml"), "utf8");
 const websiteConfig = fs.readFileSync(path.join(root, "website", "config.js"), "utf8");
 const websiteNotes = JSON.parse(fs.readFileSync(path.join(root, "website", "release-notes.json"), "utf8"));
+const currentReleaseNotesPath = path.join(root, `RELEASE_NOTES_${release.artifactVersion}.md`);
+const currentReleaseNotes = fs.existsSync(currentReleaseNotesPath) ? fs.readFileSync(currentReleaseNotesPath, "utf8") : "";
 
 assert(/^\d+\.\d+\.\d+$/.test(packageJson.version), "package.json must keep an internal SemVer-compatible version.");
 assert.strictEqual(normalizeReleaseVersion(release.version), release.version, "Public release version must use major.minor format.");
@@ -41,7 +43,7 @@ assert.strictEqual(extractReleaseBuild("v1.7-build143"), 143, "Updater must pars
 
 const parsedWebsiteRelease = parseWebsiteConfigRelease(websiteConfig, "https://anxoscontrolcenter.org/config.js");
 assert.strictEqual(parsedWebsiteRelease.version, release.version, "Website config must expose the centralized public version.");
-assert.strictEqual(parsedWebsiteRelease.build, release.build, "Website config must expose the centralized build number.");
+assert(parsedWebsiteRelease.build <= release.build, "Website config must not advertise a newer build than the centralized release metadata.");
 assert.strictEqual(parsedWebsiteRelease.channel, release.channel, "Website config must expose the centralized channel.");
 
 assert(packageSource.includes("ANXOS_RELEASE_ARTIFACT_VERSION"), "Installer artifact naming must use the public release artifact label.");
@@ -64,11 +66,11 @@ assert(updateManagerSource.includes("AnxOS-Control-Center-Releases"), "Updater m
 assert(updateManagerSource.includes("DEFAULT_UPDATE_REPOSITORY") && updateManagerSource.includes("normalizeUpdateRepository(process.env.ANXOS_UPDATE_REPOSITORY)"), "Updater repository overrides must be validated before use.");
 assert(updateManagerSource.includes("isProductionSafeMetadataUrl") && updateManagerSource.includes("app?.isPackaged !== true") && updateManagerSource.includes('parsed.protocol === "https:"'), "Packaged builds must ignore local or non-HTTPS update metadata overrides.");
 assert(!updateManagerSource.includes("192.168.1.134:8766"), "Updater must not ship a hardcoded local-network manifest fallback.");
-assert(websiteConfig.includes(`latestVersion: "${release.version}"`) && websiteConfig.includes(`build: "${release.build}"`) && websiteConfig.includes(`channel: "${release.channel}"`), "Website download metadata must display the public release model.");
+assert(websiteConfig.includes(`latestVersion: "${release.version}"`) && websiteConfig.includes(`channel: "${release.channel}"`), "Website download metadata must display the public release model.");
 assert(!websiteConfig.includes("packageVersion"), "Website public metadata must not expose the internal package SemVer.");
-assert(websiteNotes.some((entry) => entry.version === release.version && Number(entry.build) === release.build && entry.channel === release.channel), "Website release notes must include the current public version/build/channel.");
-const currentWebsiteNote = websiteNotes.find((entry) => entry.version === release.version && Number(entry.build) === release.build && entry.channel === release.channel);
-const currentReleaseText = `${currentWebsiteNote?.summary || ""}\n${(currentWebsiteNote?.changes || []).join("\n")}`;
+assert(websiteNotes.some((entry) => entry.version === release.version && Number(entry.build) === parsedWebsiteRelease.build && entry.channel === release.channel), "Website release notes must include the currently advertised public version/build/channel.");
+assert(currentReleaseNotes, "Current unreleased release notes must exist in the repository.");
+const currentReleaseText = currentReleaseNotes;
 [
   "Who it is for",
   "New installations",

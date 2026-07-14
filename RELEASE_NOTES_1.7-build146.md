@@ -4,6 +4,10 @@ This private-alpha update prepares AnxOS Control Center for the Local Windows Ag
 
 This does not publish a stable production release and does not claim completed real-machine Windows validation.
 
+## Who it is for
+
+This release path is for Windows users who want AnxOS to manage servers, dependencies, files, backups, and networking on their own PC. It also supports existing users who want Local and Remote Agents to coexist.
+
 ## Changed
 
 - New installations are guided toward the Windows installer, onboarding, Use This PC, Local Agent installation, secure local pairing, dependency scanning, and Marketplace setup.
@@ -16,9 +20,10 @@ This does not publish a stable production release and does not claim completed r
 
 ## Known limitations
 
+- Windows-only limitation: the beginner Local Agent setup flow is written for Windows.
 - Windows Local Agent support is the focus of this release path. macOS Local Agent support is not documented or claimed.
 - Linux desktop packages remain available, but the beginner Local Agent flow is written for Windows.
-- Real-machine Windows installation, service startup after reboot, Marketplace installs, backups, and Public Access still need final readiness-gate evidence before a stable production release.
+- real-machine Windows installation, service startup after reboot, Marketplace installs, backups, and Public Access still need final readiness-gate evidence before a stable production release.
 - Production release tagging should wait until the final readiness gate passes.
 
 ## Upgrade guidance

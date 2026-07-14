@@ -179,6 +179,8 @@ assert(indexSource.includes("data-public-access-provider-detail-pill") && indexS
   "function getPublicAccessActionDefinitions",
   "function renderPublicAccessActionButtons",
   "function runPublicAccessAction",
+  "install-dependency",
+  "dependencyIds: [provider.dependencyId]",
   "copy-public-address",
   "copy-local-endpoint",
   "tunnel-config",

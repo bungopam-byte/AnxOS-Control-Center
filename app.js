@@ -3331,6 +3331,7 @@ async function runDependencyAction(action) {
       dependencyOperationState = "installing";
       dependencyLastError = null;
       renderDependencyStatus(latestDependencyNodeId === requestContext.nodeId ? latestDependencyResult : null, { updateSnapshot: false });
+      await refreshMarketplaceDownloads();
       const installResult = await desktopApiState.api.dependencies.install(payload);
       if (!isNodeRequestCurrent(requestContext) || requestId !== dependencyRequestSerial) {
         return;
@@ -3345,6 +3346,7 @@ async function runDependencyAction(action) {
       renderDependencyStatus(installResult);
       finishOperation(operationId, true, "Dependency preparation complete.");
       showToast("Dependency preparation complete.");
+      await refreshMarketplaceDownloads();
       return;
     }
     operationId = startOperation({
@@ -3388,6 +3390,7 @@ async function runDependencyAction(action) {
     });
     showToast(error?.message || "Dependency request failed.");
     finishOperation(operationId, false, error?.message || "Dependency request failed.");
+    await refreshMarketplaceDownloads();
     if (dependencyList && failedSummary.state === "failed") {
       const item = document.createElement("article");
       item.className = "download-item";
@@ -5464,7 +5467,13 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
   const capabilities = provider.capabilities || {};
   const hasPublicAddress = Boolean(service.publicAddress || provider.publicAddress || latestPlayitSnapshot?.tunnelAddress || latestPlayitSnapshot?.tunnelDomain || getConfiguredPlayitAddress());
   const hasLocalEndpoint = Boolean(service.localPort || latestPlayitSnapshot?.localPort);
-  return [
+  const actions = [
+    {
+      action: "install-dependency",
+      label: `Install ${provider.name || "provider"}`,
+      supported: Boolean(provider.dependencyId && provider.installed !== true && provider.lifecycleState !== "disabled"),
+      reason: provider.dependencyId ? `${provider.name || "This provider"} is already installed or cannot be installed from here.` : "This provider has no installable dependency.",
+    },
     { action: "open-logs", label: "Open logs", supported: true },
     { action: "refresh", label: "Refresh", supported: true },
     { action: "copy-public-address", label: "Copy public address", supported: capabilities.publicAddress === true && hasPublicAddress, reason: capabilities.publicAddress === true ? "No public address has been detected yet." : "This provider does not expose a public address through AnxOS." },
@@ -5472,6 +5481,7 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
     { action: "tunnel-config", label: "Open tunnel configuration", supported: provider.id === "playit" || capabilities.createTunnel === true || capabilities.listTunnels === true, reason: provider.recoveryAction || "Tunnel configuration is not supported for this provider yet." },
     { action: "provider-diagnostics", label: "Open provider diagnostics", supported: capabilities.diagnostics === true, reason: "Provider diagnostics are not available for this provider." },
   ];
+  return actions;
 }
 
 function renderPublicAccessActionButtons(container, actions = [], provider = {}) {
@@ -5561,6 +5571,35 @@ function openPublicAccessTunnelConfiguration() {
 async function runPublicAccessAction(action) {
   if (action === "refresh") return refreshPlayitStatus();
   if (action === "open-logs") return runDiagnosticsAction("open");
+  if (action === "install-dependency") {
+    const provider = getSelectedPublicAccessProvider();
+    if (!provider?.dependencyId) {
+      showToast("This provider has no installable dependency.", "warning");
+      return null;
+    }
+    const requestContext = createNodeActionContext("public-access");
+    if (!(await createSecurityConfirmation({
+      title: `Install ${provider.name}?`,
+      message: `AnxOS will install ${provider.name} on ${requestContext.nodeLabel || requestContext.nodeId || "the selected node"} using the selected backend, then verify the dependency and refresh Public Access.`,
+      confirmLabel: "Install",
+    }))) {
+      return null;
+    }
+    await refreshMarketplaceDownloads();
+    const result = await getDesktopApiState().api.dependencies.install({
+      nodeId: requestContext.nodeId,
+      dependencyIds: [provider.dependencyId],
+    });
+    if (result?.ok === false) {
+      throw Object.assign(new Error(result.error?.message || "Dependency installation failed."), {
+        code: result.error?.code || "DEPENDENCY_INSTALL_FAILED",
+      });
+    }
+    await refreshMarketplaceDownloads();
+    await refreshPlayitStatus();
+    showToast(`${provider.name} dependency check complete.`);
+    return result;
+  }
   if (action === "copy-public-address") return copyPublicAccessValue(getPublicAccessPublicAddress(), "Public address copied.", "No public address is available to copy.");
   if (action === "copy-local-endpoint") return copyPublicAccessValue(getPublicAccessLocalEndpoint(), "Local endpoint copied.", "No local endpoint is available to copy.");
   if (action === "tunnel-config") return openPublicAccessTunnelConfiguration();

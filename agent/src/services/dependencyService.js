@@ -18,15 +18,114 @@ const DEFAULT_TIMEOUT_MS = 120000;
 const INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 const OUTPUT_LIMIT = 12000;
 const activeDependencyInstalls = new Map();
+const dependencyJobs = new Map();
 let packageManagerBusy = false;
 let commandRunner = runCommand;
 let readFileText = (filePath) => fs.readFileSync(filePath, "utf8");
 let accessExecutable = (filePath) => fs.accessSync(filePath, fs.constants.X_OK);
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function createJobId(dependencyId) {
+  return `dep-${String(dependencyId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-")}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function trimOutput(value) {
   const text = String(value || "");
   if (text.length <= OUTPUT_LIMIT) return text;
   return `${text.slice(0, OUTPUT_LIMIT)}\n[output truncated, ${text.length - OUTPUT_LIMIT} chars omitted]`;
+}
+
+function sanitizeOutput(value) {
+  return trimOutput(value)
+    .replace(/(\b(?:token|secret|password|credential|certificate|cert|api[_-]?key|authkey)\b\s*[:=]\s*)\S+/gi, "$1[redacted]")
+    .replace(/(\bBearer\s+)\S+/gi, "$1[redacted]")
+    .replace(/(--?(?:secret|token|password|credential|certificate|cert|api[_-]?key|authkey)(?:=|\s+))\S+/gi, "$1[redacted]");
+}
+
+function dependencyJob(dependency, patch = {}) {
+  const dependencyId = dependency?.id || dependency;
+  const job = {
+    id: patch.id || createJobId(dependencyId),
+    dependencyId,
+    dependencyName: dependency?.displayName || dependencyId,
+    nodeId: patch.nodeId || null,
+    platform: process.platform,
+    state: patch.state || "queued",
+    stage: patch.stage || "Preparing installation",
+    progressMode: patch.progressMode || "indeterminate",
+    progressPercent: patch.progressPercent ?? null,
+    message: patch.message || "Queued dependency installation.",
+    startedAt: patch.startedAt || nowIso(),
+    completedAt: patch.completedAt || null,
+    exitCode: patch.exitCode ?? null,
+    restartRequired: patch.restartRequired === true,
+    authenticationRequired: patch.authenticationRequired === true,
+    error: patch.error || null,
+    events: [],
+    output: [],
+  };
+  dependencyJobs.set(job.id, job);
+  return job;
+}
+
+function addJobEvent(job, state, stage, message, extra = {}) {
+  const event = {
+    jobId: job.id,
+    nodeId: job.nodeId,
+    dependencyId: job.dependencyId,
+    state,
+    stage,
+    message,
+    at: nowIso(),
+    ...extra,
+  };
+  job.state = state || job.state;
+  job.stage = stage || job.stage;
+  job.message = message || job.message;
+  if (extra.progressPercent !== undefined) job.progressPercent = extra.progressPercent;
+  if (extra.progressMode) job.progressMode = extra.progressMode;
+  job.events.push(event);
+  dependencyJobs.set(job.id, job);
+  return event;
+}
+
+function addJobOutput(job, phase, result = {}) {
+  const entry = {
+    at: nowIso(),
+    jobId: job.id,
+    nodeId: job.nodeId,
+    dependencyId: job.dependencyId,
+    phase,
+    command: result.command || null,
+    args: Array.isArray(result.args) ? result.args : [],
+    exitCode: result.exitCode ?? null,
+    signal: result.signal || null,
+    stdout: sanitizeOutput(result.stdout || ""),
+    stderr: sanitizeOutput(result.stderr || ""),
+    errorMessage: sanitizeOutput(result.errorMessage || ""),
+  };
+  job.output.push(entry);
+  job.output = job.output.slice(-20);
+  dependencyJobs.set(job.id, job);
+  return entry;
+}
+
+function completeJob(job, patch = {}) {
+  job.state = patch.state || job.state;
+  job.stage = patch.stage || job.stage;
+  job.message = patch.message || job.message;
+  job.completedAt = patch.completedAt || nowIso();
+  job.exitCode = patch.exitCode ?? job.exitCode;
+  job.restartRequired = patch.restartRequired === true || job.restartRequired;
+  job.authenticationRequired = patch.authenticationRequired === true || job.authenticationRequired;
+  job.error = patch.error || job.error;
+  if (patch.progressPercent !== undefined) job.progressPercent = patch.progressPercent;
+  if (patch.progressMode) job.progressMode = patch.progressMode;
+  dependencyJobs.set(job.id, job);
+  return job;
 }
 
 function createDependencyError(code, message, details = {}, statusCode = 400) {
@@ -472,75 +571,159 @@ async function installDependency(dependencyId) {
 }
 
 async function doInstallDependency(dependencyId) {
+  let job = dependencyJob(dependencyId, {
+    state: packageManagerBusy ? "queued" : "preparing",
+    stage: packageManagerBusy ? "Waiting for another installation to finish" : "Preparing installation",
+    message: packageManagerBusy
+      ? "Waiting for another installation to finish on this node."
+      : "Preparing dependency installation.",
+  });
   if (packageManagerBusy) {
-    throw createDependencyError("PACKAGE_MANAGER_BUSY", "Another dependency installation is already running.", { dependencyId }, 409);
+    const errorDetails = { dependencyId, job };
+    completeJob(job, {
+      state: "failed",
+      stage: "Waiting for another installation to finish",
+      message: "Another dependency installation is already running on this node.",
+      error: { code: "PACKAGE_MANAGER_LOCKED", message: "Another dependency installation is already running on this node." },
+    });
+    throw createDependencyError("PACKAGE_MANAGER_LOCKED", "Another dependency installation is already running on this node.", errorDetails, 409);
   }
   packageManagerBusy = true;
   const log = [];
   try {
+    addJobEvent(job, "preparing", "Preparing installation", "Checking current dependency state.");
     const before = await checkDependency(dependencyId);
+    job.dependencyName = before.displayName;
     if (before.installed && before.state !== "update-required") {
-      return { id: dependencyId, state: "installed", changed: false, log, before, after: before };
+      completeJob(job, {
+        state: "completed",
+        stage: "Installation complete",
+        message: `${before.displayName} is already installed and verified.`,
+        progressMode: "determinate",
+        progressPercent: 100,
+      });
+      return { id: dependencyId, state: "installed", changed: false, log, before, after: before, job };
     }
     if (!before.supported) {
+      completeJob(job, {
+        state: "failed",
+        stage: "Preparing installation",
+        message: `${before.displayName} cannot be installed automatically on this operating system.`,
+        error: { code: "UNSUPPORTED_PLATFORM", message: `${before.displayName} cannot be installed automatically on this operating system.` },
+      });
       throw createDependencyError("UNSUPPORTED_DISTRIBUTION", `${before.displayName} cannot be installed automatically on this operating system.`, {
         dependencyId,
         distribution: before.distribution,
+        job,
       }, 400);
     }
     const packages = before.packages || [];
     if (packages.length === 0) {
+      completeJob(job, {
+        state: "failed",
+        stage: "Preparing installation",
+        message: `${before.displayName} has no supported package mapping for this distribution.`,
+        error: { code: "PACKAGE_NOT_FOUND", message: `${before.displayName} has no supported package mapping for this distribution.` },
+      });
       throw createDependencyError("PACKAGE_NOT_FOUND", `${before.displayName} has no supported package mapping for this distribution.`, {
         dependencyId,
         packageManager: before.packageManager,
+        job,
       }, 400);
     }
     const packageManagerCommand = getPackageManagerCommand(before.packageManager);
     if (!packageManagerCommand) {
+      completeJob(job, {
+        state: "failed",
+        stage: "Preparing installation",
+        message: `Required package manager ${before.packageManager} was not found.`,
+        error: { code: "UNSUPPORTED_PLATFORM", message: `Required package manager ${before.packageManager} was not found.` },
+      });
       throw createDependencyError("PACKAGE_MANAGER_MISSING", `Required package manager ${before.packageManager} was not found.`, {
         dependencyId,
         packageManager: before.packageManager,
+        job,
       }, 400);
     }
     const elevation = await canElevate();
     if (!elevation.available) {
+      completeJob(job, {
+        state: "waiting-for-authorization",
+        stage: "Waiting for authorization",
+        message: `${before.displayName} requires administrator privileges to install.`,
+        authenticationRequired: true,
+        error: { code: "INSUFFICIENT_PRIVILEGES", message: elevation.reason || "Administrator authorization is required." },
+      });
       throw createDependencyError("ADMIN_REQUIRED", `${before.displayName} requires administrator privileges to install.`, {
         dependencyId,
         reason: elevation.reason,
+        job,
       }, 403);
     }
     const sudoPath = elevation.method === "sudo-noninteractive" ? findCommand("sudo") : null;
     const commands = buildInstallCommands(before.packageManager, packages);
     logger.write("info", "dependency-install-started", `Installing ${dependencyId}.`, { dependencyId, packages, packageManager: before.packageManager }, { file: "agent" });
     for (const commandSpec of commands) {
+      const friendlyStage = commandSpec.phase === "refreshing-package-metadata"
+        ? "Updating package information"
+        : "Installing files";
+      addJobEvent(job, commandSpec.phase === "refreshing-package-metadata" ? "installing" : "installing", friendlyStage, `${friendlyStage} for ${before.displayName}.`);
       const executable = commandSpec.command === before.packageManager ? packageManagerCommand : findCommand(commandSpec.command);
       const command = sudoPath ? sudoPath : executable;
       const args = sudoPath ? ["-n", executable, ...commandSpec.args] : commandSpec.args;
       const result = await commandRunner(command, args, { timeoutMs: INSTALL_TIMEOUT_MS });
-      log.push({ phase: commandSpec.phase, command: commandSpec.command, args: commandSpec.args, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
+      const logEntry = { phase: commandSpec.phase, command: commandSpec.command, args: commandSpec.args, exitCode: result.exitCode, stdout: sanitizeOutput(result.stdout), stderr: sanitizeOutput(result.stderr) };
+      log.push(logEntry);
+      addJobOutput(job, commandSpec.phase, { ...result, command: commandSpec.command, args: commandSpec.args });
       if (!result.ok) {
+        const code = classifyInstallFailure(result);
+        completeJob(job, {
+          state: "failed",
+          stage: friendlyStage,
+          message: `${before.displayName} installation failed during ${friendlyStage.toLowerCase()}.`,
+          exitCode: result.exitCode,
+          error: { code, message: `${before.displayName} installation failed during ${friendlyStage.toLowerCase()}.` },
+        });
         throw createDependencyError(classifyInstallFailure(result), `${before.displayName} installation failed during ${commandSpec.phase}.`, {
           dependencyId,
           phase: commandSpec.phase,
           exitCode: result.exitCode,
-          stderr: result.stderr,
-          stdout: result.stdout,
+          stderr: sanitizeOutput(result.stderr),
+          stdout: sanitizeOutput(result.stdout),
+          job,
         }, 500);
       }
     }
     if (before.service) {
+      addJobEvent(job, "configuring", "Configuring service", `Configuring service for ${before.displayName}.`);
       await tryEnableService(before.service, sudoPath, log);
     }
+    addJobEvent(job, "verifying", "Verifying installation", `Verifying ${before.displayName}.`);
     const after = await checkDependency(dependencyId);
     if (!after.installed || after.state === "update-required") {
+      completeJob(job, {
+        state: "failed",
+        stage: "Verifying installation",
+        message: `${after.displayName} was installed but could not be verified.`,
+        error: { code: "DEPENDENCY_VERIFICATION_FAILED", message: `${after.displayName} was installed but could not be verified.` },
+      });
       throw createDependencyError("DEPENDENCY_VERIFY_FAILED", `${after.displayName} was installed but could not be verified.`, {
         dependencyId,
         state: after.state,
         commands: after.commands,
+        job,
       }, 500);
     }
+    completeJob(job, {
+      state: "completed",
+      stage: "Installation complete",
+      message: `${after.displayName} installed and verified.`,
+      progressMode: "determinate",
+      progressPercent: 100,
+      restartRequired: after.restartRequired === true || before.serviceRestartRequired === true,
+    });
     logger.write("info", "dependency-install-completed", `Installed ${dependencyId}.`, { dependencyId, packages }, { file: "agent" });
-    return { id: dependencyId, state: "installed", changed: true, log, before, after };
+    return { id: dependencyId, state: "installed", changed: true, log, before, after, job };
   } finally {
     packageManagerBusy = false;
   }
@@ -553,7 +736,7 @@ async function tryEnableService(service, sudoPath, log) {
   const baseArgs = sudoPath ? ["-n", systemctl] : [];
   for (const args of [["enable", "--now", service], ["start", service]]) {
     const result = await commandRunner(command, [...baseArgs, ...args], { timeoutMs: 60000 });
-    log.push({ phase: "starting-service", command: "systemctl", args, exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr });
+    log.push({ phase: "starting-service", command: "systemctl", args, exitCode: result.exitCode, stdout: sanitizeOutput(result.stdout), stderr: sanitizeOutput(result.stderr) });
     if (result.ok) return;
   }
 }
@@ -562,8 +745,9 @@ function classifyInstallFailure(result) {
   const output = `${result.stderr || ""}\n${result.stdout || ""}`.toLowerCase();
   if (/could not get lock|unable to acquire.*lock|is another process using it/.test(output)) return "PACKAGE_MANAGER_LOCKED";
   if (/unable to locate package|no match for argument|not found/.test(output)) return "PACKAGE_NOT_FOUND";
-  if (/temporary failure|failed to fetch|could not resolve|network is unreachable/.test(output)) return "NETWORK_UNAVAILABLE";
-  if (/repository|gpg|signature|metadata/.test(output)) return "REPOSITORY_FAILURE";
+  if (/temporary failure|failed to fetch|could not resolve|network is unreachable/.test(output)) return "NETWORK_ERROR";
+  if (/signature|gpg|public key|not signed/.test(output)) return "SIGNATURE_FAILURE";
+  if (/repository|metadata|release file/.test(output)) return "REPOSITORY_UNAVAILABLE";
   if (/permission denied|operation not permitted|sudo/.test(output)) return "INSUFFICIENT_PRIVILEGES";
   return "DEPENDENCY_INSTALL_FAILED";
 }
@@ -575,8 +759,11 @@ async function installDependencies(payload = {}) {
     results.push(await installDependency(dependencyId));
   }
   const check = await checkDependencies({ dependencyIds });
+  const jobs = results.map((result) => result.job).filter(Boolean);
   return {
     ok: check.ok,
+    jobs,
+    job: jobs[0] || null,
     results,
     dependencies: check.dependencies,
     missingDependencyIds: check.missingDependencyIds,
@@ -598,6 +785,7 @@ function __setTestHooks(hooks = {}) {
   accessExecutable = hooks.accessExecutable || ((filePath) => fs.accessSync(filePath, fs.constants.X_OK));
   packageManagerBusy = false;
   activeDependencyInstalls.clear();
+  dependencyJobs.clear();
 }
 
 module.exports = {

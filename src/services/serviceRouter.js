@@ -590,8 +590,40 @@ async function planDependencyPreparation(payload = {}) {
 
 async function installDependencies(payload = {}) {
   if (shouldUseLocalInstances(payload)) {
+    const now = new Date().toISOString();
+    const jobId = `dep-local-${Date.now().toString(36)}`;
+    const job = {
+      id: jobId,
+      dependencyId: "local-desktop",
+      dependencyName: "Local Desktop dependencies",
+      nodeId: payload.nodeId || getSelectedNodeId(),
+      platform: process.platform,
+      state: "completed",
+      stage: "Installation complete",
+      progressMode: "determinate",
+      progressPercent: 100,
+      message: "Local Desktop dependency installation is not required for this target.",
+      startedAt: now,
+      completedAt: now,
+      exitCode: null,
+      restartRequired: false,
+      authenticationRequired: false,
+      error: null,
+      events: [{
+        jobId,
+        nodeId: payload.nodeId || getSelectedNodeId(),
+        dependencyId: "local-desktop",
+        state: "completed",
+        stage: "Installation complete",
+        message: "Local Desktop dependency installation is not required for this target.",
+        at: now,
+      }],
+      output: [],
+    };
     return {
       ok: true,
+      job,
+      jobs: [job],
       results: [],
       dependencies: [],
       missingDependencyIds: [],

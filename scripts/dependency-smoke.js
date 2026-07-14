@@ -7,6 +7,7 @@ const {
   resolveTemplateDependencyIds,
 } = require("../src/shared/marketplaceDependencies");
 const dependencyService = require("../agent/src/services/dependencyService");
+const marketplaceService = require("../src/services/marketplaceService");
 
 const templates = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "config", "marketplace-templates.json"), "utf8"));
 
@@ -49,7 +50,7 @@ function createMockHooks(options = {}) {
           if (delegated === "apt-get" && args.includes("install")) {
             installedCommands.add(options.installProvides || "dotnet");
           }
-          return { ok: true, exitCode: 0, stdout: "installed", stderr: "" };
+          return { ok: true, exitCode: 0, stdout: "installed token=should-not-leak", stderr: "" };
         }
         if (commandName === "dotnet") {
           return { ok: true, exitCode: 0, stdout: "Microsoft.NETCore.App 8.0.28 [/usr/share/dotnet/shared/Microsoft.NETCore.App]", stderr: "" };
@@ -101,6 +102,10 @@ async function run() {
   assert(plan.installableActions[0].commands.some((command) => command.display.includes("sudo -n apt-get install -y dotnet-runtime-8.0")), "Preparation plan should show the exact package-manager install command.");
   let install = await dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"] });
   assert.strictEqual(install.ok, true);
+  assert(install.job && install.job.id && install.job.state === "completed", "Dependency install should return a completed job.");
+  assert.strictEqual(install.jobs.length, 1, "Dependency install should include a jobs array.");
+  assert(install.job.events.some((event) => event.stage === "Installing files"), "Dependency job should include install stage events.");
+  assert(!JSON.stringify(install.job).includes("should-not-leak"), "Dependency job output must redact token-like values.");
   assert(
     mock.commandCalls.some((call) => call.command === "sudo" && call.args.some((arg) => path.basename(String(arg)) === "apt-get")),
     "Install should use sudo -n with apt-get."
@@ -132,6 +137,22 @@ async function run() {
   ]);
   const aptInstallCalls = mock.commandCalls.filter((call) => call.command === "sudo" && call.args.includes("install"));
   assert.strictEqual(aptInstallCalls.length, 1, "Concurrent installs for one dependency should coalesce.");
+
+  const download = marketplaceService.createDependencyInstallRecord({ nodeId: "agent-smoke", dependencyIds: ["tailscale"] }, {
+    installableActions: [{ id: "tailscale", displayName: "Tailscale" }],
+  });
+  assert(download.id && download.type === "Dependency", "Dependency installs should create Download Manager dependency records.");
+  marketplaceService.updateDependencyInstallRecord(download.id, {
+    stage: "Verifying installation",
+    progress: 75,
+    logs: [{ step: "Verifying installation", message: "Checking Tailscale." }],
+  });
+  const finalized = marketplaceService.finalizeDependencyInstallRecord(download.id, {
+    ok: true,
+    jobs: [{ events: [{ state: "completed", stage: "Installation complete", message: "Tailscale verified." }], output: [] }],
+  });
+  assert.strictEqual(finalized.status, "complete", "Dependency Download Manager record should complete after verification.");
+  assert.strictEqual(finalized.progress, 100, "Completed dependency records should report 100% progress.");
 
   dependencyService.__setTestHooks();
   console.log("Dependency smoke passed.");

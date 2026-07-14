@@ -986,6 +986,114 @@ function createInstallTaskRecord(template, options = {}) {
   return record;
 }
 
+function createDependencyInstallRecord(payload = {}, plan = null) {
+  const dependencyIds = Array.isArray(payload.dependencyIds) && payload.dependencyIds.length
+    ? payload.dependencyIds
+    : Array.isArray(plan?.missingDependencyIds) && plan.missingDependencyIds.length
+      ? plan.missingDependencyIds
+      : ["dependencies"];
+  const dependencyNames = Array.isArray(plan?.installableActions) && plan.installableActions.length
+    ? plan.installableActions.map((action) => action.displayName || action.id).filter(Boolean)
+    : dependencyIds;
+  const id = `dependency-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const now = new Date().toISOString();
+  const record = {
+    id,
+    installSessionId: id,
+    templateId: "dependency",
+    type: "Dependency",
+    name: dependencyNames.length === 1 ? `Installing ${dependencyNames[0]}` : `Installing ${dependencyNames.length} dependencies`,
+    fileName: dependencyNames.join(", "),
+    url: "",
+    status: "running",
+    stage: "Preparing installation",
+    progress: 0,
+    body: `Dependency installation started for ${payload.nodeId || "selected node"}.`,
+    metadataText: dependencyIds.join(", "),
+    actionText: "Progress stays inside AnxOS. Raw package-manager output is available in sanitized logs.",
+    bytesReceived: 0,
+    bytesTotal: null,
+    speedBytesPerSecond: 0,
+    etaSeconds: null,
+    error: null,
+    startedAt: now,
+    updatedAt: now,
+    canRetry: false,
+    canCancel: false,
+    parentTaskId: null,
+    childTaskIds: [],
+    errorCode: null,
+    retryContext: null,
+    logs: [{
+      at: now,
+      level: "info",
+      message: `Queued dependency install for ${dependencyNames.join(", ")}.`,
+      templateId: "dependency",
+      step: "Preparing installation",
+    }],
+  };
+  downloads.set(id, record);
+  return sanitizeDownload(record);
+}
+
+function updateDependencyInstallRecord(downloadId, patch = {}) {
+  const record = downloads.get(downloadId);
+  if (!record) return null;
+  if (Array.isArray(patch.logs)) {
+    patch.logs.forEach((entry) => appendDownloadLog(record, entry));
+  }
+  return sanitizeDownload(updateDownload(record, {
+    status: patch.status || record.status,
+    stage: patch.stage || record.stage,
+    progress: patch.progress ?? record.progress,
+    body: patch.body || record.body,
+    metadataText: patch.metadataText || record.metadataText,
+    actionText: patch.actionText || record.actionText,
+    error: patch.error || null,
+    errorCode: patch.errorCode || null,
+    canRetry: patch.canRetry === true,
+    canCancel: false,
+  }));
+}
+
+function finalizeDependencyInstallRecord(downloadId, installResult = null, error = null) {
+  const record = downloads.get(downloadId);
+  if (!record) return null;
+  const jobs = Array.isArray(installResult?.jobs) ? installResult.jobs : [];
+  const failed = Boolean(error) || installResult?.ok === false;
+  const jobLogs = jobs.flatMap((job) => [
+    ...(Array.isArray(job.events) ? job.events.map((event) => ({
+      level: event.state === "failed" ? "error" : "info",
+      step: event.stage || job.stage,
+      message: event.message || job.message,
+      status: event.state || job.state,
+    })) : []),
+    ...(Array.isArray(job.output) ? job.output.map((entry) => ({
+      level: entry.exitCode === 0 || entry.exitCode === null ? "info" : "error",
+      step: entry.phase || job.stage,
+      message: entry.command ? `${entry.command} completed.` : job.message,
+      exitCode: entry.exitCode,
+      body: [entry.stdout, entry.stderr, entry.errorMessage].filter(Boolean).join("\n"),
+    })) : []),
+  ]);
+  jobLogs.forEach((entry) => appendDownloadLog(record, entry));
+  return sanitizeDownload(updateDownload(record, {
+    status: failed ? "failed" : "complete",
+    stage: failed ? "Failed" : "Installation complete",
+    progress: failed ? Math.min(Number(record.progress) || 0, 99) : 100,
+    body: failed
+      ? error?.message || "Dependency installation failed."
+      : "Dependency installation completed and verification succeeded.",
+    error: failed ? error?.message || "Dependency installation failed." : null,
+    errorCode: failed ? error?.code || "DEPENDENCY_INSTALL_FAILED" : null,
+    actionText: failed
+      ? "Review sanitized logs, fix the dependency issue, then retry from the dependency panel."
+      : "Dependency state has been refreshed for the selected node.",
+    canRetry: false,
+    canCancel: false,
+  }));
+}
+
 function finalizeInstallTaskRecord(record, status, message, details = {}) {
   if (!record) {
     return null;
@@ -3683,6 +3791,8 @@ module.exports = {
     validateInstallContext,
   },
   cancelDownload,
+  createDependencyInstallRecord,
+  finalizeDependencyInstallRecord,
   getDownloads: () => sanitizeDownloads(getDownloads()),
   getImportSupport,
   getMinecraftVersionCatalog,
@@ -3690,5 +3800,6 @@ module.exports = {
   installTemplate,
   listTemplates,
   retryDownload,
+  updateDependencyInstallRecord,
   validateCommunityTemplate,
 };

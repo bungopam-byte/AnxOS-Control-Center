@@ -5,6 +5,11 @@ const {
   installDependencies,
   planDependencyPreparation,
 } = require("../services/serviceRouter");
+const {
+  createDependencyInstallRecord,
+  finalizeDependencyInstallRecord,
+  updateDependencyInstallRecord,
+} = require("../services/marketplaceService");
 const { audit, requirePermission } = require("../services/securityService");
 
 function invokeDependencyOperation(operation) {
@@ -24,10 +29,29 @@ function registerDependenciesIpc() {
   ipcMain.handle("dependencies:getCatalog", async (_, payload = {}) => invokeDependencyOperation(() => getDependencyCatalog(payload)));
   ipcMain.handle("dependencies:check", async (_, payload = {}) => invokeDependencyOperation(() => checkDependencies(payload)));
   ipcMain.handle("dependencies:plan", async (_, payload = {}) => invokeDependencyOperation(() => planDependencyPreparation(payload)));
-  ipcMain.handle("dependencies:install", async (_, payload = {}) => invokeDependencyOperation(() => {
+  ipcMain.handle("dependencies:install", async (_, payload = {}) => invokeDependencyOperation(async () => {
     requirePermission("instance:write", "marketplace-dependencies");
     audit({ action: "dependencies.install", target: Array.isArray(payload.dependencyIds) ? payload.dependencyIds.join(",") : "marketplace" });
-    return installDependencies(payload);
+    const plan = await planDependencyPreparation(payload).catch(() => null);
+    const download = createDependencyInstallRecord(payload, plan);
+    updateDependencyInstallRecord(download.id, {
+      status: "running",
+      stage: "Installing files",
+      progress: 25,
+      body: "Installing selected dependencies on the selected node.",
+      logs: [{ step: "Installing files", message: "Dependency installation is running through the selected backend." }],
+    });
+    try {
+      const result = await installDependencies(payload);
+      finalizeDependencyInstallRecord(download.id, result, null);
+      return {
+        ...result,
+        downloadId: download.id,
+      };
+    } catch (error) {
+      finalizeDependencyInstallRecord(download.id, null, error);
+      throw error;
+    }
   }));
 }
 

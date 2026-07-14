@@ -25702,6 +25702,10 @@ function applySettingsPermissions() {
     const category = button.dataset.settingsCategoryTarget || "general";
     button.hidden = !categoryHasAuthorizedSettingsSection(category);
   });
+  document.querySelectorAll("[data-settings-category-group]").forEach((group) => {
+    const visibleButton = Array.from(group.querySelectorAll("[data-settings-category-target]")).some((button) => !button.hidden);
+    group.hidden = !visibleButton;
+  });
   settingsInputs.forEach((input) => {
     const authorized = isSettingKeyAuthorized(input.dataset.setting);
     input.toggleAttribute("data-settings-permission-denied", !authorized);

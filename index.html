@@ -3579,19 +3579,35 @@
               <label class="settings-search"><span>Search settings</span><input type="search" data-settings-search placeholder="Search settings"></label>
               <div class="settings-search-results" data-settings-search-results hidden></div>
               <nav class="settings-category-list">
-                <button type="button" data-settings-category-target="general">General</button>
-                <button type="button" data-settings-category-target="appearance">Appearance</button>
-                <button type="button" data-settings-category-target="startup">Startup</button>
-                <button type="button" data-settings-category-target="notifications">Notifications</button>
-                <button type="button" data-settings-category-target="security">Security</button>
-                <button type="button" data-settings-category-target="network">Network</button>
-                <button type="button" data-settings-category-target="performance">Performance</button>
-                <button type="button" data-settings-category-target="storage">Storage</button>
-                <button type="button" data-settings-category-target="backups">Backups</button>
-                <button type="button" data-settings-category-target="integrations">Integrations</button>
-                <button type="button" data-settings-category-target="updates">Updates</button>
-                <button type="button" data-settings-category-target="developer">Developer</button>
-                <button type="button" data-settings-category-target="about">About</button>
+                <div class="settings-category-group" data-settings-category-group>
+                  <p class="settings-category-group__label">Personal</p>
+                  <button type="button" data-settings-category-target="general">General</button>
+                  <button type="button" data-settings-category-target="appearance">Appearance</button>
+                  <button type="button" data-settings-category-target="startup">Startup</button>
+                  <button type="button" data-settings-category-target="notifications">Notifications</button>
+                </div>
+                <div class="settings-category-group" data-settings-category-group>
+                  <p class="settings-category-group__label">System</p>
+                  <button type="button" data-settings-category-target="performance">Performance</button>
+                  <button type="button" data-settings-category-target="storage">Storage</button>
+                  <button type="button" data-settings-category-target="backups">Backups</button>
+                  <button type="button" data-settings-category-target="network">Network</button>
+                </div>
+                <div class="settings-category-group" data-settings-category-group>
+                  <p class="settings-category-group__label">Connections</p>
+                  <button type="button" data-settings-category-target="integrations">Connections</button>
+                </div>
+                <div class="settings-category-group" data-settings-category-group>
+                  <p class="settings-category-group__label">App</p>
+                  <button type="button" data-settings-category-target="updates">Updates</button>
+                  <button type="button" data-settings-category-target="about">About</button>
+                </div>
+                <div class="settings-category-group" data-settings-category-group>
+                  <p class="settings-category-group__label">Owner Only</p>
+                  <button type="button" data-settings-category-target="security">Security</button>
+                  <button type="button" data-settings-category-target="marketplace-admin">Marketplace Administration</button>
+                  <button type="button" data-settings-category-target="developer">Developer</button>
+                </div>
               </nav>
             </aside>
           <form class="settings-shell settings-shell--workspace" data-settings-form>
@@ -3699,7 +3715,7 @@
               <div class="settings-actions"><button class="inline-action" type="button" data-settings-action="test-notification">Test Notification</button><button class="inline-action" type="button" data-settings-reset-category="notifications">Reset Notifications</button></div>
             </section>
 
-            <section class="settings-section settings-section--security" data-settings-category="security" data-settings-keywords="security owner lock timeout token audit sessions secrets mask">
+            <section class="settings-section settings-section--security" data-settings-category="security" data-settings-capability="canManageAdvancedSecurity" data-settings-keywords="security owner lock timeout token audit sessions secrets mask">
               <div class="settings-section__header"><div><h3>Security</h3><p>Owner and account security controls continue to use the existing trusted security service.</p></div><span class="status-pill status-pill--ok">Protected</span></div>
               <div class="settings-grid">
                 <label class="settings-check settings-check--toggle" title="Owner authorization is already enforced by protected IPC paths. This policy toggle is not available yet."><input type="checkbox" data-setting="security.requireOwnerForSensitiveActions" disabled><span>Require Owner authentication before sensitive actions</span></label>
@@ -3758,7 +3774,7 @@
               <div class="settings-actions"><button class="inline-action" type="button" disabled title="Versioned settings backup export is not available yet.">Create backup now</button><button class="inline-action" type="button" disabled title="Validated restore previews are not available yet.">Restore backup</button><button class="inline-action" type="button" data-settings-reset-category="backups">Reset Backups</button></div>
             </section>
 
-            <section class="settings-section settings-section--marketplace" data-settings-category="integrations" data-settings-capability="canManageMarketplaceSettings" data-settings-keywords="integrations marketplace curseforge api key modpacks">
+            <section class="settings-section settings-section--marketplace" data-settings-category="marketplace-admin" data-settings-capability="canManageMarketplaceSettings" data-settings-keywords="connections marketplace administration curseforge api key modpacks">
               <div class="settings-section__header">
                 <div>
                   <h3>Marketplace</h3>

@@ -10078,7 +10078,25 @@ button:disabled {
 
 .settings-category-list {
   display: grid;
+  gap: 12px;
+}
+
+.settings-category-group {
+  display: grid;
   gap: 4px;
+}
+
+.settings-category-group[hidden] {
+  display: none;
+}
+
+.settings-category-group__label {
+  margin: 2px 2px 0;
+  color: rgba(226, 216, 240, 0.5);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .settings-shell--workspace {
@@ -10385,8 +10403,19 @@ button:disabled {
 
   .settings-category-list {
     display: flex;
+    gap: 10px;
     overflow-x: auto;
     padding-bottom: 2px;
+  }
+
+  .settings-category-group {
+    display: flex;
+    gap: 6px;
+  }
+
+  .settings-category-group__label {
+    align-self: center;
+    margin: 0 2px 0 0;
   }
 
   .settings-category-list button {

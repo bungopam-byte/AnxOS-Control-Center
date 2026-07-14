@@ -63,6 +63,14 @@ assert(
 );
 
 assert(
+  index.includes(">Connections</button>") &&
+    index.includes("Your AMP credentials are stored securely.") &&
+    index.includes('data-settings-capability="canManageProviderCredentials"') &&
+    !index.includes("AMP password is not saved in localStorage"),
+  "Connections settings must use user-facing copy and gate AMP credential controls.",
+);
+
+assert(
   app.includes("let settingsPermissionState") &&
     app.includes("refreshSettingsPermissions") &&
     app.includes("isSettingsSectionAuthorized") &&

@@ -3795,32 +3795,32 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--amp" data-settings-category="integrations" data-settings-keywords="integrations amp panel url username password env">
+            <section class="settings-section settings-section--amp" data-settings-category="integrations" data-settings-keywords="connections amp panel url username password credentials">
               <div class="settings-section__header">
                 <div>
                   <h3>AMP</h3>
-                  <p>Store non-sensitive AMP connection defaults for the dashboard.</p>
+                  <p>Connection details used by AMP dashboard helpers.</p>
                 </div>
-                <span class="status-pill status-pill--planned">Password in .env</span>
+                <span class="status-pill status-pill--planned">Secure credentials</span>
               </div>
-              <p class="settings-note">AMP password is not saved in localStorage. Keep sensitive values in <code>.env</code>.</p>
+              <p class="settings-note">Your AMP credentials are stored securely.</p>
               <div class="settings-grid">
                 <label class="settings-field">
                   <span>AMP URL</span>
                   <input type="url" placeholder="http://localhost:8080" data-setting="amp.url">
                 </label>
-                <label class="settings-field">
+                <label class="settings-field" data-settings-capability="canManageProviderCredentials">
                   <span>AMP username</span>
                   <input type="text" autocomplete="username" placeholder="Not configured" data-setting="amp.username">
                 </label>
               </div>
             </section>
 
-            <section class="settings-section settings-section--minecraft" data-settings-category="integrations" data-settings-keywords="integrations minecraft server address">
+            <section class="settings-section settings-section--minecraft" data-settings-category="integrations" data-settings-keywords="connections minecraft server address">
               <div class="settings-section__header">
                 <div>
                   <h3>Minecraft</h3>
-                  <p>Set the default server address shown by Minecraft tools.</p>
+                  <p>The address shown by Minecraft tools and server connection helpers.</p>
                 </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>
@@ -3832,11 +3832,11 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--playit" data-settings-category="integrations" data-settings-keywords="integrations playit tunnel address">
+            <section class="settings-section settings-section--playit" data-settings-category="integrations" data-settings-keywords="connections public access playit tunnel address">
               <div class="settings-section__header">
                 <div>
-                  <h3>Public Access Provider</h3>
-                  <p>Keep the preferred Playit.gg public address close to the Public Access workspace.</p>
+                  <h3>Public Access</h3>
+                  <p>Current public address information used by Public Access helpers.</p>
                 </div>
                 <span class="status-pill status-pill--local">Local</span>
               </div>

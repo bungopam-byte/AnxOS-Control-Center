@@ -25698,6 +25698,11 @@ function applySettingsPermissions() {
     section.dataset.settingsPermissionHidden = authorized ? "false" : "true";
     if (!authorized) section.hidden = true;
   });
+  document.querySelectorAll("[data-settings-capability]").forEach((element) => {
+    if (element.matches("[data-settings-category]")) return;
+    const authorized = canUseSettingsCapability(element.dataset.settingsCapability || "");
+    element.hidden = !authorized;
+  });
   settingsCategoryButtons.forEach((button) => {
     const category = button.dataset.settingsCategoryTarget || "general";
     button.hidden = !categoryHasAuthorizedSettingsSection(category);

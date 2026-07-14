@@ -10,6 +10,12 @@ const REQUIRED_DEPENDENCY = 3;
 const OPTIONAL_DEPENDENCY = 2;
 const modMetadataCache = new Map();
 const USER_AGENT = "AnxOS-Control-Center/1.0 (+https://anxos.local)";
+const DEFAULT_TIMEOUT_MS = 30000;
+const CURSEFORGE_DOWNLOAD_HOSTS = new Set([
+  "edge.forgecdn.net",
+  "mediafilez.forgecdn.net",
+  "media.forgecdn.net",
+]);
 
 const API_KEY_FIELDS = ["apiKey", "curseForgeApiKey", "curseforgeApiKey", "cfApiKey"];
 const API_KEY_ENV = ["CURSEFORGE_API_KEY", "CF_API_KEY", "ANXHUB_CURSEFORGE_API_KEY"];
@@ -109,6 +115,24 @@ async function withRetry(operation, context = {}) {
     }
   }
   throw lastError;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const signal = options.signal && typeof AbortSignal?.any === "function"
+      ? AbortSignal.any([options.signal, controller.signal])
+      : options.signal || controller.signal;
+    const { timeoutMs: _timeoutMs, signal: _signal, ...fetchOptions } = options;
+    return await fetch(url, {
+      ...fetchOptions,
+      signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function trimValue(value) {
@@ -588,11 +612,23 @@ function buildApiHeaders(config = {}) {
   };
 }
 
+function buildDownloadHeaders(url, config = {}) {
+  const parsed = validateDownloadUrl(url, "CurseForge file");
+  const headers = {
+    "User-Agent": USER_AGENT,
+  };
+  if (CURSEFORGE_DOWNLOAD_HOSTS.has(parsed.hostname.toLowerCase()) || parsed.hostname.toLowerCase().endsWith(".curseforge.com")) {
+    headers["x-api-key"] = requireApiKey(config);
+  }
+  return headers;
+}
+
 async function requestJson(url, label, config = {}) {
   try {
     return await withRetry(async () => {
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: buildApiHeaders(config),
+        timeoutMs: config.timeoutMs,
       });
       const body = await response.text();
       console.info("[Marketplace][CurseForge] HTTP response.", {
@@ -618,7 +654,7 @@ async function requestJson(url, label, config = {}) {
           url: String(url),
         });
       }
-    }, { label, url: String(url) });
+    }, { label, url: String(url), attempts: config.attempts, delayMs: config.retryDelayMs });
   } catch (error) {
     const effectiveError = error instanceof CurseForgeProviderError
       ? error
@@ -650,14 +686,14 @@ function validateDownloadUrl(url, label = "CurseForge file") {
   return parsed;
 }
 
-async function requestBuffer(url, label) {
+async function requestBuffer(url, label, options = {}) {
   const parsed = validateDownloadUrl(url, label);
+  const headers = buildDownloadHeaders(parsed, options.config || {});
   try {
     return await withRetry(async () => {
-      const response = await fetch(parsed, {
-        headers: {
-          "User-Agent": USER_AGENT,
-        },
+      const response = await fetchWithTimeout(parsed, {
+        headers,
+        timeoutMs: options.timeoutMs || options.config?.timeoutMs,
       });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
@@ -665,15 +701,33 @@ async function requestBuffer(url, label) {
           status: response.status,
           body: truncateForLog(body),
           url,
+          hostname: parsed.hostname,
+          authenticated: Boolean(headers["x-api-key"]),
+          projectId: options.projectId || null,
+          fileId: options.fileId || null,
         });
       }
+      console.info("[Marketplace][CurseForge] Download response.", {
+        label,
+        hostname: parsed.hostname,
+        status: response.status,
+        ok: response.ok,
+        redirected: response.redirected,
+        redirectCount: response.redirected ? 1 : 0,
+        projectId: options.projectId || null,
+        fileId: options.fileId || null,
+        authenticated: Boolean(headers["x-api-key"]),
+      });
       return Buffer.from(await response.arrayBuffer());
-    }, { label, url });
+    }, { label, url, attempts: options.attempts || options.config?.attempts, delayMs: options.retryDelayMs || options.config?.retryDelayMs });
   } catch (error) {
     const effectiveError = error instanceof CurseForgeProviderError
       ? error
       : new CurseForgeProviderError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "CURSEFORGE_NETWORK_FAILED", {
         url,
+        hostname: parsed.hostname,
+        projectId: options.projectId || null,
+        fileId: options.fileId || null,
         message: error?.message || "request failed",
         stack: error?.stack || null,
       });
@@ -681,6 +735,44 @@ async function requestBuffer(url, label) {
     throw effectiveError;
   }
 }
+
+const curseForgeClient = {
+  createUrl,
+  requestJson,
+  requestBuffer,
+  searchMods(params = {}, config = {}) {
+    return requestJson(createUrl("/mods/search", params), "CurseForge search", config);
+  },
+  getMod(projectId, config = {}) {
+    return requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}`), "CurseForge mod", config);
+  },
+  getFiles(projectId, params = {}, config = {}) {
+    return requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}/files`, params), "CurseForge files", config);
+  },
+  getFile(projectId, fileId, config = {}) {
+    return requestJson(
+      createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`),
+      "CurseForge file",
+      config
+    );
+  },
+  getFileDownloadUrl(projectId, fileId, config = {}) {
+    return requestJson(
+      createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download-url`),
+      "CurseForge download URL",
+      config
+    );
+  },
+  getMinecraftVersions(config = {}) {
+    return requestJson(createUrl("/minecraft/version"), "CurseForge Minecraft versions", config);
+  },
+  getModLoaders(config = {}) {
+    return requestJson(createUrl("/minecraft/modloader"), "CurseForge mod loaders", config);
+  },
+  downloadFile(url, label, options = {}) {
+    return requestBuffer(url, label, options);
+  },
+};
 
 function assertProviderMetadata(projectId, context = "CurseForge project") {
   if (!projectId) {
@@ -786,7 +878,17 @@ async function searchModpacks(queryOrOptions = "", minecraftVersion = "", loader
     envLoaded: keyStatus.env?.envLoaded,
     url: String(url),
   });
-  const payload = await requestJson(url, "CurseForge search", options.config);
+  const payload = await curseForgeClient.searchMods({
+    gameId: MINECRAFT_GAME_ID,
+    classId: MODPACK_CLASS_ID,
+    searchFilter: options.query,
+    gameVersion: options.minecraftVersion,
+    modLoaderType: normalizeLoader(options.loader),
+    sortField: getSortField(options.mode, options.query),
+    sortOrder: "desc",
+    index: options.offset,
+    pageSize: options.limit,
+  }, options.config);
   const rawRows = Array.isArray(payload.data) ? payload.data : [];
   const results = rawRows.map(normalizeMod);
   const total = payload.pagination?.totalCount || results.length;
@@ -827,7 +929,7 @@ async function getMod(projectId, config = {}) {
   if (modMetadataCache.has(cacheKey)) {
     return modMetadataCache.get(cacheKey);
   }
-  const payload = await requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}`), "CurseForge mod", config);
+  const payload = await curseForgeClient.getMod(projectId, config);
   const mod = normalizeMod(payload.data || {});
   modMetadataCache.set(cacheKey, mod);
   return mod;
@@ -837,30 +939,32 @@ async function getFiles(projectId, minecraftVersion = "", loader = "", config = 
   if (!projectId) {
     assertProviderMetadata(projectId, "CurseForge files");
   }
-  const payload = await requestJson(createUrl(`/mods/${encodeURIComponent(projectId)}/files`, {
+  const payload = await curseForgeClient.getFiles(projectId, {
     gameVersion: minecraftVersion,
     modLoaderType: normalizeLoader(loader),
     pageSize: 50,
-  }), "CurseForge files", config);
+  }, config);
   return (payload.data || []).map(normalizeFile);
 }
 
 async function getFile(projectId, fileId, config = {}) {
-  const payload = await requestJson(
-    createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`),
-    "CurseForge file",
-    config
-  );
+  const payload = await curseForgeClient.getFile(projectId, fileId, config);
   return normalizeFile(payload.data || {});
 }
 
 async function getFileDownloadUrl(projectId, fileId, config = {}) {
-  const payload = await requestJson(
-    createUrl(`/mods/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download-url`),
-    "CurseForge download URL",
-    config
-  );
+  const payload = await curseForgeClient.getFileDownloadUrl(projectId, fileId, config);
   return typeof payload.data === "string" ? payload.data : "";
+}
+
+async function getMinecraftVersions(config = {}) {
+  const payload = await curseForgeClient.getMinecraftVersions(config);
+  return Array.isArray(payload.data) ? payload.data : [];
+}
+
+async function getModLoaders(config = {}) {
+  const payload = await curseForgeClient.getModLoaders(config);
+  return Array.isArray(payload.data) ? payload.data : [];
 }
 
 async function resolveFile(projectId, minecraftVersion = "", loader = "", requestedFileId = "", config = {}) {
@@ -931,7 +1035,11 @@ async function downloadFile(file, destination = "", options = {}) {
       fileName: file?.fileName || file?.name || null,
     });
   }
-  const buffer = await requestBuffer(downloadUrl, file.fileName || "CurseForge file");
+  const buffer = await curseForgeClient.downloadFile(downloadUrl, file.fileName || "CurseForge file", {
+    ...options,
+    projectId: file?.projectId || null,
+    fileId: file?.id || null,
+  });
   if (destination) {
     fs.mkdirSync(destination, { recursive: true });
     fs.writeFileSync(path.join(destination, file.fileName), buffer);
@@ -945,7 +1053,9 @@ async function downloadFile(file, destination = "", options = {}) {
 module.exports = {
   _test: {
     buildApiHeaders,
+    buildDownloadHeaders,
     cleanSecretValue,
+    curseForgeClient,
     friendlyHttpMessage,
     getApiKeyStatus,
     getCurseForgeApiKey,
@@ -965,7 +1075,9 @@ module.exports = {
   getFile,
   getFileDownloadUrl,
   getFiles,
+  getMinecraftVersions,
   getMod,
+  getModLoaders,
   logStartupStatus,
   resolveDependencies,
   resolveFile,

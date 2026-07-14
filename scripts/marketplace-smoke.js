@@ -2722,6 +2722,28 @@ async function assertProviderInstallSupport() {
     { fileName: "client-shader.zip", projectId: 10, fileId: 20, dependencyType: "optional" },
     "Optional CurseForge manifest files should keep project/file context."
   );
+  assert.strictEqual(
+    marketplaceInstallService._test.isCurseForgeServerSignalPath("overrides/server.properties"),
+    true,
+    "CurseForge server-pack validation should recognize server.properties in overrides."
+  );
+  assert.strictEqual(
+    marketplaceInstallService._test.isCurseForgeServerSignalPath("overrides/config/client.toml"),
+    false,
+    "CurseForge server-pack validation should not treat generic client config as a server signal."
+  );
+  assert.throws(
+    () => marketplaceInstallService._test.ensureCurseForgeServerPackCandidate({
+      projectId: 10,
+      fileId: 20,
+      fileName: "client-pack.zip",
+      isDedicatedServerPack: false,
+      serverSignalCount: 0,
+      bundledModCount: 0,
+    }),
+    /selected file does not include a server pack/,
+    "CurseForge client-only archives should not be treated as server packs."
+  );
   const restrictedFileError = marketplaceInstallService._test.createRestrictedCurseForgeFileError(
       {
         code: "CURSEFORGE_REQUEST_FAILED",

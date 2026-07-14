@@ -410,6 +410,48 @@ function ensureSupportedModpack(condition, provider, reason = "Unsupported modpa
   }
 }
 
+function isCurseForgeServerSignalPath(entryPath = "") {
+  const normalized = String(entryPath || "").replace(/\\/g, "/").replace(/^overrides\//, "").toLowerCase();
+  return normalized === "server.properties" ||
+    normalized === "eula.txt" ||
+    /^start(\.(sh|bat|cmd))?$/.test(normalized) ||
+    /^run\.(sh|bat|cmd)$/.test(normalized) ||
+    /^minecraft_server.*\.jar$/.test(normalized) ||
+    /^forge-.*\.jar$/.test(normalized) ||
+    /^neoforge-.*\.jar$/.test(normalized) ||
+    normalized === "fabric-server-launch.jar" ||
+    normalized.startsWith("libraries/") ||
+    /^mods\/.+\.jar$/.test(normalized);
+}
+
+function ensureCurseForgeServerPackCandidate(context = {}) {
+  if (context.isDedicatedServerPack) {
+    return;
+  }
+  if (context.serverSignalCount > 0 || context.bundledModCount > 0) {
+    logMarketplaceInstallStep("Validated CurseForge archive as server-capable without separate server pack.", {
+      instanceId: context.instanceId,
+      projectId: context.projectId,
+      fileId: context.fileId,
+      serverSignalCount: context.serverSignalCount,
+      bundledModCount: context.bundledModCount,
+    });
+    return;
+  }
+  throw new MarketplaceInstallError(
+    "CurseForge install failed: selected file does not include a server pack or server-specific files.",
+    "CURSEFORGE_SERVER_PACK_REQUIRED",
+    {
+      provider: "curseforge",
+      providerName: "CurseForge",
+      projectId: context.projectId || null,
+      fileId: context.fileId || null,
+      fileName: context.fileName || null,
+      suggestion: "Choose a file with an official server pack, or verify the project supports dedicated servers before installing.",
+    }
+  );
+}
+
 function ensureModrinthServerCapable(project = {}) {
   const serverSide = String(project.serverSide || project.raw?.server_side || "").trim().toLowerCase();
   if (serverSide === "unsupported") {
@@ -1520,7 +1562,11 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
     emitProgress({ ...progressState, stage: "extracting", message: "Extracting CurseForge manifest..." });
     let manifest = null;
     let bundledModCount = 0;
+    let serverSignalCount = 0;
     await extractZipBuffer(downloaded.buffer, async (entryPath, content) => {
+      if (isCurseForgeServerSignalPath(entryPath)) {
+        serverSignalCount += 1;
+      }
       if (entryPath === "manifest.json") {
         logMarketplaceInstallStep("Parsing CurseForge manifest.", { instanceId, projectId, fileName: downloaded.fileName });
         try {
@@ -1557,6 +1603,15 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
     });
     const manifestFiles = Array.isArray(manifest?.files) ? manifest.files : [];
     ensureSupportedModpack(manifest, "CurseForge", "server pack did not include a manifest.json");
+    ensureCurseForgeServerPackCandidate({
+      instanceId,
+      projectId,
+      fileId: serverFile.id,
+      fileName: downloaded.fileName,
+      isDedicatedServerPack,
+      bundledModCount,
+      serverSignalCount,
+    });
     if (isDedicatedServerPack && bundledModCount > 0) {
       logMarketplaceInstallStep("Using bundled CurseForge server pack files.", {
         instanceId,
@@ -2067,6 +2122,7 @@ module.exports = {
     createManualDownloadRequiredError,
     createRestrictedCurseForgeFileError,
     createDeduper,
+    ensureCurseForgeServerPackCandidate,
     ensureModrinthServerCapable,
     friendlyHttpMessage,
     getCurseForgeFileContext,
@@ -2075,6 +2131,7 @@ module.exports = {
     isManualDownloadRequiredError,
     isCurseForgeAccessDeniedFileError,
     isRecoverableProviderFileError,
+    isCurseForgeServerSignalPath,
     isTransientError,
     resolvePaperServerJar,
     safeArchivePath,

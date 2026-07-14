@@ -25577,7 +25577,6 @@ function setAgentConnectionDisplay(status, message, options = {}) {
 }
 
 function getAgentConfigSourceText(settingsPayload) {
-  const configPath = settingsPayload?.configPath || "config/agent.json";
   const overrides = settingsPayload?.overrides || {};
   const tokenStatus = settingsPayload?.tokenStatus || {};
   const activeOverrides = [];
@@ -25595,14 +25594,14 @@ function getAgentConfigSourceText(settingsPayload) {
   }
 
   const tokenText = tokenStatus.configured
-    ? `Token configured${tokenStatus.environmentTokenPresent ? `; shell env token ${tokenStatus.environmentTokenMatches ? "matches" : "ignored"}` : ""}.`
+    ? "Token configured."
     : "Token not configured.";
 
   if (activeOverrides.length === 0) {
-    return `Saved in ${configPath}. ${tokenText}`;
+    return `Saved securely on this device. ${tokenText}`;
   }
 
-  return `Saved in ${configPath}. Environment overrides active for ${activeOverrides.join(", ")}. ${tokenText}`;
+  return `Saved securely on this device. Runtime overrides active for ${activeOverrides.join(", ")}. ${tokenText}`;
 }
 
 function renderAgentSettings(settingsPayload) {
@@ -25634,7 +25633,6 @@ function renderAgentSettings(settingsPayload) {
 
 function renderMarketplaceSettings(settingsPayload) {
   const configured = Boolean(settingsPayload?.curseForge?.configured || settingsPayload?.stored?.hasCurseForgeApiKey);
-  const configPath = settingsPayload?.configPath || "config/marketplace.json";
 
   if (marketplaceConfigInput) {
     marketplaceConfigInput.value = "";
@@ -25654,7 +25652,7 @@ function renderMarketplaceSettings(settingsPayload) {
   }
 
   if (marketplaceConfigSource) {
-    marketplaceConfigSource.textContent = `Saved securely in ${configPath}.`;
+    marketplaceConfigSource.textContent = "Saved securely on this device.";
   }
 }
 

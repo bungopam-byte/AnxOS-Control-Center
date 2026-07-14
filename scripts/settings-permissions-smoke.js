@@ -71,6 +71,14 @@ assert(
 );
 
 assert(
+  index.includes("Saved securely on this device.") &&
+    app.includes("Saved securely on this device.") &&
+    !index.includes("Saved securely in config/marketplace.json.") &&
+    !app.includes("Saved in ${configPath}"),
+  "Normal Settings UI must not expose local configuration file paths.",
+);
+
+assert(
   app.includes("let settingsPermissionState") &&
     app.includes("refreshSettingsPermissions") &&
     app.includes("isSettingsSectionAuthorized") &&

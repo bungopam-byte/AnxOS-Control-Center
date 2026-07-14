@@ -37,7 +37,8 @@ assert.strictEqual(byId.get("playit").capabilities.udp, true, "Playit must adver
 assert.strictEqual(byId.get("tailscale").exposureScope, "tailnet-only", "Tailscale must not be described as public internet exposure.");
 assert.strictEqual(byId.get("tailscale").capabilities.serviceExposure, true, "Tailscale must support private tailnet service records.");
 assert.strictEqual(byId.get("tailscale").capabilities.publicAddress, false, "Tailscale must not be treated as a public address provider.");
-assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createTunnel, true, "Cloudflare Tunnel must expose supported web-service setup capability.");
+assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createTunnel, false, "Cloudflare Tunnel must not claim tunnel creation until real lifecycle support is implemented.");
+assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createProviderResource, false, "Cloudflare Tunnel must not claim provider-resource creation for metadata-only records.");
 assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.serviceExposure, true, "Cloudflare must support HTTP/HTTPS service records.");
 assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.httpServices, true, "Cloudflare must be limited to HTTP/HTTPS services.");
 assert.strictEqual(byId.get("anxos-relay").status, "disabled", "AnxOS Relay must stay disabled without a real backend.");
@@ -373,6 +374,7 @@ assert(indexSource.includes('data-instance-action="expose-share"') && indexSourc
 assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
 assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");
+assert(indexSource.includes("Expose services through public tunnel providers or securely share them across your private Tailscale network."), "Public Access page copy must distinguish public providers from private tailnet sharing.");
 assert(indexSource.includes('data-public-access-service-card="playit-primary"') && indexSource.includes('role="button"') && indexSource.includes("data-public-access-service-actions"), "Public Access service cards must be clickable and render live actions.");
 assert(indexSource.includes("data-public-access-provider-detail-pill") && indexSource.includes("data-public-access-provider-actions") && indexSource.includes("data-public-access-provider-unsupported"), "Provider Details must expose dynamic actions and unsupported reasons.");
 [

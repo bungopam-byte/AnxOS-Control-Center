@@ -91,6 +91,19 @@ function normalizeEndpointAddress(value) {
   return text || null;
 }
 
+function normalizePublicHostname(value, providerId) {
+  const text = String(value || "").trim().toLowerCase();
+  if (providerId !== "cloudflare-tunnel") return text || null;
+  if (!/^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$/.test(text) || !text.includes(".") || text.includes("..")) {
+    throw createAccessServiceError("INVALID_PUBLIC_HOSTNAME", "Public hostname must be a valid DNS hostname.", {
+      field: "publicHostname",
+      received: value,
+      expected: "DNS hostname",
+    });
+  }
+  return text;
+}
+
 function sanitizeServiceName(value, fallback) {
   const name = String(value || "").trim().replace(/\s+/g, " ");
   return (name || fallback || "Access Service").slice(0, 80);
@@ -123,7 +136,16 @@ function normalizeAccessService(input = {}, existing = {}) {
     throw createAccessServiceError("NODE_REQUIRED", "Choose a target node.", { field: "nodeId" });
   }
   const protocol = normalizeProtocol(input.protocol || existing.protocol);
+  if (providerId === "cloudflare-tunnel" && !["http", "https"].includes(protocol)) {
+    throw createAccessServiceError("INCOMPATIBLE_SERVICE", "Cloudflare Tunnel supports HTTP and HTTPS services in this build.", {
+      field: "protocol",
+      providerId: "cloudflare-tunnel",
+      received: protocol,
+      expected: ["http", "https"],
+    });
+  }
   const localPort = normalizePort(input.localPort ?? existing.localPort);
+  const publicHostname = normalizePublicHostname(input.publicHostname || input.publicAddress || existing.publicHostname || existing.publicAddress, providerId);
   const localHost = normalizeHost(input.localHost || existing.localHost);
   const now = nowIso();
   const normalized = {
@@ -138,7 +160,9 @@ function normalizeAccessService(input = {}, existing = {}) {
     localPort,
     protocol,
     providerResourceId: input.providerResourceId || existing.providerResourceId || null,
-    publicAddress: input.publicAddress || existing.publicAddress || null,
+    publicAddress: providerId === "cloudflare-tunnel" ? publicHostname : input.publicAddress || existing.publicAddress || null,
+    publicHostname,
+    localServiceUrl: input.localServiceUrl || existing.localServiceUrl || null,
     privateAddress: normalizeEndpointAddress(input.privateAddress || existing.privateAddress),
     hostname: input.hostname || existing.hostname || null,
     IPv4: input.IPv4 || existing.IPv4 || null,
@@ -269,6 +293,20 @@ function reconcileAccessServices(services = [], snapshot = {}) {
         exposureScope: "tailnet-only",
         state: provider.connected === true || provider.lifecycleState === "running" ? "available" : "provider-unavailable",
         status: provider.connected === true || provider.lifecycleState === "running" ? "Private Tailnet" : "Provider unavailable",
+        lastCheckedAt: snapshot.checkedAt || service.lastCheckedAt,
+      };
+    }
+    if (service.providerId === "cloudflare-tunnel") {
+      const publicAddress = service.publicAddress || service.publicHostname || null;
+      return {
+        ...service,
+        providerName: service.providerName || provider.name || "Cloudflare Tunnel",
+        accessType: "public-internet",
+        exposureScope: "public-internet",
+        publicAddress,
+        publicHostname: service.publicHostname || publicAddress,
+        state: provider.running === true || provider.lifecycleState === "running" ? "available" : service.state || "pending-provider-setup",
+        status: provider.running === true || provider.lifecycleState === "running" ? "Web Tunnel" : service.status || "Pending tunnel setup",
         lastCheckedAt: snapshot.checkedAt || service.lastCheckedAt,
       };
     }

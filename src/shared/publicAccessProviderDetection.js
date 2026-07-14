@@ -28,14 +28,14 @@ const PUBLIC_ACCESS_PROVIDERS = [
     className: "CloudflareTunnelProvider",
     name: "Cloudflare Tunnel",
     status: "foundation",
-    description: "CLI detection and setup guidance only. Tunnel creation and DNS routing are not enabled yet.",
+    description: "Expose compatible HTTP and HTTPS services through Cloudflare Tunnel.",
     exposureScope: "public-internet",
     capabilities: {
       detection: true,
       authenticationStatus: true,
       connectionStatus: true,
-      serviceExposure: false,
-      createTunnel: false,
+      serviceExposure: true,
+      createTunnel: true,
       listTunnels: true,
       startTunnel: false,
       stopTunnel: false,
@@ -43,6 +43,7 @@ const PUBLIC_ACCESS_PROVIDERS = [
       publicAddress: false,
       healthCheck: true,
       diagnostics: true,
+      httpServices: true,
     },
   },
   {
@@ -334,7 +335,7 @@ function inferCloudflareState({ executable, tunnelCount, activeTunnelCount, proc
       health: "healthy",
       lifecycleState: "running",
       displayState: "Running",
-      recoveryAction: "cloudflared is running. Service management will be enabled in a later phase.",
+      recoveryAction: "cloudflared is running. HTTP and HTTPS services can be linked to configured tunnels.",
     };
   }
   if (tunnelCount > 0) {
@@ -350,7 +351,7 @@ function inferCloudflareState({ executable, tunnelCount, activeTunnelCount, proc
       health: "setup-required",
       lifecycleState: "setup-required",
       displayState: "Installed — tunnel setup required",
-      recoveryAction: "cloudflared is authenticated. Create or select a named tunnel in a later setup phase.",
+      recoveryAction: "cloudflared is authenticated. Create or select a named tunnel before exposing web services.",
     };
   }
   return {

@@ -5470,13 +5470,15 @@ function getPublicAccessActionDefinitions(provider = {}, service = {}) {
   const actions = [
     {
       action: "create-access-service",
-      label: provider.id === "tailscale" ? "Create Private Service" : "Create Access Service",
-      supported: (provider.id === "playit" && provider.installed === true) || (provider.id === "tailscale" && provider.connected === true),
+      label: provider.id === "tailscale" ? "Create Private Service" : provider.id === "cloudflare-tunnel" ? "Create Web Service" : "Create Access Service",
+      supported: (provider.id === "playit" && provider.installed === true) || (provider.id === "tailscale" && provider.connected === true) || (provider.id === "cloudflare-tunnel" && provider.installed === true && provider.authenticated === true),
       reason: provider.id === "playit"
         ? "Install and start Playit.gg before creating an access service."
         : provider.id === "tailscale"
           ? "Tailscale must be connected before creating a private tailnet service."
-          : "Access service creation is not supported by this provider yet.",
+          : provider.id === "cloudflare-tunnel"
+            ? "Authenticate cloudflared and configure a named tunnel before creating a web service."
+            : "Access service creation is not supported by this provider yet.",
     },
     {
       action: "install-dependency",
@@ -5604,7 +5606,7 @@ function buildTailscalePrivateAddress(provider = {}, port) {
 
 async function createProviderAccessService() {
   const provider = getSelectedPublicAccessProvider();
-  if (!["playit", "tailscale"].includes(provider?.id)) {
+  if (!["playit", "tailscale", "cloudflare-tunnel"].includes(provider?.id)) {
     showToast("Access service creation is not supported by this provider yet.", "warning");
     return null;
   }
@@ -5614,13 +5616,27 @@ async function createProviderAccessService() {
   if (name === null) return null;
   const portInput = window.prompt("Local service port", defaultPort ? String(defaultPort) : "25565");
   if (portInput === null) return null;
-  const protocolInput = window.prompt("Protocol: tcp or udp", getSelectedPublicAccessService()?.protocol || latestPlayitSnapshot?.protocol || "tcp");
+  const protocolInput = window.prompt(
+    provider.id === "cloudflare-tunnel" ? "Protocol: http or https" : "Protocol: tcp or udp",
+    provider.id === "cloudflare-tunnel" ? "http" : getSelectedPublicAccessService()?.protocol || latestPlayitSnapshot?.protocol || "tcp",
+  );
   if (protocolInput === null) return null;
   const protocol = String(protocolInput || "tcp").trim().toLowerCase();
-  if (!["tcp", "udp"].includes(protocol)) {
-    throw Object.assign(new Error("Protocol must be tcp or udp for access services."), { code: "INVALID_PROTOCOL" });
+  const validProtocols = provider.id === "cloudflare-tunnel" ? ["http", "https"] : ["tcp", "udp"];
+  if (!validProtocols.includes(protocol)) {
+    throw Object.assign(new Error(provider.id === "cloudflare-tunnel"
+      ? "Protocol must be http or https for Cloudflare Tunnel services."
+      : "Protocol must be tcp or udp for access services."), { code: "INVALID_PROTOCOL" });
   }
   const localPort = normalizePublicAccessPortInput(portInput);
+  const publicHostname = provider.id === "cloudflare-tunnel"
+    ? window.prompt("Public hostname", "service.example.com")
+    : null;
+  if (provider.id === "cloudflare-tunnel" && publicHostname === null) return null;
+  if (provider.id === "cloudflare-tunnel" && !String(publicHostname || "").trim()) {
+    throw Object.assign(new Error("Public hostname is required for Cloudflare Tunnel services."), { code: "INVALID_PUBLIC_HOSTNAME" });
+  }
+  const localServiceUrl = provider.id === "cloudflare-tunnel" ? `${protocol}://127.0.0.1:${localPort}` : null;
   const payload = {
     nodeId: requestContext.nodeId,
     providerId: provider.id,
@@ -5631,6 +5647,9 @@ async function createProviderAccessService() {
     localPort,
     protocol,
     privateAddress: provider.id === "tailscale" ? buildTailscalePrivateAddress(provider, localPort) : null,
+    publicAddress: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
+    publicHostname: provider.id === "cloudflare-tunnel" ? String(publicHostname || "").trim() : null,
+    localServiceUrl,
     hostname: provider.id === "tailscale" ? provider.DNSName || provider.hostname || null : null,
     IPv4: provider.id === "tailscale" ? provider.IPv4 || null : null,
     IPv6: provider.id === "tailscale" ? provider.IPv6 || null : null,
@@ -5644,7 +5663,9 @@ async function createProviderAccessService() {
   await refreshPlayitStatus();
   showToast(provider.id === "tailscale"
     ? "Private tailnet service saved."
-    : "Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
+    : provider.id === "cloudflare-tunnel"
+      ? "Cloudflare web service saved. Verify DNS and tunnel routing in Cloudflare before relying on it."
+      : "Access service saved. Refresh Playit after creating or linking the provider tunnel.", "success");
   return result;
 }
 

@@ -33,7 +33,9 @@ assert.strictEqual(byId.get("playit").status, "supported", "Playit must remain t
 assert.strictEqual(byId.get("tailscale").exposureScope, "tailnet-only", "Tailscale must not be described as public internet exposure.");
 assert.strictEqual(byId.get("tailscale").capabilities.serviceExposure, true, "Tailscale must support private tailnet service records.");
 assert.strictEqual(byId.get("tailscale").capabilities.publicAddress, false, "Tailscale must not be treated as a public address provider.");
-assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createTunnel, false, "Cloudflare Tunnel creation must remain disabled until fully implemented.");
+assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.createTunnel, true, "Cloudflare Tunnel must expose supported web-service setup capability.");
+assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.serviceExposure, true, "Cloudflare must support HTTP/HTTPS service records.");
+assert.strictEqual(byId.get("cloudflare-tunnel").capabilities.httpServices, true, "Cloudflare must be limited to HTTP/HTTPS services.");
 assert.strictEqual(byId.get("anxos-relay").status, "disabled", "AnxOS Relay must stay disabled without a real backend.");
 
 const playitService = publicAccess._test.buildServiceFromPlayitSnapshot({
@@ -123,6 +125,41 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
   assert.strictEqual(reconciled[0].exposureScope, "tailnet-only", "Tailscale service must use tailnet-only exposure.");
   assert.strictEqual(reconciled[0].privateAddress, "anxlab.tailnet.ts.net:7777", "Tailscale service should prefer MagicDNS private endpoint.");
   assert.strictEqual(reconciled[0].publicAddress, null, "Tailscale service must not invent a public address.");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}
+
+{
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-cloudflare-access-registry-"));
+  const service = registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "cloudflare-tunnel",
+    providerName: "Cloudflare Tunnel",
+    accessType: "public-internet",
+    name: "Panel",
+    localHost: "127.0.0.1",
+    localPort: 8080,
+    protocol: "http",
+    publicHostname: "panel.example.com",
+    localServiceUrl: "http://127.0.0.1:8080",
+  }, { configDir: tempRoot });
+  assert.strictEqual(service.publicAddress, "panel.example.com", "Cloudflare service must persist the public hostname.");
+  assert.strictEqual(service.protocol, "http", "Cloudflare service must keep HTTP protocol.");
+  assert.throws(() => registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "cloudflare-tunnel",
+    localHost: "127.0.0.1",
+    localPort: 8211,
+    protocol: "udp",
+    publicHostname: "palworld.example.com",
+  }, { configDir: tempRoot }), /HTTP and HTTPS/, "Cloudflare must reject raw UDP game services.");
+  assert.throws(() => registry.createAccessService({
+    nodeId: "anxlab",
+    providerId: "cloudflare-tunnel",
+    localHost: "127.0.0.1",
+    localPort: 8081,
+    protocol: "http",
+    publicHostname: "not a hostname",
+  }, { configDir: tempRoot }), /valid DNS hostname/, "Cloudflare must reject invalid hostnames.");
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
@@ -244,6 +281,7 @@ assert(agentRouteSource.includes("/api/v1/public-access/services") && agentServe
 assert(appSource.includes("function renderPublicAccessProviders") && appSource.includes("Tailnet-only"), "Renderer must show provider capability and exposure scope honestly.");
 assert(appSource.includes("buildTailscalePrivateAddress") && appSource.includes("private-tailnet"), "Renderer must create Tailscale services as private tailnet records.");
 assert(appSource.includes("Private tailnet") && appSource.includes("service.privateAddress"), "Renderer must display Tailscale private reachability and endpoint.");
+assert(appSource.includes("Create Web Service") && appSource.includes("cloudflare-tunnel") && appSource.includes("Public hostname"), "Renderer must expose Cloudflare web-service setup without raw game-port compatibility.");
 assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
 assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");
 assert(indexSource.includes("data-public-access-providers"), "Public Access workspace must expose a provider list surface.");

@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "145",
-  buildNumber: "145",
+  build: "146",
+  buildNumber: "146",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 145 Private Alpha",
+  releaseLabel: "Version 1.7 Build 146 Private Alpha",
   releaseDate: "July 14, 2026",
-  releaseTag: "v1.7-build145",
+  releaseTag: "v1.7-build146",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build145",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build146",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -25,6 +25,25 @@ window.ANXOS_DOWNLOAD_CONFIG = {
     linuxDeb: "/api/download/latest/linux-deb",
   },
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 146,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build146",
+          "date": "July 14, 2026",
+          "datetime": "2026-07-14",
+          "title": "Local Agent release packaging integration",
+          "summary": "This private-alpha metadata update prepares release artifacts for the Local Agent Windows experience without publishing a stable production release.",
+          "changes": [
+              "Added Local Agent support metadata to updater manifests so packaged Windows builds declare the bundled Agent runtime contract.",
+              "Validated Windows service setup, automatic pairing, dependency scanner, and website installation guide coverage in release metadata.",
+              "Required NSIS installer, portable executable, blockmap, updater metadata, and SHA-256 checksum artifacts before public release upload.",
+              "Added release artifact validation that checks update manifests, checksums, rollback metadata, Local Agent runtime metadata, and secret/path redaction.",
+              "Kept stable and development publishing separated by preserving prerelease uploads for private-alpha builds.",
+              "Known limitation: this commit validates release metadata and artifact rules only; it does not publish or claim a real Windows-machine production release."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build146"
+      },
       {
           "version": "1.7",
           "build": 145,

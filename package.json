@@ -62,6 +62,7 @@
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
     "public-access:smoke": "node scripts/public-access-smoke.js",
     "packaging:smoke": "node scripts/packaging-artifact-smoke.js",
+    "release:artifacts:smoke": "node scripts/validate-release-artifacts.js --fixture",
     "website:smoke": "node scripts/website-production-smoke.js && node scripts/website-download-smoke.js",
     "website:download:smoke": "node scripts/website-download-smoke.js",
     "diagnostics:smoke": "node scripts/diagnostics-smoke.js",

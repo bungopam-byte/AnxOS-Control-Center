@@ -126,6 +126,9 @@ jobs:
           cd release-artifacts
           sha256sum * > SHA256SUMS
 
+      - name: Validate release artifact set
+        run: node scripts/validate-release-artifacts.js --directory release-artifacts
+
       - name: Publish tagged release
         env:
           GH_TOKEN: ${{ secrets.ANXOS_RELEASE_REPO_TOKEN }}

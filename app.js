@@ -427,6 +427,7 @@ const agentConnectionMessage = document.querySelector("[data-agent-connection-me
 const agentConfigSource = document.querySelector("[data-agent-config-source]");
 const marketplaceConfigInput = document.querySelector("[data-marketplace-config=\"curseForgeApiKey\"]");
 const marketplaceConfigSaveButton = document.querySelector('[data-marketplace-config-action="save"]');
+const marketplaceConfigTestButton = document.querySelector('[data-marketplace-config-action="test"]');
 const marketplaceConfigPill = document.querySelector("[data-marketplace-config-pill]");
 const marketplaceConfigMessage = document.querySelector("[data-marketplace-config-message]");
 const marketplaceConfigSource = document.querySelector("[data-marketplace-config-source]");
@@ -10816,6 +10817,15 @@ function createMarketplaceEmptyStateContent(state = {}) {
     return [title, detail, action];
   }
 
+  if (state.action === "retry-provider") {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "inline-action";
+    action.textContent = state.actionLabel || "Retry";
+    action.addEventListener("click", () => loadMarketplaceProviderPacks({ reset: true }));
+    return [title, detail, action];
+  }
+
   if (state.action === "clear-filters" || state.actionLabel === "Clear filters") {
     const action = document.createElement("button");
     action.type = "button";
@@ -11143,12 +11153,13 @@ async function loadMarketplaceProviderPacks({ reset = false } = {}) {
     marketplaceProviderHasMore = false;
     if (isCurseForgeApiKeyRequiredError(error)) {
       marketplaceProviderError = {
-        title: "CurseForge API key required",
-        message: "Save your CurseForge API key in Settings to browse and install CurseForge modpacks.",
-        action: "open-settings",
+        title: "CurseForge temporarily unavailable",
+        message: "CurseForge integration is not configured for this build. Modrinth and other Marketplace providers are still available. Diagnostics code: CF-CONFIG-MISSING.",
+        action: "retry-provider",
+        actionLabel: "Retry",
       };
-      setMarketplaceProviderStatus("CurseForge API key required", "error");
-      showToast("CurseForge API key required", "warning");
+      setMarketplaceProviderStatus("CurseForge unavailable in this build", "error");
+      showToast("CurseForge temporarily unavailable", "warning");
     } else {
       marketplaceProviderError = {
         title: "Provider unavailable",
@@ -26767,26 +26778,29 @@ function renderAgentSettings(settingsPayload) {
 
 function renderMarketplaceSettings(settingsPayload) {
   const configured = Boolean(settingsPayload?.curseForge?.configured || settingsPayload?.stored?.hasCurseForgeApiKey);
+  const diagnostics = settingsPayload?.curseForge?.diagnostics || {};
+  const mode = diagnostics.mode || (configured ? "owner-local" : "unavailable");
+  const fingerprint = diagnostics.keyFingerprint ? ` fingerprint ${diagnostics.keyFingerprint}` : "";
 
   if (marketplaceConfigInput) {
     marketplaceConfigInput.value = "";
-    marketplaceConfigInput.placeholder = configured ? "Saved - enter a new key to replace" : "Paste API key";
+    marketplaceConfigInput.placeholder = configured ? "Temporary owner key saved - enter a new key to replace" : "Temporary owner/private-alpha key";
   }
 
   if (marketplaceConfigPill) {
-    marketplaceConfigPill.textContent = configured ? "Connected" : "Missing Key";
+    marketplaceConfigPill.textContent = configured ? "Configured" : "Unavailable";
     marketplaceConfigPill.classList.toggle("is-connected", configured);
     marketplaceConfigPill.classList.toggle("is-disconnected", !configured);
   }
 
   if (marketplaceConfigMessage) {
     marketplaceConfigMessage.textContent = configured
-      ? "CurseForge API key is available for Marketplace browsing and installs."
-      : "Save a CurseForge API key to browse and install CurseForge modpacks.";
+      ? `CurseForge configuration mode: ${mode}.${fingerprint ? ` Key${fingerprint}.` : ""}`
+      : "CurseForge is unavailable until a hosted proxy, Agent configuration, or temporary owner/private-alpha key is configured.";
   }
 
   if (marketplaceConfigSource) {
-    marketplaceConfigSource.textContent = "Saved securely on this device.";
+    marketplaceConfigSource.textContent = `Source: ${diagnostics.keySource || mode}. Proxy: ${diagnostics.hostedProxyConfigured ? "configured" : "not configured"}. Agent proxy: ${diagnostics.agentProxyEligible ? "eligible" : "not active"}.`;
   }
 }
 
@@ -27596,6 +27610,36 @@ async function saveMarketplaceConfiguration() {
   } finally {
     if (marketplaceConfigSaveButton) {
       marketplaceConfigSaveButton.disabled = false;
+    }
+  }
+}
+
+async function testCurseForgeConnection() {
+  const desktopApiState = getDesktopApiState();
+
+  if (!desktopApiState.hasMarketplaceSettings || typeof desktopApiState.api.settings.testCurseForgeConnection !== "function") {
+    showToast("CurseForge diagnostics are unavailable.");
+    return;
+  }
+
+  if (marketplaceConfigTestButton) {
+    marketplaceConfigTestButton.disabled = true;
+  }
+
+  try {
+    const result = await desktopApiState.api.settings.testCurseForgeConnection();
+    const diagnostics = result?.diagnostics || {};
+    if (result?.ok) {
+      showToast(`CurseForge browsing test passed (${diagnostics.mode || "configured"}).`);
+    } else {
+      showToast(`CurseForge test failed: ${result?.error?.code || "unknown"}.`);
+    }
+    renderMarketplaceSettings(await desktopApiState.api.settings.getMarketplaceConfig());
+  } catch (error) {
+    showToast(error?.message || "CurseForge diagnostics failed.");
+  } finally {
+    if (marketplaceConfigTestButton) {
+      marketplaceConfigTestButton.disabled = false;
     }
   }
 }
@@ -29523,6 +29567,7 @@ agentSettingsTestButton?.addEventListener("click", () => testAgentConnection());
 agentSettingsPairButton?.addEventListener("click", pairAgentFromSettings);
 agentSettingsRepairButton?.addEventListener("click", focusAgentPairingRepair);
 marketplaceConfigSaveButton?.addEventListener("click", saveMarketplaceConfiguration);
+marketplaceConfigTestButton?.addEventListener("click", testCurseForgeConnection);
 operationFilterButtons.forEach((button) => {
   button.addEventListener("click", () => {
     operationsState.filter = button.dataset.operationFilter || "all";

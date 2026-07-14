@@ -319,6 +319,7 @@ const desktopApi = {
     pairAgent: (payload = {}) => ipcRenderer.invoke("settings:pairAgent", payload),
     getMarketplaceConfig: () => ipcRenderer.invoke("settings:getMarketplaceConfig"),
     saveMarketplaceConfig: (settings) => ipcRenderer.invoke("settings:saveMarketplaceConfig", settings),
+    testCurseForgeConnection: () => ipcRenderer.invoke("settings:testCurseForgeConnection"),
   },
   security: {
     getStatus: () => ipcRenderer.invoke("security:getStatus"),

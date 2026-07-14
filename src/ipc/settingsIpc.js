@@ -65,13 +65,15 @@ function getSafeAgentTokenStatus() {
 function getMarketplaceSettingsPayload() {
   const stored = readMarketplaceConfig();
   const status = curseforgeProvider._test.getApiKeyStatus();
+  const diagnostics = curseforgeProvider._test.getConfigurationDiagnostics();
 
   return {
     stored,
     configPath: getMarketplaceConfigPath(),
     curseForge: {
-      configured: status.loaded,
+      configured: diagnostics.configured,
       source: status.source,
+      diagnostics,
     },
   };
 }
@@ -126,6 +128,12 @@ function registerSettingsIpc() {
     curseforgeProvider._test.setRuntimeApiKey(saved.curseForgeApiKey);
     audit({ action: "settings.marketplace.save", target: "marketplace-config" });
     return getMarketplaceSettingsPayload();
+  });
+  ipcMain.handle("settings:testCurseForgeConnection", async () => {
+    assertCanReadSettingsSecret("canManageMarketplaceSettings", "marketplace-config");
+    const result = await curseforgeProvider.testConnection();
+    audit({ action: "settings.marketplace.testCurseForge", target: "marketplace-config", reason: result.ok ? "ok" : result.error?.code || "failed" });
+    return result;
   });
 }
 

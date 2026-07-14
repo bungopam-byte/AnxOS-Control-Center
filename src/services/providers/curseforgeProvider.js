@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const dotenv = require("dotenv");
+const crypto = require("crypto");
 const agentClient = require("../agentClient");
 const { getMarketplaceConfigPath, readMarketplaceConfig, saveMarketplaceConfig } = require("../providerConfigService");
 
@@ -521,7 +522,70 @@ function getApiKeyStatus(config = {}) {
     env: envInfo,
     hostedProxyConfigured: Boolean(getHostedProxyUrl(config)),
     agentProxyEligible: shouldUseAgentProxy(config),
+    fingerprint: getApiKeyFingerprint(config),
   };
+}
+
+function getApiKeyFingerprint(config = {}) {
+  try {
+    const key = getCurseForgeApiKey(config);
+    return key ? crypto.createHash("sha256").update(key).digest("hex").slice(0, 12) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getConfigurationDiagnostics(config = {}) {
+  const status = getApiKeyStatus(config);
+  const mode = status.hostedProxyConfigured
+    ? "hosted-proxy"
+    : status.agentProxyEligible
+      ? "agent-proxy"
+      : status.loaded
+        ? "owner-local"
+        : "unavailable";
+  return {
+    provider: "curseforge",
+    mode,
+    configured: status.hostedProxyConfigured || status.agentProxyEligible || status.loaded,
+    keyConfigured: status.loaded,
+    keySource: status.source,
+    keyFingerprint: status.fingerprint,
+    hostedProxyConfigured: status.hostedProxyConfigured,
+    agentProxyEligible: status.agentProxyEligible,
+    errorCode: status.errorCode,
+  };
+}
+
+async function testConnection(config = {}) {
+  const diagnostics = getConfigurationDiagnostics(config);
+  try {
+    await getModLoaders({ ...config, timeoutMs: config.timeoutMs || 10000 });
+    return {
+      ok: true,
+      provider: "curseforge",
+      diagnostics: {
+        ...diagnostics,
+        browsing: "passed",
+        fileDownloadAuthentication: "not-tested",
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      provider: "curseforge",
+      error: {
+        code: error?.code || "CURSEFORGE_TEST_FAILED",
+        message: error?.message || "CurseForge connection test failed.",
+        status: error?.details?.status || error?.status || null,
+      },
+      diagnostics: {
+        ...diagnostics,
+        browsing: "failed",
+        fileDownloadAuthentication: "not-tested",
+      },
+    };
+  }
 }
 
 function logStartupStatus() {
@@ -1206,6 +1270,7 @@ module.exports = {
     curseForgeClient,
     friendlyHttpMessage,
     getApiKeyStatus,
+    getConfigurationDiagnostics,
     getCurseForgeApiKey,
     getEnvCandidates,
     isTransientError,
@@ -1230,4 +1295,5 @@ module.exports = {
   resolveDependencies,
   resolveFile,
   searchModpacks,
+  testConnection,
 };

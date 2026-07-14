@@ -1417,6 +1417,66 @@ html[data-advanced-mode="true"] .marketplace-progress-debug {
   border-color: rgba(182, 108, 255, .34);
 }
 
+.app-modal--first-server {
+  width: min(880px, 100%);
+}
+
+.first-server-body {
+  display: grid;
+  gap: 18px;
+}
+
+.first-server-section {
+  display: grid;
+  gap: 10px;
+}
+
+.first-server-section h3,
+.first-server-section p {
+  margin: 0;
+}
+
+.first-server-section p {
+  color: var(--muted);
+}
+
+.first-server-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.first-server-card {
+  display: grid;
+  gap: 7px;
+  min-height: 132px;
+  padding: 14px;
+  border: 1px solid rgba(190, 170, 220, .16);
+  border-radius: 8px;
+  background: rgba(18, 14, 28, .72);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.first-server-card:hover,
+.first-server-card:focus-visible {
+  border-color: rgba(182, 108, 255, .56);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(182, 108, 255, .14);
+}
+
+.first-server-card:disabled {
+  cursor: not-allowed;
+  opacity: .54;
+}
+
+.first-server-card span,
+.first-server-card small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 [aria-busy="true"] {
   cursor: progress;
 }

@@ -1257,6 +1257,22 @@ const CONTEXTUAL_HELP_TOPICS = {
   },
 };
 
+const FIRST_SERVER_OPTIONS = {
+  minecraft: [
+    { templateId: "minecraft-paper", title: "Paper", description: "Recommended for most users. Fast, stable, and supports plugins.", port: "25565/TCP", memory: "2G" },
+    { templateId: "minecraft-purpur", title: "Purpur", description: "A customizable server based on Paper.", port: "25565/TCP", memory: "2G" },
+    { templateId: "minecraft-vanilla", title: "Vanilla", description: "The official Minecraft server experience without plugins.", port: "25565/TCP", memory: "2G" },
+    { templateId: "minecraft-fabric", title: "Fabric", description: "Lightweight mod support.", port: "25565/TCP", memory: "3G" },
+    { templateId: "minecraft-forge", title: "Forge", description: "Traditional modded Minecraft support.", port: "25565/TCP", memory: "4G" },
+    { templateId: "minecraft-neoforge", title: "NeoForge", description: "Modern modded Minecraft support.", port: "25565/TCP", memory: "4G" },
+  ],
+  game: [
+    { templateId: "terraria-tshock", title: "Terraria TShock", description: "Supported game server with plugin-capable administration.", port: "7777/TCP", memory: "1G" },
+    { templateId: "palworld", title: "Palworld Dedicated Server", description: "SteamCMD-based dedicated server for Linux Agent systems.", port: "8211/UDP", memory: "8G" },
+    { templateId: "fivem", title: "FiveM FXServer", description: "FXServer install with setup-required license-key guidance.", port: "30120/UDP", memory: "2G" },
+  ],
+};
+
 function getCurrentSettings() {
   return currentSettings || DEFAULT_SETTINGS;
 }
@@ -11769,6 +11785,118 @@ function closeMarketplaceWizard() {
   }
   resetMarketplaceVersionPicker();
   renderMarketplaceTemplates();
+}
+
+function createFirstServerOptionCard(option) {
+  const template = findMarketplaceTemplate(option.templateId);
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "first-server-card";
+  card.disabled = !template || Boolean(template.disabled || template.comingSoon);
+  card.dataset.firstServerTemplate = option.templateId;
+  const title = createTextElement("strong", option.title);
+  const description = createTextElement("span", option.description);
+  const meta = createTextElement("small", [
+    template?.platform || template?.supportedPlatform || "Supported platform varies by node",
+    `Default port ${option.port}`,
+    `Recommended memory ${option.memory}`,
+    getMarketplaceTemplateDependencyIds(template || {}).length
+      ? `Requires ${getMarketplaceTemplateDependencyIds(template || {}).join(", ")}`
+      : "No extra dependency preflight declared",
+  ].filter(Boolean).join(" · "));
+  card.append(title, description, meta);
+  card.addEventListener("click", () => {
+    document.querySelector("[data-first-server-modal]")?.remove();
+    showPage("marketplace");
+    marketplaceActiveCategory = template?.category || "All";
+    renderMarketplaceCategories();
+    renderMarketplaceTemplates();
+    openMarketplaceWizard(option.templateId);
+    setMarketplaceMessage("AnxOS will check this system and install the server using the selected options.");
+  });
+  return card;
+}
+
+function createFirstServerSection(titleText, copy, options) {
+  const section = document.createElement("section");
+  section.className = "first-server-section";
+  section.append(
+    createTextElement("h3", titleText),
+    createTextElement("p", copy),
+  );
+  const grid = document.createElement("div");
+  grid.className = "first-server-grid";
+  options.forEach((option) => grid.append(createFirstServerOptionCard(option)));
+  section.append(grid);
+  return section;
+}
+
+function openFirstServerGuide() {
+  const overlay = document.createElement("div");
+  overlay.className = "app-modal-backdrop";
+  overlay.dataset.firstServerModal = "";
+  const dialog = document.createElement("section");
+  dialog.className = "app-modal app-modal--first-server";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "Create your first server");
+  dialog.tabIndex = -1;
+  const close = document.createElement("button");
+  close.className = "app-modal__close";
+  close.type = "button";
+  close.dataset.firstServerAction = "close";
+  close.setAttribute("aria-label", "Close");
+  close.textContent = "×";
+  const header = document.createElement("div");
+  header.className = "app-modal__header";
+  header.append(
+    createTextElement("p", "Guided setup", "eyebrow"),
+    createTextElement("h2", "Create Your First Server"),
+    createTextElement("p", "Choose a beginner-friendly path. AnxOS will use the existing Marketplace installer, dependency preflight, selected node, and Download Manager."),
+  );
+  const body = document.createElement("div");
+  body.className = "first-server-body";
+  body.append(
+    createFirstServerSection("Minecraft Server", "Choose a Minecraft server type. You can change versions and options before installing.", FIRST_SERVER_OPTIONS.minecraft),
+    createFirstServerSection("Game Server", "Show only supported game-server templates and their real dependency requirements.", FIRST_SERVER_OPTIONS.game),
+  );
+  const actions = document.createElement("div");
+  actions.className = "settings-actions";
+  const marketplace = document.createElement("button");
+  marketplace.type = "button";
+  marketplace.className = "inline-action inline-action--primary";
+  marketplace.dataset.firstServerAction = "marketplace";
+  marketplace.textContent = "Start from Marketplace";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "inline-action";
+  cancel.dataset.firstServerAction = "close";
+  cancel.textContent = "Cancel";
+  actions.append(marketplace, cancel);
+  dialog.append(close, header, body, actions);
+  overlay.append(dialog);
+  let deactivateModal = null;
+  const closeModal = () => {
+    document.removeEventListener("keydown", onKeyDown);
+    deactivateModal?.();
+    overlay.remove();
+  };
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") closeModal();
+  };
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay || event.target.closest('[data-first-server-action="close"]')) {
+      closeModal();
+      return;
+    }
+    if (event.target.closest('[data-first-server-action="marketplace"]')) {
+      closeModal();
+      showPage("marketplace");
+    }
+  });
+  document.addEventListener("keydown", onKeyDown);
+  document.body.append(overlay);
+  deactivateModal = activateModal(overlay, { initialFocus: () => overlay.querySelector("[data-first-server-template]") || marketplace });
 }
 
 function collectMarketplaceInstallOptions() {
@@ -28952,7 +29080,8 @@ onboardingWizardButtons.forEach((button) => {
   });
 });
 function runDashboardFriendlyAction(action) {
-  if (action === "create-server" || action === "marketplace") return showPage("marketplace");
+  if (action === "create-server") return openFirstServerGuide();
+  if (action === "marketplace") return showPage("marketplace");
   if (action === "instances") return showPage("instances");
   if (action === "files") return showPage("files");
   if (action === "docker") return showPage("docker");
@@ -28967,6 +29096,7 @@ function runDashboardFriendlyAction(action) {
 dashboardActionButtons.forEach((button) => {
   button.addEventListener("click", () => runDashboardFriendlyAction(button.dataset.dashboardAction || "dashboard"));
 });
+document.querySelector('[data-marketplace-action="first-server"]')?.addEventListener("click", openFirstServerGuide);
 dashboardNextAction?.addEventListener("click", () => runDashboardFriendlyAction(dashboardNextActionState.page || "dashboard"));
 helpTopicButtons.forEach((button) => {
   button.addEventListener("click", () => openContextualHelp(button.dataset.helpTopic));

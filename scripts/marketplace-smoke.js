@@ -2909,6 +2909,15 @@ async function assertProviderInstallSupport() {
     "Renderer should keep technical install failure details in an expandable debug section."
   );
   assert(
+    indexSource.includes("Create Your First Server") &&
+      appSource.includes("FIRST_SERVER_OPTIONS") &&
+      appSource.includes("openFirstServerGuide") &&
+      appSource.includes("openMarketplaceWizard(option.templateId)") &&
+      appSource.includes("AnxOS will check this system and install the server using the selected options.") &&
+      fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8").includes(".first-server-card"),
+    "First-server guided experience must hand off to the existing Marketplace wizard and use real template IDs."
+  );
+  assert(
     appSource.includes("normalizedError.details?.childTaskState") &&
       appSource.includes("marketplaceLocalDownloadEntries = []") &&
       appSource.includes("renderMarketplaceDownloads(failureDownloads)"),

@@ -153,6 +153,7 @@ async function main() {
   const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "windows-release.yml"), "utf8");
   assert(download.includes('data-download-page') && download.includes('data-primary-download'), "/download should render the dynamic download workspace.");
   assert(download.includes("Download AnxOS for Windows") && download.includes("Windows installer"), "/download should make the Windows installer the primary normal-user path.");
+  assert(download.includes("<dt>Version</dt>") && !download.includes("<dt>Stable</dt>") && downloadHtml.includes("<dt>Version</dt>"), "/download release metadata must not call private-alpha builds stable.");
   assert(download.includes("Portable Version") && download.includes("View Release Notes") && download.includes("Installation Help") && download.includes("System Requirements"), "/download should keep secondary download and help options visible.");
   assert(download.includes('href="/windows-installation"') && downloadHtml.includes('href="/windows-installation"'), "/download should link installation help to the clean Windows installation route.");
   assert(download.includes('href="/system-requirements"') && downloadHtml.includes('href="/system-requirements"'), "/download should link system requirements to the clean dedicated route.");

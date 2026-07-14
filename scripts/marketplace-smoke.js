@@ -191,6 +191,13 @@ function assertSteamCmdTemplates() {
     assert.notStrictEqual(payload.executable, "node", `${id} must not instantiate a placeholder Node task.`);
     assert(!payload.args.includes("-jar"), `${id} must not start through the Minecraft jar pipeline.`);
     assert(!payload.args.includes("server.jar"), `${id} must not reference server.jar.`);
+    if (id === "palworld") {
+      assert.deepStrictEqual(payload.args.slice(0, 2), [
+        "-lc",
+        "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port=8211 -players=32 -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS",
+      ], "Palworld startup must preserve the bash -lc script as one argument.");
+      assert(payload.args[1].includes("2>/dev/null") && payload.args[1].includes("|| true") && payload.args[1].includes("; exec"), "Palworld shell operators must stay inside argv[2].");
+    }
 
     const windowsTemplate = marketplaceService._test.resolveTemplateForPlatform(template, "windows");
     assert.strictEqual(windowsTemplate.targetPlatform, "windows", `${id} should resolve a Windows platform variant.`);
@@ -204,10 +211,12 @@ function assertSteamCmdTemplates() {
 
 function assertWindowsMarketplaceTemplateVariants() {
   const serviceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceService.js"), "utf8");
+  const appSource = fs.readFileSync(appPath, "utf8");
   assert(serviceSource.includes("function resolveTemplateForPlatform"), "Marketplace should resolve platform-specific template overlays.");
   assert(serviceSource.includes("buildWindowsArchiveInstallerScript"), "Windows archive Marketplace installers should avoid Bash.");
   assert(serviceSource.includes("fivem-windows"), "FiveM resolver should support Windows artifacts.");
   assert(serviceSource.includes("powershell.exe") && serviceSource.includes("Expand-Archive"), "Windows archive installers should use PowerShell Expand-Archive.");
+  assert(appSource.includes("function stringifyArgs(args)") && appSource.includes("JSON.stringify(args)"), "Instance settings must serialize argument arrays without flattening shell commands.");
 
   const forge = marketplaceService._test.resolveTemplateForPlatform(findTemplate("minecraft-forge"), "windows");
   assert.strictEqual(forge.startup.executable, "cmd.exe", "Forge Windows startup should use cmd.exe.");

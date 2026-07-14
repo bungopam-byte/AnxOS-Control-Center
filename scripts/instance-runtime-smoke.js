@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 const assert = require("assert");
+const childProcess = require("child_process");
+const { EventEmitter } = require("events");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { PassThrough } = require("stream");
 
 const servicePath = require.resolve("../agent/src/services/instances/instanceService");
 
@@ -50,6 +53,29 @@ async function withTempService(fn) {
     clearService();
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+function createFakeChild(pid = 701001) {
+  const child = new EventEmitter();
+  child.pid = pid;
+  child.exitCode = null;
+  child.signalCode = null;
+  child.stdin = new PassThrough();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  const originalEmit = child.emit.bind(child);
+  child.emit = (eventName, ...args) => {
+    if (eventName === "exit") {
+      child.exitCode = args[0] ?? null;
+      child.signalCode = args[1] || null;
+    }
+    return originalEmit(eventName, ...args);
+  };
+  return child;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function runtimeSnapshot(instanceRoot, pid = 580981, port = 8211, queryPort = 27015) {
@@ -135,6 +161,45 @@ async function assertPalworldShellCommandNormalization() {
   });
 }
 
+async function assertPalworldSpawnArgvAndLogs() {
+  await withTempService(async (instanceService) => {
+    const payload = palworldPayload("palworld-spawn-argv");
+    await instanceService.createInstance(payload);
+    await instanceService.writeInstanceFile(payload.id, "server/PalServer.sh", "#!/usr/bin/env bash\n");
+    const originalSpawn = childProcess.spawn;
+    const calls = [];
+    const fakeChild = createFakeChild(701101);
+    childProcess.spawn = (command, args, options) => {
+      calls.push({ command, args: [...args], options });
+      return fakeChild;
+    };
+    try {
+      const started = await instanceService.startInstance(payload.id);
+      assert.strictEqual(started.pid, 701101, "Started Palworld wrapper PID should be recorded.");
+      assert.strictEqual(calls.length, 1, "Palworld start should spawn exactly one wrapper process.");
+      assert.strictEqual(calls[0].command, "bash", "argv[0] executable should be bash.");
+      assert.strictEqual(calls[0].args[0], "-lc", "argv[1] should be -lc.");
+      assert.strictEqual(calls[0].args[1], payload.args[1], "argv[2] should be the full Palworld shell script.");
+      assert.strictEqual(calls[0].args.length, 2, "Palworld shell script must not be whitespace-split.");
+      assert(calls[0].args[1].includes("2>/dev/null"), "stderr redirect should remain inside argv[2].");
+      assert(calls[0].args[1].includes("|| true"), "fallback operator should remain inside argv[2].");
+      assert(calls[0].args[1].includes("; exec"), "semicolon command separator should remain inside argv[2].");
+
+      const logs = await instanceService.readLogs(payload.id, { stream: "stdout", limit: 20 });
+      const launchLine = logs.entries.find((entry) => String(entry.message || "").startsWith("Launch command:"));
+      assert(launchLine, "Startup logs should include a readable launch command.");
+      assert(launchLine.message.includes('"chmod +x ./PalServer.sh'), "Readable launch command should quote the multi-word script argument.");
+      const status = await instanceService.getStatus(payload.id);
+      assert.deepStrictEqual(status.args, payload.args, "Log formatting must not mutate stored argv.");
+
+      fakeChild.emit("exit", 0, null);
+      await wait(20);
+    } finally {
+      childProcess.spawn = originalSpawn;
+    }
+  });
+}
+
 async function assertRestartBackoffBounds() {
   await withTempService(async (instanceService) => {
     const instanceId = "restart-backoff-smoke";
@@ -152,6 +217,92 @@ async function assertRestartBackoffBounds() {
     const reset = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });
     assert.strictEqual(reset.allowed, true, "Manual start/stop reset should allow retries again.");
     assert.strictEqual(reset.delayMs, 1000, "Manual reset should restore the initial restart delay.");
+  });
+}
+
+async function assertStopDoesNotRestart() {
+  await withTempService(async (instanceService) => {
+    const payload = {
+      id: "intentional-stop-smoke",
+      displayName: "Intentional Stop Smoke",
+      type: "custom-command",
+      workingDirectory: "data",
+      executable: "node",
+      args: ["server.js"],
+      restartPolicy: "always",
+      startupTimeoutMs: 60000,
+    };
+    await instanceService.createInstance(payload);
+    const originalSpawn = childProcess.spawn;
+    const originalKill = process.kill;
+    const fakeChild = createFakeChild(701201);
+    const alive = new Set([701201]);
+    let spawnCount = 0;
+    childProcess.spawn = () => {
+      spawnCount += 1;
+      return fakeChild;
+    };
+    process.kill = (pid, signal) => {
+      if (Number(pid) === 701201 && signal === "SIGTERM") {
+        alive.delete(701201);
+        setImmediate(() => fakeChild.emit("exit", 0, null));
+        return true;
+      }
+      return originalKill(pid, signal);
+    };
+    instanceService._test.setProcessAliveProvider((pid) => alive.has(Number(pid)));
+    try {
+      await instanceService.startInstance(payload.id);
+      const stopped = await instanceService.stopInstance(payload.id);
+      assert.strictEqual(stopped.state, "Stopped", "Intentional stop should transition to Stopped.");
+      await wait(1200);
+      assert.strictEqual(spawnCount, 1, "Intentional stop must not schedule an automatic restart.");
+    } finally {
+      childProcess.spawn = originalSpawn;
+      process.kill = originalKill;
+    }
+  });
+}
+
+async function assertJavaAndArgumentCompatibility() {
+  await withTempService(async (instanceService) => {
+    const minecraft = await instanceService.createInstance({
+      id: "minecraft-java-smoke",
+      displayName: "Minecraft Java Smoke",
+      type: "minecraft-paper",
+      workingDirectory: "data",
+      executable: "java",
+      memoryLimit: "2G",
+      jar: "paper.jar",
+      args: ["--nogui-extra"],
+      restartPolicy: "never",
+    });
+    assert.strictEqual(minecraft.executable, "java", "Minecraft startup should still use Java.");
+    assert.deepStrictEqual(minecraft.args, ["-Xmx2G", "-jar", "paper.jar", "nogui", "--nogui-extra"], "Minecraft Java args should remain tokenized.");
+
+    const spaced = await instanceService.createInstance({
+      id: "path-space-smoke",
+      displayName: "Path Space Smoke",
+      type: "custom-command",
+      workingDirectory: "data",
+      executable: "bash",
+      args: ["-lc", 'exec "./server path/start.sh" "$WORLD_NAME"'],
+      environment: { WORLD_NAME: "World One" },
+      restartPolicy: "never",
+    });
+    assert.deepStrictEqual(spaced.args, ["-lc", 'exec "./server path/start.sh" "$WORLD_NAME"'], "Paths with spaces and env references should stay in the shell script argv.");
+    assert.strictEqual(spaced.environment.WORLD_NAME, "[configured]", "Public instance config should redact but preserve configured environment.");
+
+    const envArg = await instanceService.createInstance({
+      id: "env-arg-smoke",
+      displayName: "Env Arg Smoke",
+      type: "custom-command",
+      workingDirectory: "data",
+      executable: "node",
+      args: ["--data-dir=${ANXOS_DATA_DIR}", "--name=World One"],
+      restartPolicy: "never",
+    });
+    assert.deepStrictEqual(envArg.args, ["--data-dir=${ANXOS_DATA_DIR}", "--name=World One"], "Environment-variable-like arguments and spaces should remain intact.");
   });
 }
 
@@ -280,7 +431,10 @@ async function assertRenameDuplicateAndCrashLifecycle() {
 
 async function run() {
   await assertPalworldShellCommandNormalization();
+  await assertPalworldSpawnArgvAndLogs();
   await assertRestartBackoffBounds();
+  await assertStopDoesNotRestart();
+  await assertJavaAndArgumentCompatibility();
   await assertDetachedRuntimeReconciliation();
   await assertNoUnrelatedAdoptionAndPortCollision();
   await assertStopAfterReconciliation();

@@ -152,6 +152,12 @@ a:focus-visible {
   outline: none;
 }
 
+.site-nav a[aria-current="page"] {
+  background: rgba(182, 108, 255, 0.18);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(206, 150, 255, 0.22);
+}
+
 .site-nav__cta,
 .site-nav__button {
   border: 1px solid rgba(182, 108, 255, 0.32);
@@ -1304,6 +1310,12 @@ a[aria-disabled="true"] {
 .site-footer button:hover,
 .site-footer button:focus-visible {
   color: var(--text);
+}
+
+.site-footer a[aria-current="page"] {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .account-hero {

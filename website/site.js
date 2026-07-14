@@ -2104,6 +2104,38 @@ function closeSiteMenu() {
   toggle?.setAttribute("aria-expanded", "false");
 }
 
+function navPathFromHref(href) {
+  try {
+    const url = new URL(href, window.location.origin);
+    if (url.origin !== window.location.origin) return "";
+    return url.pathname.replace(/\/+$/, "") || "/";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeCurrentNavPath() {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/index.html") return "/";
+  if (path === "/download.html") return "/download";
+  if (path === "/profile.html") return "/profile";
+  if (path === "/account.html") return "/account";
+  return path;
+}
+
+function applyActiveNavigation() {
+  const currentPath = normalizeCurrentNavPath();
+  document.querySelectorAll(".site-nav a, .site-footer a").forEach((link) => {
+    const linkPath = navPathFromHref(link.getAttribute("href") || "");
+    const isActive = Boolean(linkPath) && linkPath === currentPath;
+    if (isActive) {
+      link.setAttribute("aria-current", "page");
+    } else if (link.getAttribute("aria-current") === "page") {
+      link.removeAttribute("aria-current");
+    }
+  });
+}
+
 function bindSiteNavigation() {
   const nav = document.querySelector("[data-site-nav]");
   const toggle = document.querySelector("[data-site-menu-toggle]");
@@ -2148,6 +2180,7 @@ async function applyRouteState() {
     }
     setProfileDirty(false);
   }
+  applyActiveNavigation();
   if (activeRoute === "profile" && authState === "signed-out") {
     redirectToSignInForCurrentRoute();
     return;
@@ -2188,6 +2221,7 @@ function initializeWebsite() {
     applyConfigText();
     applyDownloads().catch((error) => showDownloadStartupFallback(error));
     applyReleaseNotes();
+    applyActiveNavigation();
     bindSiteNavigation();
     bindDownloadControls();
     bindAccountForms();

@@ -24,6 +24,7 @@ const mainSource = fs.readFileSync(path.join(root, "main.js"), "utf8");
 const updateManagerSource = fs.readFileSync(path.join(root, "src", "services", "updateManager.js"), "utf8");
 const builderSource = fs.readFileSync(path.join(root, "scripts", "run-electron-builder.js"), "utf8");
 const manifestSource = fs.readFileSync(path.join(root, "scripts", "write-update-manifest.js"), "utf8");
+const releaseWorkflowSource = fs.readFileSync(path.join(root, ".github", "workflows", "windows-release.yml"), "utf8");
 const websiteConfig = fs.readFileSync(path.join(root, "website", "config.js"), "utf8");
 const websiteNotes = JSON.parse(fs.readFileSync(path.join(root, "website", "release-notes.json"), "utf8"));
 
@@ -50,6 +51,9 @@ assert(mainSource.includes("releaseLabel") && mainSource.includes("packageVersio
 assert(mainSource.includes("release-build.json") && mainSource.includes("buildDate") && mainSource.includes("gitCommit"), "Runtime info must expose packaged build date and commit metadata.");
 assert(builderSource.includes("release-build.json") && builderSource.includes("supportedOperatingSystems") && builderSource.includes("minimumArchitecture"), "Packaging must generate release metadata for bundled builds.");
 assert(manifestSource.includes("supportedOperatingSystems") && manifestSource.includes("minimumArchitecture") && manifestSource.includes("updateSource"), "Updater metadata must publish platform and update-source details.");
+assert(releaseWorkflowSource.includes("--no-increment-build"), "Tagged release workflow must preserve committed release metadata.");
+assert(releaseWorkflowSource.includes("latest.yml") && releaseWorkflowSource.includes("latest-linux.yml") && releaseWorkflowSource.includes("update-manifest.json"), "Tagged release workflow must publish updater metadata.");
+assert(releaseWorkflowSource.includes("ANXOS_RELEASE_REPO_TOKEN") && releaseWorkflowSource.includes("AnxOS-Control-Center-Releases"), "Tagged release workflow must publish to the public release-only repository with the release token.");
 assert(updateManagerSource.includes("AnxOS-Control-Center-Releases"), "Updater must default to the public release-only repository.");
 assert(updateManagerSource.includes("DEFAULT_UPDATE_REPOSITORY") && updateManagerSource.includes("normalizeUpdateRepository(process.env.ANXOS_UPDATE_REPOSITORY)"), "Updater repository overrides must be validated before use.");
 assert(updateManagerSource.includes("isProductionSafeMetadataUrl") && updateManagerSource.includes("app?.isPackaged !== true") && updateManagerSource.includes('parsed.protocol === "https:"'), "Packaged builds must ignore local or non-HTTPS update metadata overrides.");

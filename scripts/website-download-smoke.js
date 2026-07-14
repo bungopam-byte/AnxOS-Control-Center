@@ -174,7 +174,7 @@ async function main() {
   assert(!new RegExp(`${privateSourceRepositoryUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:/releases|["'])`).test(config), "Browser release discovery must not use the private source repository.");
   assert(!/GITHUB_TOKEN|GH_TOKEN|PERSONAL_ACCESS_TOKEN|ANXOS_RELEASE_REPO_TOKEN/.test(`${download}\n${downloadHtml}\n${site}\n${config}\n${fs.readFileSync(path.join(websiteRoot, "release-download-service.js"), "utf8")}`), "Frontend download code must not contain GitHub tokens or token variable names.");
   assert(config.includes("githubReleasesApiUrl") && config.includes("stableDownloadEndpoints") && !config.includes("downloads:"), "Config should contain release discovery settings, not static artifact URLs.");
-  assert(workflow.includes("sha256sum AnxOS-Control-Center-* > SHA256SUMS") && workflow.includes("ANXOS_RELEASE_REPO_TOKEN") && workflow.includes(publicRepository), "Release workflow should publish checksummed artifacts to the public release repository using a server-side secret.");
+  assert(workflow.includes("sha256sum * > SHA256SUMS") && workflow.includes("update-manifest.json") && workflow.includes("ANXOS_RELEASE_REPO_TOKEN") && workflow.includes(publicRepository), "Release workflow should publish checksummed artifacts and updater metadata to the public release repository using a server-side secret.");
 
   const functionsHelper = await import(pathToFileURL(path.join(root, "functions", "_shared", "release-download.mjs")).href);
   assert.strictEqual(functionsHelper.DEFAULT_RELEASE_REPOSITORY, publicRepository, "Pages Functions should default to the public release repository.");

@@ -39,7 +39,7 @@ jobs:
           }
 
       - name: Build Windows installer
-        run: npm run dist:win -- --publish never
+        run: npm run dist:win -- --publish never --no-increment-build
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -52,7 +52,9 @@ jobs:
           name: anxos-control-center-windows
           path: |
             dist/AnxOS-Control-Center-Setup-*.exe
+            dist/AnxOS-Control-Center-Setup-*.exe.blockmap
             dist/AnxOS-Control-Center-*-portable.exe
+            dist/latest.yml
           if-no-files-found: error
 
   linux:
@@ -72,7 +74,7 @@ jobs:
         run: npm ci
 
       - name: Build Linux packages
-        run: npm run dist:linux -- --publish never
+        run: npm run dist:linux -- --publish never --no-increment-build
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -81,6 +83,7 @@ jobs:
           path: |
             dist/AnxOS-Control-Center-*.deb
             dist/AnxOS-Control-Center-*.AppImage
+            dist/latest-linux.yml
           if-no-files-found: error
 
   publish:
@@ -91,38 +94,69 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout release notes and metadata scripts
+        uses: actions/checkout@v4
+
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-artifacts
           merge-multiple: true
 
+      - name: Setup Node for release metadata
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install metadata dependencies
+        run: npm ci
+
+      - name: Generate updater manifest
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp release-artifacts/AnxOS-Control-Center-* dist/
+          npm run updates:manifest
+          cp dist/update-manifest.json release-artifacts/update-manifest.json
+
       - name: Generate SHA-256 checksum manifest
         shell: bash
         run: |
           cd release-artifacts
-          sha256sum AnxOS-Control-Center-* > SHA256SUMS
+          sha256sum * > SHA256SUMS
 
       - name: Publish tagged release
         env:
           GH_TOKEN: ${{ secrets.ANXOS_RELEASE_REPO_TOKEN }}
           ANXOS_RELEASE_REPOSITORY: bungopam-byte/AnxOS-Control-Center-Releases
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "ANXOS_RELEASE_REPO_TOKEN is required to publish public release assets." >&2
             exit 1
           fi
-          if gh release view "${{ github.ref_name }}" --repo "$ANXOS_RELEASE_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "${{ github.ref_name }}" \
+
+          NOTES_FILE="RELEASE_NOTES_${GITHUB_REF_NAME#v}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            NOTES_ARGS=(--notes-file "$NOTES_FILE")
+          else
+            NOTES_ARGS=(--notes "Desktop installers and portable builds for AnxOS Control Center ${GITHUB_REF_NAME}.")
+          fi
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$ANXOS_RELEASE_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
               --repo "$ANXOS_RELEASE_REPOSITORY" \
-              --title "${{ github.ref_name }}" \
-              --notes "Desktop installers and portable builds for AnxOS Control Center ${{ github.ref_name }}."
-            gh release upload "${{ github.ref_name }}" release-artifacts/* \
+              --title "$GITHUB_REF_NAME" \
+              --prerelease \
+              "${NOTES_ARGS[@]}"
+            gh release upload "$GITHUB_REF_NAME" release-artifacts/* \
               --repo "$ANXOS_RELEASE_REPOSITORY" \
               --clobber
           else
-            gh release create "${{ github.ref_name }}" release-artifacts/* \
+            gh release create "$GITHUB_REF_NAME" release-artifacts/* \
               --repo "$ANXOS_RELEASE_REPOSITORY" \
-              --title "${{ github.ref_name }}" \
-              --notes "Desktop installers and portable builds for AnxOS Control Center ${{ github.ref_name }}."
+              --title "$GITHUB_REF_NAME" \
+              --prerelease \
+              "${NOTES_ARGS[@]}"
           fi

@@ -15487,41 +15487,48 @@ function getFileConflictSummary(existing, incomingName, destinationPath) {
   ].join("\n");
 }
 
-function resolveNameConflict({ incomingName, destinationPath, existing, allowReplace = true, allowRename = true } = {}) {
+async function resolveNameConflict({ incomingName, destinationPath, existing, allowReplace = true, allowRename = true } = {}) {
   if (!existing) return { action: "none", name: incomingName, path: destinationPath, replace: false };
-  const choices = [];
-  if (allowReplace) choices.push("Replace");
-  if (allowRename) choices.push("Rename");
-  choices.push("Cancel");
-  const choice = window.prompt(
-    `An item named "${incomingName}" already exists.\n\n${getFileConflictSummary(existing, incomingName, destinationPath)}\n\nChoose: ${choices.join(", ")}`,
-    allowRename ? "Rename" : allowReplace ? "Replace" : "Cancel",
-  );
-  const normalizedChoice = String(choice || "").trim().toLowerCase();
-  if (allowReplace && normalizedChoice === "replace") {
-    return { action: "replace", name: incomingName, path: destinationPath, replace: true };
-  }
-  if (allowRename && normalizedChoice === "rename") {
-    const renamed = normalizeFileNameInput(window.prompt("New destination name", `${incomingName}.copy`));
-    if (!renamed) return { action: "cancel" };
-    const renamedConflict = findFileEntryByName(renamed);
-    if (renamedConflict) {
-      showToast("That destination name already exists. Operation canceled.", "warning");
-      return { action: "cancel" };
+  const summary = getFileConflictSummary(existing, incomingName, destinationPath);
+  if (allowRename) {
+    const renamed = normalizeFileNameInput(await createSecurityTextPrompt({
+      title: `Rename ${incomingName}?`,
+      message: `An item with that name already exists.\n\n${summary}`,
+      label: "New destination name",
+      initialValue: `${incomingName}.copy`,
+      confirmLabel: "Use New Name",
+    }));
+    if (renamed) {
+      const renamedConflict = findFileEntryByName(renamed);
+      if (renamedConflict) {
+        showToast("That destination name already exists. Operation canceled.", "warning");
+        return { action: "cancel" };
+      }
+      return {
+        action: "rename",
+        name: renamed,
+        path: joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", renamed),
+        replace: false,
+      };
     }
-    return {
-      action: "rename",
-      name: renamed,
-      path: joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", renamed),
-      replace: false,
-    };
+  }
+  if (allowReplace && await createSecurityConfirmation({
+    title: `Replace ${incomingName}?`,
+    message: summary,
+    confirmLabel: "Replace",
+  })) {
+    return { action: "replace", name: incomingName, path: destinationPath, replace: true };
   }
   return { action: "cancel" };
 }
 
-function shouldWarnLargeFile(entry, actionLabel) {
+async function shouldWarnLargeFile(entry, actionLabel) {
   return !entry?.isDirectory && Number(entry?.size || 0) >= FILE_LARGE_TRANSFER_WARN_BYTES
-    ? window.confirm(`${actionLabel} ${entry.name}? This file is ${formatBytes(entry.size)}. Progress is shown only when the provider reports real bytes.`)
+    ? Boolean(await createSecurityConfirmation({
+      title: `${actionLabel} ${entry.name}?`,
+      message: `This file is ${formatBytes(entry.size)}. Progress is shown only when the provider reports real bytes.`,
+      confirmLabel: actionLabel,
+    }))
     : true;
 }
 
@@ -21672,7 +21679,11 @@ async function runFileMutation(actionName, payload, successMessage, refreshPath,
     const message = normalizeIpcErrorMessage(error, "Remote file action failed.");
     if (actionName === "upload" && (error?.code === "FILES_CONFLICT" || /already exists|conflict/i.test(message))) {
       finishFileTransfer(transferId, false, message);
-      if (window.confirm(`${message}\n\nSelect the file again and replace the existing item?`)) {
+      if (await createSecurityConfirmation({
+        title: "Replace existing item?",
+        message: `${message}\n\nSelect the file again and replace the existing item.`,
+        confirmLabel: "Replace",
+      })) {
         return runFileMutation(actionName, { ...payload, conflictPolicy: "replace" }, successMessage, refreshPath, { ...options, retryable: false });
       }
       showToast("Upload canceled to avoid overwriting an existing item.", "warning");
@@ -21702,7 +21713,12 @@ async function createRemoteFolder() {
     return;
   }
 
-  const folderName = normalizeFileNameInput(window.prompt("New folder name"));
+  const folderName = normalizeFileNameInput(await createSecurityTextPrompt({
+    title: "New Folder",
+    message: "Create a folder in the current location.",
+    label: "Folder name",
+    confirmLabel: "Create Folder",
+  }));
 
   if (!folderName) {
     showToast("Folder name is invalid or empty.", "warning");
@@ -21733,7 +21749,12 @@ async function createRemoteFile() {
   if (!filesConnectionState.connected) {
     return;
   }
-  const fileName = normalizeFileNameInput(window.prompt("New file name"));
+  const fileName = normalizeFileNameInput(await createSecurityTextPrompt({
+    title: "New File",
+    message: "Create an empty file in the current location.",
+    label: "File name",
+    confirmLabel: "Create File",
+  }));
   if (!fileName) {
     showToast("File name is invalid or empty.", "warning");
     return;
@@ -21741,7 +21762,7 @@ async function createRemoteFile() {
   const filePath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", fileName);
   const existing = findFileEntryByName(fileName);
   if (existing) {
-    const conflict = resolveNameConflict({ incomingName: fileName, destinationPath: filePath, existing, allowReplace: true, allowRename: true });
+    const conflict = await resolveNameConflict({ incomingName: fileName, destinationPath: filePath, existing, allowReplace: true, allowRename: true });
     if (conflict.action === "cancel") return;
     if (conflict.action === "rename") {
       return runFileMutation(
@@ -21781,7 +21802,13 @@ async function renameRemoteEntry() {
     return;
   }
 
-  const nextName = normalizeFileNameInput(window.prompt(`Rename ${entry.name} to`, entry.name));
+  const nextName = normalizeFileNameInput(await createSecurityTextPrompt({
+    title: `Rename ${entry.name}`,
+    message: "Choose a new name for the selected item.",
+    label: "New name",
+    initialValue: entry.name,
+    confirmLabel: "Rename",
+  }));
 
   if (!nextName || nextName === entry.name) {
     if (!nextName) showToast("Name is invalid or empty.", "warning");
@@ -21791,7 +21818,7 @@ async function renameRemoteEntry() {
   const nextPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
   const existing = findFileEntryByName(nextName);
   if (existing && existing.path !== entry.path) {
-    const conflict = resolveNameConflict({ incomingName: nextName, destinationPath: nextPath, existing, allowReplace: true, allowRename: true });
+    const conflict = await resolveNameConflict({ incomingName: nextName, destinationPath: nextPath, existing, allowReplace: true, allowRename: true });
     if (conflict.action === "cancel") return;
     if (conflict.action === "rename") {
       return renameRemoteEntryTo(entry, conflict.name);
@@ -21848,7 +21875,13 @@ async function copyRemoteEntry() {
     showToast("Folder copy is not supported for this storage provider.", "warning");
     return;
   }
-  const nextName = normalizeFileNameInput(window.prompt(`Copy ${entry.name} to`, `${entry.name}.copy`));
+  const nextName = normalizeFileNameInput(await createSecurityTextPrompt({
+    title: `Copy ${entry.name}`,
+    message: "Choose the destination name for the copied item.",
+    label: "Copy name",
+    initialValue: `${entry.name}.copy`,
+    confirmLabel: "Copy",
+  }));
   if (!nextName) {
     showToast("Destination name is invalid or empty.", "warning");
     return;
@@ -21856,7 +21889,7 @@ async function copyRemoteEntry() {
   let destinationPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
   const existing = findFileEntryByName(nextName);
   if (existing) {
-    const conflict = resolveNameConflict({ incomingName: nextName, destinationPath, existing, allowReplace: true, allowRename: true });
+    const conflict = await resolveNameConflict({ incomingName: nextName, destinationPath, existing, allowReplace: true, allowRename: true });
     if (conflict.action === "cancel") return;
     if (conflict.action === "rename") {
       destinationPath = conflict.path;
@@ -21915,7 +21948,7 @@ async function pasteFilesClipboard() {
   let destinationPath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", destinationName);
   const existing = findFileEntryByName(destinationName);
   if (existing) {
-    const conflict = resolveNameConflict({ incomingName: destinationName, destinationPath, existing, allowReplace: true, allowRename: true });
+    const conflict = await resolveNameConflict({ incomingName: destinationName, destinationPath, existing, allowReplace: true, allowRename: true });
     if (conflict.action === "cancel") return;
     if (conflict.action === "rename") {
       destinationName = conflict.name;
@@ -21959,7 +21992,12 @@ async function deleteRemoteEntry() {
   let confirmDangerous = false;
 
   if (isProtectedRemotePathForConfirm(entry.path)) {
-    const typed = window.prompt(`Protected path detected.\nType DELETE ${entry.path} to confirm.`, "");
+    const typed = await createSecurityTextPrompt({
+      title: "Protected Path Delete",
+      message: `Type DELETE ${entry.path} to confirm deleting this protected path.`,
+      label: "Confirmation phrase",
+      confirmLabel: "Delete",
+    });
 
     if (typed !== `DELETE ${entry.path}`) {
       showToast("Protected delete canceled.");
@@ -22022,7 +22060,7 @@ async function downloadRemoteFile() {
     return;
   }
 
-  if (!shouldWarnLargeFile(entry, "Download")) {
+  if (!(await shouldWarnLargeFile(entry, "Download"))) {
     return;
   }
 
@@ -25091,7 +25129,7 @@ async function confirmDestructiveAction({ title, message, confirmLabel = "Contin
   return window.confirm(`${title || "Confirm action"}\n\n${message || "This action may permanently change data."}`);
 }
 
-function createSecurityTextPrompt({ title, message, label = "Value", confirmLabel = "Save" } = {}) {
+function createSecurityTextPrompt({ title, message, label = "Value", initialValue = "", confirmLabel = "Save" } = {}) {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "app-modal-backdrop";
@@ -25120,6 +25158,7 @@ function createSecurityTextPrompt({ title, message, label = "Value", confirmLabe
     input.type = "text";
     input.autocomplete = "off";
     input.dataset.promptValue = "";
+    input.value = initialValue || "";
     field.append(createTextElement("span", label), input);
     const actions = document.createElement("div");
     actions.className = "settings-actions";

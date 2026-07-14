@@ -128,8 +128,39 @@ async function main() {
     assert(appSource.includes("openFilesContextMenu") && appSource.includes('role = "menu"'), "Files workspace should expose an accessible context menu.");
     assert(appSource.includes("stageFilesCopy") && appSource.includes("pasteFilesClipboard"), "Files workspace should support staged copy and paste keyboard behavior without a second transfer system.");
     assert(appSource.includes("resolveNameConflict") && appSource.includes("getFileConflictSummary"), "Files workspace should preflight visible rename/copy/create conflicts.");
+    assert(appSource.includes("async function resolveNameConflict") && appSource.includes("createSecurityTextPrompt") && appSource.includes("createSecurityConfirmation"), "Files conflict decisions should use in-app modals instead of browser dialogs.");
     assert(appSource.includes("FILE_INLINE_EDIT_LIMIT_BYTES") && appSource.includes("Large file preview disabled"), "Files workspace should avoid loading large files into the renderer editor.");
     assert(appSource.includes("Operations") && appSource.includes("transfer.retry"), "Transfer history should link to Operations and expose real retry actions when available.");
+    [
+      "resolveNameConflict",
+      "createRemoteFolder",
+      "createRemoteFile",
+      "renameRemoteEntry",
+      "copyRemoteEntry",
+      "pasteFilesClipboard",
+      "deleteRemoteEntry",
+      "downloadRemoteFile",
+    ].forEach((functionName) => {
+      const start = appSource.indexOf(`function ${functionName}`);
+      const asyncStart = appSource.indexOf(`async function ${functionName}`);
+      const functionStart = start >= 0 ? start : asyncStart;
+      assert(functionStart >= 0, `Renderer should define ${functionName}.`);
+      const open = appSource.indexOf("{", functionStart);
+      let depth = 0;
+      let body = "";
+      for (let index = open; index < appSource.length; index += 1) {
+        const char = appSource[index];
+        if (char === "{") depth += 1;
+        if (char === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            body = appSource.slice(functionStart, index + 1);
+            break;
+          }
+        }
+      }
+      assert(!/window\.prompt|prompt\(|window\.confirm|confirm\(/.test(body), `${functionName} should not use browser dialogs.`);
+    });
 
     const serviceSource = await fs.readFile(path.join(rootDir, "src", "services", "fileService.js"), "utf8");
     assert(serviceSource.includes("async identity(options = {})"), "Desktop file service should expose filesystem identity for local, Agent, and SFTP providers.");

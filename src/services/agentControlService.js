@@ -9,6 +9,7 @@ const { getAllNodesSync, getNodeAgentConfig, getSelectedNodeId } = require("./no
 const diagnostics = require("./diagnosticsService");
 const agentPackage = require("../../agent/package.json");
 const { getReleaseInfo } = require("../shared/releaseConfig");
+const { getBundledLocalAgentRuntime, getPublicLocalAgentRuntimeInfo } = require("./localAgentRuntimeService");
 
 const SERVICE_NAME = "AnxOSAgent";
 const REMOTE_DIAGNOSTICS_CACHE_MS = 30000;
@@ -22,8 +23,8 @@ const remoteDiagnosticsCache = new Map();
 function getConfigDirectory() { if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR; try { return path.join(app.getPath("userData"), "config"); } catch { return path.join(process.cwd(), "config"); } }
 function getRuntimeConfigPath() { return path.join(getConfigDirectory(), "agent-runtime.json"); }
 function getAgentDataDirectory() { try { return path.join(app.getPath("userData"), "agent"); } catch { return path.join(path.dirname(getConfigDirectory()), "agent"); } }
-function getAgentScript() { try { return path.join(app.getAppPath(), "agent", "src", "server.js"); } catch { return path.join(__dirname, "..", "..", "agent", "src", "server.js"); } }
-function getAppRoot() { try { return app.getAppPath(); } catch { return path.join(__dirname, "..", ".."); } }
+function getAgentScript() { return getBundledLocalAgentRuntime().agentScript; }
+function getAppRoot() { return getBundledLocalAgentRuntime().workingDirectory; }
 function defaults() { return { name: `${os.hostname()} Agent`, host: "127.0.0.1", port: 47131, allowedOrigins: [], allowedFolders: [os.homedir()], storageRoots: [os.homedir()], autoStart: false, updateChannel: "stable", loggingLevel: "info", connectionTimeoutMs: 10000, heartbeatIntervalMs: 5000, restartPolicy: "on-failure", ownerMachine: false, accountAssociation: null }; }
 function readConfig() { try { return { ...defaults(), ...JSON.parse(fs.readFileSync(getRuntimeConfigPath(), "utf8")) }; } catch { return defaults(); } }
 function validateConfig(input = {}) {
@@ -47,7 +48,10 @@ function restoreConfigBackup() { const backup = `${getRuntimeConfigPath()}.backu
 function resetConfig() { return saveConfig(defaults()); }
 
 function command(command, args, options = {}) { return new Promise((resolve) => execFile(command, args, { windowsHide: true, timeout: options.timeout || 15000, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, code: error?.code || null, stdout: String(stdout || "").trim(), stderr: String(stderr || "").trim() }))); }
-function agentEnvironment(config) { return { ...process.env, ELECTRON_RUN_AS_NODE: "1", AGENT_HOST: config.host, AGENT_PORT: String(config.port), AGENT_FILE_ROOTS: config.allowedFolders.join(path.delimiter), AGENT_INSTANCE_ROOT: path.join(getAgentDataDirectory(), "instances"), AGENT_IDENTITY_PATH: path.join(getAgentDataDirectory(), "device-identity.json"), ANXHUB_CONFIG_DIR: getConfigDirectory() }; }
+function agentEnvironment(config) {
+  const runtime = getBundledLocalAgentRuntime();
+  return { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_ENV: "production", AGENT_HOST: config.host, AGENT_PORT: String(config.port), AGENT_FILE_ROOTS: config.allowedFolders.join(path.delimiter), AGENT_INSTANCE_ROOT: path.join(getAgentDataDirectory(), "instances"), AGENT_IDENTITY_PATH: path.join(getAgentDataDirectory(), "device-identity.json"), ANXHUB_CONFIG_DIR: getConfigDirectory(), ANXOS_LOCAL_AGENT_RUNTIME_ROOT: runtime.runtimeRoot, ANXOS_LOCAL_AGENT_RUNTIME_MANIFEST: runtime.manifestPath };
+}
 function isWindowsAccessDenied(result = {}) { return /access is denied|administrator|elevat/i.test(`${result.stderr || ""}\n${result.stdout || ""}\n${result.code || ""}`); }
 function createWindowsElevationError(action = "modify") { return Object.assign(new Error(`Windows requires administrator permission to ${action} the Agent startup task. Run AnxOS Control Center as Administrator, then install the Agent service again.`), { code: "ELEVATION_REQUIRED", recoverySuggestion: "Close AnxOS Control Center, right-click it, choose Run as administrator, then retry the Agent service action." }); }
 
@@ -163,6 +167,10 @@ async function start() {
       await new Promise((resolve) => setTimeout(resolve, 800));
       ensureLocalAgentBackendSelected(config);
       lastRestartReason = "Background service started from AnxOS"; lastError = null; return getStatus();
+    }
+    const runtime = getBundledLocalAgentRuntime();
+    if (!runtime.exists) {
+      throw Object.assign(new Error("Bundled Local Agent runtime is missing or incomplete. Repair AnxOS Control Center, then try again."), { code: "LOCAL_AGENT_RUNTIME_MISSING" });
     }
     managedProcess = spawn(process.execPath, [getAgentScript()], { cwd: getAppRoot(), env: agentEnvironment(config), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     managedProcess.spawnAt = Date.now();
@@ -565,6 +573,7 @@ async function getStatus() {
     agentUrl,
     port: config.port,
     startupMode: service.type,
+    runtimeBundle: getPublicLocalAgentRuntimeInfo(),
     lastRestartReason,
     mostRecentError: lastError,
   };

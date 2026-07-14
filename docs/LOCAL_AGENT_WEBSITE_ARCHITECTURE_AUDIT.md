@@ -210,3 +210,9 @@ Gaps for the requested Local Agent launch:
 Local Agent discovery now lives in `src/services/nodeService.js` so localhost Agent detection feeds the same node registry used by remote Agents. The registry probes both `http://127.0.0.1:<configured-port>` and `http://localhost:<configured-port>`, names a discovered local Agent `This PC`, marks it with `localAgent: true`, and merges localhost entries by a temporary local identity until the Agent health endpoint returns a stable device ID.
 
 The Phase 2 implementation distinguishes local desktop presence, local Agent reachability, authentication-required health, and remote-node availability in node connection metadata. It does not yet install the Agent, create a Windows service, perform secure automatic local pairing, or verify Desktop/Agent version compatibility; those remain later-phase work.
+
+## Phase 3 Runtime Bundle Note
+
+Packaged builds now include an unpacked `local-agent-runtime` resource through `electron-builder` `extraResources`. The bundle contains the Agent source, required shared runtime modules, the Agent config template, Marketplace template metadata, and a runtime manifest. It excludes logs, runtime config directories, `.env` files, source maps, package lockfiles, and dependency trees that are not required by the Agent runtime.
+
+`src/services/localAgentRuntimeService.js` resolves the managed runtime path. Development builds continue to use the repository tree, while packaged builds prefer `process.resourcesPath/local-agent-runtime`. `agentControlService` starts the Agent with Electron's Node runtime (`ELECTRON_RUN_AS_NODE=1`) and sets production runtime environment variables, so the Local Agent does not depend on globally installed Node.js. Renderer-facing status only exposes non-sensitive runtime metadata.

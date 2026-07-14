@@ -98,6 +98,43 @@
       "package.json",
       "node_modules/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "agent",
+        "to": "local-agent-runtime/agent",
+        "filter": [
+          "package.json",
+          "src/**/*",
+          "!agent.log",
+          "!config/**/*",
+          "!**/*.map",
+          "!**/.env",
+          "!**/.env.*",
+          "!package-lock.json",
+          "!node_modules/**/*"
+        ]
+      },
+      {
+        "from": "src/shared",
+        "to": "local-agent-runtime/src/shared",
+        "filter": [
+          "**/*.js",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "config/agent.example.json",
+        "to": "local-agent-runtime/config/agent.example.json"
+      },
+      {
+        "from": "config/marketplace-templates.json",
+        "to": "local-agent-runtime/config/marketplace-templates.json"
+      },
+      {
+        "from": "config/local-agent-runtime.json",
+        "to": "local-agent-runtime/local-agent-runtime.json"
+      }
+    ],
     "win": {
       "target": [
         {

@@ -5037,10 +5037,10 @@ async function runAgentControlAction(action) {
       showToast("Remote Agent mode stays available. Add or select a remote node from the node picker or Agent Connection settings.", "info");
       document.querySelector("[data-agent-setting='agentUrl']")?.focus();
     }
-    else if (action === "repairAgent") { await api.installService(); if (!(await api.status())?.running) await api.start(); }
+    else if (action === "repairAgent") { await api.pairLocalAgent({ rotate: false, reason: "repair" }); await api.installService(); if (!(await api.status())?.running) await api.start(); }
     else if (action === "checkUpdates") await getDesktopApiState().api.updates.check({ silent: false });
     else if (action === "updateAgent") await getDesktopApiState().api.updates.download();
-    else if (action === "rotateToken") { await getDesktopApiState().api.security.rotateAgentToken(); await api.restart(); }
+    else if (action === "rotateToken") { await api.pairLocalAgent({ rotate: true, reason: "manual-rotation" }); await api.restart(); }
     else if (action === "copyUrl") { await navigator.clipboard.writeText(getAgentControlOverviewTarget()?.agentUrl || ""); showToast("Agent URL copied.", "success"); }
     else if (action === "copyId") { await navigator.clipboard.writeText(getAgentControlOverviewTarget()?.identity?.deviceId || ""); showToast("Agent ID copied.", "success"); }
     else if (action === "completeSetup") {
@@ -5050,7 +5050,7 @@ async function runAgentControlAction(action) {
         if (agentSetupMessage) agentSetupMessage.textContent = "Local-only mode configured. You can enable the Agent later.";
       } else {
         await getDesktopApiState().api.settings.saveAgentConfig({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}` });
-        await getDesktopApiState().api.security.rotateAgentToken();
+        await api.pairLocalAgent({ rotate: true, reason: "setup" });
         if (agentSetupAutoStart?.checked) await api.installService();
         if (!(await api.status())?.running) await api.start();
         const connection = await getDesktopApiState().api.settings.testAgentConnection({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}` });
@@ -30182,6 +30182,7 @@ agentDiagnosticsList?.addEventListener("click", (event) => {
   const action = event.target.closest("[data-agent-repair]")?.dataset.agentRepair;
   if (action === "start") runAgentControlAction("start");
   if (action === "install-service") runAgentControlAction("installService");
+  if (action === "repair-pairing") runAgentControlAction("repairAgent");
   if (action === "select-port") agentConfigFields.forEach((field) => { if (field.dataset.agentConfig === "port") field.focus(); });
 });
 document.querySelectorAll("[data-diagnostics-action]").forEach((button) => button.addEventListener("click", async () => {

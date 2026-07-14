@@ -16,8 +16,8 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
   "getAgentInstancesDirectory",
   "getAgentBackupsDirectory",
   "getAgentTempDirectory",
-  "rotateAgentSettingsToken",
-  "saveAgentSettings",
+  "pairLocalAgent",
+  "readLocalAgentPairingStatus",
   "testConnection",
   "LOCAL_AGENT_RUNTIME_MISSING",
   "LOCAL_AGENT_VERIFY_FAILED",
@@ -31,13 +31,16 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
 assert(!agentControl.includes("token: token.token"), "Installer results must not return raw tokens.");
 assert(!agentControl.includes("agentToken: token.token"), "Installer results must not expose generated Agent tokens.");
+assert(agentControl.includes("pairLocalAgentSecurely"), "Agent Control should expose local pairing repair without manual token copying.");
 
 [
   "agentControl:installLocalAgent",
+  "agentControl:pairLocalAgent",
   "runLocalLifecycle(\"install-local-agent\"",
 ].forEach((needle) => assert(ipc.includes(needle), `Agent Control IPC should expose ${needle}.`));
 
 assert(preload.includes("installLocalAgent: (payload = {}) => ipcRenderer.invoke(\"agentControl:installLocalAgent\", payload)"), "Preload should expose installLocalAgent.");
+assert(preload.includes("pairLocalAgent: (payload = {}) => ipcRenderer.invoke(\"agentControl:pairLocalAgent\", payload)"), "Preload should expose pairLocalAgent.");
 
 [
   "data-agent-local-installer",
@@ -54,6 +57,7 @@ assert(preload.includes("installLocalAgent: (payload = {}) => ipcRenderer.invoke
   "agentLocalInstallerStatus",
   "agentLocalInstallerSteps",
   "api.installLocalAgent({ autoStart: true, installService: true })",
+  "api.pairLocalAgent({ rotate: true",
   "The Local Agent runs on this PC",
   "Remote Agent mode stays available",
   "await refreshNodes()",

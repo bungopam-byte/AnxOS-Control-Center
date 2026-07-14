@@ -27,8 +27,10 @@ async function main() {
   assert(serviceSource.includes("validateWindowsServiceRegistration"), "Agent Control must validate Windows service registration before reporting it as passed.");
   assert(serviceSource.includes("SERVICE_VERIFICATION_FAILED"), "Agent Control service install must verify registration after modification.");
   assert(serviceSource.includes("ensureLocalAgentBackendSelected"), "Starting the bundled local Agent must select the local Agent backend for first-time packaged users.");
+  assert(serviceSource.includes("pairLocalAgentSecurely") && serviceSource.includes("readLocalAgentPairingStatus"), "Agent Control must expose secure automatic Local Agent pairing.");
   assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
   assert(ipcSource.includes("runLocalLifecycle") && ipcSource.includes('start: () => control.start()'), "Local Agent lifecycle actions must be available without requiring npm or Owner-only service installation.");
+  assert(ipcSource.includes("agentControl:pairLocalAgent") && ipcSource.includes("pair-local-agent"), "Local Agent pairing must use the local lifecycle IPC path.");
   assert(ipcSource.includes("installService: () => control.installService()") && ipcSource.includes("runAuthorized(channel, operation)"), "Background service installation must remain Owner-authorized.");
   assert(ipcSource.includes('ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null'), "Local Agent diagnostics must remain read-only and available without owner authorization.");
   assert(ipcSource.includes('authorize("remote-diagnostics")'), "Remote Agent diagnostic capture must remain owner-authorized.");
@@ -41,6 +43,7 @@ async function main() {
   assert(rendererSource.includes("Local Application Host") && rendererSource.includes("Local Agent Service"), "Agent Control must distinguish the application host from the local Agent service.");
   assert(rendererSource.includes("function renderAgentBeginnerSummary") && rendererSource.includes("This Computer") && rendererSource.includes("Local AnxOS Agent") && rendererSource.includes("Connected Systems"), "Agent Control must render a beginner summary that separates desktop, local Agent, and remote systems.");
   assert(rendererSource.includes("getLocalAgentFriendlyState") && rendererSource.includes("Authentication issue") && rendererSource.includes("Start the bundled local Agent"), "Agent Control beginner summary must adapt actions to the real local Agent state.");
+  assert(rendererSource.includes("api.pairLocalAgent({ rotate: true") && rendererSource.includes("repair-pairing"), "Renderer must repair and rotate Local Agent pairing without manual tokens.");
   assert(rendererSource.includes("data-agent-summary-page") && rendererSource.includes("runAgentControlAction(action)"), "Agent Control summary actions must reuse existing page routing and Agent Control operations.");
   assert(!rendererSource.includes('subtitle: "Remote Agent"') || rendererSource.includes("renderRemoteAgents"), "Local host rendering must not label the application host as a remote Agent.");
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");

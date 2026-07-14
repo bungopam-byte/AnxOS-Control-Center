@@ -10,7 +10,12 @@ const diagnostics = require("./diagnosticsService");
 const agentPackage = require("../../agent/package.json");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 const { getBundledLocalAgentRuntime, getPublicLocalAgentRuntimeInfo } = require("./localAgentRuntimeService");
-const { rotateAgentSettingsToken, saveAgentSettings, testConnection } = require("./agentClient");
+const { testConnection } = require("./agentClient");
+const {
+  pairLocalAgent,
+  readLocalAgentPairingStatus,
+  rotateLocalAgentCredentials,
+} = require("./localAgentPairingService");
 
 const SERVICE_NAME = "AnxOSAgent";
 const LOCAL_AGENT_DISPLAY_NAME = "This PC";
@@ -364,9 +369,8 @@ async function installLocalAgent(options = {}) {
     mark("configuration", "complete", "Local Agent configuration is ready.");
 
     const localAgentUrl = getLocalAgentUrl(config);
-    const token = rotateAgentSettingsToken({ backendMode: "agent", agentUrl: localAgentUrl });
-    saveAgentSettings({ backendMode: "agent", agentUrl: localAgentUrl });
-    mark("credentials", "complete", `Secure local credentials were generated. Fingerprint ${token.fingerprint || "available"}.`);
+    const pairing = pairLocalAgent({ agentUrl: localAgentUrl, rotate: true, reason: "local-agent-install" });
+    mark("credentials", "complete", `Secure local credentials were generated. Fingerprint ${pairing.fingerprint || "available"}.`);
 
     let serviceWarning = null;
     if (options.installService !== false) {
@@ -416,6 +420,23 @@ async function installLocalAgent(options = {}) {
   } finally {
     operationInFlight = null;
   }
+}
+
+async function pairLocalAgentSecurely(options = {}) {
+  const config = readConfig();
+  const localAgentUrl = getLocalAgentUrl(config);
+  const result = options.rotate === true
+    ? rotateLocalAgentCredentials({ agentUrl: localAgentUrl, reason: options.reason || "local-agent-rotation" })
+    : pairLocalAgent({ agentUrl: localAgentUrl, reason: options.reason || "local-agent-pairing" });
+  diagnostics.log("info", "agent-control", "local-pairing", "Local Agent pairing state updated", {
+    fingerprint: result.fingerprint || null,
+    rotated: result.rotated,
+    credentialState: result.credentialState,
+  }, { file: "service-manager" });
+  return {
+    ...result,
+    status: await getStatus(),
+  };
 }
 
 async function probePort(port) { return new Promise((resolve) => { const socket = net.connect({ host: "127.0.0.1", port, timeout: 800 }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => resolve(false)); socket.once("timeout", () => { socket.destroy(); resolve(false); }); }); }
@@ -746,6 +767,7 @@ async function getStatus() {
     memoryTotalBytes: runtime.memory.totalBytes,
     memoryUsagePercent: runtime.memory.usagePercent,
     runtime,
+    pairing: readLocalAgentPairingStatus(),
     connectedClients: health?.process?.connectedClients || 0,
     lastHeartbeat: health ? new Date().toISOString() : null,
     latencyMs,
@@ -917,6 +939,15 @@ async function runDiagnostics() {
       explanation: status.running ? "Agent owns the configured port." : portUsed ? "Another process is using the configured port." : "Configured port is available.",
       repairAction: portUsed && !status.running ? "select-port" : null,
     },
+    {
+      id: "local-pairing",
+      label: "Local pairing",
+      result: status.pairing?.configured && status.pairing?.localOnly ? "Passed" : "Warning",
+      explanation: status.pairing?.configured && status.pairing?.localOnly
+        ? `Desktop credentials are paired locally. Fingerprint ${status.pairing.fingerprint || "available"}.`
+        : "Local Agent credentials need to be paired or repaired on this computer.",
+      repairAction: status.pairing?.configured && status.pairing?.localOnly ? null : "repair-pairing",
+    },
     { id: "configuration", label: "Configuration validity", result: "Passed", explanation: `Configuration is valid for ${config.host}:${config.port}.` },
     { id: "logs", label: "Log directory", result: fs.existsSync(diagnostics.getDirectory()) ? "Passed" : "Warning", explanation: "Diagnostics directory is writable." },
   ];
@@ -940,6 +971,7 @@ module.exports = {
   listAgents,
   openDataFolder,
   openLogs,
+  pairLocalAgentSecurely,
   readConfig,
   resetConfig,
   restart,

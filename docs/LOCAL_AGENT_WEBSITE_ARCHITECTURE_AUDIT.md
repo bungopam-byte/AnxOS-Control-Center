@@ -63,9 +63,9 @@ Windows background startup was implemented as a scheduled task named `AnxOSAgent
 
 ### Local Pairing
 
-The shared token system can generate and rotate strong tokens, and pairing-code parsing exists. Local automatic pairing is not yet a hardened local-only handshake. The current user-facing failure text still tells users to run `npm run agent:token:status` or `npm run agent:pair` on the Agent machine, which does not meet the no-terminal requirement.
+The shared token system can generate and rotate strong tokens, and pairing-code parsing exists. Phase 6 adds a dedicated Local Agent pairing path that only accepts loopback Agent URLs, writes Desktop-side local credentials through the existing encrypted secure-session store, stores only fingerprints in renderer-visible responses, and keeps manual pairing-code handling scoped to remote Agent setup.
 
-Credentials are currently stored in JSON config files with `0600` mode where supported. The code does not yet use an OS secure credential store for Local Agent credentials.
+The Agent process still needs access to the shared token through the managed Agent configuration file, so that file remains permission-restricted with `0600` mode where supported. Desktop-side Local Agent pairing state is mirrored in `local-agent-credentials.json` through Electron `safeStorage` or the existing AES-GCM local fallback. A stronger local takeover prevention handshake and migration away from any plaintext Agent-process credential remain later hardening work.
 
 ### Onboarding
 
@@ -227,3 +227,9 @@ The installer handles missing runtime, busy operations, service elevation blocks
 Windows background startup now uses the Windows Service Control Manager path (`sc.exe`) instead of scheduled tasks. The service manager can query, create, start, stop, disable, delete, and validate the `AnxOSAgent` Windows service, configures automatic startup, writes service environment values under the service registry key, and configures restart-on-failure recovery actions. Linux systemd user service behavior is preserved.
 
 This phase updates source-level validation and Linux smoke coverage. It does not claim real Windows SCM validation because these checks were run from the current Linux development environment.
+
+## Phase 6 Local Pairing Note
+
+Local Agent installation, setup repair, and token rotation now use `localAgentPairingService` rather than the remote pairing-code path. The service rejects non-loopback URLs, switches the Desktop to the localhost Agent backend, generates or rotates a strong shared token, writes an encrypted Desktop credential record, and returns only status, restart requirements, and token fingerprints to the renderer.
+
+Remote Agent pairing remains available through `ANXOS-PAIR` codes in Settings. Local Agent pairing does not require a terminal, JSON edits, or token copying. The current implementation is source- and smoke-tested on Linux; real Windows validation of secure storage and service restart behavior is still required before a production release.

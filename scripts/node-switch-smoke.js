@@ -27,6 +27,14 @@ function compact(source) {
 includesAll(appSource, [
   "let selectedNodeContextVersion = 0;",
   "let nodePickerOpen = false;",
+  "function getNodeConnectionState",
+  'key: "connected"',
+  'key: "connecting"',
+  'key: "degraded"',
+  'key: "unauthorized"',
+  'key: "unavailable"',
+  'key: "offline"',
+  "function getNodeConnectionSummary",
   "function getNodeRequestContext",
   "function isNodeRequestCurrent",
   "function getNodeScopedPayload",
@@ -52,6 +60,8 @@ includesAll(appSource, [
   "await activateNodePickerOption(nodePickerActiveIndex);",
   "closeNodePicker();\n      await selectNode(node.id || \"application-host\");",
   "sidebarFooter.dataset.agentState = nodeState;",
+  "sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? \"Switching node\" : connectionState.message}`;",
+  "badge.textContent = node.id === getSelectedNodeId() ? \"Current\" : connectionState.label;",
 ], "Node picker interaction");
 
 includesAll(appSource, [
@@ -92,6 +102,7 @@ includesAll(appSource, [
   "showToast(normalizeIpcErrorMessage(error, \"Node could not be selected.\"), \"warning\");",
   "nodeSwitchInProgress = false;\n    renderNodes();",
   "Selected node was unavailable. Switched to",
+  "getFriendlyErrorMessage(result.message || \"Node unavailable.\")",
 ], "Node switch persistence and completion");
 
 includesAll(appSource, [

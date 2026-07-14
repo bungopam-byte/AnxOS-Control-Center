@@ -25709,34 +25709,109 @@ function createAgentRobotIcon(state = "offline") {
 }
 
 function getNodeVisualState(node) {
+  const state = getNodeConnectionState(node);
+  if (state.key === "connected") return "online";
+  if (state.key === "connecting") return "installing";
+  if (state.key === "degraded") return "warning";
+  if (state.key === "unauthorized") return "error";
+  if (state.key === "offline") return "offline";
+  return state.tone || "error";
+}
+
+function getNodeConnectionState(node) {
   if (node?.kind === "application-host") {
-    return "online";
+    return {
+      key: "connected",
+      label: "Connected",
+      tone: "online",
+      message: "This device is available locally.",
+      suggestion: "Local desktop services remain available.",
+    };
   }
-  if (node?.connection?.status === "online" || node?.connection?.connected === true) {
-    return "online";
+  if (!node) {
+    return {
+      key: "unavailable",
+      label: "Unavailable",
+      tone: "error",
+      message: "Node details are unavailable.",
+      suggestion: "Refresh nodes or choose another system.",
+    };
   }
-  if (node?.connection?.status === "warning") {
-    return "warning";
+  const status = String(node.connection?.status || node.state || "").toLowerCase();
+  const message = String(node.connection?.message || node.error || "");
+  const combined = `${status} ${message}`;
+  if (node.installing || /connecting|testing|pending|starting|installing/.test(combined)) {
+    return {
+      key: "connecting",
+      label: "Connecting",
+      tone: "installing",
+      message: "AnxOS is checking this Agent connection.",
+      suggestion: "Wait for the current connection check to finish.",
+    };
   }
-  if (node?.connection?.status === "offline" || node?.connection?.connected === false) {
-    return "offline";
+  if (/unauthorized|forbidden|auth|token|credential/.test(combined)) {
+    return {
+      key: "unauthorized",
+      label: "Unauthorized",
+      tone: "error",
+      message: "The Agent rejected this desktop connection.",
+      suggestion: "Repair pairing or rotate the shared Agent token from Agent Control.",
+    };
   }
-  if (node?.installing) {
-    return "installing";
+  if (node.connection?.status === "online" || node.connection?.connected === true) {
+    return {
+      key: "connected",
+      label: "Connected",
+      tone: "online",
+      message: message || "Agent is responding.",
+      suggestion: "Remote management is available for this system.",
+    };
   }
-  if (node?.error) {
-    return "error";
+  if (/warning|degraded|partial|limited|unhealthy/.test(combined)) {
+    return {
+      key: "degraded",
+      label: "Degraded",
+      tone: "warning",
+      message: message || "The Agent is reachable, but one or more checks need attention.",
+      suggestion: "Open Node Health or Agent Control for details.",
+    };
   }
-  return node?.hasToken ? "offline" : "error";
+  if (node.connection?.status === "offline" || node.connection?.connected === false || /offline|disconnected|unreachable|refused|timed? out|fetch failed|enotfound|econnrefused|etimedout/.test(combined)) {
+    return {
+      key: "offline",
+      label: "Offline",
+      tone: "offline",
+      message: "The selected system is offline or unreachable.",
+      suggestion: "Start the Agent on that system or check the network address.",
+    };
+  }
+  if (!node.hasToken || !node.agentUrl) {
+    return {
+      key: "unavailable",
+      label: "Unavailable",
+      tone: "error",
+      message: !node.agentUrl ? "Agent URL is not configured for this node." : "Agent token is missing for this node.",
+      suggestion: "Edit the node settings before connecting.",
+    };
+  }
+  return {
+    key: "unavailable",
+    label: "Unavailable",
+    tone: "error",
+    message: message || "Agent connection state is unavailable.",
+    suggestion: "Test the connection or refresh nodes.",
+  };
 }
 
 function getNodeStatusLabel(node) {
-  const state = getNodeVisualState(node);
-  if (state === "online") return node?.kind === "application-host" ? "Healthy" : "Connected";
-  if (state === "warning") return "Warning";
-  if (state === "installing") return "Installing";
-  if (state === "error") return "Error";
-  return "Offline";
+  const state = getNodeConnectionState(node);
+  if (node?.kind === "application-host") return "Healthy";
+  return state.label;
+}
+
+function getNodeConnectionSummary(node) {
+  const state = getNodeConnectionState(node);
+  return `${state.message} ${state.suggestion}`.trim();
 }
 
 const NODE_HEALTH_STALE_MS = 60 * 1000;
@@ -25917,12 +25992,13 @@ function getSystemSnapshotForNode(node = getSelectedNode()) {
 
 function buildConnectivityHealth(node) {
   const visual = getNodeVisualState(node);
+  const connectionState = getNodeConnectionState(node);
   const target = getCurrentAgentHealthTarget();
   const runtime = getHealthRuntime();
   const latency = runtime?.latencyMs ?? target?.latencyMs;
   const lastHeartbeat = node?.connection?.lastSeen || node?.updatedAt || target?.lastHeartbeat || null;
-  let state = visual === "online" ? "Healthy" : visual === "warning" ? "Warning" : visual === "offline" ? "Degraded" : "Unknown";
-  if (target?.state === "Authentication failed") state = "Degraded";
+  let state = visual === "online" ? "Healthy" : visual === "warning" ? "Warning" : ["offline", "error"].includes(visual) ? "Degraded" : "Unknown";
+  if (connectionState.key === "unauthorized" || target?.state === "Authentication failed") state = "Degraded";
   else if (Number.isFinite(latency) && latency > NODE_HEALTH_RESOURCE_THRESHOLDS.latencyWarningMs) state = "Warning";
   else if (node?.kind === "agent" && isNodeHealthStale(lastHeartbeat, 2 * NODE_HEALTH_STALE_MS) && visual === "online") state = "Warning";
   return buildNodeHealthCategory({
@@ -25930,10 +26006,11 @@ function buildConnectivityHealth(node) {
     label: "Connectivity",
     state,
     evidence: [
-      node?.connection?.message || getNodeStatusLabel(node),
+      `${connectionState.label}: ${connectionState.message}`,
       Number.isFinite(latency) ? `Latency ${latency} ms` : "Latency unavailable",
       lastHeartbeat ? `Last heartbeat ${formatHealthCheckedAt(lastHeartbeat)}` : "Heartbeat unavailable",
       node?.kind === "application-host" ? "Local application host" : node?.agentUrl || "Agent URL unavailable",
+      connectionState.suggestion,
     ].join(" · "),
     checkedAt: lastHeartbeat ? Date.parse(lastHeartbeat) || Date.now() : Date.now(),
     issueCount: state === "Healthy" ? 0 : 1,
@@ -26738,7 +26815,8 @@ function openNodeDetails(nodeId) {
   const health = node.id === getSelectedNodeId() ? refreshNodeHealth({ notify: false }) : getSharedNodeHealthModel(node);
   if (nodeDetailsTitle) nodeDetailsTitle.textContent = node.displayName || node.id || "Node";
   if (nodeDetailsSummary) {
-    nodeDetailsSummary.textContent = `${node.kind === "application-host" ? "Application host" : "Agent node"} · ${getNodeStatusLabel(node)} · ${health.issueCount} health issue${health.issueCount === 1 ? "" : "s"}`;
+    const connectionState = getNodeConnectionState(node);
+    nodeDetailsSummary.textContent = `${node.kind === "application-host" ? "Application host" : "Agent node"} · ${connectionState.label} · ${health.issueCount} health issue${health.issueCount === 1 ? "" : "s"}`;
   }
   if (nodeDetailsBadges) {
     nodeDetailsBadges.replaceChildren(
@@ -26762,7 +26840,7 @@ function openNodeDetails(nodeId) {
     runningState: node.kind === "application-host" ? identity.runningState || "running" : node.connection?.connected ? "Agent connected" : "Agent unavailable",
     docker: node.kind === "application-host" ? "Unsupported here: Docker workspace controls require an Agent node." : node.docker?.enabled === false ? "Disabled" : "Enabled",
     lastSeen: formatNodeLastSeen(node),
-    connection: node.connection?.message || getNodeStatusLabel(node),
+    connection: getNodeConnectionSummary(node),
     url: node.kind === "application-host" ? "Local Application" : node.agentUrl || "Unavailable",
     token: node.kind === "application-host" ? "Not required" : node.hasToken ? "Configured" : "Missing",
     unsupportedFeatures: getNodeUnsupportedFeatureSummary(node),
@@ -26856,15 +26934,17 @@ function renderNodePicker() {
   }
 
   nodes.forEach((node, index) => {
+    const visualState = getNodeVisualState(node);
+    const connectionState = getNodeConnectionState(node);
     const option = document.createElement("button");
     option.type = "button";
     option.id = `node-picker-option-${String(node.id || index).replace(/[^a-z0-9_-]/gi, "-")}`;
     option.className = "node-picker-option";
     option.dataset.nodePickerOption = node.id;
-    option.dataset.agentState = getNodeVisualState(node);
+    option.dataset.agentState = visualState;
     option.setAttribute("role", "option");
     option.setAttribute("aria-selected", node.id === getSelectedNodeId() ? "true" : "false");
-    option.append(createAgentRobotIcon(getNodeVisualState(node)));
+    option.append(createAgentRobotIcon(visualState));
     const copy = document.createElement("span");
     copy.className = "node-picker-option__copy";
     const title = document.createElement("strong");
@@ -26876,7 +26956,7 @@ function renderNodePicker() {
     copy.append(title, detail);
     const badge = document.createElement("span");
     badge.className = "node-picker-option__badge";
-    badge.textContent = node.id === getSelectedNodeId() ? "Current" : getNodeVisualState(node);
+    badge.textContent = node.id === getSelectedNodeId() ? "Current" : connectionState.label;
     option.append(copy, badge);
     option.addEventListener("click", async (event) => {
       event.stopPropagation();
@@ -26957,6 +27037,7 @@ function renderNodes() {
     const selected = getSelectedNode();
     const nodeName = selected?.displayName || "Application Host";
     const nodeState = getNodeVisualState(selected);
+    const connectionState = getNodeConnectionState(selected);
     const nameTarget = sidebarFooter.querySelector("[data-node-picker-label]");
     const detailTarget = sidebarFooter.querySelector("[data-node-picker-detail]");
     if (nameTarget) {
@@ -26967,10 +27048,10 @@ function renderNodes() {
         ? "Switching node..."
       : selected?.kind === "application-host"
           ? "Application host"
-          : selected?.agentUrl || "Remote agent";
+          : `${connectionState.label} · ${selected?.agentUrl || "Remote agent"}`;
     }
     sidebarFooter.dataset.agentState = nodeState;
-    sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? "Switching node" : "Click to switch nodes"}`;
+    sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? "Switching node" : connectionState.message}`;
   }
 
   if (nodeMessage) {
@@ -27001,6 +27082,7 @@ function renderNodes() {
     }
     nodes.forEach((node) => {
       const state = getNodeVisualState(node);
+      const connectionState = getNodeConnectionState(node);
       const health = getSharedNodeHealthModel(node);
       const item = document.createElement("article");
       item.className = "download-item node-card";
@@ -27032,6 +27114,7 @@ function renderNodes() {
       meta.className = "node-card__meta";
       [
         ["Agent", node.kind === "application-host" ? "Local Application" : node.agentUrl || "Unavailable"],
+        ["Connection", `${connectionState.label} - ${connectionState.message}`],
         ["Last seen", formatNodeLastSeen(node)],
         ["Health", `${health.state} · ${health.issueCount} issue${health.issueCount === 1 ? "" : "s"}`],
       ].forEach(([label, value]) => {
@@ -27199,7 +27282,7 @@ async function testSelectedNode() {
     return;
   }
   const result = await desktopApiState.api.nodes.test(getSelectedNodeId()).catch((error) => ({ connected: false, message: error.message }));
-  showToast(result.connected ? "Node connected." : result.message || "Node unavailable.");
+  showToast(result.connected ? "Node connected." : getFriendlyErrorMessage(result.message || "Node unavailable."));
 }
 
 async function deleteSelectedNode() {
@@ -27230,7 +27313,7 @@ async function testNodeById(nodeId) {
   if (!desktopApiState.hasNodes) return;
   const result = await desktopApiState.api.nodes.test(nodeId || getSelectedNodeId()).catch((error) => ({ connected: false, message: error.message }));
   await refreshNodes();
-  showToast(result.connected ? "Node connected." : result.message || "Node unavailable.");
+  showToast(result.connected ? "Node connected." : getFriendlyErrorMessage(result.message || "Node unavailable."));
 }
 
 async function deleteNodeById(nodeId) {

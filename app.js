@@ -398,6 +398,9 @@ const settingsSearchResults = document.querySelector("[data-settings-search-resu
 const accentSwatchButtons = document.querySelectorAll("[data-accent-swatch]");
 const settingsResetButton = document.querySelector("[data-settings-reset]");
 const settingsResetCategoryButtons = document.querySelectorAll("[data-settings-reset-category]");
+settingsInputs.forEach((input) => {
+  input.dataset.settingsInitiallyDisabled = input.disabled ? "true" : "false";
+});
 const agentSettingsInputs = document.querySelectorAll("[data-agent-setting]");
 const agentSettingsSaveButton = document.querySelector('[data-agent-action="save"]');
 const agentSettingsTestButton = document.querySelector('[data-agent-action="test"]');
@@ -1077,6 +1080,14 @@ const DEFAULT_SETTINGS = {
   "developer.debugMode": false,
 };
 let currentSettings = { ...DEFAULT_SETTINGS };
+let settingsPermissionState = {
+  owner: false,
+  authenticated: false,
+  role: "Guest",
+  capabilities: {},
+  categories: { ownerOnly: ["developer"] },
+  settings: { ownerOnly: ["developer.debugMode"] },
+};
 
 function getCurrentSettings() {
   return currentSettings || DEFAULT_SETTINGS;
@@ -1220,6 +1231,7 @@ function getDesktopApiState() {
       typeof api?.ssh?.onData === "function" &&
       typeof api?.ssh?.onStatus === "function",
     hasSettings:
+      typeof api?.settings?.getPermissions === "function" &&
       typeof api?.settings?.getAgentConfig === "function" &&
       typeof api?.settings?.saveAgentConfig === "function" &&
       typeof api?.settings?.testAgentConnection === "function" &&
@@ -23339,6 +23351,7 @@ async function refreshSecurityState() {
     console.warn("[Security] Dashboard unavailable.", normalizeIpcErrorMessage(error, "Security dashboard unavailable."));
   }
   renderSecurityState();
+  await refreshSettingsPermissions();
   getDesktopApiState().api?.diagnostics?.capture?.({
     accountSignedIn: securityState?.accountAuthenticated === true,
     ownerAuthorized: securityState?.ownerWorkspaceAvailable === true,
@@ -25652,8 +25665,99 @@ function setSettingsStatus(message, tone = "neutral") {
   });
 }
 
+function canUseSettingsCapability(capability) {
+  if (!capability) return true;
+  return settingsPermissionState?.capabilities?.[capability] === true;
+}
+
+function isSettingKeyAuthorized(key) {
+  const ownerOnly = settingsPermissionState?.settings?.ownerOnly || [];
+  return !ownerOnly.includes(key) || settingsPermissionState?.owner === true;
+}
+
+function isSettingsSectionAuthorized(section) {
+  if (!section) return false;
+  return canUseSettingsCapability(section.dataset.settingsCapability || "");
+}
+
+function categoryHasAuthorizedSettingsSection(category) {
+  return Array.from(settingsCategorySections).some((section) => (
+    section.dataset.settingsCategory === category && isSettingsSectionAuthorized(section)
+  ));
+}
+
+function normalizeSettingsCategory(category = "general") {
+  const requested = category || "general";
+  if (categoryHasAuthorizedSettingsSection(requested)) return requested;
+  return categoryHasAuthorizedSettingsSection("general") ? "general" : requested;
+}
+
+function applySettingsPermissions() {
+  settingsCategorySections.forEach((section) => {
+    const authorized = isSettingsSectionAuthorized(section);
+    section.dataset.settingsPermissionHidden = authorized ? "false" : "true";
+    if (!authorized) section.hidden = true;
+  });
+  settingsCategoryButtons.forEach((button) => {
+    const category = button.dataset.settingsCategoryTarget || "general";
+    button.hidden = !categoryHasAuthorizedSettingsSection(category);
+  });
+  settingsInputs.forEach((input) => {
+    const authorized = isSettingKeyAuthorized(input.dataset.setting);
+    input.toggleAttribute("data-settings-permission-denied", !authorized);
+    input.disabled = !authorized || input.dataset.settingsInitiallyDisabled === "true";
+  });
+  if (!categoryHasAuthorizedSettingsSection(activeSettingsCategory)) {
+    activeSettingsCategory = "general";
+    try { window.sessionStorage.setItem("anxos-settings-category", activeSettingsCategory); } catch {}
+  }
+  setActiveSettingsCategory(activeSettingsCategory || "general");
+  renderSettingsSearch();
+}
+
+async function refreshSettingsPermissions() {
+  const desktopApiState = getDesktopApiState();
+  if (desktopApiState.api?.settings?.getPermissions) {
+    try {
+      const payload = await desktopApiState.api.settings.getPermissions();
+      settingsPermissionState = {
+        ...settingsPermissionState,
+        ...(payload || {}),
+        capabilities: { ...(settingsPermissionState.capabilities || {}), ...(payload?.capabilities || {}) },
+      };
+    } catch (error) {
+      settingsPermissionState = {
+        ...settingsPermissionState,
+        owner: false,
+        capabilities: {},
+      };
+      console.warn("[Settings] Permission state unavailable.", normalizeIpcErrorMessage(error, "Settings permissions unavailable."));
+    }
+  } else {
+    const owner = isOwnerWorkspaceAuthorized();
+    settingsPermissionState = {
+      ...settingsPermissionState,
+      owner,
+      authenticated: Boolean(securityState?.authenticated || securityState?.accountAuthenticated),
+      role: securityState?.user?.role || "Guest",
+      capabilities: owner ? {
+        canManageMarketplaceSettings: true,
+        canManageDeveloperSettings: true,
+        canManageInternalUpdates: true,
+        canManageAdvancedSecurity: true,
+        canManageInfrastructure: true,
+        canManageAgentConfiguration: true,
+        canManageProviderCredentials: true,
+        canViewDiagnostics: true,
+        canManageAdvancedNetworking: true,
+      } : {},
+    };
+  }
+  applySettingsPermissions();
+}
+
 function setActiveSettingsCategory(category = "general", highlightSelector = null) {
-  activeSettingsCategory = category || "general";
+  activeSettingsCategory = normalizeSettingsCategory(category || "general");
   try { window.sessionStorage.setItem("anxos-settings-category", activeSettingsCategory); } catch {}
   settingsCategoryButtons.forEach((button) => {
     const active = button.dataset.settingsCategoryTarget === activeSettingsCategory;
@@ -25661,7 +25765,7 @@ function setActiveSettingsCategory(category = "general", highlightSelector = nul
     button.setAttribute("aria-current", active ? "page" : "false");
   });
   settingsCategorySections.forEach((section) => {
-    section.hidden = section.dataset.settingsCategory !== activeSettingsCategory;
+    section.hidden = section.dataset.settingsCategory !== activeSettingsCategory || !isSettingsSectionAuthorized(section);
   });
   if (highlightSelector) {
     requestAnimationFrame(() => {
@@ -25675,7 +25779,7 @@ function setActiveSettingsCategory(category = "general", highlightSelector = nul
 }
 
 function getSettingSearchEntries() {
-  return Array.from(settingsCategorySections).map((section) => {
+  return Array.from(settingsCategorySections).filter(isSettingsSectionAuthorized).map((section) => {
     const title = section.querySelector("h3")?.textContent || section.dataset.settingsCategory || "Settings";
     const description = section.querySelector(".settings-section__header p")?.textContent || "";
     const keywords = section.dataset.settingsKeywords || "";
@@ -25716,6 +25820,7 @@ function renderSettingsSearch() {
 
 async function loadSettings() {
   const desktopApiState = getDesktopApiState();
+  await refreshSettingsPermissions();
   let settings = readStoredSettings();
   if (desktopApiState.hasPreferences) {
     try {
@@ -25743,6 +25848,7 @@ async function saveSettings() {
   };
 
   settingsInputs.forEach((input) => {
+    if (!isSettingKeyAuthorized(input.dataset.setting)) return;
     settings[input.dataset.setting] = getSettingInputValue(input);
   });
 
@@ -25758,7 +25864,9 @@ async function saveSettings() {
   settingsSaveInFlight = true;
   setSettingsStatus("Saving settings...");
   try {
-    const payload = await desktopApiState.api.settings.savePreferences(settings);
+    const payload = await desktopApiState.api.settings.savePreferences(Object.fromEntries(
+      Object.entries(settings).filter(([key]) => isSettingKeyAuthorized(key)),
+    ));
     writeStoredSettings({ ...DEFAULT_SETTINGS, ...(payload?.settings || settings) });
     setSettingsStatus("Settings saved.");
   } catch (error) {

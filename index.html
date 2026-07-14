@@ -3758,7 +3758,7 @@
               <div class="settings-actions"><button class="inline-action" type="button" disabled title="Versioned settings backup export is not available yet.">Create backup now</button><button class="inline-action" type="button" disabled title="Validated restore previews are not available yet.">Restore backup</button><button class="inline-action" type="button" data-settings-reset-category="backups">Reset Backups</button></div>
             </section>
 
-            <section class="settings-section settings-section--marketplace" data-settings-category="integrations" data-settings-keywords="integrations marketplace curseforge api key modpacks">
+            <section class="settings-section settings-section--marketplace" data-settings-category="integrations" data-settings-capability="canManageMarketplaceSettings" data-settings-keywords="integrations marketplace curseforge api key modpacks">
               <div class="settings-section__header">
                 <div>
                   <h3>Marketplace</h3>
@@ -3856,7 +3856,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--developer" data-settings-category="developer" data-settings-keywords="developer debug logs diagnostics devtools reset">
+            <section class="settings-section settings-section--developer" data-settings-category="developer" data-settings-capability="canManageDeveloperSettings" data-settings-keywords="developer debug logs diagnostics devtools reset">
               <div class="settings-section__header">
                 <div>
                   <h3>Developer</h3>
@@ -3922,7 +3922,7 @@
                 <button class="inline-action" type="button" data-settings-category-target="updates">Open Updates</button>
               </div>
             </section>
-            <section class="settings-section" data-routing-diagnostics hidden>
+            <section class="settings-section" data-routing-diagnostics data-settings-capability="canViewDiagnostics" hidden>
               <div class="settings-section-heading">
                 <div>
                   <span class="settings-section-icon" aria-hidden="true">DEV</span>

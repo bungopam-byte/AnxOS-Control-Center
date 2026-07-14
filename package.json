@@ -51,6 +51,7 @@
     "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
     "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",
+    "settings:permissions:smoke": "node scripts/settings-permissions-smoke.js",
     "maintenance:smoke": "node scripts/maintenance-smoke.js",
     "global-search:smoke": "node scripts/global-search-smoke.js",
     "command-palette:smoke": "node scripts/command-palette-smoke.js",

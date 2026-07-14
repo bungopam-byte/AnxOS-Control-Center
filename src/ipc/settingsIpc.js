@@ -19,8 +19,14 @@ const {
   resetPreferences,
   updatePreferences,
 } = require("../services/settingsPreferenceService");
+const {
+  assertCanReadSettingsSecret,
+  assertCanResetSettingsCategory,
+  assertCanWriteSettingsPayload,
+  getSettingsPermissions,
+} = require("../services/settingsPermissionService");
 const curseforgeProvider = require("../services/providers/curseforgeProvider");
-const { audit, requirePermission } = require("../services/securityService");
+const { audit } = require("../services/securityService");
 
 function getAgentSettingsPayload() {
   const stored = readAgentSettings();
@@ -71,29 +77,33 @@ function getMarketplaceSettingsPayload() {
 }
 
 function registerSettingsIpc() {
+  ipcMain.handle("settings:getPermissions", async () => getSettingsPermissions());
   ipcMain.handle("settings:getPreferences", async () => readPreferences());
   ipcMain.handle("settings:savePreferences", async (_, payload = {}) => {
-    requirePermission("settings:write", "preferences");
+    assertCanWriteSettingsPayload(payload.settings || payload, "preferences");
     const result = updatePreferences(payload.settings || payload);
     audit({ action: "settings.preferences.save", target: "preferences" });
     return result;
   });
   ipcMain.handle("settings:resetPreferences", async (_, payload = {}) => {
-    requirePermission("settings:write", "preferences");
+    assertCanResetSettingsCategory(payload.category || null);
     const result = resetPreferences(payload.category || null);
     audit({ action: "settings.preferences.reset", target: payload.category || "all" });
     return result;
   });
-  ipcMain.handle("settings:getAgentConfig", async () => getAgentSettingsPayload());
+  ipcMain.handle("settings:getAgentConfig", async () => {
+    assertCanReadSettingsSecret("canManageAgentConfiguration", "agent-config");
+    return getAgentSettingsPayload();
+  });
   ipcMain.handle("settings:saveAgentConfig", async (_, payload = {}) => {
-    requirePermission("settings:write", "agent-config");
+    assertCanReadSettingsSecret("canManageAgentConfiguration", "agent-config");
     saveAgentSettings(payload);
     audit({ action: "settings.agent.save", target: "agent-config" });
     return getAgentSettingsPayload();
   });
   ipcMain.handle("settings:testAgentConnection", async (_, payload = null) => testConnection(payload));
   ipcMain.handle("settings:pairAgent", async (_, payload = {}) => {
-    requirePermission("settings:write", "agent-pairing");
+    assertCanReadSettingsSecret("canManageAgentConfiguration", "agent-pairing");
     const result = pairAgentFromCode(payload.code || payload.pairingCode || "");
     audit({ action: "settings.agent.pair", target: "agent-config", reason: result.fingerprint || null });
     return {
@@ -106,9 +116,12 @@ function registerSettingsIpc() {
       },
     };
   });
-  ipcMain.handle("settings:getMarketplaceConfig", async () => getMarketplaceSettingsPayload());
+  ipcMain.handle("settings:getMarketplaceConfig", async () => {
+    assertCanReadSettingsSecret("canManageMarketplaceSettings", "marketplace-config");
+    return getMarketplaceSettingsPayload();
+  });
   ipcMain.handle("settings:saveMarketplaceConfig", async (_, payload = {}) => {
-    requirePermission("settings:write", "marketplace-config");
+    assertCanReadSettingsSecret("canManageMarketplaceSettings", "marketplace-config");
     const saved = saveMarketplaceConfig({ curseForgeApiKey: payload.curseForgeApiKey || "" });
     curseforgeProvider._test.setRuntimeApiKey(saved.curseForgeApiKey);
     audit({ action: "settings.marketplace.save", target: "marketplace-config" });

@@ -309,6 +309,7 @@ const desktopApi = {
     },
   },
   settings: {
+    getPermissions: () => ipcRenderer.invoke("settings:getPermissions"),
     getPreferences: () => ipcRenderer.invoke("settings:getPreferences"),
     savePreferences: (settings = {}) => ipcRenderer.invoke("settings:savePreferences", { settings }),
     resetPreferences: (category = null) => ipcRenderer.invoke("settings:resetPreferences", { category }),

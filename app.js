@@ -448,6 +448,10 @@ const dashboardFriendlyFields = document.querySelectorAll("[data-dashboard-frien
 const dashboardFriendlyEmpty = document.querySelector("[data-dashboard-friendly-empty]");
 const dashboardNextAction = document.querySelector("[data-dashboard-next-action]");
 const dashboardActionButtons = document.querySelectorAll("[data-dashboard-action]");
+const setupHealthCenter = document.querySelector("[data-setup-health-center]");
+const setupHealthFields = document.querySelectorAll("[data-setup-health]");
+const setupHealthGroups = document.querySelector("[data-setup-health-groups]");
+const setupHealthContinueButton = document.querySelector('[data-setup-health-action="continue"]');
 const agentConfigFields = document.querySelectorAll("[data-agent-config]");
 const agentConfigMessage = document.querySelector("[data-agent-config-message]");
 const agentConfigSummary = document.querySelector("[data-agent-config-summary]");
@@ -485,6 +489,7 @@ let dependencyRequestSerial = 0;
 let dependencyLastError = null;
 let agentLogEntries = [];
 let dashboardNextActionState = { page: "dashboard" };
+let setupHealthActionState = { action: "dashboard" };
 let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
 let fivemSetupModalCleanup = null;
@@ -1609,6 +1614,159 @@ function getFriendlyDashboardState() {
   return { computer, systems, services, setup, next, instances, remoteNodes };
 }
 
+function setSetupHealthField(name, value) {
+  setupHealthFields.forEach((field) => {
+    if (field.dataset.setupHealth === name) field.textContent = value;
+  });
+}
+
+function getSetupHealthStatus(ready, label = "Ready") {
+  return ready
+    ? { label, tone: "ok" }
+    : { label: "Needs attention", tone: "warning" };
+}
+
+function createSetupHealthItem(item) {
+  const article = document.createElement("article");
+  article.className = "setup-health-item";
+  article.append(
+    createTextElement("span", item.status, `status-pill status-pill--${item.tone || "planned"}`),
+    createTextElement("strong", item.title),
+    createTextElement("p", item.detail),
+  );
+  return article;
+}
+
+function createSetupHealthGroup(title, items) {
+  const group = document.createElement("section");
+  group.className = "setup-health-group";
+  const completed = items.filter((item) => item.complete).length;
+  group.append(
+    createTextElement("h3", title),
+    createTextElement("p", `${completed}/${items.length} complete`),
+  );
+  const list = document.createElement("div");
+  list.className = "setup-health-list";
+  items.forEach((item) => list.append(createSetupHealthItem(item)));
+  group.append(list);
+  return group;
+}
+
+function getSetupHealthState() {
+  const friendly = getFriendlyDashboardState();
+  const agentSummary = getOnboardingAgentSummary();
+  const dependencySummary = summarizeDependencyStatus(latestDependencyResult);
+  const hasDependencyScan = Boolean(latestDependencyResult);
+  const backupCount = Number.isFinite(backupsState.summary?.totalBackups) ? backupsState.summary.totalBackups : backupsState.backups.length;
+  const publicAccessServices = Array.isArray(latestPublicAccessSnapshot?.services) ? latestPublicAccessSnapshot.services.length : 0;
+  const publicAccessConfigured = Boolean(publicAccessServices || getCurrentSettings()["playit.address"]);
+  const agentConnected = agentSummary.status === "Connected";
+  const serviceConfigured = Boolean(agentControlState?.local?.service?.installed || agentControlState?.local?.service?.enabled);
+  const core = [
+    {
+      title: "App installed",
+      detail: runtimeInfoState?.appVersion ? `AnxOS ${runtimeInfoState.appVersion} is running.` : "The desktop app is running.",
+      complete: true,
+      ...getSetupHealthStatus(true),
+    },
+    {
+      title: "Local system detected",
+      detail: friendly.computer.detail,
+      complete: friendly.computer.status === "Ready",
+      ...getSetupHealthStatus(friendly.computer.status === "Ready", friendly.computer.status),
+    },
+    {
+      title: "Agent connected",
+      detail: agentConnected ? "Agent features can use the selected connection." : `Agent status: ${agentSummary.status}.`,
+      complete: agentConnected,
+      ...getSetupHealthStatus(agentConnected, "Connected"),
+      action: "agent-control",
+    },
+  ];
+  const recommended = [
+    {
+      title: "Agent service configured",
+      detail: serviceConfigured ? "The local Agent service is configured." : "Configure service startup when you want local Agent management to start automatically.",
+      complete: serviceConfigured,
+      status: serviceConfigured ? "Ready" : "Recommended",
+      tone: serviceConfigured ? "ok" : "planned",
+      action: "agent-control",
+    },
+    {
+      title: "Dependencies checked",
+      detail: hasDependencyScan ? dependencySummary.message : "Run a dependency check before installing servers that need Java, SteamCMD, Docker, or other tools.",
+      complete: hasDependencyScan && dependencySummary.state !== "unknown",
+      status: hasDependencyScan ? dependencySummary.label : "Not checked",
+      tone: hasDependencyScan ? dependencySummary.tone.replace("status-pill--", "") : "planned",
+      action: "agent-control",
+    },
+    {
+      title: "First server created",
+      detail: friendly.instances.length ? `${friendly.instances.length} managed server${friendly.instances.length === 1 ? "" : "s"} found.` : "Install a server from the Marketplace when you are ready.",
+      complete: friendly.instances.length > 0,
+      status: friendly.instances.length ? "Ready" : "Recommended",
+      tone: friendly.instances.length ? "ok" : "planned",
+      action: "create-server",
+    },
+    {
+      title: "Backup created",
+      detail: backupCount ? `${backupCount} backup${backupCount === 1 ? "" : "s"} available.` : "Create a backup before making major server changes.",
+      complete: backupCount > 0,
+      status: backupCount ? "Ready" : "Recommended",
+      tone: backupCount ? "ok" : "planned",
+      action: "backups",
+    },
+  ];
+  const optional = [
+    {
+      title: "Docker ready",
+      detail: dockerWorkspaceState?.ready ? "Docker is ready for container workloads." : "Docker is optional unless you plan to use containers.",
+      complete: dockerWorkspaceState?.ready === true,
+      status: dockerWorkspaceState?.ready ? "Ready" : "Optional",
+      tone: dockerWorkspaceState?.ready ? "ok" : "planned",
+      action: "docker",
+    },
+    {
+      title: "Public access configured",
+      detail: publicAccessConfigured ? "At least one public or private access address is configured." : "Configure Public Access only for services you want reachable outside the local system.",
+      complete: publicAccessConfigured,
+      status: publicAccessConfigured ? "Ready" : "Optional",
+      tone: publicAccessConfigured ? "ok" : "planned",
+      action: "playit",
+    },
+    {
+      title: "Remote system connected",
+      detail: friendly.remoteNodes.length ? `${friendly.remoteNodes.length} remote system${friendly.remoteNodes.length === 1 ? "" : "s"} registered.` : "Remote systems are optional.",
+      complete: friendly.remoteNodes.length > 0,
+      status: friendly.remoteNodes.length ? "Ready" : "Optional",
+      tone: friendly.remoteNodes.length ? "ok" : "planned",
+      action: "nodes",
+    },
+  ];
+  const continueItem = [...core, ...recommended, ...optional].find((item) => !item.complete && item.action)
+    || { action: "dashboard" };
+  return { core, recommended, optional, continueAction: continueItem.action };
+}
+
+function renderSetupHealthCenter() {
+  if (!setupHealthCenter || !setupHealthGroups) return;
+  const state = getSetupHealthState();
+  const coreComplete = state.core.filter((item) => item.complete).length;
+  const optionalItems = [...state.recommended, ...state.optional];
+  const optionalComplete = optionalItems.filter((item) => item.complete).length;
+  setSetupHealthField("coreProgress", `${coreComplete}/${state.core.length} complete`);
+  setSetupHealthField("optionalProgress", `${optionalComplete}/${optionalItems.length} complete`);
+  setupHealthActionState = { action: state.continueAction };
+  if (setupHealthContinueButton) {
+    setupHealthContinueButton.textContent = state.continueAction === "dashboard" ? "Open Dashboard" : "Continue Setup";
+  }
+  setupHealthGroups.replaceChildren(
+    createSetupHealthGroup("Essential", state.core),
+    createSetupHealthGroup("Recommended", state.recommended),
+    createSetupHealthGroup("Optional", state.optional),
+  );
+}
+
 function renderFriendlyDashboard() {
   const state = getFriendlyDashboardState();
   setDashboardFriendlyField("computerStatus", state.computer.status);
@@ -1645,6 +1803,7 @@ function renderFriendlyDashboard() {
     }
     dashboardFriendlyEmpty.hidden = dashboardFriendlyEmpty.childElementCount === 0;
   }
+  renderSetupHealthCenter();
 }
 
 function ensurePageIntroductions() {
@@ -29275,6 +29434,7 @@ dashboardActionButtons.forEach((button) => {
 });
 document.querySelector('[data-marketplace-action="first-server"]')?.addEventListener("click", openFirstServerGuide);
 dashboardNextAction?.addEventListener("click", () => runDashboardFriendlyAction(dashboardNextActionState.page || "dashboard"));
+setupHealthContinueButton?.addEventListener("click", () => runDashboardFriendlyAction(setupHealthActionState.action || "dashboard"));
 helpTopicButtons.forEach((button) => {
   button.addEventListener("click", () => openContextualHelp(button.dataset.helpTopic));
 });

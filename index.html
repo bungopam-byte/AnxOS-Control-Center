@@ -544,6 +544,24 @@
             <div class="dashboard-friendly-empty" data-dashboard-friendly-empty hidden></div>
           </section>
 
+          <section class="dashboard-setup-health" data-setup-health-center aria-labelledby="setup-health-title">
+            <div class="dashboard-setup-health__header">
+              <div>
+                <p class="eyebrow">Setup Health</p>
+                <h2 id="setup-health-title">Your setup checklist</h2>
+                <p>Core setup and optional features are tracked separately so optional tools do not look like critical failures.</p>
+              </div>
+              <button class="primary-button" type="button" data-setup-health-action="continue">Continue Setup</button>
+            </div>
+            <div class="dashboard-setup-progress">
+              <div><span>Core setup</span><strong data-setup-health="coreProgress">Checking</strong></div>
+              <div><span>Optional features</span><strong data-setup-health="optionalProgress">Checking</strong></div>
+            </div>
+            <div class="setup-health-groups" data-setup-health-groups>
+              <div class="security-empty-state">Checking setup health.</div>
+            </div>
+          </section>
+
           <div class="dashboard-ops-grid" aria-label="Operations snapshot">
             <article>
               <span>Docker</span>

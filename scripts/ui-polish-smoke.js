@@ -49,8 +49,11 @@ assert(preload.includes("dependencies:plan") && app.includes("typeof api?.depend
 assert(main.includes("registerSettingsIpc"), "Main process must register settings IPC.");
 assert(index.includes("nodes-summary-grid") && index.includes('data-node-summary="online"'), "Nodes workspace must expose a compact dashboard summary.");
 assert(index.includes("Your AnxOS Overview") && index.includes("data-dashboard-friendly-grid") && index.includes("data-dashboard-next-action"), "Dashboard must include the beginner-friendly overview and next-step action.");
+assert(index.includes("Setup Health") && index.includes("data-setup-health-center") && index.includes("Core setup") && index.includes("Optional features"), "Dashboard must include a setup health checklist with separate core and optional progress.");
 assert(app.includes("function renderFriendlyDashboard") && app.includes("getFriendlyDashboardState") && app.includes("runDashboardFriendlyAction"), "Dashboard friendly overview must be wired to real renderer state and actions.");
+assert(app.includes("function getSetupHealthState") && app.includes("optionalItems") && app.includes("setupHealthActionState"), "Setup Health must derive from existing readiness state and keep optional features separate.");
 assert(styles.includes(".dashboard-welcome") && styles.includes(".dashboard-friendly-grid") && styles.includes(".dashboard-next-step"), "Dashboard friendly overview CSS must exist.");
+assert(styles.includes(".dashboard-setup-health") && styles.includes(".setup-health-groups"), "Setup Health CSS must exist.");
 assert(index.includes('data-nav-description="System overview"') && index.includes('data-nav-description="Install servers and tools"'), "Primary navigation should expose friendly expanded descriptions.");
 assert(app.includes("label.dataset.navDescription") && app.includes("PAGE_INTRODUCTIONS"), "Renderer should wire nav descriptions and page introductions.");
 assert(styles.includes(".page-introduction") && styles.includes(".nav-item[data-nav-description] .nav-item__label::after"), "Friendly navigation and page introduction CSS must exist.");

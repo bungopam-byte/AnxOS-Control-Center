@@ -7938,17 +7938,115 @@ dd {
   gap: 8px;
 }
 
+.dashboard-setup-health {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(17, 22, 34, .9), rgba(10, 12, 20, .84));
+}
+
+.dashboard-setup-health__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.dashboard-setup-health__header h2,
+.dashboard-setup-health__header p,
+.setup-health-group h3,
+.setup-health-group p,
+.setup-health-item p {
+  margin: 0;
+}
+
+.dashboard-setup-health__header p,
+.setup-health-group > p,
+.setup-health-item p {
+  color: var(--muted);
+}
+
+.dashboard-setup-progress,
+.setup-health-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-setup-progress > div,
+.setup-health-group {
+  padding: 12px;
+  border: 1px solid rgba(190, 170, 220, .14);
+  border-radius: 8px;
+  background: rgba(7, 9, 14, .34);
+}
+
+.dashboard-setup-progress span {
+  display: block;
+  color: var(--muted);
+  font-size: .68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dashboard-setup-progress strong {
+  display: block;
+  margin-top: 4px;
+}
+
+.setup-health-groups {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.setup-health-group {
+  display: grid;
+  gap: 10px;
+}
+
+.setup-health-list {
+  display: grid;
+  gap: 8px;
+}
+
+.setup-health-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(190, 170, 220, .1);
+  border-radius: 8px;
+  background: rgba(12, 14, 22, .42);
+}
+
+.setup-health-item strong {
+  display: block;
+}
+
+.setup-health-item .status-pill {
+  justify-self: start;
+}
+
 @media (max-width: 980px) {
   .dashboard-friendly-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .setup-health-groups {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 640px) {
   .dashboard-friendly-grid,
   .dashboard-friendly-empty,
-  .dashboard-next-step {
+  .dashboard-next-step,
+  .dashboard-setup-progress {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-setup-health__header {
+    flex-direction: column;
   }
 
   .dashboard-next-step .primary-button {

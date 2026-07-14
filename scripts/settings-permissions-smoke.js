@@ -87,6 +87,14 @@ assert(
 );
 
 assert(
+  index.includes('data-settings-capability="canManageAdvancedNetworking"') &&
+    index.includes("Advanced network policy is Owner-only.") &&
+    app.includes('canUseSettingsCapability("canManageInternalUpdates")') &&
+    app.includes("Owner access is required to install application updates."),
+  "Network advanced controls and update installation must be Owner-gated while public update checks remain visible.",
+);
+
+assert(
   app.includes("let settingsPermissionState") &&
     app.includes("refreshSettingsPermissions") &&
     app.includes("isSettingsSectionAuthorized") &&

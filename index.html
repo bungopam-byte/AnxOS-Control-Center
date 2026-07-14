@@ -3728,8 +3728,9 @@
             </section>
 
             <section class="settings-section settings-section--network" data-settings-category="network" data-settings-keywords="network proxy timeout retry backoff heartbeat reconnect ipv4 ipv6 dns">
-              <div class="settings-section__header"><div><h3>Network</h3><p>Connection defaults for app-to-agent requests. Secrets in proxy URLs are rejected.</p></div><span class="status-pill status-pill--local">Local</span></div>
-              <div class="settings-grid">
+              <div class="settings-section__header"><div><h3>Network</h3><p>Basic connection status is available from Nodes and Agent Control. Advanced network policy is Owner-only.</p></div><span class="status-pill status-pill--local">Local</span></div>
+              <p class="settings-note">Regular users can view connection status without changing Agent URLs, proxy policy, ports, or trust settings.</p>
+              <div class="settings-grid" data-settings-capability="canManageAdvancedNetworking">
                 <label class="settings-field" title="Network policy plumbing is not available yet."><span>Agent request timeout</span><input type="number" min="1000" max="120000" data-setting="network.requestTimeoutMs" disabled></label>
                 <label class="settings-field" title="Network policy plumbing is not available yet."><span>Connection retry attempts</span><input type="number" min="0" max="8" data-setting="network.retryAttempts" disabled></label>
                 <label class="settings-field" title="Network policy plumbing is not available yet."><span>Retry backoff</span><input type="number" min="100" max="30000" data-setting="network.retryBackoffMs" disabled></label>

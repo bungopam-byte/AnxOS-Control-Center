@@ -26464,8 +26464,9 @@ function renderUpdateSurfaces(state = updateUiState) {
     updateReadyBanner.hidden = !isReady;
   }
   updateInstallButtons.forEach((button) => {
-    button.hidden = !isReady;
-    button.disabled = !isReady;
+    const canInstallUpdate = canUseSettingsCapability("canManageInternalUpdates");
+    button.hidden = !isReady || !canInstallUpdate;
+    button.disabled = !isReady || !canInstallUpdate;
   });
 
   if (state?.status === "up-to-date") setUpdateStatusMessage("You're up to date.");
@@ -26786,6 +26787,10 @@ async function downloadUpdate() {
 async function installUpdate() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasUpdates) return;
+  if (!canUseSettingsCapability("canManageInternalUpdates")) {
+    showToast("Owner access is required to install application updates.");
+    return;
+  }
   try {
     await (desktopApiState.api.updates.install ? desktopApiState.api.updates.install() : desktopApiState.api.updates.openDownloaded());
   } catch {

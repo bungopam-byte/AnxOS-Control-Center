@@ -367,6 +367,8 @@ assert(indexSource.includes('data-instance-action="expose-share"') && indexSourc
   "runInstanceAction(\"expose-share\")",
   "runInstanceAction(\"copy-access-address\")",
   "runInstanceAction(\"manage-access\")",
+  "linked access service",
+  "summarizeAccessCleanupResult",
 ].forEach((needle) => assert(appSource.includes(needle), `Instances Public Access integration should include ${needle}.`));
 assert(appSource.includes("renderPublicAccessProviderMetricFields(provider, {})"), "Provider switching must clear stale provider details immediately.");
 assert(appSource.includes('provider?.id === "playit"') && appSource.includes("provider?.tailnetAddress"), "Provider copy actions must not reuse Playit addresses for other providers.");

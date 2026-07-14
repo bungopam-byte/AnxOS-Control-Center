@@ -5913,16 +5913,24 @@ function openInstanceAccessManager(instance = findInstance()) {
 async function deleteAccessServicesForInstance(instance = null) {
   const desktopApiState = getDesktopApiState();
   if (!instance?.id || !desktopApiState.hasPublicAccess || typeof desktopApiState.api?.publicAccess?.deleteService !== "function") {
-    return;
+    return { total: 0, removed: 0, failed: 0, failures: [] };
   }
   const services = getInstanceAccessServices(instance);
-  if (services.length === 0) return;
+  if (services.length === 0) return { total: 0, removed: 0, failed: 0, failures: [] };
   const requestContext = createNodeActionContext("instance-access-cleanup");
+  const result = { total: services.length, removed: 0, failed: 0, failures: [] };
   for (const service of services) {
-    if (!isNodeActionStillCurrent(requestContext)) return;
+    if (!isNodeActionStillCurrent(requestContext)) return result;
     try {
       await desktopApiState.api.publicAccess.deleteService({ serviceId: service.id, nodeId: requestContext.nodeId });
+      result.removed += 1;
     } catch (error) {
+      result.failed += 1;
+      result.failures.push({
+        serviceId: service.id,
+        providerId: service.providerId,
+        code: getAgentErrorCode(error),
+      });
       console.warn("[Instances] Linked access service cleanup failed.", {
         instanceId: instance.id,
         serviceId: service.id,
@@ -5931,6 +5939,15 @@ async function deleteAccessServicesForInstance(instance = null) {
     }
   }
   await refreshPlayitStatus();
+  return result;
+}
+
+function summarizeAccessCleanupResult(result = {}) {
+  if (!result.total) return "";
+  if (result.failed > 0) {
+    return ` ${result.removed}/${result.total} linked access service records were removed; ${result.failed} still need cleanup in Public Access.`;
+  }
+  return ` Removed ${result.removed} linked access service record${result.removed === 1 ? "" : "s"}.`;
 }
 
 async function createProviderAccessService() {
@@ -13220,7 +13237,11 @@ async function runInstanceAction(actionName) {
   }
 
   if (actionName === "delete") {
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) {
+    const linkedAccessServices = getInstanceAccessServices(selectedInstance);
+    const accessWarning = linkedAccessServices.length
+      ? `\n\nThis instance has ${linkedAccessServices.length} linked access service${linkedAccessServices.length === 1 ? "" : "s"}: ${linkedAccessServices.map(getInstanceAccessBadgeLabel).join(", ")}. AnxOS will remove supported access records after deletion and report any cleanup failures.`
+      : "";
+    if (!window.confirm(`Delete ${label}? This cannot be undone.${accessWarning}`)) {
       showToast("Delete canceled.");
       return;
     }
@@ -13263,7 +13284,9 @@ async function runInstanceAction(actionName) {
     showToast(actionName === "delete" ? formatInstanceDeletionResult(actionResult, "Instance deleted.") : actionName === "forget" ? formatInstanceDeletionResult(actionResult, "Instance removed from list.") : `Instance ${actionName} request completed.`);
 
     if (actionName === "delete" || actionName === "forget") {
-      await deleteAccessServicesForInstance(selectedInstance);
+      const accessCleanup = await deleteAccessServicesForInstance(selectedInstance);
+      const cleanupMessage = summarizeAccessCleanupResult(accessCleanup);
+      if (cleanupMessage) showToast(cleanupMessage, accessCleanup.failed > 0 ? "warning" : "success");
       selectedInstanceId = null;
       latestInstanceMetrics = null;
       clearInstanceLogs();
@@ -13284,14 +13307,14 @@ async function runInstanceAction(actionName) {
     if (isInstanceNotFoundError(error)) {
       if (actionName === "delete" || actionName === "forget") {
         instanceRemovalAllowedIds.add(targetInstanceId);
-        await deleteAccessServicesForInstance(selectedInstance);
+        const accessCleanup = await deleteAccessServicesForInstance(selectedInstance);
         selectedInstanceId = null;
         latestInstanceMetrics = null;
         storeLastInstanceId(null);
         clearInstanceLogs();
         setInstanceDetails(null);
         removeInstanceFromSnapshot(targetInstanceId);
-        showToast("Instance was already deleted. Refreshed the list.", "warning");
+        showToast(`Instance was already deleted. Refreshed the list.${summarizeAccessCleanupResult(accessCleanup)}`, "warning");
         await refreshInstances();
       } else {
         await handleMissingSelectedInstance(error, targetInstanceId, `${actionName}-not-found`);
@@ -13315,14 +13338,14 @@ async function runInstanceAction(actionName) {
             showToast(`Deleting ${label}...`);
             await desktopApiState.api.instances.delete(targetInstanceId, getNodeScopedPayload(requestContext));
             instanceRemovalAllowedIds.add(targetInstanceId);
-            await deleteAccessServicesForInstance(selectedInstance);
+            const accessCleanup = await deleteAccessServicesForInstance(selectedInstance);
             selectedInstanceId = null;
             latestInstanceMetrics = null;
             storeLastInstanceId(null);
             clearInstanceLogs();
             setInstanceDetails(null);
             removeInstanceFromSnapshot(targetInstanceId);
-            showToast("Instance stopped and deleted.");
+            showToast(`Instance stopped and deleted.${summarizeAccessCleanupResult(accessCleanup)}`);
             await refreshInstances();
             return;
           } catch (retryError) {
@@ -13336,14 +13359,14 @@ async function runInstanceAction(actionName) {
         try {
           const forgetResult = await desktopApiState.api.instances.forget(targetInstanceId, getNodeScopedPayload(requestContext));
           instanceRemovalAllowedIds.add(targetInstanceId);
-          await deleteAccessServicesForInstance(selectedInstance);
+          const accessCleanup = await deleteAccessServicesForInstance(selectedInstance);
           selectedInstanceId = null;
           latestInstanceMetrics = null;
           storeLastInstanceId(null);
           clearInstanceLogs();
           setInstanceDetails(null);
           removeInstanceFromSnapshot(targetInstanceId);
-          showToast(formatInstanceDeletionResult(forgetResult, "Instance removed from list."));
+          showToast(`${formatInstanceDeletionResult(forgetResult, "Instance removed from list.")}${summarizeAccessCleanupResult(accessCleanup)}`);
           await refreshInstances();
           return;
         } catch (forgetError) {

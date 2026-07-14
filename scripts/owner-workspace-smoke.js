@@ -83,6 +83,28 @@ async function main() {
   assert(appJs.includes("ownerWorkspacePage?.addEventListener(\"click\""), "Owner Overview actions should use one delegated listener.");
   assert(!appJs.includes("ownerOverviewAgents.innerHTML"), "Owner Overview must not render Agent summaries with raw HTML.");
   assert(!appJs.includes("ownerOverviewAdmin.innerHTML"), "Owner Overview must not render admin summaries with raw HTML.");
+  assert(appJs.includes("Create Owner Page") && appJs.includes("Clear scratchpad?") && appJs.includes("Change restart-required feature flag?"), "Owner Workspace actions should use in-app modals for prompts and confirmations.");
+  ["renderOwnerFlags", "renderOwnerCommands", "handleOwnerAction"].forEach((functionName) => {
+    const start = appJs.indexOf(`function ${functionName}`);
+    const asyncStart = appJs.indexOf(`async function ${functionName}`);
+    const functionStart = start >= 0 ? start : asyncStart;
+    assert(functionStart >= 0, `Renderer should define ${functionName}.`);
+    const open = appJs.indexOf("{", functionStart);
+    let depth = 0;
+    let body = "";
+    for (let index = open; index < appJs.length; index += 1) {
+      const char = appJs[index];
+      if (char === "{") depth += 1;
+      if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          body = appJs.slice(functionStart, index + 1);
+          break;
+        }
+      }
+    }
+    assert(!/window\.prompt|prompt\(|window\.confirm|confirm\(/.test(body), `${functionName} should not use browser dialogs.`);
+  });
   assert(appJs.includes("dedupKey: `owner-overview:${model.state}`"), "Owner Overview notifications should be deduplicated.");
   assert(appJs.includes('id: "owner.overview"'), "Command Palette should include Open Owner Overview.");
   assert(appJs.includes('id: "owner.offlineAgents"'), "Command Palette should include Show Offline Agents.");

@@ -5772,7 +5772,11 @@ function renderOwnerFlags(flags = ownerWorkspaceState.flags || []) {
       createTextElement("small", `${flag.environment || "local"} · ${flag.productionSafe ? "Production-safe" : "Development-only"}${flag.requiresRestart ? " · Restart required" : ""}`),
     );
     input.addEventListener("change", async (event) => {
-      if (flag.requiresRestart && !window.confirm("Changing this flag requires restart. Continue?")) {
+      if (flag.requiresRestart && !(await createSecurityConfirmation({
+        title: "Change restart-required feature flag?",
+        message: `${flag.name || "This feature flag"} requires restart before the change fully applies.`,
+        confirmLabel: "Change Flag",
+      }))) {
         event.target.checked = !event.target.checked;
         return;
       }
@@ -5809,7 +5813,11 @@ async function renderOwnerCommands() {
     top.appendChild(action);
     row.append(top, createTextElement("p", command.reason || (command.disruptive ? "Confirmation required." : "Ready.")));
     action.addEventListener("click", async () => {
-      if (command.disruptive && !window.confirm(`${command.label}?`)) return;
+      if (command.disruptive && !(await createSecurityConfirmation({
+        title: `${command.label || "Run command"}?`,
+        message: command.reason || "This owner command can change local application state.",
+        confirmLabel: "Run",
+      }))) return;
       const result = await desktopApiState.api.ownerWorkspace.runCommand({ commandId: command.id, confirmed: command.disruptive }).catch((error) => ({
         ok: false,
         message: normalizeIpcErrorMessage(error, "Command failed."),
@@ -5987,7 +5995,12 @@ async function handleOwnerAction(action) {
   }
   const selected = ownerWorkspaceState.pages.find((page) => page.id === ownerWorkspaceState.selectedPageId);
   if (action === "create-page") {
-    const title = window.prompt("Page name");
+    const title = await createSecurityTextPrompt({
+      title: "Create Owner Page",
+      message: "Add a private Owner Workspace page.",
+      label: "Page name",
+      confirmLabel: "Create",
+    });
     if (!title) return;
     const result = await desktopApiState.api.ownerWorkspace.createPage({ title }).catch((error) => {
       showToast(normalizeIpcErrorMessage(error, "Page could not be created."));
@@ -5998,7 +6011,13 @@ async function handleOwnerAction(action) {
       renderOwnerWorkspace();
     }
   } else if (action === "rename-page" && selected && !selected.builtIn) {
-    const title = window.prompt("Rename page", selected.title);
+    const title = await createSecurityTextPrompt({
+      title: "Rename Owner Page",
+      message: "Choose a new name for this private page.",
+      label: "Page name",
+      initialValue: selected.title || "",
+      confirmLabel: "Rename",
+    });
     if (!title) return;
     await desktopApiState.api.ownerWorkspace.updatePage({ id: selected.id, title });
     await refreshOwnerWorkspace();
@@ -6010,7 +6029,11 @@ async function handleOwnerAction(action) {
     await desktopApiState.api.ownerWorkspace.updatePage({ id: selected.id, pinned: !selected.pinned });
     await refreshOwnerWorkspace();
   } else if (action === "delete-page" && selected && !selected.builtIn) {
-    if (!window.confirm(`Delete ${selected.title}?`)) return;
+    if (!(await createSecurityConfirmation({
+      title: `Delete ${selected.title}?`,
+      message: "This removes the custom Owner Workspace page and its saved content.",
+      confirmLabel: "Delete",
+    }))) return;
     const result = await desktopApiState.api.ownerWorkspace.deletePage({ id: selected.id });
     ownerWorkspaceState = { ...ownerWorkspaceState, ...result.workspace, selectedPageId: "overview" };
     renderOwnerWorkspace();
@@ -6033,7 +6056,11 @@ async function handleOwnerAction(action) {
       showToast("Logs copied.");
     }
   } else if (action === "clear-scratchpad" && selected?.id === "scratchpad") {
-    if (!window.confirm("Clear the scratchpad?")) return;
+    if (!(await createSecurityConfirmation({
+      title: "Clear scratchpad?",
+      message: "This clears the saved Owner scratchpad content.",
+      confirmLabel: "Clear",
+    }))) return;
     const response = await desktopApiState.api.ownerWorkspace.saveContent({
       pageId: selected.id,
       markdown: "",

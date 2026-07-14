@@ -18,6 +18,11 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 export ANXHUB_CONFIG_DIR="${ANXHUB_CONFIG_DIR:-$SCRIPT_DIR/config}"
+export ANXOS_AGENT_ENV_PATH="${ANXOS_AGENT_ENV_PATH:-${XDG_CONFIG_HOME:-$HOME/.config}/anxos-control-center/agent.env}"
+
+if [[ -f "$ANXOS_AGENT_ENV_PATH" ]]; then
+  echo "Using protected Agent environment file: $ANXOS_AGENT_ENV_PATH"
+fi
 
 if [[ -n "${AGENT_TOKEN:-}" ]]; then
   echo "Ignoring shell AGENT_TOKEN; the agent will use the shared token in $ANXHUB_CONFIG_DIR/agent.json."

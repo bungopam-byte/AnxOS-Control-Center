@@ -45,6 +45,65 @@ For local development only, the desktop still supports ignored local secret sour
 
 This compatibility path is temporary private-alpha support. It must remain owner-only, masked in UI/diagnostics, and excluded from release artifacts.
 
+## Debian Agent Setup
+
+For a one-off manual Agent run:
+
+```bash
+cd ~/Projects/AnxOS-Control-Center/agent
+export CURSEFORGE_API_KEY='REPLACE_WITH_REAL_KEY'
+npm start
+```
+
+For persistent Debian Agent configuration, place the key in a protected user environment file outside the repository:
+
+```bash
+mkdir -p ~/.config/anxos-control-center
+chmod 700 ~/.config/anxos-control-center
+touch ~/.config/anxos-control-center/agent.env
+chmod 600 ~/.config/anxos-control-center/agent.env
+```
+
+File contents:
+
+```bash
+CURSEFORGE_API_KEY=REPLACE_WITH_REAL_KEY
+```
+
+The Agent loads this file by default from:
+
+```text
+~/.config/anxos-control-center/agent.env
+```
+
+When launching through the repository helper, run:
+
+```bash
+cd ~/Projects/AnxOS-Control-Center
+./AnxAgent.sh
+```
+
+The helper exports `ANXOS_AGENT_ENV_PATH` to the protected file if it is not already set. If you use a custom service manager or user systemd unit, add:
+
+```ini
+Environment=ANXOS_AGENT_ENV_PATH=%h/.config/anxos-control-center/agent.env
+WorkingDirectory=%h/Projects/AnxOS-Control-Center
+ExecStart=%h/Projects/AnxOS-Control-Center/AnxAgent.sh
+```
+
+Then restart the Agent service after editing `agent.env`.
+
+Never place the CurseForge key in:
+
+- repository `.env`
+- Electron build configuration
+- GitHub release assets
+- frontend source
+- `config/nodes.json`
+- `config/application-host.json`
+- `config/marketplace.json`
+- screenshots, logs, diagnostics, or exported settings
+
 ## Secret Handling
 
 Diagnostics may report only:
@@ -56,4 +115,3 @@ Diagnostics may report only:
 - request class that failed
 
 Diagnostics must never include the API key, signed URLs, authorization headers, or full secret-bearing response data.
-

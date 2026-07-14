@@ -91,6 +91,13 @@ assert(app.includes("agentControlLastRuntimeSnapshot"), "Agent Control must pres
 assert(!app.includes('"Service managed"'), "Agent Control must not render Service managed as the primary process value.");
 assert(styles.includes(".agent-overview-actions .primary-button:disabled"), "Disabled lifecycle buttons must not keep the active primary styling.");
 assert(styles.includes(".docker-empty-actions") && styles.includes(".docker-empty-state > *"), "Docker empty states must use non-overlapping content and action layout.");
+assert(index.includes("No matching servers found") && index.includes("Try another search, clear your filters, or choose a different category."), "Marketplace empty state must explain no results and recovery.");
+assert(index.includes("You have not installed any servers yet.") && app.includes("Install a server from the Marketplace to get started."), "Instances empty state must point new users to Marketplace.");
+assert(app.includes("Docker is not installed on this system.") && app.includes("Install Docker") && app.includes("No containers yet"), "Docker empty states must distinguish missing Docker from an empty container list.");
+assert(app.includes("Connect a supported system to browse its files.") && app.includes("This folder is empty"), "Files empty states must distinguish no target from an empty folder.");
+assert(index.includes("No backups yet") && app.includes("Create a backup before making major server changes."), "Backups empty state must be calm and actionable.");
+assert(app.includes("No access services created yet") && app.includes("Choose a provider to securely access supported services."), "Public Access empty state must explain provider setup without stale data.");
+assert(app.includes("No security issues found."), "Security Center empty state must avoid warning styling for a clean state.");
 assert(styles.includes(".node-card__actions") && styles.includes(".node-details-drawer") && styles.includes("@keyframes nodeDrawerIn"), "Nodes polish CSS must include compact cards, drawer, and subtle animation.");
 assert(pageMarkup("operations").includes("data-operation-list") && pageMarkup("operations").includes('data-operation-filter="running"'), "Operations Center must expose filterable operation history.");
 assert(pageMarkup("operations").includes('data-operation-action="clear-completed"') && pageMarkup("operations").includes("data-operation-detail"), "Operations Center must expose history cleanup and details.");

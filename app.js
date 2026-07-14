@@ -6624,6 +6624,13 @@ function renderPublicAccessSnapshot(snapshot = {}) {
     setField("publicAccessServices", `${snapshot.services.length} service${snapshot.services.length === 1 ? "" : "s"}`);
     setField("publicAccessActiveTunnels", `${Number(snapshot.activeTunnels || 0)} active`);
     setField("publicAccessActivity", snapshot.recentActivity?.[0]?.label || "Status checked");
+  } else {
+    selectedPublicAccessServiceId = null;
+    setField("publicAccessServiceName", "No access service configured");
+    setField("publicAccessServices", "No access services");
+    setField("publicAccessActiveTunnels", "No public connections");
+    setField("publicAccessActivity", "No access services created yet");
+    setField("publicAccessReachability", "Choose a provider to securely access supported services.");
   }
   renderPublicAccessProviderDetails(snapshot);
   renderInstanceRows(getInstances());
@@ -6742,9 +6749,9 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
   if (!getSelectedNodeId()) {
     return {
       key: "no-node",
-      title: "No node selected",
-      message: "Select a node before loading Docker data.",
-      badge: "Unknown",
+      title: "No system selected",
+      message: "Choose a system before loading Docker containers.",
+      badge: "Select system",
       tone: "status-pill--planned",
       ready: false,
       countsAvailable: false,
@@ -6753,9 +6760,9 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
   if (error) {
     const reason = getDockerUnavailableReason(error);
     const copy = {
-      "agent-unavailable": ["Docker unavailable", "The selected node is disconnected, so Docker data cannot be loaded.", "Agent disconnected"],
-      "not-installed": ["Docker not installed", "Docker is not installed on this node.", "Missing"],
-      "daemon-stopped": ["Docker daemon stopped", "Docker is installed, but the daemon is not running.", "Stopped"],
+      "agent-unavailable": ["Docker is unavailable", "The selected system is offline or unreachable. Reconnect it, then try again.", "System offline"],
+      "not-installed": ["Docker is not installed on this system.", "Install Docker to create and manage containers here.", "Not installed"],
+      "daemon-stopped": ["Docker is installed but stopped.", "Start Docker on this system, then refresh this page.", "Stopped"],
       "permission-denied": ["Docker permission denied", "AnxOS cannot access Docker on this node. Check Docker group or administrator permissions.", "Permission denied"],
       timeout: ["Docker request timed out", "Docker did not respond before the request timed out.", "Timed out"],
       error: ["Docker unavailable", error.message || "Docker data could not be loaded.", "Unavailable"],
@@ -6774,9 +6781,9 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
   if (!snapshot) {
     return {
       key: "unknown",
-      title: "Docker status unknown",
-      message: "Refresh Docker to check the selected node.",
-      badge: "Unknown",
+      title: "Docker status is unavailable",
+      message: "Refresh Docker to check the selected system.",
+      badge: "Unable to confirm",
       tone: "status-pill--planned",
       ready: false,
       countsAvailable: false,
@@ -6785,9 +6792,9 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
   if (!snapshot.installed) {
     return {
       key: "not-installed",
-      title: "Docker not installed",
-      message: snapshot.message || "Docker is not installed on this node.",
-      badge: "Missing",
+      title: "Docker is not installed on this system.",
+      message: snapshot.message || "Install Docker to create and manage containers here.",
+      badge: "Not installed",
       tone: "status-pill--warning",
       ready: false,
       countsAvailable: false,
@@ -6797,8 +6804,8 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
     const reason = getDockerUnavailableReason(snapshot);
     return {
       key: reason === "permission-denied" ? "permission-denied" : "daemon-stopped",
-      title: reason === "permission-denied" ? "Docker permission denied" : "Docker daemon stopped",
-      message: snapshot.message || "Docker is installed, but the daemon is not running.",
+      title: reason === "permission-denied" ? "Docker permission denied" : "Docker is installed but stopped.",
+      message: snapshot.message || "Start Docker on this system, then refresh this page.",
       badge: reason === "permission-denied" ? "Permission denied" : "Stopped",
       tone: reason === "permission-denied" ? "status-pill--critical" : "status-pill--warning",
       ready: false,
@@ -6810,8 +6817,8 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
   if (!containers.length) {
     return {
       key: "empty",
-      title: "No containers",
-      message: "Docker is connected and healthy, but no containers exist.",
+      title: "No containers yet",
+      message: "Create a container, start a Compose project, or install a server that uses Docker.",
       badge: "Ready",
       tone: "status-pill--ok",
       ready: true,
@@ -6845,11 +6852,11 @@ function renderDockerEmptyState(state = dockerWorkspaceState) {
   const actionDefs = state.key === "agent-unavailable" || state.key === "timeout"
     ? [["agent-control", "Reconnect Agent"], ["refresh", "Retry"], ["diagnostics", "Open Diagnostics"]]
     : state.key === "not-installed"
-      ? [["dependencies", "Prepare Node"], ["agent-control", "Open Agent Control"]]
+      ? [["dependencies", "Install Docker"], ["agent-control", "Open Agent Control"]]
       : state.key === "daemon-stopped" || state.key === "permission-denied"
         ? [["diagnostics", "Open Diagnostics"], ["agent-control", "Open Agent Control"]]
-        : state.key === "empty"
-          ? [["marketplace", "Create or Install Container"], ["refresh", "Refresh"]]
+      : state.key === "empty"
+          ? [["marketplace", "Create Container"], ["refresh", "Refresh"]]
           : [["refresh", "Retry"], ["node-health", "Open Node Health"]];
   actionDefs.slice(0, 3).forEach(([action, label]) => {
     const button = document.createElement("button");
@@ -9407,7 +9414,7 @@ function setInstancesLoading(isLoading) {
   document.querySelector('[data-page="instances"]')?.setAttribute("aria-busy", isLoading ? "true" : "false");
 }
 
-function setInstancesEmpty(isVisible, message = "Game servers and apps appear here after you create one from Marketplace or the instance templates.") {
+function setInstancesEmpty(isVisible, message = "Install a server from the Marketplace to get started.") {
   if (instancesEmpty) {
     instancesEmpty.hidden = !isVisible;
   }
@@ -9928,7 +9935,7 @@ function renderInstancesSnapshot(snapshot) {
   updateTitlebar();
 }
 
-function renderInstancesUnavailable(message = "Instance manager unavailable.") {
+function renderInstancesUnavailable(message = "AnxOS could not load installed servers for the selected system.") {
   latestInstancesSnapshot = null;
   latestInstancesSnapshotAt = 0;
   latestInstanceMetrics = null;
@@ -10286,10 +10293,10 @@ function isCurseForgeApiKeyRequiredError(error = {}) {
 
 function createMarketplaceEmptyStateContent(state = {}) {
   const title = document.createElement("strong");
-  title.textContent = state.title || "No templates found";
+  title.textContent = state.title || "No matching servers found";
 
   const detail = document.createElement("span");
-  detail.textContent = state.message || "Marketplace templates appear here after the catalog loads. Clear filters, choose a category, or check dependencies for the selected node.";
+  detail.textContent = state.message || "Try another search, clear your filters, or choose a different category.";
 
   if (state.action === "open-settings") {
     const action = document.createElement("button");
@@ -10297,6 +10304,20 @@ function createMarketplaceEmptyStateContent(state = {}) {
     action.className = "inline-action";
     action.textContent = "Open Settings";
     action.addEventListener("click", openCurseForgeIntegrationSettings);
+    return [title, detail, action];
+  }
+
+  if (state.action === "clear-filters" || state.actionLabel === "Clear filters") {
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "inline-action";
+    action.textContent = state.actionLabel || "Clear filters";
+    action.addEventListener("click", () => {
+      if (marketplaceSearchInput) marketplaceSearchInput.value = "";
+      if (marketplaceProviderLoader) marketplaceProviderLoader.value = "all";
+      if (marketplaceProviderMinecraftVersion) marketplaceProviderMinecraftVersion.value = "";
+      renderMarketplaceTemplates();
+    });
     return [title, detail, action];
   }
 
@@ -10309,8 +10330,9 @@ function renderMarketplaceEmptyState(state = null) {
   }
 
   const activeState = state || {
-    title: "No templates found",
-    message: "Marketplace templates appear here after the catalog loads. Clear filters, choose a category, or check dependencies for the selected node.",
+    title: "No matching servers found",
+    message: "Try another search, clear your filters, or choose a different category.",
+    action: "clear-filters",
   };
   marketplaceEmpty.replaceChildren(...createMarketplaceEmptyStateContent(activeState));
   marketplaceEmpty.hidden = marketplaceRequestInFlight || marketplaceProviderRequestInFlight || Boolean(activeState.hidden);
@@ -10417,7 +10439,12 @@ function renderMarketplaceTemplates() {
     loader: marketplaceProviderLoader?.value || "",
     minecraftVersion: marketplaceProviderMinecraftVersion?.value || "",
   });
-  renderMarketplaceEmptyState(templates.length > 0 ? { hidden: true } : marketplaceProviderError);
+  const noResultsMessage = marketplaceProviderError || {
+    title: "No matching servers found",
+    message: "Try another search, clear your filters, or choose a different category.",
+    actionLabel: "Clear filters",
+  };
+  renderMarketplaceEmptyState(templates.length > 0 ? { hidden: true } : noResultsMessage);
 
   templates.forEach((template) => {
     const templateState = getMarketplaceStateForTemplate(template);
@@ -12478,8 +12505,8 @@ function renderBackups() {
   }
   if (backupEmptyMessage) {
     backupEmptyMessage.textContent = connected
-      ? "Create a backup from an instance or configure backup paths to begin protecting server data."
-      : backupsState.error || "Select a node with backup support, then refresh backup state.";
+      ? "Create a backup before making major server changes."
+      : backupsState.error || "Select a system with backup support, then refresh backup state.";
   }
   if (backupLoadingState) {
     backupLoadingState.hidden = !backupRequestInFlight;
@@ -18300,7 +18327,20 @@ function renderFileListingUnavailable(message = "File listing unavailable.") {
   setFileDetails(null);
   resetFileEditor(message);
   setFilesLoading(false);
-  setFilesEmpty(true, "File service unavailable", message);
+  const normalizedMessage = String(message || "");
+  const noTarget = /No filesystem profile|No SSH profile|No storage connection|No available target/i.test(normalizedMessage);
+  const disconnected = /disconnected|unavailable|preload bridge|IPC bridge/i.test(normalizedMessage);
+  const title = noTarget
+    ? "Connect a supported system to browse its files."
+    : disconnected
+      ? "File service unavailable"
+      : "This file location is not available on the selected system.";
+  const friendlyMessage = noTarget
+    ? "Choose a local or Agent filesystem profile, or add a storage connection."
+    : disconnected
+      ? "Reconnect the selected system or open Agent Control to check file access."
+      : normalizedMessage;
+  setFilesEmpty(true, title, friendlyMessage);
   renderStorageConnections();
   updateFileActionButtons();
   refreshNodeHealth({ notify: false });
@@ -23635,7 +23675,7 @@ function renderSecurityEvents() {
   }
   const events = (securityDashboardState?.events || []).filter((event) => securityEventFilter === "all" || event.category === securityEventFilter);
   if (!events.length) {
-    container.appendChild(createEmptyState("No matching security events reported."));
+    container.appendChild(createEmptyState(securityEventFilter === "all" ? "No security issues found." : "No matching security events reported."));
     return;
   }
   events.forEach((event) => {

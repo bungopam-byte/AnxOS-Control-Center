@@ -79,9 +79,9 @@ The dependency registry covers Java, .NET runtime, .NET Desktop Runtime, SteamCM
 
 Windows-specific dependencies required by the goal are incomplete:
 
-- No managed Windows installers for Java, Git, SteamCMD, .NET Runtime, .NET Desktop Runtime, FFmpeg, Tailscale, Cloudflared, Playit, Docker Desktop, or VC++ runtime yet.
-- No checksum/signature verification model for Windows dependency installers.
-- No reboot-required detection contract.
+- Managed Windows dependency installation is source-wired through fixed `winget` package IDs for supported dependencies, but it still requires real Windows validation and package-source verification before production release.
+- No separate checksum/signature verification model exists beyond Windows Package Manager source verification.
+- Reboot/restart-required detection is currently represented by dependency metadata, not by live Windows restart-manager checks.
 
 ### Marketplace and Instances
 
@@ -246,3 +246,9 @@ The implementation has source and smoke coverage only. Real Windows validation i
 The dependency scanner remains routed through the selected Agent and now has Windows-aware registry and PATH detection. Renderer labels map scanner states to beginner-readable statuses such as Ready, Not installed, Update available, Installed but unavailable, Unsupported, and Detection failed. Dependency rows include detected version, required version, installation source, package/source mapping, verification status, update status, and elevation requirement data where available.
 
 This phase does not install Windows dependencies. Real Windows validation is still required for Docker Desktop, Visual C++ runtime registry detection, .NET Desktop Runtime detection, and provider-specific public-access tools.
+
+## Phase 9 Dependency Installation Note
+
+Windows Local Agent dependency installation now has a managed Agent-side path for allowlisted dependencies through Windows Package Manager (`winget`). Plans expose fixed package IDs and non-interactive commands, while installs publish Downloading, Verifying, Installing, Configuring, Complete, Failed, and verification-degraded job stages through the existing dependency job model. Renderer-provided installer arguments are not accepted.
+
+The Linux `apt` and `dnf` package-manager flows are preserved. This phase is source- and smoke-tested from Linux only; it does not claim that each Windows package ID has been installed on a real Windows machine.

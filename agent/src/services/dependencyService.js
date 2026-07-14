@@ -425,6 +425,15 @@ function getPackageManagerCommand(packageManager) {
   return null;
 }
 
+function getWindowsInstaller(definition = {}) {
+  return process.platform === "win32" ? definition.installers?.win32 || null : null;
+}
+
+function getWindowsPackageInstallerCommand(installer = null) {
+  if (!installer || installer.method !== "winget" || !installer.packageId) return null;
+  return findCommand("winget");
+}
+
 async function checkDependency(dependencyId) {
   const id = assertKnownDependencyId(dependencyId);
   const definition = DEPENDENCY_REGISTRY[id];
@@ -626,13 +635,21 @@ async function planDependencyPreparation(payload = {}) {
       continue;
     }
 
+    const definition = DEPENDENCY_REGISTRY[dependency.id];
+    const windowsInstaller = getWindowsInstaller(definition);
+    const windowsInstallerCommand = getWindowsPackageInstallerCommand(windowsInstaller);
     const packages = dependency.packages || [];
     const packageManager = dependency.packageManager || null;
     const packageManagerCommand = packageManager ? getPackageManagerCommand(packageManager) : null;
-    const installable = Boolean(dependency.supported && packageManager && packageManagerCommand && packages.length > 0 && elevation.available);
+    const windowsInstallable = Boolean(process.platform === "win32" && dependency.supported && windowsInstaller && windowsInstallerCommand);
+    const installable = windowsInstallable || Boolean(dependency.supported && packageManager && packageManagerCommand && packages.length > 0 && elevation.available);
     let reason = null;
     if (!dependency.supported) {
       reason = `${dependency.displayName} is not supported for automatic installation on ${dependency.distribution?.name || "this host"}.`;
+    } else if (process.platform === "win32" && !windowsInstaller) {
+      reason = "No trusted managed Windows installer is registered for this dependency.";
+    } else if (process.platform === "win32" && !windowsInstallerCommand) {
+      reason = "Windows Package Manager (winget) is required for managed installation and was not found.";
     } else if (!packageManager) {
       reason = "No supported package manager was detected.";
     } else if (!packageManagerCommand) {
@@ -643,12 +660,16 @@ async function planDependencyPreparation(payload = {}) {
       reason = `Administrator privileges are required (${elevation.reason || "elevation unavailable"}).`;
     }
 
-    const commandSpecs = installable ? buildInstallCommands(packageManager, packages) : [];
+    const commandSpecs = installable && process.platform === "win32"
+      ? [{ phase: "installing-package", command: "winget", args: ["install", "--id", windowsInstaller.packageId, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"] }]
+      : installable ? buildInstallCommands(packageManager, packages) : [];
     const commands = commandSpecs.map((commandSpec) => ({
       phase: commandSpec.phase,
       command: commandSpec.command,
       args: commandSpec.args,
-      display: elevation.method === "sudo-noninteractive"
+      display: process.platform === "win32"
+        ? formatCommand(commandSpec.command, commandSpec.args)
+        : elevation.method === "sudo-noninteractive"
         ? formatCommand("sudo", ["-n", commandSpec.command, ...commandSpec.args])
         : formatCommand(commandSpec.command, commandSpec.args),
     }));
@@ -662,6 +683,8 @@ async function planDependencyPreparation(payload = {}) {
       reason: reason || `Install ${dependency.displayName} with ${packageManager}.`,
       packages,
       packageManager,
+      installationSource: dependency.installationSource || null,
+      installer: windowsInstallable ? { method: windowsInstaller.method, packageId: windowsInstaller.packageId } : null,
       requiresElevation: dependency.requiresElevation,
       elevation,
       commands,
@@ -689,6 +712,33 @@ async function planDependencyPreparation(payload = {}) {
   };
 }
 
+async function installWindowsDependency(dependencyId, before, job) {
+  const definition = DEPENDENCY_REGISTRY[dependencyId];
+  const installer = getWindowsInstaller(definition);
+  const winget = getWindowsPackageInstallerCommand(installer);
+  if (!installer || !winget) {
+    throw createDependencyError("WINDOWS_INSTALLER_UNAVAILABLE", "A managed Windows installer is not available for this dependency.", { dependencyId, installer: installer ? { method: installer.method, packageId: installer.packageId } : null, job }, 400);
+  }
+  const args = ["install", "--id", installer.packageId, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"];
+  addJobEvent(job, "downloading", "Downloading", `Downloading ${before.displayName} from ${before.installationSource || "the official package source"}.`, { progressPercent: 20, progressMode: "indeterminate" });
+  addJobEvent(job, "verifying", "Verifying", "Windows Package Manager will verify the package identity before installation.", { progressPercent: 40, progressMode: "indeterminate" });
+  addJobEvent(job, "installing", "Installing files", `Installing ${before.displayName}.`, { progressPercent: 65, progressMode: "indeterminate" });
+  const result = await commandRunner(winget, args, { timeoutMs: INSTALL_TIMEOUT_MS });
+  addJobOutput(job, "install", { ...result, command: "winget", args });
+  if (!result.ok) {
+    completeJob(job, {
+      state: "failed",
+      stage: "Installing files",
+      message: `${before.displayName} installation failed.`,
+      exitCode: result.exitCode,
+      error: { code: "WINDOWS_DEPENDENCY_INSTALL_FAILED", message: result.stderr || result.errorMessage || "Windows dependency installation failed." },
+    });
+    throw createDependencyError("WINDOWS_DEPENDENCY_INSTALL_FAILED", `${before.displayName} installation failed.`, { dependencyId, job }, 500);
+  }
+  addJobEvent(job, "configuring", "Configuring", "Refreshing dependency state after installation.", { progressPercent: 85, progressMode: "indeterminate" });
+  return installer;
+}
+
 async function installDependency(dependencyId, context = {}) {
   const id = assertKnownDependencyId(dependencyId);
   if (activeDependencyInstalls.has(id)) {
@@ -704,7 +754,7 @@ async function doInstallDependency(dependencyId, context = {}) {
     nodeId: context.nodeId || null,
     platform: context.platform || process.platform,
     executionBackend: "agent",
-    installationMethod: "package-manager",
+    installationMethod: process.platform === "win32" ? "winget" : "package-manager",
     externalTerminal: false,
     state: packageManagerBusy ? "queued" : "preparing",
     stage: packageManagerBusy ? "Waiting for another installation to finish" : "Preparing installation",
@@ -750,6 +800,31 @@ async function doInstallDependency(dependencyId, context = {}) {
         distribution: before.distribution,
         job,
       }, 400);
+    }
+    if (process.platform === "win32") {
+      const installer = await installWindowsDependency(dependencyId, before, job);
+      const after = await checkDependency(dependencyId);
+      if (!after.installed || after.state !== "installed") {
+        completeJob(job, {
+          state: "degraded",
+          stage: "Verifying installation",
+          message: `${before.displayName} was installed but verification still needs attention.`,
+          progressMode: "determinate",
+          progressPercent: 100,
+          restartRequired: Boolean(before.serviceRestartRequired),
+          error: { code: "VERIFICATION_FAILED", message: "Dependency verification failed after installation." },
+        });
+        return { id: dependencyId, state: after.state, changed: true, log, before, after, installer: { method: installer.method, packageId: installer.packageId }, job };
+      }
+      completeJob(job, {
+        state: "completed",
+        stage: "Installation complete",
+        message: `${after.displayName} installed and verified.`,
+        progressMode: "determinate",
+        progressPercent: 100,
+        restartRequired: Boolean(after.serviceRestartRequired),
+      });
+      return { id: dependencyId, state: "installed", changed: true, log, before, after, installer: { method: installer.method, packageId: installer.packageId }, job };
     }
     const packages = before.packages || [];
     if (packages.length === 0) {

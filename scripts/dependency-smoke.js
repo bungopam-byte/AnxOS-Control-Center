@@ -226,6 +226,9 @@ async function run() {
   assert(agentDependencySource.includes("detectWindowsRegistryDependency") && agentDependencySource.includes("windowsRegistry"), "Dependency scanning must support Windows registry-backed runtime detection.");
   assert(agentDependencySource.includes("installed-unavailable") && agentDependencySource.includes("detection-failed"), "Dependency scanning must distinguish installed-but-unavailable and detection-failed states.");
   assert(agentDependencySource.includes("ANXOS_LOCAL_AGENT_RUNTIME_ROOT") && agentDependencySource.includes("privateRuntime"), "Dependency scanning must honor the AnxOS managed private Local Agent runtime.");
+  assert(agentDependencySource.includes("installWindowsDependency") && agentDependencySource.includes("\"winget\""), "Windows dependencies must use the managed Windows Package Manager install path.");
+  assert(agentDependencySource.includes("--accept-package-agreements") && agentDependencySource.includes("--accept-source-agreements"), "Windows dependency installs must use fixed non-interactive package-manager arguments.");
+  assert(agentDependencySource.includes("WINDOWS_DEPENDENCY_INSTALL_FAILED") && agentDependencySource.includes("WINDOWS_INSTALLER_UNAVAILABLE"), "Windows dependency installs must report structured failures.");
   assert(agentDependencySource.includes("externalTerminal: false") && agentDependencySource.includes("executionBackend: \"agent\""), "Agent dependency jobs must declare backend execution without external terminals.");
   assert(agentDependencySource.includes("AUTHORIZATION_REQUIRED") && agentDependencySource.includes("VERIFICATION_FAILED"), "Dependency lifecycle must expose structured authorization and verification states.");
   assert(serviceRouterSource.includes("executionBackend: \"desktop\"") && serviceRouterSource.includes("installationMethod: \"local-noop\""), "Local Desktop dependency routing must stay owned by the Desktop backend.");

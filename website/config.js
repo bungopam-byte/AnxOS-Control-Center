@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "148",
-  buildNumber: "148",
+  build: "149",
+  buildNumber: "149",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 148 Private Alpha",
+  releaseLabel: "Version 1.7 Build 149 Private Alpha",
   releaseDate: "July 14, 2026",
-  releaseTag: "v1.7-build148",
+  releaseTag: "v1.7-build149",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build148",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build149",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -26,23 +26,41 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build148.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-Setup-1.7-build148.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build149.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-Setup-1.7-build149.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build148-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-1.7-build148-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build149-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-1.7-build149-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build148.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-1.7-build148.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build149.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-1.7-build149.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build148.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build148/AnxOS-Control-Center-1.7-build148.deb"
+          fileName: "AnxOS-Control-Center-1.7-build149.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-1.7-build149.deb"
       }
   ],
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 149,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build149",
+          "date": "July 14, 2026",
+          "datetime": "2026-07-14",
+          "title": "Build 149 Private Alpha hotfix",
+          "summary": "Private Alpha hotfix for an empty packaged Marketplace caused by missing template catalog config.",
+          "changes": [
+              "Fixed packaged Marketplace loading by injecting config/marketplace-templates.json into app.asar.",
+              "Added config/agent.example.json to the same packaging verification path.",
+              "Added artifact smoke assertions so Windows and Linux packages must include the Marketplace template catalog.",
+              "Preserved the build 148 shared-module packaging fix.",
+              "Bumped the Electron updater package version to 1.0.51 so Private Alpha hotfix updates can be detected."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build149"
+      },
       {
           "version": "1.7",
           "build": 148,

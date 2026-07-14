@@ -33,14 +33,19 @@ window.ANXOS_DOWNLOAD_CONFIG = {
           "date": "July 14, 2026",
           "datetime": "2026-07-14",
           "title": "Local Agent release packaging integration",
-          "summary": "This private-alpha metadata update prepares release artifacts for the Local Agent Windows experience without publishing a stable production release.",
+          "summary": "This private-alpha update prepares AnxOS Control Center for the Local Windows Agent release path while preserving existing remote Agent workflows.",
           "changes": [
-              "Added Local Agent support metadata to updater manifests so packaged Windows builds declare the bundled Agent runtime contract.",
-              "Validated Windows service setup, automatic pairing, dependency scanner, and website installation guide coverage in release metadata.",
-              "Required NSIS installer, portable executable, blockmap, updater metadata, and SHA-256 checksum artifacts before public release upload.",
-              "Added release artifact validation that checks update manifests, checksums, rollback metadata, Local Agent runtime metadata, and secret/path redaction.",
-              "Kept stable and development publishing separated by preserving prerelease uploads for private-alpha builds.",
-              "Known limitation: this commit validates release metadata and artifact rules only; it does not publish or claim a real Windows-machine production release."
+              "Who it is for: Windows users who want to run servers from their own PC, plus existing users who want Local and Remote Agents to coexist.",
+              "New installations are guided toward the Windows installer, onboarding, Use This PC, Local Agent installation, secure local pairing, dependency scanning, and Marketplace setup.",
+              "Existing remote Agent users do not need to change their Debian or remote Windows Agent setup for this metadata update.",
+              "Packaged Windows builds declare the bundled Local Agent runtime contract in updater metadata.",
+              "Release uploads now require the NSIS installer, portable executable, blockmap, updater metadata, and SHA-256 checksum artifacts.",
+              "Release artifact validation checks update manifests, checksums, rollback metadata, Local Agent runtime metadata, and secret/path redaction before upload.",
+              "Website docs now cover Local Agent setup, Windows service behavior, automatic pairing, dependency scanning, installation help, system requirements, security and privacy, and FAQ entries.",
+              "Windows-only limitation: the beginner Local Agent flow is written for Windows; macOS Local Agent support is not documented or claimed.",
+              "Known limitation: real-machine Windows installation, service startup after reboot, Marketplace installs, backups, and Public Access still need final readiness-gate evidence before a stable production release.",
+              "Upgrade guidance: new Windows users should use the Windows installer and onboarding; existing remote Agent users can add This PC later.",
+              "Repair guidance: use Agent diagnostics, Repair Service, Repair Pairing, dependency re-scan, and rollback guidance instead of manual token copying or config edits."
           ],
           "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build146"
       },

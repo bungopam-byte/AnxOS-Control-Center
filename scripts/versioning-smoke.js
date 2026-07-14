@@ -67,5 +67,19 @@ assert(!updateManagerSource.includes("192.168.1.134:8766"), "Updater must not sh
 assert(websiteConfig.includes(`latestVersion: "${release.version}"`) && websiteConfig.includes(`build: "${release.build}"`) && websiteConfig.includes(`channel: "${release.channel}"`), "Website download metadata must display the public release model.");
 assert(!websiteConfig.includes("packageVersion"), "Website public metadata must not expose the internal package SemVer.");
 assert(websiteNotes.some((entry) => entry.version === release.version && Number(entry.build) === release.build && entry.channel === release.channel), "Website release notes must include the current public version/build/channel.");
+const currentWebsiteNote = websiteNotes.find((entry) => entry.version === release.version && Number(entry.build) === release.build && entry.channel === release.channel);
+const currentReleaseText = `${currentWebsiteNote?.summary || ""}\n${(currentWebsiteNote?.changes || []).join("\n")}`;
+[
+  "Who it is for",
+  "New installations",
+  "Existing remote Agent users",
+  "Windows-only limitation",
+  "macOS Local Agent support is not documented or claimed",
+  "Upgrade guidance",
+  "Repair guidance",
+  "real-machine Windows installation",
+].forEach((phrase) => {
+  assert(currentReleaseText.includes(phrase), `Current release notes must include ${phrase}.`);
+});
 
 console.log("Versioning smoke checks passed.");

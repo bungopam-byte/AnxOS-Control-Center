@@ -50,6 +50,7 @@ const diagnostics = require("./src/services/diagnosticsService");
 const { registerDiagnosticsIpc } = require("./src/ipc/diagnosticsIpc");
 const { registerAgentControlIpc } = require("./src/ipc/agentControlIpc");
 const { registerDependenciesIpc } = require("./src/ipc/dependenciesIpc");
+const { requireSettingsCapability } = require("./src/services/settingsPermissionService");
 const originalConsoleError = console.error.bind(console);
 console.error = (...args) => {
   originalConsoleError(...args);
@@ -122,11 +123,27 @@ function registerUpdatesIpc() {
 }
 
 function registerDeveloperUpdatesIpc() {
-  ipcMain.handle("developerUpdates:getState", () => developerGitUpdater.getState());
-  ipcMain.handle("developerUpdates:check", (_, options = {}) => developerGitUpdater.check(options));
-  ipcMain.handle("developerUpdates:update", () => developerGitUpdater.update());
-  ipcMain.handle("developerUpdates:restart", () => developerGitUpdater.restart());
-  ipcMain.handle("developerUpdates:openChanges", () => developerGitUpdater.openChanges());
+  const requireDeveloperUpdateAccess = () => requireSettingsCapability("canManageDeveloperSettings", "developer-updates");
+  ipcMain.handle("developerUpdates:getState", () => {
+    requireDeveloperUpdateAccess();
+    return developerGitUpdater.getState();
+  });
+  ipcMain.handle("developerUpdates:check", (_, options = {}) => {
+    requireDeveloperUpdateAccess();
+    return developerGitUpdater.check(options);
+  });
+  ipcMain.handle("developerUpdates:update", () => {
+    requireDeveloperUpdateAccess();
+    return developerGitUpdater.update();
+  });
+  ipcMain.handle("developerUpdates:restart", () => {
+    requireDeveloperUpdateAccess();
+    return developerGitUpdater.restart();
+  });
+  ipcMain.handle("developerUpdates:openChanges", () => {
+    requireDeveloperUpdateAccess();
+    return developerGitUpdater.openChanges();
+  });
 }
 
 function getWindowStatePath() {

@@ -26132,7 +26132,7 @@ function renderDevelopmentBadge(state = developerUpdateState) {
   if (!developmentBadge) {
     return;
   }
-  const visible = Boolean(state?.eligible && state?.available !== false);
+  const visible = Boolean(canUseSettingsCapability("canManageDeveloperSettings") && state?.eligible && state?.available !== false);
   developmentBadge.hidden = !visible;
   developmentBadge.dataset.devState = state?.status || "up-to-date";
   developmentBadge.title = visible ? "Open Developer Update status" : "";
@@ -26194,7 +26194,7 @@ function renderDeveloperUpdateModal(state = developerUpdateState) {
 
 async function refreshDeveloperUpdateState(options = {}) {
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasDeveloperUpdates) {
+  if (!desktopApiState.hasDeveloperUpdates || !canUseSettingsCapability("canManageDeveloperSettings")) {
     developerUpdateState = null;
     renderDevelopmentBadge(null);
     return null;
@@ -26225,6 +26225,10 @@ async function refreshDeveloperUpdateState(options = {}) {
 }
 
 async function openDeveloperUpdateModal() {
+  if (!canUseSettingsCapability("canManageDeveloperSettings")) {
+    showToast("Owner access is required for Developer Update.");
+    return;
+  }
   await refreshDeveloperUpdateState({ fetch: false });
   renderDeveloperUpdateModal(developerUpdateState);
   setDevUpdateModalVisible(true);
@@ -26232,7 +26236,7 @@ async function openDeveloperUpdateModal() {
 
 async function runDeveloperUpdateAction(action) {
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasDeveloperUpdates || developerUpdateBusy) return;
+  if (!desktopApiState.hasDeveloperUpdates || developerUpdateBusy || !canUseSettingsCapability("canManageDeveloperSettings")) return;
   if (action === "dismiss") {
     setDevUpdateModalVisible(false);
     return;

@@ -14,6 +14,7 @@ const index = read("index.html");
 const preload = read("preload.js");
 const settingsIpc = read("src/ipc/settingsIpc.js");
 const permissions = read("src/services/settingsPermissionService.js");
+const main = read("main.js");
 
 assert(
   preload.includes("getPermissions: () => ipcRenderer.invoke(\"settings:getPermissions\")"),
@@ -45,6 +46,13 @@ assert(
     permissions.includes("requireOwner(target)") &&
     permissions.includes('error.code = "FORBIDDEN"'),
   "Settings permission service must map Owner-only capabilities through Owner authorization.",
+);
+
+assert(
+  main.includes('requireSettingsCapability("canManageDeveloperSettings", "developer-updates")') &&
+    app.includes('canUseSettingsCapability("canManageDeveloperSettings") && state?.eligible') &&
+    app.includes('Owner access is required for Developer Update.'),
+  "Developer update controls must be Owner-gated in main and renderer.",
 );
 
 assert(

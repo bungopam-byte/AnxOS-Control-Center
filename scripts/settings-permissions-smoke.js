@@ -95,6 +95,14 @@ assert(
 );
 
 assert(
+  index.includes('class="owner-only-badge"') &&
+    index.includes("Marketplace provider credentials and administrative integration settings are available only to the Owner.") &&
+    index.includes("Internal development, diagnostics, and experimental controls.") &&
+    !index.includes('settings-section--general" data-settings-capability'),
+  "Owner-only Settings content must have concise badges and explanations without marking public Settings as restricted.",
+);
+
+assert(
   app.includes("let settingsPermissionState") &&
     app.includes("refreshSettingsPermissions") &&
     app.includes("isSettingsSectionAuthorized") &&

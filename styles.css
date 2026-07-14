@@ -7176,6 +7176,21 @@ dd {
   border: 1px solid transparent;
 }
 
+.owner-only-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 9px;
+  border: 1px solid rgba(182, 108, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(182, 108, 255, 0.14);
+  color: rgba(235, 221, 255, 0.92);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .status-pill--manual,
 .status-pill--local {
   background: var(--accent-soft);

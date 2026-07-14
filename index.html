@@ -3716,7 +3716,7 @@
             </section>
 
             <section class="settings-section settings-section--security" data-settings-category="security" data-settings-capability="canManageAdvancedSecurity" data-settings-keywords="security owner lock timeout token audit sessions secrets mask">
-              <div class="settings-section__header"><div><h3>Security</h3><p>Owner and account security controls continue to use the existing trusted security service.</p></div><span class="status-pill status-pill--ok">Protected</span></div>
+              <div class="settings-section__header"><div><h3>Security</h3><p>Advanced security policy, audit, and token controls are available only to the Owner.</p></div><span class="owner-only-badge">Owner Only</span></div>
               <div class="settings-grid">
                 <label class="settings-check settings-check--toggle" title="Owner authorization is already enforced by protected IPC paths. This policy toggle is not available yet."><input type="checkbox" data-setting="security.requireOwnerForSensitiveActions" disabled><span>Require Owner authentication before sensitive actions</span></label>
                 <label class="settings-check settings-check--toggle" title="Inactivity locking policy controls are not available yet."><input type="checkbox" data-setting="security.lockAfterInactivity" disabled><span>Lock the application after inactivity</span></label>
@@ -3779,9 +3779,9 @@
               <div class="settings-section__header">
                 <div>
                   <h3>Marketplace</h3>
-                  <p>CurseForge API Key</p>
+                  <p>Marketplace provider credentials and administrative integration settings are available only to the Owner.</p>
                 </div>
-                <span class="status-pill status-pill--planned" data-marketplace-config-pill>Providers</span>
+                <div class="settings-section__badges"><span class="owner-only-badge">Owner Only</span><span class="status-pill status-pill--planned" data-marketplace-config-pill>Providers</span></div>
               </div>
               <p class="settings-note" data-marketplace-config-message>Save a CurseForge API key to browse and install CurseForge modpacks.</p>
               <div class="settings-grid">
@@ -3877,9 +3877,9 @@
               <div class="settings-section__header">
                 <div>
                   <h3>Developer</h3>
-                  <p>Local troubleshooting controls and disabled future log tools.</p>
+                  <p>Internal development, diagnostics, and experimental controls.</p>
                 </div>
-                <span class="status-pill status-pill--manual">Tools</span>
+                <span class="owner-only-badge">Owner Only</span>
               </div>
               <div class="settings-actions">
                 <label class="settings-check settings-check--toggle">

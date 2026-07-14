@@ -48,6 +48,9 @@ assert(preload.includes("settings:getPreferences") && preload.includes("settings
 assert(preload.includes("dependencies:plan") && app.includes("typeof api?.dependencies?.plan === \"function\""), "Dependency preparation planning must be exposed before install actions.");
 assert(main.includes("registerSettingsIpc"), "Main process must register settings IPC.");
 assert(index.includes("nodes-summary-grid") && index.includes('data-node-summary="online"'), "Nodes workspace must expose a compact dashboard summary.");
+assert(index.includes("Your AnxOS Overview") && index.includes("data-dashboard-friendly-grid") && index.includes("data-dashboard-next-action"), "Dashboard must include the beginner-friendly overview and next-step action.");
+assert(app.includes("function renderFriendlyDashboard") && app.includes("getFriendlyDashboardState") && app.includes("runDashboardFriendlyAction"), "Dashboard friendly overview must be wired to real renderer state and actions.");
+assert(styles.includes(".dashboard-welcome") && styles.includes(".dashboard-friendly-grid") && styles.includes(".dashboard-next-step"), "Dashboard friendly overview CSS must exist.");
 assert(index.includes("[data-node-list]") || index.includes("data-node-list"), "Nodes workspace must expose the node card list.");
 assert(index.includes("data-node-modal") && index.includes('data-node-action="open-add"'), "Nodes registration form must live in an Add Node modal.");
 assert(index.includes("data-node-details-modal") && index.includes("node-details-drawer"), "Nodes workspace must include a details drawer.");

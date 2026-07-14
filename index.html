@@ -496,6 +496,54 @@
             </div>
           </header>
 
+          <section class="dashboard-welcome" aria-labelledby="dashboard-overview-title">
+            <div class="dashboard-welcome__header">
+              <div>
+                <p class="eyebrow">Your AnxOS Overview</p>
+                <h2 id="dashboard-overview-title">See what is connected, what is running, and anything that needs your attention.</h2>
+              </div>
+            </div>
+            <div class="dashboard-friendly-grid" data-dashboard-friendly-grid>
+              <article class="dashboard-friendly-card">
+                <span>This Computer</span>
+                <strong data-dashboard-friendly="computerStatus">Checking</strong>
+                <p data-dashboard-friendly="computerDetail">Checking local system state.</p>
+              </article>
+              <article class="dashboard-friendly-card">
+                <span>Connected Systems</span>
+                <strong data-dashboard-friendly="systemsStatus">Checking</strong>
+                <p data-dashboard-friendly="systemsDetail">Checking connected systems.</p>
+              </article>
+              <article class="dashboard-friendly-card">
+                <span>Running Services</span>
+                <strong data-dashboard-friendly="servicesStatus">Checking</strong>
+                <p data-dashboard-friendly="servicesDetail">Checking managed servers and containers.</p>
+              </article>
+              <article class="dashboard-friendly-card">
+                <span>Setup Status</span>
+                <strong data-dashboard-friendly="setupStatus">Checking</strong>
+                <p data-dashboard-friendly="setupDetail">Checking setup progress.</p>
+              </article>
+            </div>
+            <div class="dashboard-next-step">
+              <div>
+                <span>Recommended Next Step</span>
+                <strong data-dashboard-friendly="nextStepTitle">Checking current state</strong>
+                <p data-dashboard-friendly="nextStepDetail">AnxOS is checking what is ready.</p>
+              </div>
+              <button class="primary-button" type="button" data-dashboard-next-action>Open Dashboard</button>
+            </div>
+            <div class="dashboard-quick-actions" aria-label="Dashboard quick actions">
+              <button class="inline-action" type="button" data-dashboard-action="create-server">Create a Server</button>
+              <button class="inline-action" type="button" data-dashboard-action="instances">View Instances</button>
+              <button class="inline-action" type="button" data-dashboard-action="files">Open Files</button>
+              <button class="inline-action" type="button" data-dashboard-action="docker">Manage Docker</button>
+              <button class="inline-action" type="button" data-dashboard-action="nodes">Add Remote System</button>
+              <button class="inline-action" type="button" data-dashboard-action="public-access">Configure Public Access</button>
+            </div>
+            <div class="dashboard-friendly-empty" data-dashboard-friendly-empty hidden></div>
+          </section>
+
           <div class="dashboard-ops-grid" aria-label="Operations snapshot">
             <article>
               <span>Docker</span>

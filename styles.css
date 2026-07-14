@@ -7696,6 +7696,114 @@ dd {
   color: var(--text);
 }
 
+.dashboard-welcome {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(182, 108, 255, .2);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(33, 16, 51, .78), rgba(16, 8, 28, .72));
+}
+
+.dashboard-welcome__header h2 {
+  max-width: 780px;
+  margin: 0;
+  font-size: clamp(1.1rem, 1.6vw, 1.45rem);
+  line-height: 1.25;
+}
+
+.dashboard-friendly-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-friendly-card,
+.dashboard-next-step,
+.dashboard-friendly-empty article {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(190, 170, 220, .14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.dashboard-friendly-card {
+  display: grid;
+  gap: 7px;
+}
+
+.dashboard-friendly-card span,
+.dashboard-next-step span {
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.dashboard-friendly-card strong,
+.dashboard-next-step strong,
+.dashboard-friendly-empty strong {
+  color: var(--text);
+}
+
+.dashboard-friendly-card p,
+.dashboard-next-step p,
+.dashboard-friendly-empty p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.dashboard-next-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.dashboard-next-step > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.dashboard-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dashboard-friendly-empty {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-friendly-empty article {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 980px) {
+  .dashboard-friendly-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-friendly-grid,
+  .dashboard-friendly-empty,
+  .dashboard-next-step {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-next-step .primary-button {
+    width: 100%;
+  }
+}
+
 .app-modal-backdrop {
   position: fixed;
   inset: 0;

@@ -437,6 +437,10 @@ const agentControlButtons = document.querySelectorAll("[data-agent-control-actio
 const dependencyStatus = document.querySelector("[data-dependency-status]");
 const dependencyList = document.querySelector("[data-dependency-list]");
 const dependencyButtons = document.querySelectorAll("[data-dependency-action]");
+const dashboardFriendlyFields = document.querySelectorAll("[data-dashboard-friendly]");
+const dashboardFriendlyEmpty = document.querySelector("[data-dashboard-friendly-empty]");
+const dashboardNextAction = document.querySelector("[data-dashboard-next-action]");
+const dashboardActionButtons = document.querySelectorAll("[data-dashboard-action]");
 const agentConfigFields = document.querySelectorAll("[data-agent-config]");
 const agentConfigMessage = document.querySelector("[data-agent-config-message]");
 const agentConfigSummary = document.querySelector("[data-agent-config-summary]");
@@ -473,6 +477,7 @@ let dependencyOperationState = "idle";
 let dependencyRequestSerial = 0;
 let dependencyLastError = null;
 let agentLogEntries = [];
+let dashboardNextActionState = { page: "dashboard" };
 let updateModalCleanup = null;
 let devUpdateModalCleanup = null;
 let fivemSetupModalCleanup = null;
@@ -1417,6 +1422,115 @@ function updateFieldAttributes(name, updater) {
   (fieldMap.get(name) || []).forEach((field) => {
     updater(field);
   });
+}
+
+function setDashboardFriendlyField(name, value) {
+  dashboardFriendlyFields.forEach((field) => {
+    if (field.dataset.dashboardFriendly === name) field.textContent = value;
+  });
+}
+
+function getFriendlyDashboardState() {
+  const nodeId = getSelectedNodeId();
+  const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
+  const connectedRemoteNodes = remoteNodes.filter((node) => getNodeVisualState(node) === "online");
+  const instances = getInstances();
+  const runningInstances = instances.filter(isInstanceRunning);
+  const runningContainers = Number(latestDockerSnapshot?.summary?.runningContainers || 0);
+  const hasSystemSnapshot = Boolean(latestSystemSnapshot && latestSystemSnapshotNodeId === nodeId);
+  const agentSummary = getOnboardingAgentSummary();
+  const onboardingComplete = getCurrentSettings()["onboarding.completed"] === true;
+  const dockerReady = dockerWorkspaceState?.ready === true;
+
+  const computer = hasSystemSnapshot || runtimeInfoState
+    ? {
+      status: "Ready",
+      detail: `${runtimeInfoState?.hostname || latestSystemSnapshot?.host?.hostname || "This computer"} is available to AnxOS.`,
+    }
+    : {
+      status: "Unable to confirm",
+      detail: "System details have not loaded yet.",
+    };
+
+  const systems = remoteNodes.length
+    ? {
+      status: connectedRemoteNodes.length ? "Connected" : "Attention needed",
+      detail: `${connectedRemoteNodes.length}/${remoteNodes.length} remote systems connected.`,
+    }
+    : {
+      status: "Ready",
+      detail: "Only this computer is connected. Add another system whenever you are ready.",
+    };
+
+  const services = instances.length || runningContainers
+    ? {
+      status: runningInstances.length || runningContainers ? "Running" : "Ready",
+      detail: `${runningInstances.length} servers and ${runningContainers} containers running.`,
+    }
+    : {
+      status: "Setup needed",
+      detail: "No servers yet. Install a server from the Marketplace to get started.",
+    };
+
+  const setupAttention = agentSummary.status === "Connected" || agentSummary.status === "Unable to check" ? false : true;
+  const setup = onboardingComplete && !setupAttention
+    ? { status: "Ready", detail: "Core setup is complete." }
+    : setupAttention
+      ? { status: "Attention needed", detail: `Agent status: ${agentSummary.status}.` }
+      : { status: "Setup needed", detail: "Finish the setup guide to review local tools and optional features." };
+
+  let next = { title: "Everything looks ready", detail: "Open a workspace or continue managing your systems.", action: "dashboard" };
+  if (agentSummary.status !== "Connected" && agentSummary.status !== "Unable to check") {
+    next = { title: "Connect your local Agent", detail: "Open Agent Control to check service state and recovery actions.", action: "agent-control" };
+  } else if (!dockerReady) {
+    next = { title: "Install Docker", detail: "Docker is optional, but useful for container workloads.", action: "docker" };
+  } else if (!instances.length) {
+    next = { title: "Create your first server", detail: "Browse the Marketplace and install a supported server.", action: "marketplace" };
+  } else if (!remoteNodes.length) {
+    next = { title: "Add a remote system", detail: "Connect another Windows or Linux system when you are ready.", action: "nodes" };
+  } else if (!getCurrentSettings()["playit.address"]) {
+    next = { title: "Configure public access", detail: "Public Access can make supported services reachable.", action: "playit" };
+  }
+
+  return { computer, systems, services, setup, next, instances, remoteNodes };
+}
+
+function renderFriendlyDashboard() {
+  const state = getFriendlyDashboardState();
+  setDashboardFriendlyField("computerStatus", state.computer.status);
+  setDashboardFriendlyField("computerDetail", state.computer.detail);
+  setDashboardFriendlyField("systemsStatus", state.systems.status);
+  setDashboardFriendlyField("systemsDetail", state.systems.detail);
+  setDashboardFriendlyField("servicesStatus", state.services.status);
+  setDashboardFriendlyField("servicesDetail", state.services.detail);
+  setDashboardFriendlyField("setupStatus", state.setup.status);
+  setDashboardFriendlyField("setupDetail", state.setup.detail);
+  setDashboardFriendlyField("nextStepTitle", state.next.title);
+  setDashboardFriendlyField("nextStepDetail", state.next.detail);
+  dashboardNextActionState = { page: state.next.action };
+  if (dashboardNextAction) dashboardNextAction.textContent = state.next.title;
+  if (dashboardFriendlyEmpty) {
+    dashboardFriendlyEmpty.replaceChildren();
+    if (!state.instances.length) {
+      const server = document.createElement("article");
+      server.append(createTextElement("strong", "No servers yet"), createTextElement("p", "Install a server from the Marketplace to get started."));
+      const button = createTextElement("button", "Browse Marketplace", "inline-action");
+      button.type = "button";
+      button.addEventListener("click", () => showPage("marketplace"));
+      server.append(button);
+      dashboardFriendlyEmpty.append(server);
+    }
+    if (!state.remoteNodes.length) {
+      const nodes = document.createElement("article");
+      nodes.append(createTextElement("strong", "Only this computer is connected"), createTextElement("p", "Add another Windows or Linux system whenever you are ready."));
+      const button = createTextElement("button", "Add Remote System", "inline-action");
+      button.type = "button";
+      button.addEventListener("click", () => { showPage("nodes"); setNodeModalVisible(true); });
+      nodes.append(button);
+      dashboardFriendlyEmpty.append(nodes);
+    }
+    dashboardFriendlyEmpty.hidden = dashboardFriendlyEmpty.childElementCount === 0;
+  }
 }
 
 function configurePrimaryNavigation() {
@@ -5389,6 +5503,7 @@ function renderSnapshot(snapshot, nodeId = getSelectedNodeId()) {
   setField("uptime", formatDuration(safeSnapshot.uptimeSeconds));
   renderCpuTemperature(safeSnapshot);
   refreshNodeHealth({ notify: false });
+  renderFriendlyDashboard();
 }
 
 function getConfiguredPlayitAddress() {
@@ -7112,6 +7227,7 @@ function renderDockerSnapshot(snapshot) {
     dockerFilterSelect.disabled = !snapshot?.installed || !snapshot?.daemonRunning;
   }
   updateTitlebar();
+  renderFriendlyDashboard();
   captureDockerDiagnostics(snapshot, dockerWorkspaceState);
   if (dockerWorkspaceState.ready && getActivePageName() === "docker") {
     refreshDockerResources("all");
@@ -7145,6 +7261,7 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setDockerEmpty(true);
   updateDockerActionButtons();
   updateTitlebar();
+  renderFriendlyDashboard();
   captureDockerDiagnostics(null, dockerWorkspaceState);
 }
 
@@ -9626,6 +9743,7 @@ function renderInstancesSnapshot(snapshot) {
     renderMarketplaceInstallSummary(findMarketplaceTemplate());
   }
   refreshNodeHealth({ notify: false });
+  renderFriendlyDashboard();
   updateTitlebar();
 }
 
@@ -9648,6 +9766,7 @@ function renderInstancesUnavailable(message = "Instance manager unavailable.") {
   setInstanceDetails(null);
   clearInstanceLogs("Select an instance and refresh logs.");
   activeConsoleInstanceId = null;
+  renderFriendlyDashboard();
   consoleOpenInstanceIds = [];
   consoleBufferedEntries = [];
   renderConsoleWorkspace();
@@ -25220,6 +25339,7 @@ async function activateNodePickerOption(index) {
 function renderNodes() {
   renderRoutingDiagnostics();
   renderNodeSummary();
+  renderFriendlyDashboard();
   nodeTargetSelects.forEach((select) => {
     select.replaceChildren();
     (nodesState.nodes || []).forEach((node) => {
@@ -28363,6 +28483,23 @@ onboardingWizardButtons.forEach((button) => {
     }
   });
 });
+function runDashboardFriendlyAction(action) {
+  if (action === "create-server" || action === "marketplace") return showPage("marketplace");
+  if (action === "instances") return showPage("instances");
+  if (action === "files") return showPage("files");
+  if (action === "docker") return showPage("docker");
+  if (action === "nodes") {
+    showPage("nodes");
+    return setNodeModalVisible(true);
+  }
+  if (action === "public-access" || action === "playit") return showPage("playit");
+  if (action === "agent-control") return showPage("agent-control");
+  return showPage("dashboard");
+}
+dashboardActionButtons.forEach((button) => {
+  button.addEventListener("click", () => runDashboardFriendlyAction(button.dataset.dashboardAction || "dashboard"));
+});
+dashboardNextAction?.addEventListener("click", () => runDashboardFriendlyAction(dashboardNextActionState.page || "dashboard"));
 document.querySelector('[data-page="settings"]')?.addEventListener("click", async (event) => {
   const categoryButton = event.target.closest("[data-settings-category-target]");
   if (categoryButton) {
@@ -29022,6 +29159,7 @@ loadSettings();
 renderOperationsCenter();
 renderNotificationCenter();
 renderMaintenanceCenter();
+renderFriendlyDashboard();
 refreshAccountState();
 refreshSecurityState();
 refreshNodes();

@@ -1,6 +1,25 @@
 [
   {
     "version": "1.7",
+    "build": 150,
+    "channel": "Private Alpha",
+    "tag": "v1.7-build150",
+    "date": "July 14, 2026",
+    "datetime": "2026-07-14",
+    "title": "Build 150 Private Alpha release polish",
+    "summary": "Private Alpha release candidate with startup-command safety fixes, bounded restart behavior, Public Access modal creation, and desktop/website polish.",
+    "changes": [
+      "Preserved shell-wrapped startup commands as structured executable arguments so Palworld keeps the full bash -lc script intact.",
+      "Added bounded restart/backoff handling so immediately crashing instances stop instead of restarting every second forever.",
+      "Replaced the Public Access Create Access Service browser prompt with an in-app modal that validates service name, host, port, and protocol.",
+      "Polished desktop navigation, dashboard, instances, marketplace, Public Access, files, console, Docker, backups, settings, security, owner tools, node status, empty/error states, accessibility, and copy.",
+      "Polished website design, navigation, home, authentication, profile, download, release notes, responsive behavior, accessibility, metadata, and production route readiness.",
+      "Bumped the Electron updater package version to 1.0.52 so Private Alpha build 150 updates can be detected."
+    ],
+    "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build150"
+  },
+  {
+    "version": "1.7",
     "build": 149,
     "channel": "Private Alpha",
     "tag": "v1.7-build149",

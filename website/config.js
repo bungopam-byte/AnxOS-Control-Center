@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "149",
-  buildNumber: "149",
+  build: "150",
+  buildNumber: "150",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 149 Private Alpha",
+  releaseLabel: "Version 1.7 Build 150 Private Alpha",
   releaseDate: "July 14, 2026",
-  releaseTag: "v1.7-build149",
+  releaseTag: "v1.7-build150",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build149",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build150",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -26,23 +26,42 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build149.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-Setup-1.7-build149.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build150.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build150/AnxOS-Control-Center-Setup-1.7-build150.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build149-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-1.7-build149-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build150-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build150/AnxOS-Control-Center-1.7-build150-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build149.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-1.7-build149.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build150.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build150/AnxOS-Control-Center-1.7-build150.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build149.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build149/AnxOS-Control-Center-1.7-build149.deb"
+          fileName: "AnxOS-Control-Center-1.7-build150.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build150/AnxOS-Control-Center-1.7-build150.deb"
       }
   ],
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 150,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build150",
+          "date": "July 14, 2026",
+          "datetime": "2026-07-14",
+          "title": "Build 150 Private Alpha release polish",
+          "summary": "Private Alpha release candidate with startup-command safety fixes, bounded restart behavior, Public Access modal creation, and desktop/website polish.",
+          "changes": [
+              "Preserved shell-wrapped startup commands as structured executable arguments so Palworld keeps the full bash -lc script intact.",
+              "Added bounded restart/backoff handling so immediately crashing instances stop instead of restarting every second forever.",
+              "Replaced the Public Access Create Access Service browser prompt with an in-app modal that validates service name, host, port, and protocol.",
+              "Polished desktop navigation, dashboard, instances, marketplace, Public Access, files, console, Docker, backups, settings, security, owner tools, node status, empty/error states, accessibility, and copy.",
+              "Polished website design, navigation, home, authentication, profile, download, release notes, responsive behavior, accessibility, metadata, and production route readiness.",
+              "Bumped the Electron updater package version to 1.0.52 so Private Alpha build 150 updates can be detected."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build150"
+      },
       {
           "version": "1.7",
           "build": 149,

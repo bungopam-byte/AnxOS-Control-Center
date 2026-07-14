@@ -7,9 +7,12 @@ const { app, shell } = require("electron");
 const agentClient = require("./agentClient");
 const { getAllNodesSync, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
-const agentPackage = require("../../agent/package.json");
 const { getReleaseInfo } = require("../shared/releaseConfig");
-const { getBundledLocalAgentRuntime, getPublicLocalAgentRuntimeInfo } = require("./localAgentRuntimeService");
+const {
+  getBundledLocalAgentRuntime,
+  getBundledLocalAgentVersion,
+  getPublicLocalAgentRuntimeInfo,
+} = require("./localAgentRuntimeService");
 const { testConnection } = require("./agentClient");
 const {
   pairLocalAgent,
@@ -437,13 +440,13 @@ async function installLocalAgent(options = {}) {
 }
 
 function getLocalAgentUpdateState(status = {}) {
-  const bundledVersion = agentPackage.version;
+  const bundledVersion = getBundledLocalAgentVersion(null);
   const installedVersion = status.agentVersion || status.identity?.agentVersion || null;
-  const comparison = installedVersion ? compareVersions(installedVersion, bundledVersion) : null;
+  const comparison = installedVersion && bundledVersion ? compareVersions(installedVersion, bundledVersion) : null;
   const updateAvailable = comparison !== null && comparison < 0;
   const agentNewerThanDesktop = comparison !== null && comparison > 0;
   return {
-    bundledVersion,
+    bundledVersion: bundledVersion || "unavailable",
     installedVersion,
     updateAvailable,
     agentNewerThanDesktop,
@@ -555,13 +558,14 @@ async function updateLocalAgent(options = {}) {
     operationInFlight = "update";
     mark("start", "complete", "Local Agent restarted.");
     const afterUpdate = getLocalAgentUpdateState(started);
-    if (afterUpdate.installedVersion && compareVersions(afterUpdate.installedVersion, agentPackage.version) !== 0) {
+    const bundledVersion = getBundledLocalAgentVersion(null);
+    if (bundledVersion && afterUpdate.installedVersion && compareVersions(afterUpdate.installedVersion, bundledVersion) !== 0) {
       throw Object.assign(new Error("Local Agent restarted but did not report the bundled runtime version."), { code: "LOCAL_AGENT_UPDATE_VERIFY_FAILED", steps, update: afterUpdate });
     }
     mark("verify", "complete", "Local Agent health verified after update.");
     const recordPath = writeLocalAgentUpdateRecord({
       fromVersion: update.installedVersion,
-      toVersion: agentPackage.version,
+      toVersion: bundledVersion || "unavailable",
       backupRoot: backup.backupRoot,
       status: "complete",
     });
@@ -573,7 +577,7 @@ async function updateLocalAgent(options = {}) {
     diagnostics.logError("agent-control", "update-local-agent", error, { backupRoot: backup?.backupRoot || null, steps }, { file: "service-manager" });
     writeLocalAgentUpdateRecord({
       fromVersion: before?.agentVersion || null,
-      toVersion: agentPackage.version,
+      toVersion: getBundledLocalAgentVersion("unavailable"),
       backupRoot: backup?.backupRoot || null,
       status: "failed",
       error: { code: error.code || "LOCAL_AGENT_UPDATE_FAILED", message: error.message },
@@ -984,7 +988,7 @@ async function getStatus() {
     },
   };
   const runtime = normalizeAgentRuntimeStatus({
-    base: { agentUrl, hostname: os.hostname(), agentVersion: health?.identity?.agentVersion || agentPackage.version, uptime: managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null },
+    base: { agentUrl, hostname: os.hostname(), agentVersion: health?.identity?.agentVersion || getBundledLocalAgentVersion("unavailable"), uptime: managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null },
     health,
     stats: localStats,
     service,
@@ -994,7 +998,7 @@ async function getStatus() {
     capabilities: { metrics: true, lifecycle: true, repair: true, reconnect: true },
   });
   const baseStatus = {
-    agentVersion: health?.identity?.agentVersion || agentPackage.version,
+    agentVersion: health?.identity?.agentVersion || getBundledLocalAgentVersion("unavailable"),
     identity: health?.identity || null,
   };
   return {

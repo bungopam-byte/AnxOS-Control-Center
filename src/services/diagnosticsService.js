@@ -4,11 +4,11 @@ const os = require("os");
 const path = require("path");
 const { app, dialog, shell } = require("electron");
 const packageJson = require("../../package.json");
-const agentPackage = require("../../agent/package.json");
 const { sanitize } = require("../shared/redaction");
 const { StructuredLogger, safeWriteJson } = require("../shared/structuredLogger");
 const { buildEnvironmentReadinessSummary } = require("./readinessService");
 const { getReleaseInfo } = require("../shared/releaseConfig");
+const { getBundledLocalAgentVersion } = require("./localAgentRuntimeService");
 
 function isDevelopment() { return app?.isPackaged === false || process.env.NODE_ENV === "development"; }
 function getDirectory() {
@@ -18,8 +18,9 @@ function getDirectory() {
   catch { return path.join(process.cwd(), ".dev-logs"); }
 }
 const releaseInfo = getReleaseInfo();
-const logger = new StructuredLogger({ directory: getDirectory(), source: "desktop", processName: "main", appVersion: releaseInfo.compactLabel, agentVersion: agentPackage.version });
-let runtimeState = { applicationRunning: true, appVersion: releaseInfo.compactLabel, release: releaseInfo, packageVersion: packageJson.version, agentVersion: agentPackage.version, platform: process.platform, architecture: process.arch, currentWorkspace: "startup" };
+const bundledAgentVersion = getBundledLocalAgentVersion("unavailable");
+const logger = new StructuredLogger({ directory: getDirectory(), source: "desktop", processName: "main", appVersion: releaseInfo.compactLabel, agentVersion: bundledAgentVersion });
+let runtimeState = { applicationRunning: true, appVersion: releaseInfo.compactLabel, release: releaseInfo, packageVersion: packageJson.version, agentVersion: bundledAgentVersion, platform: process.platform, architecture: process.arch, currentWorkspace: "startup" };
 
 function buildReadinessFromRuntime(state = runtimeState) {
   const base = { ...state };
@@ -79,7 +80,7 @@ async function exportBundle(parentWindow = null) {
   const result = await dialog.showSaveDialog(parentWindow || undefined, { title: "Export AnxOS Diagnostic Bundle", defaultPath: `anxos-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`, filters: [{ name: "JSON", extensions: ["json"] }] });
   if (result.canceled || !result.filePath) return { canceled: true };
   const release = getReleaseInfo();
-  const bundle = sanitize({ generatedAt: new Date().toISOString(), application: { name: "AnxOS Control Center", version: release.versionLabel, build: release.buildLabel, channel: release.channel, releaseLabel: release.compactLabel, packageVersion: packageJson.version, platform: os.platform(), release: os.release(), architecture: os.arch() }, agentVersion: agentPackage.version, readinessSummary: buildReadinessFromRuntime(), runtimeState, latestError: (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })(), logs: readLogs({ limit: 500 }).entries });
+  const bundle = sanitize({ generatedAt: new Date().toISOString(), application: { name: "AnxOS Control Center", version: release.versionLabel, build: release.buildLabel, channel: release.channel, releaseLabel: release.compactLabel, packageVersion: packageJson.version, platform: os.platform(), release: os.release(), architecture: os.arch() }, agentVersion: getBundledLocalAgentVersion("unavailable"), readinessSummary: buildReadinessFromRuntime(), runtimeState, latestError: (() => { try { return JSON.parse(fs.readFileSync(path.join(getDirectory(), "latest-error.json"), "utf8")); } catch { return null; } })(), logs: readLogs({ limit: 500 }).entries });
   fs.writeFileSync(result.filePath, `${JSON.stringify(bundle, null, 2)}\n`, { mode: 0o600 });
   log("info", "diagnostics", "export", "Sanitized diagnostic bundle exported", { destinationType: "user-selected-json" });
   return { canceled: false, exported: true };

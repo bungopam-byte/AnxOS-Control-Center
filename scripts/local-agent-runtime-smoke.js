@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, "..");
 const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const runtimeService = fs.readFileSync(path.join(root, "src", "services", "localAgentRuntimeService.js"), "utf8");
 const agentControl = fs.readFileSync(path.join(root, "src", "services", "agentControlService.js"), "utf8");
+const diagnosticsService = fs.readFileSync(path.join(root, "src", "services", "diagnosticsService.js"), "utf8");
 const manifest = JSON.parse(fs.readFileSync(path.join(root, "config", "local-agent-runtime.json"), "utf8"));
 
 assert.strictEqual(manifest.runtimeId, "anxos-local-agent");
@@ -36,6 +37,7 @@ assert(runtimeManifest, "electron-builder should package the runtime manifest.")
   "const AGENT_ENTRYPOINT = path.join(\"agent\", \"src\", \"server.js\")",
   "process.resourcesPath",
   "getBundledLocalAgentRuntime",
+  "getBundledLocalAgentVersion",
   "getPublicLocalAgentRuntimeInfo",
   "usesGlobalNode: false",
   "nodeRuntime: \"electron-run-as-node\"",
@@ -56,6 +58,9 @@ assert(runtimeManifest, "electron-builder should package the runtime manifest.")
   assert(agentControl.includes(needle), `Agent Control should use bundled runtime behavior: ${needle}.`);
 });
 
+assert(!agentControl.includes('require("../../agent/package.json")'), "Agent Control must not hard-load agent/package.json from app.asar.");
+assert(!diagnosticsService.includes('require("../../agent/package.json")'), "Diagnostics must not hard-load agent/package.json from app.asar.");
+assert(diagnosticsService.includes("getBundledLocalAgentVersion"), "Diagnostics should resolve the bundled Agent version through the runtime service.");
 assert(!/runtimeBundle: getBundledLocalAgentRuntime\(\)/.test(agentControl), "Agent Control status must not expose full runtime paths.");
 
 console.log("Local Agent runtime packaging smoke checks passed.");

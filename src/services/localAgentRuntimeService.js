@@ -5,6 +5,7 @@ const { app } = require("electron");
 const RUNTIME_DIRECTORY_NAME = "local-agent-runtime";
 const RUNTIME_MANIFEST_NAME = "local-agent-runtime.json";
 const AGENT_ENTRYPOINT = path.join("agent", "src", "server.js");
+const AGENT_PACKAGE = path.join("agent", "package.json");
 
 function getDevelopmentRoot() {
   try {
@@ -24,6 +25,14 @@ function pathExists(filePath) {
     return Boolean(filePath && fs.existsSync(filePath));
   } catch {
     return false;
+  }
+}
+
+function readJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
   }
 }
 
@@ -63,9 +72,33 @@ function getPublicLocalAgentRuntimeInfo() {
   };
 }
 
+function getBundledLocalAgentPackage() {
+  const runtime = getBundledLocalAgentRuntime();
+  const developmentRoot = getDevelopmentRoot();
+  const candidates = [
+    path.join(runtime.runtimeRoot, AGENT_PACKAGE),
+    path.join(developmentRoot, AGENT_PACKAGE),
+  ];
+  const packagePath = candidates.find(pathExists) || null;
+  const packageJson = packagePath ? readJson(packagePath) : null;
+  return {
+    path: packagePath,
+    version: packageJson?.version || null,
+    packageJson,
+    available: Boolean(packageJson?.version),
+  };
+}
+
+function getBundledLocalAgentVersion(fallback = null) {
+  return getBundledLocalAgentPackage().version || fallback;
+}
+
 module.exports = {
   AGENT_ENTRYPOINT,
+  AGENT_PACKAGE,
   RUNTIME_DIRECTORY_NAME,
   getBundledLocalAgentRuntime,
+  getBundledLocalAgentPackage,
+  getBundledLocalAgentVersion,
   getPublicLocalAgentRuntimeInfo,
 };

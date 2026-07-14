@@ -634,6 +634,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
 function publicConfig(config) {
   return {
     ...config,
+    lifecycleState: config.state === INSTANCE_STATES.FAILED && config.failureReason ? "Crashed" : config.state,
+    crashed: config.state === INSTANCE_STATES.FAILED && Boolean(config.failureReason),
     instancePath: instancePath(config.id),
     environment: Object.keys(config.environment || {}).reduce((redacted, key) => {
       redacted[key] = "[configured]";
@@ -2625,6 +2627,52 @@ async function updateInstance(instanceId, payload = {}) {
   return publicConfig(next);
 }
 
+async function renameInstance(instanceId, displayName) {
+  return updateInstance(instanceId, { displayName });
+}
+
+async function duplicateInstance(instanceId, payload = {}) {
+  const source = await reconcileConfigState(await loadInstanceConfig(instanceId));
+  const activePid = source.pid && isProcessAlive(source.pid) ? source.pid : null;
+  if (activePid || getActiveRunningProcess(source.id)) {
+    throw createInstanceError("INSTANCE_RUNNING", 409);
+  }
+
+  const nextId = validateInstanceId(payload.id || `${source.id}-copy`);
+  const targetPath = instancePath(nextId);
+  if (await pathExists(configPath(nextId)) || await pathExists(targetPath)) {
+    throw createInstanceError("INSTANCE_ALREADY_EXISTS", 409);
+  }
+
+  await ensureManagedPath(targetPath);
+  await fs.cp(instancePath(source.id), targetPath, { recursive: true, errorOnExist: true, force: false });
+  const now = nowIso();
+  const duplicated = {
+    ...source,
+    id: nextId,
+    displayName: validateDisplayName(payload.displayName || payload.name, `${source.displayName || source.id} Copy`),
+    createdAt: now,
+    updatedAt: now,
+    lastStartedAt: null,
+    lastStoppedAt: null,
+    state: INSTANCE_STATES.STOPPED,
+    pid: null,
+    exitCode: null,
+    signal: null,
+    failureReason: null,
+    setupRequired: source.setupRequired || null,
+    setupReadiness: source.setupReadiness || null,
+    runtimeProcess: null,
+    duplicatedFrom: source.id,
+  };
+  await writeJson(configPath(nextId), duplicated);
+  return {
+    instance: publicConfig(duplicated),
+    sourceId: source.id,
+    duplicated: true,
+  };
+}
+
 async function deleteInstance(instanceId) {
   const id = validateInstanceId(instanceId);
   let config;
@@ -3827,6 +3875,7 @@ module.exports = {
   INSTANCE_STATES,
   INSTANCE_TYPES: [...INSTANCE_TYPES],
   createInstance,
+  duplicateInstance,
   deleteInstance,
   forgetInstance,
   clearLogs,
@@ -3842,6 +3891,7 @@ module.exports = {
   readLogs,
   readMinecraftProperties,
   refreshFiveMReadiness,
+  renameInstance,
   renameInstanceFile,
   restartInstance,
   saveFiveMLicenseKey,

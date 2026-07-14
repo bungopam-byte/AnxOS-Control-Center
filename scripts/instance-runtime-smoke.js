@@ -183,10 +183,62 @@ async function assertStopAfterReconciliation() {
   });
 }
 
+async function assertRenameDuplicateAndCrashLifecycle() {
+  await withTempService(async (instanceService) => {
+    await instanceService.createInstance({
+      id: "duplicate-source",
+      displayName: "Duplicate Source",
+      type: "custom-command",
+      workingDirectory: "data",
+      executable: "node",
+      args: ["server.js"],
+      restartPolicy: "never",
+      ports: [25565],
+    });
+    await instanceService.writeInstanceFile("duplicate-source", "server.properties", "server-port=25565\n");
+
+    const renamed = await instanceService.renameInstance("duplicate-source", "Renamed Source");
+    assert.strictEqual(renamed.displayName, "Renamed Source", "Instance rename should update display name without changing ID.");
+
+    const duplicated = await instanceService.duplicateInstance("duplicate-source", {
+      id: "duplicate-copy",
+      displayName: "Duplicate Copy",
+    });
+    assert.strictEqual(duplicated.duplicated, true, "Duplicate operation should report success.");
+    assert.strictEqual(duplicated.instance.id, "duplicate-copy", "Duplicate should use requested target ID.");
+    assert.strictEqual(duplicated.instance.displayName, "Duplicate Copy", "Duplicate should use requested display name.");
+    assert.strictEqual(duplicated.instance.state, "Stopped", "Duplicated instances should start stopped.");
+    assert.strictEqual(duplicated.instance.pid, null, "Duplicated instances should not inherit runtime PID.");
+    assert.strictEqual(duplicated.instance.duplicatedFrom, "duplicate-source", "Duplicate should preserve source identity metadata.");
+    const copiedFile = await instanceService.readInstanceFile("duplicate-copy", "server.properties");
+    assert.strictEqual(copiedFile.content, "server-port=25565\n", "Duplicate should copy instance data files.");
+
+    await instanceService.updateInstance("duplicate-copy", {});
+    const crashedConfigPath = path.join(process.env.AGENT_INSTANCE_ROOT, "duplicate-copy", "config.json");
+    const crashedConfig = JSON.parse(fs.readFileSync(crashedConfigPath, "utf8"));
+    fs.writeFileSync(crashedConfigPath, `${JSON.stringify({
+      ...crashedConfig,
+      state: "Failed",
+      failureReason: "PROCESS_EXITED",
+      pid: null,
+    }, null, 2)}\n`);
+    const crashed = await instanceService.getStatus("duplicate-copy");
+    assert.strictEqual(crashed.lifecycleState, "Crashed", "Failed process exits should expose Crashed lifecycle state.");
+    assert.strictEqual(crashed.crashed, true, "Failed process exits should expose crashed=true.");
+
+    await assert.rejects(
+      () => instanceService.duplicateInstance("duplicate-source", { id: "duplicate-copy" }),
+      (error) => error.code === "INSTANCE_ALREADY_EXISTS",
+      "Duplicate should refuse to overwrite an existing instance."
+    );
+  });
+}
+
 async function run() {
   await assertDetachedRuntimeReconciliation();
   await assertNoUnrelatedAdoptionAndPortCollision();
   await assertStopAfterReconciliation();
+  await assertRenameDuplicateAndCrashLifecycle();
   console.log("Instance runtime smoke checks passed.");
 }
 

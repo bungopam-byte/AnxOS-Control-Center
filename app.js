@@ -1377,6 +1377,9 @@ function getDesktopApiState() {
       typeof api?.instances?.list === "function" &&
       typeof api?.instances?.create === "function" &&
       typeof api?.instances?.update === "function" &&
+      typeof api?.instances?.rename === "function" &&
+      typeof api?.instances?.duplicate === "function" &&
+      typeof api?.instances?.openFolder === "function" &&
       typeof api?.instances?.getStatus === "function" &&
       typeof api?.instances?.getMetrics === "function" &&
       typeof api?.instances?.getLogs === "function" &&
@@ -9964,6 +9967,20 @@ function updateInstanceActionButtons() {
     button.disabled = busy || !hasInstancesBridge || !selectedInstance || !getDesktopApiState().hasPublicAccess;
   });
 
+  document.querySelectorAll('[data-instance-action="rename"]').forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance || typeof desktopApiState.api?.instances?.rename !== "function";
+  });
+
+  document.querySelectorAll('[data-instance-action="duplicate"]').forEach((button) => {
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance || isInstanceRunning(selectedInstance) || typeof desktopApiState.api?.instances?.duplicate !== "function";
+  });
+
+  document.querySelectorAll('[data-instance-action="open-folder"]').forEach((button) => {
+    const selectedNode = getSelectedNode();
+    const localFolderTarget = !selectedNode || selectedNode.kind === "application-host" || selectedNode.localAgent === true;
+    button.disabled = busy || !hasInstancesBridge || !selectedInstance || !localFolderTarget || typeof desktopApiState.api?.instances?.openFolder !== "function";
+  });
+
   document.querySelectorAll(".instance-quick-actions [data-instance-action='start']").forEach((button) => {
     button.hidden = Boolean(selectedInstance && isInstanceRunning(selectedInstance));
   });
@@ -14341,6 +14358,33 @@ async function runInstanceAction(actionName) {
     return;
   }
 
+  let renameDisplayName = null;
+  let duplicateConfig = null;
+  if (actionName === "rename") {
+    renameDisplayName = window.prompt("Rename server", label);
+    if (!renameDisplayName || !renameDisplayName.trim()) {
+      showToast("Rename canceled.");
+      updateInstanceActionButtons();
+      return;
+    }
+  } else if (actionName === "duplicate") {
+    if (isInstanceRunning(selectedInstance)) {
+      showToast("Stop this server before duplicating it.", "warning");
+      updateInstanceActionButtons();
+      return;
+    }
+    const nextId = window.prompt("Duplicate server ID", `${targetInstanceId}-copy`);
+    if (!nextId || !nextId.trim()) {
+      showToast("Duplicate canceled.");
+      updateInstanceActionButtons();
+      return;
+    }
+    duplicateConfig = {
+      id: nextId.trim(),
+      displayName: `${label} Copy`,
+    };
+  }
+
   if (actionName === "forceKill" && !canStopInstance(selectedInstance)) {
     showToast("Instance is already stopped. Use Delete or Forget to remove it.", "warning");
     updateInstanceActionButtons();
@@ -14390,12 +14434,22 @@ async function runInstanceAction(actionName) {
       showToast(`Deleting ${label}...`);
     } else if (actionName === "forget") {
       showToast(`Removing ${label} from the instance list...`);
+    } else if (actionName === "rename") {
+      showToast(`Renaming ${label}...`);
+    } else if (actionName === "duplicate") {
+      showToast(`Duplicating ${label}...`);
     } else if (actionName === "start") {
       logInstanceLifecycle("start requested", { instanceId: targetInstanceId });
     }
 
     if (!isNodeActionStillCurrent(requestContext)) return;
-    const actionResult = await desktopApiState.api.instances[actionName](targetInstanceId, getNodeScopedPayload(requestContext));
+    const actionResult = actionName === "rename"
+      ? await desktopApiState.api.instances.rename(targetInstanceId, renameDisplayName.trim(), getNodeScopedPayload(requestContext))
+      : actionName === "duplicate"
+        ? await desktopApiState.api.instances.duplicate(targetInstanceId, duplicateConfig, getNodeScopedPayload(requestContext))
+        : actionName === "open-folder"
+          ? await desktopApiState.api.instances.openFolder(targetInstanceId, getNodeScopedPayload(requestContext))
+          : await desktopApiState.api.instances[actionName](targetInstanceId, getNodeScopedPayload(requestContext));
     if (actionName === "start") {
       logInstanceLifecycle("start result", {
         instanceId: targetInstanceId,
@@ -14404,7 +14458,17 @@ async function runInstanceAction(actionName) {
       });
     }
     forgetStaleInstanceId(targetInstanceId);
-    showToast(actionName === "delete" ? formatInstanceDeletionResult(actionResult, "Instance deleted.") : actionName === "forget" ? formatInstanceDeletionResult(actionResult, "Instance removed from list.") : `Instance ${actionName} request completed.`);
+    showToast(actionName === "delete"
+      ? formatInstanceDeletionResult(actionResult, "Instance deleted.")
+      : actionName === "forget"
+        ? formatInstanceDeletionResult(actionResult, "Instance removed from list.")
+        : actionName === "rename"
+          ? "Instance renamed."
+          : actionName === "duplicate"
+            ? "Instance duplicated."
+            : actionName === "open-folder"
+              ? "Instance folder opened."
+              : `Instance ${actionName} request completed.`);
 
     if (actionName === "delete" || actionName === "forget") {
       const accessCleanup = await deleteAccessServicesForInstance(selectedInstance);
@@ -14419,6 +14483,12 @@ async function runInstanceAction(actionName) {
     }
 
     const refreshedInstances = await refreshInstances();
+    if (actionName === "duplicate") {
+      const duplicatedId = actionResult?.instance?.id || actionResult?.id || duplicateConfig?.id;
+      if (duplicatedId && refreshedInstances.some((instance) => instance.id === duplicatedId)) {
+        selectInstance(duplicatedId, { refreshMetrics: true });
+      }
+    }
     if (actionName === "start") {
       logInstanceLifecycle("list result after start", {
         instanceId: targetInstanceId,
@@ -29437,6 +29507,15 @@ instancesStopButtons.forEach((button) => {
 });
 instancesRestartButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("restart"));
+});
+document.querySelectorAll('[data-instance-action="rename"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("rename"));
+});
+document.querySelectorAll('[data-instance-action="duplicate"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("duplicate"));
+});
+document.querySelectorAll('[data-instance-action="open-folder"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("open-folder"));
 });
 instancesDeleteButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("delete"));

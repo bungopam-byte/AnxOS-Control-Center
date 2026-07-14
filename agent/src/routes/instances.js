@@ -4,6 +4,7 @@ const {
   createInstanceFolder,
   deleteInstance,
   deleteInstanceFile,
+  duplicateInstance,
   forgetInstance,
   forceKillInstance,
   getMetrics,
@@ -15,6 +16,7 @@ const {
   readLogs,
   readMinecraftProperties,
   refreshFiveMReadiness,
+  renameInstance,
   renameInstanceFile,
   restartInstance,
   saveFiveMLicenseKey,
@@ -221,6 +223,19 @@ async function handleInstances(request, url) {
       } catch (error) {
         throw attachReceivedValidationValue(error, body);
       }
+    }
+
+    const renameInstanceId = getInstanceIdFromPath(url.pathname, "/display-name");
+    if (request.method === "POST" && renameInstanceId) {
+      const body = parseJsonBody(request);
+      return result(200, {
+        instance: await renameInstance(renameInstanceId, body.displayName || body.name),
+      });
+    }
+
+    const duplicateId = getInstanceIdFromPath(url.pathname, "/duplicate");
+    if (request.method === "POST" && duplicateId) {
+      return result(201, await duplicateInstance(duplicateId, parseJsonBody(request)));
     }
 
     const statusId = getInstanceIdFromPath(url.pathname, "/status");

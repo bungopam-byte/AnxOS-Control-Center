@@ -270,3 +270,9 @@ This phase keeps all pages on the shared node-selection path rather than duplica
 Marketplace template installation now resolves platform-specific template overlays before validation, dependency checks, downloads, installers, config generation, metadata detection, and startup configuration. Windows Local Agent installs can use Windows variants without changing the existing Debian/Linux template definitions.
 
 The Windows variants cover Forge and NeoForge `run.bat` startup, Windows TShock and FiveM archive downloads, Windows SteamCMD executable verification and startup for Valheim, Rust, CS2, and Palworld, and managed startup environment values such as `SteamAppId`. Archive installers on Windows use a PowerShell `Expand-Archive` path instead of Bash. This phase is source- and smoke-tested only; real Windows SteamCMD, FiveM, TShock, and game-server binary validation remains required before production release claims.
+
+## Phase 13 Local Windows Instance Management Note
+
+Instance management now exposes explicit instance rename, duplicate, and local open-folder actions through the shared Agent, service-router, IPC, and preload layers. Duplicate operations copy stopped managed instance data, reset runtime fields, preserve source metadata, and refuse to overwrite existing instance IDs. The renderer adds Rename, Duplicate, and Open Folder actions to the existing Instances action bar; Open Folder is limited to Local Agent or desktop-local targets.
+
+The shared instance public model now includes `lifecycleState: "Crashed"` and `crashed: true` for failed process exits while preserving the existing `state: "Failed"` value for backward compatibility. Real Windows process lifecycle validation remains required before production release claims.

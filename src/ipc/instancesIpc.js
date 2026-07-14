@@ -5,6 +5,7 @@ const {
   createInstanceFolder,
   deleteInstance,
   deleteInstanceFile,
+  duplicateInstance,
   forgetInstance,
   forceKillInstance,
   getInstanceLogs,
@@ -14,7 +15,9 @@ const {
   getMinecraftProperties,
   listInstanceFiles,
   listInstances,
+  openInstanceFolder,
   readInstanceFile,
+  renameInstance,
   renameInstanceFile,
   restartInstance,
   saveMinecraftProperties,
@@ -54,6 +57,20 @@ function registerInstancesIpc() {
   ipcMain.handle("instances:list", async (_, payload = {}) => invokeInstanceOperation(() => listInstances(payload)));
   ipcMain.handle("instances:create", async (_, payload = {}) => invokeInstanceOperation(() => createInstance(payload)));
   ipcMain.handle("instances:update", async (_, payload = {}) => invokeInstanceOperation(() => updateInstance(payload.instanceId, payload.config || {}, payload)));
+  ipcMain.handle("instances:rename", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("instance:write", payload.instanceId);
+    audit({ action: "instance.rename", target: payload.instanceId });
+    return renameInstance(payload.instanceId, payload.displayName || payload.name, payload);
+  }));
+  ipcMain.handle("instances:duplicate", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("instance:write", payload.instanceId);
+    audit({ action: "instance.duplicate", target: payload.instanceId });
+    return duplicateInstance(payload.instanceId, payload.config || payload.options || payload, payload);
+  }));
+  ipcMain.handle("instances:openFolder", async (_, payload = {}) => invokeInstanceOperation(() => {
+    audit({ action: "instance.openFolder", target: payload.instanceId });
+    return openInstanceFolder(payload.instanceId, payload);
+  }));
   ipcMain.handle("instances:getStatus", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceStatus(payload.instanceId, payload)));
   ipcMain.handle("instances:getMetrics", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceMetrics(payload.instanceId, payload)));
   ipcMain.handle("instances:getLogs", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceLogs(payload.instanceId, payload)));

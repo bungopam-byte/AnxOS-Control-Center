@@ -12,6 +12,12 @@ const {
 } = require("./instanceForgetService");
 const fs = require("fs");
 const path = require("path");
+let electronShell = null;
+try {
+  electronShell = require("electron").shell || null;
+} catch {
+  electronShell = null;
+}
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 
 const MARKETPLACE_TEMPLATE_PATH = path.join(__dirname, "..", "..", "config", "marketplace-templates.json");
@@ -428,6 +434,63 @@ async function updateInstance(instanceId, payload, options = {}) {
   return agentClient.updateInstance(instanceId, payload, getOptionalNodeConfig(options));
 }
 
+async function renameInstance(instanceId, displayName, options = {}) {
+  if (shouldUseLocalInstances(options)) {
+    return localInstanceService.renameInstance(instanceId, displayName);
+  }
+  return agentClient.renameInstance(instanceId, displayName, getOptionalNodeConfig(options));
+}
+
+async function duplicateInstance(instanceId, payload = {}, options = {}) {
+  const nodeId = options?.nodeId || getSelectedNodeId();
+  const result = shouldUseLocalInstances(options)
+    ? await localInstanceService.duplicateInstance(instanceId, payload)
+    : await agentClient.duplicateInstance(instanceId, payload, getOptionalNodeConfig(options));
+  clearForgottenInstance(nodeId, result?.instance?.id || result?.id || payload?.id);
+  return result;
+}
+
+async function openInstanceFolder(instanceId, options = {}) {
+  const nodeId = options?.nodeId || getSelectedNodeId();
+  const node = getNode(nodeId);
+  if (!shouldUseLocalInstances(options) && node?.localAgent !== true) {
+    const error = new Error("INSTANCE_FOLDER_OPEN_UNSUPPORTED");
+    error.code = "INSTANCE_FOLDER_OPEN_UNSUPPORTED";
+    error.statusCode = 400;
+    throw error;
+  }
+  const status = shouldUseLocalInstances(options)
+    ? await localInstanceService.getStatus(instanceId)
+    : await agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options));
+  const instance = status?.instance || status || {};
+  const folderPath = instance.instancePath;
+  if (!folderPath || !path.isAbsolute(folderPath)) {
+    const error = new Error("INSTANCE_FOLDER_UNAVAILABLE");
+    error.code = "INSTANCE_FOLDER_UNAVAILABLE";
+    error.statusCode = 404;
+    throw error;
+  }
+  if (!electronShell?.openPath) {
+    const error = new Error("INSTANCE_FOLDER_OPEN_UNSUPPORTED");
+    error.code = "INSTANCE_FOLDER_OPEN_UNSUPPORTED";
+    error.statusCode = 400;
+    throw error;
+  }
+  const openError = await electronShell.openPath(folderPath);
+  if (openError) {
+    const error = new Error("INSTANCE_FOLDER_OPEN_FAILED");
+    error.code = "INSTANCE_FOLDER_OPEN_FAILED";
+    error.statusCode = 500;
+    error.message = openError;
+    throw error;
+  }
+  return {
+    id: instance.id || instanceId,
+    path: folderPath,
+    opened: true,
+  };
+}
+
 async function getInstanceStatus(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.getStatus(instanceId);
@@ -809,6 +872,7 @@ module.exports = {
   dockerComposeAction,
   execDockerContainer,
   deleteInstance,
+  duplicateInstance,
   deleteInstanceFile,
   downloadBackup,
   forceKillInstance,
@@ -827,6 +891,7 @@ module.exports = {
   getInstanceLogs,
   getInstanceMetrics,
   getInstanceStatus,
+  openInstanceFolder,
   getFiveMReadiness,
   getMinecraftProperties,
   getPlayitSnapshot,
@@ -851,6 +916,7 @@ module.exports = {
   planDependencyPreparation,
   readInstanceFile,
   renameInstanceFile,
+  renameInstance,
   restartInstance,
   restartDockerContainer,
   removeDockerNetwork,

@@ -2161,6 +2161,28 @@ async function updateInstance(instanceId, payload = {}, configOverride = null) {
   });
 }
 
+async function renameInstance(instanceId, displayName, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().renameInstance(instanceId, displayName);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/display-name`, {
+    config: configOverride,
+    method: "POST",
+    body: { displayName },
+  });
+}
+
+async function duplicateInstance(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().duplicateInstance(instanceId, payload);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/duplicate`, {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
 async function getInstanceStatus(instanceId, configOverride = null) {
   if (shouldUseLocalInstanceService(configOverride)) {
     return getLocalInstanceService().getStatus(instanceId);
@@ -2494,6 +2516,7 @@ module.exports = {
   downloadBackup,
   createInstance,
   createInstanceFolder,
+  duplicateInstance,
   deleteBackup,
   deleteBackupSchedule,
   deleteDockerContainer,
@@ -2564,6 +2587,7 @@ module.exports = {
   readFileText,
   removeDockerNetwork,
   removeDockerVolume,
+  renameInstance,
   renameDockerContainer,
   runDockerCleanup,
   pairAgentFromCode,

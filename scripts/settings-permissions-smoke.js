@@ -103,6 +103,16 @@ assert(
 );
 
 assert(
+  app.includes("function readRequestedSettingsCategoryFromLocation") &&
+    app.includes('params.get("settingsCategory")') &&
+    app.includes('hash.match(/^settings') &&
+    app.includes("clearRestrictedSettingsState") &&
+    app.includes("previousSettingsOwnerState === true && ownerNow === false") &&
+    app.includes("targetSection.dataset.settingsCategory !== activeSettingsCategory"),
+  "Settings navigation must reject stale restricted categories and clear restricted state after permission loss.",
+);
+
+assert(
   app.includes("let settingsPermissionState") &&
     app.includes("refreshSettingsPermissions") &&
     app.includes("isSettingsSectionAuthorized") &&

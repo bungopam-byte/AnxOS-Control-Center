@@ -1088,6 +1088,7 @@ let settingsPermissionState = {
   categories: { ownerOnly: ["developer"] },
   settings: { ownerOnly: ["developer.debugMode"] },
 };
+let previousSettingsOwnerState = false;
 
 function getCurrentSettings() {
   return currentSettings || DEFAULT_SETTINGS;
@@ -25690,7 +25691,34 @@ function normalizeSettingsCategory(category = "general") {
   return categoryHasAuthorizedSettingsSection("general") ? "general" : requested;
 }
 
+function clearRestrictedSettingsState() {
+  marketplaceConfigInput && (marketplaceConfigInput.value = "");
+  latestAgentSettingsPayload = null;
+  developerUpdateState = null;
+  renderDevelopmentBadge(null);
+  setDevUpdateModalVisible(false);
+  settingsSearchResults?.replaceChildren();
+}
+
+function readRequestedSettingsCategoryFromLocation() {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const queryCategory = params.get("settingsCategory") || params.get("settings");
+    if (queryCategory) return queryCategory;
+    const hash = String(window.location.hash || "").replace(/^#/, "");
+    const match = hash.match(/^settings(?:[:=/])([^&?/]+)/i);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 function applySettingsPermissions() {
+  const ownerNow = settingsPermissionState?.owner === true;
+  if (previousSettingsOwnerState === true && ownerNow === false) {
+    clearRestrictedSettingsState();
+  }
+  previousSettingsOwnerState = ownerNow;
   settingsCategorySections.forEach((section) => {
     const authorized = isSettingsSectionAuthorized(section);
     section.dataset.settingsPermissionHidden = authorized ? "false" : "true";
@@ -25777,6 +25805,12 @@ function setActiveSettingsCategory(category = "general", highlightSelector = nul
   if (highlightSelector) {
     requestAnimationFrame(() => {
       const target = document.querySelector(highlightSelector);
+      const targetSection = target?.matches?.("[data-settings-category]")
+        ? target
+        : target?.closest?.("[data-settings-category]");
+      if (!targetSection || targetSection.dataset.settingsCategory !== activeSettingsCategory || !isSettingsSectionAuthorized(targetSection)) {
+        return;
+      }
       target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
       target?.classList?.add("settings-highlight");
       target?.focus?.();
@@ -25845,7 +25879,8 @@ async function loadSettings() {
   applySettings(settings);
   syncAccentSwatches();
   const storedCategory = (() => { try { return window.sessionStorage.getItem("anxos-settings-category"); } catch { return null; } })();
-  setActiveSettingsCategory(storedCategory || activeSettingsCategory || "general");
+  const routeCategory = readRequestedSettingsCategoryFromLocation();
+  setActiveSettingsCategory(routeCategory || storedCategory || activeSettingsCategory || "general");
 }
 
 async function saveSettings() {

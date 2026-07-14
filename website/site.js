@@ -1835,7 +1835,11 @@ function confirmUserAction({
   fallback = "Confirm this action?",
 } = {}) {
   const modal = document.querySelector("[data-confirm-modal], [data-cleanup-modal]");
-  if (!modal) return Promise.resolve(window.confirm(fallback));
+  if (!modal) {
+    logWebsiteDiagnostic("warn", "confirm-modal-missing", new Error(fallback));
+    showToast("Confirmation dialog is unavailable. Refresh the page and try again.", "error");
+    return Promise.resolve(false);
+  }
   const dialog = modal.querySelector('[role="dialog"]');
   const eyebrowNode = modal.querySelector("[data-confirm-modal-eyebrow]");
   const titleNode = modal.querySelector("[data-confirm-modal-title], [data-cleanup-modal-title]");

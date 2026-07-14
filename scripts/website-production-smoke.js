@@ -302,7 +302,7 @@ assert(site.includes("redirectToSignInForCurrentRoute") && site.includes("/signi
 assert(site.includes("WEBSITE_DEBUG") && site.includes("if (!WEBSITE_DEBUG) return;"), "Verbose website auth logging must be opt-in.");
 assert(account.includes("data-confirm-modal") && activateRoute.includes("data-confirm-modal"), "Account and activation pages should expose the shared confirmation modal.");
 assert(site.includes("function confirmUserAction") && site.includes("Approve this desktop app?") && site.includes("Sign out all desktop sessions?"), "Security-sensitive website actions should use branded confirmation copy.");
-assert(!site.includes('confirm("Approve this AnxOS desktop app') && !site.includes('confirm("Sign out all desktop sessions'), "Website should not use raw browser confirmations for account/device actions.");
+assert(!/window\.(?:prompt|alert|confirm)|\b(?:prompt|alert|confirm)\(/.test(site), "Website should not use raw browser prompt, alert, or confirm dialogs.");
 assert(site.includes('document.body.classList.add("has-open-modal")') && site.includes('document.body.style.overflow = "hidden"') && site.includes('event.key !== "Tab"'), "Website confirmation modal must lock background scroll and trap keyboard focus.");
 
 assert(signup.includes('name="passwordConfirm"') && resetRoute.includes('name="passwordConfirm"'), "Create account and reset forms should include password confirmation.");

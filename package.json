@@ -79,6 +79,9 @@
     "productName": "AnxOS Control Center",
     "copyright": "Copyright © 2026 Anx",
     "afterPack": "scripts/normalize-package-permissions.js",
+    "asarUnpack": [
+      "src/shared/**/*"
+    ],
     "files": [
       "main.js",
       "preload.js",

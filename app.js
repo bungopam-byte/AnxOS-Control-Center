@@ -11578,6 +11578,8 @@ function buildDependencyInstallPanel(download = {}) {
   metrics.className = "dependency-install-panel__metrics";
   appendDependencyMetric(metrics, "Target", currentJob?.nodeId || download.nodeId || "Selected node");
   appendDependencyMetric(metrics, "Platform", currentJob?.platform || "Selected node platform");
+  appendDependencyMetric(metrics, "Backend", currentJob?.executionBackend || "Selected node backend");
+  appendDependencyMetric(metrics, "Method", currentJob?.installationMethod || "Shared dependency installer");
   appendDependencyMetric(metrics, "State", formatDependencyJobState(currentJob?.state || download.status));
   appendDependencyMetric(metrics, "Current step", currentJob?.stage || download.stage || "Preparing installation");
   appendDependencyMetric(metrics, "Progress", formatDependencyProgress(download));

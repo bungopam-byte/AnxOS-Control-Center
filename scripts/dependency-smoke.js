@@ -14,6 +14,8 @@ const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const dependenciesIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "dependenciesIpc.js"), "utf8");
 const marketplaceServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceService.js"), "utf8");
+const agentDependencySource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "services", "dependencyService.js"), "utf8");
+const serviceRouterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "serviceRouter.js"), "utf8");
 
 function template(id) {
   const found = templates.find((entry) => entry.id === id);
@@ -104,10 +106,14 @@ async function run() {
   let plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["dotnet-runtime"] });
   assert.strictEqual(plan.installableActions.length, 1, "Missing .NET should produce an installable preparation action.");
   assert(plan.installableActions[0].commands.some((command) => command.display.includes("sudo -n apt-get install -y dotnet-runtime-8.0")), "Preparation plan should show the exact package-manager install command.");
-  let install = await dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"] });
+  let install = await dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"], nodeId: "anxlab" });
   assert.strictEqual(install.ok, true);
   assert(install.job && install.job.id && install.job.state === "completed", "Dependency install should return a completed job.");
   assert.strictEqual(install.jobs.length, 1, "Dependency install should include a jobs array.");
+  assert.strictEqual(install.job.nodeId, "anxlab", "Agent dependency jobs must preserve selected remote node id.");
+  assert.strictEqual(install.job.executionBackend, "agent", "Remote dependency jobs must identify the Agent backend.");
+  assert.strictEqual(install.job.installationMethod, "package-manager", "Remote dependency jobs must identify package-manager installation.");
+  assert.strictEqual(install.job.externalTerminal, false, "Remote dependency jobs must not launch external terminals.");
   assert(install.job.events.some((event) => event.stage === "Installing files"), "Dependency job should include install stage events.");
   assert(!JSON.stringify(install.job).includes("should-not-leak"), "Dependency job output must redact token-like values.");
   assert(
@@ -176,13 +182,18 @@ async function run() {
   assert.strictEqual(finalized.progressMode, "determinate", "Completed dependency records should report determinate progress.");
   assert.strictEqual(finalized.dependencyJobs[0].nodeId, "agent-smoke", "Dependency job summaries must preserve target node ownership.");
   assert.strictEqual(finalized.dependencyJobs[0].dependencyName, "Tailscale", "Dependency job summaries must preserve dependency identity.");
+  assert.strictEqual(finalized.dependencyJobs[0].executionBackend, null, "Job summaries should include backend only when reported by the backend.");
 
   assert(dependenciesIpcSource.includes("progressMode: \"indeterminate\"") && !dependenciesIpcSource.includes("progress: 25"), "Dependency IPC must not seed fake progress percentages.");
   assert(marketplaceServiceSource.includes("dependencyJobs") && marketplaceServiceSource.includes("progressMode: \"indeterminate\""), "Dependency Download Manager records must preserve job summaries and progress mode.");
+  assert(agentDependencySource.includes("windowsHide: true"), "Dependency command execution must hide Windows command windows.");
+  assert(agentDependencySource.includes("externalTerminal: false") && agentDependencySource.includes("executionBackend: \"agent\""), "Agent dependency jobs must declare backend execution without external terminals.");
+  assert(serviceRouterSource.includes("executionBackend: \"desktop\"") && serviceRouterSource.includes("installationMethod: \"local-noop\""), "Local Desktop dependency routing must stay owned by the Desktop backend.");
   [
     "function buildDependencyInstallPanel",
     "Install Dependency",
     "Installation Details",
+    "Selected node backend",
     "formatDependencyProgress",
     "isDependencyDownload",
     "dataset.downloadType",

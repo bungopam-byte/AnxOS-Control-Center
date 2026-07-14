@@ -63,6 +63,9 @@ function dependencyJob(dependency, patch = {}) {
     exitCode: patch.exitCode ?? null,
     restartRequired: patch.restartRequired === true,
     authenticationRequired: patch.authenticationRequired === true,
+    executionBackend: patch.executionBackend || "agent",
+    installationMethod: patch.installationMethod || null,
+    externalTerminal: patch.externalTerminal === true,
     error: patch.error || null,
     events: [],
     output: [],
@@ -560,18 +563,23 @@ async function planDependencyPreparation(payload = {}) {
   };
 }
 
-async function installDependency(dependencyId) {
+async function installDependency(dependencyId, context = {}) {
   const id = assertKnownDependencyId(dependencyId);
   if (activeDependencyInstalls.has(id)) {
     return activeDependencyInstalls.get(id);
   }
-  const promise = doInstallDependency(id).finally(() => activeDependencyInstalls.delete(id));
+  const promise = doInstallDependency(id, context).finally(() => activeDependencyInstalls.delete(id));
   activeDependencyInstalls.set(id, promise);
   return promise;
 }
 
-async function doInstallDependency(dependencyId) {
+async function doInstallDependency(dependencyId, context = {}) {
   let job = dependencyJob(dependencyId, {
+    nodeId: context.nodeId || null,
+    platform: context.platform || process.platform,
+    executionBackend: "agent",
+    installationMethod: "package-manager",
+    externalTerminal: false,
     state: packageManagerBusy ? "queued" : "preparing",
     stage: packageManagerBusy ? "Waiting for another installation to finish" : "Preparing installation",
     message: packageManagerBusy
@@ -754,9 +762,13 @@ function classifyInstallFailure(result) {
 
 async function installDependencies(payload = {}) {
   const dependencyIds = resolveDependencyRequestIds(payload);
+  const context = {
+    nodeId: payload.nodeId || null,
+    platform: process.platform,
+  };
   const results = [];
   for (const dependencyId of dependencyIds) {
-    results.push(await installDependency(dependencyId));
+    results.push(await installDependency(dependencyId, context));
   }
   const check = await checkDependencies({ dependencyIds });
   const jobs = results.map((result) => result.job).filter(Boolean);

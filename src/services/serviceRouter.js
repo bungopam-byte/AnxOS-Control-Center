@@ -608,6 +608,9 @@ async function installDependencies(payload = {}) {
       exitCode: null,
       restartRequired: false,
       authenticationRequired: false,
+      executionBackend: "desktop",
+      installationMethod: "local-noop",
+      externalTerminal: false,
       error: null,
       events: [{
         jobId,

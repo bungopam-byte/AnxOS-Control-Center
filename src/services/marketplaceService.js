@@ -1079,6 +1079,9 @@ function finalizeDependencyInstallRecord(downloadId, installResult = null, error
     exitCode: job.exitCode ?? null,
     restartRequired: job.restartRequired === true,
     authenticationRequired: job.authenticationRequired === true,
+    executionBackend: job.executionBackend || null,
+    installationMethod: job.installationMethod || null,
+    externalTerminal: job.externalTerminal === true,
     error: job.error || null,
   }));
   const failed = Boolean(error) || installResult?.ok === false;

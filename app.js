@@ -1560,15 +1560,23 @@ function setDashboardFriendlyField(name, value) {
 
 function getFriendlyDashboardState() {
   const nodeId = getSelectedNodeId();
+  const selectedNode = getSelectedNode();
   const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
   const connectedRemoteNodes = remoteNodes.filter((node) => getNodeVisualState(node) === "online");
   const instances = getInstances();
   const runningInstances = instances.filter(isInstanceRunning);
   const runningContainers = Number(latestDockerSnapshot?.summary?.runningContainers || 0);
   const hasSystemSnapshot = Boolean(latestSystemSnapshot && latestSystemSnapshotNodeId === nodeId);
+  const nodeHealth = getSharedNodeHealthModel(selectedNode);
   const agentSummary = getOnboardingAgentSummary();
   const onboardingComplete = getCurrentSettings()["onboarding.completed"] === true;
   const dockerReady = dockerWorkspaceState?.ready === true;
+  const metrics = {
+    selectedSystem: selectedNode?.displayName || "This Device",
+    selectedSystemStatus: getNodeStatusLabel(selectedNode),
+    updated: hasSystemSnapshot ? formatHealthCheckedAt(latestSystemSnapshotAt) : "Waiting for metrics",
+    health: `${nodeHealth.state} · ${nodeHealth.issueCount} issue${nodeHealth.issueCount === 1 ? "" : "s"}`,
+  };
 
   const computer = hasSystemSnapshot || runtimeInfoState
     ? {
@@ -1620,7 +1628,7 @@ function getFriendlyDashboardState() {
     next = { title: "Configure public access", detail: "Public Access can make supported services reachable.", action: "playit" };
   }
 
-  return { computer, systems, services, setup, next, instances, remoteNodes };
+  return { computer, systems, services, setup, next, metrics, instances, remoteNodes };
 }
 
 function setSetupHealthField(name, value) {
@@ -1778,6 +1786,10 @@ function renderSetupHealthCenter() {
 
 function renderFriendlyDashboard() {
   const state = getFriendlyDashboardState();
+  setDashboardFriendlyField("selectedSystem", state.metrics.selectedSystem);
+  setDashboardFriendlyField("selectedSystemStatus", state.metrics.selectedSystemStatus);
+  setDashboardFriendlyField("metricsUpdated", state.metrics.updated);
+  setDashboardFriendlyField("nodeHealth", state.metrics.health);
   setDashboardFriendlyField("computerStatus", state.computer.status);
   setDashboardFriendlyField("computerDetail", state.computer.detail);
   setDashboardFriendlyField("systemsStatus", state.systems.status);

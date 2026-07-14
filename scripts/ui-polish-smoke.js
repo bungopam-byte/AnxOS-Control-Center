@@ -50,11 +50,13 @@ assert(main.includes("registerSettingsIpc"), "Main process must register setting
 assert(index.includes("nodes-summary-grid") && index.includes('data-node-summary="online"'), "Nodes workspace must expose a compact dashboard summary.");
 assert(index.includes("Switch System / Node") && index.includes("Choose a system to manage.") && index.includes("selected system"), "New-user language should consistently teach system/node terminology.");
 assert(index.includes("Your AnxOS Overview") && index.includes("data-dashboard-friendly-grid") && index.includes("data-dashboard-next-action"), "Dashboard must include the beginner-friendly overview and next-step action.");
+assert(index.includes("dashboard-context-strip") && index.includes('data-dashboard-friendly="selectedSystem"') && index.includes('data-dashboard-friendly="metricsUpdated"'), "Dashboard must show selected system and metrics freshness context.");
 assert(index.includes("Setup Health") && index.includes("data-setup-health-center") && index.includes("Core setup") && index.includes("Optional features"), "Dashboard must include a setup health checklist with separate core and optional progress.");
 assert(app.includes("function renderFriendlyDashboard") && app.includes("getFriendlyDashboardState") && app.includes("runDashboardFriendlyAction"), "Dashboard friendly overview must be wired to real renderer state and actions.");
+assert(app.includes("selectedSystemStatus: getNodeStatusLabel(selectedNode)") && app.includes('setDashboardFriendlyField("nodeHealth"'), "Dashboard context must reuse selected node and node health state.");
 assert(app.includes("function getSetupHealthState") && app.includes("optionalItems") && app.includes("setupHealthActionState"), "Setup Health must derive from existing readiness state and keep optional features separate.");
 assert(app.includes("first-server-guide-title") && app.includes("first-server-guide-description"), "First-server guide modal must have accessible title and description bindings.");
-assert(styles.includes(".dashboard-welcome") && styles.includes(".dashboard-friendly-grid") && styles.includes(".dashboard-next-step"), "Dashboard friendly overview CSS must exist.");
+assert(styles.includes(".dashboard-welcome") && styles.includes(".dashboard-context-strip") && styles.includes(".dashboard-friendly-grid") && styles.includes(".dashboard-next-step"), "Dashboard friendly overview CSS must exist.");
 assert(styles.includes(".dashboard-setup-health") && styles.includes(".setup-health-groups"), "Setup Health CSS must exist.");
 assert(index.includes('data-nav-description="System overview"') && index.includes('data-nav-description="Install servers and tools"'), "Primary navigation should expose friendly expanded descriptions.");
 assert(app.includes("label.dataset.navDescription") && app.includes("PAGE_INTRODUCTIONS"), "Renderer should wire nav descriptions and page introductions.");

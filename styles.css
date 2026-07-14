@@ -7926,6 +7926,42 @@ dd {
   gap: 10px;
 }
 
+.dashboard-context-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboard-context-strip > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(190, 170, 220, .12);
+  border-radius: 8px;
+  background: rgba(8, 10, 18, .28);
+}
+
+.dashboard-context-strip span {
+  display: block;
+  overflow: hidden;
+  color: rgba(222, 212, 238, .66);
+  font-size: .66rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dashboard-context-strip strong {
+  display: block;
+  min-width: 0;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: .86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dashboard-friendly-card,
 .dashboard-next-step,
 .dashboard-friendly-empty article {
@@ -8084,6 +8120,7 @@ dd {
 }
 
 @media (max-width: 980px) {
+  .dashboard-context-strip,
   .dashboard-friendly-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -8094,6 +8131,7 @@ dd {
 
 @media (max-width: 640px) {
   .dashboard-friendly-grid,
+  .dashboard-context-strip,
   .dashboard-friendly-empty,
   .dashboard-next-step,
   .dashboard-setup-progress {

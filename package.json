@@ -95,6 +95,7 @@
       "website/anxos-design-system.css",
       "website/account-config.js",
       "src/**/*",
+      "src/shared/**/*",
       "agent/package.json",
       "agent/src/**/*",
       "package.json",

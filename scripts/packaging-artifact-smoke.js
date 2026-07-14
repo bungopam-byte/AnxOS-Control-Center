@@ -73,6 +73,9 @@ const requiredEntries = [
   "/assets/icon.ico",
   "/assets/icons/png/512x512.png",
   "/config/ssh-profiles.json",
+  "/src/shared/redaction.js",
+  "/src/shared/structuredLogger.js",
+  "/src/shared/releaseConfig.js",
 ];
 
 const forbiddenEntries = [

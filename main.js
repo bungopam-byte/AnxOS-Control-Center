@@ -86,9 +86,18 @@ function getGitCommit() {
   }
 }
 
+function readBuildMetadata() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "release-build.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 function getRuntimeInfo() {
   const trustedDevelopmentMode = process.env.ANXOS_TRUSTED_DEVELOPMENT_MODE === "1" && app.isPackaged === false;
   const release = getReleaseInfo();
+  const buildMetadata = readBuildMetadata();
   return {
     name: "AnxOS Control Center",
     version: release.versionLabel,
@@ -100,7 +109,15 @@ function getRuntimeInfo() {
     releaseTag: release.tag,
     packageVersion: packageJson.version,
     appVersion: release.compactLabel,
-    gitCommit: getGitCommit(),
+    gitCommit: buildMetadata.gitCommit || process.env.ANXOS_BUILD_COMMIT || getGitCommit(),
+    buildDate: buildMetadata.buildDate || process.env.ANXOS_BUILD_DATE || null,
+    websiteUrl: release.websiteUrl,
+    releaseRepository: release.releaseRepository,
+    releaseRepositoryUrl: release.releaseRepositoryUrl,
+    releaseUrl: release.releaseUrl,
+    updateSource: release.updateSource,
+    supportedOperatingSystems: release.supportedOperatingSystems,
+    minimumArchitecture: release.minimumArchitecture,
     electron: process.versions.electron || null,
     node: process.versions.node || null,
     chromium: process.versions.chrome || null,

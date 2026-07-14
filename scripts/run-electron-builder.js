@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { spawnSync } = require("child_process");
 const fs = require("fs");
+const path = require("path");
 const {
   buildReleaseInfo,
   getReleaseConfigPath,
@@ -20,6 +21,34 @@ if (increment) {
 
 const info = buildReleaseInfo(nextRelease);
 console.log(`Packaging AnxOS Control Center ${info.compactLabel}`);
+
+function getGitCommit() {
+  const result = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    shell: false,
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+fs.writeFileSync(path.join(process.cwd(), "release-build.json"), `${JSON.stringify({
+  version: info.version,
+  build: info.build,
+  channel: info.channel,
+  releaseLabel: info.compactLabel,
+  releaseTag: info.tag,
+  artifactVersion: info.artifactVersion,
+  buildDate: new Date().toISOString(),
+  gitCommit: process.env.ANXOS_BUILD_COMMIT || getGitCommit(),
+  websiteUrl: info.websiteUrl,
+  releaseRepository: info.releaseRepository,
+  releaseRepositoryUrl: info.releaseRepositoryUrl,
+  releaseUrl: info.releaseUrl,
+  updateSource: info.updateSource,
+  supportedOperatingSystems: info.supportedOperatingSystems,
+  minimumArchitecture: info.minimumArchitecture,
+}, null, 2)}\n`);
 
 const result = spawnSync(
   process.platform === "win32" ? "electron-builder.cmd" : "electron-builder",

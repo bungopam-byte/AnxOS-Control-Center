@@ -81,6 +81,7 @@
       "app.js",
       "index.html",
       "release.json",
+      "release-build.json",
       "styles.css",
       "windows/**/*",
       "assets/**/*",

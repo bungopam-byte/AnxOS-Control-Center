@@ -29,6 +29,7 @@ const requiredEntries = [
   "/app.js",
   "/index.html",
   "/release.json",
+  "/release-build.json",
   "/assets/icon.ico",
   "/assets/icons/png/512x512.png",
   "/config/agent.example.json",
@@ -72,6 +73,14 @@ for (const archivePath of asarArchives) {
   assert.strictEqual(release.version, releaseConfig.version, `${path.relative(rootDir, archivePath)} has unexpected release version`);
   assert.strictEqual(release.build, releaseConfig.build, `${path.relative(rootDir, archivePath)} has unexpected build number`);
   assert.strictEqual(release.channel, releaseConfig.channel, `${path.relative(rootDir, archivePath)} has unexpected release channel`);
+
+  const buildMetadata = JSON.parse(asar.extractFile(archivePath, "release-build.json").toString("utf8"));
+  assert.strictEqual(buildMetadata.version, releaseConfig.version, `${path.relative(rootDir, archivePath)} has unexpected release metadata version`);
+  assert.strictEqual(buildMetadata.build, releaseConfig.build, `${path.relative(rootDir, archivePath)} has unexpected release metadata build`);
+  assert.strictEqual(buildMetadata.channel, releaseConfig.channel, `${path.relative(rootDir, archivePath)} has unexpected release metadata channel`);
+  assert(buildMetadata.buildDate, `${path.relative(rootDir, archivePath)} release metadata must include a build date`);
+  assert(buildMetadata.gitCommit, `${path.relative(rootDir, archivePath)} release metadata must include a git commit`);
+  assert.strictEqual(buildMetadata.releaseRepository?.repo, "AnxOS-Control-Center-Releases", `${path.relative(rootDir, archivePath)} release metadata must use the public release repository`);
 }
 
 assert(fs.existsSync(path.join(distDir, "win-unpacked", "AnxOS Control Center.exe")), "Missing Windows unpacked executable");

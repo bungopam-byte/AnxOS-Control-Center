@@ -29,6 +29,7 @@ config/marketplace.json
 config/agent.json
 config/owner-accounts.json
 agent/*.log
+release-build.json
 
 # Owner Workspace local development/private data
 .anxos-owner-workspace/

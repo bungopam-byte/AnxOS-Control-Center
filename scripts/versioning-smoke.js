@@ -22,6 +22,8 @@ const packageSource = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const diagnosticsSource = fs.readFileSync(path.join(root, "src", "services", "diagnosticsService.js"), "utf8");
 const mainSource = fs.readFileSync(path.join(root, "main.js"), "utf8");
 const updateManagerSource = fs.readFileSync(path.join(root, "src", "services", "updateManager.js"), "utf8");
+const builderSource = fs.readFileSync(path.join(root, "scripts", "run-electron-builder.js"), "utf8");
+const manifestSource = fs.readFileSync(path.join(root, "scripts", "write-update-manifest.js"), "utf8");
 const websiteConfig = fs.readFileSync(path.join(root, "website", "config.js"), "utf8");
 const websiteNotes = JSON.parse(fs.readFileSync(path.join(root, "website", "release-notes.json"), "utf8"));
 
@@ -42,8 +44,12 @@ assert.strictEqual(parsedWebsiteRelease.channel, release.channel, "Website confi
 
 assert(packageSource.includes("ANXOS_RELEASE_ARTIFACT_VERSION"), "Installer artifact naming must use the public release artifact label.");
 assert(packageSource.includes("scripts/run-electron-builder.js"), "Packaged build scripts must go through the build increment wrapper.");
+assert(packageSource.includes("release-build.json"), "Packaged builds must include generated release build metadata.");
 assert(diagnosticsSource.includes("getReleaseInfo") && diagnosticsSource.includes("packageVersion"), "Diagnostics must include public release info and keep internal package version secondary.");
 assert(mainSource.includes("releaseLabel") && mainSource.includes("packageVersion"), "Runtime info must expose public release fields and internal package version.");
+assert(mainSource.includes("release-build.json") && mainSource.includes("buildDate") && mainSource.includes("gitCommit"), "Runtime info must expose packaged build date and commit metadata.");
+assert(builderSource.includes("release-build.json") && builderSource.includes("supportedOperatingSystems") && builderSource.includes("minimumArchitecture"), "Packaging must generate release metadata for bundled builds.");
+assert(manifestSource.includes("supportedOperatingSystems") && manifestSource.includes("minimumArchitecture") && manifestSource.includes("updateSource"), "Updater metadata must publish platform and update-source details.");
 assert(updateManagerSource.includes("AnxOS-Control-Center-Releases"), "Updater must default to the public release-only repository.");
 assert(!updateManagerSource.includes("192.168.1.134:8766"), "Updater must not ship a hardcoded local-network manifest fallback.");
 assert(websiteConfig.includes(`latestVersion: "${release.version}"`) && websiteConfig.includes(`build: "${release.build}"`) && websiteConfig.includes(`channel: "${release.channel}"`), "Website download metadata must display the public release model.");

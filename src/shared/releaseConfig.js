@@ -3,9 +3,22 @@ const path = require("path");
 
 const DEFAULT_RELEASE = {
   version: "1.7",
-  build: 142,
+  build: 143,
   channel: "Private Alpha",
 };
+
+const RELEASE_REPOSITORY = {
+  owner: "bungopam-byte",
+  repo: "AnxOS-Control-Center-Releases",
+};
+
+const RELEASE_REPOSITORY_URL = `https://github.com/${RELEASE_REPOSITORY.owner}/${RELEASE_REPOSITORY.repo}`;
+const RELEASE_WEBSITE_URL = "https://anxoscontrolcenter.org";
+const SUPPORTED_OPERATING_SYSTEMS = [
+  "Windows 11 x64",
+  "Debian-compatible Linux x64",
+  "Ubuntu-compatible Linux x64",
+];
 
 const CHANNELS = {
   development: "Development",
@@ -67,6 +80,7 @@ function readReleaseConfig() {
 
 function buildReleaseInfo(config = readReleaseConfig()) {
   const release = normalizeReleaseConfig(config);
+  const tag = `v${release.version}-build${release.build}`;
   return {
     ...release,
     versionLabel: `Version ${release.version}`,
@@ -74,7 +88,14 @@ function buildReleaseInfo(config = readReleaseConfig()) {
     displayName: `Version ${release.version}\nBuild ${release.build}\n${release.channel}`,
     compactLabel: `Version ${release.version} Build ${release.build} ${release.channel}`,
     artifactVersion: `${release.version}-build${release.build}`,
-    tag: `v${release.version}-build${release.build}`,
+    tag,
+    websiteUrl: RELEASE_WEBSITE_URL,
+    releaseRepository: { ...RELEASE_REPOSITORY },
+    releaseRepositoryUrl: RELEASE_REPOSITORY_URL,
+    releaseUrl: `${RELEASE_REPOSITORY_URL}/releases/tag/${tag}`,
+    updateSource: `${RELEASE_REPOSITORY_URL}/releases/latest`,
+    supportedOperatingSystems: [...SUPPORTED_OPERATING_SYSTEMS],
+    minimumArchitecture: "x64",
   };
 }
 
@@ -84,6 +105,10 @@ function getReleaseInfo() {
 
 module.exports = {
   CHANNELS,
+  RELEASE_REPOSITORY,
+  RELEASE_REPOSITORY_URL,
+  RELEASE_WEBSITE_URL,
+  SUPPORTED_OPERATING_SYSTEMS,
   buildReleaseInfo,
   getReleaseConfigPath,
   getReleaseInfo,

@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "142",
-  buildNumber: "142",
+  build: "143",
+  buildNumber: "143",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 142 Private Alpha",
+  releaseLabel: "Version 1.7 Build 143 Private Alpha",
   releaseDate: "July 13, 2026",
-  releaseTag: "v1.7-build142",
+  releaseTag: "v1.7-build143",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build142",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build143",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -25,6 +25,20 @@ window.ANXOS_DOWNLOAD_CONFIG = {
     linuxDeb: "/api/download/latest/linux-deb",
   },
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 143,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build143",
+          "date": "July 13, 2026",
+          "datetime": "2026-07-14",
+          "title": "AnxOS Version 1.7",
+          "summary": "Latest AnxOS-Control-Center release.",
+          "changes": [
+              "Updated application build, website metadata, and downloadable release assets."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build143"
+      },
       {
           "version": "1.7",
           "build": 142,

@@ -40,6 +40,11 @@ const manifest = {
   name: release.tag,
   releaseUrl: `${repositoryUrl}/releases/tag/${release.tag}`,
   publishedAt: new Date().toISOString(),
+  websiteUrl: release.websiteUrl,
+  releaseRepository: release.releaseRepository,
+  updateSource: release.updateSource,
+  supportedOperatingSystems: release.supportedOperatingSystems,
+  minimumArchitecture: release.minimumArchitecture,
   assets,
 };
 

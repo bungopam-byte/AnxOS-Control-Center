@@ -111,6 +111,30 @@ async function assertDetachedRuntimeReconciliation() {
   });
 }
 
+async function assertPalworldShellCommandNormalization() {
+  await withTempService(async (instanceService) => {
+    const payload = palworldPayload("palworld-command-normalization");
+    const created = await instanceService.createInstance(payload);
+    assert.strictEqual(created.executable, "bash", "Palworld executable should remain bash.");
+    assert.deepStrictEqual(created.args, payload.args, "Palworld shell startup script should remain one argv entry.");
+    assert(created.args[1].includes("2>/dev/null"), "Palworld script should preserve stderr redirect in argv[2].");
+    assert(created.args[1].includes("|| true"), "Palworld script should preserve shell fallback operator in argv[2].");
+    assert(created.args[1].includes("; exec ./PalServer.sh"), "Palworld script should preserve semicolon operator in argv[2].");
+
+    await instanceService.createInstance({
+      ...payload,
+      id: "palworld-flattened-command",
+      args: ["-lc", "chmod", "+x", "./PalServer.sh", "2>/dev/null", "||", "true;", "exec", "./PalServer.sh", "-port=8211"],
+    });
+    const repaired = await instanceService.updateInstance("palworld-flattened-command", {});
+    assert.deepStrictEqual(
+      repaired.args,
+      ["-lc", "chmod +x ./PalServer.sh 2>/dev/null || true; exec ./PalServer.sh -port=8211"],
+      "Existing flattened Palworld shell commands should be repaired without reinstalling."
+    );
+  });
+}
+
 async function assertNoUnrelatedAdoptionAndPortCollision() {
   await withTempService(async (instanceService) => {
     const instanceRoot = await createPalworld(instanceService, "palworld-collision-smoke");
@@ -235,6 +259,7 @@ async function assertRenameDuplicateAndCrashLifecycle() {
 }
 
 async function run() {
+  await assertPalworldShellCommandNormalization();
   await assertDetachedRuntimeReconciliation();
   await assertNoUnrelatedAdoptionAndPortCollision();
   await assertStopAfterReconciliation();

@@ -8961,7 +8961,7 @@ function setActiveInstanceTab(tabName) {
 }
 
 function stringifyArgs(args) {
-  return Array.isArray(args) ? args.join(" ") : "";
+  return Array.isArray(args) ? JSON.stringify(args) : "";
 }
 
 function parseMemoryFromArgs(instance) {

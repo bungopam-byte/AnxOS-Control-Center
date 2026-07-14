@@ -381,6 +381,37 @@ function normalizeJavaJarCommandArgs(args = [], jarPath = "app.jar") {
   return [...jvmArgs, "-jar", jar, ...appArgs];
 }
 
+function shellCommandJoinIndex(executable, args = []) {
+  const name = executableName(executable);
+  const first = String(args[0] || "").toLowerCase();
+  const second = String(args[1] || "").toLowerCase();
+
+  if ((name === "bash" || name === "sh") && (first === "-c" || first === "-lc")) {
+    return 1;
+  }
+
+  if ((name === "powershell" || name === "powershell.exe" || name === "pwsh" || name === "pwsh.exe") && second !== "-encodedcommand") {
+    const commandIndex = args.findIndex((arg) => /^-(?:command|c)$/i.test(String(arg || "")));
+    return commandIndex >= 0 ? commandIndex + 1 : -1;
+  }
+
+  return -1;
+}
+
+function normalizeShellWrapperArgs(executable, args = []) {
+  const normalizedArgs = Array.isArray(args) ? args.map((arg) => String(arg ?? "").trim()).filter(Boolean) : [];
+  const joinIndex = shellCommandJoinIndex(executable, normalizedArgs);
+
+  if (joinIndex < 0 || normalizedArgs.length <= joinIndex + 1) {
+    return normalizedArgs;
+  }
+
+  return [
+    ...normalizedArgs.slice(0, joinIndex),
+    normalizedArgs.slice(joinIndex).join(" "),
+  ];
+}
+
 function instancePath(instanceId) {
   return path.join(getInstanceRoot(), instanceId);
 }
@@ -490,38 +521,43 @@ async function assertNoInstanceDataEscape(resolved, options = {}) {
 }
 
 function buildTypeCommand(type, payload) {
-  const args = normalizeStringArray(payload.args, "ARGS", 128);
+  const rawArgs = normalizeStringArray(payload.args, "ARGS", 128);
 
   if (type === "custom-command") {
+    const executable = validateExecutable(payload.executable || payload.command);
     return {
-      executable: validateExecutable(payload.executable || payload.command),
-      args,
+      executable,
+      args: normalizeShellWrapperArgs(executable, rawArgs),
     };
   }
 
   if (type === "node-app") {
+    const executable = validateExecutable(payload.executable || "node");
     const entrypoint = validateRelativeAssetPath(payload.entrypoint || "index.js", "ENTRYPOINT");
     return {
-      executable: validateExecutable(payload.executable || "node"),
-      args: [entrypoint, ...args],
+      executable,
+      args: [entrypoint, ...normalizeShellWrapperArgs(executable, rawArgs)],
     };
   }
 
   if (type === "python-app") {
+    const executable = validateExecutable(payload.executable || "python3");
     const entrypoint = validateRelativeAssetPath(payload.entrypoint || "app.py", "ENTRYPOINT");
     return {
-      executable: validateExecutable(payload.executable || "python3"),
-      args: [entrypoint, ...args],
+      executable,
+      args: [entrypoint, ...normalizeShellWrapperArgs(executable, rawArgs)],
     };
   }
 
   if (type === "java-app") {
-    if (isScriptExecutable(payload.executable) || args.some(isStartupScript)) {
+    const executable = validateExecutable(payload.executable || (rawArgs.some(isStartupScript) ? "bash" : "java"));
+    const args = normalizeShellWrapperArgs(executable, rawArgs);
+    if (isScriptExecutable(executable) || args.some(isStartupScript)) {
       const scriptArgs = args.length > 0
         ? args
         : normalizeStringArray(payload.startupArguments, "ARGS", 128);
       return {
-        executable: validateExecutable(payload.executable || "bash"),
+        executable,
         args: scriptArgs,
       };
     }
@@ -533,11 +569,13 @@ function buildTypeCommand(type, payload) {
   }
 
   if (type === "minecraft-paper") {
+    const executable = validateExecutable(payload.executable || "java");
+    const args = normalizeShellWrapperArgs(executable, rawArgs);
     const jar = validateRelativeAssetPath(payload.jar || payload.entrypoint || "paper.jar", "JAR");
     const memory = validateMemoryValue(payload.memory || payload.memoryLimit || "");
     const memoryArgs = memory ? [`-Xmx${memory}`] : [];
     return {
-      executable: validateExecutable(payload.executable || "java"),
+      executable,
       args: [...memoryArgs, "-jar", jar, "nogui", ...args],
     };
   }
@@ -2554,7 +2592,9 @@ async function updateInstance(instanceId, payload = {}) {
       ? path.relative(instancePath(current.id), resolveRelativeManagedPath(current.id, payload.workingDirectory, "data")) || "."
       : current.workingDirectory,
     executable: payload.executable !== undefined ? validateExecutable(payload.executable) : current.executable,
-    args: payload.args !== undefined ? normalizeStringArray(payload.args, "ARGS", 128) : current.args,
+    args: payload.args !== undefined
+      ? normalizeShellWrapperArgs(payload.executable !== undefined ? validateExecutable(payload.executable) : current.executable, normalizeStringArray(payload.args, "ARGS", 128))
+      : normalizeShellWrapperArgs(payload.executable !== undefined ? validateExecutable(payload.executable) : current.executable, current.args),
     startupArguments: payload.startupArguments !== undefined ? normalizeStringArray(payload.startupArguments, "ARGS", 128) : current.startupArguments,
     startupScript: payload.startupScript !== undefined ? (payload.startupScript ? validateRelativeAssetPath(payload.startupScript, "ENTRYPOINT") : null) : current.startupScript,
     environment: payload.environment !== undefined || payload.env !== undefined
@@ -2938,6 +2978,11 @@ function buildSpawnEnvironment(config) {
 
 async function startInstance(instanceId) {
   let config = await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId)), { force: true });
+  const repairedArgs = normalizeShellWrapperArgs(config.executable, config.args);
+  if (JSON.stringify(repairedArgs) !== JSON.stringify(config.args || [])) {
+    config = await updateInstance(config.id, { args: repairedArgs });
+    await appendLog(config.id, "stdout", `Repaired startup command arguments: ${formatCommandForLog(config)}`).catch(() => {});
+  }
 
   const discoveredRuntime = await discoverDetachedRuntime(config).catch(() => null);
   if (discoveredRuntime) {
@@ -3864,6 +3909,8 @@ module.exports = {
     updateFiveMLicenseInConfig,
     parseRandomSeedFromLevelDat,
     parseTpsFromMessages,
+    normalizeShellWrapperArgs,
+    formatCommandForLog,
     setProcessInspectionProvider(provider) {
       processInspectionProvider = typeof provider === "function" ? provider : null;
     },

@@ -1573,7 +1573,7 @@ function getFriendlyDashboardState() {
   const onboardingComplete = getCurrentSettings()["onboarding.completed"] === true;
   const dockerReady = dockerWorkspaceState?.ready === true;
   const metrics = {
-    selectedSystem: selectedNode?.displayName || "This Device",
+    selectedSystem: selectedNode?.displayName || "This PC",
     selectedSystemStatus: getNodeStatusLabel(selectedNode),
     updated: hasSystemSnapshot ? formatHealthCheckedAt(latestSystemSnapshotAt) : "Waiting for metrics",
     health: `${nodeHealth.state} · ${nodeHealth.issueCount} issue${nodeHealth.issueCount === 1 ? "" : "s"}`,
@@ -2414,7 +2414,7 @@ function updateSidebarFooterTooltip() {
     return;
   }
 
-  const nodeName = sidebarFooter.querySelector("[data-node-picker-label]")?.textContent?.trim() || "This Device";
+  const nodeName = sidebarFooter.querySelector("[data-node-picker-label]")?.textContent?.trim() || "This PC";
   const nodeDetail = sidebarFooter.querySelector("[data-node-picker-detail]")?.textContent?.trim() || "Click to switch nodes";
   const tooltip = `${nodeName} | ${nodeDetail}`;
 
@@ -16092,7 +16092,7 @@ function getFilesLocalNodeLabel(node) {
   if (platform === "win32" || /windows/i.test(node?.applicationHost?.operatingSystem || node?.operatingSystem || "")) {
     return "This Windows PC";
   }
-  return "This Device";
+  return "This PC";
 }
 
 function getFilesNodeLabel(node) {
@@ -19115,7 +19115,7 @@ function setupFileTransferEvents() {
 async function loadStorageConnections() {
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasFiles || typeof desktopApiState.api.files.listConnections !== "function") {
-    storageConnectionsState = { defaultConnectionId: "local", connections: [{ id: "local", provider: "local", badge: "Local", name: "This Device", default: true }] };
+    storageConnectionsState = { defaultConnectionId: "local", connections: [{ id: "local", provider: "local", badge: "Local", name: "This PC", default: true }] };
     selectedStorageId = "local";
     renderStorageConnections();
     return;
@@ -19124,7 +19124,7 @@ async function loadStorageConnections() {
     storageConnectionsState = await desktopApiState.api.files.listConnections();
     selectedStorageId = getStorageConnectionById(selectedStorageId)?.id || storageConnectionsState.defaultConnectionId || "local";
   } catch {
-    storageConnectionsState = { defaultConnectionId: "local", connections: [{ id: "local", provider: "local", badge: "Local", name: "This Device", default: true }] };
+    storageConnectionsState = { defaultConnectionId: "local", connections: [{ id: "local", provider: "local", badge: "Local", name: "This PC", default: true }] };
     selectedStorageId = "local";
   }
   renderStorageConnections();
@@ -24358,7 +24358,7 @@ function renderAccountState() {
     accountDetailsPanel.hidden = !signedIn && !pending;
   }
   if (accountStatus) {
-    accountStatus.textContent = ownerAccount ? "Owner" : signedIn ? "Signed in" : pending ? "Waiting" : expired ? "Session expired" : "Using local device mode";
+    accountStatus.textContent = ownerAccount ? "Owner" : signedIn ? "Signed in" : pending ? "Waiting" : expired ? "Session expired" : "Using This PC";
   }
   if (accountOwnerBadge) {
     accountOwnerBadge.hidden = !ownerAccount;
@@ -24374,12 +24374,12 @@ function renderAccountState() {
     else if (key === "email") field.value = account.email || "";
     else if (key === "provider") field.value = account.provider || "";
     else if (key === "connectedAt") field.value = account.connectedAt ? formatDateTime(account.connectedAt) : "";
-    else if (key === "device") field.value = device.deviceName || device.platform ? `${device.deviceName || "This device"} · ${device.platform || "desktop"}` : "";
+    else if (key === "device") field.value = device.deviceName || device.platform ? `${device.deviceName || "This PC"} · ${device.platform || "desktop"}` : "";
     else if (key === "session") field.value = signedIn
       ? `Active until ${accountState.expiresAt ? formatDateTime(accountState.expiresAt) : "unknown"}`
       : expired
         ? "Expired. Sign in again."
-        : "Local device mode";
+        : "This PC only";
   });
   if (accountDeviceCode) {
     accountDeviceCode.value = pending?.userCode || "";
@@ -26974,7 +26974,7 @@ function renderNodePicker() {
   nodePickerList.replaceChildren();
   if (nodePickerStatus) {
     nodePickerStatus.textContent = nodes.length
-      ? "Choose a device to manage."
+      ? "Choose a system to manage."
       : getDesktopApiState().hasNodes
         ? "No selectable nodes are available."
         : "Node service is loading.";
@@ -26983,8 +26983,8 @@ function renderNodePicker() {
     const empty = document.createElement("div");
     empty.className = "node-picker-empty";
     empty.textContent = getDesktopApiState().hasNodes
-      ? "No selectable nodes are available. This Device will appear after node setup finishes."
-      : "Node service is unavailable. Local device mode will remain available when startup completes.";
+      ? "No selectable nodes are available. This PC will appear after node setup finishes."
+      : "Node service is unavailable. This PC mode will remain available when startup completes.";
     nodePickerList.append(empty);
     return;
   }
@@ -27133,7 +27133,7 @@ function renderNodes() {
       const title = document.createElement("strong");
       title.textContent = "No remote nodes have been registered yet.";
       const copy = document.createElement("p");
-      copy.textContent = "This Device is ready. Add a remote Agent node to manage another PC or server.";
+      copy.textContent = "This PC is ready. Add a remote Agent node to manage another PC or server.";
       const action = document.createElement("button");
       action.type = "button";
       action.className = "primary-button";
@@ -27169,7 +27169,7 @@ function renderNodes() {
         createNodeBadge(getNodeStatusLabel(node), state),
         createNodeHealthBadge(health.state),
         createNodeBadge(node.docker?.enabled === false ? "Docker Off" : "Docker", node.docker?.enabled === false ? "planned" : "online"),
-        createNodeBadge(node.ownerMachine ? "Owner" : node.kind === "application-host" ? "This Device" : "Agent", node.ownerMachine || node.kind === "application-host" ? "online" : "planned"),
+        createNodeBadge(node.ownerMachine ? "Owner" : node.kind === "application-host" ? "This PC" : "Agent", node.ownerMachine || node.kind === "application-host" ? "online" : "planned"),
       );
       header.append(titleGroup, badges);
       const meta = document.createElement("dl");

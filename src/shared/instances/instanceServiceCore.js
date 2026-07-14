@@ -69,6 +69,8 @@ const DEFAULT_EXECUTABLE_ROOTS = [
 
 const runningProcesses = new Map();
 const metricsSamples = new Map();
+let processInspectionProvider = null;
+let processAliveProvider = null;
 
 function createInstanceError(code, statusCode = 400, details = {}) {
   return Object.assign(new Error(code), { code, statusCode, ...details });
@@ -1870,12 +1872,357 @@ function isProcessAlive(pid) {
     return false;
   }
 
+  if (typeof processAliveProvider === "function") {
+    return Boolean(processAliveProvider(pid));
+  }
+
   try {
     process.kill(pid, 0);
     return true;
   } catch {
     return false;
   }
+}
+
+function normalizePid(value) {
+  const pid = Number(value);
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+function readProcText(filePath) {
+  try {
+    return fsSync.readFileSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function readProcLink(filePath) {
+  try {
+    return fsSync.readlinkSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function parseProcStatIdentity(pid) {
+  const stat = readProcText(`/proc/${pid}/stat`);
+  if (!stat) {
+    return { name: null, ppid: null };
+  }
+  const text = stat.toString("utf8");
+  const open = text.indexOf("(");
+  const close = text.lastIndexOf(")");
+  const name = open >= 0 && close > open ? text.slice(open + 1, close) : null;
+  const fields = close >= 0 ? text.slice(close + 2).split(" ") : [];
+  return {
+    name,
+    ppid: normalizePid(fields[1]),
+  };
+}
+
+function parseProcCmdline(pid) {
+  const buffer = readProcText(`/proc/${pid}/cmdline`);
+  if (!buffer) {
+    return { args: [], commandLine: "" };
+  }
+  const args = buffer.toString("utf8").split("\0").filter(Boolean);
+  return {
+    args,
+    commandLine: args.join(" "),
+  };
+}
+
+function parseSocketTable(filePath, protocol) {
+  const text = readProcText(filePath);
+  if (!text) {
+    return [];
+  }
+  return text.toString("utf8").split(/\r?\n/).slice(1).map((line) => {
+    const columns = line.trim().split(/\s+/);
+    if (columns.length < 10) {
+      return null;
+    }
+    const local = columns[1] || "";
+    const state = columns[3] || "";
+    const inode = columns[9] || "";
+    const portHex = local.split(":")[1];
+    const port = Number.parseInt(portHex, 16);
+    if (!Number.isInteger(port) || port <= 0 || !inode) {
+      return null;
+    }
+    if (protocol.startsWith("tcp") && state !== "0A") {
+      return null;
+    }
+    return { protocol, port, inode };
+  }).filter(Boolean);
+}
+
+function readProcessSocketInodes(pid) {
+  const fdDir = `/proc/${pid}/fd`;
+  const inodes = new Set();
+  let entries = [];
+  try {
+    entries = fsSync.readdirSync(fdDir);
+  } catch {
+    return inodes;
+  }
+  for (const entry of entries) {
+    const target = readProcLink(path.join(fdDir, entry));
+    const match = String(target || "").match(/^socket:\[(\d+)\]$/);
+    if (match) {
+      inodes.add(match[1]);
+    }
+  }
+  return inodes;
+}
+
+async function inspectSystemProcesses() {
+  if (typeof processInspectionProvider === "function") {
+    const snapshot = await processInspectionProvider();
+    return {
+      processes: Array.isArray(snapshot?.processes) ? snapshot.processes : [],
+      ports: Array.isArray(snapshot?.ports) ? snapshot.ports : [],
+    };
+  }
+
+  if (process.platform !== "linux") {
+    return { processes: [], ports: [] };
+  }
+
+  let procEntries = [];
+  try {
+    procEntries = fsSync.readdirSync("/proc", { withFileTypes: true });
+  } catch {
+    return { processes: [], ports: [] };
+  }
+
+  const processes = [];
+  for (const entry of procEntries) {
+    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) {
+      continue;
+    }
+    const pid = normalizePid(entry.name);
+    if (!pid) {
+      continue;
+    }
+    const identity = parseProcStatIdentity(pid);
+    const cmdline = parseProcCmdline(pid);
+    processes.push({
+      pid,
+      ppid: identity.ppid,
+      name: identity.name,
+      commandLine: cmdline.commandLine,
+      args: cmdline.args,
+      exe: readProcLink(`/proc/${pid}/exe`),
+      cwd: readProcLink(`/proc/${pid}/cwd`),
+      socketInodes: readProcessSocketInodes(pid),
+    });
+  }
+
+  const socketRows = [
+    ...parseSocketTable("/proc/net/tcp", "tcp"),
+    ...parseSocketTable("/proc/net/tcp6", "tcp6"),
+    ...parseSocketTable("/proc/net/udp", "udp"),
+    ...parseSocketTable("/proc/net/udp6", "udp6"),
+  ];
+  const processesByInode = new Map();
+  for (const proc of processes) {
+    for (const inode of proc.socketInodes || []) {
+      if (!processesByInode.has(inode)) {
+        processesByInode.set(inode, []);
+      }
+      processesByInode.get(inode).push(proc.pid);
+    }
+  }
+  const ports = [];
+  for (const row of socketRows) {
+    for (const pid of processesByInode.get(row.inode) || []) {
+      ports.push({ port: row.port, protocol: row.protocol, pid, inode: row.inode });
+    }
+  }
+
+  return { processes, ports };
+}
+
+function isPalworldRuntimeCandidate(config = {}) {
+  return inferGameFamily(config) === "palworld" ||
+    /palworld|palserver/i.test([
+      config.templateId,
+      config.displayName,
+      config.id,
+      config.executable,
+      ...(Array.isArray(config.args) ? config.args : []),
+      ...(Array.isArray(config.tags) ? config.tags : []),
+    ].join(" "));
+}
+
+function configuredRuntimePorts(config = {}) {
+  return [...new Set([
+    ...(Array.isArray(config.ports) ? config.ports : []),
+    config.primaryPort,
+  ].map((port) => Number(port)).filter((port) => Number.isInteger(port) && port > 0 && port <= 65535))];
+}
+
+async function safeRealpath(filePath) {
+  try {
+    return await fs.realpath(filePath);
+  } catch {
+    return path.resolve(filePath);
+  }
+}
+
+async function buildDetachedRuntimeSpec(config = {}) {
+  if (!isPalworldRuntimeCandidate(config)) {
+    return null;
+  }
+  const instanceRoot = await safeRealpath(instancePath(config.id));
+  const workingDirectory = await safeRealpath(resolveRelativeManagedPath(config.id, config.workingDirectory, "data"));
+  return {
+    kind: "palworld",
+    instanceRoot,
+    workingDirectory,
+    processNames: new Set([
+      "palserver-linux-shipping",
+      "palserver-win64-shipping-cmd.exe",
+      "palserver-win64-shipping.exe",
+    ]),
+    executableFragments: [
+      path.join("Pal", "Binaries", "Linux", "PalServer-Linux-Shipping"),
+      path.join("Pal", "Binaries", "Win64", "PalServer-Win64-Shipping-Cmd.exe"),
+      path.join("Pal", "Binaries", "Win64", "PalServer-Win64-Shipping.exe"),
+    ],
+    ports: configuredRuntimePorts(config),
+  };
+}
+
+function processOwnsPorts(proc, ports, portRows) {
+  const requiredPorts = ports || [];
+  if (requiredPorts.length === 0) {
+    return { ok: false, ownedPorts: [] };
+  }
+  const ownedPorts = [...new Set(portRows
+    .filter((row) => normalizePid(row.pid) === normalizePid(proc.pid) && requiredPorts.includes(Number(row.port)))
+    .map((row) => Number(row.port)))];
+  return {
+    ok: requiredPorts.every((port) => ownedPorts.includes(port)),
+    ownedPorts,
+  };
+}
+
+function collectProcessPathCandidates(proc) {
+  const values = [
+    proc.exe,
+    proc.cwd,
+    ...(Array.isArray(proc.args) ? proc.args : []),
+    ...String(proc.commandLine || "").split(/\s+/),
+  ];
+  return values
+    .map((value) => String(value || "").trim().replace(/^"|"$/g, ""))
+    .filter((value) => value && path.isAbsolute(value))
+    .map((value) => path.resolve(value));
+}
+
+function processMatchesDetachedIdentity(proc, spec) {
+  const name = path.basename(String(proc.name || proc.exe || proc.args?.[0] || "")).toLowerCase();
+  const commandLine = String(proc.commandLine || "");
+  const exe = String(proc.exe || "");
+  const cwd = String(proc.cwd || "");
+  const expectedName = spec.processNames.has(name);
+  const expectedExecutable = spec.executableFragments.some((fragment) => {
+    const normalizedFragment = fragment.replace(/\\/g, "/").toLowerCase();
+    return exe.replace(/\\/g, "/").toLowerCase().endsWith(normalizedFragment) ||
+      commandLine.replace(/\\/g, "/").toLowerCase().includes(normalizedFragment);
+  });
+  const pathInsideInstance = collectProcessPathCandidates({ ...proc, exe, cwd, commandLine })
+    .some((candidate) => isInsideRoot(candidate, spec.instanceRoot) || isInsideRoot(candidate, spec.workingDirectory));
+  return (expectedName || expectedExecutable) && pathInsideInstance;
+}
+
+async function discoverDetachedRuntime(config = {}) {
+  const spec = await buildDetachedRuntimeSpec(config);
+  if (!spec) {
+    return null;
+  }
+  const snapshot = await inspectSystemProcesses();
+  for (const proc of snapshot.processes) {
+    if (!normalizePid(proc.pid) || !isProcessAlive(proc.pid)) {
+      continue;
+    }
+    if (!processMatchesDetachedIdentity(proc, spec)) {
+      continue;
+    }
+    const ports = processOwnsPorts(proc, spec.ports, snapshot.ports);
+    if (!ports.ok) {
+      continue;
+    }
+    return {
+      pid: normalizePid(proc.pid),
+      ppid: normalizePid(proc.ppid),
+      processName: proc.name || path.basename(proc.exe || ""),
+      executablePath: proc.exe || null,
+      workingDirectory: proc.cwd || null,
+      commandLine: proc.commandLine || null,
+      ports: ports.ownedPorts,
+      detectionMethod: "detached-runtime-process",
+      runtimeKind: spec.kind,
+    };
+  }
+  return null;
+}
+
+async function findUnrelatedPortConflicts(config = {}) {
+  const ports = configuredRuntimePorts(config);
+  if (ports.length === 0) {
+    return [];
+  }
+  const spec = await buildDetachedRuntimeSpec(config);
+  const snapshot = await inspectSystemProcesses();
+  const conflicts = [];
+  for (const row of snapshot.ports) {
+    const port = Number(row.port);
+    const pid = normalizePid(row.pid);
+    if (!ports.includes(port) || !pid || !isProcessAlive(pid)) {
+      continue;
+    }
+    const proc = snapshot.processes.find((entry) => normalizePid(entry.pid) === pid) || { pid };
+    if (spec && processMatchesDetachedIdentity(proc, spec)) {
+      continue;
+    }
+    conflicts.push({
+      port,
+      protocol: row.protocol || null,
+      pid,
+      processName: proc.name || path.basename(proc.exe || "") || null,
+    });
+  }
+  return conflicts;
+}
+
+async function adoptDiscoveredRuntime(config, runtime, options = {}) {
+  if (!runtime?.pid || !isProcessAlive(runtime.pid)) {
+    return null;
+  }
+  const updated = await updateRuntimeState(config.id, {
+    state: INSTANCE_STATES.RUNNING,
+    pid: runtime.pid,
+    exitCode: null,
+    signal: null,
+    failureReason: null,
+    lastStartedAt: config.lastStartedAt || nowIso(),
+    runtimeProcess: {
+      pid: runtime.pid,
+      ppid: runtime.ppid || null,
+      processName: runtime.processName || null,
+      executablePath: runtime.executablePath || null,
+      workingDirectory: runtime.workingDirectory || null,
+      ports: runtime.ports || [],
+      detectionMethod: runtime.detectionMethod || "detached-runtime-process",
+      reconciledAt: nowIso(),
+      reason: options.reason || null,
+    },
+  });
+  return updated;
 }
 
 function getActiveRunningProcess(instanceId) {
@@ -1889,6 +2236,11 @@ function isCurrentRunningProcess(instanceId, child) {
 }
 
 async function reconcileConfigState(config) {
+  const detachedRuntime = await discoverDetachedRuntime(config).catch(() => null);
+  if (detachedRuntime) {
+    return adoptDiscoveredRuntime(config, detachedRuntime, { reason: "reconcile" });
+  }
+
   const processEntry = runningProcesses.get(config.id);
   const pid = processEntry?.child?.pid || config.pid;
 
@@ -1906,6 +2258,7 @@ async function reconcileConfigState(config) {
       ...config,
       state: INSTANCE_STATES.STOPPED,
       pid: null,
+      runtimeProcess: null,
       lastStoppedAt: config.lastStoppedAt || nowIso(),
     };
 
@@ -2074,7 +2427,8 @@ async function deleteInstance(instanceId) {
   } catch (error) {
     if (error?.code === "INSTANCE_NOT_FOUND" || error?.code === "INSTANCE_CONFIG_UNREADABLE") {
       const processEntry = runningProcesses.get(id);
-      if (processEntry?.pid && isProcessAlive(processEntry.pid)) {
+      const pid = processEntry?.child?.pid || processEntry?.pid;
+      if (pid && isProcessAlive(pid)) {
         throw createInstanceError("INSTANCE_RUNNING", 409);
       }
 
@@ -2155,7 +2509,8 @@ async function forgetInstance(instanceId) {
     errors: [],
   };
 
-  if (processEntry?.child?.pid && isProcessAlive(processEntry.child.pid)) {
+  const pid = processEntry?.child?.pid || processEntry?.pid;
+  if (pid && isProcessAlive(pid)) {
     throw createInstanceError("INSTANCE_RUNNING", 409);
   }
 
@@ -2316,8 +2671,36 @@ function buildSpawnEnvironment(config) {
 async function startInstance(instanceId) {
   let config = await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId)), { force: true });
 
+  const discoveredRuntime = await discoverDetachedRuntime(config).catch(() => null);
+  if (discoveredRuntime) {
+    const runningConfig = await adoptDiscoveredRuntime(config, discoveredRuntime, { reason: "start-preflight" });
+    const error = createInstanceError("INSTANCE_ALREADY_RUNNING", 409, {
+      state: "ALREADY_RUNNING",
+      runtime: discoveredRuntime,
+      instance: publicConfig(runningConfig),
+    });
+    error.message = "The instance is already running.";
+    throw error;
+  }
+
   if (getActiveRunningProcess(config.id) || (config.pid && isProcessAlive(config.pid))) {
-    throw createInstanceError("INSTANCE_ALREADY_RUNNING", 409);
+    const error = createInstanceError("INSTANCE_ALREADY_RUNNING", 409, {
+      state: "ALREADY_RUNNING",
+      pid: config.pid || getActiveRunningProcess(config.id)?.child?.pid || null,
+    });
+    error.message = "The instance is already running.";
+    throw error;
+  }
+
+  const portConflicts = await findUnrelatedPortConflicts(config).catch(() => []);
+  if (portConflicts.length > 0) {
+    const error = createInstanceError("PORT_IN_USE", 409, {
+      field: "ports",
+      conflicts: portConflicts,
+      expected: "configured instance ports must be free or owned by the same instance runtime",
+    });
+    error.message = "One or more configured ports are already in use by another process.";
+    throw error;
   }
 
   config = await repairConfiguredServerJar(config);
@@ -2356,6 +2739,7 @@ async function startInstance(instanceId) {
     exitCode: null,
     signal: null,
     failureReason: null,
+    runtimeProcess: null,
     lastStartedAt: nowIso(),
   });
 
@@ -2387,6 +2771,7 @@ async function startInstance(instanceId) {
       suppressRestart: false,
       failureReason: null,
       startupTimer: null,
+      discoveryTimer: null,
       outputTail: [],
       commandDiagnostics,
     });
@@ -2436,7 +2821,7 @@ async function startInstance(instanceId) {
         entry.failureReason = "FIVEM_LICENSE_REQUIRED";
       }
     }
-    if (/Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running/i.test(String(chunk))) {
+    if (!isPalworldRuntimeCandidate(config) && /Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running/i.test(String(chunk))) {
       if (!isCurrentRunningProcess(config.id, child)) {
         return;
       }
@@ -2493,21 +2878,46 @@ async function startInstance(instanceId) {
       clearTimeout(entry.startupTimer);
     }
 
-    runningProcesses.delete(config.id);
-    metricsSamples.delete(config.id);
-
     const failed = !requestedStop && (exitCode !== 0 || earlyCleanExit);
     const resolvedFailureReason = earlyCleanExit
       ? "EARLY_CLEAN_EXIT"
       : failed ? failureReason : null;
-    updateRuntimeState(config.id, {
+
+    discoverDetachedRuntime(config).then(async (runtime) => {
+      if (runtime && !requestedStop) {
+        const updated = await adoptDiscoveredRuntime(config, runtime, { reason: "wrapper-exit" });
+        console.info("[Instances] Reconciled detached instance runtime after wrapper exit.", {
+          instanceId: config.id,
+          wrapperPid: child.pid || null,
+          runtimePid: runtime.pid,
+          runtimePpid: runtime.ppid || null,
+          ports: runtime.ports || [],
+        });
+        appendLog(config.id, "stdout", `Reconciled detached runtime PID: ${runtime.pid}`).catch(() => {});
+        if (entry?.startupTimer) {
+          clearTimeout(entry.startupTimer);
+        }
+        if (entry?.discoveryTimer) {
+          clearInterval(entry.discoveryTimer);
+        }
+        runningProcesses.delete(config.id);
+        return updated;
+      }
+
+      runningProcesses.delete(config.id);
+      metricsSamples.delete(config.id);
+      return updateRuntimeState(config.id, {
       state: failed ? INSTANCE_STATES.FAILED : INSTANCE_STATES.STOPPED,
       pid: null,
       exitCode,
       signal,
       failureReason: resolvedFailureReason,
       lastStoppedAt: nowIso(),
+      });
     }).then((updatedConfig) => {
+      if (updatedConfig?.state === INSTANCE_STATES.RUNNING && updatedConfig?.pid) {
+        return;
+      }
       const stopReason = earlyCleanExit
         ? "Server exited immediately; this modpack may be client-only or missing server files."
         : `Stopped ${updatedConfig.displayName} exitCode=${exitCode ?? "null"} signal=${signal || "null"}`;
@@ -2547,13 +2957,33 @@ async function startInstance(instanceId) {
   const startupTimer = setTimeout(() => {
     const entry = runningProcesses.get(config.id);
 
-    if (entry?.child === child && child.exitCode === null && isProcessAlive(child.pid)) {
+    if (!isPalworldRuntimeCandidate(config) && entry?.child === child && child.exitCode === null && isProcessAlive(child.pid)) {
       updateRuntimeState(config.id, {
         state: INSTANCE_STATES.RUNNING,
         pid: child.pid,
       }).catch(() => {});
     }
   }, config.startupTimeoutMs);
+
+  const discoveryTimer = isPalworldRuntimeCandidate(config) ? setInterval(() => {
+    const entry = runningProcesses.get(config.id);
+    if (!entry || entry.child !== child || entry.requestedStop) {
+      clearInterval(discoveryTimer);
+      return;
+    }
+    discoverDetachedRuntime(config).then(async (runtime) => {
+      if (!runtime) {
+        return;
+      }
+      await adoptDiscoveredRuntime(config, runtime, { reason: "post-launch-discovery" });
+      appendLog(config.id, "stdout", `Discovered detached runtime PID: ${runtime.pid}`).catch(() => {});
+      clearInterval(discoveryTimer);
+      if (entry.startupTimer) {
+        clearTimeout(entry.startupTimer);
+      }
+    }).catch(() => {});
+  }, 1000) : null;
+  discoveryTimer?.unref?.();
 
   const existingEntry = runningProcesses.get(config.id);
   runningProcesses.set(config.id, {
@@ -2563,6 +2993,7 @@ async function startInstance(instanceId) {
     suppressRestart: existingEntry?.suppressRestart || false,
     failureReason: existingEntry?.failureReason || null,
     startupTimer,
+    discoveryTimer,
     outputTail: existingEntry?.outputTail || [],
     commandDiagnostics,
   });
@@ -2610,6 +3041,12 @@ async function forceKillInstance(instanceId) {
 
   if (entry) {
     entry.requestedStop = true;
+    if (entry.discoveryTimer) {
+      clearInterval(entry.discoveryTimer);
+    }
+    if (entry.startupTimer) {
+      clearTimeout(entry.startupTimer);
+    }
   }
 
   process.kill(pid, "SIGKILL");
@@ -2617,12 +3054,35 @@ async function forceKillInstance(instanceId) {
     state: INSTANCE_STATES.STOPPED,
     pid: null,
     signal: "SIGKILL",
+    runtimeProcess: null,
     lastStoppedAt: nowIso(),
   });
 
   runningProcesses.delete(config.id);
   metricsSamples.delete(config.id);
   return publicConfig(updated);
+}
+
+function waitForPidExit(pid, timeoutMs) {
+  return new Promise((resolve) => {
+    if (!pid || !isProcessAlive(pid)) {
+      resolve(true);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      if (!isProcessAlive(pid)) {
+        clearInterval(timer);
+        resolve(true);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        clearInterval(timer);
+        resolve(false);
+      }
+    }, 250);
+    timer.unref?.();
+  });
 }
 
 function waitForExit(child, timeoutMs) {
@@ -2662,6 +3122,12 @@ async function stopInstance(instanceId) {
 
   if (entry) {
     entry.requestedStop = true;
+    if (entry.discoveryTimer) {
+      clearInterval(entry.discoveryTimer);
+    }
+    if (entry.startupTimer) {
+      clearTimeout(entry.startupTimer);
+    }
   }
 
   try {
@@ -2670,7 +3136,7 @@ async function stopInstance(instanceId) {
     // The reconcile path below will correct stale PIDs.
   }
 
-  const exited = entry ? await waitForExit(entry.child, config.shutdownTimeoutMs) : false;
+  const exited = entry ? await waitForExit(entry.child, config.shutdownTimeoutMs) : await waitForPidExit(pid, config.shutdownTimeoutMs);
 
   if (!exited && isProcessAlive(pid)) {
     try {
@@ -2683,6 +3149,7 @@ async function stopInstance(instanceId) {
   config = await updateRuntimeState(config.id, {
     state: INSTANCE_STATES.STOPPED,
     pid: null,
+    runtimeProcess: null,
     lastStoppedAt: nowIso(),
   });
 
@@ -3114,8 +3581,17 @@ async function getMetrics(instanceId) {
 
 module.exports = {
   _test: {
+    configuredRuntimePorts,
+    discoverDetachedRuntime,
+    findUnrelatedPortConflicts,
     parseRandomSeedFromLevelDat,
     parseTpsFromMessages,
+    setProcessInspectionProvider(provider) {
+      processInspectionProvider = typeof provider === "function" ? provider : null;
+    },
+    setProcessAliveProvider(provider) {
+      processAliveProvider = typeof provider === "function" ? provider : null;
+    },
   },
   configureInstanceService,
   INSTANCE_STATES,

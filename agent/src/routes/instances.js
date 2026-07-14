@@ -48,15 +48,53 @@ function result(statusCode, body) {
 
 function errorResult(error) {
   const validation = getValidationErrorDetails(error);
+  const runtimeDetails = getRuntimeErrorDetails(error);
   return result(error.statusCode || 500, {
     error: {
       code: error.code || "INSTANCE_REQUEST_FAILED",
       message: error.message && error.message !== error.code
         ? error.message
         : validation?.userMessage || "Request failed.",
-      details: validation || (error.result ? { result: error.result } : undefined),
+      details: validation || runtimeDetails || (error.result ? { result: error.result } : undefined),
     },
   });
+}
+
+function getRuntimeErrorDetails(error) {
+  if (error?.code === "INSTANCE_ALREADY_RUNNING") {
+    return {
+      code: error.code,
+      state: error.state || "ALREADY_RUNNING",
+      pid: error.pid || error.runtime?.pid || error.instance?.pid || null,
+      runtime: error.runtime ? {
+        pid: error.runtime.pid || null,
+        ppid: error.runtime.ppid || null,
+        processName: error.runtime.processName || null,
+        executablePath: error.runtime.executablePath || null,
+        workingDirectory: error.runtime.workingDirectory || null,
+        ports: Array.isArray(error.runtime.ports) ? error.runtime.ports : [],
+        detectionMethod: error.runtime.detectionMethod || null,
+      } : undefined,
+      userMessage: "This instance is already running.",
+      suggestion: "Refresh the instance list or stop the running server before starting it again.",
+    };
+  }
+  if (error?.code === "PORT_IN_USE") {
+    return {
+      code: error.code,
+      field: error.field || "ports",
+      expected: error.expected || "configured ports must be available",
+      conflicts: Array.isArray(error.conflicts) ? error.conflicts.map((conflict) => ({
+        port: conflict.port || null,
+        protocol: conflict.protocol || null,
+        pid: conflict.pid || null,
+        processName: conflict.processName || null,
+      })) : [],
+      userMessage: "One or more configured ports are already in use by another process.",
+      suggestion: "Stop the conflicting process or choose different ports before starting this instance.",
+    };
+  }
+  return undefined;
 }
 
 function getValidationErrorDetails(error) {

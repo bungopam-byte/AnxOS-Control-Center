@@ -908,13 +908,20 @@ a[aria-disabled="true"] {
 }
 
 .download-primary {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   justify-content: space-between;
   margin-top: 16px;
   padding: 16px;
+}
+
+.download-primary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .download-primary h3,
@@ -1829,8 +1836,14 @@ a[aria-disabled="true"] {
   }
 
   .download-primary {
+    grid-template-columns: 1fr;
     align-items: stretch;
-    flex-direction: column;
+  }
+
+  .download-primary__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
   }
 
   .feature-grid,

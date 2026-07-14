@@ -190,7 +190,7 @@ function setDownloadLinksLoading() {
   document.querySelectorAll("[data-download-page]").forEach((node) => {
     node.dataset.state = "loading";
   });
-  setDownloadStatus("Checking the latest published GitHub Release for official installer assets...", "loading");
+  setDownloadStatus("Checking the latest published release for the official Windows installer...", "loading");
 }
 
 function trackDownloadClick(asset, release) {
@@ -284,10 +284,24 @@ function createDownloadButton(asset, release, primary = false) {
   use.setAttribute("href", "#icon-download");
   icon.append(use);
   const text = document.createElement("span");
-  text.textContent = asset.platform === "windows" && asset.packageType === "setup"
-    ? "Download for Windows"
-    : `Download ${asset.installerType}`;
+  if (asset.platform === "windows" && asset.packageType === "setup") {
+    text.textContent = "Download AnxOS for Windows";
+  } else if (asset.platform === "windows" && asset.packageType === "portable") {
+    text.textContent = "Portable Version";
+  } else {
+    text.textContent = `Download ${asset.installerType}`;
+  }
   link.append(icon, text);
+  return link;
+}
+
+function createDownloadSupportLink(label, href) {
+  const link = document.createElement("a");
+  link.className = "button button-ghost";
+  link.href = href;
+  const text = document.createElement("span");
+  text.textContent = label;
+  link.append(text);
   return link;
 }
 
@@ -301,7 +315,7 @@ function createAssetCard(asset, release) {
   meta.textContent = assetLabel(asset);
   const help = document.createElement("small");
   help.textContent = asset.platform === "windows"
-    ? asset.packageType === "portable" ? "Portable build for Windows systems." : "Recommended package for Windows installs."
+    ? asset.packageType === "portable" ? "Portable build for Windows x64 systems when the installer is not appropriate." : "Recommended installer for Windows 10 and Windows 11 x64."
     : asset.packageType === "deb" ? "For Debian and Ubuntu-based systems." : "Portable Linux package for distributions that support AppImage.";
   body.append(title, meta, help);
   card.append(body, createDownloadButton(asset, release, asset.key === "windows-setup" || asset.key === "linux-appimage"));
@@ -344,26 +358,45 @@ function renderDownloadPage(release) {
   panel.dataset.state = "ready";
   renderReleaseSummary(release);
   const detectedPlatform = window.AnxOSReleaseDownloads.detectPlatform();
-  const primaryAsset = window.AnxOSReleaseDownloads.preferredAssetForPlatform(release, detectedPlatform);
+  const windowsSetup = findDownloadAsset(release, "windows");
+  const windowsPortable = findDownloadAsset(release, "windowsPortable");
+  const detectedPlatformAsset = window.AnxOSReleaseDownloads.preferredAssetForPlatform(release, detectedPlatform);
+  const primaryAsset = windowsSetup || detectedPlatformAsset;
   const primaryTarget = panel.querySelector("[data-primary-download]");
   if (primaryTarget) {
     primaryTarget.replaceChildren();
     if (primaryAsset) {
       const copy = document.createElement("div");
       const heading = document.createElement("h3");
-      heading.textContent = `Recommended for ${platformLabel(detectedPlatform)}`;
+      heading.textContent = windowsSetup ? "Windows installer ready" : `Recommended for ${platformLabel(detectedPlatform)}`;
       const meta = document.createElement("p");
-      meta.textContent = `${primaryAsset.installerType} · ${assetLabel(primaryAsset)}`;
+      const detectedNote = detectedPlatform === "windows"
+        ? "Windows detected."
+        : detectedPlatform === "unknown"
+          ? "Manual platform options remain visible below."
+          : `${platformLabel(detectedPlatform)} detected; Windows remains available for manual download.`;
+      meta.textContent = `${primaryAsset.installerType} · ${assetLabel(primaryAsset)} · ${detectedNote}`;
       copy.append(heading, meta);
-      primaryTarget.append(copy, createDownloadButton(primaryAsset, release, true));
+      const actions = document.createElement("div");
+      actions.className = "download-primary__actions";
+      actions.append(createDownloadButton(primaryAsset, release, true));
+      if (windowsPortable) actions.append(createDownloadButton(windowsPortable, release, false));
+      actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
+      actions.append(createDownloadSupportLink("Installation Help", "#install-help"));
+      actions.append(createDownloadSupportLink("System Requirements", "#system-requirements"));
+      primaryTarget.append(copy, actions);
     } else {
       const heading = document.createElement("h3");
-      heading.textContent = detectedPlatform === "macos" ? "macOS is not available yet" : "Choose from available downloads";
+      heading.textContent = "Windows installer unavailable";
       const meta = document.createElement("p");
-      meta.textContent = detectedPlatform === "macos"
-        ? "AnxOS Control Center currently publishes Windows and Linux builds only."
-        : "Your platform could not be detected. Use one of the official packages below.";
-      primaryTarget.append(heading, meta);
+      meta.textContent = release.assets.length
+        ? "The latest release has downloadable assets, but no Windows setup executable. Use the manual options below only if they match your system."
+        : "No downloadable packages are attached to the latest release.";
+      const actions = document.createElement("div");
+      actions.className = "download-primary__actions";
+      actions.append(createDownloadSupportLink("View Release Notes", release.releaseNotesUrl || "/release-notes.html"));
+      actions.append(createDownloadSupportLink("Installation Help", "#install-help"));
+      primaryTarget.append(heading, meta, actions);
     }
   }
   const platforms = panel.querySelector("[data-download-platforms]");

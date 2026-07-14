@@ -476,6 +476,8 @@ const agentSetupMode = document.querySelector('[data-agent-setup="mode"]');
 const agentSetupAutoStart = document.querySelector('[data-agent-setup="autoStart"]');
 const agentSetupMessage = document.querySelector("[data-agent-setup-message]");
 const agentSetupSummary = document.querySelector("[data-agent-setup-summary]");
+const agentLocalInstallerStatus = document.querySelector("[data-agent-local-installer-status]");
+const agentLocalInstallerSteps = document.querySelector("[data-agent-local-installer-steps]");
 let agentControlState = null;
 let agentControlBusy = false;
 let agentControlRefreshInFlight = false;
@@ -3718,6 +3720,28 @@ function renderAgentSetupSummary(local = {}) {
   }
 }
 
+function renderLocalAgentInstallerSteps(steps = []) {
+  if (!agentLocalInstallerSteps) return;
+  agentLocalInstallerSteps.replaceChildren();
+  if (!steps.length) {
+    const empty = document.createElement("div");
+    empty.className = "docker-empty-state";
+    empty.append(createTextElement("strong", "No install has run yet"), createTextElement("span", "AnxOS will prepare the managed runtime, create secure credentials, start the Agent, and reconnect automatically."));
+    agentLocalInstallerSteps.append(empty);
+    return;
+  }
+  steps.forEach((step) => {
+    const row = document.createElement("article");
+    row.className = "dependency-item";
+    row.append(
+      createTextElement("strong", step.label || "Installer step"),
+      createTextElement("span", step.state || "pending", `status-pill status-pill--${step.state === "complete" ? "ok" : step.state === "failed" ? "critical" : step.state === "blocked" || step.state === "warning" ? "warning" : "planned"}`),
+      createTextElement("p", step.message || "Waiting for this step."),
+    );
+    agentLocalInstallerSteps.append(row);
+  });
+}
+
 function getAgentControlOverviewTarget(payload = agentControlState) {
   if (!payload) return null;
   if (payload.configured?.configured || payload.configured?.backendMode === "agent") {
@@ -3848,6 +3872,11 @@ function renderAgentControlState(payload = agentControlState) {
       button.removeAttribute("title");
     }
   });
+  if (agentLocalInstallerStatus) {
+    const runtime = payload?.local?.runtimeBundle || local.runtimeBundle;
+    agentLocalInstallerStatus.textContent = running ? "Installed" : runtime?.exists ? "Ready" : "Repair Required";
+    agentLocalInstallerStatus.className = `status-pill ${running ? "status-pill--ok" : runtime?.exists ? "status-pill--planned" : "status-pill--warning"}`;
+  }
   renderAgentSetupSummary(payload?.local || local);
   renderAgentBeginnerSummary(payload);
   renderLocalAgentSystems(payload);
@@ -4968,6 +4997,9 @@ async function runAgentControlAction(action) {
     repairAgent: "Repair local Agent",
     checkUpdates: "Check Agent updates",
     updateAgent: "Download Agent update",
+    installLocalAgent: "Install Local Agent",
+    learnLocalAgent: "Learn about Local Agent",
+    useRemoteAgent: "Use Remote Agent",
     rotateToken: "Rotate Agent token",
     completeSetup: "Complete Agent setup",
     saveConfig: "Save Agent configuration",
@@ -4991,6 +5023,20 @@ async function runAgentControlAction(action) {
   });
   try {
     if (action === "reconnect") await testAgentConnection({ silent: false });
+    else if (action === "installLocalAgent") {
+      if (agentLocalInstallerStatus) agentLocalInstallerStatus.textContent = "Installing";
+      const result = await api.installLocalAgent({ autoStart: true, installService: true });
+      renderLocalAgentInstallerSteps(result.steps || []);
+      if (result.serviceWarning) showToast(result.serviceWarning.message, "warning");
+      await refreshNodes();
+    }
+    else if (action === "learnLocalAgent") {
+      showToast("The Local Agent runs on this PC so AnxOS can manage local servers, files, backups, dependencies, and services without a separate Debian server.", "info");
+    }
+    else if (action === "useRemoteAgent") {
+      showToast("Remote Agent mode stays available. Add or select a remote node from the node picker or Agent Connection settings.", "info");
+      document.querySelector("[data-agent-setting='agentUrl']")?.focus();
+    }
     else if (action === "repairAgent") { await api.installService(); if (!(await api.status())?.running) await api.start(); }
     else if (action === "checkUpdates") await getDesktopApiState().api.updates.check({ silent: false });
     else if (action === "updateAgent") await getDesktopApiState().api.updates.download();

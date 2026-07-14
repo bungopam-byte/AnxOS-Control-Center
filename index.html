@@ -3488,6 +3488,23 @@
                 <div><span>Utilities</span><button class="inline-action" type="button" data-agent-control-action="copyUrl">Copy URL</button><button class="inline-action" type="button" data-agent-control-action="copyId">Copy ID</button><button class="inline-action" type="button" data-agent-control-action="openLogs">Logs Folder</button><button class="inline-action" type="button" data-agent-control-action="openDataFolder">Data Folder</button></div>
               </div>
             </section>
+            <section class="settings-section settings-section--wide agent-local-installer" data-agent-local-installer>
+              <div class="settings-section__header">
+                <div>
+                  <h2>Install Local Agent</h2>
+                  <p>AnxOS Local Agent lets AnxOS manage servers, files, backups, dependencies, and services on this computer.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-agent-local-installer-status>Ready</span>
+              </div>
+              <div class="settings-actions">
+                <button class="primary-button" type="button" data-agent-control-action="installLocalAgent">Install Local Agent</button>
+                <button class="inline-action" type="button" data-agent-control-action="learnLocalAgent">Learn More</button>
+                <button class="inline-action" type="button" data-agent-control-action="useRemoteAgent">Use Remote Agent Instead</button>
+              </div>
+              <div class="download-list" data-agent-local-installer-steps>
+                <div class="docker-empty-state"><strong>No install has run yet</strong><span>AnxOS will prepare the managed runtime, create secure credentials, start the Agent, and reconnect automatically.</span></div>
+              </div>
+            </section>
             <section class="settings-section agent-connection-section">
               <div class="settings-section__header">
                 <div>

@@ -10,8 +10,10 @@ const diagnostics = require("./diagnosticsService");
 const agentPackage = require("../../agent/package.json");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 const { getBundledLocalAgentRuntime, getPublicLocalAgentRuntimeInfo } = require("./localAgentRuntimeService");
+const { rotateAgentSettingsToken, saveAgentSettings, testConnection } = require("./agentClient");
 
 const SERVICE_NAME = "AnxOSAgent";
+const LOCAL_AGENT_DISPLAY_NAME = "This PC";
 const REMOTE_DIAGNOSTICS_CACHE_MS = 30000;
 let managedProcess = null;
 let operationInFlight = null;
@@ -23,9 +25,13 @@ const remoteDiagnosticsCache = new Map();
 function getConfigDirectory() { if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR; try { return path.join(app.getPath("userData"), "config"); } catch { return path.join(process.cwd(), "config"); } }
 function getRuntimeConfigPath() { return path.join(getConfigDirectory(), "agent-runtime.json"); }
 function getAgentDataDirectory() { try { return path.join(app.getPath("userData"), "agent"); } catch { return path.join(path.dirname(getConfigDirectory()), "agent"); } }
+function getAgentLogsDirectory() { return path.join(getAgentDataDirectory(), "logs"); }
+function getAgentInstancesDirectory() { return path.join(getAgentDataDirectory(), "instances"); }
+function getAgentBackupsDirectory() { return path.join(getAgentDataDirectory(), "backups"); }
+function getAgentTempDirectory() { return path.join(getAgentDataDirectory(), "tmp"); }
 function getAgentScript() { return getBundledLocalAgentRuntime().agentScript; }
 function getAppRoot() { return getBundledLocalAgentRuntime().workingDirectory; }
-function defaults() { return { name: `${os.hostname()} Agent`, host: "127.0.0.1", port: 47131, allowedOrigins: [], allowedFolders: [os.homedir()], storageRoots: [os.homedir()], autoStart: false, updateChannel: "stable", loggingLevel: "info", connectionTimeoutMs: 10000, heartbeatIntervalMs: 5000, restartPolicy: "on-failure", ownerMachine: false, accountAssociation: null }; }
+function defaults() { return { name: `${os.hostname()} Agent`, host: "127.0.0.1", port: 47131, allowedOrigins: [], allowedFolders: [os.homedir(), getAgentInstancesDirectory(), getAgentBackupsDirectory()], storageRoots: [getAgentInstancesDirectory(), getAgentBackupsDirectory()], autoStart: false, updateChannel: "stable", loggingLevel: "info", connectionTimeoutMs: 10000, heartbeatIntervalMs: 5000, restartPolicy: "on-failure", ownerMachine: true, accountAssociation: null }; }
 function readConfig() { try { return { ...defaults(), ...JSON.parse(fs.readFileSync(getRuntimeConfigPath(), "utf8")) }; } catch { return defaults(); } }
 function validateConfig(input = {}) {
   const value = { ...defaults(), ...input };
@@ -48,9 +54,22 @@ function restoreConfigBackup() { const backup = `${getRuntimeConfigPath()}.backu
 function resetConfig() { return saveConfig(defaults()); }
 
 function command(command, args, options = {}) { return new Promise((resolve) => execFile(command, args, { windowsHide: true, timeout: options.timeout || 15000, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, code: error?.code || null, stdout: String(stdout || "").trim(), stderr: String(stderr || "").trim() }))); }
+function ensureManagedAgentDirectories() {
+  const directories = [
+    getConfigDirectory(),
+    getAgentDataDirectory(),
+    getAgentLogsDirectory(),
+    getAgentInstancesDirectory(),
+    getAgentBackupsDirectory(),
+    getAgentTempDirectory(),
+  ];
+  directories.forEach((directory) => fs.mkdirSync(directory, { recursive: true }));
+  return directories;
+}
+
 function agentEnvironment(config) {
   const runtime = getBundledLocalAgentRuntime();
-  return { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_ENV: "production", AGENT_HOST: config.host, AGENT_PORT: String(config.port), AGENT_FILE_ROOTS: config.allowedFolders.join(path.delimiter), AGENT_INSTANCE_ROOT: path.join(getAgentDataDirectory(), "instances"), AGENT_IDENTITY_PATH: path.join(getAgentDataDirectory(), "device-identity.json"), ANXHUB_CONFIG_DIR: getConfigDirectory(), ANXOS_LOCAL_AGENT_RUNTIME_ROOT: runtime.runtimeRoot, ANXOS_LOCAL_AGENT_RUNTIME_MANIFEST: runtime.manifestPath };
+  return { ...process.env, ELECTRON_RUN_AS_NODE: "1", NODE_ENV: "production", AGENT_HOST: config.host, AGENT_PORT: String(config.port), AGENT_FILE_ROOTS: config.allowedFolders.join(path.delimiter), AGENT_INSTANCE_ROOT: getAgentInstancesDirectory(), AGENT_BACKUP_ROOT: getAgentBackupsDirectory(), AGENT_LOG_DIR: getAgentLogsDirectory(), AGENT_TEMP_DIR: getAgentTempDirectory(), AGENT_IDENTITY_PATH: path.join(getAgentDataDirectory(), "device-identity.json"), ANXHUB_CONFIG_DIR: getConfigDirectory(), ANXOS_LOCAL_AGENT_RUNTIME_ROOT: runtime.runtimeRoot, ANXOS_LOCAL_AGENT_RUNTIME_MANIFEST: runtime.manifestPath };
 }
 function isWindowsAccessDenied(result = {}) { return /access is denied|administrator|elevat/i.test(`${result.stderr || ""}\n${result.stdout || ""}\n${result.code || ""}`); }
 function createWindowsElevationError(action = "modify") { return Object.assign(new Error(`Windows requires administrator permission to ${action} the Agent startup task. Run AnxOS Control Center as Administrator, then install the Agent service again.`), { code: "ELEVATION_REQUIRED", recoverySuggestion: "Close AnxOS Control Center, right-click it, choose Run as administrator, then retry the Agent service action." }); }
@@ -161,7 +180,7 @@ async function start() {
         code: "AGENT_PORT_IN_USE",
       });
     }
-    if (service.installed) {
+    if (service.installed && service.valid !== false) {
       const result = process.platform === "linux" ? await command("systemctl", ["--user", "start", "anxos-agent.service"]) : await command("schtasks.exe", ["/Run", "/TN", SERVICE_NAME]);
       if (!result.ok) throw Object.assign(new Error(result.stderr || "Background Agent could not be started."), { code: "SERVICE_START_FAILED" });
       await new Promise((resolve) => setTimeout(resolve, 800));
@@ -179,6 +198,7 @@ async function start() {
     managedProcess.once("exit", (code, signal) => { diagnostics.log(code === 0 ? "info" : "error", "agent", "process-exit", "Local Agent process exited", { code, signal, restartPolicy: config.restartPolicy }, { file: "agent", correlationId }); managedProcess = null; if (code && config.restartPolicy === "always") start().catch(() => {}); });
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (managedProcess?.exitCode !== null) throw Object.assign(new Error("Agent exited during startup."), { code: "AGENT_START_FAILED" });
+    await waitForLocalAgentHealth(config, config.connectionTimeoutMs || 3500);
     ensureLocalAgentBackendSelected(config);
     lastRestartReason = "Started from AnxOS"; lastError = null; return getStatus();
   } catch (error) { lastError = { code: error.code || "AGENT_START_FAILED", message: error.message }; diagnostics.logError("agent-control", "start", error, {}, { file: "service-manager" }); throw error; }
@@ -188,13 +208,35 @@ async function start() {
 async function stop({ force = false } = {}) {
   if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
   operationInFlight = "stop";
-  try { const service = await getServiceState(); if (service.installed && service.active) { const result = process.platform === "linux" ? await command("systemctl", ["--user", "stop", "anxos-agent.service"]) : await command("schtasks.exe", ["/End", "/TN", SERVICE_NAME]); if (!result.ok && !force) throw Object.assign(new Error(result.stderr || "Background Agent could not be stopped."), { code: "SERVICE_STOP_FAILED" }); } if (managedProcess && !managedProcess.killed) { const child = managedProcess; child.kill(force ? "SIGKILL" : "SIGTERM"); await new Promise((resolve) => { const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); resolve(); }, 5000); child.once("exit", () => { clearTimeout(timer); resolve(); }); }); } managedProcess = null; lastRestartReason = force ? "Force stopped from AnxOS" : "Stopped from AnxOS"; return getStatus(); }
+  try { const config = readConfig(); const service = await getServiceState(); if (service.installed && service.active) { const result = process.platform === "linux" ? await command("systemctl", ["--user", "stop", "anxos-agent.service"]) : await command("schtasks.exe", ["/End", "/TN", SERVICE_NAME]); if (!result.ok && !force) throw Object.assign(new Error(result.stderr || "Background Agent could not be stopped."), { code: "SERVICE_STOP_FAILED" }); } if (managedProcess && !managedProcess.killed) { const child = managedProcess; child.kill(force ? "SIGKILL" : "SIGTERM"); await new Promise((resolve) => { const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); resolve(); }, 5000); child.once("exit", () => { clearTimeout(timer); resolve(); }); }); } managedProcess = null; await waitForLocalAgentStopped(config).catch(() => false); lastRestartReason = force ? "Force stopped from AnxOS" : "Stopped from AnxOS"; return getStatus(); }
   finally { operationInFlight = null; }
 }
 async function restart({ force = false } = {}) { await stop({ force }); lastRestartReason = force ? "Force restarted from AnxOS" : "Restarted from AnxOS"; return start(); }
 
 async function getServiceState() {
-  if (process.platform === "linux") { const result = await command("systemctl", ["--user", "is-enabled", "anxos-agent.service"]); const active = await command("systemctl", ["--user", "is-active", "anxos-agent.service"]); const output = `${result.stdout}\n${result.stderr}`; const installed = !/not-found|No such file/i.test(output); const service = { supported: true, type: "systemd-user", installed, valid: installed, enabled: result.stdout === "enabled", active: active.stdout === "active", state: active.stdout || "inactive", registrationStatus: installed ? "valid" : "missing", verification: { state: installed ? "valid" : "missing", issues: [] }, privilege: { supported: false, elevated: false, state: "not-applicable" } }; return service; }
+  if (process.platform === "linux") {
+    const result = await command("systemctl", ["--user", "is-enabled", "anxos-agent.service"]);
+    const active = await command("systemctl", ["--user", "is-active", "anxos-agent.service"]);
+    const output = `${result.stdout}\n${result.stderr}`;
+    const installed = !/not-found|No such file/i.test(output);
+    const unitPath = path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service");
+    let valid = installed;
+    const issues = [];
+    if (installed) {
+      try {
+        const unit = fs.readFileSync(unitPath, "utf8");
+        const normalizedUnit = normalizeCommandForComparison(unit);
+        if (!normalizedUnit.includes(normalizeCommandForComparison(getAgentScript()))) issues.push("Unit does not point at the current bundled Agent server.");
+        if (!normalizedUnit.includes(normalizeCommandForComparison(`ANXHUB_CONFIG_DIR=${getConfigDirectory()}`))) issues.push("Unit does not use the current Agent config directory.");
+        valid = issues.length === 0;
+      } catch (error) {
+        valid = false;
+        issues.push(error?.code === "ENOENT" ? "Unit file is missing." : "Unit file could not be verified.");
+      }
+    }
+    const service = { supported: true, type: "systemd-user", installed, valid, enabled: result.stdout === "enabled", active: active.stdout === "active" && valid, state: installed && !valid ? "invalid" : active.stdout || "inactive", registrationStatus: installed ? valid ? "valid" : "invalid" : "missing", verification: { state: installed ? valid ? "valid" : "invalid" : "missing", issues }, privilege: { supported: false, elevated: false, state: "not-applicable" } };
+    return service;
+  }
   if (process.platform === "win32") {
     const result = await command("schtasks.exe", ["/Query", "/TN", SERVICE_NAME, "/FO", "LIST", "/V"]);
     const active = /Status:\s*Running/i.test(result.stdout);
@@ -262,7 +304,135 @@ async function installService() {
 async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.privilege?.elevated !== true) throw createWindowsElevationError("remove"); const result = await command("schtasks.exe", ["/Delete", "/F", "/TN", SERVICE_NAME]); if (!result.ok && !/cannot find|does not exist/i.test(`${result.stdout}\n${result.stderr}`)) throw isWindowsAccessDenied(result) ? createWindowsElevationError("remove") : Object.assign(new Error(result.stderr || "Could not remove Agent startup task."), { code: "SERVICE_UNINSTALL_FAILED" }); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
 async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.privilege?.elevated !== true) throw createWindowsElevationError(enabled ? "enable" : "disable"); const result = await command("schtasks.exe", ["/Change", "/TN", SERVICE_NAME, enabled ? "/ENABLE" : "/DISABLE"]); if (!result.ok) throw isWindowsAccessDenied(result) ? createWindowsElevationError(enabled ? "enable" : "disable") : Object.assign(new Error(result.stderr || "Could not update Agent startup task."), { code: "SERVICE_UPDATE_FAILED" }); } saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
 
+function installerStep(id, label, state = "pending", message = "") {
+  return { id, label, state, message, at: new Date().toISOString() };
+}
+
+async function installLocalAgent(options = {}) {
+  if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
+  operationInFlight = "install";
+  const steps = [
+    installerStep("runtime", "Validate bundled runtime"),
+    installerStep("directories", "Create managed folders"),
+    installerStep("configuration", "Create secure configuration"),
+    installerStep("credentials", "Generate local credentials"),
+    installerStep("service", "Configure background startup"),
+    installerStep("start", "Start Local Agent"),
+    installerStep("verify", "Verify connection"),
+  ];
+  const mark = (id, state, message) => {
+    const step = steps.find((entry) => entry.id === id);
+    if (step) {
+      step.state = state;
+      step.message = message || step.message;
+      step.at = new Date().toISOString();
+    }
+  };
+  try {
+    const runtime = getBundledLocalAgentRuntime();
+    if (!runtime.exists) {
+      mark("runtime", "failed", "The bundled Local Agent runtime is missing. Repair AnxOS Control Center, then retry.");
+      throw Object.assign(new Error("Bundled Local Agent runtime is missing or incomplete."), { code: "LOCAL_AGENT_RUNTIME_MISSING", steps });
+    }
+    mark("runtime", "complete", "Bundled runtime is available.");
+
+    ensureManagedAgentDirectories();
+    mark("directories", "complete", "Managed folders are ready.");
+
+    const current = readConfig();
+    const config = saveConfig({
+      ...current,
+      name: LOCAL_AGENT_DISPLAY_NAME,
+      host: "127.0.0.1",
+      allowedFolders: current.allowedFolders?.length ? current.allowedFolders : defaults().allowedFolders,
+      storageRoots: current.storageRoots?.length ? current.storageRoots : defaults().storageRoots,
+      ownerMachine: true,
+      autoStart: options.autoStart !== false,
+    });
+    mark("configuration", "complete", "Local Agent configuration is ready.");
+
+    const localAgentUrl = getLocalAgentUrl(config);
+    const token = rotateAgentSettingsToken({ backendMode: "agent", agentUrl: localAgentUrl });
+    saveAgentSettings({ backendMode: "agent", agentUrl: localAgentUrl });
+    mark("credentials", "complete", `Secure local credentials were generated. Fingerprint ${token.fingerprint || "available"}.`);
+
+    let serviceWarning = null;
+    if (options.installService !== false) {
+      try {
+        await installService();
+        mark("service", "complete", "Background startup is configured.");
+      } catch (error) {
+        serviceWarning = {
+          code: error.code || "SERVICE_INSTALL_SKIPPED",
+          message: error.recoverySuggestion || error.message || "Background startup could not be configured.",
+        };
+        mark("service", error.code === "ELEVATION_REQUIRED" ? "blocked" : "warning", serviceWarning.message);
+      }
+    } else {
+      mark("service", "skipped", "Background startup was skipped.");
+    }
+
+    const statusBeforeStart = await getStatus();
+    if (!statusBeforeStart.running) {
+      operationInFlight = null;
+      await start();
+      operationInFlight = "install";
+    }
+    mark("start", "complete", "Local Agent started.");
+
+    const connection = await testConnection({ backendMode: "agent", agentUrl: localAgentUrl });
+    if (!connection.connected) {
+      mark("verify", "failed", connection.message || "Local Agent did not pass the connection check.");
+      throw Object.assign(new Error(connection.message || "Local Agent did not pass the connection check."), { code: "LOCAL_AGENT_VERIFY_FAILED", steps });
+    }
+    mark("verify", "complete", "Desktop reconnected to the Local Agent.");
+    lastRestartReason = "Installed Local Agent from AnxOS";
+    lastError = null;
+    return {
+      ok: true,
+      installed: true,
+      started: true,
+      serviceWarning,
+      steps,
+      status: await getStatus(),
+    };
+  } catch (error) {
+    lastError = { code: error.code || "LOCAL_AGENT_INSTALL_FAILED", message: error.message };
+    diagnostics.logError("agent-control", "install-local-agent", error, { steps }, { file: "service-manager" });
+    error.steps = error.steps || steps;
+    throw error;
+  } finally {
+    operationInFlight = null;
+  }
+}
+
 async function probePort(port) { return new Promise((resolve) => { const socket = net.connect({ host: "127.0.0.1", port, timeout: 800 }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => resolve(false)); socket.once("timeout", () => { socket.destroy(); resolve(false); }); }); }
+
+async function waitForLocalAgentHealth(config, timeoutMs = 3500) {
+  const startedAt = Date.now();
+  let lastError = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const health = await agentClient.getHealth(getLocalAgentHealthConfig(config));
+      if (health?.ok) return health;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  if (lastError) throw lastError;
+  throw Object.assign(new Error("Local Agent did not become healthy before the startup timeout."), { code: "AGENT_START_TIMEOUT" });
+}
+
+async function waitForLocalAgentStopped(config, timeoutMs = 3500) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const health = await agentClient.getHealth(getLocalAgentHealthConfig(config)).catch(() => null);
+    if (!health?.ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return false;
+}
 
 function getLocalAgentUrl(config) {
   return `http://127.0.0.1:${config.port}`;
@@ -754,6 +924,7 @@ module.exports = {
   getRuntimeConfigPath,
   getStatus,
   installService,
+  installLocalAgent,
   listAgents,
   openDataFolder,
   openLogs,

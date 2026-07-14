@@ -1,0 +1,64 @@
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+
+const root = path.resolve(__dirname, "..");
+const agentControl = fs.readFileSync(path.join(root, "src", "services", "agentControlService.js"), "utf8");
+const ipc = fs.readFileSync(path.join(root, "src", "ipc", "agentControlIpc.js"), "utf8");
+const preload = fs.readFileSync(path.join(root, "preload.js"), "utf8");
+const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+[
+  "async function installLocalAgent",
+  "ensureManagedAgentDirectories",
+  "getAgentLogsDirectory",
+  "getAgentInstancesDirectory",
+  "getAgentBackupsDirectory",
+  "getAgentTempDirectory",
+  "rotateAgentSettingsToken",
+  "saveAgentSettings",
+  "testConnection",
+  "LOCAL_AGENT_RUNTIME_MISSING",
+  "LOCAL_AGENT_VERIFY_FAILED",
+  "serviceWarning",
+  "operationInFlight = null;",
+  "operationInFlight = \"install\";",
+  "status: await getStatus()",
+].forEach((needle) => {
+  assert(agentControl.includes(needle), `Local Agent installer service should include ${needle}.`);
+});
+
+assert(!agentControl.includes("token: token.token"), "Installer results must not return raw tokens.");
+assert(!agentControl.includes("agentToken: token.token"), "Installer results must not expose generated Agent tokens.");
+
+[
+  "agentControl:installLocalAgent",
+  "runLocalLifecycle(\"install-local-agent\"",
+].forEach((needle) => assert(ipc.includes(needle), `Agent Control IPC should expose ${needle}.`));
+
+assert(preload.includes("installLocalAgent: (payload = {}) => ipcRenderer.invoke(\"agentControl:installLocalAgent\", payload)"), "Preload should expose installLocalAgent.");
+
+[
+  "data-agent-local-installer",
+  "Install Local Agent",
+  "AnxOS Local Agent lets AnxOS manage servers, files, backups, dependencies, and services on this computer.",
+  "data-agent-control-action=\"installLocalAgent\"",
+  "data-agent-control-action=\"learnLocalAgent\"",
+  "data-agent-control-action=\"useRemoteAgent\"",
+  "data-agent-local-installer-steps",
+].forEach((needle) => assert(index.includes(needle), `Agent Control UI should include ${needle}.`));
+
+[
+  "renderLocalAgentInstallerSteps",
+  "agentLocalInstallerStatus",
+  "agentLocalInstallerSteps",
+  "api.installLocalAgent({ autoStart: true, installService: true })",
+  "The Local Agent runs on this PC",
+  "Remote Agent mode stays available",
+  "await refreshNodes()",
+].forEach((needle) => assert(app.includes(needle), `Renderer installer flow should include ${needle}.`));
+
+assert(!app.includes("agentToken copied"), "Renderer must not offer to copy Local Agent tokens.");
+
+console.log("Local Agent installer smoke checks passed.");

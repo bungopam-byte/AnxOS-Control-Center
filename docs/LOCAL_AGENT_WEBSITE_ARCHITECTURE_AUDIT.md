@@ -216,3 +216,9 @@ The Phase 2 implementation distinguishes local desktop presence, local Agent rea
 Packaged builds now include an unpacked `local-agent-runtime` resource through `electron-builder` `extraResources`. The bundle contains the Agent source, required shared runtime modules, the Agent config template, Marketplace template metadata, and a runtime manifest. It excludes logs, runtime config directories, `.env` files, source maps, package lockfiles, and dependency trees that are not required by the Agent runtime.
 
 `src/services/localAgentRuntimeService.js` resolves the managed runtime path. Development builds continue to use the repository tree, while packaged builds prefer `process.resourcesPath/local-agent-runtime`. `agentControlService` starts the Agent with Electron's Node runtime (`ELECTRON_RUN_AS_NODE=1`) and sets production runtime environment variables, so the Local Agent does not depend on globally installed Node.js. Renderer-facing status only exposes non-sensitive runtime metadata.
+
+## Phase 4 Installer Note
+
+Agent Control now exposes an in-app `Install Local Agent` action. The trusted main process validates the bundled runtime, creates managed config/data/logs/instances/backups/temp directories, writes runtime configuration, rotates the shared local Agent credential without returning the raw token, attempts background-startup registration, starts the bundled Agent, verifies the local connection, refreshes nodes, and reports beginner-readable installer steps.
+
+The installer handles missing runtime, busy operations, service elevation blocks, and failed verification with structured step states. It still uses the current scheduled-task/systemd startup layer; a proper Windows service backend, installer rollback, antivirus-specific recovery, disk-space preflight, and full interrupted-install resume remain later-phase work.

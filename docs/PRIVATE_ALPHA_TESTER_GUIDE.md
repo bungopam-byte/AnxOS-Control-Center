@@ -85,6 +85,15 @@ Before installing:
 - Install missing dependencies only after reviewing the plan.
 - Confirm the target port is not already in use.
 
+CurseForge behavior:
+
+- Do not create, paste, screenshot, or share a CurseForge developer API key.
+- CurseForge should load in packaged builds only when the AnxOS-hosted proxy or protected Agent configuration is available.
+- If CurseForge is not configured for the build, it should show a friendly unavailable state with retry and diagnostics code `CF-CONFIG-MISSING`.
+- Modrinth and other Marketplace providers should remain usable when CurseForge is unavailable.
+- Report any visible raw key, signed secret data, or key-like value in DevTools, logs, diagnostics, settings exports, crash reports, or network responses.
+- Server modpack installs should prefer official CurseForge server packs. A client-only pack must fail with a clear explanation instead of being installed as a server.
+
 During install:
 
 - Watch Operations and Download Manager.

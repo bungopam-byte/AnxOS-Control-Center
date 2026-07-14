@@ -27979,7 +27979,7 @@ async function testCurseForgeConnection() {
     if (result?.ok) {
       showToast(`CurseForge browsing test passed (${diagnostics.mode || "configured"}).`);
     } else {
-      showToast(`CurseForge test failed: ${result?.error?.code || "unknown"}.`);
+      showToast(getCurseForgeTestFailureMessage(result));
     }
     renderMarketplaceSettings(await desktopApiState.api.settings.getMarketplaceConfig());
     renderCurseForgeDiagnostics(diagnostics);
@@ -27990,6 +27990,24 @@ async function testCurseForgeConnection() {
       marketplaceConfigTestButton.disabled = false;
     }
   }
+}
+
+function getCurseForgeTestFailureMessage(result = {}) {
+  const diagnostics = result?.diagnostics || {};
+  const errorCode = result?.error?.code || diagnostics.errorCode || "unknown";
+  if (diagnostics.agentReachable === false) {
+    return "CurseForge test failed: selected Agent is unreachable.";
+  }
+  if (diagnostics.configured === false) {
+    return "CurseForge test failed: no API key is configured for the selected Agent.";
+  }
+  if (diagnostics.apiConnectivity === "failed") {
+    return `CurseForge API test failed: ${errorCode}.`;
+  }
+  if (diagnostics.cdnAuthenticationConnectivity === "failed") {
+    return `CurseForge CDN authentication test failed: ${errorCode}.`;
+  }
+  return `CurseForge test failed: ${errorCode}.`;
 }
 
 async function testAgentConnection(options = {}) {

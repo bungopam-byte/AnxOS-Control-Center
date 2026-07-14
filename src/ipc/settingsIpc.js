@@ -134,12 +134,19 @@ async function testSelectedAgentCurseForgeConnection() {
       targetLabel: "curseforge-diagnostics-test",
       suppressConnectionRefusedLog: true,
       timeoutMs: 45000,
-    }).catch((error) => ({
-      ok: false,
-      errorCode: error?.payload?.error?.code || error?.code || "CURSEFORGE_AGENT_TEST_FAILED",
-      api: { ok: false, status: error?.status || null, errorCode: error?.payload?.error?.code || error?.code || null },
-      cdn: { ok: false, status: null, errorCode: null },
-    }));
+    }).catch((error) => {
+      const payload = error?.payload && typeof error.payload === "object" && !Array.isArray(error.payload)
+        ? error.payload
+        : null;
+      const errorCode = payload?.errorCode || payload?.error?.code || error?.code || "CURSEFORGE_AGENT_TEST_FAILED";
+      return {
+        ok: false,
+        checkedAt: payload?.checkedAt || checkedAt,
+        errorCode,
+        api: payload?.api || { ok: false, status: error?.status || null, errorCode },
+        cdn: payload?.cdn || { ok: false, status: null, errorCode: null },
+      };
+    });
     return {
       ok: Boolean(test.ok),
       provider: "curseforge",

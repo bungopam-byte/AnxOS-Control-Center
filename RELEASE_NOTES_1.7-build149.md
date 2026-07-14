@@ -2,7 +2,7 @@
 
 This Private Alpha hotfix is for invited testers only. It is not stable, production-ready, fully validated, or generally available.
 
-Build 149 replaces build 148 for testers because build 148 can launch but the packaged Marketplace catalog can be empty when required config files are missing from `app.asar`.
+Build 149 replaces build 148 for testers because build 148 can launch but the packaged Marketplace catalog can be empty when required config files are missing from `app.asar`. It also fixes the CurseForge connection test path that could show a generic `AGENT_HTTP_ERROR` instead of the real provider diagnostic result.
 
 ## Highlights
 
@@ -10,6 +10,8 @@ Build 149 replaces build 148 for testers because build 148 can launch but the pa
 - Added `config/agent.example.json` to the same packaging verification path.
 - Added artifact smoke assertions so future Windows and Linux packages must include the Marketplace template catalog.
 - Preserved the build 148 shared-module packaging fix.
+- Preserved CurseForge API and CDN diagnostic results when the selected Agent is reachable but the provider probe fails.
+- Updated the CurseForge test toast to distinguish Agent reachability, missing configuration, API probe failures, and CDN authentication probe failures.
 - Bumped the Electron updater package version to `1.0.51` for Private Alpha hotfix detection.
 
 ## Intended audience
@@ -21,7 +23,7 @@ Build 149 replaces build 148 for testers because build 148 can launch but the pa
 
 ## Who it is for
 
-This release is for invited testers who saw an empty Marketplace in build 148 or are starting Local Agent testing from the website.
+This release is for invited testers who saw an empty Marketplace in build 148, saw a generic CurseForge `AGENT_HTTP_ERROR`, or are starting Local Agent testing from the website.
 
 New installations should use build 149 from the website, complete onboarding, choose Use This PC, install the Local Agent, pair automatically, scan dependencies, and create a test Marketplace server.
 
@@ -44,7 +46,7 @@ Existing remote Agent users do not need to change their Debian or remote Windows
 ## Upgrade guidance
 
 - New Windows users should use the build 149 Windows installer from the website, choose Use This PC, and let onboarding install and pair the Local Agent.
-- Existing build 148 users who see an empty Marketplace should install build 149 manually.
+- Existing build 148 users who see an empty Marketplace or generic CurseForge `AGENT_HTTP_ERROR` should install build 149 manually.
 - Existing build 146 or 147 users who see a JavaScript startup error should install build 149 manually because the app may crash before it can run an update check.
 - Existing remote Agent users can keep using their configured remote nodes and add This PC later.
 - Existing private-alpha users should verify the website version, installer filename, checksums, and release notes before replacing an installed build.
@@ -52,6 +54,7 @@ Existing remote Agent users do not need to change their Debian or remote Windows
 ## Repair guidance
 
 - If Marketplace shows no templates immediately after install, close AnxOS and install build 149 from the website.
+- If the CurseForge connection test fails, build 149 should show whether the selected Agent is unreachable, missing configuration, failing the API probe, or failing the CDN authentication probe.
 - If the Local Agent is offline after build 149 starts, use Agent diagnostics to start or repair the service.
 - If pairing fails, use Repair Pairing instead of copying tokens manually.
 - If dependencies are missing or unavailable, re-run the dependency scan after installation or restart.

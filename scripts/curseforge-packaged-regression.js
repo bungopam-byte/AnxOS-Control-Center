@@ -74,6 +74,10 @@ function assertPackagedConfigurationSurface() {
   assert(providerSource.includes("requestAgentProxyJson"), "Desktop provider must support Agent proxy configuration.");
   assert(agentSource.includes("/api/v1/marketplace/curseforge/download"), "Agent must expose a CurseForge download proxy route.");
   assert(agentSource.includes('"x-api-key"'), "Agent CurseForge proxy must attach x-api-key.");
+  assert(
+    agentSource.includes("return { statusCode: 200, body: result };"),
+    "Agent CurseForge test endpoint should return diagnostic failures as structured 200 responses."
+  );
 }
 
 function assertDownloadAuthenticationCoverage() {

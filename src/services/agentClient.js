@@ -412,6 +412,13 @@ function getAgentHttpErrorMessage(status, code, payload) {
   return `Agent request failed with HTTP ${status}.`;
 }
 
+function getAgentPayloadErrorCode(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "AGENT_HTTP_ERROR";
+  }
+  return payload.error?.code || payload.errorCode || payload.code || "AGENT_HTTP_ERROR";
+}
+
 function getDockerApiExpectation(pathname, method = "GET") {
   if (!String(pathname || "").startsWith("/api/v1/docker/")) {
     return null;
@@ -564,10 +571,7 @@ async function requestJson(pathname, options = {}) {
     const payload = contentType.includes("application/json") ? await response.json() : await response.text();
 
     if (!response.ok) {
-      const responseErrorCode =
-        payload && typeof payload === "object" && !Array.isArray(payload)
-          ? payload.error?.code || "AGENT_HTTP_ERROR"
-          : "AGENT_HTTP_ERROR";
+      const responseErrorCode = getAgentPayloadErrorCode(payload);
       const dockerExpectation = response.status === 404 ? getDockerApiExpectation(pathname, method) : null;
       const dockerNotFoundDetails = dockerExpectation
         ? createDockerNotFoundDetails({ method, pathname, requestUrl, expectation: dockerExpectation })
@@ -932,14 +936,11 @@ async function requestBuffer(pathname, options = {}) {
 
     if (!response.ok) {
       const payload = parseAgentPayload(buffer, contentType);
-      const responseErrorCode =
-        payload && typeof payload === "object" && !Array.isArray(payload)
-          ? payload.error?.code || "AGENT_HTTP_ERROR"
-          : "AGENT_HTTP_ERROR";
+      const responseErrorCode = getAgentPayloadErrorCode(payload);
       const message = getAgentHttpErrorMessage(response.status, responseErrorCode, payload);
       const error = new AgentClientError(message, {
         status: response.status,
-        code: "AGENT_HTTP_ERROR",
+        code: responseErrorCode,
         payload,
       });
       logAgentRequestFailure(pathname, response.status, responseErrorCode, {

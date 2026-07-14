@@ -51,12 +51,14 @@ window.ANXOS_DOWNLOAD_CONFIG = {
           "date": "July 14, 2026",
           "datetime": "2026-07-14",
           "title": "Build 149 Private Alpha hotfix",
-          "summary": "Private Alpha hotfix for an empty packaged Marketplace caused by missing template catalog config.",
+          "summary": "Private Alpha hotfix for an empty packaged Marketplace and generic CurseForge Agent diagnostics.",
           "changes": [
               "Fixed packaged Marketplace loading by injecting config/marketplace-templates.json into app.asar.",
               "Added config/agent.example.json to the same packaging verification path.",
               "Added artifact smoke assertions so Windows and Linux packages must include the Marketplace template catalog.",
               "Preserved the build 148 shared-module packaging fix.",
+              "Preserved CurseForge API and CDN diagnostic results instead of collapsing them to AGENT_HTTP_ERROR.",
+              "Updated CurseForge Settings feedback to distinguish Agent reachability, missing configuration, API probe failures, and CDN authentication probe failures.",
               "Bumped the Electron updater package version to 1.0.51 so Private Alpha hotfix updates can be detected."
           ],
           "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build149"

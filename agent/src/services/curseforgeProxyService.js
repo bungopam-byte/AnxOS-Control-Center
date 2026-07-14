@@ -340,7 +340,7 @@ async function testCurseForgeConnectivity() {
   } catch (error) {
     result.api = { ok: false, status: error?.details?.status || error?.statusCode || null, errorCode: error?.code || "CURSEFORGE_API_TEST_FAILED" };
     result.errorCode = result.api.errorCode;
-    return { statusCode: error.statusCode || 502, body: result };
+    return { statusCode: 200, body: result };
   }
 
   try {
@@ -379,7 +379,7 @@ async function testCurseForgeConnectivity() {
       hostname: error?.details?.hostname || null,
     };
     result.errorCode = result.cdn.errorCode;
-    return { statusCode: error.statusCode || 502, body: result };
+    return { statusCode: 200, body: result };
   }
 }
 

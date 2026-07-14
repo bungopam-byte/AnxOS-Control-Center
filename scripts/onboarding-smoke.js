@@ -78,6 +78,11 @@ try {
     "data-contextual-help-modal",
     "data-help-topic=\"agent\"",
     "data-help-action=\"reset-tips\"",
+    "data-setup-health-center",
+    "data-setup-health=\"coreProgress\"",
+    "data-setup-health=\"optionalProgress\"",
+    "data-setup-health-action=\"continue\"",
+    "Create Your First Server",
   ].forEach((needle) => assert(index.includes(needle), `Onboarding UI missing: ${needle}`));
 
   [
@@ -121,11 +126,33 @@ try {
     '"onboarding.currentStep": "welcome"',
     "activateModal(onboardingWelcomeModal",
     "activateModal(onboardingWizardModal",
+    "function getSetupHealthState",
+    "Essential",
+    "Recommended",
+    "Optional",
+    "optionalItems",
+    "function renderAgentBeginnerSummary",
+    "Local AnxOS Agent",
+    "Remote Agents are listed separately from this computer.",
+    "service.supported === false",
+    "localAgent.lifecycleSupported === false",
+    "FRIENDLY_ERROR_DEFINITIONS",
+    "Copy Technical Details",
+    "normalizeFriendlyError",
+    "openFirstServerGuide",
+    "openMarketplaceWizard(option.templateId)",
+    "first-server-guide-title",
+    "first-server-guide-description",
   ].forEach((needle) => assert(app.includes(needle), `Onboarding renderer wiring missing: ${needle}`));
 
   assert(app.includes("Unable to confirm"), "Wizard should use Unable to confirm instead of fake ready states.");
   assert(app.includes("No dependency check has completed yet"), "Wizard dependency step should not invent dependency results.");
   assert(app.includes("settings[\"onboarding.started\"] === true"), "Interrupted onboarding should resume the saved wizard step.");
+  assert(app.includes("No servers yet") && app.includes("Only this computer is connected"), "Dashboard empty states should give clear first steps.");
+  assert(app.includes("The Agent is not responding.") && app.includes("Check that the Agent is running, then try again."), "Common backend errors should have friendly mappings.");
+  assert(app.includes("copyNotificationDetails") && app.includes("notification.technicalDetails"), "Copied technical details should use the structured notification details path.");
+  assert(!app.includes("Something went wrong"), "Raw vague error copy must not be the only user-facing error fallback.");
+  assert(!app.includes("Agent marked not installed only because unreachable"), "Static guard should not rely on explanatory placeholder text.");
 
   assert(styles.includes(".app-modal--welcome"), "Welcome modal CSS should be scoped.");
   assert(styles.includes(".app-modal--onboarding-wizard"), "Wizard modal CSS should be scoped.");
@@ -133,6 +160,9 @@ try {
   assert(styles.includes(".help-topic-grid"), "Help topic grid CSS should exist.");
   assert(styles.includes(".onboarding-step-track"), "Wizard step tracker CSS should exist.");
   assert(styles.includes(".onboarding-feature-grid"), "Welcome feature grid CSS should exist.");
+  assert(styles.includes(".dashboard-setup-health"), "Setup Health center CSS should exist.");
+  assert(styles.includes(".first-server-card:focus-visible"), "First-server guide cards should have visible keyboard focus.");
+  assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "Reduced-motion users should be respected.");
   assert(packageJson.includes('"onboarding:smoke"'), "package.json should expose onboarding smoke command.");
 
   console.log("Onboarding smoke checks passed.");

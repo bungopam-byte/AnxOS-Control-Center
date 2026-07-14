@@ -8,17 +8,16 @@ const { openExternalUrl } = require("./externalUrlService");
 const { OFFICIAL_SITE_ORIGIN } = require("../shared/officialSite");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 
-const UPDATE_REPOSITORY = "bungopam-byte/AnxOS-Control-Center";
+const UPDATE_REPOSITORY = process.env.ANXOS_UPDATE_REPOSITORY || "bungopam-byte/AnxOS-Control-Center-Releases";
 const UPDATE_RELEASES_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
 const WEBSITE_CONFIG_URLS = [
   process.env.ANXOS_WEBSITE_CONFIG_URL,
   `${OFFICIAL_SITE_ORIGIN}/config.js`,
 ].filter(Boolean);
 const UPDATE_MANIFEST_URLS = [
-  process.env.ANXHUB_UPDATE_MANIFEST_URL,
   process.env.ANXOS_UPDATE_MANIFEST_URL,
+  process.env.ANXHUB_UPDATE_MANIFEST_URL,
   `https://github.com/${UPDATE_REPOSITORY}/releases/latest/download/update-manifest.json`,
-  "http://192.168.1.134:8766/update-manifest.json",
 ].filter(Boolean);
 const UPDATE_STATUS_CHANNEL = "updates:status";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;

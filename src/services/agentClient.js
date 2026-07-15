@@ -900,6 +900,141 @@ async function isHealthy(configOverride = null) {
   }
 }
 
+function normalizeNodeAgentPath(pathname) {
+  const value = trimValue(pathname);
+  if (!value) return "/api/v1/";
+  if (/^https?:\/\//i.test(value)) {
+    throw new AgentClientError("Agent node requests must use API paths, not absolute URLs.", {
+      code: "AGENT_NODE_ABSOLUTE_URL",
+    });
+  }
+  if (value.startsWith("/api/")) return value;
+  return value.startsWith("/") ? `/api/v1${value}` : `/api/v1/${value}`;
+}
+
+function createNodeAgentError(message, details = {}) {
+  return new AgentClientError(message, {
+    status: details.status || null,
+    code: details.code || null,
+    payload: {
+      error: {
+        code: details.code || null,
+        message,
+        details: {
+          nodeId: details.nodeId || null,
+          nodeName: details.nodeName || null,
+          endpoint: details.endpoint || null,
+          operation: details.operation || null,
+        },
+      },
+    },
+  });
+}
+
+function getNodeService() {
+  return require("./nodeService");
+}
+
+function resolveNodeAgentTarget(nodeId) {
+  const requestedNodeId = trimValue(nodeId);
+  if (!requestedNodeId) {
+    throw createNodeAgentError("Select a node before contacting an Agent.", {
+      code: "NODE_REQUIRED",
+      operation: "resolve-node-agent",
+    });
+  }
+
+  let node;
+  try {
+    node = getNodeService().getNode(requestedNodeId);
+  } catch {
+    throw createNodeAgentError("Node not found.", {
+      code: "NODE_NOT_FOUND",
+      nodeId: requestedNodeId,
+      operation: "resolve-node-agent",
+    });
+  }
+
+  const nodeName = node.displayName || node.name || node.id || requestedNodeId;
+  if (node.kind !== "agent") {
+    throw createNodeAgentError(`${nodeName} is not an Agent node.`, {
+      code: "NODE_NOT_AGENT",
+      nodeId: node.id || requestedNodeId,
+      nodeName,
+      operation: "resolve-node-agent",
+    });
+  }
+
+  if (node.enabled === false) {
+    throw createNodeAgentError(`${nodeName} is disabled. Enable the node before sending Agent requests.`, {
+      code: "NODE_DISABLED",
+      nodeId: node.id || requestedNodeId,
+      nodeName,
+      operation: "resolve-node-agent",
+    });
+  }
+
+  const config = getNodeService().getNodeAgentConfig(node.id);
+  return {
+    node,
+    nodeId: node.id,
+    nodeName,
+    config: {
+      ...config,
+      nodeId: node.id,
+      nodeName,
+      targetLabel: `node:${node.id}`,
+    },
+  };
+}
+
+class NodeAgentClient {
+  constructor(target) {
+    this.target = target;
+  }
+
+  request(pathname, options = {}) {
+    const endpoint = normalizeNodeAgentPath(pathname);
+    return requestJson(endpoint, {
+      ...options,
+      config: this.target.config,
+      targetLabel: this.target.config.targetLabel,
+    }).catch((error) => {
+      if (error instanceof AgentClientError) {
+        throw createNodeAgentError(`${this.target.nodeName}: ${error.message}`, {
+          status: error.status,
+          code: error.code,
+          nodeId: this.target.nodeId,
+          nodeName: this.target.nodeName,
+          endpoint,
+          operation: options.method || "GET",
+        });
+      }
+      throw error;
+    });
+  }
+
+  get(pathname, options = {}) {
+    return this.request(pathname, { ...options, method: "GET" });
+  }
+
+  post(pathname, body = null, options = {}) {
+    return this.request(pathname, { ...options, method: "POST", body });
+  }
+
+  put(pathname, body = null, options = {}) {
+    return this.request(pathname, { ...options, method: "PUT", body });
+  }
+
+  delete(pathname, options = {}) {
+    return this.request(pathname, { ...options, method: "DELETE" });
+  }
+}
+
+function forNode(nodeId) {
+  return new NodeAgentClient(resolveNodeAgentTarget(nodeId));
+}
+
 async function requestBuffer(pathname, options = {}) {
   const {
     config: configOverride = null,
@@ -2546,6 +2681,7 @@ module.exports = {
   getDockerCleanupPreview,
   getDockerSnapshot,
   getDockerSummary,
+  forNode,
   getDiagnostics,
   inspectDockerContainer,
   inspectDockerImage,

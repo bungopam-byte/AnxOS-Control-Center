@@ -38,6 +38,7 @@
     "agent:token:smoke": "node scripts/agent-token-smoke.js",
     "agent:instances:smoke": "node scripts/agent-instance-record-smoke.js",
     "instances:runtime:smoke": "node scripts/instance-runtime-smoke.js",
+    "node:agent-client:smoke": "node scripts/node-agent-client-smoke.js",
     "node:legacy-migration:smoke": "node scripts/node-legacy-migration-smoke.js",
     "node:registry:smoke": "node scripts/node-registry-model-smoke.js",
     "node:switch:smoke": "node scripts/node-switch-smoke.js",

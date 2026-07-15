@@ -26,7 +26,9 @@ assert(preloadSource.includes("generateToken: () => ipcRenderer.invoke(\"nodes:g
 
 assert(htmlSource.includes('data-node-action="generate-token"') && htmlSource.includes('data-node-action="copy-token"'), "Add/Edit Node must expose Generate Token and Copy Token controls.");
 assert(appSource.includes("Your saved token is stored securely") && htmlSource.includes("Treat this token like a password."), "Node token UI must explain saved credential and security handling.");
-assert(htmlSource.includes("Temporary Linux shell example") && htmlSource.includes("Temporary Windows PowerShell example"), "Node token setup guidance must include platform-aware examples.");
+assert(htmlSource.includes("Pair with Code") && htmlSource.includes("No manual token setup is required."), "Normal node setup must prefer Pair with Code without manual token setup.");
+assert(htmlSource.includes("Advanced manual token setup is intended for development, recovery, or headless administration."), "Manual token setup must stay scoped to advanced/recovery/headless use.");
+assert(!htmlSource.includes("Temporary Linux shell example") && !htmlSource.includes("Temporary Windows PowerShell example"), "Normal node token setup must not show terminal command examples.");
 
 assert(appSource.includes("async function generateNodeAgentToken()") && appSource.includes("desktopApiState.api.nodes.generateToken()"), "Renderer must request generated tokens from trusted IPC.");
 assert(appSource.includes("async function copyNodeAgentToken()") && appSource.includes("Agent token copied."), "Renderer must copy only the unsaved visible token with in-app feedback.");

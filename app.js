@@ -704,7 +704,6 @@ let ownerLogEntries = [];
 let nodesState = { selectedNodeId: "application-host", nodes: [], applicationHost: null };
 let nodeHealthState = null;
 let nodeHealthGeneration = 0;
-let nodeRefreshGeneration = 0;
 const nodeHealthSnapshotCache = new Map();
 let previousNodeHealthState = null;
 let previousOwnerOverviewState = null;
@@ -1618,7 +1617,7 @@ function setDashboardFriendlyField(name, value) {
 function getFriendlyDashboardState() {
   const nodeId = getSelectedNodeId();
   const selectedNode = getSelectedNode();
-  const targetContext = getSelectedTargetContext();
+  const activeTarget = resolveActiveManagementTarget();
   const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
   const connectedRemoteNodes = remoteNodes.filter((node) => getNodeVisualState(node) === "online");
   const instances = getInstances();
@@ -1630,21 +1629,21 @@ function getFriendlyDashboardState() {
   const onboardingComplete = getCurrentSettings()["onboarding.completed"] === true;
   const dockerReady = dockerWorkspaceState?.ready === true;
   const metrics = {
-    selectedSystem: targetContext.displayName,
-    selectedSystemStatus: targetContext.displayStatus,
+    selectedSystem: `${activeTarget.name} · ${activeTarget.targetType === "application-host" ? "Local Application Host" : activeTarget.targetType === "local-agent" ? "Local Agent" : "Remote Agent"}`,
+    selectedSystemStatus: activeTarget.connectionState.label,
     updated: hasSystemSnapshot ? formatHealthCheckedAt(latestSystemSnapshotAt) : "Waiting for metrics",
     health: `${nodeHealth.state} · ${nodeHealth.issueCount} issue${nodeHealth.issueCount === 1 ? "" : "s"}`,
   };
 
-  const computer = targetContext.targetType === "application-host" && (hasSystemSnapshot || runtimeInfoState)
+  const computer = activeTarget.targetType === "application-host" && (hasSystemSnapshot || runtimeInfoState)
     ? {
       status: "Ready",
       detail: `${runtimeInfoState?.hostname || latestSystemSnapshot?.host?.hostname || "This computer"} is available to AnxOS.`,
     }
-    : targetContext.targetType !== "application-host"
+    : activeTarget.targetType !== "application-host"
       ? {
-        status: targetContext.displayStatus,
-        detail: `${targetContext.name} is the selected target. Local Windows metrics are hidden to avoid mixing sources.`,
+        status: activeTarget.connectionState.label,
+        detail: `${activeTarget.name} is the selected target. Local Windows metrics are hidden to avoid mixing sources.`,
       }
     : {
       status: "Unable to confirm",
@@ -26618,81 +26617,43 @@ async function rotateAgentTokenFromSettings() {
   }
 }
 
-function getSelectionNodeLookup() {
-  const selectedNodeId = nodesState.selectedNodeId || "application-host";
-  const selectedNode = (nodesState.nodes || []).find((node) => node.id === selectedNodeId) || null;
-  return { selectedNodeId, selectedNode };
-}
-
-function getFallbackSelectedNode() {
-  const fallbackNode = (nodesState.nodes || []).find((node) => node.kind === "application-host") || (nodesState.nodes || [])[0] || null;
-  return fallbackNode || { id: "application-host", kind: "application-host", displayName: "Application Host" };
-}
-
-function buildSelectedTargetContext(selectedNode = getFallbackSelectedNode()) {
-  const normalizedNode = selectedNode && selectedNode.id ? selectedNode : getFallbackSelectedNode();
-  const isApplicationHost = normalizedNode.kind === "application-host";
-  const isLocalAgent = !isApplicationHost && normalizedNode.localAgent === true;
-  const targetType = isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : "registered-node";
-  const connectionState = getNodeConnectionState(normalizedNode);
-  const identity = getNodeIdentity(normalizedNode);
-  const nodeTypeLabel = isApplicationHost ? "Local Application Host" : isLocalAgent ? "Local Agent" : "Remote Agent";
-  const name = normalizedNode.displayName || normalizedNode.name || (isApplicationHost ? "Application Host" : "Selected Agent");
-  return {
-    targetType,
-    selectedNode: normalizedNode,
-    nodeId: isApplicationHost ? null : normalizedNode.id || null,
-    id: normalizedNode.id || "application-host",
-    name,
-    displayName: `${name} · ${nodeTypeLabel}`,
-    displayStatus: connectionState.label,
-    nodeTypeLabel,
-    agentUrl: isApplicationHost ? null : normalizedNode.agentUrl || normalizedNode.baseUrl || null,
-    targetLabel: isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : `node:${normalizedNode.id}`,
-    credentialSource: isApplicationHost ? "local-application-host" : isLocalAgent ? "local-agent-config" : "protected-node-credential",
-    platform: identity.platform || normalizedNode.platform || normalizedNode.applicationHost?.platform || null,
-    architecture: identity.architecture || identity.arch || normalizedNode.architecture || normalizedNode.applicationHost?.architecture || null,
-    operatingSystem: identity.operatingSystem || normalizedNode.operatingSystem || normalizedNode.applicationHost?.operatingSystem || null,
-    hostname: identity.hostname || normalizedNode.hostname || normalizedNode.applicationHost?.hostname || null,
-    apiVersion: identity.apiVersion || normalizedNode.connection?.apiVersion || normalizedNode.apiVersion || null,
-    protocolVersion: identity.protocolVersion || normalizedNode.connection?.protocolVersion || normalizedNode.protocolVersion || null,
-    agentVersion: identity.agentVersion || normalizedNode.agentVersion || null,
-    reachable: connectionState.key === "connected" || connectionState.key === "degraded" || connectionState.key === "unauthorized",
-    authenticated: connectionState.key === "connected" || connectionState.key === "degraded",
-    compatibility: normalizedNode.connection?.compatibility || null,
-    connectionState,
-    lastSuccessfulResponse: normalizedNode.connection?.lastSeen || normalizedNode.connection?.checkedAt || normalizedNode.updatedAt || null,
-    requestGenerationId: `${selectedNodeContextVersion}:${nodeRequestSerials.get("system") || 0}:${nodeRequestSerials.get("agent-control") || 0}`,
-  };
-}
-
-function syncSharedTargetContext(selectedNode = null) {
-  const selection = getSelectionNodeLookup();
-  const nextNode = selectedNode || selection.selectedNode || getFallbackSelectedNode();
-  sharedTargetContext = buildSelectedTargetContext(nextNode);
-  return sharedTargetContext;
-}
-
-function getSelectedTargetContext() {
-  const selection = getSelectionNodeLookup();
-  const selectedNode = selection.selectedNode || getFallbackSelectedNode();
-  const nextContext = buildSelectedTargetContext(selectedNode);
-  if (!sharedTargetContext || sharedTargetContext.id !== nextContext.id || sharedTargetContext.displayStatus !== nextContext.displayStatus || sharedTargetContext.displayName !== nextContext.displayName || sharedTargetContext.targetType !== nextContext.targetType || sharedTargetContext.selectedNode !== selectedNode) {
-    sharedTargetContext = nextContext;
-  }
-  return sharedTargetContext;
-}
-
 function getSelectedNodeId() {
-  return getSelectedTargetContext().id || "application-host";
+  return nodesState.selectedNodeId || "application-host";
 }
 
 function getSelectedNode() {
-  return getSelectedTargetContext().selectedNode || null;
+  return (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId()) || null;
 }
 
 function resolveActiveManagementTarget() {
-  return getSelectedTargetContext();
+  const node = getSelectedNode() || { id: "application-host", kind: "application-host", displayName: "Windows Desktop" };
+  const isApplicationHost = node.kind === "application-host";
+  const isLocalAgent = !isApplicationHost && node.localAgent === true;
+  const targetType = isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : "registered-node";
+  const connectionState = getNodeConnectionState(node);
+  const identity = getNodeIdentity(node);
+  return {
+    targetType,
+    nodeId: isApplicationHost ? null : node.id || null,
+    id: node.id || "application-host",
+    name: node.displayName || node.name || (isApplicationHost ? "Windows Desktop" : "Selected Agent"),
+    agentUrl: isApplicationHost ? null : node.agentUrl || node.baseUrl || null,
+    targetLabel: isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : `node:${node.id}`,
+    credentialSource: isApplicationHost ? "local-application-host" : isLocalAgent ? "local-agent-config" : "protected-node-credential",
+    platform: identity.platform || node.platform || node.applicationHost?.platform || null,
+    architecture: identity.architecture || identity.arch || node.architecture || node.applicationHost?.architecture || null,
+    operatingSystem: identity.operatingSystem || node.operatingSystem || node.applicationHost?.operatingSystem || null,
+    hostname: identity.hostname || node.hostname || node.applicationHost?.hostname || null,
+    apiVersion: identity.apiVersion || node.connection?.apiVersion || node.apiVersion || null,
+    protocolVersion: identity.protocolVersion || node.connection?.protocolVersion || node.protocolVersion || null,
+    agentVersion: identity.agentVersion || node.agentVersion || null,
+    reachable: connectionState.key === "connected" || connectionState.key === "degraded" || connectionState.key === "unauthorized",
+    authenticated: connectionState.key === "connected" || connectionState.key === "degraded",
+    compatibility: node.connection?.compatibility || null,
+    connectionState,
+    lastSuccessfulResponse: node.connection?.lastSeen || node.connection?.checkedAt || node.updatedAt || null,
+    requestGenerationId: `${selectedNodeContextVersion}:${nodeRequestSerials.get("system") || 0}:${nodeRequestSerials.get("agent-control") || 0}`,
+  };
 }
 
 function getNodeRequestContext(label = "node-request") {
@@ -28683,53 +28644,25 @@ function renderNodes() {
 
 async function refreshNodes(options = {}) {
   const desktopApiState = getDesktopApiState();
-  const refreshGeneration = ++nodeRefreshGeneration;
   const previousSelectedNodeId = nodesState.selectedNodeId || "application-host";
   if (!desktopApiState.hasNodes) {
-    if (refreshGeneration !== nodeRefreshGeneration) {
-      return;
-    }
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
-    syncSharedTargetContext();
     nodeHealthSnapshotCache.clear();
     refreshNodeHealth({ notify: false });
     renderNodes();
     return;
   }
   try {
-    const nextState = options.forceHealthRefresh || typeof desktopApiState.api.nodes.restore !== "function"
+    nodesState = options.forceHealthRefresh || typeof desktopApiState.api.nodes.restore !== "function"
       ? await desktopApiState.api.nodes.list()
       : await desktopApiState.api.nodes.restore();
-    if (refreshGeneration !== nodeRefreshGeneration) {
-      return;
-    }
-    const nextNodes = Array.isArray(nextState?.nodes) ? nextState.nodes : [];
-    const fallbackNodeId = nextNodes.find((node) => node.kind === "application-host")?.id || nextNodes[0]?.id || "application-host";
-    const resolvedSelectedNodeId = nextState?.selectedNodeId && nextNodes.some((node) => node.id === nextState.selectedNodeId)
-      ? nextState.selectedNodeId
-      : previousSelectedNodeId && nextNodes.some((node) => node.id === previousSelectedNodeId)
-        ? previousSelectedNodeId
-        : fallbackNodeId;
-    nodesState = {
-      ...(nextState || {}),
-      selectedNodeId: resolvedSelectedNodeId,
-      nodes: nextNodes,
-      applicationHost: nextState?.applicationHost || null,
-    };
-    if (previousSelectedNodeId !== "application-host" && resolvedSelectedNodeId !== previousSelectedNodeId) {
-      const selected = nextNodes.find((node) => node.id === resolvedSelectedNodeId);
+    if (previousSelectedNodeId !== "application-host" && nodesState.selectedNodeId !== previousSelectedNodeId) {
+      const selected = (nodesState.nodes || []).find((node) => node.id === nodesState.selectedNodeId);
       showToast(`Selected node was unavailable. Switched to ${selected?.displayName || "the available default node"}.`, "warning");
     }
   } catch {
-    if (refreshGeneration !== nodeRefreshGeneration) {
-      return;
-    }
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
   }
-  if (refreshGeneration !== nodeRefreshGeneration) {
-    return;
-  }
-  syncSharedTargetContext();
   nodeHealthSnapshotCache.clear();
   refreshNodeHealth();
   renderNodes();
@@ -28761,7 +28694,6 @@ async function selectNode(nodeId) {
     nodes: Array.isArray(nodesState.nodes) ? [...nodesState.nodes] : [],
   };
   if (nextNodeId === previousNodeId && !nodeSwitchInProgress) {
-    syncSharedTargetContext((nodesState.nodes || []).find((node) => node.id === nextNodeId) || null);
     renderNodes();
     return { changed: false, selectedNodeId: previousNodeId };
   }
@@ -28772,7 +28704,6 @@ async function selectNode(nodeId) {
   }
 
   nodesState.selectedNodeId = nextNodeId;
-  syncSharedTargetContext((nodesState.nodes || []).find((node) => node.id === nextNodeId) || null);
   selectedNodeContextVersion += 1;
   nodeSwitchInProgress = true;
   const context = getNodeRequestContext("select-node");
@@ -28781,37 +28712,17 @@ async function selectNode(nodeId) {
   if (desktopApiState.hasNodes) {
     try {
       const persistedState = await desktopApiState.api.nodes.select(nodesState.selectedNodeId);
-      if (!isNodeRequestCurrent(context)) {
-        nodeSwitchInProgress = false;
-        syncSharedTargetContext();
-        renderNodes();
-        return { changed: false, selectedNodeId: getSelectedNodeId() };
-      }
       if (persistedState?.selectedNodeId && Array.isArray(persistedState.nodes)) {
         nodesState = persistedState;
-        syncSharedTargetContext();
       }
     } catch (error) {
-      if (!isNodeRequestCurrent(context)) {
-        nodeSwitchInProgress = false;
-        syncSharedTargetContext();
-        renderNodes();
-        return { changed: false, selectedNodeId: getSelectedNodeId() };
-      }
       nodesState = previousNodesState;
       nodeSwitchInProgress = false;
       selectedNodeContextVersion += 1;
-      syncSharedTargetContext();
       renderNodes();
       showToast(normalizeIpcErrorMessage(error, "Node could not be selected."), "warning");
       return { changed: false, selectedNodeId: getSelectedNodeId(), error };
     }
-  }
-  if (!isNodeRequestCurrent(context)) {
-    nodeSwitchInProgress = false;
-    syncSharedTargetContext();
-    renderNodes();
-    return { changed: false, selectedNodeId: getSelectedNodeId() };
   }
   renderNodes();
   if (isNodeRequestCurrent(context)) {
@@ -29222,9 +29133,8 @@ function setAgentConnectionDisplay(status, message, options = {}) {
 }
 
 function syncAgentConnectionDisplayWithSelectedNode() {
-  const targetContext = getSelectedTargetContext();
-  const selected = targetContext.selectedNode;
-  const connectionState = targetContext.connectionState;
+  const selected = getSelectedNode();
+  const connectionState = getNodeConnectionState(selected);
   if (!selected || selected.kind === "application-host") {
     setAgentConnectionDisplay("connected", "Application Host is available locally.", {
       label: "Application Host",
@@ -29232,19 +29142,19 @@ function syncAgentConnectionDisplayWithSelectedNode() {
     return;
   }
   if (connectionState.key === "connected") {
-    setAgentConnectionDisplay("connected", `${targetContext.name} is authenticated and reachable.`, {
+    setAgentConnectionDisplay("connected", `${selected.displayName || "Selected Agent"} is authenticated and reachable.`, {
       label: "Agent Connected",
     });
     return;
   }
   if (connectionState.key === "unauthorized") {
-    setAgentConnectionDisplay("error", `${targetContext.name} rejected its saved credential.`, {
+    setAgentConnectionDisplay("error", `${selected.displayName || "Selected Agent"} rejected its saved credential.`, {
       label: "Authentication Rejected",
       repairAvailable: true,
     });
     return;
   }
-  setAgentConnectionDisplay("disconnected", `${targetContext.name} is not reachable.`, {
+  setAgentConnectionDisplay("disconnected", `${selected.displayName || "Selected Agent"} is not reachable.`, {
     label: "Agent Unavailable",
   });
 }

@@ -13875,6 +13875,10 @@ async function refreshBackups() {
 
   backupRequestInFlight = true;
   const requestContext = getNodeRequestContext("backups");
+  if (shouldBackOffAgentPolling("backups", requestContext)) {
+    backupRequestInFlight = false;
+    return;
+  }
   renderBackups();
   try {
     const result = await desktopApiState.api.backups.list(getNodeScopedPayload(requestContext));
@@ -13898,6 +13902,7 @@ async function refreshBackups() {
     backupsState.scheduleSupported = scheduleSupported;
     backupsState.connected = true;
     backupsState.error = null;
+    clearAgentPollingBackoff("backups", requestContext);
     if (!getSelectedBackup()) {
       backupsState.selectedBackupId = backupsState.backups[0]?.id || null;
     }
@@ -13906,6 +13911,7 @@ async function refreshBackups() {
       return;
     }
     showToast(error?.message || "Backups could not be loaded.");
+    recordAgentPollingFailure("backups", requestContext, error);
     backupsState = {
       ...backupsState,
       backups: [],
@@ -14664,6 +14670,10 @@ async function refreshInstances(options = {}) {
 
   instancesRequestInFlight = true;
   const requestContext = getNodeRequestContext("instances");
+  if (shouldBackOffAgentPolling("instances", requestContext)) {
+    instancesRequestInFlight = false;
+    return getInstances();
+  }
   setInstancesLoading(true);
   updateInstanceActionButtons();
 
@@ -14673,6 +14683,7 @@ async function refreshInstances(options = {}) {
       return getInstances();
     }
     renderInstancesSnapshot(snapshot);
+    clearAgentPollingBackoff("instances", requestContext);
     if (options.refreshMetrics !== false) {
       await refreshSelectedInstanceMetrics();
     }
@@ -14681,6 +14692,7 @@ async function refreshInstances(options = {}) {
       return getInstances();
     }
     console.warn("[Instances] List refresh failed; keeping previous renderer state.", error);
+    recordAgentPollingFailure("instances", requestContext, error);
     if (latestInstancesSnapshot) {
       setInstancesLoading(false);
       setInstancesEmpty(getInstances().length === 0, "Instance list refresh failed. Keeping the last known list.");
@@ -20540,6 +20552,10 @@ async function refreshAmpDashboard(options = {}) {
 
   ampRequestInFlight = true;
   const requestContext = getNodeRequestContext("amp");
+  if (shouldBackOffAgentPolling("amp", requestContext)) {
+    ampRequestInFlight = false;
+    return;
+  }
 
   try {
     const snapshot = normalizeAmpSnapshotForRenderer(await desktopApiState.api.amp.getSnapshot(getNodeScopedPayload(requestContext)));
@@ -20547,6 +20563,7 @@ async function refreshAmpDashboard(options = {}) {
       return;
     }
     latestAmpSnapshot = snapshot;
+    clearAgentPollingBackoff("amp", requestContext);
     ampRendererReceiveCount += 1;
     renderAmpSnapshot(latestAmpSnapshot);
     lastAmpRefreshAt = Date.now();
@@ -20558,6 +20575,7 @@ async function refreshAmpDashboard(options = {}) {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
+    recordAgentPollingFailure("amp", requestContext, error);
     const message = getFriendlyStatusFailureMessage(
       error,
       "AMP status could not be refreshed.",
@@ -20600,6 +20618,10 @@ async function refreshDashboard() {
 
   systemRequestInFlight = true;
   const requestContext = getNodeRequestContext("system");
+  if (shouldBackOffAgentPolling("system", requestContext)) {
+    systemRequestInFlight = false;
+    return;
+  }
 
   try {
     const snapshot = await desktopApiState.api.system.getSnapshot(getNodeScopedPayload(requestContext));
@@ -20607,6 +20629,7 @@ async function refreshDashboard() {
       return;
     }
     renderSnapshot(snapshot, requestContext.nodeId);
+    clearAgentPollingBackoff("system", requestContext);
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
@@ -20615,6 +20638,7 @@ async function refreshDashboard() {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
+    recordAgentPollingFailure("system", requestContext, error);
     setField("cpuUsage", "Unavailable");
     setField("memoryUsage", "Unavailable");
     setField("diskUsage", "Unavailable");
@@ -20645,6 +20669,10 @@ async function refreshPlayitStatus() {
 
   playitRequestInFlight = true;
   const requestContext = getNodeRequestContext("playit");
+  if (shouldBackOffAgentPolling("public-access", requestContext)) {
+    playitRequestInFlight = false;
+    return;
+  }
 
   try {
     const payload = getNodeScopedPayload(requestContext);
@@ -20665,6 +20693,7 @@ async function refreshPlayitStatus() {
     } else {
       renderPlayitSnapshot(snapshot);
     }
+    clearAgentPollingBackoff("public-access", requestContext);
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
@@ -20673,6 +20702,7 @@ async function refreshPlayitStatus() {
       message: error?.message || String(error),
       stack: error?.stack || null,
     });
+    recordAgentPollingFailure("public-access", requestContext, error);
     renderPlayitUnavailable(getFriendlyStatusFailureMessage(
       error,
       "Public Access status could not be refreshed.",
@@ -21082,6 +21112,10 @@ async function refreshDockerStatus() {
   dockerRequestInFlight = true;
   const requestId = ++dockerRequestSerial;
   const requestContext = getNodeRequestContext("docker");
+  if (shouldBackOffAgentPolling("docker", requestContext)) {
+    dockerRequestInFlight = false;
+    return;
+  }
   const fastFailure = getDockerFastFailure();
   if (fastFailure) {
     dockerRequestInFlight = false;
@@ -21114,6 +21148,7 @@ async function refreshDockerStatus() {
     }
     dockerRequestInFlight = false;
     renderDockerSnapshot(snapshot);
+    clearAgentPollingBackoff("docker", requestContext);
     logDockerDiagnostic("snapshot-success", "info", {
       message: `Docker snapshot loaded with ${Array.isArray(snapshot?.containers) ? snapshot.containers.length : 0} container(s).`,
     });
@@ -21128,6 +21163,7 @@ async function refreshDockerStatus() {
     }
     dockerRequestInFlight = false;
     renderDockerUnavailable(error);
+    recordAgentPollingFailure("docker", requestContext, error);
     logDockerDiagnostic("snapshot-failed", "warn", {
       message: error?.message || "Docker snapshot failed.",
       errorCode: error?.code || error?.errorCode || null,
@@ -25958,6 +25994,39 @@ function getNodeScopedPayload(context, payload = {}) {
     ...payload,
     nodeId: context?.nodeId || getSelectedNodeId(),
   };
+}
+
+const agentPollingBackoff = new Map();
+
+function getAgentPollingBackoffKey(feature, context = {}) {
+  return `${context.nodeId || getSelectedNodeId()}:${feature || context.label || "agent"}`;
+}
+
+function isBackoffEligibleAgentError(error = {}) {
+  const combined = `${error?.code || ""} ${error?.message || ""}`;
+  return /UNAUTHORIZED|AUTHENTICATION_FAILED|AGENT_UNAVAILABLE|ECONNREFUSED|TIMEOUT|NETWORK_ERROR|NODE_DISABLED|NODE_NOT_FOUND|Agent unavailable|token rejected/i.test(combined);
+}
+
+function shouldBackOffAgentPolling(feature, context = {}) {
+  const entry = agentPollingBackoff.get(getAgentPollingBackoffKey(feature, context));
+  return Boolean(entry && Date.now() < entry.nextRetryAt);
+}
+
+function recordAgentPollingFailure(feature, context = {}, error = {}) {
+  if (!isBackoffEligibleAgentError(error)) return;
+  const key = getAgentPollingBackoffKey(feature, context);
+  const previous = agentPollingBackoff.get(key) || { failures: 0 };
+  const failures = Math.min(6, previous.failures + 1);
+  const delayMs = Math.min(60000, 5000 * 2 ** (failures - 1));
+  agentPollingBackoff.set(key, {
+    failures,
+    code: error?.code || null,
+    nextRetryAt: Date.now() + delayMs,
+  });
+}
+
+function clearAgentPollingBackoff(feature, context = {}) {
+  agentPollingBackoff.delete(getAgentPollingBackoffKey(feature, context));
 }
 
 function isNodeSwitching() {

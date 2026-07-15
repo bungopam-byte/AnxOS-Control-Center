@@ -19,6 +19,7 @@ function getConfigDirectory() {
 
 function getNodesPath() { return path.join(getConfigDirectory(), "nodes.json"); }
 function getRuntimeConfigPath() { return path.join(getConfigDirectory(), "agent-runtime.json"); }
+function getLegacyAgentConfigPath() { return path.join(getConfigDirectory(), "agent.json"); }
 function ensureConfigDirectory() { fs.mkdirSync(getConfigDirectory(), { recursive: true }); }
 function normalizeUrl(value) { try { const url = new URL(String(value || "").trim()); return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, "")}`; } catch { return String(value || "").trim(); } }
 function getUrlParts(url) {
@@ -148,6 +149,15 @@ function buildNodeCapabilities(node = {}) {
 function readLocalAgentRuntimeConfig() {
   try {
     const parsed = JSON.parse(fs.readFileSync(getRuntimeConfigPath(), "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readLegacyAgentSettingsRaw() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getLegacyAgentConfigPath(), "utf8"));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
@@ -392,10 +402,26 @@ async function withDiscoveredLocalAgent(state) {
 }
 
 function migrateState(parsed = {}) {
+  const rawLegacy = readLegacyAgentSettingsRaw();
   const effective = getEffectiveAgentSettings();
   const legacyNodes = Array.isArray(parsed.nodes) ? parsed.nodes.filter((node) => node.id !== APPLICATION_HOST_NODE_ID && node.kind !== "application-host") : [];
-  if (effective.backendMode === "agent" && effective.agentUrl && !legacyNodes.some((node) => normalizeUrl(node.agentUrl || node.url) === normalizeUrl(effective.agentUrl))) {
-    legacyNodes.push({ displayName: "Owner Machine", agentUrl: effective.agentUrl, agentToken: effective.agentToken });
+  const rawLegacyUrl = String(rawLegacy.agentUrl || rawLegacy.url || process.env.AGENT_URL || "").trim();
+  const canMigrateLegacyAgent = effective.backendMode === "agent" && rawLegacyUrl && effective.agentUrl;
+  if (canMigrateLegacyAgent) {
+    const legacyUrl = normalizeUrl(effective.agentUrl);
+    const existingIndex = legacyNodes.findIndex((node) => normalizeUrl(node.baseUrl || node.agentUrl || node.url) === legacyUrl);
+    if (existingIndex >= 0) {
+      const existing = legacyNodes[existingIndex];
+      legacyNodes[existingIndex] = {
+        ...existing,
+        baseUrl: existing.baseUrl || existing.agentUrl || legacyUrl,
+        agentUrl: existing.agentUrl || existing.baseUrl || legacyUrl,
+        agentToken: existing.agentToken || existing.token || getNodeToken(existing.id) || effective.agentToken,
+        legacyGlobalAgent: existing.legacyGlobalAgent !== false,
+      };
+    } else {
+      legacyNodes.push({ displayName: "Owner Machine", baseUrl: effective.agentUrl, agentUrl: effective.agentUrl, agentToken: effective.agentToken, legacyGlobalAgent: true });
+    }
   }
   const nodes = mergeAgentNodes(legacyNodes);
   let selectedNodeId = parsed.selectedNodeId || APPLICATION_HOST_NODE_ID;
@@ -408,11 +434,31 @@ function migrateState(parsed = {}) {
   return { schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId, nodes };
 }
 
+function toPersistentNode(node) {
+  const { agentToken, connection, token, ...persistentNode } = node;
+  if (persistentNode.baseUrl && !persistentNode.agentUrl) {
+    persistentNode.agentUrl = persistentNode.baseUrl;
+  }
+  return persistentNode;
+}
+
+function toPersistentState(state) {
+  return {
+    schemaVersion: NODE_SCHEMA_VERSION,
+    selectedNodeId: state.selectedNodeId,
+    nodes: state.nodes.map(toPersistentNode),
+  };
+}
+
+function needsCredentialWrite(state) {
+  return state.nodes.some((node) => node.kind === "agent" && node.id && node.agentToken && getNodeToken(node.id) !== node.agentToken);
+}
+
 function readNodeState() {
   let parsed = {};
   try { parsed = JSON.parse(fs.readFileSync(getNodesPath(), "utf8")); } catch {}
   const state = migrateState(parsed);
-  if (parsed.schemaVersion !== NODE_SCHEMA_VERSION || JSON.stringify(parsed) !== JSON.stringify(state)) writeNodeState(state);
+  if (parsed.schemaVersion !== NODE_SCHEMA_VERSION || JSON.stringify(parsed) !== JSON.stringify(toPersistentState(state)) || needsCredentialWrite(state)) writeNodeState(state);
   return state;
 }
 
@@ -422,11 +468,7 @@ function writeNodeState(state) {
     if (node.kind === "agent" && node.id && node.agentToken) {
       setNodeToken(node.id, node.agentToken);
     }
-    const { agentToken, connection, token, ...persistentNode } = node;
-    if (persistentNode.baseUrl && !persistentNode.agentUrl) {
-      persistentNode.agentUrl = persistentNode.baseUrl;
-    }
-    return persistentNode;
+    return toPersistentNode(node);
   });
   fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes }, null, 2)}\n`, { mode: 0o600 });
 }

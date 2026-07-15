@@ -40,6 +40,7 @@
     "agent:auth-fallback:smoke": "node scripts/agent-auth-fallback-smoke.js",
     "agent:expected-ipc:smoke": "node scripts/expected-agent-ipc-smoke.js",
     "agent:polling-backoff:smoke": "node scripts/agent-polling-backoff-smoke.js",
+    "agent:no-terminal-guidance:smoke": "node scripts/no-normal-terminal-guidance-smoke.js",
     "agent:instances:smoke": "node scripts/agent-instance-record-smoke.js",
     "instances:runtime:smoke": "node scripts/instance-runtime-smoke.js",
     "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",

@@ -80,9 +80,9 @@ Main-process selected-node state is persisted in `nodes.json` as `selectedNodeId
   - `nodesState = { selectedNodeId, nodes, applicationHost }`
   - `selectedNodeContextVersion`
   - helpers including `getSelectedNodeId()`, `getSelectedNode()`, `createSelectedNodeRequestContext()`, and `isSelectedNodeRequestCurrent()`
-- Some renderer flows already use selected-node request contexts to avoid stale writes.
+- Renderer flows use node request contexts with node ID, context version, and per-operation serials to avoid stale writes.
 
-Current fallback risk: `serviceRouter.getOptionalNodeConfig(options)` uses `options.nodeId || getSelectedNodeId()`. That is convenient for single-node behavior, but for strict node routing every agent-backed action should bind to an explicit node snapshot at the UI/API boundary.
+Compatibility cleanup: `serviceRouter.getOptionalNodeConfig(options)` now requires an explicit `nodeId` when the selected target is an Agent. Local application-host calls remain compatible for single-node/local workflows, but missing `nodeId` no longer silently routes an agent-backed request to the currently selected Agent.
 
 ## Agent Request Helpers
 
@@ -100,7 +100,7 @@ Reusable pieces:
 - request failure throttling in `logAgentRequestFailure()`
 - existing endpoint helpers for health, system stats, instances, Docker, files, backups, dependencies, public access, diagnostics, and actions.
 
-Current architecture issue: `agentClient` accepts optional config overrides, but it is not node-aware by itself. Missing overrides fall back to the legacy global agent config. A future `agentClient.forNode(nodeId)` or equivalent should reject missing/disabled nodes and avoid fallback.
+Compatibility note: low-level `agentClient` still supports legacy global settings for migration, Agent Control, and local-agent compatibility. Agent-backed feature paths should use `agentClient.forNode(nodeId)` or pass a node-derived config; missing node IDs must fail clearly rather than falling back to legacy global settings.
 
 ## Pages And Services That Communicate With The Agent
 
@@ -282,8 +282,8 @@ Required later phases:
 
 - Legacy global agent settings are still user-visible and used by Agent Control and Settings.
 - Local agent discovery depends on shared global token behavior.
-- Node registry persistence currently stores raw tokens.
-- Renderer and service-router fallbacks can implicitly use selected node or global settings.
+- Node registry persistence strips raw tokens from `nodes.json`; per-node Agent tokens are written through the node credential store and exposed to the renderer only as configured/missing metadata.
+- Legacy global settings remain for migration and Agent Control, but service-router agent-backed calls block implicit selected-Agent fallback when `nodeId` is missing.
 - Marketplace and install progress are long-running and must retain initiating node ownership.
 - Files and Instances can have identical resource IDs across nodes.
 - Destructive actions must bind to the initiating node snapshot.

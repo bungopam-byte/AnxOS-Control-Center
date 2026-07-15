@@ -3,7 +3,7 @@ const localDockerService = require("./dockerService");
 const localPlayitService = require("./playitService");
 const localInstanceService = require("./localInstanceService");
 const agentClient = require("./agentClient");
-const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
+const { APPLICATION_HOST_NODE_ID, getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
 const {
   clearForgottenInstance,
@@ -408,7 +408,7 @@ async function getFileListing(options = {}) {
 }
 
 function getOptionalNodeConfig(options = {}) {
-  const nodeId = options?.nodeId || getSelectedNodeId();
+  const nodeId = getRequestNodeId(options);
   const target = getExecutionTarget(nodeId);
   if (target.type !== "agent") {
     return null;
@@ -428,12 +428,26 @@ function getOptionalNodeConfig(options = {}) {
 }
 
 function getAgentNodeClient(options = {}) {
-  const nodeId = options?.nodeId || getSelectedNodeId();
+  const nodeId = getRequestNodeId(options);
   return agentClient.forNode(nodeId);
 }
 
 function getRequestNodeId(options = {}) {
-  return options?.nodeId || getSelectedNodeId() || "application-host";
+  if (options?.nodeId) {
+    return options.nodeId;
+  }
+  const selectedNodeId = getSelectedNodeId() || APPLICATION_HOST_NODE_ID;
+  if (selectedNodeId !== APPLICATION_HOST_NODE_ID) {
+    diagnostics.log("warn", "nodes", "implicit-node-fallback-blocked", "Blocked missing nodeId on agent-backed service request.", {
+      selectedNodeId,
+      code: "NODE_REQUIRED",
+    }, { file: "nodes" });
+    const error = new Error("Agent-backed requests require an explicit nodeId.");
+    error.code = "NODE_REQUIRED";
+    error.statusCode = 400;
+    throw error;
+  }
+  return APPLICATION_HOST_NODE_ID;
 }
 
 function withNodeContext(payload, nodeId) {
@@ -478,11 +492,11 @@ function withNodeContext(payload, nodeId) {
 }
 
 function isApplicationHostTarget(options = {}) {
-  return getExecutionTarget(options?.nodeId || getSelectedNodeId()).type === "application-host";
+  return getExecutionTarget(getRequestNodeId(options)).type === "application-host";
 }
 
 async function listInstances(options = {}) {
-  const nodeId = options?.nodeId || getSelectedNodeId();
+  const nodeId = getRequestNodeId(options);
   if (shouldUseLocalInstances(options)) {
     return filterForgottenInstances(await localInstanceService.listInstances(), nodeId);
   }
@@ -498,7 +512,7 @@ async function listInstances(options = {}) {
 }
 
 async function createInstance(payload) {
-  const nodeId = payload?.nodeId || getSelectedNodeId();
+  const nodeId = getRequestNodeId(payload);
   const result = shouldUseLocalInstances(payload)
     ? await localInstanceService.createInstance(payload)
     : await getAgentNodeClient(payload).createInstance(payload);

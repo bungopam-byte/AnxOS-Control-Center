@@ -31,8 +31,9 @@ const nodeService = fs.readFileSync(path.join(root, "src", "services", "nodeServ
   "selectedRemoteNode",
   "shouldDefaultToLocal",
   "mergeAgentNodes([",
-  "agentToken: node.agentToken ? \"[configured]\" : \"\"",
-  "modeLabel: node.localAgent ? \"Local Agent\" : \"Agent\"",
+  "agentToken: node.agentToken || hasNodeToken(node.id) ? \"[configured]\" : \"\"",
+  "modeLabel: getAgentNodeModeLabel(node)",
+  "Registered Local Agent Node",
 ].forEach((needle) => {
   assert(nodeService.includes(needle), `Local Agent discovery source should include ${needle}.`);
 });

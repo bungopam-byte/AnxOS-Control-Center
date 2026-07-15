@@ -57,6 +57,7 @@ function legacyDeviceId(url) {
 function nodeIdForDevice(deviceId) { return `agent-${String(deviceId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 56)}`; }
 function isGenericNodeDisplayName(value) { return /^(owner machine|default|remote node|agent node|windows desktop|local agent|this pc)$/i.test(String(value || "").trim()); }
 function isDefaultLocalAgentDisplayName(value) { return /^(this pc|local agent|owner machine|windows desktop)$/i.test(String(value || "").trim()); }
+function getAgentNodeModeLabel(node = {}) { return node.localAgent === true || isLocalAgentUrl(node.agentUrl) ? "Registered Local Agent Node" : "Registered Remote Agent Node"; }
 
 function normalizeRemovedLocalAgents(value) {
   const entries = Array.isArray(value) ? value : [];
@@ -386,7 +387,10 @@ function normalizeAgentNode(node = {}) {
     ownerMachine: Boolean(node.ownerMachine),
     localAgent,
     local: localAgent,
-    modeLabel: localAgent ? "Local Agent" : "Agent",
+    modeLabel: localAgent ? "Registered Local Agent Node" : "Registered Remote Agent Node",
+    nodeTypeLabel: "Registered Agent Node",
+    builtIn: false,
+    removable: true,
     profile: localAgent ? node.profile || buildLocalNodeProfile({ node: { ...node, displayName }, health: { identity } }) : node.profile || null,
     capabilities: buildNodeCapabilities({ ...node, kind: "agent", agentUrl, localAgent }),
     connection: node.connection && typeof node.connection === "object" ? {
@@ -450,7 +454,7 @@ function mergeAgentNodes(nodes) {
       ownerMachine: current.ownerMachine || raw.ownerMachine,
       localAgent: current.localAgent || raw.localAgent,
       local: current.local || raw.local,
-      modeLabel: current.localAgent || raw.localAgent ? "Local Agent" : current.modeLabel || raw.modeLabel,
+      modeLabel: getAgentNodeModeLabel(current.localAgent || raw.localAgent ? { ...current, localAgent: true } : current),
       connection: current.connection || raw.connection,
       updatedAt: new Date().toISOString(),
     });
@@ -663,7 +667,7 @@ function publicNode(node) {
       },
     };
   }
-  return { ...node, baseUrl: node.baseUrl || node.agentUrl, name: node.name || node.displayName, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken || hasNodeToken(node.id)), agentToken: node.agentToken || hasNodeToken(node.id) ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
+  return { ...node, baseUrl: node.baseUrl || node.agentUrl, name: node.name || node.displayName, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken || hasNodeToken(node.id)), agentToken: node.agentToken || hasNodeToken(node.id) ? "[configured]" : "", local: node.localAgent === true, modeLabel: getAgentNodeModeLabel(node), nodeTypeLabel: "Registered Agent Node", builtIn: false, removable: true, localProfile: node.localAgent === true ? node.profile || null : null };
 }
 
 function applyHealthPatchToNode(node, patch = {}) {

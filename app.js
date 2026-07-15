@@ -27184,11 +27184,16 @@ function formatNodePlatform(node = {}) {
 function formatNodeAgentContext(node = {}) {
   const connectionState = getNodeConnectionState(node);
   if (node?.kind === "application-host") {
-    return `${connectionState.label} · ${formatNodePlatform(node)}`;
+    return `${connectionState.label} · ${formatNodePlatform(node)} · ${node.modeLabel || "Local Application"}`;
   }
   const identity = getNodeIdentity(node);
   const version = identity.agentVersion ? `Agent ${identity.agentVersion}` : "Agent version unknown";
   return `${connectionState.label} · ${formatNodePlatform(node)} · ${version}`;
+}
+
+function getNodeTypeLabel(node = {}) {
+  if (node.kind === "application-host") return node.nodeTypeLabel || "Application Host";
+  return node.modeLabel || (node.localAgent ? "Registered Local Agent Node" : "Registered Remote Agent Node");
 }
 
 function formatNodeCpu(node = {}) {
@@ -27427,14 +27432,14 @@ function openNodeDetails(nodeId) {
   if (nodeDetailsTitle) nodeDetailsTitle.textContent = node.displayName || node.id || "Node";
   if (nodeDetailsSummary) {
     const connectionState = getNodeConnectionState(node);
-    nodeDetailsSummary.textContent = `${node.kind === "application-host" ? "Application host" : "Agent node"} · ${connectionState.label} · ${health.issueCount} health issue${health.issueCount === 1 ? "" : "s"}`;
+    nodeDetailsSummary.textContent = `${getNodeTypeLabel(node)} · ${connectionState.label} · ${health.issueCount} health issue${health.issueCount === 1 ? "" : "s"}`;
   }
   if (nodeDetailsBadges) {
     nodeDetailsBadges.replaceChildren(
       createNodeBadge(getNodeStatusLabel(node), visualState),
-      createNodeBadge(node.docker?.enabled === false ? "Docker Off" : "Docker Enabled", node.docker?.enabled === false ? "planned" : "online"),
-      createNodeBadge(node.kind === "application-host" ? "Application Host" : "Agent", node.kind === "application-host" ? "online" : visualState),
-      createNodeBadge(node.ownerMachine ? "Owner Machine" : "Standard Node", node.ownerMachine ? "online" : "planned"),
+      createNodeBadge(node.kind === "application-host" ? "Built In" : "Registered", node.kind === "application-host" ? "online" : visualState),
+      createNodeBadge(getNodeTypeLabel(node), node.kind === "application-host" ? "online" : visualState),
+      createNodeBadge(node.docker?.enabled === false ? "Docker Off" : node.kind === "application-host" ? "Docker Unsupported" : "Docker Enabled", node.docker?.enabled === false || node.kind === "application-host" ? "planned" : "online"),
     );
   }
   const values = {
@@ -27570,8 +27575,8 @@ function renderNodePicker() {
     title.textContent = node.displayName || node.id || "Unnamed node";
     const detail = document.createElement("small");
     detail.textContent = node.kind === "application-host"
-      ? `${formatNodeAgentContext(node)} · Local Application`
-      : `${formatNodeAgentContext(node)} · ${node.agentUrl || "Agent API"}`;
+      ? `${formatNodeAgentContext(node)} · Built in`
+      : `${formatNodeAgentContext(node)} · ${getNodeTypeLabel(node)} · ${node.agentUrl || "Agent API"}`;
     copy.append(title, detail);
     const badge = document.createElement("span");
     badge.className = "node-picker-option__badge";
@@ -27666,7 +27671,7 @@ function renderNodes() {
       detailTarget.textContent = nodeSwitchInProgress
         ? "Switching node..."
       : selected?.kind === "application-host"
-          ? "Application host"
+          ? selected.modeLabel || "Local Application"
           : formatNodeAgentContext(selected);
     }
     sidebarFooter.dataset.agentState = nodeState;
@@ -27717,22 +27722,22 @@ function renderNodes() {
       title.textContent = node.displayName || node.id;
       const detail = document.createElement("small");
       detail.textContent = node.kind === "application-host"
-        ? `${formatNodePlatform(node)} · Local Application`
-        : `${formatNodePlatform(node)} · ${node.agentUrl || "Agent API"}`;
+        ? `${formatNodePlatform(node)} · ${node.modeLabel || "Local Application"} · Built in`
+        : `${formatNodePlatform(node)} · ${getNodeTypeLabel(node)} · ${node.agentUrl || "Agent API"}`;
       titleGroup.append(title, detail);
       const badges = document.createElement("div");
       badges.className = "node-card__badges";
       badges.append(
         createNodeBadge(getNodeStatusLabel(node), state),
         createNodeHealthBadge(health.state),
-        createNodeBadge(node.docker?.enabled === false ? "Docker Off" : "Docker", node.docker?.enabled === false ? "planned" : "online"),
-        createNodeBadge(node.ownerMachine ? "Owner" : node.kind === "application-host" ? "This PC" : "Agent", node.ownerMachine || node.kind === "application-host" ? "online" : "planned"),
+        createNodeBadge(node.kind === "application-host" ? "Built In" : "Registered", node.kind === "application-host" ? "online" : state),
+        createNodeBadge(getNodeTypeLabel(node), node.kind === "application-host" ? "online" : state),
       );
       header.append(titleGroup, badges);
       const meta = document.createElement("dl");
       meta.className = "node-card__meta";
       [
-        ["Agent", node.kind === "application-host" ? "Local Application" : node.agentUrl || "Unavailable"],
+        ["Context", node.kind === "application-host" ? "Local Application Host" : `${getNodeTypeLabel(node)} · ${node.agentUrl || "Unavailable"}`],
         ["Connection", `${connectionState.label} - ${connectionState.message}`],
         ["Last seen", formatNodeLastSeen(node)],
         ["Health", `${health.state} · ${health.issueCount} issue${health.issueCount === 1 ? "" : "s"}`],
@@ -27753,7 +27758,7 @@ function renderNodes() {
         ["edit", "Edit"],
         ["refresh", "Refresh"],
         ["details", "View Details"],
-        ["remove", "Remove"],
+        ["remove", node.kind === "application-host" ? "Built In" : "Remove"],
       ];
       if (getNodeConnectionState(node).key === "unauthorized") {
         nodeActions.splice(3, 0, ["repair", "Re-pair Existing Node"]);
@@ -27766,6 +27771,10 @@ function renderNodes() {
         button.dataset.nodeId = node.id;
         button.textContent = label;
         button.disabled = (node.kind === "application-host" && ["edit", "remove"].includes(actionName)) || (actionName === "select" && node.id === getSelectedNodeId());
+        if (node.kind === "application-host" && actionName === "remove") {
+          button.title = node.removeUnavailableReason || "The built-in Application Host cannot be removed.";
+          button.setAttribute("aria-label", button.title);
+        }
         actions.append(button);
       });
       body.append(header, meta, actions);

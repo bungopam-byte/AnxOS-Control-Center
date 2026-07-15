@@ -3691,13 +3691,24 @@
               </div>
             </section>
             <section class="settings-section" data-agent-control-section="credentials">
-              <div class="settings-section__header"><div><h2>Credentials</h2><p>Safe connection credential metadata. Raw tokens are never displayed.</p></div></div>
+              <div class="settings-section__header"><div><h2>Credentials</h2><p>Safe connection credential metadata. Saved tokens are never displayed.</p></div></div>
               <div class="agent-section-grid">
                 <div><span>Configured</span><strong>Protected</strong></div>
                 <div><span>Fingerprint</span><strong data-agent-control-field="clients">Unavailable</strong></div>
                 <div><span>Endpoint</span><strong data-agent-control-field="url">Unavailable</strong></div>
                 <div><span>Status</span><strong>Safe metadata only</strong></div>
               </div>
+              <div class="settings-grid">
+                <label class="settings-field settings-field--wide">
+                  <span>Generated token</span>
+                  <input type="password" readonly autocomplete="off" spellcheck="false" placeholder="Generate a temporary token to display it here" data-agent-generated-token>
+                </label>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-agent-control-action="generateToken">Generate Token</button>
+                <button class="inline-action" type="button" data-agent-control-action="copyToken" disabled>Copy Token</button>
+              </div>
+              <p class="settings-note" data-agent-generated-token-note>Only newly generated tokens are shown here. Existing saved Agent tokens remain protected and masked.</p>
             </section>
             <section class="settings-section" data-agent-control-section="identity">
               <div class="settings-section__header"><div><h2>Agent Identity</h2><p>Local Systems: desktop host and local Agent service identity.</p></div><button class="inline-action" type="button" data-agent-control-action="copyId">Copy ID</button></div><div class="agent-remote-list" data-agent-local-host-list><div class="security-empty-state">Loading local systems.</div></div>

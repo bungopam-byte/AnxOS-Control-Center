@@ -423,7 +423,7 @@ const agentSettingsSaveButton = document.querySelector('[data-agent-action="save
 const agentSettingsTestButton = document.querySelector('[data-agent-action="test"]');
 const agentSettingsPairButton = document.querySelector('[data-agent-action="pair"]');
 const agentSettingsRepairButton = document.querySelector('[data-agent-action="repair"]');
-const agentPairingCodeInput = document.querySelector("[data-agent-pairing-code]");
+const agentPairingCodeInput = document.querySelector("textarea[data-agent-pairing-code]");
 const agentConnectionPill = document.querySelector("[data-agent-connection-pill]");
 const agentConnectionMessage = document.querySelector("[data-agent-connection-message]");
 const agentConfigSource = document.querySelector("[data-agent-config-source]");
@@ -483,9 +483,11 @@ const agentSetupSummary = document.querySelector("[data-agent-setup-summary]");
 const agentLocalInstallerStatus = document.querySelector("[data-agent-local-installer-status]");
 const agentLocalInstallerSteps = document.querySelector("[data-agent-local-installer-steps]");
 const agentPairingStatus = document.querySelector("[data-agent-pairing-status]");
-const agentPairingCode = document.querySelector("[data-agent-pairing-code]");
+const agentPairingCode = document.querySelector("strong[data-agent-pairing-code]");
 const agentPairingExpires = document.querySelector("[data-agent-pairing-expires]");
 const agentPairingUrl = document.querySelector("[data-agent-pairing-url]");
+const agentGeneratedTokenInput = document.querySelector("[data-agent-generated-token]");
+const agentGeneratedTokenNote = document.querySelector("[data-agent-generated-token-note]");
 const agentControlSectionButtons = document.querySelectorAll("[data-agent-control-section-target]");
 const agentControlSections = document.querySelectorAll("[data-agent-control-section]");
 let agentControlState = null;
@@ -494,6 +496,7 @@ let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentControlLastRuntimeSnapshot = null;
 let activeAgentPairingCode = "";
+let activeAgentGeneratedToken = "";
 const remoteDiagnosticsInFlight = new Set();
 const remoteDiagnosticsLastCapturedAt = new Map();
 let latestDependencyResult = null;
@@ -3863,6 +3866,20 @@ function renderAgentPairingSetup(session = null) {
   document.querySelector('[data-agent-control-action="copyPairingCode"]')?.toggleAttribute("disabled", !activeAgentPairingCode);
 }
 
+function renderAgentGeneratedTokenControls() {
+  if (agentGeneratedTokenInput) {
+    agentGeneratedTokenInput.value = activeAgentGeneratedToken;
+    agentGeneratedTokenInput.placeholder = activeAgentGeneratedToken
+      ? "Generated token is masked"
+      : "Generate a temporary token to display it here";
+  }
+  if (agentGeneratedTokenNote) {
+    agentGeneratedTokenNote.textContent = activeAgentGeneratedToken
+      ? "This token is not saved automatically. Copy it now and configure the same token on the Agent and Control Center."
+      : "Only newly generated tokens are shown here. Existing saved Agent tokens remain protected and masked.";
+  }
+}
+
 function getAgentControlOverviewTarget(payload = agentControlState) {
   if (!payload) return null;
   const selectedNodeId = payload.selectedNodeId || getSelectedNodeId();
@@ -3944,6 +3961,7 @@ function renderAgentControlState(payload = agentControlState) {
   const local = getAgentControlOverviewTarget(payload);
   if (!local) return;
   agentControlState = payload;
+  renderAgentGeneratedTokenControls();
   const { runtime, stale } = getAgentRuntimeForDisplay(local);
   const running = runtime?.serviceState === "running" || isAgentTargetRunning(local);
   const busy = agentControlBusy || Boolean(local.operationInFlight);
@@ -3993,6 +4011,8 @@ function renderAgentControlState(payload = agentControlState) {
       || (action === "enableAutoStart" && (!lifecycleSupported || service.enabled || serviceNeedsElevation))
       || (action === "disableAutoStart" && (!lifecycleSupported || !service.enabled || serviceNeedsElevation))
       || (action === "rotateToken" && !isLocalTarget)
+      || (action === "generateToken" && typeof getDesktopApiState().api?.nodes?.generateToken !== "function")
+      || (action === "copyToken" && !activeAgentGeneratedToken)
       || (action === "openDataFolder" && !isLocalTarget)
       || (action === "copyUrl" && !local.agentUrl)
       || (action === "copyId" && !local.identity?.deviceId);
@@ -5213,6 +5233,8 @@ async function runAgentControlAction(action) {
     installLocalAgent: "Install Local Agent",
     startPairingSession: "Generate Agent pairing code",
     copyPairingCode: "Copy Agent pairing code",
+    generateToken: "Generate Agent token",
+    copyToken: "Copy Agent token",
     learnLocalAgent: "Learn about Local Agent",
     useRemoteAgent: "Use Remote Agent",
     rotateToken: "Rotate Agent token",
@@ -5258,6 +5280,20 @@ async function runAgentControlAction(action) {
       if (!activeAgentPairingCode) throw new Error("Generate a pairing code before copying.");
       await navigator.clipboard.writeText(activeAgentPairingCode);
       showToast("Pairing code copied.", "success");
+    }
+    else if (action === "generateToken") {
+      const nodesApi = getDesktopApiState().api?.nodes;
+      if (typeof nodesApi?.generateToken !== "function") throw new Error("Agent token generation is unavailable in this build.");
+      const result = await nodesApi.generateToken();
+      activeAgentGeneratedToken = String(result?.token || "");
+      if (!activeAgentGeneratedToken) throw new Error("Agent token generation returned no token.");
+      renderAgentGeneratedTokenControls();
+      showToast("Secure Agent token generated.", "success");
+    }
+    else if (action === "copyToken") {
+      if (!activeAgentGeneratedToken) throw new Error("Generate a token before copying.");
+      await navigator.clipboard.writeText(activeAgentGeneratedToken);
+      showToast("Agent token copied.", "success");
     }
     else if (action === "useRemoteAgent") {
       showToast("Remote Agent mode stays available. Add or select a remote node from the node picker or Agent Connection settings.", "info");

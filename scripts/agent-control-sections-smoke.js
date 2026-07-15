@@ -82,6 +82,8 @@ function assertSection(section, expected, rejected = []) {
   "checkUpdates",
   "updateAgent",
   "rotateToken",
+  "generateToken",
+  "copyToken",
   "copyUrl",
   "copyId",
   "openLogs",
@@ -129,6 +131,15 @@ assertSection("paths", [
 ], [
   "Check Updates",
   "Install Local Agent",
+]);
+
+assertSection("credentials", [
+  "Generate Token",
+  "Copy Token",
+  "data-agent-generated-token",
+  "Existing saved Agent tokens remain protected and masked.",
+], [
+  "Rotate Token",
 ]);
 
 assert(index.includes("settings-workspace agent-control-workspace"), "Agent Control must use the Settings-style workspace shell.");

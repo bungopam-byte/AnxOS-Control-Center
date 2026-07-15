@@ -25,6 +25,8 @@ assert(ipcSource.includes('ipcMain.handle("nodes:generateToken"') && ipcSource.i
 assert(preloadSource.includes("generateToken: () => ipcRenderer.invoke(\"nodes:generateToken\")"), "Preload must expose node token generation without renderer randomness.");
 
 assert(htmlSource.includes('data-node-action="generate-token"') && htmlSource.includes('data-node-action="copy-token"'), "Add/Edit Node must expose Generate Token and Copy Token controls.");
+assert(htmlSource.includes('data-agent-control-action="generateToken"') && htmlSource.includes('data-agent-control-action="copyToken"'), "Agent Control Credentials must expose Generate Token and Copy Token controls.");
+assert(htmlSource.includes("data-agent-generated-token") && htmlSource.includes('type="password" readonly'), "Agent Control generated-token display must stay masked and read-only.");
 assert(appSource.includes("Your saved token is stored securely") && htmlSource.includes("Treat this token like a password."), "Node token UI must explain saved credential and security handling.");
 assert(htmlSource.includes("Pair with Code") && htmlSource.includes("No manual token setup is required."), "Normal node setup must prefer Pair with Code without manual token setup.");
 assert(htmlSource.includes("Advanced manual token setup is intended for development, recovery, or headless administration."), "Manual token setup must stay scoped to advanced/recovery/headless use.");
@@ -32,6 +34,10 @@ assert(!htmlSource.includes("Temporary Linux shell example") && !htmlSource.incl
 
 assert(appSource.includes("async function generateNodeAgentToken()") && appSource.includes("desktopApiState.api.nodes.generateToken()"), "Renderer must request generated tokens from trusted IPC.");
 assert(appSource.includes("async function copyNodeAgentToken()") && appSource.includes("Agent token copied."), "Renderer must copy only the unsaved visible token with in-app feedback.");
+assert(appSource.includes('action === "generateToken"') && appSource.includes("nodesApi.generateToken()"), "Agent Control must request generated tokens from trusted IPC.");
+assert(appSource.includes('action === "copyToken"') && appSource.includes("activeAgentGeneratedToken"), "Agent Control must copy only the freshly generated token.");
+assert(appSource.includes('action === "copyToken" && !activeAgentGeneratedToken'), "Agent Control Copy Token must be disabled until a token is generated.");
+assert(appSource.includes("Existing saved Agent tokens remain protected and masked."), "Agent Control must not display permanent saved Agent tokens by default.");
 assert(appSource.includes('copyButton.disabled = nodeFormBusy || !hasUnsavedToken'), "Copy Token must be disabled when only a saved hidden credential exists.");
 assert(appSource.includes('field.dataset.unsavedCredential = "false"'), "Opening an existing node must not mark the saved protected token as visible.");
 assert(appSource.includes("After saving this new token, update the Agent configuration"), "Token regeneration warning must explain the Agent-side update requirement.");

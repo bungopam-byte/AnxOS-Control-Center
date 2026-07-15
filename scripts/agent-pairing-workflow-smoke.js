@@ -34,6 +34,9 @@ async function waitForAgent(baseUrl) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "anx-agent-pairing-"));
   const controlConfig = path.join(temp, "control");
   const agentConfig = path.join(temp, "agent");
+  const nodeServiceSource = fs.readFileSync(path.join(root, "src", "services", "nodeService.js"), "utf8");
+  assert(nodeServiceSource.includes("agentIdentityMatchesNode") && nodeServiceSource.includes("NODE_REPAIR_URL_CONFIRMATION_REQUIRED"), "Existing-node re-pairing must verify Agent identity before changing URLs.");
+  assert(nodeServiceSource.includes("repairedExistingNode"), "Pairing results should identify in-place node repairs.");
   fs.mkdirSync(controlConfig, { recursive: true });
   fs.mkdirSync(agentConfig, { recursive: true });
   process.env.ANXHUB_CONFIG_DIR = controlConfig;

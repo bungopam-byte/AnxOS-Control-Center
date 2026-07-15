@@ -922,6 +922,17 @@ function getNodeAgentConfigFromNode(node) { return normalizeAgentSettings({ back
 function getNodeAgentConfig(nodeId) { const node = getNode(nodeId); if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" }); return getNodeAgentConfigFromNode(node); }
 function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, localAgent: node.localAgent === true, capabilities: buildNodeCapabilities(node), config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId, capabilities: buildNodeCapabilities(node) }; }
 
+function agentIdentityMatchesNode(node = null, identity = {}) {
+  if (!node || !identity || typeof identity !== "object") return false;
+  const existing = node.agentIdentity || {};
+  const comparisons = [
+    ["deviceId", existing.deviceId, identity.deviceId],
+    ["agentInstallationId", existing.agentInstallationId || node.agentInstallationId, identity.agentInstallationId],
+    ["agentIdentityId", existing.agentIdentityId || node.agentIdentityId, identity.agentIdentityId],
+  ];
+  return comparisons.some(([, left, right]) => Boolean(left && right && left === right));
+}
+
 async function saveNode(payload = {}) {
   const displayName = String(payload.displayName || payload.name || "").trim();
   const agentUrl = normalizeUrl(payload.agentUrl || payload.url);
@@ -982,6 +993,18 @@ async function pairNodeFromCode(payload = {}) {
   });
   const identity = health.identity || paired.identity || {};
   if (!identity?.deviceId) throw Object.assign(new Error("Paired Agent did not provide a stable device identity."), { code: "AGENT_IDENTITY_MISSING" });
+  const existingIdentityMatches = agentIdentityMatchesNode(existingById, identity);
+  const existingUrl = existingById ? normalizeUrl(existingById.baseUrl || existingById.agentUrl) : null;
+  if (existingById && existingUrl !== agentUrl && !existingIdentityMatches && payload.confirmUrlChange !== true) {
+    throw Object.assign(new Error("This pairing code is for a different Agent address. Confirm the URL change before re-pairing this existing node."), {
+      code: "NODE_REPAIR_URL_CONFIRMATION_REQUIRED",
+      details: {
+        nodeId: existingById.id,
+        currentAgentUrl: existingUrl,
+        pairingAgentUrl: agentUrl,
+      },
+    });
+  }
   const existing = existingById || state.nodes.find((node) => node.agentIdentity?.deviceId === identity.deviceId || normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl);
   const displayName = String(payload.displayName || existing?.displayName || identity.hostname || "Paired Agent").trim().slice(0, 80) || "Paired Agent";
   const node = normalizeAgentNode({
@@ -1010,6 +1033,7 @@ async function pairNodeFromCode(payload = {}) {
   writeNodeState({ ...state, removedLocalAgents: clearLocalAgentRemovalMarkersForNode(state, node), selectedNodeId: node.id, nodes });
   return {
     paired: true,
+    repairedExistingNode: Boolean(existingById),
     node: publicNode(node),
     selectedNodeId: node.id,
     agentUrl,

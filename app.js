@@ -4067,7 +4067,8 @@ function renderAgentControlState(payload = agentControlState) {
   setAgentControlField("hostname", local.name || runtime?.hostname || local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", runtime?.version || local.agentVersion || local.identity?.agentVersion);
   setAgentControlField("pid", formatAgentProcess(runtime, state));
-  setAgentControlField("service", service.supported ? `${service.type} · ${service.registrationStatus || service.state}${serviceNeedsElevation ? " · Administrator required" : ""}` : "Unsupported");
+  const startupSummary = local.startupSummary || payload?.local?.startupSummary || null;
+  setAgentControlField("service", service.supported ? `${startupSummary?.label || `${service.type} · ${service.registrationStatus || service.state}`}${serviceNeedsElevation ? " · Administrator required" : ""}` : "Unsupported");
   setAgentControlField("url", local.agentUrl);
   setAgentControlField("latency", Number.isFinite(runtime?.latencyMs ?? local.latencyMs) ? `${runtime?.latencyMs ?? local.latencyMs} ms` : "Unavailable");
   setAgentControlField("uptime", Number.isFinite(runtime?.uptimeSeconds ?? local.uptime) ? formatDuration(runtime?.uptimeSeconds ?? local.uptime) : "Unavailable");
@@ -4678,6 +4679,7 @@ function renderAgentBeginnerSummary(payload = agentControlState) {
         localAgent.agentVersion ? `Version ${localAgent.agentVersion}` : "Version unavailable",
         localAgent.agentUrl || "No local Agent URL confirmed",
         localAgent.service?.registrationStatus ? `Registration ${localAgent.service.registrationStatus}` : null,
+        localAgent.startupSummary?.label || null,
       ],
       actions: localState.actions,
     }),
@@ -4745,7 +4747,7 @@ function renderLocalAgentSystems(payload = agentControlState) {
       status: running ? "Running" : service.installed ? "Stopped" : "Ready to start",
       statusTone: running ? "ok" : "planned",
       details: [
-        service.supported ? `${service.type} ${service.registrationStatus || service.state || "unknown"}` : "Service management unsupported",
+        localAgent.startupSummary?.label || (service.supported ? `${service.type} ${service.registrationStatus || service.state || "unknown"}` : "Service management unsupported"),
         localAgent.agentUrl || null,
         localAgent.agentVersion ? `Agent ${localAgent.agentVersion}` : null,
       ],

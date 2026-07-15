@@ -218,6 +218,27 @@ function getRegistrationStatusFromServiceState(service = {}) {
   return "valid";
 }
 
+function getLocalAgentStartupSummary({ running = false, service = {} } = {}) {
+  const registrationStatus = getRegistrationStatusFromServiceState(service);
+  const processLabel = running ? "Running" : "Stopped";
+  const startupLabel = registrationStatus === "valid"
+    ? "Startup Registered"
+    : registrationStatus === "invalid"
+      ? "Startup Registration Invalid"
+      : registrationStatus === "unverifiable"
+        ? "Startup Registration Unverifiable"
+        : registrationStatus === "missing"
+          ? "Startup Not Registered"
+          : "Startup Unsupported";
+  return {
+    processState: processLabel,
+    registrationState: registrationStatus,
+    label: `${processLabel} · ${startupLabel}`,
+    degradesApplicationHost: false,
+    repairAction: service.supported && registrationStatus !== "valid" ? "install-service" : null,
+  };
+}
+
 function ensureLocalAgentBackendSelected(config) {
   const effective = agentClient.getEffectiveAgentSettings();
   if (effective.overrides?.backendMode || effective.overrides?.agentUrl) {
@@ -1337,6 +1358,7 @@ async function getStatus(_options = {}) {
     agentVersion: health?.identity?.agentVersion || getBundledLocalAgentVersion("unavailable"),
     identity: health?.identity || null,
   };
+  const startupSummary = getLocalAgentStartupSummary({ running, service });
   return {
     local: true,
     targetType: "local-agent",
@@ -1347,6 +1369,7 @@ async function getStatus(_options = {}) {
     pid: health?.process?.pid || managedProcess?.pid || null,
     config,
     service,
+    startupSummary,
     identity: baseStatus.identity,
     agentVersion: baseStatus.agentVersion,
     appVersion,
@@ -1679,6 +1702,7 @@ module.exports = {
     getWindowsLauncherPath,
     getLocalAgentUpdateState,
     getRegistrationStatusFromServiceState,
+    getLocalAgentStartupSummary,
     validateWindowsServiceRegistration,
     writeWindowsAgentLauncher,
   },

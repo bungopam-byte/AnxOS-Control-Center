@@ -68,7 +68,7 @@ async function main() {
   assert(!rendererSource.includes('"Service managed"'), "Agent Control must not use Service managed as the primary process value.");
   assert(htmlSource.includes("Agent Connection") && htmlSource.includes('data-agent-setting="agentUrl"'), "Agent Connection must render in Agent Control.");
   assert(htmlSource.includes("data-agent-beginner-summary") && htmlSource.includes("Agent Control Summary"), "Agent Control must include the beginner-friendly summary panel.");
-  assert(htmlSource.includes("data-agent-local-host-list") && htmlSource.includes("Local Systems"), "Agent Control must expose a local systems panel.");
+  assert(htmlSource.includes("data-agent-local-host-list") && htmlSource.includes("Application Host, Local Agent, and the selected Remote Agent"), "Agent Control must expose distinct local and remote identity panels.");
   const control = require("../src/services/agentControlService");
   control._test.writeWindowsAgentLauncher(control.readConfig());
   const validService = control._test.validateWindowsServiceRegistration(`Task To Run: ${control._test.expectedWindowsServiceCommand(control.readConfig())}\nStatus: Ready`, control.readConfig());

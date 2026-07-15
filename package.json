@@ -85,6 +85,7 @@
     "node:status-classification:smoke": "node scripts/node-status-classification-smoke.js",
     "node:state-consistency:smoke": "node scripts/node-state-consistency-smoke.js",
     "cross-page:selected-target:smoke": "node scripts/cross-page-selected-target-smoke.js",
+    "agent-control:remote-identity:smoke": "node scripts/remote-identity-rendering-smoke.js",
     "node-health:smoke": "node scripts/node-health-smoke.js",
     "security:page:smoke": "node scripts/security-page-smoke.js",
     "security:sections:smoke": "node scripts/security-sections-smoke.js",

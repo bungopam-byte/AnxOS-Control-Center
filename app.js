@@ -4625,6 +4625,8 @@ function renderLocalAgentSystems(payload = agentControlState) {
   agentLocalHostList.replaceChildren();
   const applicationHost = getLocalApplicationHostNode();
   const localAgent = payload?.local || null;
+  const activeTarget = resolveActiveManagementTarget();
+  const activeRemote = payload?.activeAgent || (Array.isArray(payload?.remote) ? payload.remote.find((agent) => agent.nodeId === activeTarget.nodeId) : null);
   agentLocalHostList.append(createAgentSystemCard({
     title: applicationHost.displayName || "Windows Desktop",
     subtitle: "Local Application Host",
@@ -4648,6 +4650,28 @@ function renderLocalAgentSystems(payload = agentControlState) {
         service.supported ? `${service.type} ${service.registrationStatus || service.state || "unknown"}` : "Service management unsupported",
         localAgent.agentUrl || null,
         localAgent.agentVersion ? `Agent ${localAgent.agentVersion}` : null,
+      ],
+    }));
+  }
+  if (activeTarget.targetType === "registered-node") {
+    const identity = activeRemote?.identity || getSelectedNode()?.agentIdentity || {};
+    const connectionState = activeTarget.connectionState || getNodeConnectionState(getSelectedNode());
+    agentLocalHostList.append(createAgentSystemCard({
+      title: identity.hostname || activeTarget.name || "Selected Remote Agent",
+      subtitle: "Selected Remote Agent Identity",
+      status: connectionState.label,
+      statusTone: activeTarget.authenticated ? "ok" : connectionState.key === "unauthorized" ? "critical" : "warning",
+      details: [
+        activeTarget.nodeId ? `Node ${activeTarget.nodeId}` : null,
+        identity.deviceId ? `Device ${identity.deviceId}` : "Device ID unavailable",
+        activeTarget.agentUrl || "Endpoint unavailable",
+        activeTarget.agentVersion ? `Agent ${activeTarget.agentVersion}` : identity.agentVersion ? `Agent ${identity.agentVersion}` : "Agent version unavailable",
+        activeTarget.operatingSystem || identity.operatingSystem || identity.platform || "OS unavailable",
+        activeTarget.architecture ? `Arch ${activeTarget.architecture}` : null,
+        `API ${activeTarget.apiVersion || identity.apiVersion || "v1"}`,
+        `Protocol ${activeTarget.protocolVersion || identity.protocolVersion || 1}`,
+        `Credential ${activeTarget.credentialSource}`,
+        activeTarget.lastSuccessfulResponse ? `Last response ${formatDateTime(activeTarget.lastSuccessfulResponse)}` : "Last response unavailable",
       ],
     }));
   }

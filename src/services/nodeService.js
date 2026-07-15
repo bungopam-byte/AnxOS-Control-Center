@@ -6,6 +6,8 @@ const { getApplicationHostNode, APPLICATION_HOST_NODE_ID } = require("./applicat
 const agentClient = require("./agentClient");
 const { getEffectiveAgentSettings, getHealth, normalizeAgentSettings } = agentClient;
 const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, setNodeToken } = require("./nodeCredentialStore");
+const { parsePairingCode } = require("../shared/agentPairing");
+const { generateAgentToken } = require("../shared/agentTokenStore");
 
 const NODE_SCHEMA_VERSION = 2;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
@@ -868,6 +870,82 @@ async function saveNode(payload = {}) {
   return { node: publicNode(node), ...(await listNodes({ refreshIdentity: false })) };
 }
 
+async function postPairingComplete(agentUrl, payload = {}) {
+  const endpoint = `${normalizeUrl(agentUrl)}/api/v1/pairing/complete`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let body = null;
+  try { body = await response.json(); } catch {}
+  if (!response.ok) {
+    const message = body?.error?.message || body?.message || `Agent pairing failed with HTTP ${response.status}.`;
+    throw Object.assign(new Error(message), { code: body?.error?.code || "PAIRING_FAILED", status: response.status });
+  }
+  return body || {};
+}
+
+async function pairNodeFromCode(payload = {}) {
+  const pairing = parsePairingCode(payload.pairingCode || payload.code || "");
+  const agentUrl = normalizeUrl(pairing.agentUrl);
+  const state = readNodeState();
+  const existingById = payload.nodeId || payload.id ? state.nodes.find((node) => node.id === (payload.nodeId || payload.id)) : null;
+  const permanentToken = generateAgentToken();
+  const paired = await postPairingComplete(agentUrl, {
+    pairingCode: pairing.pairingCode,
+    permanentToken,
+  });
+  const health = await getHealth(normalizeAgentSettings({
+    backendMode: "agent",
+    agentUrl,
+    agentToken: permanentToken,
+  }), {
+    timeoutMs: 8000,
+    targetLabel: "node-pairing",
+    suppressConnectionRefusedLog: true,
+    logThrottleMs: 60000,
+  });
+  const identity = health.identity || paired.identity || {};
+  if (!identity?.deviceId) throw Object.assign(new Error("Paired Agent did not provide a stable device identity."), { code: "AGENT_IDENTITY_MISSING" });
+  const existing = existingById || state.nodes.find((node) => node.agentIdentity?.deviceId === identity.deviceId || normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl);
+  const displayName = String(payload.displayName || existing?.displayName || identity.hostname || "Paired Agent").trim().slice(0, 80) || "Paired Agent";
+  const node = normalizeAgentNode({
+    ...existing,
+    id: existing?.id || nodeIdForDevice(identity.deviceId),
+    displayName,
+    agentUrl,
+    agentToken: permanentToken,
+    enabled: true,
+    agentIdentity: {
+      ...identity,
+      agentInstallationId: identity.agentInstallationId || paired.agentInstallationId || null,
+      agentIdentityId: identity.agentIdentityId || paired.agentIdentityId || null,
+      apiVersion: identity.apiVersion || health.apiVersion || null,
+      capabilities: Array.isArray(identity.capabilities) ? identity.capabilities : Array.isArray(health.capabilities) ? health.capabilities : [],
+    },
+    lastConnectionState: "online",
+    connection: {
+      connected: true,
+      status: "online",
+      message: "Agent paired successfully.",
+      lastSeen: new Date().toISOString(),
+    },
+  });
+  const nodes = mergeAgentNodes([...state.nodes.filter((entry) => entry.id !== node.id && entry.agentIdentity?.deviceId !== identity.deviceId), node]);
+  writeNodeState({ ...state, selectedNodeId: node.id, nodes });
+  return {
+    paired: true,
+    node: publicNode(node),
+    selectedNodeId: node.id,
+    agentUrl,
+    identity,
+    tokenConfigured: true,
+    tokenFingerprint: paired.tokenFingerprint || null,
+    ...(await listNodes({ discoverLocalAgent: false, refreshIdentity: false })),
+  };
+}
+
 async function testNodeConnectionPayload(payload = {}) {
   const displayName = String(payload.displayName || payload.name || "Agent Node").trim().slice(0, 80) || "Agent Node";
   const agentUrl = normalizeUrl(payload.agentUrl || payload.url);
@@ -903,4 +981,4 @@ function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload };

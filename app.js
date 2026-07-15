@@ -618,6 +618,7 @@ const nodeFormStatus = document.querySelector("[data-node-form-status]");
 const nodeFieldErrors = document.querySelectorAll("[data-node-field-error]");
 const nodeTokenNote = document.querySelector("[data-node-token-note]");
 const nodeTokenSetup = document.querySelector("[data-node-token-setup]");
+const nodePairingCodeInput = document.querySelector("[data-node-pairing-code]");
 const nodeDetailsModal = document.querySelector("[data-node-details-modal]");
 const nodeDetailsTitle = document.querySelector("[data-node-details-title]");
 const nodeDetailsSummary = document.querySelector("[data-node-details-summary]");
@@ -27029,7 +27030,7 @@ function renderNodeSummary() {
 
 function setNodeFormBusy(isBusy, label = "") {
   nodeFormBusy = Boolean(isBusy);
-  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"], [data-node-action="generate-token"]').forEach((button) => {
+  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"], [data-node-action="generate-token"], [data-node-action="pair-code"], [data-node-action="paste-pairing-code"]').forEach((button) => {
     button.disabled = nodeFormBusy;
   });
   updateNodeTokenControls();
@@ -27047,6 +27048,15 @@ function setNodeFormErrors(errors = {}) {
     const input = nodeModal?.querySelector(`[data-node-field="${fieldName}"]`);
     input?.setAttribute("aria-invalid", message ? "true" : "false");
   });
+}
+
+function setNodePairingError(message = "") {
+  nodeFieldErrors.forEach((target) => {
+    if (target.dataset.nodeFieldError === "pairingCode") {
+      target.textContent = message;
+    }
+  });
+  nodePairingCodeInput?.setAttribute("aria-invalid", message ? "true" : "false");
 }
 
 function validateNodeFormPayload(payload = {}) {
@@ -27139,6 +27149,8 @@ function setNodeModalVisible(isVisible, node = null) {
   if (isVisible) {
     nodeEditId = node?.kind === "agent" ? node.id : null;
     setNodeFormErrors({});
+    setNodePairingError("");
+    if (nodePairingCodeInput) nodePairingCodeInput.value = "";
     setNodeFormBusy(false, "");
     if (nodeModalTitle) nodeModalTitle.textContent = nodeEditId ? "Edit Node" : "Add Node";
     const saveButton = nodeModal.querySelector('[data-node-action="save"]');
@@ -27174,6 +27186,7 @@ function setNodeModalVisible(isVisible, node = null) {
     nodeModalCleanup = null;
     nodeEditId = null;
     setNodeFormErrors({});
+    setNodePairingError("");
     setNodeFormBusy(false, "");
     if (nodeTokenSetup) nodeTokenSetup.hidden = true;
   }
@@ -27702,6 +27715,51 @@ async function testNodeFormConnection() {
     const message = normalizeIpcErrorMessage(error, "Node connection test failed.");
     setNodeFormBusy(false, message);
     showToast(message, "error");
+  }
+}
+
+async function pairNodeFromSettings() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasNodes || nodeFormBusy || typeof desktopApiState.api.nodes.pair !== "function") {
+    return;
+  }
+  const pairingCode = String(nodePairingCodeInput?.value || "").trim();
+  if (!pairingCode) {
+    setNodePairingError("Paste the temporary pairing code displayed by the Agent.");
+    showToast("Pairing code is required.", "warning");
+    return;
+  }
+  try {
+    setNodePairingError("");
+    setNodeFormBusy(true, "Pairing Agent and securing connection...");
+    const result = await desktopApiState.api.nodes.pair({ pairingCode, id: nodeEditId || null });
+    if (nodePairingCodeInput) nodePairingCodeInput.value = "";
+    setNodeModalVisible(false);
+    await refreshNodes();
+    if (result?.selectedNodeId) {
+      nodesState.selectedNodeId = result.selectedNodeId;
+      syncNodeSelectorControls();
+      await reloadActiveNodeData(getNodeRequestContext("node-pairing"));
+    }
+    showToast(`${result?.node?.displayName || "Agent"} paired successfully.`, "success");
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Agent pairing failed.");
+    setNodePairingError(message);
+    setNodeFormBusy(false, message);
+    showToast(message, "error");
+  }
+}
+
+async function pasteNodePairingCode() {
+  try {
+    const value = await navigator.clipboard.readText();
+    if (nodePairingCodeInput) {
+      nodePairingCodeInput.value = String(value || "").trim();
+      setNodePairingError("");
+    }
+    showToast("Pairing code pasted.", "success");
+  } catch {
+    showToast("Pairing code could not be pasted.", "error");
   }
 }
 
@@ -31418,6 +31476,8 @@ document.querySelector('[data-node-action="test"]')?.addEventListener("click", t
 document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);
 document.querySelector('[data-node-action="generate-token"]')?.addEventListener("click", generateNodeAgentToken);
 document.querySelector('[data-node-action="copy-token"]')?.addEventListener("click", copyNodeAgentToken);
+document.querySelector('[data-node-action="pair-code"]')?.addEventListener("click", pairNodeFromSettings);
+document.querySelector('[data-node-action="paste-pairing-code"]')?.addEventListener("click", pasteNodePairingCode);
 document.querySelectorAll('[data-node-action="close-modal"]').forEach((button) => button.addEventListener("click", () => setNodeModalVisible(false)));
 document.querySelectorAll('[data-node-action="close-details"]').forEach((button) => button.addEventListener("click", () => setNodeDetailsVisible(false)));
 getNodeTokenInput()?.addEventListener("input", (event) => {

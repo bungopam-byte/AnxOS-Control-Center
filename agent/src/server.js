@@ -16,6 +16,7 @@ const { handleDependencies } = require("./routes/dependencies");
 const { handleFilesDownload, handleFilesIdentity, handleFilesList, handleFilesMutate, handleFilesRead, handleFilesStat } = require("./routes/files");
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
+const { handlePairing } = require("./routes/pairing");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handlePublicAccess } = require("./routes/publicAccess");
 const { handleStats, handleSystemSummary } = require("./routes/system");
@@ -325,6 +326,14 @@ async function handleRequest(request, response) {
     request.body = await readRequestBody(request);
 
     const url = new URL(request.url, `http://${request.headers.host || `${config.host}:${config.port}`}`);
+    if (url.pathname.startsWith("/api/v1/pairing/")) {
+      checkRateLimit(`pairing:${address}`, 30, 60 * 1000);
+      const pairingResult = await handlePairing(request, url, config);
+      if (pairingResult) {
+        sendResult(response, pairingResult);
+        return;
+      }
+    }
     const auth = isAuthorized(request, config, url.pathname);
 
     if (!auth.ok) {

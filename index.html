@@ -4138,8 +4138,18 @@
           </div>
           <button class="icon-action" type="button" aria-label="Close node form" data-node-action="close-modal">&times;</button>
         </header>
-        <p class="settings-note node-form-guidance">One machine or server = one independently running AnxOS Agent. Install the Agent on that machine, then connect this node directly to its Agent URL and token.</p>
+        <p class="settings-note node-form-guidance">One machine or server = one independently running AnxOS Agent. Use Pair with Code for automatic setup, or open Advanced Manual Setup for recovery and development.</p>
         <div class="settings-message" data-node-form-status hidden></div>
+        <section class="settings-section node-pairing-section" data-node-pairing-section>
+          <div class="settings-section__header"><div><h3>Pair with Code</h3><p>Recommended. Enter the temporary pairing code displayed by Agent setup. No manual token setup is required.</p></div><span class="status-pill status-pill--ok">Recommended</span></div>
+          <label class="settings-field settings-field--wide"><span>Pairing code</span><textarea rows="3" data-node-pairing-code placeholder="ANX-4K7P-92DM" autocomplete="off" spellcheck="false"></textarea><small class="settings-field-error" data-node-field-error="pairingCode"></small></label>
+          <div class="settings-actions">
+            <button class="primary-button" type="button" data-node-action="pair-code">Pair Agent</button>
+            <button class="inline-action" type="button" data-node-action="paste-pairing-code">Paste Pairing Code</button>
+          </div>
+        </section>
+        <section class="settings-section node-manual-section" data-node-manual-section>
+          <div class="settings-section__header"><div><h3>Advanced Manual Setup</h3><p>Use direct Agent URL and token only for development, recovery, older Agents, or headless workflows.</p></div><span class="status-pill status-pill--planned">Advanced</span></div>
         <div class="settings-grid nodes-form-grid">
           <label class="settings-field"><span>Node name</span><input type="text" data-node-field="displayName" placeholder="Anxlab" maxlength="80"><small class="settings-field-error" data-node-field-error="displayName"></small></label>
           <label class="settings-field"><span>Agent URL</span><input type="url" data-node-field="agentUrl" placeholder="http://192.168.1.134:47131"><small class="settings-field-error" data-node-field-error="agentUrl"></small></label>
@@ -4163,6 +4173,7 @@
           <button class="inline-action" type="button" data-node-action="close-modal">Cancel</button>
           <button class="inline-action" type="button" data-node-action="delete">Delete Selected</button>
         </div>
+        </section>
         <div class="settings-note node-token-setup" data-node-token-setup hidden>
           <strong>Token setup</strong>
           <ol>

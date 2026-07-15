@@ -230,4 +230,5 @@ module.exports = {
   resolveSharedAgentToken,
   rotateSharedAgentToken,
   tokenFingerprint,
+  writeAgentConfigToken,
 };

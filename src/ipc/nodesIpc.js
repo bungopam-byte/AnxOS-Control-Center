@@ -4,6 +4,7 @@ const {
   checkNodeHealth,
   deleteNode,
   listNodes,
+  pairNodeFromCode,
   saveNode,
   testNode,
   testNodeConnectionPayload,
@@ -46,6 +47,12 @@ function registerNodesIpc() {
     requirePermission("settings:write", "nodes");
     audit({ action: "node.generate-token", target: "node-agent-token" });
     return { token: generateAgentToken(), tokenFormat: "anxos-base64url-v1" };
+  }));
+  ipcMain.handle("nodes:pair", async (_, payload = {}) => invokeNodeOperation(async () => {
+    requirePermission("settings:write", "nodes");
+    const paired = await pairNodeFromCode(payload);
+    audit({ action: "node.pair-agent", target: paired.node?.id || paired.selectedNodeId || "paired-node" });
+    return setActiveNode(paired.selectedNodeId, { reason: "agent-pairing", state: paired });
   }));
 }
 

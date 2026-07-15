@@ -479,11 +479,16 @@ const agentSetupMessage = document.querySelector("[data-agent-setup-message]");
 const agentSetupSummary = document.querySelector("[data-agent-setup-summary]");
 const agentLocalInstallerStatus = document.querySelector("[data-agent-local-installer-status]");
 const agentLocalInstallerSteps = document.querySelector("[data-agent-local-installer-steps]");
+const agentPairingStatus = document.querySelector("[data-agent-pairing-status]");
+const agentPairingCode = document.querySelector("[data-agent-pairing-code]");
+const agentPairingExpires = document.querySelector("[data-agent-pairing-expires]");
+const agentPairingUrl = document.querySelector("[data-agent-pairing-url]");
 let agentControlState = null;
 let agentControlBusy = false;
 let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentControlLastRuntimeSnapshot = null;
+let activeAgentPairingCode = "";
 const remoteDiagnosticsInFlight = new Set();
 const remoteDiagnosticsLastCapturedAt = new Map();
 let latestDependencyResult = null;
@@ -3810,6 +3815,24 @@ function renderLocalAgentInstallerSteps(steps = []) {
   });
 }
 
+function renderAgentPairingSetup(session = null) {
+  activeAgentPairingCode = session?.pairingCode || "";
+  if (agentPairingStatus) {
+    agentPairingStatus.textContent = session?.pairingCode ? "Waiting for Control Center" : "Not paired";
+    agentPairingStatus.className = `status-pill ${session?.pairingCode ? "status-pill--warning" : "status-pill--planned"}`;
+  }
+  if (agentPairingCode) {
+    agentPairingCode.textContent = session?.displayCode || session?.pairingCode || "Not generated";
+  }
+  if (agentPairingExpires) {
+    agentPairingExpires.textContent = session?.expiresAt ? formatDateTime(session.expiresAt) : "Unavailable";
+  }
+  if (agentPairingUrl) {
+    agentPairingUrl.textContent = session?.agentUrl || "Unavailable";
+  }
+  document.querySelector('[data-agent-control-action="copyPairingCode"]')?.toggleAttribute("disabled", !activeAgentPairingCode);
+}
+
 function getAgentControlOverviewTarget(payload = agentControlState) {
   if (!payload) return null;
   const selectedNodeId = payload.selectedNodeId || getSelectedNodeId();
@@ -5098,6 +5121,8 @@ async function runAgentControlAction(action) {
     checkUpdates: "Check Agent updates",
     updateAgent: "Update Local Agent",
     installLocalAgent: "Install Local Agent",
+    startPairingSession: "Generate Agent pairing code",
+    copyPairingCode: "Copy Agent pairing code",
     learnLocalAgent: "Learn about Local Agent",
     useRemoteAgent: "Use Remote Agent",
     rotateToken: "Rotate Agent token",
@@ -5132,6 +5157,17 @@ async function runAgentControlAction(action) {
     }
     else if (action === "learnLocalAgent") {
       showToast("The Local Agent runs on this PC so AnxOS can manage local servers, files, backups, dependencies, and services without a separate Debian server.", "info");
+    }
+    else if (action === "startPairingSession") {
+      if (typeof api.startPairingSession !== "function") throw new Error("Agent pairing setup is unavailable in this build.");
+      const session = await api.startPairingSession();
+      renderAgentPairingSetup(session);
+      showToast("Pairing code generated.", "success");
+    }
+    else if (action === "copyPairingCode") {
+      if (!activeAgentPairingCode) throw new Error("Generate a pairing code before copying.");
+      await navigator.clipboard.writeText(activeAgentPairingCode);
+      showToast("Pairing code copied.", "success");
     }
     else if (action === "useRemoteAgent") {
       showToast("Remote Agent mode stays available. Add or select a remote node from the node picker or Agent Connection settings.", "info");
@@ -11138,8 +11174,8 @@ function getAgentErrorMessage(error, fallback = "Instance request failed.") {
     INSTANCE_ALREADY_EXISTS: "An instance with this ID already exists. Delete the failed partial instance or choose a different name, then retry.",
     INSTANCE_NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_VERIFICATION_FAILED: error?.message || "Created instance could not be verified.",
-    AGENT_TOKEN_MISSING: "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.",
-    UNAUTHORIZED: "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.",
+    AGENT_TOKEN_MISSING: "Agent token is missing. Open Agent Control, generate a pairing code, then pair or repair the node connection.",
+    UNAUTHORIZED: "Agent token rejected. Open Agent Control and use Repair, Rotate Token, or Pair with Code to refresh the connection.",
     NOT_FOUND: "The selected instance no longer exists.",
     INSTANCE_RUNNING: "Stop the instance before deleting it.",
     INSTANCE_DELETE_FAILED: "Instance files could not be deleted.",
@@ -29141,7 +29177,7 @@ async function pairAgentFromSettings() {
 function focusAgentPairingRepair() {
   showPage("agent-control");
   agentPairingCodeInput?.focus();
-  setAgentConnectionDisplay("error", "Run npm run agent:pair on the Debian agent machine, paste the code here, then click Pair Agent.", { repairAvailable: true });
+  setAgentConnectionDisplay("error", "Open Agent setup on that machine, generate a temporary pairing code, paste it here, then select Pair Agent.", { repairAvailable: true });
 }
 
 function setAboutFields(info) {

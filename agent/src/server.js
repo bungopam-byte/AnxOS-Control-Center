@@ -125,10 +125,10 @@ function sendError(response, statusCode, code, message = "Request failed.", deta
 
 function getAuthErrorMessage(code) {
   if (code === "AGENT_TOKEN_MISSING") {
-    return "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.";
+    return "Agent token is missing. Open Agent setup, generate a temporary pairing code, then pair this Agent from Control Center.";
   }
   if (code === "UNAUTHORIZED") {
-    return "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.";
+    return "Agent token rejected. Re-pair this Agent from Control Center or rotate the node credential from Agent Control.";
   }
   return "Request failed.";
 }

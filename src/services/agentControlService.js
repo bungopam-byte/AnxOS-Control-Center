@@ -692,6 +692,30 @@ async function pairLocalAgentSecurely(options = {}) {
   };
 }
 
+async function startPairingSession() {
+  const config = readConfig();
+  if (!(await getStatus())?.running) {
+    await start();
+  }
+  const response = await fetch(`${getLocalAgentUrl(config)}/api/v1/pairing/start`, { method: "POST" });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.pairingCode) {
+    throw Object.assign(new Error(payload?.error?.message || "Agent pairing setup could not start."), { code: payload?.error?.code || "PAIRING_START_FAILED" });
+  }
+  diagnostics.log("info", "agent-control", "pairing-session", "Temporary Agent pairing session started", {
+    agentUrl: payload.agentUrl || getLocalAgentUrl(config),
+    expiresAt: payload.expiresAt || null,
+  }, { file: "service-manager" });
+  return {
+    status: payload.status || "waiting",
+    pairingCode: payload.pairingCode,
+    displayCode: payload.displayCode || null,
+    expiresAt: payload.expiresAt || null,
+    agentUrl: payload.agentUrl || getLocalAgentUrl(config),
+    identity: payload.identity || null,
+  };
+}
+
 async function probePort(port) { return new Promise((resolve) => { const socket = net.connect({ host: "127.0.0.1", port, timeout: 800 }); socket.once("connect", () => { socket.destroy(); resolve(true); }); socket.once("error", () => resolve(false)); socket.once("timeout", () => { socket.destroy(); resolve(false); }); }); }
 
 async function waitForLocalAgentHealth(config, timeoutMs = 3500) {
@@ -1427,6 +1451,7 @@ module.exports = {
   runDiagnostics,
   saveConfig,
   setAutoStart,
+  startPairingSession,
   start,
   stop,
   uninstallService,

@@ -49,6 +49,7 @@
     "node:startup-selection:smoke": "node scripts/startup-selection-smoke.js",
     "node:token-workflow:smoke": "node scripts/node-token-workflow-smoke.js",
     "node:agent-pairing:smoke": "node scripts/agent-pairing-workflow-smoke.js",
+    "agent:terminal-free:smoke": "node scripts/agent-terminal-free-smoke.js",
     "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
     "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
     "node:compat-cleanup:smoke": "node scripts/node-compat-cleanup-smoke.js",

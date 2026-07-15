@@ -3534,6 +3534,25 @@
                 <div class="docker-empty-state"><strong>No install has run yet</strong><span>AnxOS will prepare the managed runtime, create secure credentials, start the Agent, and reconnect automatically.</span></div>
               </div>
             </section>
+            <section class="settings-section settings-section--wide agent-pairing-setup" data-agent-pairing-setup>
+              <div class="settings-section__header">
+                <div>
+                  <h2>Pair This Agent</h2>
+                  <p>Generate a temporary pairing code for another Control Center. The permanent credential is created automatically during pairing.</p>
+                </div>
+                <span class="status-pill status-pill--planned" data-agent-pairing-status>Not paired</span>
+              </div>
+              <div class="security-summary-grid">
+                <div><span>Pairing code</span><strong data-agent-pairing-code>Not generated</strong></div>
+                <div><span>Expires</span><strong data-agent-pairing-expires>Unavailable</strong></div>
+                <div><span>Agent address</span><strong data-agent-pairing-url>Unavailable</strong></div>
+              </div>
+              <div class="settings-actions">
+                <button class="primary-button" type="button" data-agent-control-action="startPairingSession">Generate Pairing Code</button>
+                <button class="inline-action" type="button" data-agent-control-action="copyPairingCode" disabled>Copy Pairing Code</button>
+              </div>
+              <p class="settings-note">Open Add Node on the other Control Center, paste this temporary code, and select Pair Agent. Codes expire and can be used only once.</p>
+            </section>
             <section class="settings-section agent-connection-section">
               <div class="settings-section__header">
                 <div>
@@ -4173,7 +4192,6 @@
           <button class="inline-action" type="button" data-node-action="close-modal">Cancel</button>
           <button class="inline-action" type="button" data-node-action="delete">Delete Selected</button>
         </div>
-        </section>
         <div class="settings-note node-token-setup" data-node-token-setup hidden>
           <strong>Token setup</strong>
           <ol>
@@ -4188,6 +4206,7 @@
           <p>Temporary Windows PowerShell example: <code>$env:ANXOS_AGENT_TOKEN="&lt;generated-token&gt;"</code></p>
           <p>Treat this token like a password. Anyone with it may be able to control this Agent.</p>
         </div>
+        </section>
       </section>
     </div>
 

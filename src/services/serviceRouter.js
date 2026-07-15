@@ -32,6 +32,25 @@ class AgentUnavailableError extends Error {
   }
 }
 
+function getAgentErrorCode(error) {
+  return error?.payload?.error?.code || error?.code || null;
+}
+
+function shouldPreserveAgentError(error) {
+  const code = getAgentErrorCode(error);
+  return [
+    "UNAUTHORIZED",
+    "AUTHENTICATION_FAILED",
+    "AGENT_INCOMPATIBLE",
+    "NODE_DISABLED",
+    "NODE_NOT_FOUND",
+    "NODE_REQUIRED",
+    "AGENT_TIMEOUT",
+    "TIMEOUT",
+    "NETWORK_ERROR",
+  ].includes(code) || error?.status === 401 || error?.statusCode === 401;
+}
+
 function createUnavailableFileListing(message = "File service unavailable.") {
   return {
     configured: false,
@@ -367,7 +386,8 @@ async function listDockerVolumes(options = {}) {
 async function getAgentPlayitSnapshot(options = {}) {
   try {
     return await agentClient.getPlayitSnapshot(getOptionalNodeConfig(options));
-  } catch {
+  } catch (error) {
+    if (shouldPreserveAgentError(error)) throw error;
     throw new AgentUnavailableError();
   }
 }
@@ -379,7 +399,8 @@ async function getPlayitSnapshot(options = {}) {
 async function getAgentAmpSnapshot(options = {}) {
   try {
     return await agentClient.getAmpSnapshot(getOptionalNodeConfig(options));
-  } catch {
+  } catch (error) {
+    if (shouldPreserveAgentError(error)) throw error;
     throw new AgentUnavailableError();
   }
 }
@@ -390,13 +411,19 @@ async function getAmpSnapshot(options = {}) {
 
 async function getAgentFileListing(options = {}) {
   const config = getOptionalNodeConfig(options);
-  if (!(await agentClient.isHealthy(config))) {
+  try {
+    if (!(await agentClient.isHealthy(config))) {
+      throw new AgentUnavailableError();
+    }
+  } catch (error) {
+    if (shouldPreserveAgentError(error)) throw error;
     throw new AgentUnavailableError();
   }
 
   try {
     return await agentClient.getFileListing(".", config);
-  } catch {
+  } catch (error) {
+    if (shouldPreserveAgentError(error)) throw error;
     throw new AgentUnavailableError();
   }
 }
@@ -505,8 +532,9 @@ async function listInstances(options = {}) {
   } catch (error) {
     diagnostics.log("warn", "instances", "list-failed", "Instance list request failed.", {
       nodeId,
-      errorCode: error?.code || error?.payload?.error?.code || "INSTANCE_LIST_FAILED",
+      errorCode: getAgentErrorCode(error) || "INSTANCE_LIST_FAILED",
     }, { file: "instances" });
+    if (shouldPreserveAgentError(error)) throw error;
     throw new AgentUnavailableError();
   }
 }

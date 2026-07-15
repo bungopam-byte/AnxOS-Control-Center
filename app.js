@@ -1994,11 +1994,11 @@ const FRIENDLY_ERROR_DEFINITIONS = [
   },
   {
     id: "agent-auth",
-    codes: ["UNAUTHORIZED", "FORBIDDEN", "AGENT_TOKEN_INVALID", "AGENT_TOKEN_MISMATCH"],
+    codes: ["UNAUTHORIZED", "AUTHENTICATION_FAILED", "FORBIDDEN", "AGENT_TOKEN_INVALID", "AGENT_TOKEN_MISMATCH"],
     pattern: /unauthorized|forbidden|token.*(mismatch|invalid|rejected)|authentication mismatch/i,
-    message: "The app and Agent are using different connection credentials.",
-    suggestion: "Repair the Agent connection or rotate the shared Agent token from Security or Agent Control.",
-    actions: ["Open Agent Control", "View Diagnostics"],
+    message: "Authentication failed.",
+    suggestion: "Control Center could reach this Agent, but its saved connection credential was rejected. Re-pair the Agent or repair the connection.",
+    actions: ["Re-pair Agent", "Repair Connection", "View Diagnostics"],
   },
   {
     id: "docker-unavailable",

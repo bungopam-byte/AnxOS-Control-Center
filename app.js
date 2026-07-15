@@ -3643,15 +3643,8 @@ function startStartupFallback() {
     return;
   }
 
-  try {
-    startStartupMusic();
-    runStartupSequence();
-  } catch (error) {
-    console.warn("Startup sequence failed, forcing fallback reveal.", error);
-    startupState.systemReady = true;
-    startupState.sequenceReady = true;
-    tryCompleteStartup(true);
-  }
+  startStartupMusic();
+  runStartupSequence();
 
   window.setTimeout(() => {
     if (!startupState.systemReady) {
@@ -3664,66 +3657,6 @@ function startStartupFallback() {
 
     tryCompleteStartup(true);
   }, Math.max(STARTUP_FALLBACK_MS, getStartupMinimumMs() + 2200));
-}
-
-function startAppBootstrap() {
-  try {
-    configurePrimaryNavigation();
-    ensurePageIntroductions();
-    loadSettings();
-    renderOperationsCenter();
-    renderNotificationCenter();
-    renderMaintenanceCenter();
-    renderFriendlyDashboard();
-    refreshAccountState();
-    refreshSecurityState();
-    refreshNodes();
-    loadAgentSettings();
-    loadMarketplaceSettings();
-    applySettings(readStoredSettings(), { openDefaultPage: true });
-    loadRuntimeInfo();
-    setupUpdates();
-    setupDeveloperUpdates();
-    startStartupFallback();
-    refreshDockerStatus();
-
-    registerRefreshTask(updateLocalTime, 30000);
-    registerRefreshTask(() => {
-      if (!shouldSkipNodeScopedPolling() && getActivePageName() === "dashboard") refreshDashboard();
-    }, 1000);
-    registerRefreshTask(() => {
-      if (!shouldSkipNodeScopedPolling() && ["dashboard", "amp", "minecraft"].includes(getActivePageName())) refreshAmpDashboard();
-    }, AMP_REFRESH_INTERVAL_MS);
-    registerRefreshTask(() => {
-      if (!shouldSkipNodeScopedPolling() && ["dashboard", "playit"].includes(getActivePageName())) refreshPlayitStatus();
-    }, 5000);
-    registerRefreshTask(() => {
-      if (shouldSkipNodeScopedPolling()) return;
-      if (getActivePageName() === "instances" || getActivePageName() === "dashboard" || getActivePageName() === "console") {
-        refreshInstances();
-      }
-    }, 5000);
-    registerRefreshTask(() => {
-      if (shouldSkipNodeScopedPolling()) return;
-      if (getActivePageName() === "console") {
-        refreshConsoleMetrics();
-        refreshConsoleLogs({ silent: true });
-      }
-    }, 3000);
-    registerRefreshTask(() => {
-      if (!shouldSkipNodeScopedPolling() && getActivePageName() === "marketplace") {
-        refreshMarketplaceDownloads();
-      }
-    }, 2000);
-    registerRefreshTask(() => {
-      if (getActivePageName() === "agent-control" && !document.hidden) refreshAgentControl();
-    }, 5000);
-  } catch (error) {
-    console.error("Application bootstrap failed, forcing startup fallback.", error);
-    startupState.systemReady = true;
-    startupState.sequenceReady = true;
-    tryCompleteStartup(true);
-  }
 }
 
 function hasOwnerWorkspaceAccess() {
@@ -33151,4 +33084,53 @@ windowMaximizedUnsubscribe = getDesktopWindowApi()?.onMaximizedChanged?.((isMaxi
   setTitlebarWindowState(isMaximized);
 }) || null;
 syncTitlebarWindowState();
-startAppBootstrap();
+configurePrimaryNavigation();
+ensurePageIntroductions();
+loadSettings();
+renderOperationsCenter();
+renderNotificationCenter();
+renderMaintenanceCenter();
+renderFriendlyDashboard();
+refreshAccountState();
+refreshSecurityState();
+refreshNodes();
+loadAgentSettings();
+loadMarketplaceSettings();
+applySettings(readStoredSettings(), { openDefaultPage: true });
+loadRuntimeInfo();
+setupUpdates();
+setupDeveloperUpdates();
+startStartupFallback();
+refreshDockerStatus();
+
+registerRefreshTask(updateLocalTime, 30000);
+registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling() && getActivePageName() === "dashboard") refreshDashboard();
+}, 1000);
+registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling() && ["dashboard", "amp", "minecraft"].includes(getActivePageName())) refreshAmpDashboard();
+}, AMP_REFRESH_INTERVAL_MS);
+registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling() && ["dashboard", "playit"].includes(getActivePageName())) refreshPlayitStatus();
+}, 5000);
+registerRefreshTask(() => {
+  if (shouldSkipNodeScopedPolling()) return;
+  if (getActivePageName() === "instances" || getActivePageName() === "dashboard" || getActivePageName() === "console") {
+    refreshInstances();
+  }
+}, 5000);
+registerRefreshTask(() => {
+  if (shouldSkipNodeScopedPolling()) return;
+  if (getActivePageName() === "console") {
+    refreshConsoleMetrics();
+    refreshConsoleLogs({ silent: true });
+  }
+}, 3000);
+registerRefreshTask(() => {
+  if (!shouldSkipNodeScopedPolling() && getActivePageName() === "marketplace") {
+    refreshMarketplaceDownloads();
+  }
+}, 2000);
+registerRefreshTask(() => {
+  if (getActivePageName() === "agent-control" && !document.hidden) refreshAgentControl();
+}, 5000);

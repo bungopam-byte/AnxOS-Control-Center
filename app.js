@@ -729,6 +729,7 @@ let marketplaceProgressRenderTimer = null;
 let marketplacePendingProgressSteps = null;
 let unsubscribeMarketplaceInstallProgress = null;
 let activeMarketplaceOperationId = null;
+let activeMarketplaceInstallNodeId = null;
 let marketplaceLocalDownloadEntries = [];
 let marketplaceManualRecoveryState = null;
 let marketplaceProviderActive = "modrinth";
@@ -12953,6 +12954,12 @@ function startMarketplaceInstallProgressListener() {
   }
   marketplaceInstallProgressEvents = [];
   unsubscribeMarketplaceInstallProgress = desktopApiState.api.marketplace.onInstallProgress((event) => {
+    if (event?.nodeId && activeMarketplaceInstallNodeId && event.nodeId !== activeMarketplaceInstallNodeId) {
+      return;
+    }
+    if (event?.nodeId && event.nodeId !== getSelectedNodeId()) {
+      return;
+    }
     marketplaceInstallProgressEvents = [...marketplaceInstallProgressEvents, event].slice(-8);
     updateMarketplaceOperationFromEvent(event);
     scheduleMarketplaceProgressRender();
@@ -13461,7 +13468,9 @@ async function refreshMarketplaceDownloads() {
   }
 
   try {
-    const payload = await desktopApiState.api.marketplace.getDownloads();
+    const requestContext = getNodeRequestContext("marketplace-downloads");
+    const payload = await desktopApiState.api.marketplace.getDownloads(getNodeScopedPayload(requestContext));
+    if (!isNodeRequestCurrent(requestContext)) return;
     renderMarketplaceDownloads(Array.isArray(payload?.downloads) ? payload.downloads : []);
   } catch {
     renderMarketplaceDownloads([]);
@@ -13470,7 +13479,9 @@ async function refreshMarketplaceDownloads() {
 
 async function cancelMarketplaceDownload(downloadId) {
   try {
-    await getDesktopApiState().api.marketplace.cancelDownload(downloadId);
+    const requestContext = createNodeActionContext("marketplace-download-cancel");
+    await getDesktopApiState().api.marketplace.cancelDownload(downloadId, getNodeScopedPayload(requestContext));
+    if (!isNodeActionStillCurrent(requestContext)) return;
     await refreshMarketplaceDownloads();
   } catch (error) {
     showToast(error?.message || "Download cancel failed.");
@@ -13479,7 +13490,9 @@ async function cancelMarketplaceDownload(downloadId) {
 
 async function retryMarketplaceDownload(downloadId) {
   try {
-    await getDesktopApiState().api.marketplace.retryDownload(downloadId);
+    const requestContext = createNodeActionContext("marketplace-download-retry");
+    await getDesktopApiState().api.marketplace.retryDownload(downloadId, getNodeScopedPayload(requestContext));
+    if (!isNodeActionStillCurrent(requestContext)) return;
     await refreshMarketplaceDownloads();
   } catch (error) {
     showToast(error?.message || "Download retry failed.");
@@ -14254,6 +14267,7 @@ async function installMarketplaceTemplate(event) {
   }
 
   const requestContext = createNodeActionContext("marketplace-install");
+  activeMarketplaceInstallNodeId = requestContext.nodeId;
   marketplaceInstallInFlight = true;
   activeMarketplaceOperationId = startOperation({
     type: "Marketplace",
@@ -14374,6 +14388,7 @@ async function installMarketplaceTemplate(event) {
       window.clearInterval(downloadPoll);
     }
     stopMarketplaceInstallProgressListener();
+    activeMarketplaceInstallNodeId = null;
     marketplaceInstallInFlight = false;
     activeMarketplaceOperationId = null;
     if (marketplaceInstallButton) {
@@ -25743,6 +25758,11 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
   latestDependencyNodeId = null;
   latestInstancesSnapshot = null;
   latestInstanceMetrics = null;
+  marketplaceInstallProgressEvents = [];
+  marketplacePendingProgressSteps = null;
+  activeMarketplaceInstallNodeId = null;
+  marketplaceLocalDownloadEntries = [];
+  setMarketplaceManualRecoveryState(null);
   selectedDockerContainerId = null;
   selectedInstanceId = null;
   activeConsoleInstanceId = null;

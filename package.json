@@ -49,6 +49,7 @@
     "owner:smoke": "node scripts/owner-workspace-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",
     "marketplace:smoke": "node scripts/marketplace-smoke.js",
+    "marketplace:node-routing:smoke": "node scripts/marketplace-node-routing-smoke.js",
     "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",
     "files:smoke": "node scripts/files-pipeline-smoke.js",

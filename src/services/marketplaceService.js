@@ -108,14 +108,16 @@ function validateInstallContext(installContext = {}) {
 function resolveMarketplaceAgentConfig(nodeId = null) {
   const executionTarget = getExecutionTarget(nodeId);
   if (executionTarget.type === "agent") {
-    return executionTarget.config;
-  }
-
-  const effectiveAgent = agentClient.getEffectiveAgentSettings();
-  if (effectiveAgent.backendMode === "agent") {
+    const node = getNode(executionTarget.nodeId);
+    if (node.enabled === false) {
+      throw createMarketplaceError("Selected node is disabled.", "NODE_DISABLED", {
+        nodeId: executionTarget.nodeId,
+      });
+    }
     return {
-      ...effectiveAgent,
-      targetLabel: "configured-agent",
+      ...executionTarget.config,
+      nodeId: executionTarget.nodeId,
+      agentNodeId: executionTarget.nodeId,
     };
   }
 
@@ -993,9 +995,11 @@ function pushStep(progress, label, status = "complete", detail = "") {
 function createDownloadRecord(template, fileName, options = {}) {
   const id = `${template.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const installSessionId = options.installSessionId || id;
+  const nodeId = options.nodeId || null;
   const record = {
     id,
     installSessionId,
+    nodeId,
     templateId: template.id,
     name: fileName || template.displayName || template.id,
     installerType: getTemplateInstallerType(template) || null,
@@ -1020,6 +1024,7 @@ function createDownloadRecord(template, fileName, options = {}) {
       level: "info",
       message: `Queued ${fileName || template.displayName || template.id}.`,
       templateId: template.id,
+      nodeId,
       step: "Validate template",
     }],
   };
@@ -1085,7 +1090,9 @@ function isFiveMTemplate(template = {}) {
 }
 
 function createInstallTaskRecord(template, options = {}) {
-  const record = createDownloadRecord(template, template.displayName || template.id);
+  const record = createDownloadRecord(template, template.displayName || template.id, {
+    nodeId: options.nodeId || null,
+  });
   updateDownload(record, {
     stage: "Validating",
     status: "running",
@@ -1127,6 +1134,7 @@ function createDependencyInstallRecord(payload = {}, plan = null, options = {}) 
   const record = {
     id,
     installSessionId: options.installSessionId || id,
+    nodeId: payload.nodeId || null,
     templateId: "dependency",
     type: "Dependency",
     name: dependencyNames.length === 1 ? `Installing ${dependencyNames[0]}` : `Installing ${dependencyNames.length} dependencies`,
@@ -1285,6 +1293,17 @@ function getDownloads() {
   };
 }
 
+function getDownloadsForNode(nodeId = null) {
+  const requestedNodeId = nodeId || getSelectedNodeId();
+  const allDownloads = getDownloads().downloads;
+  if (!requestedNodeId) {
+    return { downloads: allDownloads };
+  }
+  return {
+    downloads: allDownloads.filter((download) => !download.nodeId || download.nodeId === requestedNodeId),
+  };
+}
+
 function getInstallSessionRecords(record) {
   if (!record) return [];
   const sessionId = record.installSessionId || record.retryContext?.installSessionId || record.id;
@@ -1296,11 +1315,23 @@ function getInstallSessionRecords(record) {
   );
 }
 
-function cancelDownload(downloadId) {
+function assertDownloadNode(record, nodeId = null) {
+  if (!record || !nodeId || !record.nodeId || record.nodeId === nodeId) {
+    return;
+  }
+  throw createMarketplaceError("Download belongs to a different node.", "DOWNLOAD_NODE_MISMATCH", {
+    downloadId: record.id,
+    nodeId,
+    downloadNodeId: record.nodeId,
+  });
+}
+
+function cancelDownload(downloadId, options = {}) {
   const record = downloads.get(downloadId);
   if (!record) {
     throw createMarketplaceError("Download was not found.", "DOWNLOAD_NOT_FOUND");
   }
+  assertDownloadNode(record, options.nodeId || null);
 
   if (record.controller) {
     record.controller.abort();
@@ -1315,11 +1346,12 @@ function cancelDownload(downloadId) {
   return { download: sanitizeDownload(record) };
 }
 
-async function retryDownload(downloadId) {
+async function retryDownload(downloadId, options = {}) {
   const record = downloads.get(downloadId);
   if (!record) {
     throw createMarketplaceError("Download was not found.", "DOWNLOAD_NOT_FOUND");
   }
+  assertDownloadNode(record, options.nodeId || null);
 
   const retryContext = record.retryContext && typeof record.retryContext === "object"
     ? JSON.parse(JSON.stringify(record.retryContext))
@@ -3443,6 +3475,7 @@ async function downloadOneToInstance(template, download, options, instanceId, pr
   const record = createDownloadRecord(template, fileName, {
     parentTaskId: parentRecord?.id || null,
     installSessionId: parentRecord?.installSessionId || null,
+    nodeId: parentRecord?.nodeId || options.nodeId || agentConfig?.nodeId || null,
   });
   if (parentRecord && !parentRecord.childTaskIds.includes(record.id)) {
     parentRecord.childTaskIds.push(record.id);
@@ -3704,7 +3737,8 @@ async function installTemplate(payload = {}) {
   pushStep(progress, "Validate template", "complete", `${template.id} is installable as ${manifestValidation.installerType}.`);
 
   const options = normalizeMarketplaceInstallOptions(template, payload.options || {});
-  const parentRecord = createInstallTaskRecord(template, options);
+  const installNodeId = payload.nodeId || getSelectedNodeId();
+  const parentRecord = createInstallTaskRecord(template, { ...options, nodeId: installNodeId });
   const ports = template.category === "Minecraft"
     ? [resolveMinecraftPort(options, template.defaultPorts)]
     : parsePorts(options.ports || options.port, template.defaultPorts);
@@ -3713,7 +3747,7 @@ async function installTemplate(payload = {}) {
 
   try {
     updateDownload(parentRecord, { stage: "Check dependencies", progress: 10 });
-    await ensureTemplateDependencies(template, { ...options, nodeId: payload.nodeId || null }, agentConfig, progress, parentRecord);
+    await ensureTemplateDependencies(template, { ...options, nodeId: installNodeId }, agentConfig, progress, parentRecord);
   } catch (error) {
     const message = mapMarketplaceError(error, "Marketplace dependency check failed.");
     finalizeInstallTaskRecord(parentRecord, "failed", message, {
@@ -3747,7 +3781,7 @@ async function installTemplate(payload = {}) {
         instance: result.container,
         container: result.container,
         progress,
-        downloads: sanitizeDownloads(getDownloads()).downloads,
+        downloads: sanitizeDownloads(getDownloadsForNode(installNodeId)).downloads,
       };
     } catch (error) {
       pushStep(progress, "Failed", "failed", mapMarketplaceError(error, "Docker template install failed."));
@@ -3965,7 +3999,7 @@ async function installTemplate(payload = {}) {
       template,
       instance: startedInstance,
       progress,
-      downloads: sanitizeDownloads(getDownloads()).downloads,
+      downloads: sanitizeDownloads(getDownloadsForNode(installNodeId)).downloads,
     };
   } catch (error) {
     if (createdInstanceId && template.rollbackOnFailure !== false) {
@@ -4033,7 +4067,7 @@ module.exports = {
   cancelDownload,
   createDependencyInstallRecord,
   finalizeDependencyInstallRecord,
-  getDownloads: () => sanitizeDownloads(getDownloads()),
+  getDownloads: (nodeId = null) => sanitizeDownloads(getDownloadsForNode(nodeId)),
   getImportSupport,
   getMinecraftVersionCatalog,
   importCommunityTemplate,

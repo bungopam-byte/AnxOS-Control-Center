@@ -197,9 +197,9 @@ const desktopApi = {
       ipcRenderer.on("marketplace:install-progress", handler);
       return () => ipcRenderer.removeListener("marketplace:install-progress", handler);
     },
-    getDownloads: () => invokeMarketplace("marketplace:getDownloads"),
-    cancelDownload: (downloadId) => invokeMarketplace("marketplace:cancelDownload", { downloadId }),
-    retryDownload: (downloadId) => invokeMarketplace("marketplace:retryDownload", { downloadId }),
+    getDownloads: (payload = {}) => invokeMarketplace("marketplace:getDownloads", payload),
+    cancelDownload: (downloadId, payload = {}) => invokeMarketplace("marketplace:cancelDownload", { ...payload, downloadId }),
+    retryDownload: (downloadId, payload = {}) => invokeMarketplace("marketplace:retryDownload", { ...payload, downloadId }),
   },
   dependencies: {
     getCatalog: (payload = {}) => ipcRenderer.invoke("dependencies:getCatalog", payload),

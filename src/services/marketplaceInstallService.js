@@ -71,6 +71,11 @@ function getCurseForgeAgentConfig(nodeId = null) {
   const selectedNodeId = nodeId || getSelectedNodeId();
   const executionTarget = getExecutionTarget(selectedNodeId);
   const node = getNode(selectedNodeId);
+  if (executionTarget.type === "agent" && node?.enabled === false) {
+    throw new MarketplaceInstallError("Selected node is disabled.", "NODE_DISABLED", {
+      nodeId: executionTarget.nodeId,
+    });
+  }
   if (executionTarget.type !== "agent") {
     return {
       useAgentProxy: false,
@@ -81,7 +86,11 @@ function getCurseForgeAgentConfig(nodeId = null) {
   }
   return {
     useAgentProxy: true,
-    agentConfig: executionTarget.config,
+    agentConfig: {
+      ...executionTarget.config,
+      nodeId: executionTarget.nodeId,
+      agentNodeId: executionTarget.nodeId,
+    },
     agentNodeId: executionTarget.nodeId,
     agentNodeLabel: node?.displayName || executionTarget.nodeId,
   };
@@ -108,17 +117,18 @@ async function ensureProviderPackDependencies(options = {}, agentConfig = null) 
     return;
   }
   const dependencyIds = ["java"];
-  emitProgress({ instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Checking node dependencies...", current: 0, total: 1 });
+  const nodeId = options.nodeId || agentConfig?.nodeId || null;
+  emitProgress({ nodeId, instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Checking node dependencies...", current: 0, total: 1 });
   const check = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
   if (check.ok) {
-    emitProgress({ instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies are ready.", current: 1, total: 1 });
+    emitProgress({ nodeId, instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies are ready.", current: 1, total: 1 });
     return;
   }
   if (options.autoInstallDependencies === true) {
     await agentClient.installDependencies({ dependencyIds: check.missingDependencyIds || dependencyIds }, agentConfig);
     const recheck = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
     if (recheck.ok) {
-      emitProgress({ instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies installed.", current: 1, total: 1 });
+      emitProgress({ nodeId, instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies installed.", current: 1, total: 1 });
       return;
     }
   }
@@ -258,6 +268,7 @@ function emitProgress(payload = {}) {
     ? Number(payload.percent)
     : total > 0 ? Math.round((current / total) * 100) : 0;
   const event = {
+    nodeId: payload.nodeId || "",
     instanceId: payload.instanceId || "",
     stage: payload.stage || "resolving",
     message: payload.message || "",
@@ -806,6 +817,7 @@ function createPendingManualInstall(context = {}) {
   const sessionId = `manual-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const session = {
     id: sessionId,
+    nodeId: context.nodeId || context.agentConfig?.nodeId || null,
     status: "waiting-manual-download",
     createdAt: new Date().toISOString(),
     importedFiles: {},
@@ -826,6 +838,7 @@ function getPublicManualInstall(session) {
   const manual = session?.manual || {};
   return {
     sessionId: session?.id || manual.sessionId || "",
+    nodeId: session?.nodeId || null,
     status: session?.status || "waiting-manual-download",
     provider: manual.provider || "",
     providerName: manual.providerName || titleCaseProvider(manual.provider),
@@ -1822,14 +1835,15 @@ async function continueProviderPackInstall(context = {}) {
     manualFiles = {},
   } = context;
 
+  const nodeId = agentConfig?.nodeId || options?.nodeId || null;
   let installRecords = { mods: [], downloads: [], source: {} };
   if (provider === "modrinth") {
-    installRecords = await installModrinthPack(instanceId, options, agentConfig, { instanceId, manualFiles });
+    installRecords = await installModrinthPack(instanceId, options, agentConfig, { nodeId, instanceId, manualFiles });
   } else if (provider === "curseforge") {
-    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { instanceId, manualFiles, curseForgeConfig });
+    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { nodeId, instanceId, manualFiles, curseForgeConfig });
   }
 
-  emitProgress({ instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
+  emitProgress({ nodeId, instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
   await writeText(instanceId, "eula.txt", `eula=${options.acceptEula === false ? "false" : "true"}\n`, agentConfig);
   await applyMinecraftServerProperties(agentClient, instanceId, {
     ...options,
@@ -1847,7 +1861,7 @@ async function continueProviderPackInstall(context = {}) {
     startJar: serverInfo.serverJar,
   }, agentConfig);
   if (options.start) {
-    emitProgress({ instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
+    emitProgress({ nodeId, instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
     await withRetry(
       () => agentClient.startInstance(instanceId, agentConfig),
       { label: "agent start instance", attempts: 2 }
@@ -1861,7 +1875,7 @@ async function continueProviderPackInstall(context = {}) {
     projectId: options.providerProjectId || options.projectId || null,
     versionId: options.providerVersionId || options.versionId || null,
   });
-  emitProgress({ instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
+  emitProgress({ nodeId, instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
   return {
     status: "completed",
     instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
@@ -1883,7 +1897,16 @@ async function installPack(payload = {}) {
     ensureProviderProjectId(options.providerProjectId, provider === "modrinth" ? "Modrinth" : "CurseForge");
   }
   const executionTarget = getExecutionTarget(payload.nodeId);
-  const agentConfig = executionTarget.type === "agent" ? executionTarget.config : { backendMode: "local" };
+  const targetNode = getNode(executionTarget.nodeId);
+  if (executionTarget.type === "agent" && targetNode?.enabled === false) {
+    throw new MarketplaceInstallError("Selected node is disabled.", "NODE_DISABLED", {
+      nodeId: executionTarget.nodeId,
+    });
+  }
+  const agentConfig = executionTarget.type === "agent"
+    ? { ...executionTarget.config, nodeId: executionTarget.nodeId, agentNodeId: executionTarget.nodeId }
+    : { backendMode: "local", nodeId: executionTarget.nodeId || "application-host" };
+  const installNodeId = agentConfig.nodeId || payload.nodeId || getSelectedNodeId();
   const curseForgeConfig = provider === "curseforge" ? getCurseForgeAgentConfig(payload.nodeId) : null;
   if (provider === "curseforge") {
     curseforgeProvider.ensureConfigured(curseForgeConfig || {});
@@ -1897,7 +1920,7 @@ async function installPack(payload = {}) {
   let createResult = null;
 
   try {
-    emitProgress({ instanceId, stage: "resolving", message: "Creating instance folder...", current: 0, total: 1 });
+    emitProgress({ nodeId: installNodeId, instanceId, stage: "resolving", message: "Creating instance folder...", current: 0, total: 1 });
     createResult = await withRetry(
       () => agentClient.createInstance(instancePayload, agentConfig),
       { label: "agent create instance", attempts: 3 }
@@ -1910,7 +1933,7 @@ async function installPack(payload = {}) {
       );
     }
 
-    emitProgress({ instanceId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
+    emitProgress({ nodeId: installNodeId, instanceId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
     await writeBuffer(instanceId, serverInfo.downloadDestination || serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName), agentConfig);
     await runServerInstaller(instanceId, serverInfo, agentConfig);
 
@@ -1944,6 +1967,7 @@ async function installPack(payload = {}) {
       };
       const session = createPendingManualInstall({
         provider,
+        nodeId: installNodeId,
         instanceId,
         options,
         agentConfig,
@@ -1962,7 +1986,7 @@ async function installPack(payload = {}) {
         versionId: options.providerVersionId || options.versionId || null,
         fileName: manual.fileName || null,
       });
-      emitProgress({ instanceId, stage: "waiting", message: "Waiting for manual download.", current: 0, total: 0, percent: 0 });
+      emitProgress({ nodeId: installNodeId, instanceId, stage: "waiting", message: "Waiting for manual download.", current: 0, total: 0, percent: 0 });
       return {
         status: "waiting-manual-download",
         instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
@@ -1970,7 +1994,7 @@ async function installPack(payload = {}) {
         progress: [{ label: "Waiting for Manual Download", status: "waiting", detail: "A required modpack file needs manual download." }],
       };
     }
-    emitProgress({ instanceId, stage: "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
+    emitProgress({ nodeId: installNodeId, instanceId, stage: "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
     if (created) {
       try {
         await agentClient.deleteInstance(instanceId, agentConfig);
@@ -2037,7 +2061,7 @@ async function importManualInstallFile(sessionId, filePath) {
     versionId: manual.versionId || null,
     fileId: manual.fileId || null,
   });
-  emitProgress({ instanceId: session.instanceId, stage: "imported", message: "Manual file imported.", current: 1, total: 1, percent: 100 });
+  emitProgress({ nodeId: session.nodeId || session.agentConfig?.nodeId || null, instanceId: session.instanceId, stage: "imported", message: "Manual file imported.", current: 1, total: 1, percent: 100 });
   return {
     imported: true,
     manualDownload: getPublicManualInstall(session),
@@ -2064,7 +2088,7 @@ async function resumeManualInstall(sessionId) {
     versionId: manual.versionId || null,
     fileName: manual.fileName || null,
   });
-  emitProgress({ instanceId: session.instanceId, stage: "resuming", message: "Resuming Marketplace install...", current: 0, total: 0, percent: 0 });
+  emitProgress({ nodeId: session.nodeId || session.agentConfig?.nodeId || null, instanceId: session.instanceId, stage: "resuming", message: "Resuming Marketplace install...", current: 0, total: 0, percent: 0 });
   try {
     const result = await continueProviderPackInstall({
       provider: session.provider,

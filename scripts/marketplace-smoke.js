@@ -26,6 +26,11 @@ const preloadPath = path.join(__dirname, "..", "preload.js");
 const marketplaceIpcPath = path.join(__dirname, "..", "src", "ipc", "marketplaceIpc.js");
 const templates = JSON.parse(fs.readFileSync(catalogPath, "utf8"));
 
+function writeJson(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+}
+
 function pickVersionTrace(value = {}) {
   return {
     gameVersion: value.gameVersion || value.versionInfo?.gameVersion || null,
@@ -365,7 +370,7 @@ function assertMarketplaceInstallerRegistry() {
   assert(instanceServiceSource.includes("MAX_STARTUP_TIMEOUT_MS = 2 * 60 * 60 * 1000"), "Agent schema should allow long native installer startup timeouts.");
 }
 
-function assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent() {
+function assertMarketplaceInstallDoesNotFallbackToLegacyAgent() {
   const agentClient = require("../src/services/agentClient");
   const configPath = agentClient.getAgentConfigPath();
   const originalConfig = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : null;
@@ -376,10 +381,28 @@ function assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent() {
       agentUrl: "http://192.168.1.134:47131",
       agentToken: "smoke-token",
     });
+    writeJson(path.join(path.dirname(configPath), "nodes.json"), {
+      schemaVersion: 2,
+      selectedNodeId: "marketplace-smoke-node",
+      nodes: [{
+        id: "marketplace-smoke-node",
+        kind: "agent",
+        name: "Marketplace Smoke Node",
+        displayName: "Marketplace Smoke Node",
+        baseUrl: "http://192.168.1.134:47131",
+        agentUrl: "http://192.168.1.134:47131",
+        enabled: true,
+        agentIdentity: { deviceId: "marketplace-smoke-device" },
+      }],
+    });
+    writeJson(path.join(path.dirname(configPath), "node-agent-credentials.json"), {
+      schemaVersion: 1,
+      nodes: {
+        "marketplace-smoke-node": { agentToken: "smoke-token" },
+      },
+    });
     const resolved = marketplaceService._test.resolveMarketplaceAgentConfig("application-host");
-    assert.strictEqual(resolved.backendMode, "agent", "Marketplace installs must not force localhost when configured backend mode is agent.");
-    assert.strictEqual(resolved.agentUrl, "http://192.168.1.134:47131", "Marketplace installs should use the configured Agent URL.");
-    assert.strictEqual(resolved.agentToken, "smoke-token", "Marketplace installs should preserve the configured Agent token.");
+    assert.strictEqual(resolved.backendMode, "local", "Marketplace installs must not silently fall back from the selected application host to legacy global Agent settings.");
   } finally {
     if (originalConfig === null) {
       fs.rmSync(configPath, { force: true });
@@ -419,6 +442,26 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
       backendMode: "agent",
       agentUrl: "http://192.168.1.134:47131",
       agentToken: "smoke-token",
+    });
+    writeJson(path.join(path.dirname(configPath), "nodes.json"), {
+      schemaVersion: 2,
+      selectedNodeId: "marketplace-smoke-node",
+      nodes: [{
+        id: "marketplace-smoke-node",
+        kind: "agent",
+        name: "Marketplace Smoke Node",
+        displayName: "Marketplace Smoke Node",
+        baseUrl: "http://192.168.1.134:47131",
+        agentUrl: "http://192.168.1.134:47131",
+        enabled: true,
+        agentIdentity: { deviceId: "marketplace-smoke-device" },
+      }],
+    });
+    writeJson(path.join(path.dirname(configPath), "node-agent-credentials.json"), {
+      schemaVersion: 1,
+      nodes: {
+        "marketplace-smoke-node": { agentToken: "smoke-token" },
+      },
     });
     agentClient.checkDependencies = async () => ({
       ok: dependenciesReady,
@@ -466,6 +509,7 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
     await assert.rejects(
       () => marketplaceService.installTemplate({
         templateId: "discord-js",
+        nodeId: "marketplace-smoke-node",
         options: { id: "dependency-block-smoke", name: "Dependency Block Smoke", start: false },
       }),
       (error) => error?.code === "DEPENDENCIES_REQUIRED",
@@ -475,6 +519,7 @@ async function assertMarketplaceDependencyPreflightBlocksAndResumes() {
 
     const result = await marketplaceService.installTemplate({
       templateId: "discord-js",
+      nodeId: "marketplace-smoke-node",
       options: { id: "dependency-resume-smoke", name: "Dependency Resume Smoke", start: false, autoInstallDependencies: true },
     });
     assert.strictEqual(installCalls, 1, "autoInstallDependencies should invoke the Agent dependency installer once.");
@@ -3124,7 +3169,7 @@ async function main() {
   assertMarketplaceRuntimeSettingsReferencesAreScoped();
   assertMarketplaceInstallContextValidation();
   assertNestedArchiveInstallerExtraction();
-  assertMarketplaceInstallUsesConfiguredAgentWhenBackendIsAgent();
+  assertMarketplaceInstallDoesNotFallbackToLegacyAgent();
   await assertMarketplaceDependencyPreflightBlocksAndResumes();
   assertInstanceProcessStateGuards();
   assertMarketplaceManifestAuditReport();

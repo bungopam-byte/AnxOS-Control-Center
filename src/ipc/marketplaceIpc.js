@@ -299,9 +299,9 @@ function registerMarketplaceIpc() {
     return importManualInstallFile(payload.sessionId, selection.filePaths[0]);
   }));
   ipcMain.handle("marketplace:resumeManualInstall", async (_, payload = {}) => invokeMarketplaceOperation(() => resumeManualInstall(payload.sessionId)));
-  ipcMain.handle("marketplace:getDownloads", async () => invokeMarketplaceOperation(() => getDownloads()));
-  ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => cancelDownload(payload.downloadId)));
-  ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => retryDownload(payload.downloadId)));
+  ipcMain.handle("marketplace:getDownloads", async (_, payload = {}) => invokeMarketplaceOperation(() => getDownloads(payload.nodeId || null)));
+  ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => cancelDownload(payload.downloadId, { nodeId: payload.nodeId || null })));
+  ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => retryDownload(payload.downloadId, { nodeId: payload.nodeId || null })));
 }
 
 module.exports = {

@@ -44,6 +44,7 @@ includesAll(appSource, [
   "function isNodeActionStillCurrent",
   "function resetNodeScopedRendererState",
   "async function reloadActiveNodeData",
+  "const activePageName = getActivePageName();",
   "function openNodePicker",
   "function closeNodePicker",
   "function renderNodePicker",
@@ -65,6 +66,14 @@ includesAll(appSource, [
   "sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? \"Switching node\" : connectionState.message}`;",
   "badge.textContent = node.id === getSelectedNodeId() ? \"Current\" : connectionState.label;",
 ], "Node picker interaction");
+
+includesAll(appSource, [
+  'if (activePageName === "dashboard")',
+  'if (activePageName === "marketplace")',
+  'if (activePageName === "agent-control")',
+  "refreshMarketplaceDownloads()",
+  "refreshAgentControl()",
+], "Active-view node refresh");
 
 includesAll(appSource, [
   "desktopApiState.api.system.getSnapshot(getNodeScopedPayload(requestContext))",

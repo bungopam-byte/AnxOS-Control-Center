@@ -25835,31 +25835,45 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
 }
 
 async function reloadActiveNodeData(context = getNodeRequestContext("reload-node")) {
-  const reloads = [
-    refreshDashboard(),
-    refreshAmpDashboard({ force: true }),
-    refreshPlayitStatus(),
-  ];
+  const activePageName = getActivePageName();
+  const reloads = [];
 
-  if (getActivePageName() === "docker" || latestDockerSnapshot) {
+  if (activePageName === "dashboard") {
+    reloads.push(
+      refreshDashboard(),
+      refreshAmpDashboard({ force: true }),
+      refreshPlayitStatus(),
+      refreshInstances({ refreshMetrics: true }),
+    );
+  }
+  if (["amp", "minecraft"].includes(activePageName)) {
+    reloads.push(refreshAmpDashboard({ force: true }));
+  }
+  if (activePageName === "playit") {
+    reloads.push(refreshPlayitStatus());
+  }
+  if (activePageName === "marketplace") {
+    reloads.push(refreshMarketplaceDownloads());
+  }
+  if (activePageName === "docker") {
     reloads.push(refreshDockerStatus());
   }
-  if (["instances", "dashboard", "console"].includes(getActivePageName())) {
-    reloads.push(refreshInstances({ refreshMetrics: getActivePageName() !== "console" }));
+  if (activePageName === "instances") {
+    reloads.push(refreshInstances({ refreshMetrics: true }));
   }
-  if (getActivePageName() === "backups") {
+  if (activePageName === "backups") {
     reloads.push(refreshBackups());
   }
-  if (getActivePageName() === "console") {
+  if (activePageName === "console") {
     reloads.push(refreshConsoleMetrics(), refreshConsoleLogs({ silent: true }));
   }
-  if (getActivePageName() === "security") {
+  if (activePageName === "security") {
     reloads.push(refreshSecurityState());
   }
-  if (getActivePageName() === "agent-control") {
+  if (activePageName === "agent-control") {
     reloads.push(refreshAgentControl());
   }
-  if (getActivePageName() === "files" && getSelectedRemoteFilesNode()) {
+  if (activePageName === "files" && getSelectedRemoteFilesNode()) {
     reloads.push(connectFilesSession());
   }
 

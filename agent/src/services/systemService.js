@@ -4,9 +4,13 @@ const os = require("os");
 const path = require("path");
 
 const { getConfig } = require("../config");
+const { logger } = require("./diagnosticsLogger");
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
+const DISK_STATS_UNAVAILABLE = "DISK_STATS_UNAVAILABLE";
+const diskStatsWarningState = new Map();
+const DISK_STATS_WARNING_REPEAT_INTERVAL_MS = 5 * 60 * 1000;
 
 function execFile(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -91,10 +95,69 @@ function buildDiskUsage(total, free, mount) {
   };
 }
 
-async function getDiskMountPoint(targetPath) {
+function isWindowsPlatform(platform = process.platform) {
+  return platform === "win32";
+}
+
+function normalizeDiskPath(targetPath, platform = process.platform) {
+  const fallbackPath = targetPath || getConfig().instanceRoot || process.cwd();
+  if (isWindowsPlatform(platform)) {
+    const rawPath = String(fallbackPath).replace(/\//g, "\\");
+    return /^[a-zA-Z]:\\|^\\\\/.test(rawPath) ? path.win32.normalize(rawPath) : path.win32.resolve(rawPath);
+  }
+  return path.resolve(fallbackPath);
+}
+
+function resolveDiskRoot(targetPath, platform = process.platform) {
+  const resolvedPath = normalizeDiskPath(targetPath, platform);
+  if (isWindowsPlatform(platform)) {
+    return path.win32.parse(resolvedPath).root || resolvedPath;
+  }
+  return path.parse(resolvedPath).root || resolvedPath;
+}
+
+function emitDiskStatsWarning(reason, details = {}) {
+  const key = `${DISK_STATS_UNAVAILABLE}:${process.platform}:${reason}`;
+  const now = Date.now();
+  const previous = diskStatsWarningState.get(key) || { count: 0, lastEmittedAt: 0 };
+  const next = { count: previous.count + 1, lastEmittedAt: previous.lastEmittedAt };
+  const shouldEmit = !previous.lastEmittedAt || now - previous.lastEmittedAt >= DISK_STATS_WARNING_REPEAT_INTERVAL_MS;
+  if (shouldEmit) {
+    next.lastEmittedAt = now;
+    logger.warn("disk-stats", "Agent disk statistics unavailable.", {
+      code: DISK_STATS_UNAVAILABLE,
+      reason,
+      suppressedCount: Math.max(next.count - 1, 0),
+      platform: process.platform,
+      path: details.path || null,
+      mount: details.mount || null,
+      message: details.message || null,
+      stderr: details.stderr || null,
+    }, { file: "agent", errorCode: DISK_STATS_UNAVAILABLE });
+    next.count = 0;
+  }
+  diskStatsWarningState.set(key, next);
+}
+
+async function readStatfsDiskUsage(statPath, mountPath) {
+  if (typeof fs.statfs !== "function") {
+    return null;
+  }
+  const stats = await fs.statfs(statPath);
+  const blockSize = Number(stats.bsize || stats.frsize || 0);
+  const total = Number(stats.blocks) * blockSize;
+  const free = Number(stats.bavail ?? stats.bfree) * blockSize;
+  return buildDiskUsage(total, free, mountPath || statPath);
+}
+
+async function getDiskMountPoint(targetPath, platform = process.platform) {
+  if (isWindowsPlatform(platform)) {
+    return resolveDiskRoot(targetPath, platform);
+  }
+
   const result = await execFile("df", ["-kP", targetPath]);
   if (!result.ok) {
-    console.warn("[AnxOS Agent][Stats] df mount lookup failed.", {
+    emitDiskStatsWarning("df_mount_lookup_failed", {
       path: targetPath,
       stderr: result.stderr.trim(),
     });
@@ -106,7 +169,22 @@ async function getDiskMountPoint(targetPath) {
 }
 
 async function getDiskUsage(targetPath = getConfig().instanceRoot) {
-  let resolvedPath = path.resolve(targetPath || getConfig().instanceRoot || process.cwd());
+  if (isWindowsPlatform()) {
+    const resolvedPath = normalizeDiskPath(targetPath);
+    const driveRoot = resolveDiskRoot(resolvedPath);
+    try {
+      return await readStatfsDiskUsage(driveRoot, driveRoot);
+    } catch (error) {
+      emitDiskStatsWarning("windows_disk_lookup_failed", {
+        path: resolvedPath,
+        mount: driveRoot,
+        message: error?.message || String(error),
+      });
+      return null;
+    }
+  }
+
+  let resolvedPath = normalizeDiskPath(targetPath);
 
   while (resolvedPath && !(await fs.stat(resolvedPath).then(() => true).catch(() => false))) {
     const parentPath = path.dirname(resolvedPath);
@@ -116,24 +194,22 @@ async function getDiskUsage(targetPath = getConfig().instanceRoot) {
     resolvedPath = parentPath;
   }
 
-  if (typeof fs.statfs === "function") {
-    try {
-      const stats = await fs.statfs(resolvedPath);
-      const blockSize = Number(stats.bsize || stats.frsize || 0);
-      const total = Number(stats.blocks) * blockSize;
-      const free = Number(stats.bavail ?? stats.bfree) * blockSize;
-      return buildDiskUsage(total, free, await getDiskMountPoint(resolvedPath) || resolvedPath);
-    } catch (error) {
-      console.warn("[AnxOS Agent][Stats] statfs disk read failed.", {
-        path: resolvedPath,
-        message: error?.message || String(error),
-      });
+  try {
+    const mount = await getDiskMountPoint(resolvedPath) || resolvedPath;
+    const statfsUsage = await readStatfsDiskUsage(resolvedPath, mount);
+    if (statfsUsage) {
+      return statfsUsage;
     }
+  } catch (error) {
+    emitDiskStatsWarning("statfs_disk_read_failed", {
+      path: resolvedPath,
+      message: error?.message || String(error),
+    });
   }
 
   const result = await execFile("df", ["-kP", resolvedPath]);
   if (!result.ok) {
-    console.warn("[AnxOS Agent][Stats] df disk read failed.", {
+    emitDiskStatsWarning("df_disk_read_failed", {
       path: resolvedPath,
       stderr: result.stderr.trim(),
     });
@@ -326,4 +402,13 @@ async function getSystemSummary() {
 
 module.exports = {
   getSystemSummary,
+  _test: {
+    DISK_STATS_UNAVAILABLE,
+    diskStatsWarningState,
+    emitDiskStatsWarning,
+    getDiskMountPoint,
+    getDiskUsage,
+    normalizeDiskPath,
+    resolveDiskRoot,
+  },
 };

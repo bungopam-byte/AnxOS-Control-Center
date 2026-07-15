@@ -354,7 +354,7 @@ function buildAgentUrl(pathname, configOverride = null) {
 }
 
 function logAgentRequestFailure(pathname, status, errorCode = null, details = {}) {
-  const targetLabel = details.targetLabel || "configured-agent";
+  const targetLabel = details.targetLabel || "global-configured-agent";
   const throttleMs = Number.isFinite(details.logThrottleMs) ? details.logThrottleMs : 30000;
   const now = Date.now();
   const key = JSON.stringify({
@@ -517,7 +517,7 @@ function logAgentRequestPayload(pathname, details = {}) {
   console.info("[AnxOS][Agent] Request payload.", {
     pathname,
     method: details.method,
-    targetLabel: details.targetLabel || "configured-agent",
+    targetLabel: details.targetLabel || "global-configured-agent",
     body: redactForAgentLog(details.body),
   });
 }
@@ -543,7 +543,7 @@ async function requestJson(pathname, options = {}) {
     config: configOverride = null,
     method = "GET",
     body = null,
-    targetLabel = configOverride?.targetLabel || "configured-agent",
+    targetLabel = configOverride?.targetLabel || "global-configured-agent",
     suppressConnectionRefusedLog = configOverride?.suppressConnectionRefusedLog === true,
     logThrottleMs = configOverride?.logThrottleMs,
     timeoutMs = REQUEST_TIMEOUT_MS,

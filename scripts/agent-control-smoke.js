@@ -17,9 +17,10 @@ async function main() {
   const rendererSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   const htmlSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
   assert(serviceSource.includes("getConfiguredAgentStatus"), "Agent Control must expose configured Agent status separately from local status.");
-  assert(serviceSource.includes('targetLabel: "configured-agent"'), "Configured Agent checks must be labeled separately.");
-  assert(serviceSource.includes("normalizeAgentUrlForComparison"), "Agent Control should normalize Agent URLs before deduping probes.");
-  assert(serviceSource.includes("reusedConfiguredAgentProbe"), "Agent Control should reuse configured Agent probe results for matching registered nodes.");
+  assert(serviceSource.includes('targetLabel: "global-configured-agent"'), "Configured Agent checks must be labeled separately from registered nodes.");
+  assert(serviceSource.includes("configuredMatchesSelectedNode"), "Agent Control should isolate the configured Agent probe when a selected registered node owns that URL.");
+  assert(!serviceSource.includes("reusedConfiguredAgentProbe"), "Agent Control must not reuse a global configured probe for registered nodes.");
+  assert(serviceSource.includes("targetLabel: `node:${node.id}`"), "Registered Agent probes must use explicit node-scoped labels.");
   assert(serviceSource.includes("REMOTE_DIAGNOSTICS_CACHE_MS") && serviceSource.includes("remoteDiagnosticsRequests"), "Remote diagnostics capture must dedupe repeated Agent diagnostics exports.");
   assert(serviceSource.includes("normalizeAgentRuntimeStatus"), "Agent Control must normalize runtime status before rendering.");
   assert(serviceSource.includes("getSystemStats(getConfiguredAgentHealthConfig(effective))"), "Configured Agent status must include lightweight Agent metrics.");

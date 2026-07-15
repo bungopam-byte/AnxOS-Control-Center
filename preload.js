@@ -93,8 +93,8 @@ const desktopApi = {
     exportBundle: () => ipcRenderer.invoke("diagnostics:export"),
   },
   agentControl: {
-    list: () => ipcRenderer.invoke("agentControl:list"),
-    status: () => ipcRenderer.invoke("agentControl:status"),
+    list: (payload = {}) => ipcRenderer.invoke("agentControl:list", payload),
+    status: (payload = {}) => ipcRenderer.invoke("agentControl:status", payload),
     diagnostics: () => ipcRenderer.invoke("agentControl:diagnostics"),
     remoteDiagnostics: (nodeId) => ipcRenderer.invoke("agentControl:remoteDiagnostics", { nodeId }),
     getConfig: () => ipcRenderer.invoke("agentControl:getConfig"),

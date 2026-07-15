@@ -50,11 +50,11 @@ function createPairingSessionPayload(options = {}) {
 }
 
 function normalizePairingCode(value) {
-  const raw = String(value || "").trim();
+  const raw = String(value || "").trim().replace(/\s+/g, "");
   if (!raw) return "";
   const [friendly, encoded] = raw.split(".", 2);
   const normalizedFriendly = formatFriendlyCode(friendly);
-  return encoded ? `${normalizedFriendly}.${encoded.trim()}` : normalizedFriendly;
+  return encoded ? `${normalizedFriendly}.${encoded}` : normalizedFriendly;
 }
 
 function parsePairingCode(value) {

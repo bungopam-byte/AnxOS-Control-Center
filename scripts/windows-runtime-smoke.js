@@ -91,7 +91,8 @@ async function main() {
 
     const agentControlSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "agentControlService.js"), "utf8");
     assert(agentControlSource.includes("normalizeAgentUrlForComparison"), "Agent Control must normalize URLs before duplicate remote probe checks.");
-    assert(agentControlSource.includes("reusedConfiguredAgentProbe"), "Agent Control must mark matching registered nodes that reuse the configured Agent probe.");
+    assert(!agentControlSource.includes("reusedConfiguredAgentProbe"), "Agent Control must not reuse a global configured probe for registered nodes.");
+    assert(agentControlSource.includes("targetLabel: `node:${node.id}`"), "Agent Control must label registered Agent requests by node id.");
 
     const paths = resolveElectronPaths({
       platform: "win32",
@@ -124,8 +125,8 @@ async function main() {
     const devUpdaterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "developerGitUpdater.js"), "utf8");
     assert(devUpdaterSource.includes("app?.isPackaged !== false"), "Developer Mode must be disabled in packaged builds.");
     assert(devUpdaterSource.includes("rev-parse") && devUpdaterSource.includes("--is-inside-work-tree"), "Developer Mode must require a Git working tree.");
-    assert(devUpdaterSource.includes('branch !== "dev"'), "Developer Mode must require the dev branch.");
-    assert(devUpdaterSource.includes("rev-list") && devUpdaterSource.includes("HEAD...origin/dev"), "Developer updater must compare local and remote dev commits.");
+    assert(devUpdaterSource.includes("EXPECTED_BRANCH") && devUpdaterSource.includes("branch === EXPECTED_BRANCH"), "Developer Mode must require the dev branch.");
+    assert(devUpdaterSource.includes("rev-list") && devUpdaterSource.includes("HEAD...${EXPECTED_REMOTE_REF}"), "Developer updater must compare local and remote dev commits.");
 
     console.log("Windows runtime smoke checks passed.");
   } finally {

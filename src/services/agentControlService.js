@@ -913,7 +913,10 @@ function getLocalAgentHealthConfig(config) {
 function getRemoteHealthConfig(node, selectedNodeId) {
   return {
     ...getNodeAgentConfig(node.id),
-    targetLabel: node.id === selectedNodeId ? "selected-agent" : "remote-agent",
+    nodeId: node.id,
+    nodeName: node.displayName || node.name || node.id,
+    nodeUrl: node.agentUrl || node.baseUrl || null,
+    targetLabel: `node:${node.id}`,
     logThrottleMs: node.id === selectedNodeId ? 15000 : 30000,
   };
 }
@@ -943,7 +946,7 @@ function getConfiguredAgentHealthConfig(effective) {
     backendMode: "agent",
     agentUrl: effective.agentUrl,
     agentToken: effective.agentToken,
-    targetLabel: "configured-agent",
+    targetLabel: "global-configured-agent",
     logThrottleMs: 15000,
   };
 }
@@ -1183,15 +1186,15 @@ function logRuntimePayloadShape(target, payload) {
   }, { file: "agent" });
 }
 
-async function getConfiguredAgentStatus() {
+async function getConfiguredAgentStatus(options = {}) {
   const effective = agentClient.getEffectiveAgentSettings();
   const configured = {
     local: false,
     configured: true,
     backendMode: effective.backendMode,
-    targetType: "configured-agent",
-    healthTargetLabel: "configured-agent",
-    state: effective.backendMode === "agent" ? "Offline" : "Local mode",
+    targetType: "global-configured-agent",
+    healthTargetLabel: "global-configured-agent",
+    state: options.skipProbe ? "Registered node selected" : effective.backendMode === "agent" ? "Offline" : "Local mode",
     running: false,
     agentUrl: effective.backendMode === "agent" ? effective.agentUrl : null,
     lifecycleSupported: false,
@@ -1209,26 +1212,26 @@ async function getConfiguredAgentStatus() {
     connectedClients: 0,
     lastHeartbeat: null,
     latencyMs: null,
-    mostRecentError: null,
+    mostRecentError: options.skipProbe ? { code: "REGISTERED_NODE_CONTEXT", message: "This URL belongs to a selected registered node; Agent Control is using the node credential instead." } : null,
   };
 
-  if (effective.backendMode !== "agent" || !effective.agentUrl) {
+  if (effective.backendMode !== "agent" || !effective.agentUrl || options.skipProbe) {
     return configured;
   }
 
   const started = Date.now();
   try {
     const health = await agentClient.getHealth(getConfiguredAgentHealthConfig(effective));
-    logRuntimePayloadShape("configured-agent-health", health);
+    logRuntimePayloadShape("global-configured-agent-health", health);
     let stats = null;
     let partialFailure = null;
     try {
       stats = await agentClient.getSystemStats(getConfiguredAgentHealthConfig(effective));
-      logRuntimePayloadShape("configured-agent-stats", stats);
+      logRuntimePayloadShape("global-configured-agent-stats", stats);
     } catch (statsError) {
       partialFailure = { code: statsError.code || null, message: statsError.message || "Agent metrics endpoint unavailable." };
       diagnostics.log("warn", "agent-control", "runtime-metrics-partial", "Agent metrics endpoint did not return full runtime status", {
-        target: "configured-agent",
+        target: "global-configured-agent",
         code: partialFailure.code,
         message: partialFailure.message,
       }, { file: "agent", errorCode: partialFailure.code });
@@ -1284,7 +1287,7 @@ async function getConfiguredAgentStatus() {
   }
 }
 
-async function getStatus() {
+async function getStatus(_options = {}) {
   const config = readConfig();
   const service = await getServiceState();
   const agentUrl = getLocalAgentUrl(config);
@@ -1375,35 +1378,47 @@ async function getStatus() {
   };
 }
 
-async function listAgents() {
-  const local = await getStatus();
-  const configured = await getConfiguredAgentStatus();
-  const selectedNodeId = getSelectedNodeId();
+async function listAgents(options = {}) {
+  const requestedSelectedNodeId = typeof options.selectedNodeId === "string" ? options.selectedNodeId.trim() : "";
+  const local = await getStatus(options);
+  const selectedNodeId = requestedSelectedNodeId || getSelectedNodeId();
   const selectedNode = getNode(selectedNodeId);
   const effective = agentClient.getEffectiveAgentSettings();
   const configuredUrlKey = effective.backendMode === "agent" ? normalizeAgentUrlForComparison(effective.agentUrl) : null;
+  const selectedNodeUrlKey = selectedNode?.kind === "agent" ? normalizeAgentUrlForComparison(selectedNode.agentUrl || selectedNode.baseUrl) : null;
+  const configuredMatchesSelectedNode = Boolean(configuredUrlKey && selectedNodeUrlKey && configuredUrlKey === selectedNodeUrlKey);
+  const configured = await getConfiguredAgentStatus({ skipProbe: configuredMatchesSelectedNode });
   const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => {
     const started = Date.now();
     const healthConfig = getRemoteHealthConfig(node, selectedNodeId);
-    if (configuredUrlKey && normalizeAgentUrlForComparison(node.agentUrl) === configuredUrlKey) {
-      return {
-        local: false,
-        targetType: healthConfig.targetLabel,
-        healthTargetLabel: healthConfig.targetLabel,
-        nodeId: node.id,
-        state: configured.state,
-        name: node.displayName,
-        agentUrl: node.agentUrl,
-        identity: configured.identity || node.agentIdentity,
-        agentVersion: configured.agentVersion || node.agentIdentity?.agentVersion,
-        latencyMs: configured.latencyMs || null,
-        lastHeartbeat: configured.lastHeartbeat || null,
-        mostRecentError: configured.mostRecentError || null,
-        reusedConfiguredAgentProbe: true,
-      };
-    }
     try {
       const health = await agentClient.getHealth(healthConfig);
+      let stats = null;
+      let partialFailure = null;
+      if (node.id === selectedNodeId) {
+        try {
+          stats = await agentClient.getSystemStats(healthConfig);
+          logRuntimePayloadShape(`${healthConfig.targetLabel}-stats`, stats);
+        } catch (statsError) {
+          if (statsError.status === 401 || statsError.code === "UNAUTHORIZED") {
+            const authError = new Error(`${node.displayName || node.name || node.id} credential rejected`);
+            authError.code = statsError.code || "UNAUTHORIZED";
+            authError.status = statsError.status || 401;
+            throw authError;
+          }
+          partialFailure = { code: statsError.code || null, message: statsError.message || "Agent metrics endpoint unavailable." };
+        }
+      }
+      const runtime = normalizeAgentRuntimeStatus({
+        base: { agentUrl: node.agentUrl || node.baseUrl, agentVersion: health.identity?.agentVersion, partialFailure },
+        health,
+        stats,
+        service: { state: "running", installed: true },
+        latencyMs: Date.now() - started,
+        connected: true,
+        reachable: true,
+        capabilities: { metrics: Boolean(stats), lifecycle: false, repair: false, reconnect: true },
+      });
       return {
         local: false,
         targetType: healthConfig.targetLabel,
@@ -1414,6 +1429,7 @@ async function listAgents() {
         agentUrl: node.agentUrl,
         identity: health.identity,
         agentVersion: health.identity?.agentVersion,
+        runtime,
         latencyMs: Date.now() - started,
         lastHeartbeat: new Date().toISOString(),
       };
@@ -1437,12 +1453,12 @@ async function listAgents() {
     configuredAgentUrl: effective.backendMode === "agent" ? effective.agentUrl : null,
     selectedAgentId: selectedNodeId,
     connectedAgents: [
-      ...(configured.running ? [{ nodeId: null, deviceId: configured.identity?.deviceId, state: configured.state, version: configured.agentVersion, target: "configured-agent" }] : []),
+      ...(configured.running ? [{ nodeId: null, deviceId: configured.identity?.deviceId, state: configured.state, version: configured.agentVersion, target: "global-configured-agent" }] : []),
       ...remote.map((agent) => ({ nodeId: agent.nodeId, deviceId: agent.identity?.deviceId, state: agent.state, version: agent.agentVersion })),
     ],
     recentConnectionResult: [
       { target: "local-agent", url: local.agentUrl, state: local.state, latencyMs: local.latencyMs || null },
-      { target: "configured-agent", url: configured.agentUrl, state: configured.state, latencyMs: configured.latencyMs || null },
+      { target: "global-configured-agent", url: configured.agentUrl, state: configured.state, latencyMs: configured.latencyMs || null },
       ...remote.map((agent) => ({ target: agent.healthTargetLabel, nodeId: agent.nodeId, url: agent.agentUrl, state: agent.state, latencyMs: agent.latencyMs || null })),
     ],
   });

@@ -86,6 +86,18 @@ function reloadNodeService(root) {
   return require("../src/services/nodeService");
 }
 
+function reloadAgentControlService(root) {
+  [
+    "src/services/agentControlService.js",
+    "src/services/nodeService.js",
+    "src/services/nodeCredentialStore.js",
+    "src/services/agentClient.js",
+  ].forEach((relativePath) => {
+    delete require.cache[require.resolve(path.join(root, relativePath))];
+  });
+  return require("../src/services/agentControlService");
+}
+
 (async () => {
   const root = path.resolve(__dirname, "..");
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "anx-agent-pairing-"));
@@ -134,6 +146,13 @@ function reloadNodeService(root) {
     const reloadedConfig = reloadedNodes.getNodeAgentConfig(paired.node.id);
     assert.strictEqual(reloadedConfig.agentToken, config.agentToken, "Reloaded node config should use the newly paired credential from the canonical node credential store.");
     await assertProtectedEndpointsUseToken(agentUrl, reloadedConfig.agentToken, "stale-before-restart");
+    const agentClient = require("../src/services/agentClient");
+    fs.writeFileSync(agentClient.getAgentConfigPath(), `${JSON.stringify({ backendMode: "agent", agentUrl, agentToken: "stale-global-token" }, null, 2)}\n`, { mode: 0o600 });
+    const reloadedControl = reloadAgentControlService(root);
+    const controlStatus = await reloadedControl.listAgents({ selectedNodeId: paired.node.id });
+    assert.strictEqual(controlStatus.activeAgent?.nodeId, paired.node.id, "Agent Control should keep the paired node active after desktop reload.");
+    assert.strictEqual(controlStatus.activeAgent?.state, "Running", "Agent Control /stats should authenticate with the canonical node credential after Agent and desktop restart.");
+    assert.strictEqual(controlStatus.activeAgent?.targetType, `node:${paired.node.id}`, "Agent Control should not route the selected paired node through the global configured-agent target.");
     const replay = await fetch(`${agentUrl}/api/v1/pairing/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

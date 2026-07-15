@@ -3971,7 +3971,8 @@ function isAgentTargetLocal(target = {}) {
 
 function getAgentTargetLabel(target = {}) {
   if (target.nodeId && target.nodeId === getSelectedNodeId()) return "Active Node Agent";
-  if (target.targetType === "configured-agent") return "Configured Agent";
+  if (target.targetType === "global-configured-agent" || target.targetType === "configured-agent") return "Configured Agent";
+  if (String(target.targetType || "").startsWith("node:")) return target.name || "Remote Agent";
   if (target.targetType === "selected-agent") return "Selected Agent";
   if (target.targetType === "remote-agent") return "Remote Agent";
   return "Local Agent";
@@ -5254,7 +5255,7 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
   if (!api || agentControlBusy || agentControlRefreshInFlight) return;
   agentControlRefreshInFlight = true;
   try {
-    const payload = await api.list();
+    const payload = await api.list({ selectedNodeId: getSelectedNodeId() });
     renderAgentControlState(payload);
     if (includeConfig && isOwnerWorkspaceAuthorized()) {
       populateAgentConfig(await api.getConfig());
@@ -5292,6 +5293,7 @@ async function runAgentControlAction(action) {
     return;
   }
   agentControlBusy = true; renderAgentControlState();
+  const context = { selectedNodeId: getSelectedNodeId() };
   const agentOperationLabels = {
     reconnect: "Reconnect Agent",
     repairAgent: "Repair local Agent",
@@ -5384,10 +5386,10 @@ async function runAgentControlAction(action) {
         });
         showToast("Background startup could not be configured. Starting the Local Agent for this session instead.", "warning");
       }
-      if (!(await api.status())?.running) await api.start();
+      if (!(await api.status(context))?.running) await api.start();
     }
     else if (action === "checkUpdates") {
-      const status = await api.status();
+      const status = await api.status(context);
       showToast(status?.update?.state || "Local Agent update state checked.", status?.update?.updateAvailable ? "warning" : "info");
     }
     else if (action === "updateAgent") {
@@ -5407,7 +5409,7 @@ async function runAgentControlAction(action) {
         await getDesktopApiState().api.settings.saveAgentConfig({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}` });
         await api.pairLocalAgent({ rotate: true, reason: "setup" });
         if (agentSetupAutoStart?.checked) await api.installService();
-        if (!(await api.status())?.running) await api.start();
+        if (!(await api.status(context))?.running) await api.start();
         const connection = await getDesktopApiState().api.settings.testAgentConnection({ backendMode: "agent", agentUrl: `http://127.0.0.1:${config.port}` });
         if (!connection?.connected) throw new Error(connection?.message || "Agent connectivity test failed.");
         if (agentSetupMessage) agentSetupMessage.textContent = "Agent configured and connected. The token is stored securely and is not displayed.";
@@ -28497,6 +28499,15 @@ async function pairNodeFromSettings(options = {}) {
       showToast("Pairing code expired.", "warning");
       return;
     }
+    if (getAgentErrorCode(error) === "PAIRING_CODE_INVALID") {
+      if (nodePairingCodeInput) nodePairingCodeInput.value = "";
+      nodePairingLastSubmittedCode = "";
+      setNodePairingRetryVisible(true);
+      setNodePairingError("Pairing code is invalid. Generate a new code, then paste it here.");
+      setNodeFormBusy(false, "Pairing code is invalid. Generate a new code, then paste it here.");
+      showToast("Pairing code is invalid.", "error");
+      return;
+    }
     if (getAgentErrorCode(error) === "NODE_REPAIR_URL_CONFIRMATION_REQUIRED") {
       const details = error?.details || {};
       const currentAgentUrl = details.currentAgentUrl || expectedAgentUrl || "Current Agent URL unavailable";
@@ -29989,6 +30000,9 @@ async function pairAgentFromSettings() {
     await refreshAgentControl({ includeConfig: false });
   } catch (error) {
     const message = normalizeIpcErrorMessage(error, "Agent pairing failed.");
+    if (getAgentErrorCode(error) === "PAIRING_CODE_INVALID" || isExpiredPairingError(error, message)) {
+      if (agentPairingCodeInput) agentPairingCodeInput.value = "";
+    }
     setAgentConnectionDisplay("error", message, { repairAvailable: true });
     showToast(message);
   } finally {

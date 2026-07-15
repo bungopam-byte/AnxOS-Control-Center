@@ -20,6 +20,18 @@ function requireSource(needle, message) {
 ].forEach((needle) => requireSource(needle, `Top-bar connection state should use explicit selected-node labels: ${needle}`));
 
 [
+  "function getSelectedTargetContext",
+  "const targetContext = getSelectedTargetContext();",
+  "selectedSystemStatus: targetContext.displayStatus",
+  "selectedSystem: targetContext.displayName",
+  "let nodeRefreshGeneration = 0;",
+  "const refreshGeneration = ++nodeRefreshGeneration;",
+  "const previousSelectedNodeId = nodesState.selectedNodeId || \"application-host\";",
+  "if (refreshGeneration !== nodeRefreshGeneration) {",
+  "if (!isNodeRequestCurrent(context)) {",
+].forEach((needle) => requireSource(needle, `Dashboard target state should resolve through one shared selected-target context: ${needle}`));
+
+[
   "const connectedAgent = remoteNodes.find((node) => getNodeConnectionState(node).key === \"connected\");",
   "setNodeSummary(\"connected\", connectedAgent ? connectedAgent.displayName || connectedAgent.name || \"Agent\" : \"None\");",
 ].forEach((needle) => requireSource(needle, `Connected Agent summary must be based on authenticated remote nodes only: ${needle}`));

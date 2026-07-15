@@ -30,10 +30,10 @@ function requestStatus(url, headers = {}) {
         resolve({ statusCode: response.statusCode, body });
       });
     });
-    request.on("error", () => resolve(null));
+    request.on("error", (error) => resolve({ statusCode: null, body: null, errorCode: error?.code || "NETWORK_ERROR" }));
     request.on("timeout", () => {
       request.destroy();
-      resolve(null);
+      resolve({ statusCode: null, body: null, errorCode: "TIMEOUT" });
     });
     request.end();
   });
@@ -45,12 +45,20 @@ async function getLiveAgentStatus() {
   const protectedStatus = status.token
     ? await requestStatus(`${baseUrl}/api/v1/stats`, { Authorization: `Bearer ${status.token}` })
     : null;
+  const networkReachable = Boolean(health?.statusCode || protectedStatus?.statusCode);
+  const authenticated = protectedStatus?.statusCode === 200;
+  const rejected = protectedStatus?.statusCode === 401 || protectedStatus?.statusCode === 403;
   return {
-    reachable: health !== null,
+    networkReachable,
+    authenticated,
+    authRejected: rejected,
     healthStatus: health?.statusCode || null,
     runningFingerprint: health?.body?.tokenFingerprint || null,
-    tokenMatches: protectedStatus?.statusCode === 200,
+    tokenMatches: authenticated ? true : rejected ? false : null,
     protectedStatus: protectedStatus?.statusCode || null,
+    apiVersion: health?.body?.apiVersion || null,
+    protocolVersion: health?.body?.protocolVersion ?? null,
+    networkErrorCode: health?.errorCode || protectedStatus?.errorCode || null,
   };
 }
 
@@ -64,9 +72,14 @@ getLiveAgentStatus().then((live) => {
   console.log(`environmentTokenPresent: ${status.environmentTokenPresent ? "yes" : "no"}`);
   console.log(`environmentTokenMatches: ${status.environmentTokenMatches === null ? "not set" : status.environmentTokenMatches ? "yes" : "no"}`);
   console.log(`environmentTokenIgnored: ${status.environmentTokenIgnored ? "yes" : "no"}`);
-  console.log(`runningAgentReachable: ${live.reachable ? "yes" : "no"}`);
+  console.log(`runningAgentNetworkReachable: ${live.networkReachable ? "yes" : "no"}`);
+  console.log(`runningAgentAuthenticated: ${live.authenticated ? "yes" : live.authRejected ? "no" : "not checked"}`);
   console.log(`runningAgentFingerprint: ${live.runningFingerprint || "not reported"}`);
-  console.log(`runningAgentTokenMatches: ${live.reachable ? live.tokenMatches ? "yes" : "no" : "not checked"}`);
+  console.log(`runningAgentTokenMatches: ${live.tokenMatches === null ? "not checked" : live.tokenMatches ? "yes" : "no"}`);
+  console.log(`runningAgentHealthStatus: ${live.healthStatus || live.networkErrorCode || "not reachable"}`);
+  console.log(`runningAgentProtectedStatus: ${live.protectedStatus || live.networkErrorCode || "not checked"}`);
+  console.log(`apiVersion: ${live.apiVersion || "not reported"}`);
+  console.log(`protocolVersion: ${live.protocolVersion ?? "not reported"}`);
   if (status.weakStoredTokenReplaced || status.weakEnvironmentTokenIgnored) {
     console.log("weakTokenHandling: weak/default token ignored or replaced");
   }

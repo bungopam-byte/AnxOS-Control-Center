@@ -58,6 +58,7 @@
     "agent:terminal-free:smoke": "node scripts/agent-terminal-free-smoke.js",
     "ssh:interactive-input:smoke": "node scripts/ssh-interactive-input-smoke.js",
     "ssh:input-diagnostics:smoke": "node scripts/ssh-input-diagnostics-smoke.js",
+    "ssh:renderer-input-lifecycle:smoke": "node scripts/ssh-renderer-input-lifecycle-smoke.js",
     "ssh:terminal-emulation:smoke": "node scripts/ssh-terminal-emulation-smoke.js",
     "synchronized-final:smoke": "node scripts/synchronized-final-regression-smoke.js",
     "live-regressions:smoke": "node scripts/live-routing-regression-smoke.js",

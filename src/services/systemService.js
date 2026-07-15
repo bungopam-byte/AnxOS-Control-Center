@@ -433,13 +433,19 @@ async function getLocalSystemSnapshot() {
   };
 }
 
-function getOptionalSelectedNodeConfig(options = {}) {
-  const target = getExecutionTarget(options?.nodeId || getSelectedNodeId());
-  return target.type === "agent" ? target.config : null;
-}
-
-async function getAgentSystemSnapshot(configOverride = null) {
-  const snapshot = await agentClient.getSystemStats(configOverride);
+async function getAgentSystemSnapshot(nodeId, configOverride = null) {
+  const nodeAgent = agentClient.forNode(nodeId);
+  let snapshot;
+  try {
+    snapshot = await nodeAgent.get("/stats");
+  } catch (error) {
+    console.warn("[AnxOS][Agent] Stats endpoint unavailable; falling back to system summary.", {
+      nodeId,
+      message: error?.message || String(error),
+      code: error?.code || null,
+    });
+    snapshot = await nodeAgent.get("/system/summary");
+  }
   return normalizeAgentSystemSnapshot(snapshot, configOverride);
 }
 
@@ -449,9 +455,10 @@ async function getSystemSnapshot(options = {}) {
 
   if (nodeConfig) {
     try {
-      return await getAgentSystemSnapshot(nodeConfig);
+      return await getAgentSystemSnapshot(target.nodeId, nodeConfig);
     } catch (error) {
       console.error("[AnxOS][System] Selected node stats fetch failed.", {
+        nodeId: target.nodeId,
         nodeUrl: nodeConfig.agentUrl || nodeConfig.url || null,
         message: error?.message || String(error),
         stack: error?.stack || null,

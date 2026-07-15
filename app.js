@@ -695,6 +695,7 @@ let nodeFormBusy = false;
 let nodeDetailsId = null;
 let nodeRefreshTimer = null;
 let nodePickerActiveIndex = 0;
+const nodeRequestSerials = new Map();
 let backupRequestInFlight = false;
 let backupsState = {
   backups: [],
@@ -25691,17 +25692,22 @@ function getSelectedNode() {
 }
 
 function getNodeRequestContext(label = "node-request") {
+  const requestLabel = String(label || "node-request");
+  const serial = (nodeRequestSerials.get(requestLabel) || 0) + 1;
+  nodeRequestSerials.set(requestLabel, serial);
   return {
-    label,
+    label: requestLabel,
     nodeId: getSelectedNodeId(),
     version: selectedNodeContextVersion,
+    serial,
   };
 }
 
 function isNodeRequestCurrent(context) {
   return Boolean(context) &&
     context.nodeId === getSelectedNodeId() &&
-    context.version === selectedNodeContextVersion;
+    context.version === selectedNodeContextVersion &&
+    (context.serial === undefined || nodeRequestSerials.get(context.label) === context.serial);
 }
 
 function getNodeScopedPayload(context, payload = {}) {
@@ -31478,7 +31484,7 @@ registerRefreshTask(() => {
   }
 }, 3000);
 registerRefreshTask(() => {
-  if (getActivePageName() === "marketplace") {
+  if (!shouldSkipNodeScopedPolling() && getActivePageName() === "marketplace") {
     refreshMarketplaceDownloads();
   }
 }, 2000);

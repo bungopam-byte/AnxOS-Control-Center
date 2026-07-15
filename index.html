@@ -4143,7 +4143,15 @@
         <div class="settings-grid nodes-form-grid">
           <label class="settings-field"><span>Node name</span><input type="text" data-node-field="displayName" placeholder="Anxlab" maxlength="80"><small class="settings-field-error" data-node-field-error="displayName"></small></label>
           <label class="settings-field"><span>Agent URL</span><input type="url" data-node-field="agentUrl" placeholder="http://192.168.1.134:47131"><small class="settings-field-error" data-node-field-error="agentUrl"></small></label>
-          <label class="settings-field settings-field--wide"><span>Agent token</span><input type="password" data-node-field="agentToken" placeholder="Leave blank to keep the existing token" autocomplete="off"><small class="settings-field-error" data-node-field-error="agentToken"></small></label>
+          <div class="settings-field settings-field--wide node-token-field">
+            <label><span>Agent Token</span><input type="password" data-node-field="agentToken" placeholder="Leave blank to keep the existing token" autocomplete="off"></label>
+            <div class="settings-actions node-token-actions">
+              <button class="inline-action" type="button" data-node-action="generate-token">Generate Token</button>
+              <button class="inline-action" type="button" data-node-action="copy-token" disabled>Copy Token</button>
+            </div>
+            <small class="settings-note" data-node-token-note>Generate a secure token, copy it to the Agent machine, and configure the same token on both sides.</small>
+            <small class="settings-field-error" data-node-field-error="agentToken"></small>
+          </div>
           <label class="settings-field settings-field--wide"><span>Description</span><input type="text" data-node-field="description" placeholder="Optional note, rack, owner, or location" maxlength="500"></label>
           <label class="settings-field settings-field--wide"><span>Tags</span><input type="text" data-node-field="tags" placeholder="windows, minecraft, vps"></label>
           <label class="settings-check settings-check--toggle"><input type="checkbox" data-node-field="enabled" checked><span>Node enabled</span></label>
@@ -4154,6 +4162,20 @@
           <button class="primary-button" type="button" data-node-action="save">Register Node</button>
           <button class="inline-action" type="button" data-node-action="close-modal">Cancel</button>
           <button class="inline-action" type="button" data-node-action="delete">Delete Selected</button>
+        </div>
+        <div class="settings-note node-token-setup" data-node-token-setup hidden>
+          <strong>Token setup</strong>
+          <ol>
+            <li>Copy the generated token.</li>
+            <li>Configure the same token on the Agent machine.</li>
+            <li>Restart the AnxOS Agent.</li>
+            <li>Return to Control Center.</li>
+            <li>Select Test Connection.</li>
+            <li>Save the node after validation succeeds.</li>
+          </ol>
+          <p>Temporary Linux shell example: <code>ANXOS_AGENT_TOKEN=&lt;generated-token&gt;</code></p>
+          <p>Temporary Windows PowerShell example: <code>$env:ANXOS_AGENT_TOKEN="&lt;generated-token&gt;"</code></p>
+          <p>Treat this token like a password. Anyone with it may be able to control this Agent.</p>
         </div>
       </section>
     </div>

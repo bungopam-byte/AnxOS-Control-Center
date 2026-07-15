@@ -260,6 +260,7 @@ const desktopApi = {
     testConnection: (payload = {}) => ipcRenderer.invoke("nodes:testConnection", payload),
     health: (nodeId) => ipcRenderer.invoke("nodes:health", { nodeId }),
     healthAll: () => ipcRenderer.invoke("nodes:healthAll"),
+    generateToken: () => ipcRenderer.invoke("nodes:generateToken"),
   },
   files: {
     listConnections: () => ipcRenderer.invoke("files:listConnections"),

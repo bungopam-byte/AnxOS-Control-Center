@@ -9,6 +9,7 @@ const {
   testNodeConnectionPayload,
 } = require("../services/nodeService");
 const { restorePersistedActiveNode, setActiveNode } = require("../services/activeNodeSelectionService");
+const { generateAgentToken } = require("../shared/agentTokenStore");
 const { audit, requirePermission } = require("../services/securityService");
 
 function getNodeErrorMessage(error) {
@@ -41,6 +42,11 @@ function registerNodesIpc() {
   ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => testNodeConnectionPayload(payload)));
   ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(payload.nodeId || "application-host")));
   ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => checkAllNodeHealth()));
+  ipcMain.handle("nodes:generateToken", async () => invokeNodeOperation(() => {
+    requirePermission("settings:write", "nodes");
+    audit({ action: "node.generate-token", target: "node-agent-token" });
+    return { token: generateAgentToken(), tokenFormat: "anxos-base64url-v1" };
+  }));
 }
 
 module.exports = {

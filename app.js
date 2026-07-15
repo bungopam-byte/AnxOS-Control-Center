@@ -616,6 +616,8 @@ const nodeModal = document.querySelector("[data-node-modal]");
 const nodeModalTitle = document.querySelector("[data-node-modal-title]");
 const nodeFormStatus = document.querySelector("[data-node-form-status]");
 const nodeFieldErrors = document.querySelectorAll("[data-node-field-error]");
+const nodeTokenNote = document.querySelector("[data-node-token-note]");
+const nodeTokenSetup = document.querySelector("[data-node-token-setup]");
 const nodeDetailsModal = document.querySelector("[data-node-details-modal]");
 const nodeDetailsTitle = document.querySelector("[data-node-details-title]");
 const nodeDetailsSummary = document.querySelector("[data-node-details-summary]");
@@ -27027,9 +27029,10 @@ function renderNodeSummary() {
 
 function setNodeFormBusy(isBusy, label = "") {
   nodeFormBusy = Boolean(isBusy);
-  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"]').forEach((button) => {
+  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"], [data-node-action="generate-token"]').forEach((button) => {
     button.disabled = nodeFormBusy;
   });
+  updateNodeTokenControls();
   if (nodeFormStatus) {
     nodeFormStatus.hidden = !label;
     nodeFormStatus.textContent = label || "";
@@ -27063,6 +27066,73 @@ function validateNodeFormPayload(payload = {}) {
   return errors;
 }
 
+function getNodeTokenInput() {
+  return nodeModal?.querySelector('[data-node-field="agentToken"]') || null;
+}
+
+function updateNodeTokenControls(options = {}) {
+  const tokenInput = getNodeTokenInput();
+  const copyButton = nodeModal?.querySelector('[data-node-action="copy-token"]');
+  const generateButton = nodeModal?.querySelector('[data-node-action="generate-token"]');
+  const hasUnsavedToken = Boolean(String(tokenInput?.value || "").trim());
+  if (copyButton) {
+    copyButton.disabled = nodeFormBusy || !hasUnsavedToken;
+  }
+  if (generateButton) {
+    generateButton.textContent = nodeEditId ? "Generate New Token" : "Generate Token";
+  }
+  if (nodeTokenNote) {
+    if (options.generated) {
+      nodeTokenNote.textContent = "Generating a new token does not update the Agent automatically. No connection changes occur until you save.";
+    } else if (nodeEditId && !hasUnsavedToken) {
+      nodeTokenNote.textContent = "Your saved token is stored securely and cannot be displayed here. Generate a new token to replace it.";
+    } else {
+      nodeTokenNote.textContent = "Generate a secure token, copy it to the Agent machine, and configure the same token on both sides.";
+    }
+  }
+  if (nodeTokenSetup) {
+    nodeTokenSetup.hidden = !hasUnsavedToken;
+  }
+}
+
+async function generateNodeAgentToken() {
+  const desktopApiState = getDesktopApiState();
+  const tokenInput = getNodeTokenInput();
+  if (!desktopApiState.hasNodes || nodeFormBusy || !tokenInput || typeof desktopApiState.api.nodes.generateToken !== "function") {
+    return;
+  }
+  try {
+    setNodeFormBusy(true, "Generating secure Agent token...");
+    const result = await desktopApiState.api.nodes.generateToken();
+    tokenInput.value = String(result?.token || "");
+    tokenInput.dataset.unsavedCredential = tokenInput.value ? "true" : "false";
+    updateNodeTokenControls({ generated: true });
+    setNodeFormBusy(false, nodeEditId
+      ? "After saving this new token, update the Agent configuration on this machine and restart the Agent. The node may appear offline until both sides use the same token."
+      : "Agent token generated. Copy it to the Agent machine before saving.");
+    showToast("Secure Agent token generated.", "success");
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Agent token could not be generated.");
+    setNodeFormBusy(false, message);
+    showToast(message, "error");
+  }
+}
+
+async function copyNodeAgentToken() {
+  const tokenInput = getNodeTokenInput();
+  const value = String(tokenInput?.value || "").trim();
+  if (!value) {
+    showToast("Generate or enter a new token before copying.", "warning");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast("Agent token copied.", "success");
+  } catch {
+    showToast("Agent token could not be copied.", "error");
+  }
+}
+
 function setNodeModalVisible(isVisible, node = null) {
   if (!nodeModal) return;
   nodeModal.hidden = !isVisible;
@@ -27087,6 +27157,8 @@ function setNodeModalVisible(isVisible, node = null) {
         field.value = node?.agentUrl || "";
       } else if (key === "agentToken") {
         field.value = "";
+        field.dataset.unsavedCredential = "false";
+        field.placeholder = nodeEditId ? "Saved token is stored securely" : "Enter or generate an Agent token";
       } else if (key === "description") {
         field.value = node?.description || "";
       } else if (key === "tags") {
@@ -27096,12 +27168,14 @@ function setNodeModalVisible(isVisible, node = null) {
     if (!nodeModalCleanup) {
       nodeModalCleanup = activateModal(nodeModal, { initialFocus: () => nodeModal.querySelector("[data-node-field=\"displayName\"]") });
     }
+    updateNodeTokenControls();
   } else if (nodeModalCleanup) {
     nodeModalCleanup();
     nodeModalCleanup = null;
     nodeEditId = null;
     setNodeFormErrors({});
     setNodeFormBusy(false, "");
+    if (nodeTokenSetup) nodeTokenSetup.hidden = true;
   }
 }
 
@@ -31342,8 +31416,14 @@ document.querySelector('[data-node-action="save"]')?.addEventListener("click", s
 document.querySelector('[data-node-action="test-form"]')?.addEventListener("click", testNodeFormConnection);
 document.querySelector('[data-node-action="test"]')?.addEventListener("click", testSelectedNode);
 document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);
+document.querySelector('[data-node-action="generate-token"]')?.addEventListener("click", generateNodeAgentToken);
+document.querySelector('[data-node-action="copy-token"]')?.addEventListener("click", copyNodeAgentToken);
 document.querySelectorAll('[data-node-action="close-modal"]').forEach((button) => button.addEventListener("click", () => setNodeModalVisible(false)));
 document.querySelectorAll('[data-node-action="close-details"]').forEach((button) => button.addEventListener("click", () => setNodeDetailsVisible(false)));
+getNodeTokenInput()?.addEventListener("input", (event) => {
+  event.currentTarget.dataset.unsavedCredential = String(event.currentTarget.value || "").trim() ? "true" : "false";
+  updateNodeTokenControls();
+});
 nodeModal?.addEventListener("click", (event) => {
   if (event.target === nodeModal) setNodeModalVisible(false);
 });

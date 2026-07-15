@@ -18,7 +18,7 @@ function isWeakAgentToken(value) {
 }
 
 function generateAgentToken() {
-  return `anx_${crypto.randomBytes(32).toString("base64url")}`;
+  return `anxos_${crypto.randomBytes(32).toString("base64url")}`;
 }
 
 function tokenFingerprint(value) {

@@ -65,6 +65,20 @@ function validateAccountApiUrl(value, source = "account configuration") {
   return normalized;
 }
 
+function getSupabaseProjectRefFromUrl(value) {
+  const normalized = normalizeBaseUrl(value, "");
+  if (!normalized) {
+    return "";
+  }
+  try {
+    const hostname = new URL(normalized).hostname;
+    const match = hostname.match(/^([a-z0-9-]+)\.(?:functions\.)?supabase\.co$/i);
+    return match?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
 function getBundledAccountConfigPath() {
   return path.join(__dirname, "..", "..", "website", "account-config.js");
 }
@@ -80,11 +94,24 @@ function getAccountConfigSearchPaths() {
 }
 
 function normalizeAccountConfig(rawConfig = {}, source = "unknown") {
+  const supabaseUrl = normalizeBaseUrl(rawConfig.supabaseUrl || rawConfig.SUPABASE_URL || rawConfig.ANXOS_SUPABASE_URL, "");
+  const accountApiUrl = validateAccountApiUrl(rawConfig.accountApiUrl || rawConfig.ANXOS_ACCOUNT_API_URL || rawConfig.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL, source);
+  const projectRef = String(
+    rawConfig.projectRef ||
+    rawConfig.projectId ||
+    rawConfig.supabaseProjectRef ||
+    rawConfig.SUPABASE_PROJECT_REF ||
+    rawConfig.ANXOS_SUPABASE_PROJECT_REF ||
+    getSupabaseProjectRefFromUrl(accountApiUrl) ||
+    getSupabaseProjectRefFromUrl(supabaseUrl) ||
+    "",
+  ).trim();
   return {
     source,
-    supabaseUrl: normalizeBaseUrl(rawConfig.supabaseUrl || rawConfig.SUPABASE_URL || rawConfig.ANXOS_SUPABASE_URL, ""),
+    supabaseUrl,
     supabaseAnonKey: String(rawConfig.supabaseAnonKey || rawConfig.supabaseAnonKeyPublic || rawConfig.SUPABASE_ANON_KEY || rawConfig.ANXOS_SUPABASE_ANON_KEY || "").trim(),
-    accountApiUrl: validateAccountApiUrl(rawConfig.accountApiUrl || rawConfig.ANXOS_ACCOUNT_API_URL || rawConfig.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL, source),
+    accountApiUrl,
+    projectRef,
     siteUrl: normalizeBaseUrl(rawConfig.siteUrl || rawConfig.WEBSITE_BASE_URL || rawConfig.ANXOS_WEBSITE_BASE_URL, ""),
   };
 }
@@ -141,6 +168,7 @@ function getAccountConfig(options = {}) {
     supabaseUrl: process.env.ANXOS_SUPABASE_URL || process.env.SUPABASE_URL,
     supabaseAnonKey: process.env.ANXOS_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
     accountApiUrl: process.env.ANXOS_ACCOUNT_API_URL || process.env.ANXOS_SUPABASE_ACCOUNT_FUNCTION_URL,
+    projectRef: process.env.ANXOS_SUPABASE_PROJECT_REF || process.env.SUPABASE_PROJECT_REF || process.env.ANXOS_ACCOUNT_PROJECT_REF,
     siteUrl: process.env.ANXOS_WEBSITE_BASE_URL || process.env.WEBSITE_BASE_URL || process.env.ANXOS_ACCOUNT_SITE_URL,
   }, "environment");
   if ((envConfig.supabaseUrl && envConfig.supabaseAnonKey) || envConfig.accountApiUrl) {
@@ -216,6 +244,10 @@ function getSupabaseUrl() {
 
 function getSupabaseAnonKey() {
   return String(getAccountConfig().supabaseAnonKey || "").trim();
+}
+
+function getAccountProjectRef() {
+  return String(getAccountConfig().projectRef || "").trim();
 }
 
 function getAccountApiHeaders(rawUrl, options = {}) {
@@ -740,7 +772,11 @@ async function refreshSession() {
     return { ...getStatus(), state: "refresh-unavailable", message: "Account service is not configured." };
   }
   const response = getAccountApiUrl()
-    ? await postJson(`${getAccountApiUrl()}/api/auth/refresh`, { refreshToken: session.refreshToken })
+    ? await postJson(`${getAccountApiUrl()}/api/auth/refresh`, {
+        refreshToken: session.refreshToken,
+        projectRef: getAccountProjectRef(),
+        projectId: getAccountProjectRef(),
+      })
     : await postSupabaseAuth("token?grant_type=refresh_token", { refresh_token: session.refreshToken });
   const nextSession = normalizeSession(response);
   writeSession({

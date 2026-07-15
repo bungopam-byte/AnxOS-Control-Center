@@ -67,6 +67,7 @@
     "agent-errors:smoke": "node scripts/agent-error-category-smoke.js",
     "public-access:ipc-noise:smoke": "node scripts/public-access-ipc-noise-smoke.js",
     "features:runtime-paths:smoke": "node scripts/remaining-feature-runtime-paths-smoke.js",
+    "account:project-context:smoke": "node scripts/account-project-context-smoke.js",
     "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
     "node:local-removal:smoke": "node scripts/local-node-removal-smoke.js",
     "node:local-application-separation:smoke": "node scripts/local-application-separation-smoke.js",

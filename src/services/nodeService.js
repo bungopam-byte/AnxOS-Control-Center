@@ -281,7 +281,7 @@ function getConnectionDisplayStatus(state) {
   const normalized = normalizeConnectionState(state);
   if (normalized === "online") return "Online";
   if (normalized === "connecting") return "Connecting";
-  if (normalized === "authentication_failed") return "Authentication Failed";
+  if (normalized === "authentication_failed") return "Authentication Required";
   if (normalized === "agent_incompatible") return "Agent Incompatible";
   if (normalized === "offline") return "Offline";
   return "Unknown";
@@ -369,6 +369,7 @@ function isCompatibleAgentHealth(health = {}) {
 
 function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt = new Date().toISOString(), health = null, previous = null, localAgent = false, compatibility = null }) {
   const normalized = normalizeConnectionState(state);
+  const reachable = ["online", "authentication_failed", "agent_incompatible"].includes(normalized);
   const identity = health?.identity || {};
   const compatibilityReport = compatibility || (health ? getAgentCompatibilityReport(health) : previous?.compatibility || null);
   const agentVersion = identity.agentVersion || health?.agentVersion || previous?.agentVersion || null;
@@ -378,15 +379,16 @@ function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt
   const hostname = identity.hostname || health?.hostname || previous?.hostname || null;
   return {
     connected: normalized === "online",
+    reachable,
     status: normalized,
     displayStatus: getConnectionDisplayStatus(normalized),
     message,
-    lastSeen: normalized === "online" ? checkedAt : previous?.lastSeen || null,
+    lastSeen: reachable ? checkedAt : previous?.lastSeen || null,
     latencyMs: Number.isFinite(Number(latencyMs)) ? Number(latencyMs) : null,
     localAgent,
     desktopApplication: localAgent ? "running" : null,
-    installed: normalized === "online" ? true : previous?.installed ?? null,
-    serviceRunning: normalized === "online" ? true : normalized === "offline" ? false : previous?.serviceRunning ?? null,
+    installed: reachable ? true : previous?.installed ?? null,
+    serviceRunning: reachable ? true : normalized === "offline" ? false : previous?.serviceRunning ?? null,
     authenticated: normalized === "authentication_failed" ? false : normalized === "online" ? true : previous?.authenticated ?? null,
     remoteAvailability: localAgent ? "not-remote" : null,
     versionCompatibility: normalized === "agent_incompatible" ? "update-required" : normalized === "online" ? "compatible" : previous?.versionCompatibility || "unknown",
@@ -461,6 +463,7 @@ function normalizeAgentNode(node = {}) {
     capabilities: buildNodeCapabilities({ ...node, kind: "agent", agentUrl, localAgent }),
     connection: node.connection && typeof node.connection === "object" ? {
       connected: node.connection.connected === true,
+      reachable: node.connection.reachable === true || node.connection.connected === true || ["online", "authentication_failed", "agent_incompatible"].includes(normalizeConnectionState(node.connection.status)),
       status: node.connection.status || (node.connection.connected ? "online" : "offline"),
       displayStatus: node.connection.displayStatus || (node.connection.connected ? "Online" : "Offline"),
       message: node.connection.message || "",
@@ -865,7 +868,7 @@ async function checkNodeHealth(nodeId, options = {}) {
     } catch (error) {
       const state = classifyHealthError(error);
       const message = state === "authentication_failed"
-        ? "Agent authentication failed."
+        ? `${node.displayName || node.name || node.id} credential rejected.`
         : state === "agent_incompatible"
         ? "Agent API version is not compatible with this Control Center."
         : error?.message || "Agent is unreachable.";

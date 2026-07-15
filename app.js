@@ -26636,13 +26636,13 @@ function getNodeConnectionState(node) {
       suggestion: "Wait for the current connection check to finish.",
     };
   }
-  if (status === "authentication_failed" || /unauthorized|forbidden|auth|token|credential/.test(combined)) {
+  if (status === "authentication_failed" || node.connection?.authenticated === false || /unauthorized|forbidden|auth|token|credential/.test(combined)) {
     return {
       key: "unauthorized",
-      label: "Unauthorized",
+      label: "Authentication Required",
       tone: "error",
-      message: "The Agent rejected this desktop connection.",
-      suggestion: "Repair pairing or rotate the shared Agent token from Agent Control.",
+      message: "Reachable, but the saved credential was rejected.",
+      suggestion: `Repair or re-pair ${node.displayName || "this Node"}.`,
     };
   }
   if (status === "agent_incompatible" || /incompatible|unsupported api|update required/.test(combined)) {
@@ -26681,7 +26681,7 @@ function getNodeConnectionState(node) {
   if (node.connection?.status === "offline" || node.connection?.connected === false || /offline|disconnected|unreachable|refused|timed? out|fetch failed|enotfound|econnrefused|etimedout/.test(combined)) {
     return {
       key: "offline",
-      label: "Offline",
+      label: "Unavailable",
       tone: "offline",
       message: "The selected system is offline or unreachable.",
       suggestion: "Start the Agent on that system or check the network address.",
@@ -26876,12 +26876,22 @@ function aggregateNodeHealthCategories(categories = []) {
 }
 
 function getNodeHealthIssueCategories(categories = []) {
-  return categories.filter((category) => (
-    category.applicable !== false &&
-    category.current !== false &&
-    !category.stale &&
-    category.issueCount > 0
-  ));
+  const roots = new Set();
+  return categories.filter((category) => {
+    const hasIssue = category.issueCount > 0;
+    if (category.applicable === false || category.current === false || category.stale || !hasIssue) {
+      return false;
+    }
+    const evidence = `${category.label || ""} ${category.evidence || ""}`.toLowerCase();
+    const root = /unauthorized|authentication|credential|token/.test(evidence)
+      ? "saved-credential-rejected"
+      : category.id || category.label || "node-health-issue";
+    if (roots.has(root)) {
+      return false;
+    }
+    roots.add(root);
+    return true;
+  });
 }
 
 function hasSystemSnapshotForNode(node = getSelectedNode()) {
@@ -26943,27 +26953,34 @@ function buildAgentHealth(node) {
       applicable: false,
     });
   }
-  const target = getCurrentAgentHealthTarget();
-  const runtime = getHealthRuntime();
+  const rawTarget = getCurrentAgentHealthTarget();
+  const target = node?.kind === "agent" ? (rawTarget?.nodeId === node.id ? rawTarget : null) : rawTarget;
+  const runtime = target ? getAgentRuntime(target) : null;
+  const connectionState = getNodeConnectionState(node);
   const stateText = target?.state || node?.connection?.status || "Unknown";
-  const running = runtime?.serviceState === "running" || isAgentTargetRunning(target || {});
-  const authFailed = /auth/i.test(stateText);
-  const portConflict = /AGENT_PORT_IN_USE|port .*in use/i.test(String(target?.mostRecentError?.code || target?.mostRecentError?.message || agentControlMessage?.textContent || ""));
-  const state = authFailed || portConflict ? "Degraded" : running ? "Healthy" : target ? "Degraded" : "Unknown";
+  const running = node?.kind === "agent"
+    ? connectionState.key === "connected"
+    : runtime?.serviceState === "running" || isAgentTargetRunning(target || {});
+  const authFailed = connectionState.key === "unauthorized" || /auth/i.test(stateText);
+  const unavailable = connectionState.key === "offline" || connectionState.key === "unavailable";
+  const portConflict = target ? /AGENT_PORT_IN_USE|port .*in use/i.test(String(target?.mostRecentError?.code || target?.mostRecentError?.message || agentControlMessage?.textContent || "")) : false;
+  const state = authFailed || portConflict ? "Degraded" : running ? "Healthy" : unavailable ? "Unavailable" : target ? "Degraded" : "Unknown";
+  const checkedAt = node?.connection?.lastSeen || target?.lastHeartbeat || agentControlLastRuntimeSnapshot?.timestamp || null;
   return buildNodeHealthCategory({
     id: "agent",
     label: "Agent",
     state,
     evidence: [
-      `Process ${formatAgentProcess(runtime, stateText)}`,
-      runtime?.version || target?.agentVersion ? `Version ${runtime?.version || target?.agentVersion}` : "Version unavailable",
-      Number.isFinite(runtime?.latencyMs) ? `Last request ${runtime.latencyMs} ms` : "Last request unavailable",
-      portConflict ? "Port conflict detected" : authFailed ? "Authentication failed" : target?.mostRecentError?.message || "No recent Agent error reported",
+      node?.kind === "agent" ? `${connectionState.label}: ${connectionState.message}` : `Process ${formatAgentProcess(runtime, stateText)}`,
+      runtime?.version || target?.agentVersion || node?.connection?.agentVersion || node?.agentIdentity?.agentVersion ? `Version ${runtime?.version || target?.agentVersion || node?.connection?.agentVersion || node?.agentIdentity?.agentVersion}` : "Version unavailable",
+      Number.isFinite(runtime?.latencyMs ?? node?.connection?.latencyMs) ? `Last request ${runtime?.latencyMs ?? node?.connection?.latencyMs} ms` : "Last request unavailable",
+      portConflict ? "Port conflict detected" : authFailed ? "Saved credential rejected" : target?.mostRecentError?.message || connectionState.suggestion || "No recent Agent error reported",
     ].join(" · "),
-    checkedAt: agentControlLastRuntimeSnapshot?.timestamp || Date.now(),
+    checkedAt,
     issueCount: state === "Healthy" ? 0 : 1,
     required: node?.kind === "agent",
     applicable: node?.kind === "agent" || Boolean(target),
+    current: Boolean(checkedAt || state === "Healthy" || authFailed || unavailable),
     workspace: "agent-control",
     remediation: running ? "Open Agent Control" : "Reconnect Agent",
     action: running ? "open-agent-control" : "reconnect-agent",
@@ -28273,19 +28290,20 @@ function renderNodes() {
   renderNodePicker();
 }
 
-async function refreshNodes() {
+async function refreshNodes(options = {}) {
   const desktopApiState = getDesktopApiState();
   const previousSelectedNodeId = nodesState.selectedNodeId || "application-host";
   if (!desktopApiState.hasNodes) {
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
+    nodeHealthSnapshotCache.clear();
     refreshNodeHealth({ notify: false });
     renderNodes();
     return;
   }
   try {
-    nodesState = typeof desktopApiState.api.nodes.restore === "function"
-      ? await desktopApiState.api.nodes.restore()
-      : await desktopApiState.api.nodes.list();
+    nodesState = options.forceHealthRefresh || typeof desktopApiState.api.nodes.restore !== "function"
+      ? await desktopApiState.api.nodes.list()
+      : await desktopApiState.api.nodes.restore();
     if (previousSelectedNodeId !== "application-host" && nodesState.selectedNodeId !== previousSelectedNodeId) {
       const selected = (nodesState.nodes || []).find((node) => node.id === nodesState.selectedNodeId);
       showToast(`Selected node was unavailable. Switched to ${selected?.displayName || "the available default node"}.`, "warning");
@@ -28293,6 +28311,7 @@ async function refreshNodes() {
   } catch {
     nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
   }
+  nodeHealthSnapshotCache.clear();
   refreshNodeHealth();
   renderNodes();
 }
@@ -28575,6 +28594,7 @@ async function testSelectedNode() {
     return;
   }
   const result = await desktopApiState.api.nodes.test(getSelectedNodeId()).catch((error) => ({ connected: false, message: error.message }));
+  await refreshNodes();
   showToast(result.connected ? "Node connected." : getFriendlyErrorMessage(result.message || "Node unavailable."));
 }
 
@@ -28651,7 +28671,7 @@ async function handleNodeCardAction(action, nodeId) {
   else if (action === "test") await testNodeById(nodeId);
   else if (action === "edit") editNodeById(nodeId);
   else if (action === "repair") repairNodeById(nodeId);
-  else if (action === "refresh") await refreshNodes();
+  else if (action === "refresh") await refreshNodes({ forceHealthRefresh: true });
   else if (action === "details") openNodeDetails(nodeId);
   else if (action === "remove") await deleteNodeById(nodeId);
 }

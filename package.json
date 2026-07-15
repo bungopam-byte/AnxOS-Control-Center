@@ -82,6 +82,7 @@
     "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
     "node:compat-cleanup:smoke": "node scripts/node-compat-cleanup-smoke.js",
     "node:stale-response:smoke": "node scripts/node-stale-response-smoke.js",
+    "node:status-classification:smoke": "node scripts/node-status-classification-smoke.js",
     "node-health:smoke": "node scripts/node-health-smoke.js",
     "security:page:smoke": "node scripts/security-page-smoke.js",
     "security:sections:smoke": "node scripts/security-sections-smoke.js",

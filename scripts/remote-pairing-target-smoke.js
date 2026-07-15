@@ -89,6 +89,7 @@ async function main() {
       response.end(JSON.stringify({
         ok: token && token === acceptedToken,
         apiVersion: "1",
+        protocolVersion: 1,
         agentVersion: "1.0.0",
         identity: { deviceId: "anxlab-device", hostname: "Anxlab", platform: "linux", architecture: "x64", agentVersion: "1.0.0", apiVersion: "1" },
         capabilities: [],

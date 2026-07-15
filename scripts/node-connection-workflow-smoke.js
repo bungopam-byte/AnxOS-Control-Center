@@ -67,6 +67,7 @@ function createAgent({ token, apiVersion = "1", deviceId = "workflow-node" }) {
     response.end(JSON.stringify({
       ok: true,
       apiVersion,
+      protocolVersion: 1,
       capabilities: ["instances", "files"],
       identity: { deviceId, hostname: "Workflow Node", platform: "linux", agentVersion: "1.7.0" },
     }));

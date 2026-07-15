@@ -50,6 +50,7 @@ const servers = [];
     payload: {
       ok: true,
       apiVersion: "1",
+      protocolVersion: 1,
       agentVersion: "1.7.0",
       capabilities: ["instances", "docker"],
       identity: { deviceId: "agent-a", hostname: "Node A", platform: "linux", agentVersion: "1.7.0" },
@@ -61,6 +62,7 @@ const servers = [];
     payload: {
       ok: true,
       apiVersion: "1",
+      protocolVersion: 1,
       agentVersion: "1.7.1",
       capabilities: ["files"],
       identity: { deviceId: "agent-b", hostname: "Node B", platform: "win32", agentVersion: "1.7.1" },
@@ -69,23 +71,23 @@ const servers = [];
   servers.push(onlineB.server);
   const authAgent = createAgent({
     token: "right-token",
-    payload: { ok: true, apiVersion: "1", identity: { deviceId: "agent-auth", hostname: "Auth Node" } },
+    payload: { ok: true, apiVersion: "1", protocolVersion: 1, identity: { deviceId: "agent-auth", hostname: "Auth Node" } },
   });
   servers.push(authAgent.server);
   const incompatibleAgent = createAgent({
     token: "token-incompatible",
-    payload: { ok: true, apiVersion: "0", identity: { deviceId: "agent-old", hostname: "Old Node", agentVersion: "0.1.0" } },
+    payload: { ok: true, apiVersion: "0", protocolVersion: 1, identity: { deviceId: "agent-old", hostname: "Old Node", agentVersion: "0.1.0" } },
   });
   servers.push(incompatibleAgent.server);
   const recoveryAgent = createAgent({
     token: "token-recovery",
-    payload: { ok: true, apiVersion: "1", identity: { deviceId: "agent-recovery", hostname: "Recovery Node" } },
+    payload: { ok: true, apiVersion: "1", protocolVersion: 1, identity: { deviceId: "agent-recovery", hostname: "Recovery Node" } },
   });
   servers.push(recoveryAgent.server);
   const slowAgent = createAgent({
     token: "token-slow",
     delayMs: 100,
-    payload: { ok: true, apiVersion: "1", identity: { deviceId: "agent-slow", hostname: "Slow Node" } },
+    payload: { ok: true, apiVersion: "1", protocolVersion: 1, identity: { deviceId: "agent-slow", hostname: "Slow Node" } },
   });
   servers.push(slowAgent.server);
 

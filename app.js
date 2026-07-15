@@ -26642,11 +26642,17 @@ function getNodeConnectionState(node) {
     };
   }
   if (status === "agent_incompatible" || /incompatible|unsupported api|update required/.test(combined)) {
+    const compatibility = node.connection?.compatibility || {};
+    const supportedApi = compatibility.supportedApi || "v1";
+    const supportedProtocol = compatibility.supportedProtocol || "1";
+    const reportedApi = compatibility.reportedApi ?? node.connection?.apiVersion ?? node.apiVersion ?? "missing";
+    const reportedProtocol = compatibility.reportedProtocol ?? node.connection?.protocolVersion ?? "missing";
+    const detail = `Control Center supports: API ${supportedApi}, Protocol ${supportedProtocol}. Agent reports: API ${reportedApi}, Protocol ${reportedProtocol}. Status: ${compatibility.status || "Update Required"}.`;
     return {
       key: "degraded",
       label: "Update Required",
       tone: "warning",
-      message: "This Agent is reachable, but its API is not compatible with this Control Center.",
+      message: message || detail,
       suggestion: "Update the Agent on that node before using agent-backed tools.",
     };
   }

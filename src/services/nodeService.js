@@ -14,7 +14,10 @@ const DEFAULT_LOCAL_AGENT_PORT = 47131;
 const LOCAL_AGENT_HOSTS = ["127.0.0.1", "localhost"];
 const LOCAL_AGENT_DISPLAY_NAME = "This PC";
 const HEALTH_STATES = new Set(["connecting", "online", "offline", "authentication_failed", "agent_incompatible", "unknown"]);
-const SUPPORTED_AGENT_API_VERSIONS = new Set(["1", "1.0"]);
+const SUPPORTED_AGENT_API_MAJOR_VERSIONS = new Set([1]);
+const SUPPORTED_AGENT_PROTOCOL_VERSION = 1;
+const MIN_AGENT_PROTOCOL_VERSION = 1;
+const MAX_AGENT_PROTOCOL_VERSION = 1;
 const inFlightHealthChecks = new Map();
 
 function getConfigDirectory() {
@@ -296,20 +299,78 @@ function classifyHealthError(error) {
   return "offline";
 }
 
-function isCompatibleAgentHealth(health = {}) {
-  const apiVersion = String(health.apiVersion || health.identity?.apiVersion || "").trim();
-  if (apiVersion && !SUPPORTED_AGENT_API_VERSIONS.has(apiVersion)) {
-    return false;
-  }
-  if (health.compatible === false || health.apiCompatible === false) {
-    return false;
-  }
-  return true;
+function normalizeAgentApiMajor(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  const match = raw.match(/^v?(\d+)(?:\.0+)?$/);
+  if (!match) return null;
+  const major = Number.parseInt(match[1], 10);
+  return Number.isInteger(major) && major > 0 ? major : null;
 }
 
-function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt = new Date().toISOString(), health = null, previous = null, localAgent = false }) {
+function normalizeAgentProtocolVersion(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const version = Number(value);
+  return Number.isInteger(version) && version > 0 ? version : null;
+}
+
+function getAgentCompatibilityReport(health = {}) {
+  const reportedApiVersion = health.apiVersion ?? health.identity?.apiVersion ?? null;
+  const reportedProtocolVersion = health.protocolVersion ?? health.identity?.protocolVersion ?? null;
+  const apiMajor = normalizeAgentApiMajor(reportedApiVersion);
+  const protocolVersion = normalizeAgentProtocolVersion(reportedProtocolVersion);
+  const supportedApi = Array.from(SUPPORTED_AGENT_API_MAJOR_VERSIONS).map((major) => `v${major}`).join(", ");
+  const supportedProtocol = MIN_AGENT_PROTOCOL_VERSION === MAX_AGENT_PROTOCOL_VERSION
+    ? String(SUPPORTED_AGENT_PROTOCOL_VERSION)
+    : `${MIN_AGENT_PROTOCOL_VERSION}-${MAX_AGENT_PROTOCOL_VERSION}`;
+  let compatible = true;
+  let reason = "compatible";
+  if (health.compatible === false || health.apiCompatible === false) {
+    compatible = false;
+    reason = "agent-reported-incompatible";
+  } else if (!apiMajor) {
+    compatible = false;
+    reason = "missing-or-malformed-api-version";
+  } else if (!SUPPORTED_AGENT_API_MAJOR_VERSIONS.has(apiMajor)) {
+    compatible = false;
+    reason = "unsupported-api-major";
+  } else if (!protocolVersion) {
+    compatible = false;
+    reason = "missing-or-malformed-protocol-version";
+  } else if (protocolVersion < MIN_AGENT_PROTOCOL_VERSION) {
+    compatible = false;
+    reason = "protocol-below-minimum";
+  } else if (protocolVersion > MAX_AGENT_PROTOCOL_VERSION) {
+    compatible = false;
+    reason = "protocol-above-maximum";
+  }
+  return {
+    compatible,
+    reason,
+    supportedApi,
+    supportedProtocol,
+    supportedApiMajorVersions: Array.from(SUPPORTED_AGENT_API_MAJOR_VERSIONS),
+    minProtocolVersion: MIN_AGENT_PROTOCOL_VERSION,
+    maxProtocolVersion: MAX_AGENT_PROTOCOL_VERSION,
+    reportedApi: reportedApiVersion ?? null,
+    reportedApiMajor: apiMajor,
+    reportedProtocol: reportedProtocolVersion ?? null,
+    reportedProtocolVersion: protocolVersion,
+    status: compatible ? "Compatible" : "Update Required",
+  };
+}
+
+function formatAgentCompatibilityMessage(report = {}) {
+  return `Control Center supports: API ${report.supportedApi || "v1"}, Protocol ${report.supportedProtocol || "1"}. Agent reports: API ${report.reportedApi ?? "missing"}, Protocol ${report.reportedProtocol ?? "missing"}. Status: ${report.status || "Unknown"}.`;
+}
+
+function isCompatibleAgentHealth(health = {}) {
+  return getAgentCompatibilityReport(health).compatible;
+}
+
+function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt = new Date().toISOString(), health = null, previous = null, localAgent = false, compatibility = null }) {
   const normalized = normalizeConnectionState(state);
   const identity = health?.identity || {};
+  const compatibilityReport = compatibility || (health ? getAgentCompatibilityReport(health) : previous?.compatibility || null);
   const agentVersion = identity.agentVersion || health?.agentVersion || previous?.agentVersion || null;
   const platform = identity.platform || health?.platform || previous?.platform || null;
   const operatingSystem = identity.operatingSystem || health?.operatingSystem || previous?.operatingSystem || null;
@@ -331,6 +392,8 @@ function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt
     versionCompatibility: normalized === "agent_incompatible" ? "update-required" : normalized === "online" ? "compatible" : previous?.versionCompatibility || "unknown",
     agentVersion,
     apiVersion: health?.apiVersion || identity.apiVersion || previous?.apiVersion || null,
+    protocolVersion: health?.protocolVersion ?? identity.protocolVersion ?? previous?.protocolVersion ?? null,
+    compatibility: compatibilityReport,
     platform,
     operatingSystem,
     architecture,
@@ -409,6 +472,8 @@ function normalizeAgentNode(node = {}) {
       versionCompatibility: node.connection.versionCompatibility || "unknown",
       agentVersion: node.connection.agentVersion || identity.agentVersion || null,
       apiVersion: node.connection.apiVersion || identity.apiVersion || null,
+      protocolVersion: node.connection.protocolVersion ?? identity.protocolVersion ?? null,
+      compatibility: node.connection.compatibility && typeof node.connection.compatibility === "object" ? node.connection.compatibility : null,
       platform: node.connection.platform || identity.platform || null,
       operatingSystem: node.connection.operatingSystem || identity.operatingSystem || null,
       architecture: node.connection.architecture || identity.architecture || null,
@@ -683,6 +748,7 @@ function applyHealthPatchToNode(node, patch = {}) {
     health: patch.health || null,
     previous: previousConnection,
     localAgent,
+    compatibility: patch.compatibility || null,
   });
   const identity = patch.health?.identity || node.agentIdentity || {};
   const lastSuccessfulHealthCheck = state === "online" ? checkedAt : node.lastSuccessfulHealthCheck || previousConnection.lastSeen || null;
@@ -771,13 +837,15 @@ async function checkNodeHealth(nodeId, options = {}) {
         suppressConnectionRefusedLog: true,
         logThrottleMs: 60000,
       });
-      const state = isCompatibleAgentHealth(health) ? "online" : "agent_incompatible";
-      const message = state === "online" ? "Agent is responding." : "Agent API version is not compatible with this Control Center.";
+      const compatibility = getAgentCompatibilityReport(health);
+      const state = compatibility.compatible ? "online" : "agent_incompatible";
+      const message = state === "online" ? `Agent is responding. ${formatAgentCompatibilityMessage(compatibility)}` : formatAgentCompatibilityMessage(compatibility);
       const updated = updateNodeHealthState(node.id, {
         state,
         message,
         latencyMs: Date.now() - startedAt,
         health,
+        compatibility,
         checkedAt: new Date().toISOString(),
       });
       return {
@@ -1065,15 +1133,18 @@ async function testNodeConnectionPayload(payload = {}) {
     logThrottleMs: 60000,
   });
   const identity = health.identity || {};
-  const compatible = isCompatibleAgentHealth(health);
+  const compatibility = getAgentCompatibilityReport(health);
+  const compatible = compatibility.compatible;
   return {
     connected: compatible,
     status: compatible ? "online" : "agent_incompatible",
     state: compatible ? "online" : "agent_incompatible",
-    message: compatible ? "Agent connection verified." : "Agent API version is not compatible with this Control Center.",
+    message: compatible ? `Agent connection verified. ${formatAgentCompatibilityMessage(compatibility)}` : formatAgentCompatibilityMessage(compatibility),
     latencyMs: Date.now() - startedAt,
     agentVersion: identity.agentVersion || health.agentVersion || null,
     apiVersion: identity.apiVersion || health.apiVersion || null,
+    protocolVersion: identity.protocolVersion ?? health.protocolVersion ?? null,
+    compatibility,
     platform: identity.platform || health.platform || null,
     capabilities: Array.isArray(health.capabilities) ? health.capabilities : [],
     node: publicNode(normalizeAgentNode({ ...existing, displayName, agentUrl, agentToken, agentIdentity: identity })),
@@ -1103,4 +1174,4 @@ function deleteNode(nodeId) {
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion } };

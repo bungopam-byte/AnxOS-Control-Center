@@ -23781,8 +23781,22 @@ function getSshXtermConstructor() {
   return window.Terminal || window.XTerm?.Terminal || null;
 }
 
+function bindSshXtermInput(terminal = sshXterm) {
+  if (!terminal) return false;
+  sshXtermInputDisposable?.dispose?.();
+  sshXtermInputDisposable = terminal.onData((data) => {
+    const session = getActiveSshSession();
+    if (!session || session.status !== "connected" || sshXtermSessionId !== session.id) {
+      return;
+    }
+    writeSshInput(data);
+  });
+  return true;
+}
+
 function ensureSshXterm() {
   if (sshXterm) {
+    bindSshXtermInput(sshXterm);
     return sshXterm;
   }
 
@@ -23811,10 +23825,7 @@ function ensureSshXterm() {
   });
 
   sshXterm.open(sshXtermSurface);
-  sshXtermInputDisposable?.dispose?.();
-  sshXtermInputDisposable = sshXterm.onData((data) => {
-    writeSshInput(data);
-  });
+  bindSshXtermInput(sshXterm);
   sshXtermSurface.classList.add("is-ready");
   return sshXterm;
 }
@@ -23822,6 +23833,8 @@ function ensureSshXterm() {
 function focusSshTerminalInput() {
   const terminal = ensureSshXterm();
   if (terminal) {
+    const session = getActiveSshSession();
+    terminal.options.disableStdin = !(session && session.status === "connected");
     terminal.focus();
     return true;
   }
@@ -23838,6 +23851,7 @@ function syncSshXtermSession(session) {
   const size = measureSshTerminalSize();
   terminal.resize?.(size.cols, size.rows);
   terminal.options.disableStdin = !(session && session.status === "connected");
+  bindSshXtermInput(terminal);
 
   if (sshXtermSessionId !== (session?.id || null)) {
     terminal.clear();

@@ -13,7 +13,7 @@ const htmlSource = fs.readFileSync(path.join(rootDir, "index.html"), "utf8");
 assert(htmlSource.includes("node_modules/@xterm/xterm/lib/xterm.js"), "SSH page must load xterm.");
 assert(htmlSource.includes("data-ssh-xterm"), "SSH page must expose an xterm surface inside the terminal window.");
 assert(appSource.includes("function ensureSshXterm"), "Renderer must initialize xterm for SSH.");
-assert(appSource.includes("sshXterm.onData((data) => {") && appSource.includes("writeSshInput(data);"), "xterm onData must send emitted data directly to the active PTY.");
+assert(appSource.includes("function bindSshXtermInput") && appSource.includes("terminal.onData((data) => {") && appSource.includes("writeSshInput(data);"), "xterm onData must send emitted data directly to the active PTY.");
 assert(appSource.includes("focusSshTerminalInput") && appSource.includes("window.requestAnimationFrame(focusSshTerminalInput);"), "SSH terminal should focus after a successful connection.");
 assert(appSource.includes("sshTerminalWindow?.addEventListener(\"click\"") && appSource.includes("focusSshTerminalInput();"), "Clicking inside SSH should focus the terminal.");
 assert(preloadSource.includes("write: (sessionId, input) => ipcRenderer.invoke(\"ssh:write\", { sessionId, input })"), "Preload must expose SSH input writing.");
@@ -44,7 +44,9 @@ assert(!/event\.key\s*===\s*["']Backspace["'][\s\S]{0,180}writeSshInput/.test(ap
 assert(!/event\.key\s*===\s*["']Delete["'][\s\S]{0,180}writeSshInput/.test(appSource), "Renderer must not manually translate Delete outside xterm.");
 assert(!/String\.fromCharCode\(event\.key\.toUpperCase\(\)\.charCodeAt\(0\)\s*-\s*64\)/.test(appSource), "Renderer must not manually reconstruct Ctrl+letter input.");
 
-assert(appSource.includes("sshXtermInputDisposable?.dispose?.();") && appSource.includes("sshXtermInputDisposable = sshXterm.onData"), "Reopening SSH must replace the input subscription without duplicate listeners.");
+assert(appSource.includes("sshXtermInputDisposable?.dispose?.();") && appSource.includes("sshXtermInputDisposable = terminal.onData"), "Reopening SSH must replace the input subscription without duplicate listeners.");
+assert(appSource.includes("sshXtermSessionId !== session.id"), "xterm input must reject stale SSH session bindings.");
 assert(appSource.includes("terminal.options.disableStdin = !(session && session.status === \"connected\")"), "Disconnected sessions must disable terminal input safely.");
+assert(serviceSource.includes("SSH_STREAM_NOT_WRITABLE"), "SSH service must reject input when the PTY stream is no longer writable.");
 
 console.log("SSH interactive input smoke checks passed.");

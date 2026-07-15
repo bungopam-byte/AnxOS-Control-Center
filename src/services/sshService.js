@@ -622,6 +622,12 @@ class SshService extends EventEmitter {
       });
     }
 
+    if (session.stream.writable === false) {
+      throw new SshServiceError("SSH session input stream is not writable.", {
+        code: "SSH_STREAM_NOT_WRITABLE",
+      });
+    }
+
     const data = typeof input === "string" ? input : "";
 
     if (!data) {

@@ -89,6 +89,7 @@
     "icons:linux": "node scripts/generate-linux-icons.js",
     "marketplace:smoke": "node scripts/marketplace-smoke.js",
     "marketplace:node-routing:smoke": "node scripts/marketplace-node-routing-smoke.js",
+    "marketplace:install-selected-node:smoke": "node scripts/marketplace-install-selected-node-smoke.js",
     "curseforge:browse-agent-auth:smoke": "node scripts/curseforge-browse-agent-auth-smoke.js",
     "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",

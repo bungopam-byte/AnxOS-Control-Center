@@ -119,14 +119,14 @@ async function main() {
     const proxyConfig = (() => {
       const source = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceInstallService.js"), "utf8");
       assert(source.includes("function getCurseForgeAgentConfig"), "Install config helper should exist.");
-      assert(source.includes('credentialSource: "node-credential-store"'), "Install config should identify node credential source.");
+      assert(source.includes('credentialSource: "protected-node-credential"'), "Install config should identify node credential source.");
       return true;
     })();
     assert.strictEqual(proxyConfig, true);
     const agentProxyConfig = marketplace._test.getCurseForgeAgentConfig("anxlab");
     assert.strictEqual(agentProxyConfig.agentNodeId, "anxlab", "Install/proxy config should carry selected node id.");
     assert.strictEqual(agentProxyConfig.agentNodeLabel, "Anxlab", "Install/proxy config should carry selected node label.");
-    assert.strictEqual(agentProxyConfig.credentialSource, "node-credential-store", "Install/proxy config should identify canonical node credential source.");
+    assert.strictEqual(agentProxyConfig.credentialSource, "protected-node-credential", "Install/proxy config should identify canonical node credential source.");
     const proxiedSearch = await curseforge._test.curseForgeClient.searchMods({ searchFilter: "agent" }, agentProxyConfig);
     assert.strictEqual(proxiedSearch.data?.[0]?.id, 42, "Explicit Agent-proxy requests should succeed with the canonical selected-node credential.");
     credentials.setNodeToken("anxlab", "rejected-node-token");
@@ -137,7 +137,7 @@ async function main() {
         error.details?.source === "agent-proxy" &&
         error.details?.nodeId === "anxlab" &&
         error.details?.nodeLabel === "Anxlab" &&
-        error.details?.credentialSource === "node-credential-store",
+        error.details?.credentialSource === "protected-node-credential",
       "Agent 401 should be surfaced as selected-node Agent proxy authentication failure.",
     );
     providerConfig.saveMarketplaceConfig({ curseForgeApiKey: "" });

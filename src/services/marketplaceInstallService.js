@@ -42,6 +42,62 @@ function buildInstallContext(payload = {}, options = {}, instancePayload = {}) {
   };
 }
 
+function resolveMarketplaceInstallTarget({ nodeId = null, operation = "marketplace-install" } = {}) {
+  const requestedNodeId = String(nodeId || "").trim();
+  if (!requestedNodeId) {
+    throw new MarketplaceInstallError("No installation target is selected.", "INSTALL_TARGET_REQUIRED", {
+      operation,
+      targetType: "missing",
+    });
+  }
+  const executionTarget = getExecutionTarget(requestedNodeId);
+  const node = getNode(executionTarget.nodeId);
+  const nodeLabel = node?.displayName || node?.name || executionTarget.nodeId;
+  if (executionTarget.type === "agent" && node?.enabled === false) {
+    throw new MarketplaceInstallError("Selected node is disabled.", "NODE_DISABLED", {
+      operation,
+      nodeId: executionTarget.nodeId,
+      nodeLabel,
+      targetType: "registered-node",
+    });
+  }
+  if (executionTarget.type !== "agent") {
+    return {
+      type: "application-host",
+      nodeId: executionTarget.nodeId || "application-host",
+      nodeLabel: nodeLabel || "Application Host",
+      agentUrl: null,
+      targetLabel: "application-host",
+      credentialSource: "application-host",
+      agentConfig: { backendMode: "local", nodeId: executionTarget.nodeId || "application-host" },
+      platform: node?.platform || node?.applicationHost?.platform || null,
+      capabilities: executionTarget.capabilities || {},
+    };
+  }
+  const targetLabel = `node:${executionTarget.nodeId}`;
+  const agentUrl = node?.agentUrl || node?.baseUrl || executionTarget.config?.agentUrl || null;
+  return {
+    type: "registered-node",
+    nodeId: executionTarget.nodeId,
+    nodeLabel,
+    agentUrl,
+    targetLabel,
+    credentialSource: "protected-node-credential",
+    agentConfig: {
+      ...executionTarget.config,
+      nodeId: executionTarget.nodeId,
+      agentNodeId: executionTarget.nodeId,
+      nodeName: nodeLabel,
+      agentNodeLabel: nodeLabel,
+      nodeUrl: agentUrl,
+      targetLabel,
+      credentialSource: "protected-node-credential",
+    },
+    platform: node?.platform || node?.agentIdentity?.platform || executionTarget.config?.platform || null,
+    capabilities: executionTarget.capabilities || {},
+  };
+}
+
 function validateInstallContext(installContext = {}) {
   const missingFields = ["nodeId", "instanceId", "installPath"].filter((field) => !String(installContext[field] || "").trim());
   if (missingFields.length > 0) {
@@ -68,34 +124,24 @@ function titleCaseProvider(provider) {
 }
 
 function getCurseForgeAgentConfig(nodeId = null) {
-  const selectedNodeId = nodeId || getSelectedNodeId();
-  const executionTarget = getExecutionTarget(selectedNodeId);
-  const node = getNode(selectedNodeId);
-  if (executionTarget.type === "agent" && node?.enabled === false) {
-    throw new MarketplaceInstallError("Selected node is disabled.", "NODE_DISABLED", {
-      nodeId: executionTarget.nodeId,
-    });
-  }
-  if (executionTarget.type !== "agent") {
+  const target = resolveMarketplaceInstallTarget({ nodeId: nodeId || getSelectedNodeId(), operation: "curseforge-agent-proxy" });
+  if (target.type !== "registered-node") {
     return {
       useAgentProxy: false,
       agentConfig: null,
       agentNodeId: "application-host",
-      agentNodeLabel: node?.displayName || "Application Host",
+      agentNodeLabel: target.nodeLabel || "Application Host",
+      credentialSource: target.credentialSource,
     };
   }
   return {
     useAgentProxy: true,
-    agentConfig: {
-      ...executionTarget.config,
-      nodeId: executionTarget.nodeId,
-      agentNodeId: executionTarget.nodeId,
-      agentNodeLabel: node?.displayName || executionTarget.nodeId,
-      credentialSource: "node-credential-store",
-    },
-    agentNodeId: executionTarget.nodeId,
-    agentNodeLabel: node?.displayName || executionTarget.nodeId,
-    credentialSource: "node-credential-store",
+    agentConfig: target.agentConfig,
+    agentNodeId: target.nodeId,
+    agentNodeLabel: target.nodeLabel,
+    agentUrl: target.agentUrl,
+    targetLabel: target.targetLabel,
+    credentialSource: target.credentialSource,
   };
 }
 
@@ -137,15 +183,41 @@ async function ensureProviderPackDependencies(options = {}, agentConfig = null) 
   }
   const dependencyIds = ["java"];
   const nodeId = options.nodeId || agentConfig?.nodeId || null;
+  const nodeLabel = agentConfig?.agentNodeLabel || agentConfig?.nodeName || nodeId || "Selected node";
+  const diagnosticsContext = {
+    provider: options.provider || null,
+    operation: "dependencies-check",
+    nodeId,
+    nodeLabel,
+    targetType: nodeId ? "registered-node" : "unknown",
+    agentUrl: agentConfig?.agentUrl || agentConfig?.nodeUrl || null,
+    targetLabel: agentConfig?.targetLabel || (nodeId ? `node:${nodeId}` : null),
+    credentialSource: agentConfig?.credentialSource || (nodeId ? "protected-node-credential" : null),
+  };
+  if (!nodeId) {
+    throw new MarketplaceInstallError("No installation target is selected.", "INSTALL_TARGET_REQUIRED", diagnosticsContext);
+  }
   emitProgress({ nodeId, instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Checking node dependencies...", current: 0, total: 1 });
-  const check = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
+  let check;
+  try {
+    check = await agentClient.checkDependencies({ dependencyIds, nodeId }, agentConfig);
+  } catch (error) {
+    if (error?.status === 401 || error?.code === "UNAUTHORIZED") {
+      throw new MarketplaceInstallError(`${nodeLabel} credential rejected. Repair or re-pair this Node before installing.`, "NODE_CREDENTIAL_REJECTED", {
+        ...diagnosticsContext,
+        status: error.status || 401,
+        errorCode: error.code || "UNAUTHORIZED",
+      });
+    }
+    throw error;
+  }
   if (check.ok) {
     emitProgress({ nodeId, instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies are ready.", current: 1, total: 1 });
     return;
   }
   if (options.autoInstallDependencies === true) {
-    await agentClient.installDependencies({ dependencyIds: check.missingDependencyIds || dependencyIds }, agentConfig);
-    const recheck = await agentClient.checkDependencies({ dependencyIds }, agentConfig);
+    await agentClient.installDependencies({ dependencyIds: check.missingDependencyIds || dependencyIds, nodeId }, agentConfig);
+    const recheck = await agentClient.checkDependencies({ dependencyIds, nodeId }, agentConfig);
     if (recheck.ok) {
       emitProgress({ nodeId, instanceId: options.id || options.name || "provider-pack", stage: "dependencies", message: "Node dependencies installed.", current: 1, total: 1 });
       return;
@@ -1915,22 +1987,24 @@ async function installPack(payload = {}) {
   if (["modrinth", "curseforge"].includes(provider)) {
     ensureProviderProjectId(options.providerProjectId, provider === "modrinth" ? "Modrinth" : "CurseForge");
   }
-  const executionTarget = getExecutionTarget(payload.nodeId);
-  const targetNode = getNode(executionTarget.nodeId);
-  if (executionTarget.type === "agent" && targetNode?.enabled === false) {
-    throw new MarketplaceInstallError("Selected node is disabled.", "NODE_DISABLED", {
-      nodeId: executionTarget.nodeId,
-    });
-  }
-  const agentConfig = executionTarget.type === "agent"
-    ? { ...executionTarget.config, nodeId: executionTarget.nodeId, agentNodeId: executionTarget.nodeId }
-    : { backendMode: "local", nodeId: executionTarget.nodeId || "application-host" };
-  const installNodeId = agentConfig.nodeId || payload.nodeId || getSelectedNodeId();
-  const curseForgeConfig = provider === "curseforge" ? getCurseForgeAgentConfig(payload.nodeId) : null;
+  const installTarget = resolveMarketplaceInstallTarget({ nodeId: payload.nodeId, operation: `${provider}-install` });
+  const agentConfig = installTarget.agentConfig;
+  const installNodeId = installTarget.nodeId;
+  const curseForgeConfig = provider === "curseforge" ? getCurseForgeAgentConfig(installTarget.nodeId) : null;
   if (provider === "curseforge") {
     curseforgeProvider.ensureConfigured(curseForgeConfig || {});
   }
-  await ensureProviderPackDependencies(options, agentConfig);
+  logMarketplaceInstallStep("Resolved Marketplace install target.", {
+    provider,
+    operation: "install-target",
+    nodeId: installTarget.nodeId,
+    nodeLabel: installTarget.nodeLabel,
+    targetType: installTarget.type,
+    agentUrl: installTarget.agentUrl,
+    targetLabel: installTarget.targetLabel,
+    credentialSource: installTarget.credentialSource,
+  });
+  await ensureProviderPackDependencies({ ...options, nodeId: installNodeId }, agentConfig);
   const serverInfo = await resolveServerJar(options);
   const instancePayload = buildInstancePayload(options, serverInfo);
   const installContext = validateInstallContext(buildInstallContext(payload, options, instancePayload));
@@ -2205,6 +2279,7 @@ module.exports = {
     createRestrictedCurseForgeFileError,
     createDeduper,
     ensureCurseForgeServerPackCandidate,
+    ensureProviderPackDependencies,
     ensureModrinthServerCapable,
     friendlyHttpMessage,
     getCurseForgeBrowseConfig,
@@ -2218,6 +2293,7 @@ module.exports = {
     isCurseForgeServerSignalPath,
     isTransientError,
     resolvePaperServerJar,
+    resolveMarketplaceInstallTarget,
     safeArchivePath,
     stripArchiveRoot,
     withRetry,

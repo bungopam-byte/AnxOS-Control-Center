@@ -1826,6 +1826,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       const selectedPort = 25566 + index;
       await marketplaceInstallService.installPack({
         ...payload,
+        nodeId: "marketplace-smoke-node",
         id,
         name: `Marketplace ${name} Smoke`,
         minecraftVersion: "1.21.1",
@@ -1852,6 +1853,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     await assert.rejects(
       () => marketplaceInstallService.installPack({
         provider: "anxhub",
+        nodeId: "marketplace-smoke-node",
         loader: "vanilla",
         id: "marketplace-invalid-port-smoke",
         name: "Marketplace Invalid Port Smoke",

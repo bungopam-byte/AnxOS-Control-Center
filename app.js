@@ -12248,7 +12248,9 @@ function getMarketplaceStateForTemplate(template = {}) {
 
 function formatMarketplaceSelectedNodeLabel() {
   const selected = getSelectedNode();
-  return selected?.displayName || selected?.hostname || getSelectedNodeId() || "Selected node";
+  const label = selected?.displayName || selected?.hostname || getSelectedNodeId() || "Selected node";
+  const endpoint = selected?.kind === "agent" ? selected.agentUrl || selected.baseUrl || "" : "";
+  return endpoint ? `${label} · ${endpoint}` : label;
 }
 
 function getMarketplaceCompatibilityItems(template = {}) {

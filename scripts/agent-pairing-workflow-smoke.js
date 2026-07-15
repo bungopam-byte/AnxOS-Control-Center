@@ -79,6 +79,27 @@ async function waitForAgent(baseUrl) {
     });
     assert.notStrictEqual(replay.status, 200, "Pairing code must be single use.");
 
+    const staleToken = config.agentToken;
+    const repairStart = await fetch(`${agentUrl}/api/v1/pairing/start`, { method: "POST" });
+    assert.strictEqual(repairStart.status, 200, "Agent should allow a new limited pairing session while the saved node credential is stale.");
+    const repairSession = await repairStart.json();
+    const repaired = await pairNodeFromCode({
+      id: paired.node.id,
+      pairingCode: repairSession.pairingCode,
+      displayName: paired.node.displayName,
+    });
+    assert.strictEqual(repaired.paired, true, "Existing node should re-pair successfully.");
+    assert.strictEqual(repaired.node.id, paired.node.id, "Re-pairing must update the existing node instead of creating a duplicate.");
+    assert.strictEqual(repaired.node.displayName, paired.node.displayName, "Re-pairing should preserve the node display name.");
+    const repairedConfig = getNodeAgentConfig(paired.node.id);
+    assert.notStrictEqual(repairedConfig.agentToken, staleToken, "Re-pairing should rotate only the existing node credential.");
+    const staleProtectedRequest = await fetch(`${agentUrl}/api/v1/instances`, { headers: { Authorization: `Bearer ${staleToken}` } });
+    assert.strictEqual(staleProtectedRequest.status, 401, "Old credential should be rejected after re-pairing.");
+    const repairedProtectedRequest = await fetch(`${agentUrl}/api/v1/instances`, { headers: { Authorization: `Bearer ${repairedConfig.agentToken}` } });
+    assert.strictEqual(repairedProtectedRequest.status, 200, "Repaired node credential should authenticate immediately.");
+    const persisted = JSON.parse(fs.readFileSync(getNodesPath(), "utf8"));
+    assert.strictEqual(persisted.nodes.filter((node) => node.id === paired.node.id).length, 1, "Re-pairing must not duplicate the existing node.");
+
     console.log("Agent pairing workflow smoke checks passed.");
   } finally {
     child.kill("SIGTERM");

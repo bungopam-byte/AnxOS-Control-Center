@@ -27717,14 +27717,18 @@ function renderNodes() {
       });
       const actions = document.createElement("div");
       actions.className = "node-card__actions";
-      [
+      const nodeActions = [
         ["select", node.id === getSelectedNodeId() ? "Selected" : "Select"],
         ["test", "Test Connection"],
         ["edit", "Edit"],
         ["refresh", "Refresh"],
         ["details", "View Details"],
         ["remove", "Remove"],
-      ].forEach(([actionName, label]) => {
+      ];
+      if (getNodeConnectionState(node).key === "unauthorized") {
+        nodeActions.splice(3, 0, ["repair", "Re-pair Existing Node"]);
+      }
+      nodeActions.forEach(([actionName, label]) => {
         const button = document.createElement("button");
         button.type = "button";
         button.className = actionName === "remove" ? "inline-action inline-action--danger" : "inline-action";
@@ -28029,10 +28033,17 @@ function editNodeById(nodeId) {
   setNodeModalVisible(true, node);
 }
 
+function repairNodeById(nodeId) {
+  editNodeById(nodeId);
+  setNodeFormBusy(false, "Paste the temporary pairing code from this Agent. Re-pairing updates this node in place and keeps its name, tags, and preferences.");
+  nodePairingCodeInput?.focus();
+}
+
 async function handleNodeCardAction(action, nodeId) {
   if (action === "select") await selectNode(nodeId);
   else if (action === "test") await testNodeById(nodeId);
   else if (action === "edit") editNodeById(nodeId);
+  else if (action === "repair") repairNodeById(nodeId);
   else if (action === "refresh") await refreshNodes();
   else if (action === "details") openNodeDetails(nodeId);
   else if (action === "remove") await deleteNodeById(nodeId);

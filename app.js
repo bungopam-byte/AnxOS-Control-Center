@@ -803,7 +803,7 @@ let sshPendingPasswordProfileId = null;
 let sshTransientStatusMessage = "";
 let sshProfileFormVisible = false;
 let sshKeyboardMode = false;
-let sshKeyboardInputBuffer = "";
+let sshTerminalResizeObserver = null;
 let filesSelectedServerId = null;
 let filesSelectedProfileId = null;
 let filesPasswordPromptVisible = false;
@@ -943,6 +943,8 @@ const FILES_AGENT_PROFILE_PREFIX = "files-profile:agent:";
 const STARTUP_FALLBACK_MS = 4200;
 const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
+const SSH_TERMINAL_DEFAULT_COLS = 120;
+const SSH_TERMINAL_DEFAULT_ROWS = 32;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
 const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
@@ -23461,25 +23463,193 @@ function getSshProfileById(profileId) {
   return sshProfilesState.profiles.find((profile) => profile.id === profileId) || null;
 }
 
-function stripAnsi(value) {
-  return String(value || "").replace(
-    /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,
-    "",
-  );
+function createSshTerminalBuffer(options = {}) {
+  const state = {
+    cols: Number.isFinite(options.cols) ? Math.max(40, options.cols) : SSH_TERMINAL_DEFAULT_COLS,
+    rows: Number.isFinite(options.rows) ? Math.max(12, options.rows) : SSH_TERMINAL_DEFAULT_ROWS,
+    lines: [""],
+    row: 0,
+    col: 0,
+    escapeState: null,
+    escapeBuffer: "",
+  };
+
+  const ensureRow = (row = state.row) => {
+    while (state.lines.length <= row) {
+      state.lines.push("");
+    }
+  };
+
+  const trimRows = () => {
+    const maxRows = Math.max(SSH_OUTPUT_LINE_LIMIT, state.rows);
+    if (state.lines.length <= maxRows) return;
+    const removed = state.lines.length - maxRows;
+    state.lines = state.lines.slice(-maxRows);
+    state.row = Math.max(0, state.row - removed);
+  };
+
+  const setCursor = (row, col) => {
+    state.row = Math.max(0, Math.min(Number.isFinite(row) ? row : state.row, state.lines.length - 1));
+    state.col = Math.max(0, Math.min(Number.isFinite(col) ? col : state.col, state.cols - 1));
+    ensureRow();
+  };
+
+  const newLine = () => {
+    state.row += 1;
+    state.col = 0;
+    ensureRow();
+    trimRows();
+  };
+
+  const putChar = (char) => {
+    ensureRow();
+    if (state.col >= state.cols) {
+      newLine();
+    }
+    const line = state.lines[state.row] || "";
+    const padded = line.padEnd(state.col, " ");
+    state.lines[state.row] = `${padded.slice(0, state.col)}${char}${padded.slice(state.col + 1)}`;
+    state.col += 1;
+  };
+
+  const clearLineFromCursor = () => {
+    ensureRow();
+    state.lines[state.row] = (state.lines[state.row] || "").slice(0, state.col);
+  };
+
+  const clearLineToCursor = () => {
+    ensureRow();
+    const line = state.lines[state.row] || "";
+    state.lines[state.row] = `${" ".repeat(state.col)}${line.slice(state.col)}`;
+  };
+
+  const clearScreenFromCursor = () => {
+    ensureRow();
+    clearLineFromCursor();
+    state.lines = state.lines.slice(0, state.row + 1);
+  };
+
+  const clearScreen = () => {
+    state.lines = [""];
+    state.row = 0;
+    state.col = 0;
+  };
+
+  const parseCsiParams = (sequence) => sequence
+    .replace(/^[?=>]*/, "")
+    .slice(0, -1)
+    .split(";")
+    .filter(Boolean)
+    .map((part) => Number.parseInt(part, 10))
+    .map((value) => (Number.isFinite(value) ? value : 0));
+
+  const applyCsi = (sequence) => {
+    const command = sequence.at(-1);
+    const params = parseCsiParams(sequence);
+    const first = params[0] || 1;
+
+    if (command === "A") setCursor(state.row - first, state.col);
+    else if (command === "B") setCursor(state.row + first, state.col);
+    else if (command === "C") setCursor(state.row, state.col + first);
+    else if (command === "D") setCursor(state.row, state.col - first);
+    else if (command === "G") setCursor(state.row, Math.max(0, first - 1));
+    else if (command === "H" || command === "f") setCursor(Math.max(0, (params[0] || 1) - 1), Math.max(0, (params[1] || 1) - 1));
+    else if (command === "J") {
+      if ((params[0] || 0) === 2 || (params[0] || 0) === 3) clearScreen();
+      else clearScreenFromCursor();
+    } else if (command === "K") {
+      if ((params[0] || 0) === 1) clearLineToCursor();
+      else if ((params[0] || 0) === 2) state.lines[state.row] = "";
+      else clearLineFromCursor();
+    }
+  };
+
+  const consumeEscape = (char) => {
+    if (state.escapeState === "esc") {
+      if (char === "[") {
+        state.escapeState = "csi";
+        state.escapeBuffer = "";
+        return;
+      }
+      state.escapeState = null;
+      state.escapeBuffer = "";
+      return;
+    }
+
+    if (state.escapeState === "csi") {
+      state.escapeBuffer += char;
+      if (/[@-~]/.test(char)) {
+        applyCsi(state.escapeBuffer);
+        state.escapeState = null;
+        state.escapeBuffer = "";
+      }
+    }
+  };
+
+  return {
+    write(chunk) {
+      for (const char of String(chunk || "")) {
+        if (state.escapeState) {
+          consumeEscape(char);
+          continue;
+        }
+        if (char === "\u001b") {
+          state.escapeState = "esc";
+          state.escapeBuffer = "";
+          continue;
+        }
+        if (char === "\u0007") continue;
+        if (char === "\r") {
+          state.col = 0;
+          continue;
+        }
+        if (char === "\n") {
+          newLine();
+          continue;
+        }
+        if (char === "\b" || char === "\u007f") {
+          state.col = Math.max(0, state.col - 1);
+          continue;
+        }
+        if (char === "\t") {
+          const spaces = 8 - (state.col % 8);
+          for (let index = 0; index < spaces; index += 1) putChar(" ");
+          continue;
+        }
+        if (char < " " && char !== "\u00a0") continue;
+        putChar(char);
+      }
+      trimRows();
+    },
+    clear() {
+      clearScreen();
+    },
+    resize(size = {}) {
+      if (Number.isFinite(size.cols)) state.cols = Math.max(40, size.cols);
+      if (Number.isFinite(size.rows)) state.rows = Math.max(12, size.rows);
+      setCursor(state.row, state.col);
+    },
+    toRows() {
+      const rows = [...state.lines];
+      while (rows.length && !rows[rows.length - 1]) rows.pop();
+      return rows;
+    },
+    toText() {
+      return this.toRows().join("\n");
+    },
+  };
 }
 
-function normalizeSshOutput(value) {
-  return stripAnsi(value)
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
+function getSshTerminalBuffer(session) {
+  if (!session) return null;
+  if (!session.terminalBuffer) {
+    session.terminalBuffer = createSshTerminalBuffer(measureSshTerminalSize());
+  }
+  return session.terminalBuffer;
 }
 
 function getSshRenderableRows(session) {
-  if (!session) {
-    return [];
-  }
-
-  return session.partialLine ? [...session.outputLines, session.partialLine] : [...session.outputLines];
+  return getSshTerminalBuffer(session)?.toRows() || [];
 }
 
 function getSshRows() {
@@ -23590,24 +23760,13 @@ function clearSshOutput() {
     return;
   }
 
-  session.outputLines = [];
-  session.partialLine = "";
+  getSshTerminalBuffer(session)?.clear();
   renderSshOutput(session);
   renderSshView();
 }
 
-function getSshShellInputValue() {
-  return sshKeyboardMode ? sshKeyboardInputBuffer : sshCommandInput?.value || "";
-}
-
-function syncSshKeyboardInputValue() {
-  if (sshKeyboardMode && sshCommandInput) {
-    sshCommandInput.value = sshKeyboardInputBuffer;
-  }
-}
-
 async function copySshOutput() {
-  const output = getSshRows().join("\n");
+  const output = getSshTerminalBuffer(getActiveSshSession())?.toText() || "";
 
   if (!output) {
     return;
@@ -23681,8 +23840,6 @@ async function pasteSshText(text) {
     return false;
   }
 
-  sshKeyboardInputBuffer += pastedText;
-  syncSshKeyboardInputValue();
   return writeSshInput(pastedText);
 }
 
@@ -23701,8 +23858,7 @@ function toggleSshFullscreen() {
 function createLocalSshSession(sessionSnapshot) {
   return {
     ...sessionSnapshot,
-    outputLines: [],
-    partialLine: "",
+    terminalBuffer: createSshTerminalBuffer(measureSshTerminalSize()),
   };
 }
 
@@ -23726,25 +23882,7 @@ function appendSshOutput(sessionId, chunk) {
     return;
   }
 
-  const normalizedChunk = normalizeSshOutput(chunk);
-  const parts = normalizedChunk.split("\n");
-
-  if (parts.length === 1) {
-    session.partialLine += parts[0];
-  } else {
-    session.partialLine += parts[0];
-    session.outputLines.push(session.partialLine);
-
-    for (let index = 1; index < parts.length - 1; index += 1) {
-      session.outputLines.push(parts[index]);
-    }
-
-    session.partialLine = parts[parts.length - 1];
-  }
-
-  if (session.outputLines.length > SSH_OUTPUT_LINE_LIMIT) {
-    session.outputLines = session.outputLines.slice(-SSH_OUTPUT_LINE_LIMIT);
-  }
+  getSshTerminalBuffer(session)?.write(chunk);
 
   if (sessionId === activeSshSessionId) {
     renderSshOutput(session);
@@ -23984,14 +24122,15 @@ function renderSshView() {
 
   if (sshCommandInput) {
     sshCommandInput.disabled = !canSend;
+    sshCommandInput.readOnly = canSend;
     sshCommandInput.placeholder = canSend
       ? sshKeyboardMode
-        ? "Live keyboard mode enabled"
-        : `Connected to ${session.label}`
+        ? "Terminal input is active"
+        : "Click the terminal or this field to type"
       : "Connect to enable command input";
 
     if (sshKeyboardMode) {
-      sshCommandInput.value = sshKeyboardInputBuffer;
+      sshCommandInput.value = "";
     }
   }
 
@@ -24042,10 +24181,23 @@ async function resizeActiveSshSession() {
   }
 
   const size = measureSshTerminalSize();
+  getSshTerminalBuffer(session)?.resize(size);
+  renderSshOutput(session);
 
   try {
     await desktopApiState.api.ssh.resize(session.id, size);
   } catch {}
+}
+
+function setupSshTerminalResizeObserver() {
+  if (sshTerminalResizeObserver || !sshTerminalWindow || typeof ResizeObserver !== "function") {
+    return;
+  }
+
+  sshTerminalResizeObserver = new ResizeObserver(() => {
+    resizeActiveSshSession();
+  });
+  sshTerminalResizeObserver.observe(sshTerminalWindow);
 }
 
 async function loadSshProfiles(options = {}) {
@@ -24360,7 +24512,6 @@ async function handleSshTerminalInputKeydown(event) {
   if (event.key === "Enter") {
     event.preventDefault();
     await writeSshInput("\n");
-    sshKeyboardInputBuffer = "";
     if (sshCommandInput) {
       sshCommandInput.value = "";
     }
@@ -24369,13 +24520,7 @@ async function handleSshTerminalInputKeydown(event) {
 
   if (event.key === "Backspace") {
     event.preventDefault();
-
-    if (sshKeyboardInputBuffer) {
-      sshKeyboardInputBuffer = sshKeyboardInputBuffer.slice(0, -1);
-    }
-
-    syncSshKeyboardInputValue();
-    await writeSshInput("\b");
+    await writeSshInput("\u007f");
     return true;
   }
 
@@ -30157,8 +30302,8 @@ sshPasswordInput?.addEventListener("keydown", (event) => {
   }
 });
 sshTerminalWindow?.addEventListener("click", () => {
-  if (!sshCommandInput?.disabled) {
-    sshCommandInput?.focus();
+  if (getActiveSshSession()?.status === "connected") {
+    sshTerminalWindow.focus();
   }
 });
 sshTerminalWindow?.addEventListener("keydown", async (event) => {
@@ -30166,12 +30311,12 @@ sshTerminalWindow?.addEventListener("keydown", async (event) => {
 });
 sshCommandInput?.addEventListener("focus", () => {
   sshKeyboardMode = true;
-  sshKeyboardInputBuffer = sshCommandInput.value || "";
+  sshCommandInput.value = "";
   renderSshView();
 });
 sshCommandInput?.addEventListener("blur", () => {
   sshKeyboardMode = false;
-  sshKeyboardInputBuffer = "";
+  sshCommandInput.value = "";
   renderSshView();
 });
 sshCommandInput?.addEventListener("keydown", async (event) => {

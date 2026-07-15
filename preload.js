@@ -1,5 +1,22 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+function getBridgeByteLength(value) {
+  if (typeof value !== "string" || !value) {
+    return 0;
+  }
+
+  return Buffer.byteLength(value, "utf8");
+}
+
+function recordSshBridgeWrite(sessionId, value) {
+  globalThis.__anxSshBridgeDiagnostics = {
+    writeInvoked: true,
+    byteLength: getBridgeByteLength(value),
+    sessionPresent: Boolean(sessionId),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function forwardPreloadError(operation, error) {
   ipcRenderer.send("diagnostics:log", { severity: "error", source: "preload", file: "desktop", operation, message: error?.message || String(error), context: { code: error?.code || null, stack: error?.stack || null } });
 }
@@ -324,7 +341,10 @@ const desktopApi = {
     saveProfile: (payload) => ipcRenderer.invoke("ssh:saveProfile", payload),
     connect: (payload) => ipcRenderer.invoke("ssh:connect", payload),
     disconnect: (sessionId) => ipcRenderer.invoke("ssh:disconnect", { sessionId }),
-    write: (sessionId, input) => ipcRenderer.invoke("ssh:write", { sessionId, input }),
+    write: (sessionId, input) => {
+      recordSshBridgeWrite(sessionId, input);
+      return ipcRenderer.invoke("ssh:write", { sessionId, input });
+    },
     resize: (sessionId, size = {}) => ipcRenderer.invoke("ssh:resize", { sessionId, ...size }),
     onData: (callback) => {
       const handler = (_, payload) => callback(payload);

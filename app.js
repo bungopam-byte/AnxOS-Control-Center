@@ -809,6 +809,20 @@ let sshTerminalResizeObserver = null;
 let sshXterm = null;
 let sshXtermInputDisposable = null;
 let sshXtermSessionId = null;
+const sshInputDiagnostics = {
+  xtermCreated: false,
+  xtermOpened: false,
+  terminalMounted: false,
+  terminalVisible: false,
+  focusRequested: false,
+  onDataRegistered: false,
+  onDataEvents: 0,
+  lastInputByteLength: 0,
+  activeSessionPresent: false,
+  lastWriteAccepted: null,
+  lastWriteRejectedCategory: null,
+  updatedAt: null,
+};
 let filesSelectedServerId = null;
 let filesSelectedProfileId = null;
 let filesPasswordPromptVisible = false;
@@ -23781,15 +23795,51 @@ function getSshXtermConstructor() {
   return window.Terminal || window.XTerm?.Terminal || null;
 }
 
+function getSshInputByteLength(data) {
+  if (typeof data !== "string" || !data) {
+    return 0;
+  }
+
+  if (typeof TextEncoder === "function") {
+    return new TextEncoder().encode(data).length;
+  }
+
+  return data.length;
+}
+
+function updateSshInputDiagnostics(details = {}) {
+  const safeDetails = {
+    ...details,
+    updatedAt: new Date().toISOString(),
+  };
+
+  Object.assign(sshInputDiagnostics, safeDetails);
+  return { ...sshInputDiagnostics };
+}
+
+window.__anxGetSshInputDiagnostics = () => ({ ...sshInputDiagnostics });
+
 function bindSshXtermInput(terminal = sshXterm) {
   if (!terminal) return false;
   sshXtermInputDisposable?.dispose?.();
   sshXtermInputDisposable = terminal.onData((data) => {
     const session = getActiveSshSession();
+    updateSshInputDiagnostics({
+      onDataEvents: sshInputDiagnostics.onDataEvents + 1,
+      lastInputByteLength: getSshInputByteLength(data),
+      activeSessionPresent: Boolean(session && session.status === "connected"),
+    });
     if (!session || session.status !== "connected" || sshXtermSessionId !== session.id) {
+      updateSshInputDiagnostics({
+        lastWriteAccepted: false,
+        lastWriteRejectedCategory: "stale_or_inactive_session",
+      });
       return;
     }
     writeSshInput(data);
+  });
+  updateSshInputDiagnostics({
+    onDataRegistered: true,
   });
   return true;
 }
@@ -23823,10 +23873,18 @@ function ensureSshXterm() {
       selectionBackground: "#6d7cff55",
     },
   });
+  updateSshInputDiagnostics({
+    xtermCreated: true,
+  });
 
   sshXterm.open(sshXtermSurface);
   bindSshXtermInput(sshXterm);
   sshXtermSurface.classList.add("is-ready");
+  updateSshInputDiagnostics({
+    xtermOpened: true,
+    terminalMounted: Boolean(sshXtermSurface.isConnected),
+    terminalVisible: Boolean(sshXtermSurface.offsetParent || sshXtermSurface.getClientRects().length),
+  });
   return sshXterm;
 }
 
@@ -23836,6 +23894,10 @@ function focusSshTerminalInput() {
     const session = getActiveSshSession();
     terminal.options.disableStdin = !(session && session.status === "connected");
     terminal.focus();
+    updateSshInputDiagnostics({
+      focusRequested: true,
+      activeSessionPresent: Boolean(session && session.status === "connected"),
+    });
     return true;
   }
   sshTerminalWindow?.focus();
@@ -24607,15 +24669,34 @@ async function writeSshInput(input) {
   const desktopApiState = getDesktopApiState();
   const session = getActiveSshSession();
   const data = typeof input === "string" ? input : "";
+  const byteLength = getSshInputByteLength(data);
 
   if (!desktopApiState.hasSsh || !session || session.status !== "connected" || !data) {
+    updateSshInputDiagnostics({
+      lastInputByteLength: byteLength,
+      activeSessionPresent: Boolean(session && session.status === "connected"),
+      lastWriteAccepted: false,
+      lastWriteRejectedCategory: !desktopApiState.hasSsh ? "bridge_unavailable" : !session ? "missing_session" : session.status !== "connected" ? "session_not_connected" : "empty_data",
+    });
     return false;
   }
 
   try {
     await desktopApiState.api.ssh.write(session.id, data);
+    updateSshInputDiagnostics({
+      lastInputByteLength: byteLength,
+      activeSessionPresent: true,
+      lastWriteAccepted: true,
+      lastWriteRejectedCategory: null,
+    });
     return true;
   } catch (error) {
+    updateSshInputDiagnostics({
+      lastInputByteLength: byteLength,
+      activeSessionPresent: true,
+      lastWriteAccepted: false,
+      lastWriteRejectedCategory: error?.code || "write_failed",
+    });
     showToast(error?.message || "SSH input failed.");
     return false;
   }

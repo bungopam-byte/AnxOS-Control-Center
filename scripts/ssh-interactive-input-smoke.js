@@ -16,7 +16,7 @@ assert(appSource.includes("function ensureSshXterm"), "Renderer must initialize 
 assert(appSource.includes("function bindSshXtermInput") && appSource.includes("terminal.onData((data) => {") && appSource.includes("writeSshInput(data);"), "xterm onData must send emitted data directly to the active PTY.");
 assert(appSource.includes("focusSshTerminalInput") && appSource.includes("window.requestAnimationFrame(focusSshTerminalInput);"), "SSH terminal should focus after a successful connection.");
 assert(appSource.includes("sshTerminalWindow?.addEventListener(\"click\"") && appSource.includes("focusSshTerminalInput();"), "Clicking inside SSH should focus the terminal.");
-assert(preloadSource.includes("write: (sessionId, input) => ipcRenderer.invoke(\"ssh:write\", { sessionId, input })"), "Preload must expose SSH input writing.");
+assert(preloadSource.includes("write: (sessionId, input) => {") && preloadSource.includes("recordSshBridgeWrite(sessionId, input);") && preloadSource.includes("return ipcRenderer.invoke(\"ssh:write\", { sessionId, input });"), "Preload must expose SSH input writing.");
 assert(ipcSource.includes("ipcMain.handle(\"ssh:write\"") && ipcSource.includes("sshService.write(payload.sessionId, payload.input)"), "Main IPC must route SSH input to the SSH service.");
 assert(serviceSource.includes("session.stream.write(data);"), "SSH service must write input to the active PTY stream.");
 assert(serviceSource.includes("client.shell(") && serviceSource.includes('term: "xterm-256color"'), "SSH service must allocate an xterm-compatible PTY.");

@@ -280,6 +280,15 @@ class SshService extends EventEmitter {
     super();
     this.sessions = new Map();
     this.sessionIdsByProfileId = new Map();
+    this.lastWriteDiagnostic = null;
+  }
+
+  recordWriteDiagnostic(details = {}) {
+    this.lastWriteDiagnostic = {
+      ...details,
+      updatedAt: new Date().toISOString(),
+    };
+    return { ...this.lastWriteDiagnostic };
   }
 
   listProfiles() {
@@ -615,26 +624,62 @@ class SshService extends EventEmitter {
 
   write(sessionId, input) {
     const session = this.sessions.get(sessionId);
+    const data = typeof input === "string" ? input : "";
+    const byteLength = Buffer.byteLength(data, "utf8");
 
     if (!session || session.status !== "connected" || !session.stream) {
+      this.recordWriteDiagnostic({
+        ipcReceived: true,
+        sessionFound: Boolean(session),
+        streamExists: Boolean(session?.stream),
+        streamWritable: false,
+        byteLength,
+        accepted: false,
+        rejectedCategory: "SSH_SESSION_NOT_CONNECTED",
+      });
       throw new SshServiceError("SSH session is not connected.", {
         code: "SSH_SESSION_NOT_CONNECTED",
       });
     }
 
     if (session.stream.writable === false) {
+      this.recordWriteDiagnostic({
+        ipcReceived: true,
+        sessionFound: true,
+        streamExists: true,
+        streamWritable: false,
+        byteLength,
+        accepted: false,
+        rejectedCategory: "SSH_STREAM_NOT_WRITABLE",
+      });
       throw new SshServiceError("SSH session input stream is not writable.", {
         code: "SSH_STREAM_NOT_WRITABLE",
       });
     }
 
-    const data = typeof input === "string" ? input : "";
-
     if (!data) {
+      this.recordWriteDiagnostic({
+        ipcReceived: true,
+        sessionFound: true,
+        streamExists: true,
+        streamWritable: session.stream.writable !== false,
+        byteLength,
+        accepted: false,
+        rejectedCategory: "EMPTY_DATA",
+      });
       return { sessionId };
     }
 
     session.stream.write(data);
+    this.recordWriteDiagnostic({
+      ipcReceived: true,
+      sessionFound: true,
+      streamExists: true,
+      streamWritable: session.stream.writable !== false,
+      byteLength,
+      accepted: true,
+      rejectedCategory: null,
+    });
     return { sessionId };
   }
 

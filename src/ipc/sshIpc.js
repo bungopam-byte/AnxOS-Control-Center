@@ -3,6 +3,7 @@ const { SshService } = require("../services/sshService");
 
 const sshService = new SshService();
 let sshIpcRegistered = false;
+let lastSshWriteDiagnostic = null;
 
 function broadcastSshEvent(channel, payload) {
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -54,7 +55,15 @@ function registerSshIpc() {
   ipcMain.handle("ssh:saveProfile", async (_, payload = {}) => sshService.saveProfile(payload));
   ipcMain.handle("ssh:connect", async (_, payload = {}) => sshService.connect(payload));
   ipcMain.handle("ssh:disconnect", async (_, payload = {}) => sshService.disconnect(payload.sessionId));
-  ipcMain.handle("ssh:write", async (_, payload = {}) => sshService.write(payload.sessionId, payload.input));
+  ipcMain.handle("ssh:write", async (_, payload = {}) => {
+    lastSshWriteDiagnostic = {
+      ipcReceived: true,
+      byteLength: Buffer.byteLength(typeof payload.input === "string" ? payload.input : "", "utf8"),
+      sessionPresent: Boolean(payload.sessionId),
+      updatedAt: new Date().toISOString(),
+    };
+    return sshService.write(payload.sessionId, payload.input);
+  });
   ipcMain.handle("ssh:resize", async (_, payload = {}) => sshService.resize(payload.sessionId, payload));
   return sshService;
 }
@@ -67,4 +76,5 @@ function disposeSshIpc() {
 module.exports = {
   disposeSshIpc,
   registerSshIpc,
+  getLastSshWriteDiagnostic: () => (lastSshWriteDiagnostic ? { ...lastSshWriteDiagnostic } : null),
 };

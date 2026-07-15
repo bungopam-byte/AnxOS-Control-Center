@@ -90,9 +90,28 @@ function getCurseForgeAgentConfig(nodeId = null) {
       ...executionTarget.config,
       nodeId: executionTarget.nodeId,
       agentNodeId: executionTarget.nodeId,
+      agentNodeLabel: node?.displayName || executionTarget.nodeId,
+      credentialSource: "node-credential-store",
     },
     agentNodeId: executionTarget.nodeId,
     agentNodeLabel: node?.displayName || executionTarget.nodeId,
+    credentialSource: "node-credential-store",
+  };
+}
+
+function getCurseForgeBrowseConfig(nodeId = null) {
+  const selectedNodeId = nodeId || getSelectedNodeId();
+  let node = null;
+  try {
+    node = getNode(selectedNodeId);
+  } catch {}
+  return {
+    useAgentProxy: false,
+    agentConfig: null,
+    agentNodeId: node?.id || selectedNodeId || null,
+    agentNodeLabel: node?.displayName || node?.name || selectedNodeId || null,
+    credentialSource: "desktop-curseforge-api-key",
+    browseOnly: true,
   };
 }
 
@@ -2122,13 +2141,15 @@ async function searchProviderPacks(payload = {}) {
   });
   let result;
   if (provider === "curseforge") {
-    const curseForgeConfig = getCurseForgeAgentConfig(payload.nodeId);
+    const curseForgeConfig = getCurseForgeBrowseConfig(payload.nodeId);
     result = await curseforgeProvider.searchModpacks({ ...payload, config: curseForgeConfig });
     result.diagnostics = {
       ...(result.diagnostics || {}),
       nodeId: curseForgeConfig.agentNodeId,
       nodeLabel: curseForgeConfig.agentNodeLabel,
       agentProxy: curseForgeConfig.useAgentProxy,
+      credentialSource: curseForgeConfig.credentialSource,
+      browseOnly: true,
     };
   } else if (provider === "modrinth") {
     result = await modrinthProvider.searchModpacks(payload);
@@ -2151,9 +2172,9 @@ async function getProviderPackVersions(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
   const projectId = payload.providerProjectId || payload.projectId;
   if (provider === "curseforge") {
-    const curseForgeConfig = getCurseForgeAgentConfig(payload.nodeId);
+    const curseForgeConfig = getCurseForgeBrowseConfig(payload.nodeId);
     const files = await curseforgeProvider.getFiles(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "", curseForgeConfig);
-    return { provider, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions, loaders: file.loaders || [] })) };
+    return { provider, nodeId: curseForgeConfig.agentNodeId, nodeLabel: curseForgeConfig.agentNodeLabel, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions, loaders: file.loaders || [] })) };
   }
   if (provider === "modrinth") {
     const versions = await modrinthProvider.getVersions(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "");
@@ -2166,7 +2187,7 @@ async function getProviderPackDetails(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
   const projectId = payload.providerProjectId || payload.projectId;
   if (provider === "curseforge") {
-    const curseForgeConfig = getCurseForgeAgentConfig(payload.nodeId);
+    const curseForgeConfig = getCurseForgeBrowseConfig(payload.nodeId);
     return { provider, project: await curseforgeProvider.getMod(projectId, curseForgeConfig), nodeId: curseForgeConfig.agentNodeId, nodeLabel: curseForgeConfig.agentNodeLabel };
   }
   if (provider === "modrinth") {
@@ -2186,6 +2207,8 @@ module.exports = {
     ensureCurseForgeServerPackCandidate,
     ensureModrinthServerCapable,
     friendlyHttpMessage,
+    getCurseForgeBrowseConfig,
+    getCurseForgeAgentConfig,
     getCurseForgeFileContext,
     getManualRequirementId,
     getOfficialProviderUrl,

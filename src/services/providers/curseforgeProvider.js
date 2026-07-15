@@ -753,26 +753,36 @@ async function requestAgentProxyJson(pathname, params = {}, label = "CurseForge 
   const endpointPath = getAgentProxyApiPath(pathname, params);
   const query = new URLSearchParams(endpointPath.params || {});
   const requestPath = query.toString() ? `${endpointPath.pathname}?${query.toString()}` : endpointPath.pathname;
+  const nodeId = config.agentNodeId || config.agentConfig?.nodeId || config.agentConfig?.agentNodeId || null;
+  const nodeLabel = config.agentNodeLabel || config.agentConfig?.agentNodeLabel || null;
+  const credentialSource = config.credentialSource || config.agentConfig?.credentialSource || (nodeId ? "node-credential-store" : "global-configured-agent");
   try {
     return await agentClient.requestJson(requestPath, {
       config: config.agentConfig || null,
       timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS,
-      targetLabel: config.agentNodeLabel ? `curseforge:${config.agentNodeLabel}` : "curseforge-agent-proxy",
+      targetLabel: nodeLabel ? `curseforge:${nodeLabel}` : nodeId ? `curseforge:${nodeId}` : "curseforge-agent-proxy",
       suppressConnectionRefusedLog: true,
     });
   } catch (error) {
     const code = error?.payload?.error?.code || error?.code || "CURSEFORGE_AGENT_PROXY_FAILED";
     const missing = code === "CURSEFORGE_CONFIGURATION_MISSING";
+    const unauthorized = error?.status === 401 || code === "UNAUTHORIZED";
     throw new CurseForgeProviderError(
-      missing ? "CurseForge is not configured on the selected AnxOS Agent." : error?.message || `${label}: Agent proxy request failed.`,
+      missing
+        ? "CurseForge is not configured on the selected AnxOS Agent."
+        : unauthorized && nodeLabel
+          ? `${nodeLabel} credential rejected. Repair the selected node connection before installing.`
+          : error?.message || `${label}: Agent proxy request failed.`,
       code,
       {
         provider: "curseforge",
         status: error?.status || null,
         payload: error?.payload || null,
         source: "agent-proxy",
-        nodeId: config.agentNodeId || null,
-        nodeLabel: config.agentNodeLabel || null,
+        nodeId,
+        nodeLabel,
+        endpoint: requestPath,
+        credentialSource,
       }
     );
   }
@@ -843,20 +853,32 @@ async function requestAgentProxyBuffer(url, label, options = {}) {
   const query = new URLSearchParams({ url: String(url) });
   if (options.projectId) query.set("projectId", String(options.projectId));
   if (options.fileId) query.set("fileId", String(options.fileId));
+  const proxyConfig = options.config || {};
+  const nodeId = proxyConfig.agentNodeId || proxyConfig.agentConfig?.nodeId || proxyConfig.agentConfig?.agentNodeId || null;
+  const nodeLabel = proxyConfig.agentNodeLabel || proxyConfig.agentConfig?.agentNodeLabel || null;
+  const credentialSource = proxyConfig.credentialSource || proxyConfig.agentConfig?.credentialSource || (nodeId ? "node-credential-store" : "global-configured-agent");
   try {
     const result = await agentClient.requestBuffer(`/api/v1/marketplace/curseforge/download?${query.toString()}`, {
-      config: options.config?.agentConfig || null,
+      config: proxyConfig.agentConfig
+        ? { ...proxyConfig.agentConfig, targetLabel: nodeLabel ? `curseforge:${nodeLabel}` : nodeId ? `curseforge:${nodeId}` : "curseforge-agent-proxy" }
+        : null,
     });
     return result.buffer;
   } catch (error) {
     const code = error?.payload?.error?.code || error?.code || "CURSEFORGE_AGENT_PROXY_DOWNLOAD_FAILED";
+    const unauthorized = error?.status === 401 || code === "UNAUTHORIZED";
     throw new CurseForgeProviderError(error?.message || `${label}: Agent proxy download failed.`, code, {
       provider: "curseforge",
       status: error?.status || null,
       payload: error?.payload || null,
       source: "agent-proxy",
+      nodeId,
+      nodeLabel,
+      endpoint: "/api/v1/marketplace/curseforge/download",
+      credentialSource,
       projectId: options.projectId || null,
       fileId: options.fileId || null,
+      authenticationFailure: unauthorized,
     });
   }
 }
@@ -1111,7 +1133,7 @@ function normalizeSearchOptions(queryOrOptions = "", minecraftVersion = "", load
       mode: queryOrOptions.mode || "featured",
       offset: Math.max(Number.parseInt(queryOrOptions.offset, 10) || 0, 0),
       limit: Math.min(Math.max(Number.parseInt(queryOrOptions.limit, 10) || 25, 1), 50),
-      config,
+      config: queryOrOptions.config || config,
     };
   }
   return {

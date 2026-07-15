@@ -41,7 +41,10 @@ async function main() {
   assert(ipcSource.includes('ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null'), "Local Agent diagnostics must remain read-only and available without owner authorization.");
   assert(ipcSource.includes('authorize("remote-diagnostics")'), "Remote Agent diagnostic capture must remain owner-authorized.");
   assert(rendererSource.includes("getAgentControlOverviewTarget"), "Renderer must select an Agent Control overview target.");
-  assert(rendererSource.includes('getActivePageName() === "agent-control" && payload.local'), "Agent Control page lifecycle buttons must use the local Agent target even when a remote Agent is configured.");
+  assert(rendererSource.includes('selectedNodeId === "application-host" && payload.local'), "Agent Control must derive the overview target from the active node.");
+  assert(rendererSource.includes("payload.remote.find((agent) => agent.nodeId === selectedNodeId)"), "Agent Control must map registered remote Agents to the active node.");
+  assert(rendererSource.includes("data-remote-agent-select") && rendererSource.includes("await selectNode(nodeId);"), "Selecting a Connected Agent must switch the canonical active node.");
+  assert(serviceSource.includes("activeNode") && serviceSource.includes("activeAgent"), "Agent Control service must expose safe active Node and derived Agent context.");
   assert(rendererSource.includes("agentControlRefreshInFlight"), "Renderer must avoid overlapping Agent Control refreshes.");
   assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");
   assert(rendererSource.includes("serviceNeedsElevation") && rendererSource.includes("Administrator required"), "Renderer must block or relabel Agent service actions that require elevation.");

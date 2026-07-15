@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { app, shell } = require("electron");
 const agentClient = require("./agentClient");
-const { getAllNodesSync, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
+const { getAllNodesSync, getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 const {
@@ -1123,6 +1123,7 @@ async function listAgents() {
   const local = await getStatus();
   const configured = await getConfiguredAgentStatus();
   const selectedNodeId = getSelectedNodeId();
+  const selectedNode = getNode(selectedNodeId);
   const effective = agentClient.getEffectiveAgentSettings();
   const configuredUrlKey = effective.backendMode === "agent" ? normalizeAgentUrlForComparison(effective.agentUrl) : null;
   const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => {
@@ -1189,7 +1190,24 @@ async function listAgents() {
       ...remote.map((agent) => ({ target: agent.healthTargetLabel, nodeId: agent.nodeId, url: agent.agentUrl, state: agent.state, latencyMs: agent.latencyMs || null })),
     ],
   });
-  return { local, configured, remote };
+  const activeRemote = remote.find((agent) => agent.nodeId === selectedNodeId) || null;
+  const activeNode = {
+    id: selectedNode.id,
+    kind: selectedNode.kind,
+    name: selectedNode.displayName || selectedNode.name || selectedNode.id,
+    displayName: selectedNode.displayName || selectedNode.name || selectedNode.id,
+    agentUrl: selectedNode.kind === "agent" ? selectedNode.agentUrl || selectedNode.baseUrl || null : null,
+    platform: selectedNode.platform || selectedNode.agentIdentity?.platform || selectedNode.applicationHost?.platform || null,
+    hostname: selectedNode.hostname || selectedNode.agentIdentity?.hostname || selectedNode.applicationHost?.hostname || null,
+  };
+  return {
+    local,
+    configured,
+    remote,
+    selectedNodeId,
+    activeNode,
+    activeAgent: selectedNode.kind === "agent" ? activeRemote : null,
+  };
 }
 
 async function captureRemoteDiagnostics(nodeId) {

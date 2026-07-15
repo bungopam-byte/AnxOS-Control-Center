@@ -3809,9 +3809,13 @@ function renderLocalAgentInstallerSteps(steps = []) {
 
 function getAgentControlOverviewTarget(payload = agentControlState) {
   if (!payload) return null;
-  if (getActivePageName() === "agent-control" && payload.local) {
+  const selectedNodeId = payload.selectedNodeId || getSelectedNodeId();
+  if (selectedNodeId === "application-host" && payload.local) {
     return payload.local;
   }
+  const activeRemote = Array.isArray(payload.remote) ? payload.remote.find((agent) => agent.nodeId === selectedNodeId) : null;
+  if (activeRemote) return activeRemote;
+  if (payload.activeAgent) return payload.activeAgent;
   if (payload.configured?.configured || payload.configured?.backendMode === "agent") {
     return payload.configured;
   }
@@ -3827,6 +3831,7 @@ function isAgentTargetLocal(target = {}) {
 }
 
 function getAgentTargetLabel(target = {}) {
+  if (target.nodeId && target.nodeId === getSelectedNodeId()) return "Active Node Agent";
   if (target.targetType === "configured-agent") return "Configured Agent";
   if (target.targetType === "selected-agent") return "Selected Agent";
   if (target.targetType === "remote-agent") return "Remote Agent";
@@ -3904,7 +3909,8 @@ function renderAgentControlState(payload = agentControlState) {
   if (agentControlMessage) {
     const urlText = runtime?.url || local.agentUrl || "";
     const serviceText = `Service ${formatAgentProcess(runtime, state)}`;
-    agentControlMessage.textContent = local.mostRecentError?.message || (runtime?.reachable || running ? `${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}` : `${targetLabel} is not reachable or is stopped.`);
+    const activeNodeName = payload?.activeNode?.displayName || getSelectedNode()?.displayName || "Active Node";
+    agentControlMessage.textContent = local.mostRecentError?.message || (runtime?.reachable || running ? `${activeNodeName} · ${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}` : `${targetLabel} for ${activeNodeName} is not reachable or is stopped.`);
   }
   setAgentControlField("hostname", local.name || runtime?.hostname || local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", runtime?.version || local.agentVersion || local.identity?.agentVersion);
@@ -4506,6 +4512,8 @@ function renderRemoteAgents(agents = []) {
   table.append(head, body);
   agents.forEach((agent) => {
     const row = document.createElement("tr");
+    const isActive = agent.nodeId && agent.nodeId === getSelectedNodeId();
+    row.classList.toggle("is-selected", isActive);
     const statusClass = agent.state === "Running" ? "status-pill--ok" : agent.state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning";
     const statusCell = document.createElement("td");
     const status = document.createElement("span");
@@ -4516,7 +4524,7 @@ function renderRemoteAgents(agents = []) {
     const name = document.createElement("strong");
     name.textContent = agent.name || agent.identity?.hostname || "Remote Agent";
     const type = document.createElement("small");
-    type.textContent = agent.healthTargetLabel === "selected-agent" ? "Selected Agent" : "Remote Agent";
+    type.textContent = isActive ? "Active Node Agent" : "Registered Node Agent";
     nameCell.append(name, type);
     const versionCell = document.createElement("td");
     versionCell.textContent = agent.agentVersion || agent.identity?.agentVersion || "Unavailable";
@@ -4531,7 +4539,13 @@ function renderRemoteAgents(agents = []) {
     diagnosticsButton.dataset.remoteAgentDiagnostics = agent.nodeId || "";
     diagnosticsButton.disabled = agent.state !== "Running";
     diagnosticsButton.textContent = "Diagnostics";
-    actionCell.append(diagnosticsButton);
+    const selectButton = document.createElement("button");
+    selectButton.className = isActive ? "inline-action inline-action--primary" : "inline-action";
+    selectButton.type = "button";
+    selectButton.dataset.remoteAgentSelect = agent.nodeId || "";
+    selectButton.disabled = !agent.nodeId || isActive;
+    selectButton.textContent = isActive ? "Current" : "Select";
+    actionCell.append(selectButton, diagnosticsButton);
     row.append(statusCell, nameCell, versionCell, latencyCell, platformCell, actionCell);
     body.append(row);
   });
@@ -25842,6 +25856,9 @@ async function reloadActiveNodeData(context = getNodeRequestContext("reload-node
   if (getActivePageName() === "security") {
     reloads.push(refreshSecurityState());
   }
+  if (getActivePageName() === "agent-control") {
+    reloads.push(refreshAgentControl());
+  }
   if (getActivePageName() === "files" && getSelectedRemoteFilesNode()) {
     reloads.push(connectFilesSession());
   }
@@ -31340,6 +31357,14 @@ agentLogSeverity?.addEventListener("change", renderAgentLogs);
 agentLogSource?.addEventListener("change", renderAgentLogs);
 agentLogWrap?.addEventListener("change", renderAgentLogs);
 agentRemoteList?.addEventListener("click", async (event) => {
+  const selectButton = event.target.closest("[data-remote-agent-select]");
+  if (selectButton) {
+    const nodeId = selectButton.dataset.remoteAgentSelect || "";
+    if (nodeId) {
+      await selectNode(nodeId);
+    }
+    return;
+  }
   const button = event.target.closest("[data-remote-agent-diagnostics]");
   if (!button) return;
   const nodeId = button.dataset.remoteAgentDiagnostics || "";

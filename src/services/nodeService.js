@@ -7,7 +7,7 @@ const agentClient = require("./agentClient");
 const { getEffectiveAgentSettings, getHealth, normalizeAgentSettings } = agentClient;
 const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, setNodeToken } = require("./nodeCredentialStore");
 const { parsePairingCode } = require("../shared/agentPairing");
-const { generateAgentToken } = require("../shared/agentTokenStore");
+const { generateAgentToken, tokenFingerprint } = require("../shared/agentTokenStore");
 
 const NODE_SCHEMA_VERSION = 3;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
@@ -1002,6 +1002,88 @@ function getNodeAgentConfigFromNode(node) {
 function getNodeAgentConfig(nodeId) { const node = getNode(nodeId); if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" }); return getNodeAgentConfigFromNode(node); }
 function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, localAgent: node.localAgent === true, capabilities: buildNodeCapabilities(node), config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId, capabilities: buildNodeCapabilities(node) }; }
 
+function getConfiguredAgentTokenForNode(node) {
+  const effective = getEffectiveAgentSettings();
+  const nodeUrl = normalizeUrl(node?.agentUrl || node?.baseUrl || "");
+  const effectiveUrl = normalizeUrl(effective.agentUrl || "");
+  const token = typeof effective.agentToken === "string" ? effective.agentToken.trim() : "";
+  if (!nodeUrl || !effectiveUrl || nodeUrl !== effectiveUrl || !token) return null;
+  return { source: "configured-agent-token", token, fingerprint: tokenFingerprint(token) };
+}
+
+async function getNodeCredentialStatus(nodeId) {
+  const node = getNode(nodeId || getSelectedNodeId());
+  if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" });
+  const endpoint = normalizeUrl(node.agentUrl || node.baseUrl || "");
+  const storedToken = getNodeToken(node.id);
+  const storedFingerprint = tokenFingerprint(storedToken);
+  const configured = getConfiguredAgentTokenForNode(node);
+  let health = null;
+  let remoteFingerprint = null;
+  let reachable = false;
+  let healthError = null;
+  try {
+    health = await getHealth(normalizeAgentSettings({ backendMode: "agent", agentUrl: endpoint, agentToken: configured?.token || storedToken || "" }), {
+      timeoutMs: 8000,
+      targetLabel: `node-credential-status:${node.id}`,
+      suppressConnectionRefusedLog: true,
+      logThrottleMs: 60000,
+    });
+    reachable = true;
+    remoteFingerprint = health?.tokenFingerprint || null;
+  } catch (error) {
+    healthError = { code: error?.code || null, message: error?.message || "Agent health check failed." };
+  }
+  const configuredMatchesRemote = Boolean(configured?.fingerprint && remoteFingerprint && configured.fingerprint === remoteFingerprint);
+  const storedMatchesRemote = Boolean(storedFingerprint && remoteFingerprint && storedFingerprint === remoteFingerprint);
+  const status = !storedFingerprint
+    ? "missing"
+    : !remoteFingerprint
+      ? reachable ? "unknown" : "unreachable"
+      : storedMatchesRemote ? "valid" : "mismatch";
+  return {
+    nodeId: node.id,
+    nodeLabel: node.displayName || node.name || node.id,
+    endpoint,
+    credentialSource: "protected-node-credential",
+    tokenConfigured: Boolean(storedFingerprint),
+    storedCredentialFingerprint: storedFingerprint,
+    runningAgentConfiguredFingerprint: configured?.fingerprint || null,
+    liveHealthFingerprint: remoteFingerprint,
+    configuredAgentCredentialAvailable: Boolean(configured?.fingerprint),
+    configuredAgentMatchesLiveHealth: configuredMatchesRemote,
+    storedCredentialMatchesLiveHealth: storedMatchesRemote,
+    status,
+    reachable,
+    agentVersion: health?.identity?.agentVersion || health?.agentVersion || node.agentVersion || node.agentIdentity?.agentVersion || null,
+    checkedAt: new Date().toISOString(),
+    error: healthError,
+  };
+}
+
+async function repairNodeCredential(payload = {}) {
+  const node = getNode(payload.nodeId || getSelectedNodeId());
+  if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" });
+  const before = await getNodeCredentialStatus(node.id);
+  if (before.status === "valid") {
+    return { repaired: false, repairStatus: "already-valid", restartRequired: false, before, after: before, ...(await listNodes({ discoverLocalAgent: false, refreshIdentity: false })) };
+  }
+  const pairingCode = String(payload.pairingCode || payload.code || "").trim();
+  if (pairingCode) {
+    const paired = await pairNodeFromCode({ pairingCode, id: node.id, confirmUrlChange: payload.confirmUrlChange === true });
+    const after = await getNodeCredentialStatus(paired.selectedNodeId || node.id);
+    return { repaired: true, repairStatus: "re-paired", restartRequired: false, before, after, ...paired };
+  }
+  const configured = getConfiguredAgentTokenForNode(node);
+  if (configured?.token && before.liveHealthFingerprint && configured.fingerprint === before.liveHealthFingerprint) {
+    setNodeToken(node.id, configured.token);
+    updateNodeHealthState(node.id, { state: "online", message: "Node credential repaired from the matching configured Agent token.", checkedAt: new Date().toISOString() });
+    const after = await getNodeCredentialStatus(node.id);
+    return { repaired: true, repairStatus: "credential-updated", restartRequired: false, before, after, ...(await listNodes({ discoverLocalAgent: false, refreshIdentity: false })) };
+  }
+  return { repaired: false, repairStatus: before.status === "missing" ? "re-pair-required" : "manual-repair-required", restartRequired: false, before, after: before, ...(await listNodes({ discoverLocalAgent: false, refreshIdentity: false })) };
+}
+
 function agentIdentityMatchesNode(node = null, identity = {}) {
   if (!node || !identity || typeof identity !== "object") return false;
   const existing = node.agentIdentity || {};
@@ -1190,4 +1272,4 @@ function deleteNode(nodeId) {
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion } };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialStatus, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, repairNodeCredential, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion } };

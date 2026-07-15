@@ -3,8 +3,10 @@ const {
   checkAllNodeHealth,
   checkNodeHealth,
   deleteNode,
+  getNodeCredentialStatus,
   listNodes,
   pairNodeFromCode,
+  repairNodeCredential,
   saveNode,
   testNode,
   testNodeConnectionPayload,
@@ -47,6 +49,12 @@ function registerNodesIpc() {
   ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => testNodeConnectionPayload(payload)));
   ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(payload.nodeId || "application-host")));
   ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => checkAllNodeHealth()));
+  ipcMain.handle("nodes:credentialStatus", async (_, payload = {}) => invokeNodeOperation(() => getNodeCredentialStatus(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:repairCredential", async (_, payload = {}) => invokeNodeOperation(() => {
+    requirePermission("settings:write", payload.nodeId || "node-credential");
+    audit({ action: "node.repair-credential", target: payload.nodeId || "selected-node" });
+    return repairNodeCredential(payload);
+  }));
   ipcMain.handle("nodes:generateToken", async () => invokeNodeOperation(() => {
     requirePermission("settings:write", "nodes");
     audit({ action: "node.generate-token", target: "node-agent-token" });

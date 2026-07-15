@@ -29012,17 +29012,49 @@ function editNodeById(nodeId) {
   setNodeModalVisible(true, node);
 }
 
-function repairNodeById(nodeId) {
-  editNodeById(nodeId);
-  setNodeFormBusy(false, "Paste the temporary pairing code from this Agent. Re-pairing updates this node in place and keeps its name, tags, and preferences.");
-  nodePairingCodeInput?.focus();
+async function repairNodeById(nodeId) {
+  const desktopApiState = getDesktopApiState();
+  const node = getNodePickerNodes().find((candidate) => candidate.id === nodeId);
+  if (!desktopApiState.hasNodes || !node || node.kind === "application-host") return;
+  if (typeof desktopApiState.api.nodes.repairCredential !== "function") {
+    editNodeById(nodeId);
+    setNodeFormBusy(false, "Paste the temporary pairing code from this Agent. Re-pairing updates this node in place and keeps its name, tags, and preferences.");
+    nodePairingCodeInput?.focus();
+    return;
+  }
+  try {
+    showToast(`Checking ${node.displayName || "node"} credential fingerprints...`, "info");
+    const result = await desktopApiState.api.nodes.repairCredential({ nodeId });
+    const before = result?.before || {};
+    const after = result?.after || before;
+    const repaired = result?.repaired === true || result?.repairStatus === "already-valid";
+    await refreshNodes({ forceHealthRefresh: true });
+    if (nodeId === getSelectedNodeId()) {
+      await reloadActiveNodeData(getNodeRequestContext("node-credential-repair"));
+    }
+    if (repaired && after.status === "valid") {
+      const action = result?.repairStatus === "already-valid" ? "already matched" : "repaired";
+      showToast(`Node credential ${action}. Fingerprint ${after.storedCredentialFingerprint || "available"}.`, "success");
+      return;
+    }
+    editNodeById(nodeId);
+    const stored = before.storedCredentialFingerprint || "missing";
+    const live = before.liveHealthFingerprint || "unavailable";
+    setNodeFormBusy(false, `Credential repair needs a new pairing code. Stored fingerprint ${stored}; Agent fingerprint ${live}.`);
+    nodePairingCodeInput?.focus();
+  } catch (error) {
+    showToast(normalizeIpcErrorMessage(error, "Node credential repair failed."), "error");
+    editNodeById(nodeId);
+    setNodeFormBusy(false, "Paste the temporary pairing code from this Agent. Re-pairing updates this node in place and keeps its name, tags, and preferences.");
+    nodePairingCodeInput?.focus();
+  }
 }
 
 async function handleNodeCardAction(action, nodeId) {
   if (action === "select") await selectNode(nodeId);
   else if (action === "test") await testNodeById(nodeId);
   else if (action === "edit") editNodeById(nodeId);
-  else if (action === "repair") repairNodeById(nodeId);
+  else if (action === "repair") await repairNodeById(nodeId);
   else if (action === "refresh") await refreshNodes({ forceHealthRefresh: true });
   else if (action === "details") openNodeDetails(nodeId);
   else if (action === "remove") await deleteNodeById(nodeId);

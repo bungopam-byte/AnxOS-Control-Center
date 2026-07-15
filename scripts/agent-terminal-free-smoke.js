@@ -31,6 +31,8 @@ assert(htmlSource.indexOf("Pair with Code") < htmlSource.indexOf("Advanced Manua
 
 assert(ipcSource.includes("agentControl:startPairingSession") && preloadSource.includes("startPairingSession"), "Pairing setup must be available through IPC/preload.");
 assert(serviceSource.includes("async function startPairingSession") && serviceSource.includes("/api/v1/pairing/start"), "Agent Control service must start temporary pairing sessions without shell commands.");
+assert(serviceSource.includes("function getLocalAgentLifecycleOwnership") && serviceSource.includes("LOCAL_AGENT_OWNERSHIP_MISMATCH"), "Local Agent lifecycle must classify managed, unmanaged, and credential-mismatched listeners.");
+assert(serviceSource.includes("lifecycleOwnership") && serviceSource.includes("credential-mismatch") && serviceSource.includes("unmanaged-agent"), "Local Agent status must expose lifecycle ownership for repair workflows.");
 assert(appSource.includes("renderAgentPairingSetup") && appSource.includes("Pairing code copied."), "Renderer must show and copy temporary pairing codes in-app.");
 assert(appSource.includes("Open Agent setup on that machine") && !appSource.includes("Run npm run agent:pair"), "Pairing repair guidance must use in-app setup, not npm.");
 assert(!appSource.includes("Run npm run agent:token:status"), "Renderer token errors must not require npm for normal users.");

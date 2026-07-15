@@ -253,12 +253,25 @@ async function start() {
     const agentUrl = getLocalAgentUrl(config);
     const existingHealth = await agentClient.getHealth(getLocalAgentHealthConfig(config)).catch(() => null);
     if (existingHealth?.ok) {
+      const ownership = getLocalAgentLifecycleOwnership({
+        health: existingHealth,
+        service,
+        pairing: readLocalAgentPairingStatus(),
+        managed: managedProcess,
+      });
+      if (ownership.type === "credential-mismatch") {
+        throw Object.assign(new Error(ownership.message), {
+          code: "LOCAL_AGENT_OWNERSHIP_MISMATCH",
+          lifecycleOwnership: ownership,
+        });
+      }
       ensureLocalAgentBackendSelected(config);
-      lastRestartReason = "Connected to an already running local Agent";
+      lastRestartReason = ownership.managed ? "Connected to an already running managed local Agent" : "Detected an already running unmanaged local Agent";
       lastError = null;
       diagnostics.log("info", "agent-control", "start-existing-agent", "Local Agent was already listening on the configured port", {
         agentUrl,
         pid: existingHealth?.process?.pid || null,
+        ownership: ownership.type,
       }, { file: "service-manager" });
       return getStatus();
     }
@@ -986,6 +999,84 @@ function normalizeAgentRuntimeStatus({ base = {}, health = null, stats = null, s
   };
 }
 
+function getLocalAgentLifecycleOwnership({ health = null, service = {}, pairing = {}, managed = null } = {}) {
+  const managedChildRunning = Boolean(managed && !managed.killed);
+  const healthOk = Boolean(health?.ok);
+  const remoteFingerprint = health?.tokenFingerprint || null;
+  const localFingerprint = pairing?.fingerprint || null;
+  const credentialMatches = remoteFingerprint && localFingerprint ? remoteFingerprint === localFingerprint : null;
+
+  if (healthOk && credentialMatches === false) {
+    return {
+      type: "credential-mismatch",
+      state: "repair-required",
+      managed: false,
+      credentialMatches,
+      processKind: "unverified-listener",
+      message: "The process listening on the Local Agent port is using a different credential. Repair or re-pair the Local Agent before managing it.",
+      repairAction: "repair-local-agent",
+    };
+  }
+
+  if (healthOk && service?.active) {
+    return {
+      type: "managed-service",
+      state: "managed",
+      managed: true,
+      credentialMatches,
+      processKind: service.type || "service",
+      message: "The Local Agent is running as the managed background service.",
+      repairAction: null,
+    };
+  }
+
+  if (healthOk && managedChildRunning) {
+    return {
+      type: "managed-child-process",
+      state: "managed",
+      managed: true,
+      credentialMatches,
+      processKind: "packaged-child-process",
+      message: "The Local Agent is running as a managed packaged child process.",
+      repairAction: null,
+    };
+  }
+
+  if (healthOk) {
+    return {
+      type: "unmanaged-agent",
+      state: "unmanaged",
+      managed: false,
+      credentialMatches,
+      processKind: "external-process",
+      message: "A Local Agent is reachable, but it was not started by this Control Center service manager.",
+      repairAction: "repair-local-agent",
+    };
+  }
+
+  if (service?.active) {
+    return {
+      type: "stale-managed-service",
+      state: "repair-required",
+      managed: true,
+      credentialMatches: null,
+      processKind: service.type || "service",
+      message: "The Local Agent service appears active, but health verification did not succeed.",
+      repairAction: "repair-local-agent",
+    };
+  }
+
+  return {
+    type: "offline",
+    state: "offline",
+    managed: Boolean(service?.installed),
+    credentialMatches: null,
+    processKind: service?.installed ? service.type || "service" : "none",
+    message: "No Local Agent process is verified on the configured port.",
+    repairAction: service?.installed ? "repair-local-agent" : "install-local-agent",
+  };
+}
+
 function logRuntimePayloadShape(target, payload) {
   if (app?.isPackaged !== false) return;
   diagnostics.log("info", "agent-control", "runtime-payload-shape", "Agent runtime payload shape inspected", {
@@ -1115,6 +1206,8 @@ async function getStatus() {
   }
 
   const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok);
+  const pairing = readLocalAgentPairingStatus();
+  const lifecycleOwnership = getLocalAgentLifecycleOwnership({ health, service, pairing, managed: managedProcess });
   const releaseInfo = getReleaseInfo();
   const appVersion = releaseInfo.compactLabel;
   const localMemoryTotal = os.totalmem();
@@ -1134,7 +1227,7 @@ async function getStatus() {
     },
   };
   const runtime = normalizeAgentRuntimeStatus({
-    base: { agentUrl, hostname: os.hostname(), agentVersion: health?.identity?.agentVersion || getBundledLocalAgentVersion("unavailable"), uptime: managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null },
+    base: { agentUrl, hostname: os.hostname(), agentVersion: health?.identity?.agentVersion || getBundledLocalAgentVersion("unavailable"), uptime: managedProcess ? Math.max(0, Math.round((Date.now() - (managedProcess.spawnAt || Date.now())) / 1000)) : null, serviceManaged: lifecycleOwnership.managed },
     health,
     stats: localStats,
     service,
@@ -1151,7 +1244,7 @@ async function getStatus() {
     local: true,
     targetType: "local-agent",
     healthTargetLabel: "local-agent",
-    state: operationInFlight === "start" ? "Starting" : operationInFlight === "stop" ? "Stopping" : running ? "Running" : "Offline",
+    state: operationInFlight === "start" ? "Starting" : operationInFlight === "stop" ? "Stopping" : lifecycleOwnership.state === "repair-required" ? "Repair required" : running ? "Running" : "Offline",
     operationInFlight,
     running,
     pid: health?.process?.pid || managedProcess?.pid || null,
@@ -1169,7 +1262,8 @@ async function getStatus() {
     memoryTotalBytes: runtime.memory.totalBytes,
     memoryUsagePercent: runtime.memory.usagePercent,
     runtime,
-    pairing: readLocalAgentPairingStatus(),
+    pairing,
+    lifecycleOwnership,
     connectedClients: health?.process?.connectedClients || 0,
     lastHeartbeat: health ? new Date().toISOString() : null,
     latencyMs,

@@ -890,12 +890,24 @@ async function getDiagnostics(configOverride = null) {
   return requestJson("/api/v1/diagnostics", { config: configOverride });
 }
 
+function isCompatibilityFallbackAllowed(error = {}) {
+  const status = error.status || error.statusCode || error.payload?.error?.status || null;
+  const code = String(error.code || error.payload?.error?.code || "").toUpperCase();
+  if (status === 401 || status === 403) return false;
+  if (["UNAUTHORIZED", "AUTHENTICATION_FAILED", "NODE_DISABLED", "NODE_NOT_FOUND", "FORBIDDEN", "PERMISSION_DENIED", "POLICY_DENIED"].includes(code)) return false;
+  if (status === 404 || status === 405) return true;
+  return /ENDPOINT_NOT_SUPPORTED|NOT_SUPPORTED|METHOD_NOT_ALLOWED|NOT_FOUND|CAPABILITY_MISSING/.test(code);
+}
+
 async function getSystemStats(configOverride = null) {
   try {
     return await requestJson("/api/v1/stats", {
       config: configOverride,
     });
   } catch (error) {
+    if (!isCompatibilityFallbackAllowed(error)) {
+      throw error;
+    }
     console.warn("[AnxOS][Agent] Stats endpoint unavailable; falling back to system summary.", {
       message: error?.message || String(error),
       code: error?.code || null,
@@ -2891,6 +2903,7 @@ module.exports = {
   pairAgentFromCode,
   planDependencyPreparation,
   getSharedAgentTokenStatus,
+  isCompatibilityFallbackAllowed,
   requestBuffer,
   requestJson,
   rotateAgentSettingsToken,

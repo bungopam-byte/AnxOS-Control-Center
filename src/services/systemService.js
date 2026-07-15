@@ -439,6 +439,9 @@ async function getAgentSystemSnapshot(nodeId, configOverride = null) {
   try {
     snapshot = await nodeAgent.get("/stats");
   } catch (error) {
+    if (!agentClient.isCompatibilityFallbackAllowed(error)) {
+      throw error;
+    }
     console.warn("[AnxOS][Agent] Stats endpoint unavailable; falling back to system summary.", {
       nodeId,
       message: error?.message || String(error),

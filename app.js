@@ -1614,6 +1614,7 @@ function setDashboardFriendlyField(name, value) {
 function getFriendlyDashboardState() {
   const nodeId = getSelectedNodeId();
   const selectedNode = getSelectedNode();
+  const activeTarget = resolveActiveManagementTarget();
   const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
   const connectedRemoteNodes = remoteNodes.filter((node) => getNodeVisualState(node) === "online");
   const instances = getInstances();
@@ -1625,17 +1626,22 @@ function getFriendlyDashboardState() {
   const onboardingComplete = getCurrentSettings()["onboarding.completed"] === true;
   const dockerReady = dockerWorkspaceState?.ready === true;
   const metrics = {
-    selectedSystem: selectedNode?.displayName || "This PC",
-    selectedSystemStatus: getNodeStatusLabel(selectedNode),
+    selectedSystem: `${activeTarget.name} · ${activeTarget.targetType === "application-host" ? "Local Application Host" : activeTarget.targetType === "local-agent" ? "Local Agent" : "Remote Agent"}`,
+    selectedSystemStatus: activeTarget.connectionState.label,
     updated: hasSystemSnapshot ? formatHealthCheckedAt(latestSystemSnapshotAt) : "Waiting for metrics",
     health: `${nodeHealth.state} · ${nodeHealth.issueCount} issue${nodeHealth.issueCount === 1 ? "" : "s"}`,
   };
 
-  const computer = hasSystemSnapshot || runtimeInfoState
+  const computer = activeTarget.targetType === "application-host" && (hasSystemSnapshot || runtimeInfoState)
     ? {
       status: "Ready",
       detail: `${runtimeInfoState?.hostname || latestSystemSnapshot?.host?.hostname || "This computer"} is available to AnxOS.`,
     }
+    : activeTarget.targetType !== "application-host"
+      ? {
+        status: activeTarget.connectionState.label,
+        detail: `${activeTarget.name} is the selected target. Local Windows metrics are hidden to avoid mixing sources.`,
+      }
     : {
       status: "Unable to confirm",
       detail: "System details have not loaded yet.",
@@ -5254,8 +5260,13 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
   const api = getDesktopApiState().api?.agentControl;
   if (!api || agentControlBusy || agentControlRefreshInFlight) return;
   agentControlRefreshInFlight = true;
+  const requestContext = getNodeRequestContext("agent-control");
   try {
     const payload = await api.list({ selectedNodeId: getSelectedNodeId() });
+    if (!isNodeRequestCurrent(requestContext)) {
+      return;
+    }
+    applyAgentControlRemoteStateToNodes(payload, requestContext);
     renderAgentControlState(payload);
     if (includeConfig && isOwnerWorkspaceAuthorized()) {
       populateAgentConfig(await api.getConfig());
@@ -5266,6 +5277,80 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
   } finally {
     agentControlRefreshInFlight = false;
   }
+}
+
+function applyAgentControlRemoteStateToNodes(payload = {}, context = null) {
+  if (!payload || !Array.isArray(payload.remote) || !Array.isArray(nodesState.nodes)) {
+    return false;
+  }
+  if (context && !isNodeRequestCurrent(context)) {
+    return false;
+  }
+  const now = new Date().toISOString();
+  let changed = false;
+  const remoteByNodeId = new Map(payload.remote.filter((agent) => agent?.nodeId).map((agent) => [agent.nodeId, agent]));
+  nodesState = {
+    ...nodesState,
+    nodes: nodesState.nodes.map((node) => {
+      if (node.kind !== "agent" || !remoteByNodeId.has(node.id)) {
+        return node;
+      }
+      const agent = remoteByNodeId.get(node.id);
+      const running = String(agent.state || "").toLowerCase() === "running";
+      const authFailed = /auth/i.test(String(agent.state || agent.mostRecentError?.code || agent.mostRecentError?.message || ""));
+      const nextConnection = running
+        ? {
+          ...(node.connection || {}),
+          status: "online",
+          connected: true,
+          authenticated: true,
+          message: "Agent is responding from Remote Agent probe.",
+          latencyMs: agent.latencyMs ?? node.connection?.latencyMs ?? null,
+          checkedAt: now,
+          lastSeen: agent.lastHeartbeat || now,
+          apiVersion: agent.apiVersion || agent.identity?.apiVersion || node.connection?.apiVersion || node.apiVersion || null,
+          protocolVersion: agent.protocolVersion || agent.identity?.protocolVersion || node.connection?.protocolVersion || node.protocolVersion || null,
+        }
+        : authFailed
+          ? {
+            ...(node.connection || {}),
+            status: "authentication_failed",
+            connected: true,
+            authenticated: false,
+            message: agent.mostRecentError?.message || "Reachable, but the saved credential was rejected.",
+            latencyMs: agent.latencyMs ?? node.connection?.latencyMs ?? null,
+            checkedAt: now,
+            lastSeen: agent.lastHeartbeat || node.connection?.lastSeen || null,
+          }
+          : {
+            ...(node.connection || {}),
+            status: "offline",
+            connected: false,
+            authenticated: false,
+            message: agent.mostRecentError?.message || "Agent did not respond to the Remote Agent probe.",
+            latencyMs: null,
+            checkedAt: now,
+          };
+      changed = true;
+      return {
+        ...node,
+        connection: nextConnection,
+        agentIdentity: {
+          ...(node.agentIdentity || {}),
+          ...(agent.identity || {}),
+          hostname: agent.identity?.hostname || node.agentIdentity?.hostname || agent.name || node.displayName,
+          agentVersion: agent.agentVersion || agent.identity?.agentVersion || node.agentIdentity?.agentVersion || null,
+        },
+        updatedAt: running ? now : node.updatedAt,
+      };
+    }),
+  };
+  if (changed) {
+    nodeHealthSnapshotCache.clear();
+    refreshNodeHealth({ notify: false });
+    renderNodes();
+  }
+  return changed;
 }
 
 function startAgentControlPolling() {
@@ -20898,13 +20983,11 @@ async function refreshDashboard() {
       stack: error?.stack || null,
     });
     recordAgentPollingFailure("system", requestContext, error);
-    setField("cpuUsage", "Unavailable");
-    setField("memoryUsage", "Unavailable");
-    setField("diskUsage", "Unavailable");
-    setField("networkThroughput", "Unavailable");
+    clearDashboardMetricsForActiveTarget("Unavailable");
     latestSystemSnapshot = null;
     latestSystemSnapshotAt = 0;
     latestSystemSnapshotNodeId = null;
+    renderFriendlyDashboard();
     showToast("System metrics are unavailable.");
   } finally {
     if (isNodeRequestCurrent(requestContext)) {
@@ -26329,6 +26412,37 @@ function getSelectedNode() {
   return (nodesState.nodes || []).find((node) => node.id === getSelectedNodeId()) || null;
 }
 
+function resolveActiveManagementTarget() {
+  const node = getSelectedNode() || { id: "application-host", kind: "application-host", displayName: "Windows Desktop" };
+  const isApplicationHost = node.kind === "application-host";
+  const isLocalAgent = !isApplicationHost && node.localAgent === true;
+  const targetType = isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : "registered-node";
+  const connectionState = getNodeConnectionState(node);
+  const identity = getNodeIdentity(node);
+  return {
+    targetType,
+    nodeId: isApplicationHost ? null : node.id || null,
+    id: node.id || "application-host",
+    name: node.displayName || node.name || (isApplicationHost ? "Windows Desktop" : "Selected Agent"),
+    agentUrl: isApplicationHost ? null : node.agentUrl || node.baseUrl || null,
+    targetLabel: isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : `node:${node.id}`,
+    credentialSource: isApplicationHost ? "local-application-host" : isLocalAgent ? "local-agent-config" : "protected-node-credential",
+    platform: identity.platform || node.platform || node.applicationHost?.platform || null,
+    architecture: identity.architecture || identity.arch || node.architecture || node.applicationHost?.architecture || null,
+    operatingSystem: identity.operatingSystem || node.operatingSystem || node.applicationHost?.operatingSystem || null,
+    hostname: identity.hostname || node.hostname || node.applicationHost?.hostname || null,
+    apiVersion: identity.apiVersion || node.connection?.apiVersion || node.apiVersion || null,
+    protocolVersion: identity.protocolVersion || node.connection?.protocolVersion || node.protocolVersion || null,
+    agentVersion: identity.agentVersion || node.agentVersion || null,
+    reachable: connectionState.key === "connected" || connectionState.key === "degraded" || connectionState.key === "unauthorized",
+    authenticated: connectionState.key === "connected" || connectionState.key === "degraded",
+    compatibility: node.connection?.compatibility || null,
+    connectionState,
+    lastSuccessfulResponse: node.connection?.lastSeen || node.connection?.checkedAt || node.updatedAt || null,
+    requestGenerationId: `${selectedNodeContextVersion}:${nodeRequestSerials.get("system") || 0}:${nodeRequestSerials.get("agent-control") || 0}`,
+  };
+}
+
 function getNodeRequestContext(label = "node-request") {
   const requestLabel = String(label || "node-request");
   const serial = (nodeRequestSerials.get(requestLabel) || 0) + 1;
@@ -26421,6 +26535,26 @@ function clearDashboardForNodeSwitch(message = "Loading selected node...") {
   ].forEach((field) => setField(field, message));
 }
 
+function clearDashboardMetricsForActiveTarget(message = "Unavailable") {
+  clearDashboardForNodeSwitch(message);
+  setField("hostname", message);
+  setField("platform", message);
+  setField("cpuModel", message);
+  setField("cpuCores", message);
+  setField("memoryAvailable", message);
+  setField("memoryTotal", message);
+  setField("diskFree", message);
+  setField("diskMount", message);
+  setField("diskTotal", message);
+  setField("networkUsage", message);
+  setField("networkDownload", message);
+  setField("networkUpload", message);
+  setField("networkTotalDownload", message);
+  setField("networkTotalUpload", message);
+  setField("uptime", message);
+  setField("temperature", "Unavailable");
+}
+
 function resetNodeScopedRendererState(message = "Loading selected node...") {
   systemRequestInFlight = false;
   ampRequestInFlight = false;
@@ -26495,7 +26629,7 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
     error: message,
   };
 
-  clearDashboardForNodeSwitch(message);
+  clearDashboardMetricsForActiveTarget(message);
   updateAmpPanelLink(null);
   setMinecraftPageUnavailable("Loading", message);
   renderPlayitUnavailable(message);

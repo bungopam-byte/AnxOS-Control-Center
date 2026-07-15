@@ -4132,6 +4132,20 @@ async function runDependencyAction(action) {
     showToast("Dependency bridge unavailable.");
     return;
   }
+  const normalizedAction = ["install", "update", "repair"].includes(action)
+    ? "install"
+    : ["check", "retry", "verify", "restart"].includes(action)
+      ? "check"
+      : action;
+  const dependencyActionLabels = {
+    check: "Detect dependencies",
+    retry: "Retry dependency check",
+    verify: "Verify dependencies",
+    restart: "Restart services and verify dependencies",
+    install: "Install missing dependencies",
+    update: "Update dependencies",
+    repair: "Repair dependencies",
+  };
   const requestContext = createNodeActionContext("dependencies");
   const requestId = ++dependencyRequestSerial;
   const payload = {
@@ -4151,7 +4165,7 @@ async function runDependencyAction(action) {
   dependencyButtons.forEach((button) => { button.disabled = true; });
   let operationId = null;
   try {
-    if (action === "install") {
+    if (normalizedAction === "install") {
       const plan = await getDependencyPreparationPlan(payload);
       const planText = formatDependencyPreparationPlan(plan);
       if (plan.ok && !plan.installableActions?.length) {
@@ -4169,15 +4183,15 @@ async function runDependencyAction(action) {
         return;
       }
       if (!(await createSecurityConfirmation({
-        title: "Install missing dependencies?",
-        message: `${planText}\n\nThe Agent will use supported package-manager commands with non-interactive administrator privileges when available, then verify the dependencies afterward.`,
-        confirmLabel: "Install Missing",
+        title: `${dependencyActionLabels[action] || "Prepare dependencies"}?`,
+        message: `${planText}\n\nThe Agent will use the trusted dependency installer with in-app progress, then verify the dependencies afterward.`,
+        confirmLabel: action === "repair" ? "Repair" : action === "update" ? "Update" : "Install Missing",
       }))) {
         return;
       }
       operationId = startOperation({
         type: "Dependencies",
-        title: "Install missing dependencies",
+        title: dependencyActionLabels[action] || "Install missing dependencies",
         target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
         step: "Preparing trusted dependency installation.",
       });
@@ -4204,9 +4218,9 @@ async function runDependencyAction(action) {
     }
     operationId = startOperation({
       type: "Dependencies",
-      title: "Check host dependencies",
+      title: dependencyActionLabels[action] || "Check host dependencies",
       target: requestContext.nodeLabel || requestContext.nodeId || "Selected node",
-      step: "Checking installed runtimes and tools.",
+      step: action === "restart" ? "Requesting service state refresh and dependency verification." : "Checking installed runtimes and tools.",
     });
     dependencyOperationState = "checking";
     dependencyLastError = null;
@@ -4223,7 +4237,7 @@ async function runDependencyAction(action) {
     dependencyOperationState = "idle";
     dependencyLastError = null;
     renderDependencyStatus(check);
-    finishOperation(operationId, true, "Dependency check complete.");
+    finishOperation(operationId, true, action === "restart" ? "Dependency service state verified." : "Dependency check complete.");
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext) || requestId !== dependencyRequestSerial) {
       return;

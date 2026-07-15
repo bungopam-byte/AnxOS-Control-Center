@@ -256,6 +256,7 @@ const desktopApi = {
     delete: (nodeId) => ipcRenderer.invoke("nodes:delete", { nodeId }),
     select: (nodeId) => ipcRenderer.invoke("nodes:select", { nodeId }),
     test: (nodeId) => ipcRenderer.invoke("nodes:test", { nodeId }),
+    testConnection: (payload = {}) => ipcRenderer.invoke("nodes:testConnection", payload),
     health: (nodeId) => ipcRenderer.invoke("nodes:health", { nodeId }),
     healthAll: () => ipcRenderer.invoke("nodes:healthAll"),
   },

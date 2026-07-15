@@ -614,6 +614,8 @@ const nodeStatus = document.querySelector("[data-node-status]");
 const nodeSummaryFields = document.querySelectorAll("[data-node-summary]");
 const nodeModal = document.querySelector("[data-node-modal]");
 const nodeModalTitle = document.querySelector("[data-node-modal-title]");
+const nodeFormStatus = document.querySelector("[data-node-form-status]");
+const nodeFieldErrors = document.querySelectorAll("[data-node-field-error]");
 const nodeDetailsModal = document.querySelector("[data-node-details-modal]");
 const nodeDetailsTitle = document.querySelector("[data-node-details-title]");
 const nodeDetailsSummary = document.querySelector("[data-node-details-summary]");
@@ -689,6 +691,7 @@ let nodePickerOpen = false;
 let nodeModalCleanup = null;
 let nodeDetailsCleanup = null;
 let nodeEditId = null;
+let nodeFormBusy = false;
 let nodeDetailsId = null;
 let nodeRefreshTimer = null;
 let nodePickerActiveIndex = 0;
@@ -26945,24 +26948,72 @@ function renderNodeSummary() {
   setNodeSummary("healthIssues", health.issueCount);
 }
 
+function setNodeFormBusy(isBusy, label = "") {
+  nodeFormBusy = Boolean(isBusy);
+  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"]').forEach((button) => {
+    button.disabled = nodeFormBusy;
+  });
+  if (nodeFormStatus) {
+    nodeFormStatus.hidden = !label;
+    nodeFormStatus.textContent = label || "";
+  }
+}
+
+function setNodeFormErrors(errors = {}) {
+  nodeFieldErrors.forEach((target) => {
+    const fieldName = target.dataset.nodeFieldError;
+    const message = errors[fieldName] || "";
+    target.textContent = message;
+    const input = nodeModal?.querySelector(`[data-node-field="${fieldName}"]`);
+    input?.setAttribute("aria-invalid", message ? "true" : "false");
+  });
+}
+
+function validateNodeFormPayload(payload = {}) {
+  const errors = {};
+  if (!String(payload.displayName || "").trim()) errors.displayName = "Enter a node name.";
+  else if (String(payload.displayName || "").trim().length > 80) errors.displayName = "Use 80 characters or fewer.";
+  try {
+    const url = new URL(String(payload.agentUrl || "").trim());
+    if (!["http:", "https:"].includes(url.protocol)) errors.agentUrl = "Use an http or https Agent URL.";
+    if (!url.hostname) errors.agentUrl = "Enter a host for this Agent URL.";
+  } catch {
+    errors.agentUrl = "Enter a valid Agent URL.";
+  }
+  if (!nodeEditId && !String(payload.agentToken || "").trim()) {
+    errors.agentToken = "Enter the Agent token for this node.";
+  }
+  return errors;
+}
+
 function setNodeModalVisible(isVisible, node = null) {
   if (!nodeModal) return;
   nodeModal.hidden = !isVisible;
   if (isVisible) {
     nodeEditId = node?.kind === "agent" ? node.id : null;
+    setNodeFormErrors({});
+    setNodeFormBusy(false, "");
     if (nodeModalTitle) nodeModalTitle.textContent = nodeEditId ? "Edit Node" : "Add Node";
     const saveButton = nodeModal.querySelector('[data-node-action="save"]');
     if (saveButton) saveButton.textContent = nodeEditId ? "Save Node" : "Register Node";
+    const deleteButton = nodeModal.querySelector('[data-node-action="delete"]');
+    if (deleteButton) deleteButton.hidden = !nodeEditId;
     nodeFields.forEach((field) => {
       const key = field.dataset.nodeField;
       if (key === "dockerEnabled") {
         field.checked = node?.docker?.enabled !== false;
+      } else if (key === "enabled") {
+        field.checked = node?.enabled !== false;
       } else if (key === "displayName") {
         field.value = node?.displayName || "";
       } else if (key === "agentUrl") {
         field.value = node?.agentUrl || "";
       } else if (key === "agentToken") {
         field.value = "";
+      } else if (key === "description") {
+        field.value = node?.description || "";
+      } else if (key === "tags") {
+        field.value = Array.isArray(node?.tags) ? node.tags.join(", ") : "";
       }
     });
     if (!nodeModalCleanup) {
@@ -26972,6 +27023,8 @@ function setNodeModalVisible(isVisible, node = null) {
     nodeModalCleanup();
     nodeModalCleanup = null;
     nodeEditId = null;
+    setNodeFormErrors({});
+    setNodeFormBusy(false, "");
   }
 }
 
@@ -27417,6 +27470,10 @@ function getNodeFormPayload() {
   nodeFields.forEach((field) => {
     if (field.dataset.nodeField === "dockerEnabled") {
       payload.docker.enabled = field.checked;
+    } else if (field.dataset.nodeField === "enabled") {
+      payload.enabled = field.checked;
+    } else if (field.dataset.nodeField === "tags") {
+      payload.tags = String(field.value || "").split(",").map((tag) => tag.trim()).filter(Boolean);
     } else {
       payload[field.dataset.nodeField] = field.value;
     }
@@ -27426,12 +27483,21 @@ function getNodeFormPayload() {
 
 async function saveNodeFromSettings() {
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasNodes) {
+  if (!desktopApiState.hasNodes || nodeFormBusy) {
+    return;
+  }
+  const payload = getNodeFormPayload();
+  const errors = validateNodeFormPayload(payload);
+  setNodeFormErrors(errors);
+  if (Object.keys(errors).length) {
+    setNodeFormBusy(false, "Fix the highlighted fields before saving.");
+    showToast("Node form needs attention.", "warning");
     return;
   }
   try {
     const wasEditing = Boolean(nodeEditId);
-    await desktopApiState.api.nodes.save(getNodeFormPayload());
+    setNodeFormBusy(true, wasEditing ? "Saving node..." : "Registering node...");
+    await desktopApiState.api.nodes.save(payload);
     nodeFields.forEach((field) => {
       if (field.type !== "checkbox") {
         field.value = "";
@@ -27441,7 +27507,41 @@ async function saveNodeFromSettings() {
     await refreshNodes();
     showToast(wasEditing ? "Node updated." : "Node registered.");
   } catch (error) {
-    showToast(error?.message || "Node could not be saved.");
+    const message = normalizeIpcErrorMessage(error, "Node could not be saved.");
+    setNodeFormBusy(false, message);
+    showToast(message, "error");
+    return;
+  }
+  setNodeFormBusy(false, "");
+}
+
+async function testNodeFormConnection() {
+  const desktopApiState = getDesktopApiState();
+  if (!desktopApiState.hasNodes || nodeFormBusy) {
+    return;
+  }
+  const payload = getNodeFormPayload();
+  const errors = validateNodeFormPayload(payload);
+  setNodeFormErrors(errors);
+  if (Object.keys(errors).length) {
+    setNodeFormBusy(false, "Fix the highlighted fields before testing.");
+    showToast("Node form needs attention.", "warning");
+    return;
+  }
+  try {
+    setNodeFormBusy(true, "Testing Agent connection...");
+    const result = await desktopApiState.api.nodes.testConnection(payload);
+    const detail = [
+      result.agentVersion ? `Agent ${result.agentVersion}` : null,
+      result.apiVersion ? `API ${result.apiVersion}` : null,
+      Number.isFinite(result.latencyMs) ? `${result.latencyMs} ms` : null,
+    ].filter(Boolean).join(" · ");
+    setNodeFormBusy(false, detail ? `Connection verified. ${detail}` : "Connection verified.");
+    showToast(result.connected ? "Node connection verified." : result.message || "Node connection needs attention.", result.connected ? "success" : "warning");
+  } catch (error) {
+    const message = normalizeIpcErrorMessage(error, "Node connection test failed.");
+    setNodeFormBusy(false, message);
+    showToast(message, "error");
   }
 }
 
@@ -31153,6 +31253,7 @@ window.addEventListener("scroll", positionNodePicker, true);
 document.querySelector('[data-node-action="open-add"]')?.addEventListener("click", () => setNodeModalVisible(true));
 document.querySelector('[data-node-action="refresh"]')?.addEventListener("click", refreshNodes);
 document.querySelector('[data-node-action="save"]')?.addEventListener("click", saveNodeFromSettings);
+document.querySelector('[data-node-action="test-form"]')?.addEventListener("click", testNodeFormConnection);
 document.querySelector('[data-node-action="test"]')?.addEventListener("click", testSelectedNode);
 document.querySelector('[data-node-action="delete"]')?.addEventListener("click", deleteSelectedNode);
 document.querySelectorAll('[data-node-action="close-modal"]').forEach((button) => button.addEventListener("click", () => setNodeModalVisible(false)));

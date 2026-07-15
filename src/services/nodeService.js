@@ -789,22 +789,58 @@ function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.
 async function saveNode(payload = {}) {
   const displayName = String(payload.displayName || payload.name || "").trim();
   const agentUrl = normalizeUrl(payload.agentUrl || payload.url);
-  const agentToken = String(payload.agentToken || payload.token || "").trim();
+  const state = readNodeState();
+  const existingById = payload.id ? state.nodes.find((node) => node.id === payload.id) : null;
+  const agentTokenInput = String(payload.agentToken || payload.token || "").trim();
+  const agentToken = agentTokenInput || existingById?.agentToken || "";
   if (!displayName || displayName.length > 80) throw Object.assign(new Error("Enter a node name up to 80 characters."), { code: "INVALID_NODE_NAME" });
   if (!/^https?:\/\/[^ ]+$/i.test(agentUrl)) throw Object.assign(new Error("Enter a valid Agent URL."), { code: "INVALID_NODE_URL" });
   let identity;
   try { identity = (await getHealth(normalizeAgentSettings({ backendMode: "agent", agentUrl, agentToken }))).identity; } catch (error) { throw Object.assign(new Error(`Could not read Agent identity: ${error.message}`), { code: "AGENT_IDENTITY_UNAVAILABLE" }); }
   if (!identity?.deviceId) throw Object.assign(new Error("Agent did not provide a stable device identity."), { code: "AGENT_IDENTITY_MISSING" });
-  const state = readNodeState();
   const existing = state.nodes.find((node) => node.agentIdentity.deviceId === identity.deviceId || node.id === payload.id);
+  if (!existing && state.nodes.some((node) => normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl)) {
+    throw Object.assign(new Error("A node already uses this Agent URL."), { code: "DUPLICATE_NODE_URL" });
+  }
   const node = normalizeAgentNode({ ...existing, ...payload, id: existing?.id || nodeIdForDevice(identity.deviceId), displayName, agentUrl, agentToken: agentToken || existing?.agentToken, agentIdentity: identity });
   const nodes = mergeAgentNodes([...state.nodes.filter((entry) => entry.id !== node.id && entry.agentIdentity.deviceId !== identity.deviceId), node]);
   writeNodeState({ ...state, nodes });
   return { node: publicNode(node), ...(await listNodes({ refreshIdentity: false })) };
 }
 
+async function testNodeConnectionPayload(payload = {}) {
+  const displayName = String(payload.displayName || payload.name || "Agent Node").trim().slice(0, 80) || "Agent Node";
+  const agentUrl = normalizeUrl(payload.agentUrl || payload.url);
+  const state = readNodeState();
+  const existing = payload.id ? state.nodes.find((node) => node.id === payload.id) : null;
+  const agentTokenInput = String(payload.agentToken || payload.token || "").trim();
+  const agentToken = agentTokenInput || existing?.agentToken || "";
+  if (!/^https?:\/\/[^ ]+$/i.test(agentUrl)) throw Object.assign(new Error("Enter a valid Agent URL."), { code: "INVALID_NODE_URL" });
+  const startedAt = Date.now();
+  const health = await getHealth(normalizeAgentSettings({ backendMode: "agent", agentUrl, agentToken }), {
+    timeoutMs: 8000,
+    targetLabel: payload.id ? `node-test:${payload.id}` : "node-test:new",
+    suppressConnectionRefusedLog: true,
+    logThrottleMs: 60000,
+  });
+  const identity = health.identity || {};
+  const compatible = isCompatibleAgentHealth(health);
+  return {
+    connected: compatible,
+    status: compatible ? "online" : "agent_incompatible",
+    state: compatible ? "online" : "agent_incompatible",
+    message: compatible ? "Agent connection verified." : "Agent API version is not compatible with this Control Center.",
+    latencyMs: Date.now() - startedAt,
+    agentVersion: identity.agentVersion || health.agentVersion || null,
+    apiVersion: identity.apiVersion || health.apiVersion || null,
+    platform: identity.platform || health.platform || null,
+    capabilities: Array.isArray(health.capabilities) ? health.capabilities : [],
+    node: publicNode(normalizeAgentNode({ ...existing, displayName, agentUrl, agentToken, agentIdentity: identity })),
+  };
+}
+
 function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" }); const state = readNodeState(); const nodes = state.nodes.filter((entry) => entry.id !== nodeId); deleteNodeToken(nodeId); writeNodeState({ ...state, selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId, nodes }); return { id: nodeId, deleted: true }; }
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode, testNodeConnectionPayload };

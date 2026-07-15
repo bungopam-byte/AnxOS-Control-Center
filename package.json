@@ -44,6 +44,7 @@
     "node:legacy-migration:smoke": "node scripts/node-legacy-migration-smoke.js",
     "node:registry:smoke": "node scripts/node-registry-model-smoke.js",
     "node:switch:smoke": "node scripts/node-switch-smoke.js",
+    "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
     "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
     "node-health:smoke": "node scripts/node-health-smoke.js",
     "security:page:smoke": "node scripts/security-page-smoke.js",

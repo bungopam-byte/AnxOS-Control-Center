@@ -7315,6 +7315,21 @@ body.is-resizing-files * {
   font-weight: 700;
 }
 
+.settings-field [aria-invalid="true"] {
+  border-color: rgba(255, 107, 138, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 107, 138, 0.18);
+}
+
+.settings-message {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(190, 170, 220, 0.18);
+  border-radius: var(--anx-radius-md);
+  background: rgba(7, 9, 14, 0.58);
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .settings-field input[type="color"] {
   padding: 4px;
 }
@@ -11516,6 +11531,10 @@ button:disabled {
 
 .nodes-form-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.node-form-guidance {
+  margin-bottom: 12px;
 }
 
 .nodes-form-grid .settings-field--wide,

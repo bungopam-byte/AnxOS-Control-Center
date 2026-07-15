@@ -966,7 +966,13 @@ async function postPairingComplete(agentUrl, payload = {}) {
   try { body = await response.json(); } catch {}
   if (!response.ok) {
     const message = body?.error?.message || body?.message || `Agent pairing failed with HTTP ${response.status}.`;
-    throw Object.assign(new Error(message), { code: body?.error?.code || "PAIRING_FAILED", status: response.status });
+    const rawCode = body?.error?.code || "PAIRING_FAILED";
+    const code = rawCode === "PAIRING_REJECTED" && /no longer|expired|available/i.test(message) ? "PAIRING_EXPIRED" : rawCode;
+    throw Object.assign(new Error(code === "PAIRING_EXPIRED" ? "Pairing session expired. Generate a new pairing code on the Agent, then try again." : message), {
+      code,
+      status: response.status,
+      retryAvailable: code === "PAIRING_EXPIRED",
+    });
   }
   return body || {};
 }

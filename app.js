@@ -625,6 +625,7 @@ const nodeFieldErrors = document.querySelectorAll("[data-node-field-error]");
 const nodeTokenNote = document.querySelector("[data-node-token-note]");
 const nodeTokenSetup = document.querySelector("[data-node-token-setup]");
 const nodePairingCodeInput = document.querySelector("[data-node-pairing-code]");
+const nodePairingRetryActions = document.querySelector("[data-node-pairing-retry]");
 const nodeDetailsModal = document.querySelector("[data-node-details-modal]");
 const nodeDetailsTitle = document.querySelector("[data-node-details-title]");
 const nodeDetailsSummary = document.querySelector("[data-node-details-summary]");
@@ -27260,7 +27261,7 @@ function renderNodeSummary() {
 
 function setNodeFormBusy(isBusy, label = "") {
   nodeFormBusy = Boolean(isBusy);
-  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"], [data-node-action="generate-token"], [data-node-action="pair-code"], [data-node-action="paste-pairing-code"]').forEach((button) => {
+  nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"], [data-node-action="generate-token"], [data-node-action="pair-code"], [data-node-action="paste-pairing-code"], [data-node-action="restart-pairing"], [data-node-action="pairing-retry-help"], [data-node-action="cancel-pairing"]').forEach((button) => {
     button.disabled = nodeFormBusy;
   });
   updateNodeTokenControls();
@@ -27287,6 +27288,15 @@ function setNodePairingError(message = "") {
     }
   });
   nodePairingCodeInput?.setAttribute("aria-invalid", message ? "true" : "false");
+}
+
+function setNodePairingRetryVisible(visible) {
+  if (nodePairingRetryActions) nodePairingRetryActions.hidden = !visible;
+}
+
+function isExpiredPairingError(error, message = "") {
+  const combined = `${error?.code || ""} ${error?.statusCode || ""} ${message || error?.message || ""}`;
+  return /PAIRING_EXPIRED|PAIRING_REJECTED|pairing session.*(expired|no longer|unavailable)|session is no longer available/i.test(combined);
 }
 
 function validateNodeFormPayload(payload = {}) {
@@ -27380,6 +27390,7 @@ function setNodeModalVisible(isVisible, node = null) {
     nodeEditId = node?.kind === "agent" ? node.id : null;
     setNodeFormErrors({});
     setNodePairingError("");
+    setNodePairingRetryVisible(false);
     if (nodePairingCodeInput) nodePairingCodeInput.value = "";
     setNodeFormBusy(false, "");
     if (nodeModalTitle) nodeModalTitle.textContent = nodeEditId ? "Edit Node" : "Add Node";
@@ -27417,6 +27428,7 @@ function setNodeModalVisible(isVisible, node = null) {
     nodeEditId = null;
     setNodeFormErrors({});
     setNodePairingError("");
+    setNodePairingRetryVisible(false);
     setNodeFormBusy(false, "");
     if (nodeTokenSetup) nodeTokenSetup.hidden = true;
   }
@@ -27982,10 +27994,36 @@ async function pairNodeFromSettings() {
     showToast(`${result?.node?.displayName || "Agent"} paired successfully.`, "success");
   } catch (error) {
     const message = normalizeIpcErrorMessage(error, "Agent pairing failed.");
+    if (isExpiredPairingError(error, message)) {
+      const retryMessage = "Pairing session expired. Generate a new pairing code on the Agent, then paste it here.";
+      if (nodePairingCodeInput) nodePairingCodeInput.value = "";
+      setNodePairingError(retryMessage);
+      setNodePairingRetryVisible(true);
+      setNodeFormBusy(false, retryMessage);
+      showToast("Pairing session expired. Generate a new pairing code and try again.", "warning");
+      return;
+    }
     setNodePairingError(message);
+    setNodePairingRetryVisible(false);
     setNodeFormBusy(false, message);
     showToast(message, "error");
   }
+}
+
+function restartNodePairingEntry() {
+  if (nodePairingCodeInput) {
+    nodePairingCodeInput.value = "";
+    nodePairingCodeInput.focus();
+  }
+  setNodePairingError("Paste the new temporary pairing code displayed by Agent setup.");
+  setNodePairingRetryVisible(false);
+  setNodeFormBusy(false, "Restart pairing from Agent setup, then paste the new code here.");
+}
+
+function showNodePairingRetryHelp() {
+  setNodePairingRetryVisible(true);
+  setNodePairingError("Open Agent Setup on that machine, select Generate New Pairing Code, then paste the new code here.");
+  showToast("Open Agent Setup and generate a new pairing code.", "warning");
 }
 
 async function pasteNodePairingCode() {
@@ -27994,6 +28032,7 @@ async function pasteNodePairingCode() {
     if (nodePairingCodeInput) {
       nodePairingCodeInput.value = String(value || "").trim();
       setNodePairingError("");
+      setNodePairingRetryVisible(false);
     }
     showToast("Pairing code pasted.", "success");
   } catch {
@@ -31719,6 +31758,9 @@ document.querySelector('[data-node-action="generate-token"]')?.addEventListener(
 document.querySelector('[data-node-action="copy-token"]')?.addEventListener("click", copyNodeAgentToken);
 document.querySelector('[data-node-action="pair-code"]')?.addEventListener("click", pairNodeFromSettings);
 document.querySelector('[data-node-action="paste-pairing-code"]')?.addEventListener("click", pasteNodePairingCode);
+document.querySelector('[data-node-action="restart-pairing"]')?.addEventListener("click", restartNodePairingEntry);
+document.querySelector('[data-node-action="pairing-retry-help"]')?.addEventListener("click", showNodePairingRetryHelp);
+document.querySelector('[data-node-action="cancel-pairing"]')?.addEventListener("click", () => setNodeModalVisible(false));
 document.querySelectorAll('[data-node-action="close-modal"]').forEach((button) => button.addEventListener("click", () => setNodeModalVisible(false)));
 document.querySelectorAll('[data-node-action="close-details"]').forEach((button) => button.addEventListener("click", () => setNodeDetailsVisible(false)));
 getNodeTokenInput()?.addEventListener("input", (event) => {

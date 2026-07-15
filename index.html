@@ -4053,6 +4053,7 @@
               <div class="settings-actions">
                 <button class="inline-action" type="button" data-update-action="check">Check for Updates</button>
                 <button class="inline-action" type="button" data-update-action="release">View Release Notes</button>
+                <button class="inline-action" type="button" data-dev-update-open data-settings-capability="canManageDeveloperSettings">Developer Update</button>
                 <button class="primary-button" type="button" data-update-action="install" hidden>Install Update</button>
                 <span class="settings-inline-status" data-update-status>Updates check automatically on startup.</span>
               </div>
@@ -4167,6 +4168,11 @@
           <div class="settings-actions">
             <button class="primary-button" type="button" data-node-action="pair-code">Pair Agent</button>
             <button class="inline-action" type="button" data-node-action="paste-pairing-code">Paste Pairing Code</button>
+          </div>
+          <div class="settings-actions settings-actions--secondary" data-node-pairing-retry hidden>
+            <button class="inline-action" type="button" data-node-action="restart-pairing">Restart Pairing</button>
+            <button class="inline-action" type="button" data-node-action="pairing-retry-help">Generate New Pairing Code</button>
+            <button class="inline-action" type="button" data-node-action="cancel-pairing">Cancel</button>
           </div>
         </section>
         <section class="settings-section node-manual-section" data-node-manual-section>

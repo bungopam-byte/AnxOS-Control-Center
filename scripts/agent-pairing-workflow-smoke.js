@@ -35,8 +35,13 @@ async function waitForAgent(baseUrl) {
   const controlConfig = path.join(temp, "control");
   const agentConfig = path.join(temp, "agent");
   const nodeServiceSource = fs.readFileSync(path.join(root, "src", "services", "nodeService.js"), "utf8");
+  const nodesIpcSource = fs.readFileSync(path.join(root, "src", "ipc", "nodesIpc.js"), "utf8");
+  const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+  const htmlSource = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert(nodeServiceSource.includes("agentIdentityMatchesNode") && nodeServiceSource.includes("NODE_REPAIR_URL_CONFIRMATION_REQUIRED"), "Existing-node re-pairing must verify Agent identity before changing URLs.");
   assert(nodeServiceSource.includes("repairedExistingNode"), "Pairing results should identify in-place node repairs.");
+  assert(nodeServiceSource.includes("PAIRING_EXPIRED") && nodesIpcSource.includes("wrapped.code = error?.code"), "Expired pairing sessions must preserve a retryable error category across IPC.");
+  assert(appSource.includes("isExpiredPairingError") && appSource.includes("restartNodePairingEntry") && htmlSource.includes("data-node-pairing-retry"), "Expired pairing sessions must show in-app retry actions.");
   fs.mkdirSync(controlConfig, { recursive: true });
   fs.mkdirSync(agentConfig, { recursive: true });
   process.env.ANXHUB_CONFIG_DIR = controlConfig;

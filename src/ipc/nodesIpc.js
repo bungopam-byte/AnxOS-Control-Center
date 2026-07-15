@@ -21,7 +21,11 @@ async function invokeNodeOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    throw new Error(getNodeErrorMessage(error));
+    const wrapped = new Error(getNodeErrorMessage(error));
+    wrapped.code = error?.code || "NODE_OPERATION_FAILED";
+    wrapped.statusCode = error?.statusCode || error?.status || null;
+    wrapped.details = error?.details || null;
+    throw wrapped;
   }
 }
 

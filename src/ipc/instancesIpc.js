@@ -29,6 +29,7 @@ const {
   writeInstanceFile,
 } = require("../services/serviceRouter");
 const { audit, checkRateLimit, requirePermission } = require("../services/securityService");
+const { wrapExpectedAgentRead } = require("./expectedAgentError");
 
 function getInstanceErrorMessage(error) {
   const code = error?.payload?.error?.code || error?.code;
@@ -54,7 +55,7 @@ async function invokeInstanceOperation(operation) {
 }
 
 function registerInstancesIpc() {
-  ipcMain.handle("instances:list", async (_, payload = {}) => invokeInstanceOperation(() => listInstances(payload)));
+  ipcMain.handle("instances:list", async (_, payload = {}) => wrapExpectedAgentRead("instances:list", () => listInstances(payload)));
   ipcMain.handle("instances:create", async (_, payload = {}) => invokeInstanceOperation(() => createInstance(payload)));
   ipcMain.handle("instances:update", async (_, payload = {}) => invokeInstanceOperation(() => updateInstance(payload.instanceId, payload.config || {}, payload)));
   ipcMain.handle("instances:rename", async (_, payload = {}) => invokeInstanceOperation(() => {
@@ -71,9 +72,9 @@ function registerInstancesIpc() {
     audit({ action: "instance.openFolder", target: payload.instanceId });
     return openInstanceFolder(payload.instanceId, payload);
   }));
-  ipcMain.handle("instances:getStatus", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceStatus(payload.instanceId, payload)));
-  ipcMain.handle("instances:getMetrics", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceMetrics(payload.instanceId, payload)));
-  ipcMain.handle("instances:getLogs", async (_, payload = {}) => invokeInstanceOperation(() => getInstanceLogs(payload.instanceId, payload)));
+  ipcMain.handle("instances:getStatus", async (_, payload = {}) => wrapExpectedAgentRead("instances:getStatus", () => getInstanceStatus(payload.instanceId, payload)));
+  ipcMain.handle("instances:getMetrics", async (_, payload = {}) => wrapExpectedAgentRead("instances:getMetrics", () => getInstanceMetrics(payload.instanceId, payload)));
+  ipcMain.handle("instances:getLogs", async (_, payload = {}) => wrapExpectedAgentRead("instances:getLogs", () => getInstanceLogs(payload.instanceId, payload)));
   ipcMain.handle("instances:clearLogs", async (_, payload = {}) => invokeInstanceOperation(() => clearInstanceLogs(payload.instanceId, payload)));
   ipcMain.handle("instances:sendCommand", async (_, payload = {}) => invokeInstanceOperation(() => {
     checkRateLimit("console-command", 120, 60 * 1000);

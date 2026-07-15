@@ -37,6 +37,7 @@ const {
   connectDockerNetwork,
 } = require("../services/serviceRouter");
 const { audit, requirePermission } = require("../services/securityService");
+const { wrapExpectedAgentRead } = require("./expectedAgentError");
 const { requireNodeContext } = require("./nodeContext");
 
 function requireDockerNodeContext(payload = {}, operation = "request") {
@@ -56,10 +57,10 @@ function invokeDockerOperation(operation) {
 }
 
 function registerDockerIpc() {
-  ipcMain.handle("docker:getSnapshot", async (_, payload = {}) => invokeDockerOperation(() => getDockerSnapshot(requireDockerNodeContext(payload, "snapshot"))));
-  ipcMain.handle("docker:listContainers", async (_, payload = {}) => invokeDockerOperation(() => listDockerContainers(requireDockerNodeContext(payload, "container listing"))));
+  ipcMain.handle("docker:getSnapshot", async (_, payload = {}) => wrapExpectedAgentRead("docker:getSnapshot", () => getDockerSnapshot(requireDockerNodeContext(payload, "snapshot"))));
+  ipcMain.handle("docker:listContainers", async (_, payload = {}) => wrapExpectedAgentRead("docker:listContainers", () => listDockerContainers(requireDockerNodeContext(payload, "container listing"))));
   ipcMain.handle("docker:inspectContainer", async (_, payload = {}) => invokeDockerOperation(() => inspectDockerContainer(payload.container, requireDockerNodeContext(payload, "container inspection"))));
-  ipcMain.handle("docker:listImages", async (_, payload = {}) => invokeDockerOperation(() => listDockerImages(requireDockerNodeContext(payload, "image listing"))));
+  ipcMain.handle("docker:listImages", async (_, payload = {}) => wrapExpectedAgentRead("docker:listImages", () => listDockerImages(requireDockerNodeContext(payload, "image listing"))));
   ipcMain.handle("docker:removeImage", async (_, payload = {}) => invokeDockerOperation(() => {
     requireDockerNodeContext(payload, "image removal");
     requirePermission("instance:delete", payload.image);
@@ -79,8 +80,8 @@ function registerDockerIpc() {
     audit({ action: "docker.images.prune", target: "unused-images" });
     return pruneDockerImages(payload);
   }));
-  ipcMain.handle("docker:listNetworks", async (_, payload = {}) => invokeDockerOperation(() => listDockerNetworks(requireDockerNodeContext(payload, "network listing"))));
-  ipcMain.handle("docker:listVolumes", async (_, payload = {}) => invokeDockerOperation(() => listDockerVolumes(requireDockerNodeContext(payload, "volume listing"))));
+  ipcMain.handle("docker:listNetworks", async (_, payload = {}) => wrapExpectedAgentRead("docker:listNetworks", () => listDockerNetworks(requireDockerNodeContext(payload, "network listing"))));
+  ipcMain.handle("docker:listVolumes", async (_, payload = {}) => wrapExpectedAgentRead("docker:listVolumes", () => listDockerVolumes(requireDockerNodeContext(payload, "volume listing"))));
   ipcMain.handle("docker:create", async (_, payload = {}) => invokeDockerOperation(() => {
     requireDockerNodeContext(payload, "container creation");
     requirePermission("instance:write", payload.name || payload.image);

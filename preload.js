@@ -35,6 +35,21 @@ async function invokeMarketplace(channel, payload) {
   return result;
 }
 
+async function invokeAgentFeature(channel, payload) {
+  const result = payload === undefined
+    ? await ipcRenderer.invoke(channel)
+    : await ipcRenderer.invoke(channel, payload);
+
+  if (result && result.ok === false && result.error) {
+    const error = new Error(result.error.message || "Agent request failed.");
+    error.code = result.error.code || "AGENT_REQUEST_FAILED";
+    error.details = result.error.details || {};
+    throw error;
+  }
+
+  return result;
+}
+
 const windowApi = {
   minimize: () => ipcRenderer.send("window:minimize"),
   maximize: () => ipcRenderer.send("window:maximize"),
@@ -124,10 +139,10 @@ const desktopApi = {
   },
   window: windowApi,
   system: {
-    getSnapshot: (payload = {}) => ipcRenderer.invoke("system:getSnapshot", payload),
+    getSnapshot: (payload = {}) => invokeAgentFeature("system:getSnapshot", payload),
   },
   amp: {
-    getSnapshot: (payload = {}) => ipcRenderer.invoke("amp:getSnapshot", payload),
+    getSnapshot: (payload = {}) => invokeAgentFeature("amp:getSnapshot", payload),
   },
   playit: {
     getSnapshot: (payload = {}) => ipcRenderer.invoke("playit:getSnapshot", payload),
@@ -140,8 +155,8 @@ const desktopApi = {
     createFirewallRule: (payload = {}) => ipcRenderer.invoke("publicAccess:createFirewallRule", payload),
   },
   docker: {
-    getSnapshot: (payload = {}) => ipcRenderer.invoke("docker:getSnapshot", payload),
-    listContainers: (payload = {}) => ipcRenderer.invoke("docker:listContainers", payload),
+    getSnapshot: (payload = {}) => invokeAgentFeature("docker:getSnapshot", payload),
+    listContainers: (payload = {}) => invokeAgentFeature("docker:listContainers", payload),
     inspectContainer: (container, payload = {}) => ipcRenderer.invoke("docker:inspectContainer", { ...payload, container }),
     create: (payload = {}) => ipcRenderer.invoke("docker:create", payload),
     start: (container, payload = {}) => ipcRenderer.invoke("docker:start", { ...payload, container }),
@@ -156,19 +171,19 @@ const desktopApi = {
     rename: (container, name, payload = {}) => ipcRenderer.invoke("docker:rename", { ...payload, container, name }),
     delete: (container, payload = {}) => ipcRenderer.invoke("docker:delete", { ...payload, container }),
     removeContainer: (container, payload = {}) => ipcRenderer.invoke("docker:removeContainer", { ...payload, container }),
-    listImages: (payload = {}) => ipcRenderer.invoke("docker:listImages", payload),
+    listImages: (payload = {}) => invokeAgentFeature("docker:listImages", payload),
     removeImage: (image, payload = {}) => ipcRenderer.invoke("docker:removeImage", { ...payload, image }),
     pullImage: (image, payload = {}) => ipcRenderer.invoke("docker:pullImage", { ...payload, image }),
     inspectImage: (image, payload = {}) => ipcRenderer.invoke("docker:inspectImage", { ...payload, image }),
     pruneImages: (payload = {}) => ipcRenderer.invoke("docker:pruneImages", payload),
-    listNetworks: (payload = {}) => ipcRenderer.invoke("docker:listNetworks", payload),
+    listNetworks: (payload = {}) => invokeAgentFeature("docker:listNetworks", payload),
     inspectNetwork: (network, payload = {}) => ipcRenderer.invoke("docker:inspectNetwork", { ...payload, network }),
     createNetwork: (payload = {}) => ipcRenderer.invoke("docker:createNetwork", payload),
     removeNetwork: (network, payload = {}) => ipcRenderer.invoke("docker:removeNetwork", { ...payload, network }),
     connectNetwork: (network, container, payload = {}) => ipcRenderer.invoke("docker:connectNetwork", { ...payload, network, container }),
     disconnectNetwork: (network, container, payload = {}) => ipcRenderer.invoke("docker:disconnectNetwork", { ...payload, network, container }),
     pruneNetworks: (payload = {}) => ipcRenderer.invoke("docker:pruneNetworks", payload),
-    listVolumes: (payload = {}) => ipcRenderer.invoke("docker:listVolumes", payload),
+    listVolumes: (payload = {}) => invokeAgentFeature("docker:listVolumes", payload),
     inspectVolume: (volume, payload = {}) => ipcRenderer.invoke("docker:inspectVolume", { ...payload, volume }),
     removeVolume: (volume, payload = {}) => ipcRenderer.invoke("docker:removeVolume", { ...payload, volume }),
     pruneVolumes: (payload = {}) => ipcRenderer.invoke("docker:pruneVolumes", payload),
@@ -209,15 +224,15 @@ const desktopApi = {
     install: (payload = {}) => ipcRenderer.invoke("dependencies:install", payload),
   },
   instances: {
-    list: (payload = {}) => ipcRenderer.invoke("instances:list", payload),
+    list: (payload = {}) => invokeAgentFeature("instances:list", payload),
     create: (payload) => ipcRenderer.invoke("instances:create", payload),
     update: (instanceId, config, options = {}) => ipcRenderer.invoke("instances:update", { ...options, instanceId, config }),
     rename: (instanceId, displayName, options = {}) => ipcRenderer.invoke("instances:rename", { ...options, instanceId, displayName }),
     duplicate: (instanceId, config = {}, options = {}) => ipcRenderer.invoke("instances:duplicate", { ...options, instanceId, config }),
     openFolder: (instanceId, options = {}) => ipcRenderer.invoke("instances:openFolder", { ...options, instanceId }),
-    getStatus: (instanceId, options = {}) => ipcRenderer.invoke("instances:getStatus", { ...options, instanceId }),
-    getMetrics: (instanceId, options = {}) => ipcRenderer.invoke("instances:getMetrics", { ...options, instanceId }),
-    getLogs: (instanceId, options = {}) => ipcRenderer.invoke("instances:getLogs", { instanceId, ...options }),
+    getStatus: (instanceId, options = {}) => invokeAgentFeature("instances:getStatus", { ...options, instanceId }),
+    getMetrics: (instanceId, options = {}) => invokeAgentFeature("instances:getMetrics", { ...options, instanceId }),
+    getLogs: (instanceId, options = {}) => invokeAgentFeature("instances:getLogs", { instanceId, ...options }),
     clearLogs: (instanceId, options = {}) => ipcRenderer.invoke("instances:clearLogs", { instanceId, ...options }),
     sendCommand: (instanceId, command) => ipcRenderer.invoke("instances:sendCommand", { instanceId, command }),
     start: (instanceId, payload = {}) => ipcRenderer.invoke("instances:start", { ...payload, instanceId }),
@@ -241,13 +256,13 @@ const desktopApi = {
     executeAction: (actionId, params = {}, options = {}) => ipcRenderer.invoke("action:execute", { actionId, params, ...options }),
   },
   backups: {
-    list: (payload = {}) => ipcRenderer.invoke("backups:list", payload),
+    list: (payload = {}) => invokeAgentFeature("backups:list", payload),
     create: (payload = {}) => ipcRenderer.invoke("backups:create", payload),
     restore: (payload = {}) => ipcRenderer.invoke("backups:restore", payload),
     delete: (backupId, payload = {}) => ipcRenderer.invoke("backups:delete", { ...payload, backupId }),
     download: (backupId, payload = {}) => ipcRenderer.invoke("backups:download", { ...payload, backupId }),
     import: (payload = {}) => ipcRenderer.invoke("backups:import", payload),
-    listSchedules: (payload = {}) => ipcRenderer.invoke("backups:listSchedules", payload),
+    listSchedules: (payload = {}) => invokeAgentFeature("backups:listSchedules", payload),
     saveSchedule: (payload = {}) => ipcRenderer.invoke("backups:saveSchedule", payload),
     deleteSchedule: (instanceId, payload = {}) => ipcRenderer.invoke("backups:deleteSchedule", { ...payload, instanceId }),
   },

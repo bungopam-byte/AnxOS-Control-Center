@@ -11,6 +11,14 @@ let previousNetworkSample = null;
 const DISK_STATS_UNAVAILABLE = "DISK_STATS_UNAVAILABLE";
 const diskStatsWarningState = new Map();
 const DISK_STATS_WARNING_REPEAT_INTERVAL_MS = 5 * 60 * 1000;
+const WINDOWS_CPU_TEMP_UNAVAILABLE = "WINDOWS_CPU_TEMP_UNAVAILABLE";
+const WINDOWS_CPU_TEMP_PROVIDER_FAILED = "WINDOWS_CPU_TEMP_PROVIDER_FAILED";
+const WINDOWS_CPU_TEMP_INVALID = "WINDOWS_CPU_TEMP_INVALID";
+const CPU_TEMP_WARNING_REPEAT_INTERVAL_MS = 5 * 60 * 1000;
+const CPU_TEMP_CACHE_MS = 30 * 1000;
+const cpuTempWarningState = new Map();
+let cpuTemperatureCache = null;
+let cpuTemperatureExecFile = execFile;
 
 function execFile(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -92,6 +100,64 @@ function buildDiskUsage(total, free, mount) {
     used,
     free,
     percent: round((used / total) * 100),
+  };
+}
+
+function emitCpuTemperatureWarning(code, reason, details = {}) {
+  const key = `${code}:${process.platform}:${reason}`;
+  const now = Date.now();
+  const previous = cpuTempWarningState.get(key) || { count: 0, lastEmittedAt: 0 };
+  const next = { count: previous.count + 1, lastEmittedAt: previous.lastEmittedAt };
+  const shouldEmit = !previous.lastEmittedAt || now - previous.lastEmittedAt >= CPU_TEMP_WARNING_REPEAT_INTERVAL_MS;
+  if (shouldEmit) {
+    next.lastEmittedAt = now;
+    logger.warn("system-stats", "Agent CPU temperature unavailable.", {
+      code,
+      reason,
+      suppressedCount: Math.max(next.count - 1, 0),
+      platform: process.platform,
+      provider: details.provider || null,
+      sensor: details.sensor || null,
+      message: details.message || null,
+    }, { file: "agent", errorCode: code });
+    next.count = 0;
+  }
+  cpuTempWarningState.set(key, next);
+}
+
+function createTemperatureReading(value, metadata = {}) {
+  const number = Number(value);
+  const source = metadata.source || null;
+  const sensor = metadata.sensor || null;
+
+  if (!Number.isFinite(number) || number <= 0 || number > 125) {
+    return {
+      temperatureCelsius: null,
+      temperatureAvailable: false,
+      temperatureValid: false,
+      temperatureSource: source,
+      temperatureSensor: sensor,
+      temperatureReason: "invalid",
+    };
+  }
+
+  return {
+    temperatureCelsius: round(number),
+    temperatureAvailable: true,
+    temperatureValid: true,
+    temperatureSource: source,
+    temperatureSensor: sensor,
+  };
+}
+
+function createUnavailableTemperatureReading(reason, metadata = {}) {
+  return {
+    temperatureCelsius: null,
+    temperatureAvailable: false,
+    temperatureValid: false,
+    temperatureSource: metadata.source || null,
+    temperatureSensor: metadata.sensor || null,
+    temperatureReason: reason,
   };
 }
 
@@ -313,6 +379,136 @@ function getThermalZoneScore(label, zoneName) {
   return 0;
 }
 
+function normalizeSensorText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isRejectedTemperatureSensor(sensor = {}) {
+  const text = [
+    sensor.Name,
+    sensor.Identifier,
+    sensor.Parent,
+    sensor.SensorType,
+  ].map(normalizeSensorText).join(" ");
+  return /\b(gpu|graphics|video|ssd|hdd|disk|nvme|battery|mainboard|motherboard|ambient|acpi|thermal zone)\b/.test(text);
+}
+
+function scoreWindowsCpuTemperatureSensor(sensor = {}) {
+  const text = [
+    sensor.Name,
+    sensor.Identifier,
+    sensor.Parent,
+  ].map(normalizeSensorText).join(" ");
+
+  if (!/\b(cpu|processor|package|core)\b/.test(text)) {
+    return 0;
+  }
+
+  let score = 20;
+  if (/\b(cpu package|package|pkg)\b/.test(text)) score += 90;
+  if (/\b(cpu)\b/.test(text)) score += 40;
+  if (/\b(core)\b/.test(text)) score += 20;
+  if (/\bmax|average|avg\b/.test(text)) score += 5;
+  return score;
+}
+
+function normalizeWindowsSensorRows(stdout) {
+  if (!stdout || !String(stdout).trim()) {
+    return [];
+  }
+  const parsed = JSON.parse(stdout);
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+async function queryWindowsHardwareTemperatureNamespace(namespace) {
+  const script = [
+    `$ErrorActionPreference = 'Stop';`,
+    `Get-CimInstance -Namespace '${namespace}' -ClassName Sensor -Filter "SensorType='Temperature'"`,
+    `| Select-Object Name,Identifier,Parent,SensorType,Value`,
+    `| ConvertTo-Json -Compress`,
+  ].join(" ");
+  return cpuTemperatureExecFile("powershell.exe", [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    script,
+  ], { timeout: 5000, maxBuffer: 256 * 1024 });
+}
+
+async function readWindowsCpuTemperatureReading() {
+  const namespaces = ["root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor"];
+  let sawProvider = false;
+  let invalidSensorCount = 0;
+  const providerErrors = [];
+
+  for (const namespace of namespaces) {
+    const result = await queryWindowsHardwareTemperatureNamespace(namespace);
+    if (!result.ok) {
+      providerErrors.push(result.stderr.trim() || "provider unavailable");
+      continue;
+    }
+
+    sawProvider = true;
+    let rows = [];
+    try {
+      rows = normalizeWindowsSensorRows(result.stdout);
+    } catch (error) {
+      emitCpuTemperatureWarning(WINDOWS_CPU_TEMP_PROVIDER_FAILED, "windows_sensor_json_parse_failed", {
+        provider: namespace,
+        message: error?.message || String(error),
+      });
+      continue;
+    }
+
+    const candidates = rows
+      .filter((sensor) => normalizeSensorText(sensor?.SensorType) === "temperature")
+      .map((sensor) => ({
+        ...sensor,
+        numericValue: Number(sensor?.Value),
+        score: scoreWindowsCpuTemperatureSensor(sensor),
+      }))
+      .filter((sensor) => {
+        if (isRejectedTemperatureSensor(sensor) || sensor.score <= 0) {
+          return false;
+        }
+        if (!Number.isFinite(sensor.numericValue) || sensor.numericValue <= 0 || sensor.numericValue > 125) {
+          invalidSensorCount += 1;
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.score - a.score || b.numericValue - a.numericValue);
+
+    if (candidates[0]) {
+      return createTemperatureReading(candidates[0].numericValue, {
+        source: namespace,
+        sensor: candidates[0].Name || candidates[0].Identifier || "CPU temperature",
+      });
+    }
+  }
+
+  if (invalidSensorCount) {
+    emitCpuTemperatureWarning(WINDOWS_CPU_TEMP_INVALID, "windows_cpu_temperature_invalid", {
+      provider: sawProvider ? "hardware-monitor" : null,
+      message: `${invalidSensorCount} CPU-like temperature sensor value${invalidSensorCount === 1 ? "" : "s"} were invalid.`,
+    });
+    return createUnavailableTemperatureReading("invalid", { source: "windows-hardware-monitor" });
+  }
+
+  emitCpuTemperatureWarning(
+    sawProvider ? WINDOWS_CPU_TEMP_UNAVAILABLE : WINDOWS_CPU_TEMP_PROVIDER_FAILED,
+    sawProvider ? "windows_cpu_temperature_not_reported" : "windows_cpu_temperature_provider_unavailable",
+    {
+      provider: "LibreHardwareMonitor/OpenHardwareMonitor",
+      message: providerErrors.filter(Boolean).slice(0, 2).join("; ") || null,
+    },
+  );
+  return createUnavailableTemperatureReading(sawProvider ? "not_reported" : "provider_unavailable", {
+    source: "windows-hardware-monitor",
+  });
+}
+
 async function readThermalZone(zoneName) {
   const zonePath = path.join("/sys/class/thermal", zoneName);
 
@@ -341,8 +537,18 @@ async function readThermalZone(zoneName) {
 }
 
 async function getCpuTemperature() {
+  if (process.platform === "win32") {
+    const now = Date.now();
+    if (cpuTemperatureCache && now - cpuTemperatureCache.at < CPU_TEMP_CACHE_MS) {
+      return cpuTemperatureCache.reading;
+    }
+    const reading = await readWindowsCpuTemperatureReading();
+    cpuTemperatureCache = { at: now, reading };
+    return reading;
+  }
+
   if (process.platform !== "linux") {
-    return null;
+    return createUnavailableTemperatureReading("unsupported_platform", { source: process.platform });
   }
 
   try {
@@ -352,12 +558,15 @@ async function getCpuTemperature() {
       .filter(Boolean)
       .sort((a, b) => b.score - a.score || b.celsius - a.celsius);
 
-    return readings[0]?.celsius ?? null;
+    const best = readings[0] || null;
+    return best
+      ? createTemperatureReading(best.celsius, { source: "linux-sysfs", sensor: best.label || best.zone })
+      : createUnavailableTemperatureReading("not_reported", { source: "linux-sysfs" });
   } catch (error) {
     console.warn("[AnxOS Agent][Stats] CPU temperature unavailable.", {
       message: error?.message || String(error),
     });
-    return null;
+    return createUnavailableTemperatureReading("provider_failed", { source: "linux-sysfs" });
   }
 }
 
@@ -368,6 +577,7 @@ async function getSystemSummary() {
     getNetworkUsage(),
     getCpuTemperature(),
   ]);
+  const cpuTemperatureCelsius = cpuTemperature?.temperatureValid ? cpuTemperature.temperatureCelsius : null;
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
   const usedMemory = totalMemory - freeMemory;
@@ -383,9 +593,19 @@ async function getSystemSummary() {
       cores: cpus.length,
       usagePercent: getCpuUsagePercent(),
       loadAverage: os.loadavg(),
-      temperatureCelsius: cpuTemperature,
+      temperatureCelsius: cpuTemperatureCelsius,
+      temperatureAvailable: cpuTemperature?.temperatureAvailable === true,
+      temperatureValid: cpuTemperature?.temperatureValid === true,
+      temperatureSource: cpuTemperature?.temperatureSource || null,
+      temperatureSensor: cpuTemperature?.temperatureSensor || null,
+      temperatureReason: cpuTemperature?.temperatureReason || null,
     },
-    cpuTempC: cpuTemperature,
+    cpuTempC: cpuTemperatureCelsius,
+    temperatureAvailable: cpuTemperature?.temperatureAvailable === true,
+    temperatureValid: cpuTemperature?.temperatureValid === true,
+    temperatureSource: cpuTemperature?.temperatureSource || null,
+    temperatureSensor: cpuTemperature?.temperatureSensor || null,
+    temperatureReason: cpuTemperature?.temperatureReason || null,
     memory: {
       total: totalMemory,
       used: usedMemory,
@@ -404,11 +624,30 @@ module.exports = {
   getSystemSummary,
   _test: {
     DISK_STATS_UNAVAILABLE,
+    WINDOWS_CPU_TEMP_INVALID,
+    WINDOWS_CPU_TEMP_PROVIDER_FAILED,
+    WINDOWS_CPU_TEMP_UNAVAILABLE,
+    CPU_TEMP_CACHE_MS,
     diskStatsWarningState,
+    cpuTempWarningState,
     emitDiskStatsWarning,
+    emitCpuTemperatureWarning,
+    createTemperatureReading,
     getDiskMountPoint,
     getDiskUsage,
+    getCpuTemperature,
+    readWindowsCpuTemperatureReading,
     normalizeDiskPath,
     resolveDiskRoot,
+    scoreWindowsCpuTemperatureSensor,
+    isRejectedTemperatureSensor,
+    setCpuTemperatureExecFileForTest(fn) {
+      cpuTemperatureExecFile = fn || execFile;
+      cpuTemperatureCache = null;
+      cpuTempWarningState.clear();
+    },
+    resetCpuTemperatureCacheForTest() {
+      cpuTemperatureCache = null;
+    },
   },
 };

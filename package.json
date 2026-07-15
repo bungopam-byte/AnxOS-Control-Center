@@ -117,6 +117,7 @@
     "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "agent-control:sections:smoke": "node scripts/agent-control-sections-smoke.js",
     "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",
+    "windows-cpu-temperature:smoke": "node scripts/windows-cpu-temperature-smoke.js",
     "security:reset-password": "node scripts/reset-local-password.js",
     "icons:branding": "node scripts/generate-linux-icons.js"
   },

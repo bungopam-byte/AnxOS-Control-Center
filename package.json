@@ -57,6 +57,8 @@
     "node:startup-selection:smoke": "node scripts/startup-selection-smoke.js",
     "node:token-workflow:smoke": "node scripts/node-token-workflow-smoke.js",
     "node:agent-pairing:smoke": "node scripts/agent-pairing-workflow-smoke.js",
+    "node:remote-pairing-target:smoke": "node scripts/remote-pairing-target-smoke.js",
+    "node:expired-pairing-single-submit:smoke": "node scripts/expired-pairing-single-submit-smoke.js",
     "agent:terminal-free:smoke": "node scripts/agent-terminal-free-smoke.js",
     "ssh:command-bar:smoke": "node scripts/ssh-command-bar-submission-smoke.js",
     "ssh:interactive-input:smoke": "node scripts/ssh-interactive-input-smoke.js",

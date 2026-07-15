@@ -749,18 +749,107 @@ async function pairLocalAgentSecurely(options = {}) {
   };
 }
 
-async function startPairingSession() {
-  const config = readConfig();
-  if (!(await getStatus())?.running) {
-    await start();
+function normalizePairingTargetUrl(value) {
+  try {
+    const url = new URL(String(value || "").trim());
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname) return "";
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "";
   }
-  const response = await fetch(`${getLocalAgentUrl(config)}/api/v1/pairing/start`, { method: "POST" });
+}
+
+function getPairingSessionTarget(options = {}) {
+  const config = readConfig();
+  const requestedNodeId = String(options.nodeId || "").trim();
+  const requestedAgentUrl = normalizePairingTargetUrl(options.agentUrl || "");
+  if (requestedNodeId === "application-host") {
+    return {
+      kind: "windows-local-agent",
+      nodeId: "application-host",
+      name: "Windows Local Agent",
+      agentUrl: getLocalAgentUrl(config),
+      local: true,
+    };
+  }
+  if (requestedNodeId && requestedNodeId !== "application-host") {
+    const node = getNode(requestedNodeId);
+    if (node.kind !== "agent") {
+      throw Object.assign(new Error("Selected pairing target is not an Agent node."), { code: "NODE_NOT_AGENT" });
+    }
+    const agentUrl = normalizePairingTargetUrl(node.agentUrl || node.baseUrl);
+    if (!agentUrl) throw Object.assign(new Error("Selected Agent node does not have a valid Agent URL."), { code: "INVALID_NODE_URL" });
+    return {
+      kind: node.localAgent ? "local-node" : "remote-node",
+      nodeId: node.id,
+      name: node.displayName || node.name || node.id,
+      agentUrl,
+      local: node.localAgent === true,
+    };
+  }
+  if (requestedAgentUrl) {
+    return {
+      kind: "explicit-agent",
+      nodeId: null,
+      name: options.name || "Remote Agent",
+      agentUrl: requestedAgentUrl,
+      local: false,
+    };
+  }
+  return {
+    kind: "windows-local-agent",
+    nodeId: "application-host",
+    name: "Windows Local Agent",
+    agentUrl: getLocalAgentUrl(config),
+    local: true,
+  };
+}
+
+async function startPairingSession(options = {}) {
+  const target = getPairingSessionTarget(options);
+  if (target.kind === "windows-local-agent") {
+    if (!(await getStatus())?.running) {
+      await start();
+    }
+  }
+  let response;
+  try {
+    response = await fetch(`${target.agentUrl}/api/v1/pairing/start`, { method: "POST" });
+  } catch (error) {
+    throw Object.assign(new Error(`Remote Agent at ${target.agentUrl} is unreachable. Pairing code generation was not redirected to the Windows Local Agent.`), {
+      code: "PAIRING_AGENT_UNREACHABLE",
+      details: {
+        agentUrl: target.agentUrl,
+        nodeId: target.nodeId,
+        targetName: target.name,
+        reachable: false,
+        cause: error?.code || error?.message || "fetch failed",
+      },
+    });
+  }
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.pairingCode) {
-    throw Object.assign(new Error(payload?.error?.message || "Agent pairing setup could not start."), { code: payload?.error?.code || "PAIRING_START_FAILED" });
+    const unsupported = response.status === 404 || response.status === 405;
+    throw Object.assign(new Error(payload?.error?.message || (unsupported ? `Pairing endpoint is not supported by the Agent at ${target.agentUrl}.` : `Agent pairing setup could not start at ${target.agentUrl}.`)), {
+      code: payload?.error?.code || "PAIRING_START_FAILED",
+      details: {
+        agentUrl: target.agentUrl,
+        nodeId: target.nodeId,
+        targetName: target.name,
+        reachable: response.ok,
+        status: response.status,
+      },
+    });
   }
+  const returnedAgentUrl = normalizePairingTargetUrl(payload.agentUrl || target.agentUrl) || target.agentUrl;
   diagnostics.log("info", "agent-control", "pairing-session", "Temporary Agent pairing session started", {
-    agentUrl: payload.agentUrl || getLocalAgentUrl(config),
+    agentUrl: returnedAgentUrl,
+    requestedAgentUrl: target.agentUrl,
+    nodeId: target.nodeId,
+    targetName: target.name,
     expiresAt: payload.expiresAt || null,
   }, { file: "service-manager" });
   return {
@@ -768,7 +857,12 @@ async function startPairingSession() {
     pairingCode: payload.pairingCode,
     displayCode: payload.displayCode || null,
     expiresAt: payload.expiresAt || null,
-    agentUrl: payload.agentUrl || getLocalAgentUrl(config),
+    agentUrl: returnedAgentUrl,
+    requestedAgentUrl: target.agentUrl,
+    nodeId: target.nodeId,
+    targetName: target.name,
+    targetKind: target.kind,
+    local: target.local,
     identity: payload.identity || null,
   };
 }

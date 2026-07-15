@@ -486,6 +486,8 @@ const agentPairingStatus = document.querySelector("[data-agent-pairing-status]")
 const agentPairingCode = document.querySelector("strong[data-agent-pairing-code]");
 const agentPairingExpires = document.querySelector("[data-agent-pairing-expires]");
 const agentPairingUrl = document.querySelector("[data-agent-pairing-url]");
+const agentPairingTargetName = document.querySelector("[data-agent-pairing-target-name]");
+const agentPairingTargetUrl = document.querySelector("[data-agent-pairing-target-url]");
 const agentGeneratedTokenInput = document.querySelector("[data-agent-generated-token]");
 const agentGeneratedTokenNote = document.querySelector("[data-agent-generated-token-note]");
 const agentControlSectionButtons = document.querySelectorAll("[data-agent-control-section-target]");
@@ -496,6 +498,7 @@ let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentControlLastRuntimeSnapshot = null;
 let activeAgentPairingCode = "";
+let activeAgentPairingTarget = null;
 let activeAgentGeneratedToken = "";
 const remoteDiagnosticsInFlight = new Set();
 const remoteDiagnosticsLastCapturedAt = new Map();
@@ -709,6 +712,9 @@ let nodeModalCleanup = null;
 let nodeDetailsCleanup = null;
 let nodeEditId = null;
 let nodeFormBusy = false;
+let nodePairingSubmitInFlight = false;
+let nodePairingSubmissionSerial = 0;
+let nodePairingLastSubmittedCode = "";
 let nodeDetailsId = null;
 let nodeRefreshTimer = null;
 let nodePickerActiveIndex = 0;
@@ -3848,14 +3854,30 @@ function renderLocalAgentInstallerSteps(steps = []) {
   });
 }
 
-function renderAgentPairingSetup(session = null) {
-  activeAgentPairingCode = session?.pairingCode || "";
+function renderAgentPairingSetup(session = null, options = {}) {
+  if (session?.pairingCode || options.clearCode) {
+    activeAgentPairingCode = session?.pairingCode || "";
+  }
+  activeAgentPairingTarget = session ? {
+    nodeId: session.nodeId || null,
+    name: session.targetName || (session.local ? "Windows Local Agent" : "Remote Agent"),
+    agentUrl: session.requestedAgentUrl || session.agentUrl || null,
+    returnedAgentUrl: session.agentUrl || null,
+    local: session.local === true,
+  } : activeAgentPairingTarget;
+  const target = activeAgentPairingTarget || getAgentPairingTargetPayload();
+  if (agentPairingTargetName) {
+    agentPairingTargetName.textContent = target.name || "Windows Local Agent";
+  }
+  if (agentPairingTargetUrl) {
+    agentPairingTargetUrl.textContent = target.agentUrl || "http://127.0.0.1:47131";
+  }
   if (agentPairingStatus) {
-    agentPairingStatus.textContent = session?.pairingCode ? "Waiting for Control Center" : "Not paired";
-    agentPairingStatus.className = `status-pill ${session?.pairingCode ? "status-pill--warning" : "status-pill--planned"}`;
+    agentPairingStatus.textContent = activeAgentPairingCode ? "Waiting for Control Center" : "Not paired";
+    agentPairingStatus.className = `status-pill ${activeAgentPairingCode ? "status-pill--warning" : "status-pill--planned"}`;
   }
   if (agentPairingCode) {
-    agentPairingCode.textContent = session?.displayCode || session?.pairingCode || "Not generated";
+    agentPairingCode.textContent = session?.displayCode || activeAgentPairingCode || "Not generated";
   }
   if (agentPairingExpires) {
     agentPairingExpires.textContent = session?.expiresAt ? formatDateTime(session.expiresAt) : "Unavailable";
@@ -3864,6 +3886,50 @@ function renderAgentPairingSetup(session = null) {
     agentPairingUrl.textContent = session?.agentUrl || "Unavailable";
   }
   document.querySelector('[data-agent-control-action="copyPairingCode"]')?.toggleAttribute("disabled", !activeAgentPairingCode);
+}
+
+function getAgentPairingTargetPayload() {
+  const selected = getSelectedNode();
+  if (selected?.kind === "agent") {
+    return {
+      nodeId: selected.id,
+      name: selected.displayName || selected.name || selected.id || "Remote Agent",
+      agentUrl: selected.agentUrl || selected.baseUrl || "",
+      local: selected.localAgent === true || selected.local === true,
+    };
+  }
+  const localUrl = getAgentControlOverviewTarget()?.agentUrl || "http://127.0.0.1:47131";
+  return {
+    nodeId: "application-host",
+    name: "Windows Local Agent",
+    agentUrl: localUrl,
+    local: true,
+  };
+}
+
+function syncAgentPairingTargetForSelection() {
+  const target = getAgentPairingTargetPayload();
+  const currentUrl = activeAgentPairingTarget?.agentUrl || "";
+  const currentNodeId = activeAgentPairingTarget?.nodeId || "";
+  if (activeAgentPairingCode && (currentUrl !== target.agentUrl || currentNodeId !== target.nodeId)) {
+    activeAgentPairingTarget = target;
+    renderAgentPairingSetup(null, { clearCode: true });
+    return;
+  }
+  activeAgentPairingTarget = target;
+  renderAgentPairingSetup(null);
+}
+
+function getWrongPairingTargetMessage(session = {}) {
+  const expected = session.requestedAgentUrl || activeAgentPairingTarget?.agentUrl || getAgentPairingTargetPayload().agentUrl || "";
+  const actual = session.agentUrl || "";
+  const expectedName = session.targetName || activeAgentPairingTarget?.name || getAgentPairingTargetPayload().name || "the selected Agent";
+  if (!expected || !actual || expected === actual) return "";
+  const actualUrl = (() => {
+    try { return new URL(actual); } catch { return null; }
+  })();
+  const actualName = actualUrl && ["127.0.0.1", "localhost"].includes(actualUrl.hostname) ? "Windows Local Agent" : "another Agent";
+  return `This code belongs to the ${actualName} at ${actualUrl?.host || actual}. Generate a code from ${expectedName} at ${expected.replace(/^https?:\/\//, "")} instead.`;
 }
 
 function renderAgentGeneratedTokenControls() {
@@ -3961,6 +4027,7 @@ function renderAgentControlState(payload = agentControlState) {
   const local = getAgentControlOverviewTarget(payload);
   if (!local) return;
   agentControlState = payload;
+  syncAgentPairingTargetForSelection();
   renderAgentGeneratedTokenControls();
   const { runtime, stale } = getAgentRuntimeForDisplay(local);
   const running = runtime?.serviceState === "running" || isAgentTargetRunning(local);
@@ -5272,7 +5339,15 @@ async function runAgentControlAction(action) {
     }
     else if (action === "startPairingSession") {
       if (typeof api.startPairingSession !== "function") throw new Error("Agent pairing setup is unavailable in this build.");
-      const session = await api.startPairingSession();
+      const target = getAgentPairingTargetPayload();
+      activeAgentPairingTarget = target;
+      renderAgentPairingSetup(null, { clearCode: true });
+      const session = await api.startPairingSession(target);
+      const wrongTargetMessage = getWrongPairingTargetMessage(session);
+      if (wrongTargetMessage) {
+        renderAgentPairingSetup(null, { clearCode: true });
+        throw new Error(wrongTargetMessage);
+      }
       renderAgentPairingSetup(session);
       showToast("Pairing code generated.", "success");
     }
@@ -27613,10 +27688,18 @@ function setNodeFormBusy(isBusy, label = "") {
   nodeModal?.querySelectorAll('[data-node-action="save"], [data-node-action="test-form"], [data-node-action="delete"], [data-node-action="generate-token"], [data-node-action="pair-code"], [data-node-action="paste-pairing-code"], [data-node-action="restart-pairing"], [data-node-action="pairing-retry-help"], [data-node-action="cancel-pairing"]').forEach((button) => {
     button.disabled = nodeFormBusy;
   });
+  updateNodePairingControls();
   updateNodeTokenControls();
   if (nodeFormStatus) {
     nodeFormStatus.hidden = !label;
     nodeFormStatus.textContent = label || "";
+  }
+}
+
+function updateNodePairingControls() {
+  const pairButton = nodeModal?.querySelector('[data-node-action="pair-code"]');
+  if (pairButton) {
+    pairButton.disabled = nodeFormBusy || nodePairingSubmitInFlight || !String(nodePairingCodeInput?.value || "").trim();
   }
 }
 
@@ -27646,6 +27729,34 @@ function setNodePairingRetryVisible(visible) {
 function isExpiredPairingError(error, message = "") {
   const combined = `${error?.code || ""} ${error?.statusCode || ""} ${message || error?.message || ""}`;
   return /PAIRING_EXPIRED|PAIRING_REJECTED|pairing session.*(expired|no longer|unavailable)|session is no longer available/i.test(combined);
+}
+
+function getNodePairingCodeAgentUrl(code = "") {
+  const [, encoded] = String(code || "").trim().split(".", 2);
+  if (!encoded) return "";
+  try {
+    const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = `${base64}${"=".repeat((4 - (base64.length % 4)) % 4)}`;
+    const payload = JSON.parse(atob(padded));
+    return String(payload?.agentUrl || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function getNodePairingMismatchMessage(pairingUrl = "", expectedUrl = "", expectedName = "selected Agent") {
+  if (!pairingUrl || !expectedUrl || pairingUrl === expectedUrl) return "";
+  let pairingHost = pairingUrl;
+  try {
+    const parsed = new URL(pairingUrl);
+    pairingHost = parsed.host;
+  } catch {}
+  let expectedHost = expectedUrl;
+  try {
+    expectedHost = new URL(expectedUrl).host;
+  } catch {}
+  const isLocalhost = /^127\.0\.0\.1(?::|$)|^localhost(?::|$)/i.test(pairingHost);
+  return `This code belongs to the ${isLocalhost ? "Windows Local Agent" : "Agent"} at ${pairingHost}. Generate a code from ${expectedName} at ${expectedHost} instead.`;
 }
 
 function validateNodeFormPayload(payload = {}) {
@@ -27737,6 +27848,8 @@ function setNodeModalVisible(isVisible, node = null) {
   nodeModal.hidden = !isVisible;
   if (isVisible) {
     nodeEditId = node?.kind === "agent" ? node.id : null;
+    nodePairingSubmitInFlight = false;
+    nodePairingLastSubmittedCode = "";
     setNodeFormErrors({});
     setNodePairingError("");
     setNodePairingRetryVisible(false);
@@ -27772,6 +27885,9 @@ function setNodeModalVisible(isVisible, node = null) {
     }
     updateNodeTokenControls();
   } else if (nodeModalCleanup) {
+    nodePairingSubmitInFlight = false;
+    nodePairingLastSubmittedCode = "";
+    nodePairingSubmissionSerial += 1;
     nodeModalCleanup();
     nodeModalCleanup = null;
     nodeEditId = null;
@@ -28317,9 +28433,9 @@ async function testNodeFormConnection() {
   }
 }
 
-async function pairNodeFromSettings() {
+async function pairNodeFromSettings(options = {}) {
   const desktopApiState = getDesktopApiState();
-  if (!desktopApiState.hasNodes || nodeFormBusy || typeof desktopApiState.api.nodes.pair !== "function") {
+  if (!desktopApiState.hasNodes || nodeFormBusy || nodePairingSubmitInFlight || typeof desktopApiState.api.nodes.pair !== "function") {
     return;
   }
   const pairingCode = String(nodePairingCodeInput?.value || "").trim();
@@ -28328,11 +28444,32 @@ async function pairNodeFromSettings() {
     showToast("Pairing code is required.", "warning");
     return;
   }
+  if (!options.confirmUrlChange && pairingCode === nodePairingLastSubmittedCode) {
+    setNodePairingError("Generate or paste a new pairing code before trying again.");
+    setNodePairingRetryVisible(true);
+    showToast("Generate a new pairing code before retrying.", "warning");
+    return;
+  }
+  const expectedNode = nodeEditId ? (nodesState.nodes || []).find((node) => node.id === nodeEditId) : null;
+  const pairingAgentUrl = getNodePairingCodeAgentUrl(pairingCode);
+  const expectedAgentUrl = expectedNode?.agentUrl || expectedNode?.baseUrl || "";
+  const mismatchMessage = getNodePairingMismatchMessage(pairingAgentUrl, expectedAgentUrl, expectedNode?.displayName || expectedNode?.name || "the selected Agent");
+  if (!options.confirmUrlChange && mismatchMessage) {
+    setNodePairingError(mismatchMessage);
+    setNodePairingRetryVisible(true);
+    showToast(mismatchMessage, "error");
+    return;
+  }
+  const submissionSerial = ++nodePairingSubmissionSerial;
+  nodePairingSubmitInFlight = true;
+  nodePairingLastSubmittedCode = pairingCode;
   try {
     setNodePairingError("");
     setNodeFormBusy(true, "Pairing Agent and securing connection...");
-    const result = await desktopApiState.api.nodes.pair({ pairingCode, id: nodeEditId || null });
+    const result = await desktopApiState.api.nodes.pair({ pairingCode, id: nodeEditId || null, confirmUrlChange: options.confirmUrlChange === true });
+    if (submissionSerial !== nodePairingSubmissionSerial) return;
     if (nodePairingCodeInput) nodePairingCodeInput.value = "";
+    nodePairingLastSubmittedCode = "";
     setNodeModalVisible(false);
     await refreshNodes();
     if (result?.selectedNodeId) {
@@ -28342,20 +28479,42 @@ async function pairNodeFromSettings() {
     }
     showToast(`${result?.node?.displayName || "Agent"} paired successfully.`, "success");
   } catch (error) {
+    if (submissionSerial !== nodePairingSubmissionSerial) return;
     const message = normalizeIpcErrorMessage(error, "Agent pairing failed.");
     if (isExpiredPairingError(error, message)) {
-      const retryMessage = "Pairing session expired. Generate a new pairing code on the Agent, then paste it here.";
+      const retryMessage = "Pairing code expired. Generate a new code, then paste it here.";
       if (nodePairingCodeInput) nodePairingCodeInput.value = "";
+      nodePairingLastSubmittedCode = "";
       setNodePairingError(retryMessage);
       setNodePairingRetryVisible(true);
       setNodeFormBusy(false, retryMessage);
-      showToast("Pairing session expired. Generate a new pairing code and try again.", "warning");
+      showToast("Pairing code expired.", "warning");
       return;
+    }
+    if (getAgentErrorCode(error) === "NODE_REPAIR_URL_CONFIRMATION_REQUIRED") {
+      const details = error?.details || {};
+      const currentAgentUrl = details.currentAgentUrl || expectedAgentUrl || "Current Agent URL unavailable";
+      const nextAgentUrl = details.pairingAgentUrl || pairingAgentUrl || "New Agent URL unavailable";
+      const confirmed = await createSecurityConfirmation({
+        title: "Confirm Agent URL change",
+        message: `This will repair ${expectedNode?.displayName || "the selected node"} using a different Agent address.\n\nOld URL: ${currentAgentUrl}\nNew URL: ${nextAgentUrl}`,
+        confirmLabel: "Confirm URL Change",
+      });
+      if (confirmed) {
+        nodePairingSubmitInFlight = false;
+        setNodeFormBusy(false, "Confirming Agent URL change...");
+        await pairNodeFromSettings({ confirmUrlChange: true });
+        return;
+      }
     }
     setNodePairingError(message);
     setNodePairingRetryVisible(false);
     setNodeFormBusy(false, message);
     showToast(message, "error");
+  } finally {
+    if (submissionSerial === nodePairingSubmissionSerial) {
+      nodePairingSubmitInFlight = false;
+    }
   }
 }
 
@@ -28364,6 +28523,7 @@ function restartNodePairingEntry() {
     nodePairingCodeInput.value = "";
     nodePairingCodeInput.focus();
   }
+  nodePairingLastSubmittedCode = "";
   setNodePairingError("Paste the new temporary pairing code displayed by Agent setup.");
   setNodePairingRetryVisible(false);
   setNodeFormBusy(false, "Restart pairing from Agent setup, then paste the new code here.");
@@ -28380,6 +28540,7 @@ async function pasteNodePairingCode() {
     const value = await navigator.clipboard.readText();
     if (nodePairingCodeInput) {
       nodePairingCodeInput.value = String(value || "").trim();
+      nodePairingLastSubmittedCode = "";
       setNodePairingError("");
       setNodePairingRetryVisible(false);
     }
@@ -32216,6 +32377,11 @@ document.querySelectorAll('[data-node-action="close-details"]').forEach((button)
 getNodeTokenInput()?.addEventListener("input", (event) => {
   event.currentTarget.dataset.unsavedCredential = String(event.currentTarget.value || "").trim() ? "true" : "false";
   updateNodeTokenControls();
+});
+nodePairingCodeInput?.addEventListener("input", () => {
+  nodePairingLastSubmittedCode = "";
+  setNodePairingRetryVisible(false);
+  updateNodePairingControls();
 });
 nodeModal?.addEventListener("click", (event) => {
   if (event.target === nodeModal) setNodeModalVisible(false);

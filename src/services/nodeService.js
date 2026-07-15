@@ -982,6 +982,17 @@ async function pairNodeFromCode(payload = {}) {
   const agentUrl = normalizeUrl(pairing.agentUrl);
   const state = readNodeState();
   const existingById = payload.nodeId || payload.id ? state.nodes.find((node) => node.id === (payload.nodeId || payload.id)) : null;
+  const existingUrl = existingById ? normalizeUrl(existingById.baseUrl || existingById.agentUrl) : null;
+  if (existingById && existingUrl !== agentUrl && payload.confirmUrlChange !== true) {
+    throw Object.assign(new Error("This pairing code is for a different Agent address. Confirm the URL change before re-pairing this existing node."), {
+      code: "NODE_REPAIR_URL_CONFIRMATION_REQUIRED",
+      details: {
+        nodeId: existingById.id,
+        currentAgentUrl: existingUrl,
+        pairingAgentUrl: agentUrl,
+      },
+    });
+  }
   const permanentToken = generateAgentToken();
   const paired = await postPairingComplete(agentUrl, {
     pairingCode: pairing.pairingCode,
@@ -999,18 +1010,6 @@ async function pairNodeFromCode(payload = {}) {
   });
   const identity = health.identity || paired.identity || {};
   if (!identity?.deviceId) throw Object.assign(new Error("Paired Agent did not provide a stable device identity."), { code: "AGENT_IDENTITY_MISSING" });
-  const existingIdentityMatches = agentIdentityMatchesNode(existingById, identity);
-  const existingUrl = existingById ? normalizeUrl(existingById.baseUrl || existingById.agentUrl) : null;
-  if (existingById && existingUrl !== agentUrl && !existingIdentityMatches && payload.confirmUrlChange !== true) {
-    throw Object.assign(new Error("This pairing code is for a different Agent address. Confirm the URL change before re-pairing this existing node."), {
-      code: "NODE_REPAIR_URL_CONFIRMATION_REQUIRED",
-      details: {
-        nodeId: existingById.id,
-        currentAgentUrl: existingUrl,
-        pairingAgentUrl: agentUrl,
-      },
-    });
-  }
   const existing = existingById || state.nodes.find((node) => node.agentIdentity?.deviceId === identity.deviceId || normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl);
   const displayName = String(payload.displayName || existing?.displayName || identity.hostname || "Paired Agent").trim().slice(0, 80) || "Paired Agent";
   const node = normalizeAgentNode({

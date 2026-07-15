@@ -18,9 +18,8 @@ function parseJsonBody(request) {
 
 function getPublicAgentUrl(request, config = {}) {
   const hostHeader = request.headers.host || `${config.host || "127.0.0.1"}:${config.port || 47131}`;
-  const hostname = String(config.host || "").trim();
   const scheme = request.socket?.encrypted ? "https" : "http";
-  return `${scheme}://${hostname && hostname !== "0.0.0.0" ? `${hostname}:${config.port || 47131}` : hostHeader}`;
+  return `${scheme}://${hostHeader}`;
 }
 
 function isExpired(session = activeSession) {

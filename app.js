@@ -473,6 +473,8 @@ const diagnosticsHealthList = document.querySelector("[data-diagnostics-health-l
 const diagnosticsIssueList = document.querySelector("[data-diagnostics-issue-list]");
 const diagnosticsIssueCount = document.querySelector("[data-diagnostics-issue-count]");
 const diagnosticsSupportCategories = document.querySelector("[data-diagnostics-support-categories]");
+const securitySectionButtons = document.querySelectorAll("[data-security-section-target]");
+const securitySections = document.querySelectorAll("[data-security-section]");
 const agentSetupPanel = document.querySelector("[data-agent-setup-panel]");
 const agentSetupMode = document.querySelector('[data-agent-setup="mode"]');
 const agentSetupAutoStart = document.querySelector('[data-agent-setup="autoStart"]');
@@ -29244,6 +29246,38 @@ function setActiveAgentControlSection(section = activeAgentControlSection || "st
   });
 }
 
+const SECURITY_SECTION_ALIASES = {
+  activations: "devices",
+  rotation: "token",
+  revocations: "sessions",
+  diagnostics: "status",
+};
+
+let activeSecuritySection = (() => {
+  try { return window.sessionStorage.getItem("anxos-security-section") || "status"; } catch { return "status"; }
+})();
+
+function normalizeSecuritySection(section = "status") {
+  const requested = SECURITY_SECTION_ALIASES[section] || section || "status";
+  return Array.from(securitySections).some((panel) => panel.dataset.securitySection === requested) ? requested : "status";
+}
+
+function setActiveSecuritySection(section = activeSecuritySection || "status") {
+  const requested = section || "status";
+  const normalized = normalizeSecuritySection(requested);
+  activeSecuritySection = requested;
+  try { window.sessionStorage.setItem("anxos-security-section", requested); } catch {}
+  securitySections.forEach((panel) => {
+    panel.hidden = panel.dataset.securitySection !== normalized;
+  });
+  securitySectionButtons.forEach((button) => {
+    const target = button.dataset.securitySectionTarget || "status";
+    const active = target === requested || (target !== normalized && SECURITY_SECTION_ALIASES[target] === normalized && requested === target);
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+}
+
 function isSettingKeyAuthorized(key) {
   const ownerOnly = settingsPermissionState?.settings?.ownerOnly || [];
   return !ownerOnly.includes(key) || settingsPermissionState?.owner === true;
@@ -31896,6 +31930,11 @@ document.querySelector('[data-security-action="logout-all-sessions"]')?.addEvent
 });
 document.querySelector('[data-security-action="enable-remote-control"]')?.addEventListener("click", showRemoteControlSetup);
 document.querySelector('[data-page="security"]')?.addEventListener("click", async (event) => {
+  const sectionButton = event.target.closest("[data-security-section-target]");
+  if (sectionButton) {
+    setActiveSecuritySection(sectionButton.dataset.securitySectionTarget || "status");
+    return;
+  }
   const recommendationButton = event.target.closest("[data-security-recommendation]");
   if (recommendationButton) {
     await handleSecurityRecommendation(recommendationButton.dataset.securityRecommendation || "");
@@ -32004,6 +32043,7 @@ document.querySelector('[data-page="security"]')?.addEventListener("click", asyn
     renderSecurityEvents();
   }
 });
+setActiveSecuritySection(activeSecuritySection);
 accountButtons.forEach((button) => {
   button.addEventListener("click", async () => {
     const action = button.dataset.accountAction;

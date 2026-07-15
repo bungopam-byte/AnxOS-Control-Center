@@ -2954,8 +2954,47 @@
             </div>
           </header>
 
-          <div class="settings-shell settings-shell--security-control">
-            <section class="settings-section settings-section--account">
+          <div class="settings-workspace security-workspace" data-security-workspace>
+            <aside class="settings-nav" aria-label="Security sections">
+              <nav class="settings-category-list">
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Overview</p>
+                  <button type="button" data-security-section-target="status">Security Status</button>
+                  <button type="button" data-security-section-target="recommendations">Recommendations</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Account</p>
+                  <button type="button" data-security-section-target="account">AnxOS Account</button>
+                  <button type="button" data-security-section-target="protection">Account Protection</button>
+                  <button type="button" data-security-section-target="sessions">Sessions</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Access Control</p>
+                  <button type="button" data-security-section-target="permissions">Roles & Permissions</button>
+                  <button type="button" data-security-section-target="remote">Remote Access</button>
+                  <button type="button" data-security-section-target="owner">Owner Authorization</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Devices</p>
+                  <button type="button" data-security-section-target="devices">Trusted Devices</button>
+                  <button type="button" data-security-section-target="activations">Device Activations</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Credentials</p>
+                  <button type="button" data-security-section-target="token">Agent Token</button>
+                  <button type="button" data-security-section-target="rotation">Token Rotation</button>
+                  <button type="button" data-security-section-target="revocations">Revocations</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Advanced</p>
+                  <button type="button" data-security-section-target="audit">Audit Log</button>
+                  <button type="button" data-security-section-target="diagnostics">Security Diagnostics</button>
+                  <button type="button" data-security-section-target="developer">Developer</button>
+                </div>
+              </nav>
+            </aside>
+          <div class="settings-shell settings-shell--security-control" data-security-section-shell>
+            <section class="settings-section settings-section--account" data-security-section="account">
               <div class="settings-section__header">
                 <div>
                   <h2>AnxOS Account</h2>
@@ -3024,7 +3063,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-overview">
+            <section class="settings-section settings-section--security-overview" data-security-section="status">
               <div class="settings-section__header">
                 <div>
                   <h2>Security Overview</h2>
@@ -3043,7 +3082,7 @@
               <p class="settings-note" data-security-last-event>Last event: Loading</p>
             </section>
 
-            <section class="settings-section settings-section--security-recommendations">
+            <section class="settings-section settings-section--security-recommendations" data-security-section="recommendations">
               <div class="settings-section__header">
                 <div>
                   <h2>Security Recommendations</h2>
@@ -3055,7 +3094,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-account">
+            <section class="settings-section settings-section--security-account" data-security-section="protection">
               <div class="settings-section__header">
                 <div>
                   <h2>Account Protection</h2>
@@ -3072,7 +3111,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-permissions">
+            <section class="settings-section settings-section--security-permissions" data-security-section="permissions">
               <div class="settings-section__header">
                 <div>
                   <h2>Roles and Permissions</h2>
@@ -3084,7 +3123,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security">
+            <section class="settings-section settings-section--security" data-security-section="owner">
               <div class="settings-section__header">
                 <div>
                   <h2>Security</h2>
@@ -3111,7 +3150,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-sessions">
+            <section class="settings-section settings-section--security-sessions" data-security-section="sessions">
               <div class="settings-section__header">
                 <div>
                   <h2>Active Sessions</h2>
@@ -3137,7 +3176,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-devices">
+            <section class="settings-section settings-section--security-devices" data-security-section="devices">
               <div class="settings-section__header">
                 <div>
                   <h2>Trusted Devices</h2>
@@ -3149,7 +3188,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-remote">
+            <section class="settings-section settings-section--security-remote" data-security-section="remote">
               <div class="settings-section__header">
                 <div>
                   <h2>Remote Access</h2>
@@ -3183,7 +3222,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-token">
+            <section class="settings-section settings-section--security-token" data-security-section="token">
               <div class="settings-section__header">
                 <div>
                   <h2>Agent Token Management</h2>
@@ -3210,7 +3249,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-auth">
+            <section class="settings-section settings-section--security-auth" data-security-section="account">
               <div class="settings-section__header">
                 <div>
                   <h2>Authentication Security</h2>
@@ -3242,7 +3281,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-expiration">
+            <section class="settings-section settings-section--security-expiration" data-security-section="sessions">
               <div class="settings-section__header">
                 <div>
                   <h2>Automatic Session Expiration</h2>
@@ -3274,7 +3313,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-events">
+            <section class="settings-section settings-section--security-events" data-security-section="audit">
               <div class="settings-section__header">
                 <div>
                   <h2>Security Event Log</h2>
@@ -3301,7 +3340,7 @@
               </div>
             </section>
 
-            <section class="settings-section settings-section--security-danger">
+            <section class="settings-section settings-section--security-danger" data-security-section="developer">
               <div class="settings-section__header">
                 <div>
                   <h2>Danger Zone</h2>
@@ -3319,6 +3358,7 @@
               </div>
               <p class="settings-note">Type <strong>SECURE ANXOS</strong> in the confirmation dialog for emergency actions.</p>
             </section>
+          </div>
           </div>
         </section>
 

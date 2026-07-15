@@ -20649,6 +20649,12 @@ async function refreshPlayitStatus() {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
+    if (snapshot?.ok === false && snapshot.error) {
+      const error = new Error(snapshot.error.message || "Public Access status could not be refreshed.");
+      error.code = snapshot.error.code;
+      error.details = snapshot.error.details || null;
+      throw error;
+    }
     if (desktopApiState.hasPublicAccess) {
       renderPublicAccessSnapshot(snapshot);
     } else {

@@ -54,6 +54,7 @@
     "synchronized-final:smoke": "node scripts/synchronized-final-regression-smoke.js",
     "live-regressions:smoke": "node scripts/live-routing-regression-smoke.js",
     "agent-errors:smoke": "node scripts/agent-error-category-smoke.js",
+    "public-access:ipc-noise:smoke": "node scripts/public-access-ipc-noise-smoke.js",
     "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
     "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
     "node:compat-cleanup:smoke": "node scripts/node-compat-cleanup-smoke.js",

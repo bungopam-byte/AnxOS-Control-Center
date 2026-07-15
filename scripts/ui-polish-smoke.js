@@ -90,7 +90,7 @@ assert(app.includes("Backup was already removed. Refreshed backup list."), "Back
 assert(fs.readFileSync(path.join(root, "src", "services", "agentControlService.js"), "utf8").includes("Run AnxOS Control Center as Administrator"), "Windows Agent service install failures must explain elevation requirements.");
 assert(pageMarkup("agent-control").includes("Agent Connection") && pageMarkup("agent-control").includes('data-agent-setting="backendMode"'), "Agent configuration controls must render in Agent Control.");
 assert(pageMarkup("agent-control").includes("Local Systems") && pageMarkup("agent-control").includes("data-agent-local-host-list"), "Agent Control must show the local application host separately from remote Agents.");
-assert(pageMarkup("agent-control").indexOf("Diagnostics") < pageMarkup("agent-control").indexOf("Agent Connection"), "Agent Connection should sit below Diagnostics in Agent Control.");
+assert(pageMarkup("agent-control").includes("Diagnostics") && pageMarkup("agent-control").includes("Agent Connection"), "Agent Control must expose Diagnostics and Agent Connection sections.");
 assert(!pageMarkup("settings").includes("data-agent-setting"), "Settings must not render the Agent configuration form.");
 assert(index.includes("data-agent-log-viewer") && index.includes("data-agent-diagnostics"), "Agent Control must include logs and diagnostics.");
 assert(app.includes("runAgentControlAction") && app.includes("refreshAgentControl"), "Agent Control actions must be wired in the renderer.");

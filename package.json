@@ -114,6 +114,7 @@
     "diagnostics:disk-stats:smoke": "node scripts/diagnostic-disk-stats-classification-smoke.js",
     "versioning:smoke": "node scripts/versioning-smoke.js",
     "notifications:smoke": "node scripts/notification-center-smoke.js",
+    "developer-source-update:smoke": "node scripts/developer-source-update-smoke.js",
     "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "agent-control:sections:smoke": "node scripts/agent-control-sections-smoke.js",
     "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",

@@ -29821,6 +29821,16 @@ function formatDevUpdateTime(value) {
   return value ? formatDateTime(value) : "Not checked yet";
 }
 
+function getDeveloperUpdateUnavailableMessage(state = developerUpdateState) {
+  if (state?.error === "packaged") return "Developer Update is only available from an unpackaged Electron dev checkout.";
+  if (state?.errorCode === "DEV_SOURCE_DIRTY_WORKTREE") return "Local changes detected. Your development checkout contains uncommitted changes. Dev Update will not overwrite them.";
+  if (state?.errorCode === "DEV_SOURCE_DIVERGED") return "Development branch has diverged. Automatic source update is unavailable because local commits differ from origin/dev.";
+  if (state?.errorCode === "DEV_SOURCE_BRANCH_MISMATCH") return `Dev Update requires the dev branch. Current branch: ${state?.branch || "unknown"}.`;
+  if (state?.error === "not-git-worktree") return "Developer Update needs to run from a Git checkout.";
+  if (state?.error === "not-dev-branch") return "Developer Update only tracks the dev branch.";
+  return state?.error || "Developer Update is unavailable in this checkout.";
+}
+
 function renderDevelopmentBadge(state = developerUpdateState) {
   if (!developmentBadge) {
     return;
@@ -29858,31 +29868,56 @@ function setDevUpdateField(name, value) {
 function renderDeveloperUpdateModal(state = developerUpdateState) {
   const behind = Number(state?.behind || 0);
   const ahead = Number(state?.ahead || 0);
+  const blocked = state?.status === "blocked" || Boolean(state?.errorCode);
   if (devUpdateMessage) {
     devUpdateMessage.textContent = state?.status === "available"
-      ? `${behind} dev commit${behind === 1 ? "" : "s"} available.`
+      ? `${behind} new development commit${behind === 1 ? "" : "s"} available.`
       : state?.status === "updating"
-        ? "Updating the local dev checkout..."
+        ? "Updating source..."
+        : state?.status === "fetching"
+          ? "Fetching origin/dev..."
+          : state?.status === "installing-app-dependencies"
+            ? "Installing application dependencies from the committed lockfile..."
+            : state?.status === "installing-agent-dependencies"
+              ? "Installing Agent dependencies from the committed lockfile..."
+              : state?.status === "validating-update"
+                ? "Validating updated source..."
+                : state?.status === "restarting"
+                  ? "Restarting development application..."
         : state?.status === "restart-required" || state?.restartRequired
-          ? "Dev update applied. Restart AnxOS to load the new source."
+          ? "Source updated successfully. Restart AnxOS to load the new source."
+          : blocked
+            ? getDeveloperUpdateUnavailableMessage(state)
           : state?.status === "error"
             ? state?.error || "Developer update check failed."
-            : "This dev checkout is up to date.";
+            : !state?.eligible || state?.available === false
+              ? getDeveloperUpdateUnavailableMessage(state)
+              : "This dev checkout is up to date.";
   }
+  setDevUpdateField("mode", state?.mode === "source-dev" ? "Development Source" : state?.mode === "packaged-dev" ? "Packaged Developer Update" : "Developer Update");
   setDevUpdateField("branch", state?.branch);
+  setDevUpdateField("expectedBranch", state?.expectedBranch || "dev");
   setDevUpdateField("localCommit", state?.localCommit);
   setDevUpdateField("remoteCommit", state?.remoteCommit);
   setDevUpdateField("sync", `${behind} behind / ${ahead} ahead`);
   setDevUpdateField("latestCommitMessage", state?.latestCommitMessage);
   setDevUpdateField("lastCheckedAt", formatDevUpdateTime(state?.lastCheckedAt));
+  const detailParts = [];
+  if (Array.isArray(state?.dependencyScopes) && state.dependencyScopes.length) detailParts.push(`Dependencies: ${state.dependencyScopes.join(", ")}`);
+  else if (state?.status === "available" || state?.status === "restart-required") detailParts.push("Dependencies unchanged");
+  if (Array.isArray(state?.changedFiles) && state.changedFiles.length) {
+    detailParts.push(`${state.changedFiles.length} changed file${state.changedFiles.length === 1 ? "" : "s"}`);
+  }
+  if (Array.isArray(state?.details) && state.details.length) detailParts.push(state.details.join(" · "));
+  setDevUpdateField("details", detailParts.join(" · ") || "Unavailable");
   devUpdateButtons.forEach((button) => {
     const action = button.dataset.devUpdateAction;
     if (action === "update") {
       const restartRequired = state?.status === "restart-required" || state?.restartRequired;
-      button.disabled = developerUpdateBusy || (!restartRequired && behind <= 0);
+      button.disabled = developerUpdateBusy || blocked || (!restartRequired && behind <= 0);
       button.textContent = restartRequired ? "Restart Now" : developerUpdateBusy ? "Updating..." : "Update Now";
     } else if (action === "check" || action === "changes") {
-      button.disabled = developerUpdateBusy;
+      button.disabled = developerUpdateBusy || (action === "changes" && !state?.remoteCommit);
     }
   });
 }
@@ -31854,6 +31889,9 @@ document.querySelectorAll("[data-update-action]").forEach((button) => {
 });
 
 developmentBadge?.addEventListener("click", openDeveloperUpdateModal);
+document.querySelectorAll("[data-dev-update-open]").forEach((button) => {
+  button.addEventListener("click", openDeveloperUpdateModal);
+});
 devUpdateButtons.forEach((button) => {
   button.addEventListener("click", () => runDeveloperUpdateAction(button.dataset.devUpdateAction));
 });

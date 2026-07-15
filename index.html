@@ -3748,6 +3748,7 @@
                 </div>
               </div>
               <div class="diagnostics-overview" data-diagnostics-overview aria-label="Diagnostics overview"></div>
+              <div class="agent-diagnostic-list" data-agent-diagnostics><div class="security-empty-state">Run diagnostics to inspect Agent health.</div></div>
               <div class="diagnostics-health-list" data-diagnostics-health-list aria-label="Health checks"></div>
               <section class="diagnostics-issues" aria-label="Grouped diagnostic issues">
                 <div class="panel-heading">
@@ -4465,7 +4466,7 @@
       <section class="app-modal app-modal--developer-update" role="dialog" aria-modal="true" aria-labelledby="dev-update-modal-title" tabindex="-1">
         <header class="app-modal__header">
           <div>
-            <p class="app-modal__eyebrow">Source build</p>
+            <p class="app-modal__eyebrow" data-dev-update-field="mode">Development Source</p>
             <h2 id="dev-update-modal-title">Developer Update</h2>
           </div>
           <button class="icon-action" type="button" aria-label="Close developer update panel" data-dev-update-action="dismiss">&times;</button>
@@ -4474,11 +4475,13 @@
           <p data-dev-update-message>Checking the dev branch status...</p>
           <dl class="app-modal__meta app-modal__meta--developer">
             <div><dt>Current branch</dt><dd data-dev-update-field="branch">Unavailable</dd></div>
+            <div><dt>Expected branch</dt><dd data-dev-update-field="expectedBranch">dev</dd></div>
             <div><dt>Local commit</dt><dd data-dev-update-field="localCommit">Unavailable</dd></div>
             <div><dt>Remote commit</dt><dd data-dev-update-field="remoteCommit">Unavailable</dd></div>
             <div><dt>Behind / Ahead</dt><dd data-dev-update-field="sync">Unavailable</dd></div>
             <div><dt>Latest commit</dt><dd data-dev-update-field="latestCommitMessage">Unavailable</dd></div>
             <div><dt>Last checked</dt><dd data-dev-update-field="lastCheckedAt">Not checked yet</dd></div>
+            <div><dt>Details</dt><dd data-dev-update-field="details">Unavailable</dd></div>
           </dl>
         </div>
         <footer class="app-modal__actions">

@@ -4,6 +4,7 @@ const path = require("path");
 const { app } = require("electron");
 const { getApplicationHostNode, APPLICATION_HOST_NODE_ID } = require("./applicationHostService");
 const { getEffectiveAgentSettings, getHealth, normalizeAgentSettings, testConnection } = require("./agentClient");
+const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, setNodeToken } = require("./nodeCredentialStore");
 
 const NODE_SCHEMA_VERSION = 2;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
@@ -187,8 +188,14 @@ function createLocalAgentConnectionStatus(patch = {}) {
   };
 }
 
+function normalizeTags(value) {
+  return Array.isArray(value)
+    ? value.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 20)
+    : [];
+}
+
 function normalizeAgentNode(node = {}) {
-  const agentUrl = normalizeUrl(node.agentUrl || node.url);
+  const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url);
   const identity = node.agentIdentity || node.identity || {};
   const deviceId = identity.deviceId || node.deviceId || legacyDeviceId(agentUrl);
   const requestedDisplayName = String(node.displayName || node.name || "").trim();
@@ -202,9 +209,16 @@ function normalizeAgentNode(node = {}) {
   return {
     id: node.id && node.id !== "default" ? node.id : nodeIdForDevice(deviceId),
     kind: "agent",
+    name: displayName.slice(0, 80),
     displayName: displayName.slice(0, 80),
+    baseUrl: agentUrl,
     agentUrl,
-    agentToken: String(node.agentToken || node.token || ""),
+    agentToken: String(node.agentToken || node.token || getNodeToken(node.id && node.id !== "default" ? node.id : nodeIdForDevice(deviceId)) || ""),
+    enabled: node.enabled !== false,
+    description: String(node.description || "").trim().slice(0, 500),
+    tags: normalizeTags(node.tags),
+    lastConnectionState: node.lastConnectionState || node.connection?.status || "unknown",
+    lastSuccessfulHealthCheck: node.lastSuccessfulHealthCheck || node.connection?.lastSeen || null,
     agentIdentity: { deviceId, hostname: identity.hostname || "", operatingSystem: identity.operatingSystem || "", platform: identity.platform || "", architecture: identity.architecture || "", agentVersion: identity.agentVersion || "" },
     docker: { enabled: node.docker?.enabled !== false, runtime: node.docker?.runtime || "docker" },
     ownerMachine: Boolean(node.ownerMachine),
@@ -247,9 +261,16 @@ function mergeAgentNodes(nodes) {
     if (!current) { byDevice.set(key, raw); continue; }
     byDevice.set(key, {
       ...current,
+      name: isGenericNodeDisplayName(current.name || current.displayName) && !isGenericNodeDisplayName(raw.name || raw.displayName) ? raw.name || raw.displayName : current.name || current.displayName || raw.name || raw.displayName,
       displayName: isGenericNodeDisplayName(current.displayName) && !isGenericNodeDisplayName(raw.displayName) ? raw.displayName : current.displayName || raw.displayName,
+      baseUrl: current.localAgent ? current.baseUrl || current.agentUrl : current.baseUrl || current.agentUrl || raw.baseUrl || raw.agentUrl,
       agentUrl: current.localAgent ? current.agentUrl : current.agentUrl || raw.agentUrl,
       agentToken: current.agentToken || raw.agentToken,
+      enabled: current.enabled !== false && raw.enabled !== false,
+      description: current.description || raw.description || "",
+      tags: normalizeTags([...(current.tags || []), ...(raw.tags || [])]),
+      lastConnectionState: current.lastConnectionState || raw.lastConnectionState || "unknown",
+      lastSuccessfulHealthCheck: current.lastSuccessfulHealthCheck || raw.lastSuccessfulHealthCheck || null,
       agentIdentity: { ...raw.agentIdentity, ...Object.fromEntries(Object.entries(current.agentIdentity).filter(([, value]) => value)) },
       docker: current.docker || raw.docker,
       ownerMachine: current.ownerMachine || raw.ownerMachine,
@@ -398,7 +419,13 @@ function readNodeState() {
 function writeNodeState(state) {
   ensureConfigDirectory();
   const nodes = state.nodes.map((node) => {
-    const { connection, ...persistentNode } = node;
+    if (node.kind === "agent" && node.id && node.agentToken) {
+      setNodeToken(node.id, node.agentToken);
+    }
+    const { agentToken, connection, token, ...persistentNode } = node;
+    if (persistentNode.baseUrl && !persistentNode.agentUrl) {
+      persistentNode.agentUrl = persistentNode.baseUrl;
+    }
     return persistentNode;
   });
   fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes }, null, 2)}\n`, { mode: 0o600 });
@@ -418,7 +445,7 @@ function publicNode(node) {
       },
     };
   }
-  return { ...node, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken), agentToken: node.agentToken ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
+  return { ...node, baseUrl: node.baseUrl || node.agentUrl, name: node.name || node.displayName, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken || hasNodeToken(node.id)), agentToken: node.agentToken || hasNodeToken(node.id) ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
 }
 
 async function refreshIdentities(state) {
@@ -512,7 +539,7 @@ function getNode(nodeId) {
 
 function getSelectedNodeId() { return readNodeState().selectedNodeId; }
 function getAllNodesSync() { const state = readNodeState(); return [getApplicationHostNode(), ...state.nodes]; }
-function getNodeAgentConfigFromNode(node) { return normalizeAgentSettings({ backendMode: "agent", agentUrl: node.agentUrl, agentToken: node.agentToken }); }
+function getNodeAgentConfigFromNode(node) { return normalizeAgentSettings({ backendMode: "agent", agentUrl: node.baseUrl || node.agentUrl, agentToken: node.agentToken || getNodeToken(node.id) }); }
 function getNodeAgentConfig(nodeId) { const node = getNode(nodeId); if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" }); return getNodeAgentConfigFromNode(node); }
 function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, localAgent: node.localAgent === true, capabilities: buildNodeCapabilities(node), config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId, capabilities: buildNodeCapabilities(node) }; }
 
@@ -533,8 +560,8 @@ async function saveNode(payload = {}) {
   return { node: publicNode(node), ...(await listNodes({ refreshIdentity: false })) };
 }
 
-function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" }); const state = readNodeState(); const nodes = state.nodes.filter((entry) => entry.id !== nodeId); writeNodeState({ ...state, selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId, nodes }); return { id: nodeId, deleted: true }; }
+function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" }); const state = readNodeState(); const nodes = state.nodes.filter((entry) => entry.id !== nodeId); deleteNodeToken(nodeId); writeNodeState({ ...state, selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId, nodes }); return { id: nodeId, deleted: true }; }
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ refreshIdentity: false }); }
 async function testNode(nodeId) { const node = getNode(nodeId); if (node.kind === "application-host") return { connected: true, status: "local", message: "Application host is available.", node: publicNode(node) }; return { ...(await testConnection(getNodeAgentConfigFromNode(node))), node: publicNode(node) }; }
 
-module.exports = { APPLICATION_HOST_NODE_ID, NODE_SCHEMA_VERSION, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode };
+module.exports = { APPLICATION_HOST_NODE_ID, NODE_SCHEMA_VERSION, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode };

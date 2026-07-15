@@ -23,6 +23,7 @@ const packageJson = JSON.parse(read("package.json"));
   "dependencies:graphical:smoke",
   "features:runtime-paths:smoke",
   "account:project-context:smoke",
+  "ssh:command-bar:smoke",
   "ssh:interactive-input:smoke",
   "ssh:input-diagnostics:smoke",
   "ssh:renderer-input-lifecycle:smoke",

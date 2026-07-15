@@ -804,7 +804,6 @@ let sshPasswordPromptVisible = false;
 let sshPendingPasswordProfileId = null;
 let sshTransientStatusMessage = "";
 let sshProfileFormVisible = false;
-let sshKeyboardMode = false;
 let sshTerminalResizeObserver = null;
 let sshXterm = null;
 let sshXtermInputDisposable = null;
@@ -821,6 +820,12 @@ const sshInputDiagnostics = {
   activeSessionPresent: false,
   lastWriteAccepted: null,
   lastWriteRejectedCategory: null,
+  commandBarSubmitReceived: false,
+  commandBarSource: null,
+  commandBarCommandLength: 0,
+  commandBarConnectedState: null,
+  commandBarWriteAccepted: null,
+  commandBarFailureCategory: null,
   updatedAt: null,
 };
 let filesSelectedServerId = null;
@@ -24341,9 +24346,6 @@ function renderSshView() {
       ? "Click the terminal to type, or enter one command here"
       : "Connect to enable command input";
 
-    if (sshKeyboardMode) {
-      sshCommandInput.value = "";
-    }
   }
 
   if (sshCommandSendButton) {
@@ -24649,20 +24651,42 @@ async function disconnectSshSession() {
   }
 }
 
-async function sendSshCommand(commandText) {
+async function sendSshCommandFromBar(source = "submit") {
   const desktopApiState = getDesktopApiState();
   const session = getActiveSshSession();
-  const command = typeof commandText === "string" ? commandText : "";
+  const command = typeof sshCommandInput?.value === "string" ? sshCommandInput.value : "";
+  const connected = Boolean(session && session.status === "connected");
 
-  if (!desktopApiState.hasSsh || !session || session.status !== "connected" || !command) {
-    return;
+  updateSshInputDiagnostics({
+    commandBarSubmitReceived: true,
+    commandBarSource: source,
+    commandBarCommandLength: command.length,
+    activeSessionPresent: Boolean(session),
+    commandBarConnectedState: session?.status || "missing",
+  });
+
+  if (!desktopApiState.hasSsh || !session || !connected || !command) {
+    const category = !desktopApiState.hasSsh ? "bridge_unavailable" : !session ? "missing_session" : !connected ? "session_not_connected" : "empty_command";
+    updateSshInputDiagnostics({
+      commandBarWriteAccepted: false,
+      commandBarFailureCategory: category,
+    });
+    showToast(!command ? "Enter a command before sending." : "Connect SSH before sending commands.");
+    sshCommandInput?.focus();
+    return false;
   }
 
-  try {
-    await desktopApiState.api.ssh.write(session.id, `${command}\n`);
-  } catch (error) {
-    showToast(error?.message || "SSH command failed.");
+  const accepted = await writeSshInput(`${command}\r`);
+  updateSshInputDiagnostics({
+    commandBarWriteAccepted: accepted,
+    commandBarFailureCategory: accepted ? null : "write_failed",
+  });
+
+  if (accepted && sshCommandInput) {
+    sshCommandInput.value = "";
   }
+  sshCommandInput?.focus();
+  return accepted;
 }
 
 async function writeSshInput(input) {
@@ -30563,16 +30587,21 @@ sshTerminalWindow?.addEventListener("keydown", async (event) => {
   await handleSshTerminalInputKeydown(event);
 });
 sshCommandInput?.addEventListener("focus", () => {
-  sshKeyboardMode = true;
-  sshCommandInput.value = "";
-  renderSshView();
+  updateSshInputDiagnostics({
+    commandBarConnectedState: getActiveSshSession()?.status || "missing",
+  });
 });
 sshCommandInput?.addEventListener("blur", () => {
-  sshKeyboardMode = false;
-  sshCommandInput.value = "";
-  renderSshView();
+  updateSshInputDiagnostics({
+    commandBarConnectedState: getActiveSshSession()?.status || "missing",
+  });
 });
 sshCommandInput?.addEventListener("keydown", async (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    await sendSshCommandFromBar("enter");
+    return;
+  }
   await handleSshTerminalInputKeydown(event);
 });
 sshCommandInput?.addEventListener("paste", async (event) => {
@@ -30593,18 +30622,11 @@ sshCommandInput?.addEventListener("paste", async (event) => {
 });
 sshCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-
-  const command = sshCommandInput?.value || "";
-
-  if (!command.trim() || sshKeyboardMode) {
-    return;
-  }
-
-  await sendSshCommand(command);
-
-  if (sshCommandInput) {
-    sshCommandInput.value = "";
-  }
+  await sendSshCommandFromBar("enter");
+});
+sshCommandSendButton?.addEventListener("click", async (event) => {
+  event.preventDefault();
+  await sendSshCommandFromBar("button");
 });
 updateSshActions();
 resetSshProfileForm();

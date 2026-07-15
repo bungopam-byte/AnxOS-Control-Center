@@ -13,6 +13,16 @@ const {
 const diagnostics = require("../services/diagnosticsService");
 const { audit, requirePermission } = require("../services/securityService");
 
+function requireDependencyNodeContext(payload = {}, operation = "dependency request") {
+  if (typeof payload.nodeId === "string" && payload.nodeId.trim()) {
+    return payload;
+  }
+  const error = new Error(`A selected node is required for ${operation}.`);
+  error.code = "NODE_REQUIRED";
+  error.statusCode = 400;
+  throw error;
+}
+
 function invokeDependencyOperation(operation) {
   return Promise.resolve()
     .then(operation)
@@ -27,8 +37,9 @@ function invokeDependencyOperation(operation) {
 }
 
 function registerDependenciesIpc() {
-  ipcMain.handle("dependencies:getCatalog", async (_, payload = {}) => invokeDependencyOperation(() => getDependencyCatalog(payload)));
+  ipcMain.handle("dependencies:getCatalog", async (_, payload = {}) => invokeDependencyOperation(() => getDependencyCatalog(requireDependencyNodeContext(payload, "dependency catalog"))));
   ipcMain.handle("dependencies:check", async (_, payload = {}) => invokeDependencyOperation(async () => {
+    requireDependencyNodeContext(payload, "dependency detection");
     const result = await checkDependencies(payload);
     diagnostics.updateRuntimeState({
       dependencyCheck: result,
@@ -38,6 +49,7 @@ function registerDependenciesIpc() {
     return result;
   }));
   ipcMain.handle("dependencies:plan", async (_, payload = {}) => invokeDependencyOperation(async () => {
+    requireDependencyNodeContext(payload, "dependency planning");
     const result = await planDependencyPreparation(payload);
     diagnostics.updateRuntimeState({
       dependencyPlan: result,
@@ -47,6 +59,7 @@ function registerDependenciesIpc() {
     return result;
   }));
   ipcMain.handle("dependencies:install", async (_, payload = {}) => invokeDependencyOperation(async () => {
+    requireDependencyNodeContext(payload, "dependency installation");
     requirePermission("instance:write", "marketplace-dependencies");
     audit({ action: "dependencies.install", target: Array.isArray(payload.dependencyIds) ? payload.dependencyIds.join(",") : "marketplace" });
     const plan = await planDependencyPreparation(payload).catch(() => null);

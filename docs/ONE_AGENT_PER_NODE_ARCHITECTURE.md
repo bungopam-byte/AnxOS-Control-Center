@@ -12,6 +12,29 @@ One node equals one independently running AnxOS Agent.
 - Agents do not manage other agents, contain child nodes, or act as multi-node controllers.
 - Resource identity is node-scoped. Identical instance IDs, backup IDs, file names, container names, or public-access service IDs on different nodes must not collide.
 
+Example node registry entries:
+
+| Node | Agent URL | Meaning |
+| --- | --- | --- |
+| Anxlab | `http://192.168.1.134:47131` | Agent installed on the Anxlab machine. |
+| Windows PC | `http://192.168.1.xxx:47131` | Separate Agent installed on a Windows desktop or gaming PC. |
+| VPS | `https://agent-vps.example.com` | Separate Agent installed on a cloud server or VPS. |
+
+The Control Center connects directly to the selected Agent. Agents do not connect to each other and do not know about other nodes. Every Agent manages only its local host.
+
+## Current Implementation Summary
+
+The implementation now follows the one-agent-per-node routing model for agent-backed feature paths:
+
+- Node metadata is normalized in `src/services/nodeService.js` with stable IDs, `baseUrl`, `enabled`, description, tags, health state, timestamps, and safe capability/version metadata.
+- Per-node tokens are stored through `src/services/nodeCredentialStore.js`; `nodes.json` does not persist raw Agent tokens.
+- Legacy global `agent.json` remains for migration, Agent Control, and local-agent compatibility, but feature paths must use explicit node context.
+- `agentClient.forNode(nodeId)` resolves node URL/token, rejects missing/disabled/non-agent nodes, and avoids global fallback.
+- `serviceRouter` blocks missing `nodeId` when the selected target is an Agent, preserving local application-host compatibility while preventing accidental selected-Agent fallback.
+- Renderer node-scoped requests carry node ID, selected-node context version, and per-operation serials to reject stale responses.
+- Health checks are independent per registered node and store states including `connecting`, `online`, `offline`, `authentication_failed`, `agent_incompatible`, and `unknown`.
+- Long-running Marketplace/download/progress, dependency, Public Access, Docker, Files, Console, Backups, and Instances flows carry node context and guard stale results.
+
 ## Current Node Registry Structure
 
 The current node registry is implemented in `src/services/nodeService.js`.
@@ -25,9 +48,16 @@ The current node registry is implemented in `src/services/nodeService.js`.
   - `id`
   - `kind: "agent"`
   - `displayName`
+  - `baseUrl`
   - `agentUrl`
-  - `agentToken`
+  - token presence metadata, with raw token loaded only from the node credential store
+  - `enabled`
+  - `description`
+  - `tags`
+  - `lastConnectionState`
+  - `lastSuccessfulHealthCheck`
   - `agentIdentity`
+  - version/API/platform/capability metadata when available
   - `docker`
   - `ownerMachine`
   - `localAgent`
@@ -39,10 +69,10 @@ The current node registry is implemented in `src/services/nodeService.js`.
   - `createdAt`
   - `updatedAt`
   - `executionTarget`
-- `writeNodeState()` strips transient `connection`, but persists `agentToken` inside normal node metadata.
+- `writeNodeState()` strips transient `connection` and raw `agentToken`, then writes tokens through `nodeCredentialStore`.
 - `publicNode()` masks the token before IPC returns nodes to the renderer by setting `agentToken` to `[configured]` and adding `hasToken`.
 
-Important current mismatch with the target architecture: the registry already has node-specific URLs and tokens, but tokens are still stored in the same JSON document as safe node metadata.
+Current compatibility note: node records still retain `agentUrl` as an alias beside `baseUrl` to support older persisted data and renderer code during migration.
 
 ## Legacy Global Agent URL And Token Storage
 
@@ -65,7 +95,7 @@ Legacy single-agent configuration is implemented in `src/services/agentClient.js
   - `settings:testAgentConnection`
   - `settings:pairAgent`
 
-Compatibility risk: several services still call `agentClient.getEffectiveAgentSettings()` or `agentClient.getAgentConfig()` directly, which can silently resolve the legacy global URL/token instead of an explicit node.
+Compatibility note: legacy global settings are still used by Agent Control, local-agent setup, migration, and developer tooling. Agent-backed product feature paths use explicit node context and should not fall back to the global URL/token.
 
 ## Selected-Node State
 
@@ -79,7 +109,7 @@ Main-process selected-node state is persisted in `nodes.json` as `selectedNodeId
 - Renderer state is held in `app.js`:
   - `nodesState = { selectedNodeId, nodes, applicationHost }`
   - `selectedNodeContextVersion`
-  - helpers including `getSelectedNodeId()`, `getSelectedNode()`, `createSelectedNodeRequestContext()`, and `isSelectedNodeRequestCurrent()`
+  - helpers including `getSelectedNodeId()`, `getSelectedNode()`, `getNodeRequestContext()`, and `isNodeRequestCurrent()`
 - Renderer flows use node request contexts with node ID, context version, and per-operation serials to avoid stale writes.
 
 Compatibility cleanup: `serviceRouter.getOptionalNodeConfig(options)` now requires an explicit `nodeId` when the selected target is an Agent. Local application-host calls remain compatible for single-node/local workflows, but missing `nodeId` no longer silently routes an agent-backed request to the currently selected Agent.
@@ -118,7 +148,7 @@ Agent-backed surfaces found in the current implementation:
 - Backups: `src/services/serviceRouter.js`, `src/ipc/backupsIpc.js`.
 - Console/actions: `src/services/actionRouter.js`, `src/services/actionClient.js`, `src/ipc/actionIpc.js`.
 - SSH profiles have node association, but SSH is not itself an Agent API path.
-- Security and owner workspace still read or display legacy agent connection state in selected places.
+- Security and owner workspace still read or display legacy/local Agent connection state in selected places.
 
 ## Direct Or Legacy Global Agent Usage Hotspots
 
@@ -133,9 +163,9 @@ Targeted searches found these compatibility hotspots:
   - Migrates effective global agent settings into nodes when `backendMode === "agent"`.
   - Discovers local agents using the effective shared token.
 - `src/services/marketplaceService.js`
-  - `resolveMarketplaceAgentConfig()` currently resolves an execution target but also reads `getEffectiveAgentSettings()`.
+  - Resolves Marketplace install/download operations from explicit execution targets and avoids legacy global fallback for selected application-host mode.
 - `src/services/systemService.js`
-  - Accepts node options but still has config fallback behavior through `agentClient`.
+  - Uses `agentClient.forNode(nodeId)` for selected Agent system snapshots.
 - `src/services/ownerWorkspaceService.js`
   - Imports `getAgentConfigPath`, `readAgentSettings`, and `testConnection`.
 - `src/ipc/settingsIpc.js`
@@ -170,26 +200,27 @@ Current behavior:
 - Settings form intentionally supports global token save/pair/rotation.
 - Pairing payloads can contain raw tokens during import but return fingerprints afterward.
 
-Security gap for the target architecture: per-node tokens should be separated from safe node metadata before expanding multi-node support. A future credential store should provide node-scoped secret read/write/delete primitives and expose only token presence/fingerprint to renderer and diagnostics.
+Security behavior: per-node tokens are separated from safe node metadata through the node credential store. Renderer and diagnostics receive configured/missing metadata, not raw token values.
 
 ## Health-Check Implementation
 
 Current health behavior:
 
 - `agentClient.getHealth(config)` calls the agent health endpoint with optional bearer auth.
-- `nodeService.refreshIdentities()` loops over every persisted node and updates transient `connection`.
+- `nodeService.checkNodeHealth(nodeId)` checks one node, deduplicates overlapping checks, classifies connection state, and writes safe health metadata.
+- `nodeService.checkAllNodeHealth()` runs independent checks for every persisted Agent node.
 - `nodeService.discoverLocalAgentNode()` probes localhost agent URLs and builds local profile data.
 - Renderer `refreshNodeHealth()` builds a UI health model from current node state and cached page data.
 - `agentControlService.listAgents()` also evaluates local, configured, and remote agent status.
 
-Current limitation: health state is partly stored as transient node connection data and partly derived in renderer health categories. There is no independent durable health service with non-overlapping checks per node, backoff, and stable states such as `authentication_failed` or `agent_incompatible`.
+Compatibility limitation: health compatibility metadata is backward compatible. Missing API-version metadata is treated as compatible, while explicit incompatible API metadata is surfaced as `agent_incompatible`.
 
 ## Migration Behavior
 
 Current migration exists in `nodeService.migrateState(parsed)`:
 
 - Reads effective global agent settings.
-- If global `backendMode === "agent"` and URL is not already represented, it pushes a legacy node `{ displayName: "Owner Machine", agentUrl, agentToken }`.
+- If global `backendMode === "agent"` and URL is not already represented, it creates or updates a legacy node and writes the token through the node credential store.
 - Normalizes and merges nodes by device identity.
 - Converts selected node `"default"` to either the first agent node or `application-host`.
 - If selection is `application-host`, can select the local agent when global config points at localhost.
@@ -197,10 +228,10 @@ Current migration exists in `nodeService.migrateState(parsed)`:
 
 Risks:
 
-- Migration can copy global token into `nodes.json`.
+- Migration can import legacy global credentials into per-node credential storage.
 - Node ID is derived from agent device identity when possible or legacy URL hash otherwise.
 - Repeated discovery/identity refresh can merge nodes by device identity, which is useful but could surprise users if two records refer to the same agent.
-- Future migration must be idempotent and must not overwrite newer per-node URL/token values with legacy global values.
+- Migration is idempotent and must not overwrite newer per-node URL/token values with legacy global values.
 
 ## Diagnostics And Token Redaction Behavior
 
@@ -217,7 +248,7 @@ Existing redaction:
 Risks:
 
 - Full agent URLs are logged/displayed and must be treated as safe only when they contain no embedded credentials. URL normalization should reject or sanitize userinfo.
-- `nodes.json` currently contains raw node tokens, so diagnostics/export/import code must never include it verbatim.
+- Diagnostics/export/import code should continue treating `nodes.json` as safe metadata and credentials as separate protected state.
 - Future node-aware diagnostics should include safe context: node ID, node name, endpoint path, operation, and error category.
 
 ## Current Tests And Smoke Scripts Related To Nodes
@@ -240,7 +271,7 @@ Relevant scripts in `package.json` and `scripts/`:
 - `npm run agent:files-root:smoke` / `scripts/agent-files-root-smoke.js`
 - `npm run diagnostics:smoke` / `scripts/diagnostics-smoke.js`
 
-Several smoke tests already assert node IDs are preserved in dependency/public-access/backup flows. They do not yet prove strict two-agent routing with separate URLs, separate tokens, no fallback, independent health, stale-response protection, or credential isolation.
+Current smoke coverage includes two-node URL/token routing, strict no-fallback checks, independent health state, stale-response protection, node-scoped resources, legacy migration, connection workflow, and credential isolation from `nodes.json`.
 
 ## Reusable Components
 
@@ -260,23 +291,23 @@ Reusable after refactor:
 
 - Shared node model validator/normalizer.
 - Shared node URL normalizer.
-- Node credential store with token presence/fingerprint public metadata.
+- Node credential store with token presence public metadata.
 - Central `agentClient.forNode(nodeId)` facade.
 - Shared stale-response guard for renderer refreshes and polling.
 
 ## Required Migrations
 
-Required later phases:
+Implemented migration requirements:
 
-- Add canonical safe node metadata shape with `baseUrl`, `enabled`, `description`, `tags`, connection state, and timestamps.
-- Move per-node tokens out of ordinary node metadata or replace raw token fields with protected credential references.
-- Idempotently migrate legacy global `agent.json` into a default node without overwriting newer per-node values.
-- Preserve existing node IDs and display names.
-- Normalize `agentUrl` to `baseUrl`, preserving compatibility aliases during transition.
-- Convert agent-backed request paths from optional config overrides to explicit node resolution.
-- Make health state independent per node.
-- Make renderer caches, operations, polling, and long-running progress node-owned.
-- Keep single-node users on an automatic/simple path.
+- Canonical safe node metadata shape with `baseUrl`, `enabled`, `description`, `tags`, connection state, and timestamps.
+- Per-node tokens moved out of ordinary node metadata into the node credential store.
+- Idempotent legacy global `agent.json` migration into node records without overwriting newer per-node values.
+- Existing node IDs and display names preserved during migration.
+- `agentUrl` normalized to `baseUrl`, preserving compatibility aliases during transition.
+- Agent-backed feature request paths use explicit node resolution and no selected-Agent fallback.
+- Health state independent per node.
+- Renderer caches, operations, polling, and long-running progress carry node ownership where migrated.
+- Single-node/local users retain application-host and local-agent compatibility paths.
 
 ## Risky Compatibility Areas
 

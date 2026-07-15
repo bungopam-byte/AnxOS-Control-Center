@@ -38,7 +38,7 @@ async function main() {
   assert.strictEqual(firstRunStatus.localMode, true, "Fresh config should default to Single-Device Mode.");
   assert.strictEqual(firstRunStatus.authenticated, false, "Single-Device Mode should not require sign-in.");
   assert.strictEqual(security.requirePermission("instance:lifecycle", "local-smoke").localMode, true, "Local mode should allow local actions without an owner account.");
-  const defaultNodes = await nodeService.listNodes();
+  const defaultNodes = await nodeService.listNodes({ discoverLocalAgent: false, refreshIdentity: false });
   assert.strictEqual(defaultNodes.selectedNodeId, "application-host", "The selected node should default to the application host.");
   assert(defaultNodes.nodes.some((node) => node.id === "application-host" && node.kind === "application-host"), "The application host should be a distinct visible node.");
   const localInstances = await serviceRouter.listInstances({ nodeId: "application-host" });

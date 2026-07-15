@@ -3910,7 +3910,8 @@ function renderAgentControlState(payload = agentControlState) {
     const urlText = runtime?.url || local.agentUrl || "";
     const serviceText = `Service ${formatAgentProcess(runtime, state)}`;
     const activeNodeName = payload?.activeNode?.displayName || getSelectedNode()?.displayName || "Active Node";
-    agentControlMessage.textContent = local.mostRecentError?.message || (runtime?.reachable || running ? `${activeNodeName} · ${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}` : `${targetLabel} for ${activeNodeName} is not reachable or is stopped.`);
+    const nodeAgentCopy = "One machine or server = one Agent.";
+    agentControlMessage.textContent = local.mostRecentError?.message || (runtime?.reachable || running ? `${activeNodeName} · ${targetLabel} · ${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}. ${nodeAgentCopy}` : `${targetLabel} for ${activeNodeName} is not reachable or is stopped. ${nodeAgentCopy}`);
   }
   setAgentControlField("hostname", local.name || runtime?.hostname || local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", runtime?.version || local.agentVersion || local.identity?.agentVersion);
@@ -25957,6 +25958,15 @@ function getNodeConnectionState(node) {
       suggestion: "Refresh nodes or choose another system.",
     };
   }
+  if (node.enabled === false) {
+    return {
+      key: "disabled",
+      label: "Disabled",
+      tone: "planned",
+      message: "This node is disabled.",
+      suggestion: "Enable the node before routing Agent requests to it.",
+    };
+  }
   const status = String(node.connection?.status || node.lastConnectionState || node.state || "").toLowerCase();
   const message = String(node.connection?.message || node.error || "");
   const combined = `${status} ${message}`;
@@ -26943,6 +26953,16 @@ function formatNodePlatform(node = {}) {
   return identity.operatingSystem || identity.platform || "Agent OS unavailable";
 }
 
+function formatNodeAgentContext(node = {}) {
+  const connectionState = getNodeConnectionState(node);
+  if (node?.kind === "application-host") {
+    return `${connectionState.label} · ${formatNodePlatform(node)}`;
+  }
+  const identity = getNodeIdentity(node);
+  const version = identity.agentVersion ? `Agent ${identity.agentVersion}` : "Agent version unknown";
+  return `${connectionState.label} · ${formatNodePlatform(node)} · ${version}`;
+}
+
 function formatNodeCpu(node = {}) {
   const identity = getNodeIdentity(node);
   const snapshot = getSystemSnapshotForNode(node);
@@ -27238,8 +27258,8 @@ function renderNodePicker() {
     title.textContent = node.displayName || node.id || "Unnamed node";
     const detail = document.createElement("small");
     detail.textContent = node.kind === "application-host"
-      ? `${node.applicationHost?.operatingSystem || "Local OS"} · Local Application`
-      : `${node.agentIdentity?.operatingSystem || "Agent"} · ${node.agentUrl || "Agent API"}`;
+      ? `${formatNodeAgentContext(node)} · Local Application`
+      : `${formatNodeAgentContext(node)} · ${node.agentUrl || "Agent API"}`;
     copy.append(title, detail);
     const badge = document.createElement("span");
     badge.className = "node-picker-option__badge";
@@ -27335,7 +27355,7 @@ function renderNodes() {
         ? "Switching node..."
       : selected?.kind === "application-host"
           ? "Application host"
-          : `${connectionState.label} · ${selected?.agentUrl || "Remote agent"}`;
+          : formatNodeAgentContext(selected);
     }
     sidebarFooter.dataset.agentState = nodeState;
     sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? "Switching node" : connectionState.message}`;

@@ -3804,6 +3804,9 @@ function renderLocalAgentInstallerSteps(steps = []) {
 
 function getAgentControlOverviewTarget(payload = agentControlState) {
   if (!payload) return null;
+  if (getActivePageName() === "agent-control" && payload.local) {
+    return payload.local;
+  }
   if (payload.configured?.configured || payload.configured?.backendMode === "agent") {
     return payload.configured;
   }

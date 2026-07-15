@@ -252,6 +252,7 @@ const desktopApi = {
   },
   nodes: {
     list: () => ipcRenderer.invoke("nodes:list"),
+    restore: () => ipcRenderer.invoke("nodes:restore"),
     save: (payload = {}) => ipcRenderer.invoke("nodes:save", payload),
     delete: (nodeId) => ipcRenderer.invoke("nodes:delete", { nodeId }),
     select: (nodeId) => ipcRenderer.invoke("nodes:select", { nodeId }),

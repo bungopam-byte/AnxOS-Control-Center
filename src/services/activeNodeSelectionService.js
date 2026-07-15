@@ -137,6 +137,15 @@ async function restorePersistedActiveNode() {
     return clearInvalidSelection({ reason: "startup-recovery", force: true });
   }
   const validation = validateActiveNode();
+  if (!validation.valid && validation.code === "NODE_DISABLED") {
+    return {
+      restored: true,
+      disabled: true,
+      selectedNodeId: validation.nodeId,
+      node: validation.node,
+      ...(await listNodes({ discoverLocalAgent: false, refreshIdentity: false })),
+    };
+  }
   if (validation.valid) {
     return {
       restored: true,

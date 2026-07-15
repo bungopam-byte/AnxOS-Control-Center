@@ -27451,7 +27451,9 @@ async function refreshNodes() {
     return;
   }
   try {
-    nodesState = await desktopApiState.api.nodes.list();
+    nodesState = typeof desktopApiState.api.nodes.restore === "function"
+      ? await desktopApiState.api.nodes.restore()
+      : await desktopApiState.api.nodes.list();
     if (previousSelectedNodeId !== "application-host" && nodesState.selectedNodeId !== previousSelectedNodeId) {
       const selected = (nodesState.nodes || []).find((node) => node.id === nodesState.selectedNodeId);
       showToast(`Selected node was unavailable. Switched to ${selected?.displayName || "the available default node"}.`, "warning");

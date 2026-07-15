@@ -46,6 +46,7 @@
     "node:switch:smoke": "node scripts/node-switch-smoke.js",
     "node:active-selection:smoke": "node scripts/active-node-selection-smoke.js",
     "node:agent-identity:smoke": "node scripts/agent-identity-resolution-smoke.js",
+    "node:startup-selection:smoke": "node scripts/startup-selection-smoke.js",
     "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
     "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
     "node:compat-cleanup:smoke": "node scripts/node-compat-cleanup-smoke.js",

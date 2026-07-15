@@ -8,7 +8,7 @@ const {
   testNode,
   testNodeConnectionPayload,
 } = require("../services/nodeService");
-const { setActiveNode } = require("../services/activeNodeSelectionService");
+const { restorePersistedActiveNode, setActiveNode } = require("../services/activeNodeSelectionService");
 const { audit, requirePermission } = require("../services/securityService");
 
 function getNodeErrorMessage(error) {
@@ -25,6 +25,7 @@ async function invokeNodeOperation(operation) {
 
 function registerNodesIpc() {
   ipcMain.handle("nodes:list", async () => invokeNodeOperation(() => listNodes()));
+  ipcMain.handle("nodes:restore", async () => invokeNodeOperation(() => restorePersistedActiveNode()));
   ipcMain.handle("nodes:save", async (_, payload = {}) => invokeNodeOperation(() => {
     requirePermission("settings:write", "nodes");
     audit({ action: "node.save", target: payload.id || payload.agentUrl });

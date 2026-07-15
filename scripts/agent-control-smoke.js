@@ -46,6 +46,7 @@ async function main() {
   assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");
   assert(rendererSource.includes("serviceNeedsElevation") && rendererSource.includes("Administrator required"), "Renderer must block or relabel Agent service actions that require elevation.");
   assert(!rendererSource.includes("try { await api.uninstallService(); } catch {} await api.installService()"), "Agent repair must not blindly uninstall and reinstall service registration.");
+  assert(rendererSource.includes("Background startup could not be configured. Starting the Local Agent for this session instead."), "Agent repair must still start the Local Agent when background startup registration is denied.");
   assert(rendererSource.includes("function renderLocalAgentSystems") && rendererSource.includes("Stable ID application-host"), "Agent Control must render the local application host with a stable identity.");
   assert(rendererSource.includes("Local Application Host") && rendererSource.includes("Local Agent Service"), "Agent Control must distinguish the application host from the local Agent service.");
   assert(rendererSource.includes("function renderAgentBeginnerSummary") && rendererSource.includes("This Computer") && rendererSource.includes("Local AnxOS Agent") && rendererSource.includes("Connected Systems"), "Agent Control must render a beginner summary that separates desktop, local Agent, and remote systems.");

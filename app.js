@@ -5114,7 +5114,18 @@ async function runAgentControlAction(action) {
       showToast("Remote Agent mode stays available. Add or select a remote node from the node picker or Agent Connection settings.", "info");
       document.querySelector("[data-agent-setting='agentUrl']")?.focus();
     }
-    else if (action === "repairAgent") { await api.pairLocalAgent({ rotate: false, reason: "repair" }); await api.installService(); if (!(await api.status())?.running) await api.start(); }
+    else if (action === "repairAgent") {
+      await api.pairLocalAgent({ rotate: false, reason: "repair" });
+      try {
+        await api.installService();
+      } catch (serviceError) {
+        console.warn("[Agent Control] Background startup repair failed.", {
+          code: getAgentErrorCode(serviceError) || serviceError?.code || null,
+        });
+        showToast("Background startup could not be configured. Starting the Local Agent for this session instead.", "warning");
+      }
+      if (!(await api.status())?.running) await api.start();
+    }
     else if (action === "checkUpdates") {
       const status = await api.status();
       showToast(status?.update?.state || "Local Agent update state checked.", status?.update?.updateAvailable ? "warning" : "info");

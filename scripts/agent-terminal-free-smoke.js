@@ -11,6 +11,7 @@ const preloadSource = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 const serviceSource = fs.readFileSync(path.join(root, "src", "services", "agentControlService.js"), "utf8");
 const agentClientSource = fs.readFileSync(path.join(root, "src", "services", "agentClient.js"), "utf8");
 const agentServerSource = fs.readFileSync(path.join(root, "agent", "src", "server.js"), "utf8");
+const agentAuthSource = fs.readFileSync(path.join(root, "agent", "src", "auth.js"), "utf8");
 
 [
   'data-agent-control-action="installLocalAgent"',
@@ -36,5 +37,37 @@ assert(!appSource.includes("Run npm run agent:token:status"), "Renderer token er
 assert(!agentClientSource.includes("Run npm run agent:token:status"), "Agent client auth errors must not require npm for normal users.");
 assert(agentClientSource.includes("[redacted authentication response]"), "Agent client must redact authentication response bodies in request logs.");
 assert(!agentServerSource.includes("Run npm run agent:token:status"), "Agent auth errors must not require npm for normal users.");
+
+const normalAuthSources = {
+  "renderer auth recovery": appSource.slice(
+    appSource.indexOf("function getAgentAuthFriendlyError"),
+    appSource.indexOf("async function refreshNodeHealth", appSource.indexOf("function getAgentAuthFriendlyError")),
+  ),
+  "agent client auth errors": agentClientSource.slice(
+    agentClientSource.indexOf("function getAgentHttpErrorMessage"),
+    agentClientSource.indexOf("async function requestAgent", agentClientSource.indexOf("function getAgentHttpErrorMessage")),
+  ),
+  "agent server auth errors": agentServerSource.slice(
+    agentServerSource.indexOf("function getAuthErrorMessage"),
+    agentServerSource.indexOf("function logRequestError", agentServerSource.indexOf("function getAuthErrorMessage")),
+  ),
+  "agent auth middleware": agentAuthSource,
+};
+
+const forbiddenNormalAuthGuidance = [
+  /npm\s+run\s+agent:/i,
+  /run\s+node\b/i,
+  /\bPowerShell\b.*\$/i,
+  /\bsystemctl\b/i,
+  /edit\s+\.env/i,
+  /environment\s+variable/i,
+  /manual\s+token/i,
+];
+
+Object.entries(normalAuthSources).forEach(([label, source]) => {
+  forbiddenNormalAuthGuidance.forEach((pattern) => {
+    assert(!pattern.test(source), `${label} must not include terminal-oriented recovery guidance: ${pattern}`);
+  });
+});
 
 console.log("Agent terminal-free setup smoke checks passed.");

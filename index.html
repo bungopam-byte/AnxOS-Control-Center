@@ -3555,16 +3555,15 @@
                   <h2 data-agent-control-field="hostname">Unavailable</h2>
                   <p data-agent-control-message>Loading Agent state...</p>
                 </div>
-                <div class="agent-overview-actions" aria-label="Agent lifecycle actions">
-                  <button class="primary-button" type="button" data-agent-control-action="start">Start</button>
-                  <button class="inline-action" type="button" data-agent-control-action="stop">Stop</button>
-                  <button class="inline-action" type="button" data-agent-control-action="restart">Restart</button>
-                  <button class="inline-action" type="button" data-agent-control-action="repairAgent">Repair</button>
-                  <button class="inline-action" type="button" data-agent-control-action="reconnect">Reconnect</button>
-                </div>
               </div>
               <div class="agent-control-metrics">
                 <div><span>CPU</span><strong data-agent-control-field="cpu">Unavailable</strong></div><div><span>RAM</span><strong data-agent-control-field="memory">Unavailable</strong></div><div><span>Latency</span><strong data-agent-control-field="latency">Unavailable</strong></div><div><span>Uptime</span><strong data-agent-control-field="uptime">Unavailable</strong></div><div><span>Version</span><strong data-agent-control-field="agentVersion">Unavailable</strong></div><div><span>Process</span><strong data-agent-control-field="pid">Stopped</strong></div>
+              </div>
+              <div class="agent-section-grid">
+                <div><span>Endpoint</span><strong data-agent-control-field="url">Unavailable</strong></div>
+                <div><span>Protocol</span><strong data-agent-control-field="protocol">Unavailable</strong></div>
+                <div><span>Service</span><strong data-agent-control-field="service">Unavailable</strong></div>
+                <div><span>Platform</span><strong data-agent-control-field="platform">Unavailable</strong></div>
               </div>
             </section>
             <section class="settings-section settings-section--wide agent-beginner-summary" data-agent-beginner-summary data-agent-control-section="status">
@@ -3586,12 +3585,16 @@
               </div>
             </section>
             <section class="settings-section agent-operations-panel" data-agent-control-section="lifecycle">
-              <div class="settings-section__header"><div><h2>Diagnostics</h2><p>Health, warnings, and recovery actions.</p></div><button class="inline-action" type="button" data-agent-control-action="runDiagnostics">Run Diagnostics</button></div><div class="agent-diagnostic-list" data-agent-diagnostics><div class="security-empty-state">Run diagnostics to inspect Agent health.</div></div>
+              <div class="settings-section__header"><div><h2>Lifecycle</h2><p>Start, stop, restart, or repair the managed Local Agent process.</p></div></div>
               <div class="agent-control-actions">
-                <div><span>Lifecycle</span><button class="inline-action" type="button" data-agent-control-action="forceRestart">Force Restart</button></div>
-                <div><span>Service</span><button class="inline-action" type="button" data-agent-control-action="installService">Install</button><button class="inline-action" type="button" data-agent-control-action="uninstallService">Uninstall</button><button class="inline-action" type="button" data-agent-control-action="enableAutoStart">Auto Start On</button><button class="inline-action" type="button" data-agent-control-action="disableAutoStart">Auto Start Off</button></div>
-                <div><span>Maintenance</span><button class="inline-action" type="button" data-agent-control-action="checkUpdates">Check Updates</button><button class="inline-action" type="button" data-agent-control-action="updateAgent">Update</button><button class="inline-action" type="button" data-agent-control-action="rotateToken">Rotate Token</button></div>
-                <div><span>Utilities</span><button class="inline-action" type="button" data-agent-control-action="copyUrl">Copy URL</button><button class="inline-action" type="button" data-agent-control-action="copyId">Copy ID</button><button class="inline-action" type="button" data-agent-control-action="openLogs">Logs Folder</button><button class="inline-action" type="button" data-agent-control-action="openDataFolder">Data Folder</button></div>
+                <div><span>Process</span><button class="primary-button" type="button" data-agent-control-action="start">Start</button><button class="inline-action" type="button" data-agent-control-action="stop">Stop</button><button class="inline-action" type="button" data-agent-control-action="restart">Restart</button><button class="inline-action" type="button" data-agent-control-action="forceRestart">Force Restart</button></div>
+                <div><span>Repair</span><button class="inline-action" type="button" data-agent-control-action="repairAgent">Repair Connection</button><button class="inline-action" type="button" data-agent-control-action="reconnect">Reconnect</button></div>
+              </div>
+              <div class="agent-section-grid">
+                <div><span>Process</span><strong data-agent-control-field="pid">Stopped</strong></div>
+                <div><span>Service</span><strong data-agent-control-field="service">Unavailable</strong></div>
+                <div><span>Uptime</span><strong data-agent-control-field="uptime">Unavailable</strong></div>
+                <div><span>Last heartbeat</span><strong data-agent-control-field="heartbeat">Unavailable</strong></div>
               </div>
             </section>
             <section class="settings-section settings-section--wide agent-local-installer" data-agent-local-installer data-agent-control-section="installation">
@@ -3604,6 +3607,8 @@
               </div>
               <div class="settings-actions">
                 <button class="primary-button" type="button" data-agent-control-action="installLocalAgent">Install Local Agent</button>
+                <button class="inline-action" type="button" data-agent-control-action="installService">Install Service</button>
+                <button class="inline-action" type="button" data-agent-control-action="uninstallService">Uninstall</button>
                 <button class="inline-action" type="button" data-agent-control-action="learnLocalAgent">Learn More</button>
                 <button class="inline-action" type="button" data-agent-control-action="useRemoteAgent">Use Remote Agent Instead</button>
               </div>
@@ -3629,6 +3634,21 @@
                 <button class="inline-action" type="button" data-agent-control-action="copyPairingCode" disabled>Copy Pairing Code</button>
               </div>
               <p class="settings-note">Open Add Node on the other Control Center, paste this temporary code, and select Pair Agent. Codes expire and can be used only once.</p>
+            </section>
+            <section class="settings-section settings-section--wide" data-agent-control-section="updates">
+              <div class="settings-section__header">
+                <div><h2>Updates</h2><p>Check the installed Local Agent version and apply supported updates.</p></div>
+              </div>
+              <div class="agent-section-grid">
+                <div><span>Installed version</span><strong data-agent-control-field="agentVersion">Unavailable</strong></div>
+                <div><span>Compatibility</span><strong data-agent-control-field="protocol">Unavailable</strong></div>
+                <div><span>Endpoint</span><strong data-agent-control-field="url">Unavailable</strong></div>
+                <div><span>Mode</span><strong data-agent-control-field="service">Unavailable</strong></div>
+              </div>
+              <div class="settings-actions">
+                <button class="inline-action" type="button" data-agent-control-action="checkUpdates">Check Updates</button>
+                <button class="primary-button" type="button" data-agent-control-action="updateAgent">Update</button>
+              </div>
             </section>
             <section class="settings-section agent-connection-section" data-agent-control-section="connection">
               <div class="settings-section__header">
@@ -3666,14 +3686,33 @@
                 <button class="inline-action" type="button" data-agent-action="test">Test Connection</button>
                 <button class="inline-action inline-action--primary" type="button" data-agent-action="pair">Pair Agent</button>
                 <button class="inline-action" type="button" data-agent-action="repair" hidden>Repair Connection</button>
+                <button class="inline-action" type="button" data-agent-control-action="copyUrl">Copy URL</button>
                 <span class="settings-inline-status" data-agent-config-source>Saved in config/agent.json.</span>
               </div>
             </section>
+            <section class="settings-section" data-agent-control-section="credentials">
+              <div class="settings-section__header"><div><h2>Credentials</h2><p>Safe connection credential metadata. Raw tokens are never displayed.</p></div></div>
+              <div class="agent-section-grid">
+                <div><span>Configured</span><strong>Protected</strong></div>
+                <div><span>Fingerprint</span><strong data-agent-control-field="clients">Unavailable</strong></div>
+                <div><span>Endpoint</span><strong data-agent-control-field="url">Unavailable</strong></div>
+                <div><span>Status</span><strong>Safe metadata only</strong></div>
+              </div>
+            </section>
             <section class="settings-section" data-agent-control-section="identity">
-              <div class="settings-section__header"><div><h2>Local Systems</h2><p>Desktop host and local Agent service identity.</p></div></div><div class="agent-remote-list" data-agent-local-host-list><div class="security-empty-state">Loading local systems.</div></div>
+              <div class="settings-section__header"><div><h2>Agent Identity</h2><p>Local Systems: desktop host and local Agent service identity.</p></div><button class="inline-action" type="button" data-agent-control-action="copyId">Copy ID</button></div><div class="agent-remote-list" data-agent-local-host-list><div class="security-empty-state">Loading local systems.</div></div>
             </section>
             <section class="settings-section" data-agent-control-section="remote">
               <div class="settings-section__header"><div><h2>Connected Remote Agents</h2><p>Authenticated Agent APIs and explicit node identities.</p></div></div><div class="agent-remote-list" data-agent-remote-list><div class="security-empty-state">No remote Agents loaded.</div></div>
+            </section>
+            <section class="settings-section" data-agent-control-section="token">
+              <div class="settings-section__header"><div><h2>Rotate Token</h2><p>Generate a new protected Local Agent credential and restart the managed Agent.</p></div></div>
+              <div class="agent-section-grid">
+                <div><span>Credential</span><strong>Protected storage</strong></div>
+                <div><span>Endpoint</span><strong data-agent-control-field="url">Unavailable</strong></div>
+                <div><span>Agent ID</span><strong data-agent-control-field="clients">Unavailable</strong></div>
+              </div>
+              <div class="settings-actions"><button class="primary-button" type="button" data-agent-control-action="rotateToken">Rotate Token</button></div>
             </section>
             </div>
             <div class="agent-control-column agent-control-column--right">
@@ -3684,6 +3723,7 @@
                   <p>Sanitized structured events, grouped issues, health checks, and redacted support-bundle evidence.</p>
                 </div>
                 <div class="agent-log-actions" aria-label="Developer log actions">
+                  <button class="inline-action" type="button" data-agent-control-action="runDiagnostics">Run Diagnostics</button>
                   <button class="inline-action" type="button" data-diagnostics-action="capture">Capture Snapshot</button>
                   <button class="inline-action" type="button" data-diagnostics-action="open">Open Logs Folder</button>
                   <button class="inline-action" type="button" data-diagnostics-action="copy">Copy Summary</button>
@@ -3725,6 +3765,15 @@
               </details>
               <pre class="agent-log-viewer" data-agent-log-viewer aria-live="polite">Logs will appear here.</pre>
             </section>
+            <section class="settings-section" data-agent-control-section="paths">
+              <div class="settings-section__header"><div><h2>Paths</h2><p>Open Local Agent folders and inspect supported runtime paths.</p></div></div>
+              <div class="agent-section-grid">
+                <div><span>Logs</span><strong>Diagnostics folder</strong></div>
+                <div><span>Data</span><strong>Managed Agent data</strong></div>
+                <div><span>Configuration</span><strong>Available in Developer</strong></div>
+              </div>
+              <div class="settings-actions"><button class="inline-action" type="button" data-agent-control-action="openLogs">Logs Folder</button><button class="inline-action" type="button" data-agent-control-action="openDataFolder">Data Folder</button></div>
+            </section>
             <details class="settings-section settings-section--wide agent-config-details" data-agent-control-section="developer">
               <summary><span>Agent Configuration</span><small data-agent-config-summary>Loading configuration summary...</small></summary>
               <div class="settings-grid agent-config-grid">
@@ -3735,7 +3784,7 @@
             <section class="settings-section settings-section--wide agent-quick-setup" data-agent-setup-panel data-agent-control-section="startup">
               <div class="settings-section__header"><div><h2>First-Run Agent Setup</h2><p data-agent-setup-summary>Agent is configured.</p></div><span class="status-pill status-pill--ok">Configured</span></div>
               <div class="settings-grid"><label class="settings-field"><span>Mode</span><select data-agent-setup="mode"><option value="agent">Local Agent mode</option><option value="local">Local-only desktop mode</option></select></label><label class="settings-check settings-check--toggle"><input type="checkbox" data-agent-setup="autoStart" checked><span>Start Agent automatically when I sign in</span></label></div>
-              <div class="settings-actions"><button class="primary-button" type="button" data-agent-control-action="completeSetup">Complete Setup</button><span class="settings-inline-status" data-agent-setup-message>Review the configuration above, then complete setup.</span></div>
+              <div class="settings-actions"><button class="primary-button" type="button" data-agent-control-action="completeSetup">Complete Setup</button><button class="inline-action" type="button" data-agent-control-action="enableAutoStart">Auto Start On</button><button class="inline-action" type="button" data-agent-control-action="disableAutoStart">Auto Start Off</button><span class="settings-inline-status" data-agent-setup-message>Review the configuration above, then complete setup.</span></div>
             </section>
             </div>
           </div>

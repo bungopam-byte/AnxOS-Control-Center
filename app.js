@@ -29214,12 +29214,7 @@ function canUseSettingsCapability(capability) {
   return settingsPermissionState?.capabilities?.[capability] === true;
 }
 
-const AGENT_CONTROL_SECTION_ALIASES = {
-  credentials: "connection",
-  token: "lifecycle",
-  updates: "lifecycle",
-  paths: "developer",
-};
+const AGENT_CONTROL_SECTION_ALIASES = {};
 
 let activeAgentControlSection = (() => {
   try { return window.sessionStorage.getItem("anxos-agent-control-section") || "status"; } catch { return "status"; }

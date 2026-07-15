@@ -459,6 +459,9 @@ const setupHealthContinueButton = document.querySelector('[data-setup-health-act
 const agentConfigFields = document.querySelectorAll("[data-agent-config]");
 const agentConfigMessage = document.querySelector("[data-agent-config-message]");
 const agentConfigSummary = document.querySelector("[data-agent-config-summary]");
+const agentDeveloperFields = document.querySelectorAll("[data-agent-developer-field]");
+const agentDeveloperJson = document.querySelector("[data-agent-developer-json]");
+const agentDeveloperButtons = document.querySelectorAll("[data-agent-developer-action]");
 const agentDiagnosticsList = document.querySelector("[data-agent-diagnostics]");
 const agentLocalHostList = document.querySelector("[data-agent-local-host-list]");
 const agentRemoteList = document.querySelector("[data-agent-remote-list]");
@@ -4109,6 +4112,7 @@ function renderAgentControlState(payload = agentControlState) {
   renderAgentBeginnerSummary(payload);
   renderLocalAgentSystems(payload);
   renderRemoteAgents(payload?.remote || []);
+  renderAgentDeveloperDiagnostics(payload);
   if (nodeHealthOverview || nodeHealthCategories || nodeHealthIssues) {
     refreshNodeHealth({ notify: false });
   }
@@ -4417,6 +4421,100 @@ function populateAgentConfig(config = {}) {
     const folders = Array.isArray(config.allowedFolders) ? config.allowedFolders.length : 0;
     const roots = Array.isArray(config.storageRoots) ? config.storageRoots.length : 0;
     agentConfigSummary.textContent = `${config.name || "Agent"} · ${config.host || "127.0.0.1"}:${config.port || "47131"} · ${config.loggingLevel || "info"} logging · ${folders} folders · ${roots} storage roots`;
+  }
+}
+
+function buildSafeAgentDeveloperDiagnostics(payload = agentControlState) {
+  const target = resolveActiveManagementTarget();
+  const selectedNode = getSelectedNode();
+  const activeAgent = payload?.activeAgent || (Array.isArray(payload?.remote) ? payload.remote.find((agent) => agent.nodeId === target.nodeId) : null);
+  const local = payload?.local || null;
+  const relevant = target.targetType === "registered-node" ? activeAgent : local;
+  const service = local?.service || {};
+  const latestError = relevant?.mostRecentError || selectedNode?.connection?.error || null;
+  return {
+    targetType: target.targetType,
+    targetId: target.id,
+    nodeId: target.nodeId || "none",
+    name: target.name,
+    endpoint: target.agentUrl || local?.agentUrl || "none",
+    targetLabel: target.targetLabel,
+    credentialSource: target.credentialSource,
+    tokenConfigured: target.targetType === "registered-node" ? selectedNode?.hasToken === true : Boolean(latestAgentSettingsPayload?.tokenStatus?.configured || local?.tokenConfigured),
+    tokenFingerprint: target.targetType === "registered-node" ? selectedNode?.credentialFingerprint || selectedNode?.tokenFingerprint || "fingerprint unavailable" : latestAgentSettingsPayload?.tokenStatus?.fingerprint || "fingerprint unavailable",
+    apiVersion: target.apiVersion || relevant?.apiVersion || "unavailable",
+    protocolVersion: target.protocolVersion || relevant?.protocolVersion || "unavailable",
+    agentVersion: target.agentVersion || relevant?.agentVersion || "unavailable",
+    platform: [target.operatingSystem, target.platform, target.architecture].filter(Boolean).join(" · ") || "unavailable",
+    compatibility: target.compatibility?.status || selectedNode?.connection?.compatibility?.status || "Not reported",
+    configurationSource: target.targetType === "registered-node" ? "protected node registry" : getAgentConfigSourceText(latestAgentSettingsPayload),
+    lastProbeTime: selectedNode?.connection?.checkedAt || relevant?.lastHeartbeat || "unavailable",
+    lastSuccessfulResponse: target.lastSuccessfulResponse || relevant?.lastHeartbeat || "unavailable",
+    latestSafeErrorCode: latestError?.code || latestError?.status || "none",
+    latestSafeErrorMessage: latestError?.message || "none",
+    suppressionCount: latestError?.suppressedCount || 0,
+    pollingState: agentControlRefreshInFlight ? "refreshing" : shouldBackOffAgentPolling("system", { nodeId: target.id }) ? "backoff" : "ready",
+    requestGenerationId: target.requestGenerationId,
+    safePaths: target.targetType === "application-host"
+      ? "Application host local paths"
+      : service.path || service.executablePath || "Paths unavailable for selected target",
+  };
+}
+
+function renderAgentDeveloperDiagnostics(payload = agentControlState) {
+  const diagnostics = buildSafeAgentDeveloperDiagnostics(payload);
+  const values = {
+    targetType: diagnostics.targetType,
+    targetId: diagnostics.targetId,
+    nodeId: diagnostics.nodeId,
+    name: diagnostics.name,
+    endpoint: diagnostics.endpoint,
+    targetLabel: diagnostics.targetLabel,
+    credentialSource: diagnostics.credentialSource,
+    tokenConfigured: `${diagnostics.tokenConfigured ? "Yes" : "No"} · ${diagnostics.tokenFingerprint}`,
+    protocol: `API ${diagnostics.apiVersion} · Protocol ${diagnostics.protocolVersion}`,
+    agentVersion: diagnostics.agentVersion,
+    platform: diagnostics.platform,
+    compatibility: diagnostics.compatibility,
+    lastProbe: diagnostics.lastProbeTime === "unavailable" ? "Unavailable" : formatDateTime(diagnostics.lastProbeTime),
+    lastResponse: diagnostics.lastSuccessfulResponse === "unavailable" ? "Unavailable" : formatDateTime(diagnostics.lastSuccessfulResponse),
+    latestError: diagnostics.latestSafeErrorCode === "none" ? "None" : `${diagnostics.latestSafeErrorCode} · ${diagnostics.latestSafeErrorMessage}`,
+    polling: `${diagnostics.pollingState} · suppressed ${diagnostics.suppressionCount}`,
+    generation: diagnostics.requestGenerationId,
+    paths: diagnostics.safePaths,
+  };
+  agentDeveloperFields.forEach((field) => {
+    field.textContent = values[field.dataset.agentDeveloperField] || "Unavailable";
+  });
+  if (agentDeveloperJson) {
+    agentDeveloperJson.textContent = JSON.stringify(diagnostics, null, 2);
+  }
+  return diagnostics;
+}
+
+async function runAgentDeveloperAction(action) {
+  if (action === "copy") {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(buildSafeAgentDeveloperDiagnostics(agentControlState), null, 2));
+      showToast("Safe Agent diagnostics copied.", "success");
+    } catch {
+      showToast("Could not copy diagnostics.", "warning");
+    }
+    return;
+  }
+  if (action === "refresh") {
+    await refreshAgentControl({ includeConfig: true });
+    return;
+  }
+  if (action === "probe") {
+    if (getSelectedNodeId() === "application-host") await testAgentConnection({ silent: false });
+    else await testSelectedNode();
+    await refreshAgentControl({ includeConfig: false });
+    return;
+  }
+  if (action === "open-diagnostics") {
+    showPage("agent-control");
+    setActiveAgentControlSection("diagnostics");
   }
 }
 
@@ -32671,6 +32769,7 @@ nodeDetailsModal?.addEventListener("click", async (event) => {
   }
 });
 agentControlButtons.forEach((button) => button.addEventListener("click", () => runAgentControlAction(button.dataset.agentControlAction)));
+agentDeveloperButtons.forEach((button) => button.addEventListener("click", () => runAgentDeveloperAction(button.dataset.agentDeveloperAction)));
 agentControlSectionButtons.forEach((button) => {
   button.addEventListener("click", () => setActiveAgentControlSection(button.dataset.agentControlSectionTarget || "status"));
 });

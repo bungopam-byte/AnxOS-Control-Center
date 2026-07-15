@@ -79,16 +79,16 @@ function close(server) {
     await assert.rejects(
       () => agentClient.forNode("node-b").get("/health"),
       (error) => {
-        assert.strictEqual(error.status, 401);
-        assert.strictEqual(error.payload?.error?.details?.nodeId, "node-b");
+        assert.strictEqual(error.code, "NODE_CREDENTIAL_MISSING");
+        assert.strictEqual(error.details?.nodeId, "node-b");
         return true;
       },
-      "Node B should fail with its own missing credential, not the global credential.",
+      "Node B should fail before sending a request when its protected credential is missing.",
     );
 
     assert.strictEqual(legacy.requests.length, 0, "Global configured Agent must not receive registered-node feature requests.");
     assert(nodeA.requests.some((entry) => entry.authorization === "Bearer token-a"), "Node A should use its protected node credential.");
-    assert(nodeB.requests.some((entry) => entry.authorization === ""), "Node B must not fall back to the global configured Agent token.");
+    assert.strictEqual(nodeB.requests.length, 0, "Node B must not receive an Agent request when its protected credential is missing.");
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(agentConfigPath, "utf8")), globalConfig, "Selecting registered nodes must not rewrite global agent.json.");
 
     console.log("Global Agent configuration isolation smoke checks passed.");

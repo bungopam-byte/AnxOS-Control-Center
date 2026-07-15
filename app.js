@@ -27261,6 +27261,7 @@ function buildNodeHealthModel(node = getSelectedNode()) {
   const selectedNode = node || getSelectedNode() || { id: "application-host", kind: "application-host", displayName: "Application Host" };
   const cacheKey = getNodeHealthCacheKey(selectedNode);
   const applicability = getNodeHealthApplicability(selectedNode);
+  const ownsActiveRendererContext = selectedNode.id === getSelectedNodeId();
   const rawCategories = [
     buildConnectivityHealth(selectedNode),
     buildAgentHealth(selectedNode),
@@ -27278,6 +27279,9 @@ function buildNodeHealthModel(node = getSelectedNode()) {
   const categories = rawCategories.map((category) => {
     if (applicability.agentNode && ["updates", "maintenance"].includes(category.id)) {
       return { ...category, state: "Unavailable", applicable: false, current: false, issueCount: 0, evidence: `${category.label} is local-host-only and does not apply to remote Agent nodes.` };
+    }
+    if (!ownsActiveRendererContext && ["resources", "storage", "dependencies", "marketplace-instances", "files", "operations", "diagnostics"].includes(category.id)) {
+      return { ...category, current: false, issueCount: 0, evidence: `${category.label} evidence belongs to the active node and is not applied to ${selectedNode.displayName || selectedNode.id}.` };
     }
     return category;
   });
@@ -27699,12 +27703,12 @@ function renderNodeSummary() {
   const online = nodes.filter((node) => getNodeVisualState(node) === "online").length;
   const offline = nodes.filter((node) => ["offline", "error"].includes(getNodeVisualState(node))).length;
   const docker = remoteNodes.filter((node) => node.docker?.enabled !== false).length;
-  const selectedAgent = nodes.find((node) => node.id === getSelectedNodeId() && node.kind === "agent");
+  const connectedAgent = remoteNodes.find((node) => getNodeConnectionState(node).key === "connected");
   setNodeSummary("total", nodes.length);
   setNodeSummary("online", online);
   setNodeSummary("offline", offline);
   setNodeSummary("docker", docker);
-  setNodeSummary("connected", selectedAgent && getNodeVisualState(selectedAgent) === "online" ? selectedAgent.displayName || "Agent" : "None");
+  setNodeSummary("connected", connectedAgent ? connectedAgent.displayName || connectedAgent.name || "Agent" : "None");
   const health = getSharedNodeHealthModel();
   setNodeSummary("health", health.state);
   setNodeSummary("healthIssues", health.issueCount);
@@ -28142,6 +28146,7 @@ async function activateNodePickerOption(index) {
 
 function renderNodes() {
   renderRoutingDiagnostics();
+  syncAgentConnectionDisplayWithSelectedNode();
   renderNodeSummary();
   renderFriendlyDashboard();
   nodeTargetSelects.forEach((select) => {
@@ -28232,8 +28237,8 @@ function renderNodes() {
       const badges = document.createElement("div");
       badges.className = "node-card__badges";
       badges.append(
-        createNodeBadge(getNodeStatusLabel(node), state),
-        createNodeHealthBadge(health.state),
+        createNodeBadge(`Connection: ${getNodeStatusLabel(node)}`, state),
+        createNodeBadge(`Overall: ${normalizeNodeHealthState(health.state)}`, nodeHealthTone(health.state)),
         createNodeBadge(node.kind === "application-host" ? "Built In" : "Registered", node.kind === "application-host" ? "online" : state),
         createNodeBadge(getNodeTypeLabel(node), node.kind === "application-host" ? "online" : state),
       );
@@ -28756,7 +28761,7 @@ function setAgentConnectionDisplay(status, message, options = {}) {
   if (agentConnectionPill) {
     const connected = status === "connected";
     const testing = status === "testing";
-    agentConnectionPill.textContent = testing ? "Testing..." : connected ? "Connected" : "Disconnected";
+    agentConnectionPill.textContent = options.label || (testing ? "Testing..." : connected ? "Connected" : "Disconnected");
     agentConnectionPill.dataset.agentState = testing ? "installing" : connected ? "online" : status === "error" ? "error" : "offline";
     agentConnectionPill.classList.toggle("is-connected", connected);
     agentConnectionPill.classList.toggle("is-disconnected", !connected && !testing);
@@ -28778,6 +28783,33 @@ function setAgentConnectionDisplay(status, message, options = {}) {
   if (getActivePageName() === "backups") {
     renderBackups();
   }
+}
+
+function syncAgentConnectionDisplayWithSelectedNode() {
+  const selected = getSelectedNode();
+  const connectionState = getNodeConnectionState(selected);
+  if (!selected || selected.kind === "application-host") {
+    setAgentConnectionDisplay("connected", "Application Host is available locally.", {
+      label: "Application Host",
+    });
+    return;
+  }
+  if (connectionState.key === "connected") {
+    setAgentConnectionDisplay("connected", `${selected.displayName || "Selected Agent"} is authenticated and reachable.`, {
+      label: "Agent Connected",
+    });
+    return;
+  }
+  if (connectionState.key === "unauthorized") {
+    setAgentConnectionDisplay("error", `${selected.displayName || "Selected Agent"} rejected its saved credential.`, {
+      label: "Authentication Rejected",
+      repairAvailable: true,
+    });
+    return;
+  }
+  setAgentConnectionDisplay("disconnected", `${selected.displayName || "Selected Agent"} is not reachable.`, {
+    label: "Agent Unavailable",
+  });
 }
 
 function getAgentConfigSourceText(settingsPayload) {

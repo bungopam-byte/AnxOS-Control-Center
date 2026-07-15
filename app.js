@@ -12429,8 +12429,12 @@ function getMarketplaceStateForTemplate(template = {}) {
   const instances = getMarketplaceTemplateInstances(template);
   const activeOperation = activeMarketplaceOperationId ? operationsState.items.get(activeMarketplaceOperationId) : null;
   const localRecord = getMarketplaceLocalInstallRecord(template);
+  const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
   if (template.comingSoon || template.disabled) {
     return { label: "Unsupported", tone: "planned", action: "Unavailable", disabled: true, instances };
+  }
+  if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
+    return { label: capability.label || "Client Pack Only", tone: "warning", action: "Choose Another Version", disabled: true, instances, capability };
   }
   if (activeOperation && marketplaceSelectedTemplateId === template.id) {
     if (activeOperation.status === "waiting") return { label: "Recovery available", tone: "warning", action: "Resume", instances, operation: activeOperation };
@@ -12452,7 +12456,7 @@ function getMarketplaceStateForTemplate(template = {}) {
   if (instances.length > 0) {
     return { label: "Installed", tone: "ok", action: "Open instance", instances };
   }
-  return { label: "Available", tone: "planned", action: "Install", instances };
+  return { label: capability.label && isProviderMarketplaceTemplate(template) ? capability.label : "Available", tone: capability.state === "unknown" ? "warning" : "planned", action: "Install", instances, capability };
 }
 
 function formatMarketplaceSelectedNodeLabel() {
@@ -12561,6 +12565,7 @@ function renderMarketplaceInstallSummary(template) {
   if (!template) return;
 
   const state = getMarketplaceStateForTemplate(template);
+  const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
   const overview = document.createElement("section");
   overview.className = "marketplace-summary-section";
   overview.append(createTextElement("strong", "Install review"));
@@ -12571,10 +12576,31 @@ function renderMarketplaceInstallSummary(template) {
     ["Selected node", formatMarketplaceSelectedNodeLabel()],
     ["Version", template.version ? `Template v${template.version}` : "Version metadata unavailable"],
     ["Instance state", state.instances.length ? `${state.instances.length} installed · ${state.label}` : state.label],
+    ["Server compatibility", capability.label || "Server Support Unknown"],
+    ["Server-pack detail", capability.serverPackFileId ? `Resolved server-pack metadata: file ${capability.serverPackFileId}` : capability.detail || "No server-pack metadata available"],
     ["Install path", "Managed by the selected Agent instance data root"],
     ["Data preservation", "Uninstall and backup behavior are managed from the Instances and Backups workspaces."],
   ].forEach(([label, value]) => appendDetailPair(details, label, value, { valueTag: "small" }));
   overview.append(details);
+  if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
+    const unsupported = createEmptyState("Client pack only. This version does not provide an official dedicated-server pack on CurseForge.", "security-empty-state");
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    [
+      ["Choose Another Version", () => renderMarketplaceVersionPicker()],
+      ["Browse Server-Compatible Packs", () => { marketplaceProviderMode = "server"; loadMarketplaceProviderPacks({ reset: true }); }],
+      ["Open Project Details", () => window.open(template.projectUrl || template.websiteUrl || "", "_blank", "noopener")],
+      ["Cancel", () => closeMarketplaceWizard()],
+    ].forEach(([label, handler]) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "inline-action";
+      button.textContent = label;
+      button.addEventListener("click", handler);
+      actions.append(button);
+    });
+    overview.append(unsupported, actions);
+  }
   marketplaceInstallSummary.append(
     overview,
     createMarketplaceSummarySection("Runtime requirements", getMarketplaceRequirementItems(template)),
@@ -12751,10 +12777,53 @@ function normalizeProviderMinecraftVersion(project = {}) {
   return versions.find((version) => /^1\.\d+(?:\.\d+)?$/.test(String(version))) || versions[0] || "";
 }
 
+function classifyMarketplaceServerPackCapability(source = {}) {
+  const provider = getMarketplaceProvider(source);
+  if (provider === "curseforge") {
+    const serverPackFileId = source.serverPackFileId || source.raw?.serverPackFileId || source.mainFile?.serverPackFileId || source.latestFile?.serverPackFileId || null;
+    const text = `${source.name || ""} ${source.title || ""} ${source.description || ""} ${source.fileName || ""}`.toLowerCase();
+    if (serverPackFileId) {
+      return {
+        state: "available",
+        label: "Official Server Pack Available",
+        detail: `CurseForge metadata links an official server pack${serverPackFileId ? ` (file ${serverPackFileId})` : ""}.`,
+        installable: true,
+        serverPackFileId,
+      };
+    }
+    if (source.serverPackCompatible === false || source.serverCapable === false || /client[-\s]?only|optimization|performance client/.test(text)) {
+      return {
+        state: "client-only",
+        label: "Client Pack Only",
+        detail: "This version does not provide an official dedicated-server pack on CurseForge.",
+        installable: false,
+      };
+    }
+    return {
+      state: "unknown",
+      label: "Server Support Unknown",
+      detail: "CurseForge server-pack metadata is incomplete. AnxOS will verify before any Agent installation work.",
+      installable: true,
+    };
+  }
+  if (provider === "modrinth") {
+    const serverSide = String(source.serverSide || source.raw?.server_side || "").toLowerCase();
+    if (serverSide === "required" || serverSide === "optional") {
+      return { state: "available", label: "Server-Compatible", detail: `Modrinth marks server side as ${serverSide}.`, installable: true };
+    }
+    if (serverSide === "unsupported") {
+      return { state: "client-only", label: "Client Pack Only", detail: "Modrinth marks this project as unsupported server-side.", installable: false };
+    }
+    return { state: "unknown", label: "Server Support Unknown", detail: "Modrinth server-side metadata is unavailable.", installable: true };
+  }
+  return { state: "available", label: "Server-Compatible", detail: "AnxOS template includes server install metadata.", installable: true };
+}
+
 function buildProviderMarketplaceTemplate(project = {}) {
   const provider = getMarketplaceProvider(project);
   const providerProjectId = project.providerProjectId || project.id || project.slug;
   const id = `${provider}-${providerProjectId}`;
+  const serverPackCapability = classifyMarketplaceServerPackCapability(project);
   return {
     id,
     displayName: project.name || project.title || project.slug || providerProjectId,
@@ -12774,7 +12843,10 @@ function buildProviderMarketplaceTemplate(project = {}) {
     minecraftVersions: Array.isArray(project.minecraftVersions) ? project.minecraftVersions : [],
     downloads: project.downloads || project.downloadCount || 0,
     updatedAt: project.updatedAt || project.dateModified || "",
-    serverCapable: true,
+    serverCapable: serverPackCapability.installable !== false,
+    serverPackCapability,
+    serverPackFileId: serverPackCapability.serverPackFileId || project.serverPackFileId || null,
+    rawProviderProject: project.raw ? undefined : project,
     defaultRam: "4G",
     defaultPorts: [25565],
   };
@@ -13203,11 +13275,21 @@ function openMarketplaceWizard(templateId) {
   }
   renderMarketplaceTemplates();
   if (marketplaceInstallButton) {
-    marketplaceInstallButton.disabled = marketplaceInstallInFlight;
+    const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
+    marketplaceInstallButton.disabled = marketplaceInstallInFlight || (isProviderMarketplaceTemplate(template) && capability.installable === false);
   }
   if (!marketplaceInstallInFlight) {
     renderMarketplaceProgress([]);
-    setMarketplaceInstallState("Ready", "ready");
+    const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
+    if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
+      setMarketplaceInstallState("Client Pack Only", "failed");
+      setMarketplaceMessage("This version does not provide an official dedicated-server pack on CurseForge. Choose another version or browse server-compatible packs.", "warning");
+    } else {
+      setMarketplaceInstallState("Ready", "ready");
+    }
+    if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
+      return;
+    }
     if (isMinecraftMarketplaceTemplate(template) && serverTypeField?.dataset?.runtimeDetected !== "true") {
       setMarketplaceMessage("Server runtime could not be determined. Vanilla is selected; choose the correct runtime if this is a modpack.", "warning");
     } else {
@@ -14786,6 +14868,13 @@ async function installMarketplaceTemplate(event) {
   const template = findMarketplaceTemplate();
 
   if (!desktopApiState.hasMarketplace || !template || marketplaceInstallInFlight) {
+    return;
+  }
+  const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
+  if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
+    setMarketplaceInstallState("Client Pack Only", "failed");
+    setMarketplaceMessage("Client pack only. This version does not provide an official dedicated-server pack on CurseForge.", "warning");
+    renderMarketplaceInstallSummary(template);
     return;
   }
   if (!syncMarketplacePortValidity({ report: true })) {

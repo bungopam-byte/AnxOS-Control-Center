@@ -98,6 +98,7 @@
     "marketplace:install-selected-node:smoke": "node scripts/marketplace-install-selected-node-smoke.js",
     "marketplace:credential-refresh:smoke": "node scripts/marketplace-credential-refresh-smoke.js",
     "curseforge:server-pack-resolution:smoke": "node scripts/curseforge-server-pack-resolution-smoke.js",
+    "marketplace:server-capability-ux:smoke": "node scripts/marketplace-server-capability-ux-smoke.js",
     "curseforge:browse-agent-auth:smoke": "node scripts/curseforge-browse-agent-auth-smoke.js",
     "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",

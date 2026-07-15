@@ -81,9 +81,9 @@ The desktop application includes workspaces for:
 
 Missing platform data is shown as unavailable, unknown, or not tested instead of using fake values.
 
-## AMP API Integration
+## AMP API Integration For Source Development
 
-AnxOS Control Center can connect to a local AMP API using `@cubecoders/ampapi`. Credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed.
+AnxOS Control Center can connect to a local AMP API using `@cubecoders/ampapi`. In a source-development checkout, credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed. Packaged normal-user workflows should use the in-app setup surfaces instead of editing environment files.
 
 Create your local environment file:
 
@@ -114,7 +114,9 @@ The dashboard reports AMP connection status, instances, server state, player cou
 
 The renderer still uses plain HTML/CSS/JavaScript. Node integration remains disabled in the browser window.
 
-## Run as a Desktop App
+## Run From Source For Development
+
+This section is for developers running the repository checkout. Normal users should install a packaged build and use the in-app setup workflows.
 
 Install dependencies once:
 
@@ -131,43 +133,25 @@ npm start
 
 This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
 
-## AnxOS Agent Token
+## Pair An Agent
 
-The desktop app and the AnxOS agent share one secure token from `config/agent.json`. Do not put `AGENT_TOKEN` in multiple `.env` files. If no token exists, AnxOS generates a strong random token automatically and stores it in the shared config.
+Normal users should pair Agents from the app, without npm commands, shell commands, environment-variable editing, or manual token synchronization.
 
-Safe status check:
+Recommended workflow:
 
-```bash
-npm run agent:token:status
-```
+1. Install and open AnxOS Agent on the machine you want to manage.
+2. Open Agent Setup and select Generate Pairing Code.
+3. Open AnxOS Control Center.
+4. Select Add Node.
+5. Select Pair with Code.
+6. Paste the temporary pairing code.
+7. Select Pair Agent.
 
-This prints only whether the token is configured, whether a shell `AGENT_TOKEN` matches or is ignored, and a short fingerprint. It never prints the full token.
+Pairing codes expire, can be used only once, and are not the permanent Agent credential. After pairing succeeds, Control Center and the Agent automatically establish a permanent credential. The permanent credential is stored securely, is not written to normal node metadata, and is not displayed again.
 
-Rotate the token:
+Manual URL/token setup remains available under Advanced Setup for development, recovery, and older Agents. The in-app token generator can create a strong token, copy only the unsaved visible value, and store the saved credential through protected storage.
 
-```bash
-npm run agent:token:rotate
-```
-
-After rotation, restart both the AnxOS agent and the desktop app so they reload the shared token.
-
-Recommended agent startup on Linux:
-
-```bash
-./AnxAgent.sh
-```
-
-`AnxAgent.sh` points the agent at `config/agent.json`, unsets stale shell `AGENT_TOKEN` values, installs agent dependencies if needed, and starts the agent with `npm --prefix agent start`.
-
-Pair a remote Agent:
-
-```bash
-npm run agent:pair
-```
-
-Run that on the Debian agent machine. It prints the Agent URL, a short token fingerprint, and an `ANXOS-PAIR...` code. Treat the pairing code like a temporary secret because it contains the remote agent token for import.
-
-On the Windows desktop app, open `Agent Control -> Agent Connection`, paste the code into `Pairing code`, click `Pair Agent`, then click `Test Connection`. The desktop stores the imported token in its own local app config and shows only fingerprints in normal UI. If a protected Agent route returns `401`, use `Repair Connection` and import a fresh code from the Debian machine.
+Developer and headless recovery helpers such as token status, token rotation, and source-checkout pairing scripts remain available from `package.json`, but they are not the normal setup path.
 
 ### One-Click Development Launcher
 
@@ -361,6 +345,10 @@ The Debian agent can report Playit installed/running state from normal service c
 /run/playit/playitd.sock
 ```
 
+### Advanced Playit Service Recovery
+
+The app provides in-app dependency and service repair actions for normal users. The following commands are retained only for advanced headless recovery when the graphical repair flow is unavailable.
+
 Check the current Playit permissions on the Debian host:
 
 ```bash
@@ -407,9 +395,9 @@ stat -c '%F %a %U %G %n' /run/playit /run/playit/playitd.sock
 
 Do not use `chmod 777` on the Playit socket and do not run the entire AnxOS Agent as root. If socket access is still denied, `/api/v1/playit/snapshot` will keep `installed` and `running` detection but will leave tunnel metadata null and include a `diagnostics.playitIpcAccess` permission message.
 
-## Add to the Debian App Launcher
+## Add to the Debian App Launcher For Source Development
 
-After `npm install`, copy or symlink the desktop entry into your local applications folder:
+After `npm install` in a source checkout, developers can copy or symlink the desktop entry into a local applications folder:
 
 ```bash
 mkdir -p ~/.local/share/applications

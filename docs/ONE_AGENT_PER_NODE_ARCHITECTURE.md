@@ -1,6 +1,6 @@
 # One Agent Per Node Architecture Map
 
-Phase 1 audit document. This file maps the current implementation before behavior changes.
+Phase 1 audit document, updated through the synchronized Node/Agent selection, pairing, terminal-free setup, dependency repair, and SSH terminal validation work.
 
 ## Target Architecture
 
@@ -21,6 +21,45 @@ Example node registry entries:
 | VPS | `https://agent-vps.example.com` | Separate Agent installed on a cloud server or VPS. |
 
 The Control Center connects directly to the selected Agent. Agents do not connect to each other and do not know about other nodes. Every Agent manages only its local host.
+
+## Final Phase 15 Notes
+
+One machine or server = one independently running AnxOS Agent.
+
+- Active Node is the canonical application-wide selection.
+- Active Agent is derived from the active Node.
+- Selecting a Node automatically activates its Agent.
+- Selecting a registered Agent automatically activates its Node.
+- Control Center connects directly to the selected Node's Agent URL and protected credential.
+- Agent resources, health, polling, operations, and selected resources are node-scoped.
+- Offline Nodes remain selectable and do not silently fall back to another Node.
+- Ordinary node metadata does not contain raw Agent tokens.
+- Deleting a Node removes it only from Control Center; it does not uninstall the remote Agent and does not delete remote resources.
+
+Examples:
+
+| Machine | Node | Agent | URL |
+| --- | --- | --- | --- |
+| Anxlab | Anxlab | Anxlab Agent | `http://192.168.1.134:47131` |
+| Windows PC | Windows PC | Windows Agent | `http://192.168.1.150:47131` |
+| VPS | Cloud VPS | VPS Agent | `https://agent-vps.example.com` |
+
+Normal setup is graphical:
+
+- Pair with Code is the recommended Add Node path.
+- The Agent generates a temporary pairing code.
+- Control Center exchanges that temporary code for a permanent credential.
+- The permanent credential is stored through protected credential storage and is not shown again.
+- Manual URL/token setup remains available under Advanced setup for recovery, development, and older Agents.
+- Agent setup, service lifecycle, dependency detection, dependency install/update/repair/restart/verify, and pairing are exposed through in-app workflows for normal users.
+- CLI, environment-variable, and manual configuration instructions remain advanced/developer/recovery paths, not the normal setup path.
+
+SSH terminal behavior:
+
+- SSH sessions allocate an interactive `xterm-256color` PTY through `ssh2`.
+- Raw PTY output is written into a terminal buffer that handles Backspace, Delete, Enter, Tab, arrow-key escape sequences, Ctrl sequences, bell, carriage-return redraw, cursor movement, ANSI SGR, UTF-8, and resize synchronization.
+- Renderer code no longer strips ANSI with a broad regex or emulates Backspace by deleting the last local character.
+- Terminal input is sent directly to the PTY and typed commands are not logged by SSH renderer or service paths.
 
 ## Synchronized Node And Agent Selection
 

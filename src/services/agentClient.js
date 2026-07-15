@@ -395,6 +395,12 @@ function getAgentTransportErrorMessage(errorCode, requestUrl) {
 }
 
 function getAgentHttpErrorMessage(status, code, payload) {
+  if (code === "AGENT_TOKEN_MISSING") {
+    return "Agent token is missing. Open Agent Control, generate a pairing code, then pair or repair the node connection.";
+  }
+  if (code === "UNAUTHORIZED") {
+    return "Agent token rejected. Open Agent Control and use Repair, Rotate Token, or Pair with Code to refresh the connection.";
+  }
   const payloadMessage = payload?.error?.message;
   if (payloadMessage && payloadMessage !== "Request failed.") {
     return payloadMessage;
@@ -402,12 +408,6 @@ function getAgentHttpErrorMessage(status, code, payload) {
   const userMessage = payload?.error?.details?.userMessage;
   if (userMessage) {
     return userMessage;
-  }
-  if (code === "AGENT_TOKEN_MISSING") {
-    return "Agent token is missing. Run npm run agent:token:status to create the shared token, then restart the agent and desktop app.";
-  }
-  if (code === "UNAUTHORIZED") {
-    return "Agent token rejected. The desktop app and agent are not using the same shared token. Run npm run agent:token:status and restart both apps.";
   }
   return `Agent request failed with HTTP ${status}.`;
 }
@@ -600,7 +600,9 @@ async function requestJson(pathname, options = {}) {
         method,
         targetLabel,
         logThrottleMs,
-        responseBody: typeof payload === "string" ? payload : JSON.stringify(payload),
+        responseBody: response.status === 401 || ["UNAUTHORIZED", "AGENT_TOKEN_MISSING"].includes(responseErrorCode)
+          ? "[redacted authentication response]"
+          : typeof payload === "string" ? payload : JSON.stringify(payload),
         message: error.message,
         originalMessage: dockerNotFoundDetails?.likelyCause || null,
         stack: error.stack,
@@ -1203,7 +1205,9 @@ async function requestBuffer(pathname, options = {}) {
       logAgentRequestFailure(pathname, response.status, responseErrorCode, {
         url: requestUrl,
         method,
-        responseBody: typeof payload === "string" ? payload : JSON.stringify(payload),
+        responseBody: response.status === 401 || ["UNAUTHORIZED", "AGENT_TOKEN_MISSING"].includes(responseErrorCode)
+          ? "[redacted authentication response]"
+          : typeof payload === "string" ? payload : JSON.stringify(payload),
         message: error.message,
         stack: error.stack,
       });

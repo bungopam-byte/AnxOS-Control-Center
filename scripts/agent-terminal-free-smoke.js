@@ -9,6 +9,7 @@ const htmlSource = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const ipcSource = fs.readFileSync(path.join(root, "src", "ipc", "agentControlIpc.js"), "utf8");
 const preloadSource = fs.readFileSync(path.join(root, "preload.js"), "utf8");
 const serviceSource = fs.readFileSync(path.join(root, "src", "services", "agentControlService.js"), "utf8");
+const agentClientSource = fs.readFileSync(path.join(root, "src", "services", "agentClient.js"), "utf8");
 const agentServerSource = fs.readFileSync(path.join(root, "agent", "src", "server.js"), "utf8");
 
 [
@@ -32,6 +33,8 @@ assert(serviceSource.includes("async function startPairingSession") && serviceSo
 assert(appSource.includes("renderAgentPairingSetup") && appSource.includes("Pairing code copied."), "Renderer must show and copy temporary pairing codes in-app.");
 assert(appSource.includes("Open Agent setup on that machine") && !appSource.includes("Run npm run agent:pair"), "Pairing repair guidance must use in-app setup, not npm.");
 assert(!appSource.includes("Run npm run agent:token:status"), "Renderer token errors must not require npm for normal users.");
+assert(!agentClientSource.includes("Run npm run agent:token:status"), "Agent client auth errors must not require npm for normal users.");
+assert(agentClientSource.includes("[redacted authentication response]"), "Agent client must redact authentication response bodies in request logs.");
 assert(!agentServerSource.includes("Run npm run agent:token:status"), "Agent auth errors must not require npm for normal users.");
 
 console.log("Agent terminal-free setup smoke checks passed.");

@@ -62,6 +62,31 @@ async function main() {
     });
     providerConfig.saveMarketplaceConfig({ curseForgeApiKey: "desktop-cf-key" });
     curseforge._test.setRuntimeApiKey();
+    curseforge.resolveFile = async () => ({
+      id: 1000,
+      projectId: 100,
+      fileName: "cf-client.zip",
+      minecraftVersions: ["1.20.1"],
+      loaders: ["forge"],
+      serverPackFileId: 1001,
+    });
+    curseforge.getFile = async () => ({
+      id: 1001,
+      projectId: 100,
+      fileName: "cf-server-pack.zip",
+      minecraftVersions: ["1.20.1"],
+      loaders: ["forge"],
+    });
+    curseforge.getFiles = async () => [
+      {
+        id: 1000,
+        projectId: 100,
+        fileName: "cf-client.zip",
+        minecraftVersions: ["1.20.1"],
+        loaders: ["forge"],
+        serverPackFileId: 1001,
+      },
+    ];
 
     global.fetch = async (url, options = {}) => {
       const endpoint = String(url);

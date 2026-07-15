@@ -1805,7 +1805,9 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     });
     modrinthProvider.resolveDependencies = async () => [];
     curseforgeProvider.ensureConfigured = () => true;
-    curseforgeProvider.resolveFile = async () => ({ id: 200, projectId: 100, fileName: "curseforge-smoke.jar", downloadUrl: "https://mock.local/curseforge-smoke.jar", dependencies: [] });
+    curseforgeProvider.resolveFile = async () => ({ id: 200, projectId: 100, fileName: "curseforge-smoke-client.zip", minecraftVersions: ["1.21.1"], loaders: ["vanilla"], serverPackFileId: 201, dependencies: [] });
+    curseforgeProvider.getFile = async () => ({ id: 201, projectId: 100, fileName: "curseforge-smoke.jar", minecraftVersions: ["1.21.1"], loaders: ["vanilla"], downloadUrl: "https://mock.local/curseforge-smoke.jar", dependencies: [] });
+    curseforgeProvider.getFiles = async () => [{ id: 200, projectId: 100, fileName: "curseforge-smoke-client.zip", minecraftVersions: ["1.21.1"], loaders: ["vanilla"], serverPackFileId: 201, dependencies: [] }];
     curseforgeProvider.downloadFile = async (file) => ({ ...file, buffer: Buffer.from("cf-mod") });
     curseforgeProvider.resolveDependencies = async () => [];
 
@@ -2850,7 +2852,7 @@ async function assertProviderInstallSupport() {
       serverSignalCount: 0,
       bundledModCount: 0,
     }),
-    /selected file does not include a server pack/,
+    /does not provide a compatible dedicated-server pack/,
     "CurseForge client-only archives should not be treated as server packs."
   );
   const restrictedFileError = marketplaceInstallService._test.createRestrictedCurseForgeFileError(

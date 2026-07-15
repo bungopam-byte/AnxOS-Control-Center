@@ -8,6 +8,7 @@ process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 fs.mkdirSync(process.env.ANXHUB_CONFIG_DIR, { recursive: true });
 
 const nodes = require("../src/services/nodeService");
+const { setNodeToken } = require("../src/services/nodeCredentialStore");
 
 const legacyNode = {
   id: "anxlab",
@@ -58,6 +59,14 @@ try {
     const config = nodes.getNodeAgentConfig("anxlab");
     assert.strictEqual(config.agentUrl, "http://192.168.1.134:47131", "Agent config should resolve node baseUrl.");
     assert.strictEqual(config.agentToken, "node-specific-token", "Agent config should resolve node token from credential store.");
+
+    setNodeToken("anxlab", "new-canonical-token");
+    fs.writeFileSync(nodes.getNodesPath(), `${JSON.stringify({
+      schemaVersion: nodes.NODE_SCHEMA_VERSION,
+      selectedNodeId: "anxlab",
+      nodes: [{ ...persisted.nodes[0], agentToken: "stale-metadata-token" }],
+    }, null, 2)}\n`, { mode: 0o600 });
+    assert.strictEqual(nodes.getNodeAgentConfig("anxlab").agentToken, "new-canonical-token", "Protected node credential store must be the canonical token source over stale node metadata.");
 
     nodes.deleteNode("anxlab");
     const afterDeleteCredentials = fs.existsSync(nodes.getNodeCredentialsPath())

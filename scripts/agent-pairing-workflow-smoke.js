@@ -29,6 +29,63 @@ async function waitForAgent(baseUrl) {
   throw new Error("Agent did not become reachable.");
 }
 
+function spawnAgentProcess(root, agentConfig, port, temp) {
+  return spawn(process.execPath, [path.join(root, "agent", "src", "server.js")], {
+    cwd: path.join(root, "agent"),
+    env: {
+      ...process.env,
+      ANXHUB_CONFIG_DIR: agentConfig,
+      AGENT_HOST: "127.0.0.1",
+      AGENT_PORT: String(port),
+      AGENT_IDENTITY_PATH: path.join(agentConfig, "identity.json"),
+      ANXOS_LOG_DIR: path.join(temp, "logs"),
+    },
+    stdio: "ignore",
+  });
+}
+
+function stopAgentProcess(child) {
+  return new Promise((resolve) => {
+    if (!child || child.killed) return resolve();
+    child.once("exit", resolve);
+    child.kill("SIGTERM");
+    setTimeout(resolve, 1500).unref?.();
+  });
+}
+
+async function fetchWithToken(agentUrl, pathname, token) {
+  return fetch(`${agentUrl}${pathname}`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+async function assertProtectedEndpointsUseToken(agentUrl, token, staleToken = "") {
+  const endpoints = [
+    "/api/v1/stats",
+    "/api/v1/instances",
+    "/api/v1/docker/capabilities",
+    "/api/v1/public-access/snapshot",
+    "/api/v1/amp/status",
+  ];
+  for (const endpoint of endpoints) {
+    if (staleToken) {
+      const stale = await fetchWithToken(agentUrl, endpoint, staleToken);
+      assert.strictEqual(stale.status, 401, `${endpoint} should reject the stale token.`);
+    }
+    const fresh = await fetchWithToken(agentUrl, endpoint, token);
+    assert.notStrictEqual(fresh.status, 401, `${endpoint} should authenticate with the newly paired token.`);
+  }
+}
+
+function reloadNodeService(root) {
+  [
+    "src/services/nodeService.js",
+    "src/services/nodeCredentialStore.js",
+    "src/services/agentClient.js",
+  ].forEach((relativePath) => {
+    delete require.cache[require.resolve(path.join(root, relativePath))];
+  });
+  return require("../src/services/nodeService");
+}
+
 (async () => {
   const root = path.resolve(__dirname, "..");
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "anx-agent-pairing-"));
@@ -47,18 +104,7 @@ async function waitForAgent(baseUrl) {
   process.env.ANXHUB_CONFIG_DIR = controlConfig;
   const port = await getFreePort();
   const agentUrl = `http://127.0.0.1:${port}`;
-  const child = spawn(process.execPath, [path.join(root, "agent", "src", "server.js")], {
-    cwd: path.join(root, "agent"),
-    env: {
-      ...process.env,
-      ANXHUB_CONFIG_DIR: agentConfig,
-      AGENT_HOST: "127.0.0.1",
-      AGENT_PORT: String(port),
-      AGENT_IDENTITY_PATH: path.join(agentConfig, "identity.json"),
-      ANXOS_LOG_DIR: path.join(temp, "logs"),
-    },
-    stdio: "ignore",
-  });
+  let child = spawnAgentProcess(root, agentConfig, port, temp);
   try {
     await waitForAgent(agentUrl);
     const start = await fetch(`${agentUrl}/api/v1/pairing/start`, { method: "POST" });
@@ -80,6 +126,14 @@ async function waitForAgent(baseUrl) {
 
     const health = await fetch(`${agentUrl}/api/v1/health`, { headers: { Authorization: `Bearer ${config.agentToken}` } });
     assert.strictEqual(health.status, 200, "Agent should immediately accept the permanent credential.");
+    await assertProtectedEndpointsUseToken(agentUrl, config.agentToken, "stale-before-pairing");
+    await stopAgentProcess(child);
+    child = spawnAgentProcess(root, agentConfig, port, temp);
+    await waitForAgent(agentUrl);
+    const reloadedNodes = reloadNodeService(root);
+    const reloadedConfig = reloadedNodes.getNodeAgentConfig(paired.node.id);
+    assert.strictEqual(reloadedConfig.agentToken, config.agentToken, "Reloaded node config should use the newly paired credential from the canonical node credential store.");
+    await assertProtectedEndpointsUseToken(agentUrl, reloadedConfig.agentToken, "stale-before-restart");
     const replay = await fetch(`${agentUrl}/api/v1/pairing/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -105,12 +159,13 @@ async function waitForAgent(baseUrl) {
     assert.strictEqual(staleProtectedRequest.status, 401, "Old credential should be rejected after re-pairing.");
     const repairedProtectedRequest = await fetch(`${agentUrl}/api/v1/instances`, { headers: { Authorization: `Bearer ${repairedConfig.agentToken}` } });
     assert.strictEqual(repairedProtectedRequest.status, 200, "Repaired node credential should authenticate immediately.");
+    await assertProtectedEndpointsUseToken(agentUrl, repairedConfig.agentToken, staleToken);
     const persisted = JSON.parse(fs.readFileSync(getNodesPath(), "utf8"));
     assert.strictEqual(persisted.nodes.filter((node) => node.id === paired.node.id).length, 1, "Re-pairing must not duplicate the existing node.");
 
     console.log("Agent pairing workflow smoke checks passed.");
   } finally {
-    child.kill("SIGTERM");
+    await stopAgentProcess(child);
   }
 })().catch((error) => {
   console.error(error);

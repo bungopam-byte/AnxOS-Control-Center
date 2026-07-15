@@ -414,6 +414,9 @@ function normalizeAgentNode(node = {}) {
   const agentInstallationId = identity.agentInstallationId || identity.installationId || node.agentInstallationId || "";
   const agentIdentityId = identity.agentIdentityId || identity.identityId || node.agentIdentityId || "";
   const deviceId = identity.deviceId || node.deviceId || agentIdentityId || agentInstallationId || legacyDeviceId(agentUrl);
+  const nodeId = node.id && node.id !== "default" ? node.id : nodeIdForDevice(deviceId);
+  const credentialToken = getNodeToken(nodeId);
+  const rawToken = String(node.agentToken || node.token || "");
   const requestedDisplayName = String(node.displayName || node.name || "").trim();
   const identityHostname = String(identity.hostname || "").trim();
   const localAgent = node.localAgent === true || isLocalAgentUrl(agentUrl);
@@ -423,13 +426,13 @@ function normalizeAgentNode(node = {}) {
     ? identityHostname
     : requestedDisplayName || identityHostname || "Agent Node";
   return {
-    id: node.id && node.id !== "default" ? node.id : nodeIdForDevice(deviceId),
+    id: nodeId,
     kind: "agent",
     name: displayName.slice(0, 80),
     displayName: displayName.slice(0, 80),
     baseUrl: agentUrl,
     agentUrl,
-    agentToken: String(node.agentToken || node.token || getNodeToken(node.id && node.id !== "default" ? node.id : nodeIdForDevice(deviceId)) || ""),
+    agentToken: credentialToken || rawToken,
     enabled: node.enabled !== false,
     description: String(node.description || "").trim().slice(0, 500),
     tags: normalizeTags(node.tags),
@@ -986,7 +989,13 @@ function resolveNodeForAgentIdentity(payload = {}) {
 
 function getSelectedNodeId() { return readNodeState().selectedNodeId; }
 function getAllNodesSync() { const state = readNodeState(); return [getApplicationHostNode(), ...state.nodes]; }
-function getNodeAgentConfigFromNode(node) { return normalizeAgentSettings({ backendMode: "agent", agentUrl: node.baseUrl || node.agentUrl, agentToken: node.agentToken || getNodeToken(node.id) }); }
+function getNodeAgentConfigFromNode(node) {
+  return normalizeAgentSettings({
+    backendMode: "agent",
+    agentUrl: node.baseUrl || node.agentUrl,
+    agentToken: getNodeToken(node.id),
+  });
+}
 function getNodeAgentConfig(nodeId) { const node = getNode(nodeId); if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" }); return getNodeAgentConfigFromNode(node); }
 function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, localAgent: node.localAgent === true, capabilities: buildNodeCapabilities(node), config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId, capabilities: buildNodeCapabilities(node) }; }
 
@@ -1017,7 +1026,9 @@ async function saveNode(payload = {}) {
   if (!existing && state.nodes.some((node) => normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl)) {
     throw Object.assign(new Error("A node already uses this Agent URL."), { code: "DUPLICATE_NODE_URL" });
   }
-  const node = normalizeAgentNode({ ...existing, ...payload, id: existing?.id || nodeIdForDevice(identity.deviceId), displayName, agentUrl, agentToken: agentToken || existing?.agentToken, agentIdentity: identity });
+  const nodeId = existing?.id || nodeIdForDevice(identity.deviceId);
+  if (agentTokenInput) setNodeToken(nodeId, agentTokenInput);
+  const node = normalizeAgentNode({ ...existing, ...payload, id: nodeId, displayName, agentUrl, agentToken: agentToken || existing?.agentToken, agentIdentity: identity });
   const nodes = mergeAgentNodes([...state.nodes.filter((entry) => entry.id !== node.id && entry.agentIdentity.deviceId !== identity.deviceId), node]);
   writeNodeState({ ...state, removedLocalAgents: clearLocalAgentRemovalMarkersForNode(state, node), nodes });
   return { node: publicNode(node), ...(await listNodes({ refreshIdentity: false })) };
@@ -1080,9 +1091,11 @@ async function pairNodeFromCode(payload = {}) {
   if (!identity?.deviceId) throw Object.assign(new Error("Paired Agent did not provide a stable device identity."), { code: "AGENT_IDENTITY_MISSING" });
   const existing = existingById || state.nodes.find((node) => node.agentIdentity?.deviceId === identity.deviceId || normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl);
   const displayName = String(payload.displayName || existing?.displayName || identity.hostname || "Paired Agent").trim().slice(0, 80) || "Paired Agent";
+  const pairedNodeId = existing?.id || nodeIdForDevice(identity.deviceId);
+  setNodeToken(pairedNodeId, permanentToken);
   const node = normalizeAgentNode({
     ...existing,
-    id: existing?.id || nodeIdForDevice(identity.deviceId),
+    id: pairedNodeId,
     displayName,
     agentUrl,
     agentToken: permanentToken,

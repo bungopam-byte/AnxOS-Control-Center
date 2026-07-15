@@ -22,6 +22,42 @@ Example node registry entries:
 
 The Control Center connects directly to the selected Agent. Agents do not connect to each other and do not know about other nodes. Every Agent manages only its local host.
 
+## Synchronized Node And Agent Selection
+
+Active Node is the canonical application-wide selection. Active Agent is derived from the active Node.
+
+- The persisted selection is a node ID, not an Agent URL, token, hostname, or display name.
+- Selecting a Node updates the active Node and therefore activates that Node's assigned Agent.
+- Selecting a registered Agent in Agent Control must resolve the owning Node and set that Node active.
+- Agent Control must not persist or maintain an independent selected-Agent source of truth for registered Nodes.
+- Selection state must not duplicate raw Agent credentials, Authorization headers, or credential storage keys.
+- Offline, authentication-failed, or incompatible Agents do not cause automatic fallback to another Node after explicit selection.
+- If the selected Node is permanently deleted, recovery may select the only remaining valid Node or show a Select Node state when multiple choices remain.
+
+Proposed event flow:
+
+1. A user selects a Node from any shared selector.
+2. The active-node service validates and persists the immutable Node ID.
+3. Subscribers receive one deduplicated active-node change event.
+4. The renderer increments the node context generation, clears incompatible resource selections, cancels or invalidates previous-node work, and refreshes the visible node-aware page.
+5. Agent Control derives its active Agent from the same active Node and refreshes its active-node/Agent context.
+6. Connected Agents shown in Agent Control mark the Agent owned by the active Node as current.
+
+Registered Agent selection flow:
+
+1. A user selects a Connected Agent in Agent Control.
+2. Agent Control resolves the registered Node by stable Agent installation identity, stored node association, stable Agent identity, or normalized URL fallback.
+3. The same active-node selection path runs with that Node ID.
+4. Shared selectors, Agent Control, and the active page refresh from the single active Node.
+
+Compatibility requirements:
+
+- The virtual `application-host` Node remains supported for local desktop/application-host workflows.
+- Local Agent service state, Windows local Agent installation state, and configured legacy Agent state remain separate status surfaces; they are not alternate selected-Agent state.
+- Legacy global `agent.json` remains only for migration, local Agent setup, and compatibility paths.
+- Older Agents without stable identity metadata may use normalized URL matching as a fallback, but display name, hostname, platform, and IP address alone are not identity.
+- Startup restores the active Node from persisted node selection and derives Agent context from that Node.
+
 ## Current Implementation Summary
 
 The implementation now follows the one-agent-per-node routing model for agent-backed feature paths:

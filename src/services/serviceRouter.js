@@ -80,11 +80,16 @@ async function getAgentDockerSnapshot(options = {}) {
   try {
     const nodeConfig = getOptionalNodeConfig(options);
     const snapshot = await agentClient.getDockerSnapshot(nodeConfig);
-    const capabilities = await agentClient.getDockerCapabilities(nodeConfig).catch((error) => ({
-      available: false,
-      code: error?.code || error?.payload?.error?.code || null,
-      message: error?.message || "Docker capability manifest is unavailable on this Agent.",
-    }));
+    const capabilities = await agentClient.getDockerCapabilities(nodeConfig).catch((error) => {
+      if (shouldPreserveAgentError(error)) {
+        throw error;
+      }
+      return {
+        available: false,
+        code: error?.code || error?.payload?.error?.code || null,
+        message: error?.message || "Docker capability manifest is unavailable on this Agent.",
+      };
+    });
     return withNodeContext({
       ...snapshot,
       agentDockerCapabilities: capabilities,

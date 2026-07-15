@@ -8,6 +8,18 @@ const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
 const loggedAgentMetricWarnings = new Set();
+const EXPECTED_AGENT_SYSTEM_ERROR_CODES = new Set([
+  "UNAUTHORIZED",
+  "AUTHENTICATION_FAILED",
+  "AGENT_UNAVAILABLE",
+  "ECONNREFUSED",
+  "TIMEOUT",
+  "NETWORK_ERROR",
+  "NODE_DISABLED",
+  "NODE_NOT_FOUND",
+  "NODE_REQUIRED",
+  "AGENT_INCOMPATIBLE",
+]);
 
 function exec(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -85,6 +97,11 @@ function normalizeDiskMetric(snapshot = {}) {
     free,
     percent: percent ?? round((used / total) * 100),
   };
+}
+
+function isExpectedAgentSystemError(error = {}) {
+  const code = String(error.code || error.payload?.error?.code || "").toUpperCase();
+  return error.status === 401 || error.statusCode === 401 || EXPECTED_AGENT_SYSTEM_ERROR_CODES.has(code);
 }
 
 function normalizeNetworkMetric(snapshot = {}) {
@@ -460,12 +477,21 @@ async function getSystemSnapshot(options = {}) {
     try {
       return await getAgentSystemSnapshot(target.nodeId, nodeConfig);
     } catch (error) {
-      console.error("[AnxOS][System] Selected node stats fetch failed.", {
+      const details = {
         nodeId: target.nodeId,
         nodeUrl: nodeConfig.agentUrl || nodeConfig.url || null,
+        code: error?.code || error?.payload?.error?.code || null,
+        status: error?.status || error?.statusCode || null,
         message: error?.message || String(error),
-        stack: error?.stack || null,
-      });
+      };
+      if (isExpectedAgentSystemError(error)) {
+        console.warn("[AnxOS][System] Expected selected node stats failure.", details);
+      } else {
+        console.error("[AnxOS][System] Selected node stats fetch failed.", {
+          ...details,
+          stack: error?.stack || null,
+        });
+      }
       throw error;
     }
   }

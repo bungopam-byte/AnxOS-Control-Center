@@ -520,9 +520,11 @@ function migrateState(parsed = {}) {
     }
   }
   const nodes = mergeAgentNodes(legacyNodes);
-  let selectedNodeId = parsed.selectedNodeId || APPLICATION_HOST_NODE_ID;
+  const hadPersistedSelection = Boolean(parsed.selectedNodeId);
+  let selectedNodeId = parsed.selectedNodeId || (nodes.length === 1 ? nodes[0].id : APPLICATION_HOST_NODE_ID);
   if (selectedNodeId === "default") selectedNodeId = effective.backendMode === "agent" && nodes[0] ? nodes[0].id : APPLICATION_HOST_NODE_ID;
-  if (selectedNodeId !== APPLICATION_HOST_NODE_ID && !nodes.some((node) => node.id === selectedNodeId)) selectedNodeId = nodes[0]?.id || APPLICATION_HOST_NODE_ID;
+  if (selectedNodeId !== APPLICATION_HOST_NODE_ID && !nodes.some((node) => node.id === selectedNodeId)) selectedNodeId = nodes.length === 1 ? nodes[0].id : APPLICATION_HOST_NODE_ID;
+  if (!hadPersistedSelection && nodes.length > 1) selectedNodeId = APPLICATION_HOST_NODE_ID;
   if (selectedNodeId === APPLICATION_HOST_NODE_ID) {
     const localNode = nodes.find((node) => node.localAgent === true || isLocalAgentUrl(node.agentUrl));
     if (localNode && effective.backendMode === "agent" && isLocalAgentUrl(effective.agentUrl)) selectedNodeId = localNode.id;
@@ -840,7 +842,7 @@ async function testNodeConnectionPayload(payload = {}) {
 }
 
 function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" }); const state = readNodeState(); const nodes = state.nodes.filter((entry) => entry.id !== nodeId); deleteNodeToken(nodeId); writeNodeState({ ...state, selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId, nodes }); return { id: nodeId, deleted: true }; }
-async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ refreshIdentity: false }); }
+async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
 module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode, testNodeConnectionPayload };

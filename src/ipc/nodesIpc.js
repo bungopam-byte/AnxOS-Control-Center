@@ -5,10 +5,10 @@ const {
   deleteNode,
   listNodes,
   saveNode,
-  selectNode,
   testNode,
   testNodeConnectionPayload,
 } = require("../services/nodeService");
+const { setActiveNode } = require("../services/activeNodeSelectionService");
 const { audit, requirePermission } = require("../services/securityService");
 
 function getNodeErrorMessage(error) {
@@ -35,7 +35,7 @@ function registerNodesIpc() {
     audit({ action: "node.delete", target: payload.nodeId });
     return deleteNode(payload.nodeId);
   }));
-  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => selectNode(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => setActiveNode(payload.nodeId || "application-host", { reason: "ipc-select" })));
   ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(payload.nodeId || "application-host")));
   ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => testNodeConnectionPayload(payload)));
   ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(payload.nodeId || "application-host")));

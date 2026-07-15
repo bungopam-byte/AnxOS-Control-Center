@@ -6340,6 +6340,49 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function formatRate(bytesPerSecond) {
+  return Number.isFinite(bytesPerSecond) ? `${formatBytes(bytesPerSecond)}/s` : "Unavailable";
+}
+
+function normalizePlatformLabel(platform) {
+  const normalized = String(platform || "").toLowerCase();
+  if (normalized === "win32" || normalized === "windows") return "Windows";
+  if (normalized === "darwin" || normalized === "macos" || normalized === "mac") return "macOS";
+  if (normalized === "linux") return "Linux";
+  return platform ? String(platform) : "Unavailable";
+}
+
+function formatFriendlyOsVersion(osVersion, platform) {
+  const platformLabel = normalizePlatformLabel(platform);
+  const raw = String(osVersion || "").trim();
+  if (!raw) return "Unavailable";
+  if (platformLabel === "Windows") {
+    const build = raw.match(/(?:10\.0\.|build\s*)(\d+)/i)?.[1];
+    return build ? `Windows · Build ${build}` : "Windows";
+  }
+  if (platformLabel === "macOS") {
+    return raw.replace(/^Darwin\b/i, "macOS");
+  }
+  return raw;
+}
+
+function formatDiskMountLabel(platform) {
+  const label = normalizePlatformLabel(platform);
+  if (label === "Windows") return "Drive";
+  if (label === "macOS") return "Volume";
+  return "Mount";
+}
+
+function formatDiskMountValue(mount, platform) {
+  if (!mount) return "Unavailable";
+  if (normalizePlatformLabel(platform) === "Windows") {
+    const value = String(mount).replace(/\//g, "\\");
+    if (/^[a-zA-Z]:$/.test(value)) return `${value}\\`;
+    return value;
+  }
+  return String(mount);
+}
+
 function formatDuration(totalSeconds) {
   if (!Number.isFinite(totalSeconds)) {
     return "Unavailable";
@@ -6385,6 +6428,22 @@ function formatDateTime(value) {
 }
 
 function getSnapshotCpuTempC(snapshot) {
+  const source = String(
+    snapshot?.cpu?.temperatureSource ||
+    snapshot?.temperatureSource ||
+    snapshot?.cpuTempSource ||
+    "",
+  ).toLowerCase();
+  const explicitlyUnavailable = [
+    snapshot?.temperatureAvailable,
+    snapshot?.cpu?.temperatureAvailable,
+    snapshot?.temperatureValid,
+    snapshot?.cpu?.temperatureValid,
+  ].some((value) => value === false);
+  if (explicitlyUnavailable || /unsupported|unavailable|placeholder|not[-_ ]?reported/.test(source)) {
+    return null;
+  }
+
   const values = [
     snapshot?.cpuTempC,
     snapshot?.cpu?.temperatureCelsius,
@@ -6393,8 +6452,17 @@ function getSnapshotCpuTempC(snapshot) {
   ];
 
   for (const value of values) {
+    if (value === null || value === undefined || value === "" || value === "unsupported" || value === "unavailable") {
+      continue;
+    }
     const number = Number(value);
-    if (Number.isFinite(number)) {
+    const explicitRealZero = number === 0 && [
+      snapshot?.temperatureAvailable,
+      snapshot?.cpu?.temperatureAvailable,
+      snapshot?.temperatureValid,
+      snapshot?.cpu?.temperatureValid,
+    ].some((flag) => flag === true);
+    if (Number.isFinite(number) && number >= -40 && number <= 125 && (number !== 0 || explicitRealZero)) {
       return number;
     }
   }
@@ -6425,11 +6493,15 @@ function getCpuTemperatureStatus(value) {
 function renderCpuTemperature(snapshot) {
   const tempC = getSnapshotCpuTempC(snapshot);
   const status = getCpuTemperatureStatus(tempC);
-  const text = Number.isFinite(tempC) ? `${Math.round(tempC)}°C · ${status.label}` : status.label;
+  const text = Number.isFinite(tempC) ? `${Math.round(tempC)}°C · ${status.label}` : "Unavailable";
 
   setField("temperature", text);
   updateFieldAttributes("temperature", (field) => {
-    field.dataset.temperatureState = status.key;
+    if (Number.isFinite(tempC)) {
+      field.dataset.temperatureState = status.key;
+    } else {
+      delete field.dataset.temperatureState;
+    }
     field.title = Number.isFinite(tempC) ? `CPU temperature: ${tempC.toFixed(1)}°C (${status.label})` : "CPU temperature is not reported by this node.";
   });
 }
@@ -6468,8 +6540,9 @@ function renderSnapshot(snapshot, nodeId = getSelectedNodeId()) {
 
   setField("hostname", safeSnapshot.hostname || "Unavailable");
   updateSidebarFooterTooltip();
-  setField("osVersion", safeSnapshot.osVersion || "Unavailable");
-  setField("platform", safeSnapshot.platform || "Unavailable");
+  const platformLabel = normalizePlatformLabel(safeSnapshot.platform);
+  setField("osVersion", formatFriendlyOsVersion(safeSnapshot.osVersion, safeSnapshot.platform));
+  setField("platform", platformLabel);
   setField("cpuUsage", formatPercent(safeSnapshot.cpu?.usagePercent));
   setField("cpuModel", safeSnapshot.cpu?.model || "Unavailable");
   setField("cpuCores", Number.isFinite(safeSnapshot.cpu?.cores) ? `${safeSnapshot.cpu.cores}` : "Unavailable");
@@ -6480,11 +6553,13 @@ function renderSnapshot(snapshot, nodeId = getSelectedNodeId()) {
   if (safeSnapshot.disk) {
     setField("diskUsage", `${formatPercent(safeSnapshot.disk.percent)} (${formatBytes(safeSnapshot.disk.used)} / ${formatBytes(safeSnapshot.disk.total)})`);
     setField("diskFree", formatBytes(safeSnapshot.disk.free));
-    setField("diskMount", safeSnapshot.disk.mount || "Unavailable");
+    setField("diskMountLabel", formatDiskMountLabel(safeSnapshot.platform));
+    setField("diskMount", formatDiskMountValue(safeSnapshot.disk.mount, safeSnapshot.platform));
     setField("diskTotal", formatBytes(safeSnapshot.disk.total));
   } else {
     setField("diskUsage", "Unavailable");
     setField("diskFree", "Unavailable");
+    setField("diskMountLabel", formatDiskMountLabel(safeSnapshot.platform));
     setField("diskMount", "Unavailable");
     setField("diskTotal", "Unavailable");
   }
@@ -6492,11 +6567,11 @@ function renderSnapshot(snapshot, nodeId = getSelectedNodeId()) {
   if (safeSnapshot.network) {
     setField(
       "networkUsage",
-      `Down ${formatBytes(safeSnapshot.network.downloadPerSecond)}/s · Up ${formatBytes(safeSnapshot.network.uploadPerSecond)}/s`,
+      `Down ${formatRate(safeSnapshot.network.downloadPerSecond)} · Up ${formatRate(safeSnapshot.network.uploadPerSecond)}`,
     );
-    setField("networkDownload", `${formatBytes(safeSnapshot.network.downloadPerSecond)}/s`);
-    setField("networkUpload", `${formatBytes(safeSnapshot.network.uploadPerSecond)}/s`);
-    setField("networkThroughput", `${formatBytes(safeSnapshot.network.downloadPerSecond)}/s down · ${formatBytes(safeSnapshot.network.uploadPerSecond)}/s up`);
+    setField("networkDownload", formatRate(safeSnapshot.network.downloadPerSecond));
+    setField("networkUpload", formatRate(safeSnapshot.network.uploadPerSecond));
+    setField("networkThroughput", `${formatRate(safeSnapshot.network.downloadPerSecond)} down · ${formatRate(safeSnapshot.network.uploadPerSecond)} up`);
     setField("networkTotalDownload", formatBytes(safeSnapshot.network.totalDownload));
     setField("networkTotalUpload", formatBytes(safeSnapshot.network.totalUpload));
   } else {

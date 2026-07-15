@@ -1351,6 +1351,10 @@ body.window-is-maximized .app-workspace {
   max-width: none;
 }
 
+.page[data-page="dashboard"] {
+  max-width: 1320px;
+}
+
 .page[data-page="instances"] .page-header {
   margin-bottom: 18px;
 }
@@ -9700,12 +9704,42 @@ body.has-open-modal {
 }
 
 .status-grid.dashboard-grid {
-  grid-template-columns: minmax(300px, 0.82fr) minmax(520px, 1.35fr) minmax(300px, 0.82fr);
-  align-items: stretch;
+  grid-template-columns: repeat(3, minmax(260px, 1fr));
+  align-items: start;
+  align-content: start;
 }
 
 .status-grid.dashboard-grid .status-card {
-  min-height: clamp(210px, 25vh, 320px);
+  gap: 9px;
+  min-height: 0;
+  height: auto;
+  padding: 16px;
+}
+
+.status-grid.dashboard-grid .status-card__top {
+  margin-bottom: 6px;
+}
+
+.status-grid.dashboard-grid .status-card h3 {
+  margin-bottom: 2px;
+}
+
+.status-grid.dashboard-grid .status-card p {
+  min-height: 0;
+  margin-bottom: 4px;
+  line-height: 1.38;
+}
+
+.status-grid.dashboard-grid .status-card dl {
+  gap: 8px;
+}
+
+.status-grid.dashboard-grid .status-card dl div {
+  gap: 2px;
+}
+
+.status-grid.dashboard-grid .status-card dd {
+  overflow-wrap: anywhere;
 }
 
 .status-grid.status-grid--two {
@@ -12295,7 +12329,7 @@ button:disabled {
   }
 
   .dashboard-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
   }
 
   .minecraft-page-grid {

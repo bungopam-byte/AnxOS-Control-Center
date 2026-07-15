@@ -17,7 +17,9 @@ const { testConnection } = require("./agentClient");
 const {
   pairLocalAgent,
   readLocalAgentPairingStatus,
+  restoreLocalAgentCredential,
   rotateLocalAgentCredentials,
+  snapshotLocalAgentCredential,
 } = require("./localAgentPairingService");
 
 const SERVICE_NAME = "AnxOSAgent";
@@ -422,6 +424,7 @@ async function installLocalAgent(options = {}) {
     installerStep("service", "Configure background startup"),
     installerStep("start", "Start Local Agent"),
     installerStep("verify", "Verify connection"),
+    installerStep("rollback", "Rollback pending changes"),
   ];
   const mark = (id, state, message) => {
     const step = steps.find((entry) => entry.id === id);
@@ -434,6 +437,26 @@ async function installLocalAgent(options = {}) {
   };
   try {
     lastInstallSteps = steps.map((entry) => ({ ...entry }));
+    const previousRuntimeConfig = readConfig();
+    const previousAgentSettings = agentClient.readAgentSettings();
+    const previousLocalCredential = snapshotLocalAgentCredential();
+    let transactionStarted = false;
+    let credentialRotated = false;
+    const rollbackPendingChanges = (reason) => {
+      if (!transactionStarted) return;
+      try {
+        saveConfig(previousRuntimeConfig);
+        if (credentialRotated) {
+          agentClient.saveAgentSettings(previousAgentSettings);
+          restoreLocalAgentCredential(previousLocalCredential);
+        }
+        mark("rollback", "complete", reason || "Pending Local Agent changes were rolled back.");
+      } catch (rollbackError) {
+        mark("rollback", "failed", "Rollback could not fully restore the previous Local Agent state.");
+        diagnostics.logError("agent-control", "install-local-agent-rollback", rollbackError, {}, { file: "service-manager" });
+      }
+    };
+
     const runtime = getBundledLocalAgentRuntime();
     if (!runtime.exists) {
       mark("runtime", "failed", "The bundled Local Agent runtime is missing. Repair AnxOS Control Center, then retry.");
@@ -454,11 +477,10 @@ async function installLocalAgent(options = {}) {
       ownerMachine: true,
       autoStart: options.autoStart !== false,
     });
+    transactionStarted = true;
     mark("configuration", "complete", "Local Agent configuration is ready.");
 
     const localAgentUrl = getLocalAgentUrl(config);
-    const pairing = pairLocalAgent({ agentUrl: localAgentUrl, rotate: true, reason: "local-agent-install" });
-    mark("credentials", "complete", `Secure local credentials were generated. Fingerprint ${pairing.fingerprint || "available"}.`);
 
     let serviceWarning = null;
     if (options.installService !== false) {
@@ -466,15 +488,34 @@ async function installLocalAgent(options = {}) {
         await installService();
         mark("service", "complete", "Background startup is configured.");
       } catch (error) {
+        const installError = error.code === "ELEVATION_REQUIRED"
+          ? Object.assign(new Error("Administrator permission is required to install or repair the Local Agent."), {
+            code: "ELEVATION_REQUIRED",
+            recoverySuggestion: "Use Try Again to approve administrator permission, or Cancel to leave the current Local Agent unchanged.",
+            cause: error,
+          })
+          : Object.assign(new Error(error.message || "Background startup could not be configured."), {
+            code: error.code || "LOCAL_AGENT_SERVICE_INSTALL_FAILED",
+            recoverySuggestion: "Repair the Local Agent from Agent Control, then try again.",
+            cause: error,
+          });
         serviceWarning = {
-          code: error.code || "SERVICE_INSTALL_SKIPPED",
-          message: error.recoverySuggestion || error.message || "Background startup could not be configured.",
+          code: installError.code,
+          message: installError.recoverySuggestion || installError.message,
         };
-        mark("service", error.code === "ELEVATION_REQUIRED" ? "blocked" : "warning", serviceWarning.message);
+        mark("service", error.code === "ELEVATION_REQUIRED" ? "blocked" : "failed", serviceWarning.message);
+        rollbackPendingChanges("Local Agent installation was stopped before credentials changed.");
+        installError.steps = steps;
+        installError.serviceWarning = serviceWarning;
+        throw installError;
       }
     } else {
       mark("service", "skipped", "Background startup was skipped.");
     }
+
+    const pairing = pairLocalAgent({ agentUrl: localAgentUrl, rotate: true, reason: "local-agent-install" });
+    credentialRotated = true;
+    mark("credentials", "complete", `Secure local credentials were generated. Fingerprint ${pairing.fingerprint || "available"}.`);
 
     const statusBeforeStart = await getStatus();
     if (!statusBeforeStart.running) {
@@ -483,6 +524,7 @@ async function installLocalAgent(options = {}) {
         await start();
       } catch (error) {
         mark("start", "failed", error.message || "Local Agent could not be started.");
+        rollbackPendingChanges("Local Agent start failed; pending credentials were rolled back.");
         throw error;
       }
       operationInFlight = "install";
@@ -492,9 +534,11 @@ async function installLocalAgent(options = {}) {
     const connection = await testConnection({ backendMode: "agent", agentUrl: localAgentUrl });
     if (!connection.connected) {
       mark("verify", "failed", connection.message || "Local Agent did not pass the connection check.");
+      rollbackPendingChanges("Local Agent verification failed; pending credentials were rolled back.");
       throw Object.assign(new Error(connection.message || "Local Agent did not pass the connection check."), { code: "LOCAL_AGENT_VERIFY_FAILED", steps });
     }
     mark("verify", "complete", "Desktop reconnected to the Local Agent.");
+    mark("rollback", "skipped", "No rollback was needed.");
     lastInstallSteps = steps.map((entry) => ({ ...entry }));
     lastRestartReason = "Installed Local Agent from AnxOS";
     lastError = null;

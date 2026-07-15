@@ -78,6 +78,19 @@ function readLocalAgentPairingStatus() {
   return sanitizeCredentialRecord(store.read());
 }
 
+function snapshotLocalAgentCredential() {
+  return store.read();
+}
+
+function restoreLocalAgentCredential(record = null) {
+  if (record && typeof record === "object") {
+    store.write(record);
+  } else {
+    store.clear();
+  }
+  return readLocalAgentPairingStatus();
+}
+
 function writeLocalCredential(agentUrl, agentToken, reason) {
   const record = buildCredentialRecord({ agentUrl, agentToken, reason });
   store.write(record);
@@ -124,5 +137,7 @@ module.exports = {
   },
   pairLocalAgent,
   readLocalAgentPairingStatus,
+  restoreLocalAgentCredential,
   rotateLocalAgentCredentials,
+  snapshotLocalAgentCredential,
 };

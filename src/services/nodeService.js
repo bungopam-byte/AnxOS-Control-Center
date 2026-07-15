@@ -3,13 +3,17 @@ const fs = require("fs");
 const path = require("path");
 const { app } = require("electron");
 const { getApplicationHostNode, APPLICATION_HOST_NODE_ID } = require("./applicationHostService");
-const { getEffectiveAgentSettings, getHealth, normalizeAgentSettings, testConnection } = require("./agentClient");
+const agentClient = require("./agentClient");
+const { getEffectiveAgentSettings, getHealth, normalizeAgentSettings } = agentClient;
 const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, setNodeToken } = require("./nodeCredentialStore");
 
 const NODE_SCHEMA_VERSION = 2;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
 const LOCAL_AGENT_HOSTS = ["127.0.0.1", "localhost"];
 const LOCAL_AGENT_DISPLAY_NAME = "This PC";
+const HEALTH_STATES = new Set(["connecting", "online", "offline", "authentication_failed", "agent_incompatible", "unknown"]);
+const SUPPORTED_AGENT_API_VERSIONS = new Set(["1", "1.0"]);
+const inFlightHealthChecks = new Map();
 
 function getConfigDirectory() {
   if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR;
@@ -198,6 +202,80 @@ function createLocalAgentConnectionStatus(patch = {}) {
   };
 }
 
+function normalizeConnectionState(value) {
+  const state = String(value || "unknown").toLowerCase().replace(/-/g, "_");
+  if (state === "authentication_required" || state === "unauthorized" || state === "auth_failed" || state === "token_mismatch") return "authentication_failed";
+  if (state === "incompatible" || state === "version_incompatible") return "agent_incompatible";
+  if (state === "connected") return "online";
+  if (state === "disconnected" || state === "unreachable") return "offline";
+  return HEALTH_STATES.has(state) ? state : "unknown";
+}
+
+function getConnectionDisplayStatus(state) {
+  const normalized = normalizeConnectionState(state);
+  if (normalized === "online") return "Online";
+  if (normalized === "connecting") return "Connecting";
+  if (normalized === "authentication_failed") return "Authentication Failed";
+  if (normalized === "agent_incompatible") return "Agent Incompatible";
+  if (normalized === "offline") return "Offline";
+  return "Unknown";
+}
+
+function classifyHealthError(error) {
+  const code = String(error?.code || error?.payload?.error?.code || "").toUpperCase();
+  const message = String(error?.message || "");
+  if (error?.status === 401 || error?.status === 403 || code === "UNAUTHORIZED" || /unauthorized|forbidden|token|credential|auth/i.test(message)) {
+    return "authentication_failed";
+  }
+  if (/INCOMPATIBLE|UNSUPPORTED|API_VERSION|VERSION/i.test(code) || /incompatible|unsupported api|update required/i.test(message)) {
+    return "agent_incompatible";
+  }
+  return "offline";
+}
+
+function isCompatibleAgentHealth(health = {}) {
+  const apiVersion = String(health.apiVersion || health.identity?.apiVersion || "").trim();
+  if (apiVersion && !SUPPORTED_AGENT_API_VERSIONS.has(apiVersion)) {
+    return false;
+  }
+  if (health.compatible === false || health.apiCompatible === false) {
+    return false;
+  }
+  return true;
+}
+
+function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt = new Date().toISOString(), health = null, previous = null, localAgent = false }) {
+  const normalized = normalizeConnectionState(state);
+  const identity = health?.identity || {};
+  const agentVersion = identity.agentVersion || health?.agentVersion || previous?.agentVersion || null;
+  const platform = identity.platform || health?.platform || previous?.platform || null;
+  const operatingSystem = identity.operatingSystem || health?.operatingSystem || previous?.operatingSystem || null;
+  const architecture = identity.architecture || health?.architecture || previous?.architecture || null;
+  const hostname = identity.hostname || health?.hostname || previous?.hostname || null;
+  return {
+    connected: normalized === "online",
+    status: normalized,
+    displayStatus: getConnectionDisplayStatus(normalized),
+    message,
+    lastSeen: normalized === "online" ? checkedAt : previous?.lastSeen || null,
+    latencyMs: Number.isFinite(Number(latencyMs)) ? Number(latencyMs) : null,
+    localAgent,
+    desktopApplication: localAgent ? "running" : null,
+    installed: normalized === "online" ? true : previous?.installed ?? null,
+    serviceRunning: normalized === "online" ? true : normalized === "offline" ? false : previous?.serviceRunning ?? null,
+    authenticated: normalized === "authentication_failed" ? false : normalized === "online" ? true : previous?.authenticated ?? null,
+    remoteAvailability: localAgent ? "not-remote" : null,
+    versionCompatibility: normalized === "agent_incompatible" ? "update-required" : normalized === "online" ? "compatible" : previous?.versionCompatibility || "unknown",
+    agentVersion,
+    apiVersion: health?.apiVersion || identity.apiVersion || previous?.apiVersion || null,
+    platform,
+    operatingSystem,
+    architecture,
+    hostname,
+    capabilities: Array.isArray(health?.capabilities) ? health.capabilities : previous?.capabilities || null,
+  };
+}
+
 function normalizeTags(value) {
   return Array.isArray(value)
     ? value.map((tag) => String(tag || "").trim()).filter(Boolean).slice(0, 20)
@@ -227,8 +305,16 @@ function normalizeAgentNode(node = {}) {
     enabled: node.enabled !== false,
     description: String(node.description || "").trim().slice(0, 500),
     tags: normalizeTags(node.tags),
-    lastConnectionState: node.lastConnectionState || node.connection?.status || "unknown",
+    lastConnectionState: normalizeConnectionState(node.lastConnectionState || node.connection?.status || "unknown"),
     lastSuccessfulHealthCheck: node.lastSuccessfulHealthCheck || node.connection?.lastSeen || null,
+    lastHealthCheckedAt: node.lastHealthCheckedAt || node.connection?.checkedAt || null,
+    lastHealthErrorCode: node.lastHealthErrorCode || null,
+    lastErrorCategory: node.lastErrorCategory || null,
+    agentVersion: node.agentVersion || node.connection?.agentVersion || identity.agentVersion || "",
+    apiVersion: node.apiVersion || node.connection?.apiVersion || identity.apiVersion || "",
+    platform: node.platform || node.connection?.platform || identity.platform || "",
+    hostname: node.hostname || node.connection?.hostname || identity.hostname || "",
+    capabilitiesMetadata: Array.isArray(node.capabilitiesMetadata) ? node.capabilitiesMetadata : Array.isArray(node.connection?.capabilities) ? node.connection.capabilities : [],
     agentIdentity: { deviceId, hostname: identity.hostname || "", operatingSystem: identity.operatingSystem || "", platform: identity.platform || "", architecture: identity.architecture || "", agentVersion: identity.agentVersion || "" },
     docker: { enabled: node.docker?.enabled !== false, runtime: node.docker?.runtime || "docker" },
     ownerMachine: Boolean(node.ownerMachine),
@@ -252,10 +338,12 @@ function normalizeAgentNode(node = {}) {
       remoteAvailability: node.connection.remoteAvailability || (localAgent ? "not-remote" : null),
       versionCompatibility: node.connection.versionCompatibility || "unknown",
       agentVersion: node.connection.agentVersion || identity.agentVersion || null,
+      apiVersion: node.connection.apiVersion || identity.apiVersion || null,
       platform: node.connection.platform || identity.platform || null,
       operatingSystem: node.connection.operatingSystem || identity.operatingSystem || null,
       architecture: node.connection.architecture || identity.architecture || null,
       hostname: node.connection.hostname || identity.hostname || null,
+      capabilities: Array.isArray(node.connection.capabilities) ? node.connection.capabilities : null,
     } : null,
     createdAt: node.createdAt || new Date().toISOString(),
     updatedAt: node.updatedAt || new Date().toISOString(),
@@ -281,6 +369,14 @@ function mergeAgentNodes(nodes) {
       tags: normalizeTags([...(current.tags || []), ...(raw.tags || [])]),
       lastConnectionState: current.lastConnectionState || raw.lastConnectionState || "unknown",
       lastSuccessfulHealthCheck: current.lastSuccessfulHealthCheck || raw.lastSuccessfulHealthCheck || null,
+      lastHealthCheckedAt: current.lastHealthCheckedAt || raw.lastHealthCheckedAt || null,
+      lastHealthErrorCode: current.lastHealthErrorCode || raw.lastHealthErrorCode || null,
+      lastErrorCategory: current.lastErrorCategory || raw.lastErrorCategory || null,
+      agentVersion: current.agentVersion || raw.agentVersion || "",
+      apiVersion: current.apiVersion || raw.apiVersion || "",
+      platform: current.platform || raw.platform || "",
+      hostname: current.hostname || raw.hostname || "",
+      capabilitiesMetadata: current.capabilitiesMetadata?.length ? current.capabilitiesMetadata : raw.capabilitiesMetadata || [],
       agentIdentity: { ...raw.agentIdentity, ...Object.fromEntries(Object.entries(current.agentIdentity).filter(([, value]) => value)) },
       docker: current.docker || raw.docker,
       ownerMachine: current.ownerMachine || raw.ownerMachine,
@@ -490,74 +586,179 @@ function publicNode(node) {
   return { ...node, baseUrl: node.baseUrl || node.agentUrl, name: node.name || node.displayName, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken || hasNodeToken(node.id)), agentToken: node.agentToken || hasNodeToken(node.id) ? "[configured]" : "", local: node.localAgent === true, modeLabel: node.localAgent ? "Local Agent" : "Agent", localProfile: node.localAgent === true ? node.profile || null : null };
 }
 
-async function refreshIdentities(state) {
-  const refreshed = [];
-  for (const node of state.nodes) {
-    const startedAt = Date.now();
-    try {
-      const health = await getHealth(getNodeAgentConfigFromNode(node));
-      const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);
-      const healthConfig = getNodeAgentConfigFromNode(node);
-      const [stats, instances, dependencies] = localAgent ? await Promise.all([
-        agentClient.getSystemStats(healthConfig).catch(() => null),
-        agentClient.listInstances(healthConfig).catch(() => null),
-        agentClient.checkDependencies({ dependencyIds: ["java", "docker", "git", "steamcmd", "dotnet-runtime", "dotnet-desktop-runtime", "powershell", "ffmpeg", "tailscale", "cloudflared", "playit", "vcredist-runtime"] }, healthConfig).catch(() => null),
-      ]) : [null, null, null];
-      refreshed.push(normalizeAgentNode({
-        ...node,
-        agentIdentity: health.identity || node.agentIdentity,
-        connection: localAgent ? createLocalAgentConnectionStatus({
-          connected: true,
-          status: "online",
-          displayStatus: "Online",
-          installed: true,
-          serviceRunning: true,
-          authenticated: health.tokenConfigured === true ? Boolean(node.agentToken) : true,
-          versionCompatibility: "unknown",
-          message: "Agent is responding.",
-          lastSeen: new Date().toISOString(),
-          latencyMs: Date.now() - startedAt,
-          agentVersion: health.identity?.agentVersion || health.agentVersion || null,
-          platform: health.identity?.platform || null,
-          operatingSystem: health.identity?.operatingSystem || null,
-          architecture: health.identity?.architecture || null,
-          hostname: health.identity?.hostname || null,
-        }) : {
-          connected: true,
-          status: "online",
-          displayStatus: "Online",
-          message: "Agent is responding.",
-          lastSeen: new Date().toISOString(),
-          latencyMs: Date.now() - startedAt,
-        },
-        profile: localAgent ? buildLocalNodeProfile({ node, health, stats, instances, dependencies, service: { state: "running" } }) : node.profile,
-      }));
-    } catch (error) {
-      const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);
-      refreshed.push(normalizeAgentNode({
-        ...node,
-        connection: localAgent ? createLocalAgentConnectionStatus({
-          connected: false,
-          status: error.status === 401 || error.code === "UNAUTHORIZED" ? "warning" : "offline",
-          displayStatus: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication Required" : "Offline",
-          installed: null,
-          serviceRunning: false,
-          authenticated: error.status === 401 || error.code === "UNAUTHORIZED" ? false : null,
-          message: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication failed." : error.message || "Agent is unreachable.",
-          lastSeen: node.connection?.lastSeen || null,
-          latencyMs: null,
-        }) : {
-          connected: false,
-          status: error.status === 401 || error.code === "UNAUTHORIZED" ? "warning" : "offline",
-          displayStatus: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication Required" : "Offline",
-          message: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication failed." : error.message || "Agent is unreachable.",
-          lastSeen: node.connection?.lastSeen || null,
-          latencyMs: null,
-        },
-      }));
-    }
+function applyHealthPatchToNode(node, patch = {}) {
+  const checkedAt = patch.checkedAt || new Date().toISOString();
+  const state = normalizeConnectionState(patch.state);
+  const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);
+  const previousConnection = node.connection || {};
+  const connection = buildConnectionPatch({
+    state,
+    message: patch.message || "",
+    latencyMs: patch.latencyMs,
+    checkedAt,
+    health: patch.health || null,
+    previous: previousConnection,
+    localAgent,
+  });
+  const identity = patch.health?.identity || node.agentIdentity || {};
+  const lastSuccessfulHealthCheck = state === "online" ? checkedAt : node.lastSuccessfulHealthCheck || previousConnection.lastSeen || null;
+  return normalizeAgentNode({
+    ...node,
+    lastConnectionState: state,
+    lastSuccessfulHealthCheck,
+    lastHealthCheckedAt: checkedAt,
+    lastHealthErrorCode: patch.errorCode || null,
+    lastErrorCategory: state === "online" ? null : state,
+    agentVersion: connection.agentVersion || node.agentVersion || "",
+    apiVersion: connection.apiVersion || node.apiVersion || "",
+    platform: connection.platform || node.platform || "",
+    hostname: connection.hostname || node.hostname || "",
+    capabilitiesMetadata: Array.isArray(connection.capabilities) ? connection.capabilities : node.capabilitiesMetadata || [],
+    agentIdentity: {
+      ...node.agentIdentity,
+      ...identity,
+      deviceId: identity.deviceId || node.agentIdentity?.deviceId,
+    },
+    connection,
+    profile: localAgent && state === "online"
+      ? buildLocalNodeProfile({ node, health: patch.health, service: { state: "running" } })
+      : node.profile,
+  });
+}
+
+function updateNodeHealthState(nodeId, patch = {}) {
+  const state = readNodeState();
+  const index = state.nodes.findIndex((node) => node.id === nodeId);
+  if (index < 0) {
+    throw Object.assign(new Error("Node not found."), { code: "NODE_NOT_FOUND" });
   }
-  const nodes = mergeAgentNodes(refreshed);
+  const nodes = [...state.nodes];
+  nodes[index] = applyHealthPatchToNode(nodes[index], patch);
+  const next = { ...state, nodes };
+  writeNodeState(next);
+  return nodes[index];
+}
+
+async function checkNodeHealth(nodeId, options = {}) {
+  const node = getNode(nodeId);
+  if (node.kind === "application-host") {
+    return {
+      nodeId: APPLICATION_HOST_NODE_ID,
+      state: "online",
+      connected: true,
+      status: "online",
+      message: "Application host is available.",
+      node: publicNode(node),
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  if (node.enabled === false) {
+    const updated = updateNodeHealthState(node.id, {
+      state: "unknown",
+      message: "Node is disabled.",
+      errorCode: "NODE_DISABLED",
+      checkedAt: new Date().toISOString(),
+    });
+    return {
+      nodeId: node.id,
+      state: "unknown",
+      connected: false,
+      status: "unknown",
+      message: "Node is disabled.",
+      node: publicNode(updated),
+      checkedAt: updated.lastHealthCheckedAt,
+    };
+  }
+  if (inFlightHealthChecks.has(node.id)) {
+    return inFlightHealthChecks.get(node.id);
+  }
+  const run = (async () => {
+    const startedAt = Date.now();
+    const checkedAt = new Date().toISOString();
+    updateNodeHealthState(node.id, {
+      state: "connecting",
+      message: "Checking Agent health.",
+      checkedAt,
+    });
+    try {
+      const health = await getHealth(getNodeAgentConfigFromNode(node), {
+        timeoutMs: options.timeoutMs || 8000,
+        targetLabel: `node-health:${node.id}`,
+        suppressConnectionRefusedLog: true,
+        logThrottleMs: 60000,
+      });
+      const state = isCompatibleAgentHealth(health) ? "online" : "agent_incompatible";
+      const message = state === "online" ? "Agent is responding." : "Agent API version is not compatible with this Control Center.";
+      const updated = updateNodeHealthState(node.id, {
+        state,
+        message,
+        latencyMs: Date.now() - startedAt,
+        health,
+        checkedAt: new Date().toISOString(),
+      });
+      return {
+        nodeId: updated.id,
+        state,
+        connected: state === "online",
+        status: state,
+        message,
+        latencyMs: updated.connection?.latencyMs ?? null,
+        node: publicNode(updated),
+        health,
+        checkedAt: updated.lastHealthCheckedAt,
+      };
+    } catch (error) {
+      const state = classifyHealthError(error);
+      const message = state === "authentication_failed"
+        ? "Agent authentication failed."
+        : state === "agent_incompatible"
+        ? "Agent API version is not compatible with this Control Center."
+        : error?.message || "Agent is unreachable.";
+      const updated = updateNodeHealthState(node.id, {
+        state,
+        message,
+        errorCode: error?.code || null,
+        checkedAt: new Date().toISOString(),
+      });
+      return {
+        nodeId: updated.id,
+        state,
+        connected: false,
+        status: state,
+        message,
+        errorCode: error?.code || null,
+        node: publicNode(updated),
+        checkedAt: updated.lastHealthCheckedAt,
+      };
+    } finally {
+      inFlightHealthChecks.delete(node.id);
+    }
+  })();
+  inFlightHealthChecks.set(node.id, run);
+  return run;
+}
+
+async function checkAllNodeHealth(options = {}) {
+  const state = readNodeState();
+  const checks = await Promise.allSettled(state.nodes.map((node) => checkNodeHealth(node.id, options)));
+  return {
+    checkedAt: new Date().toISOString(),
+    nodes: checks.map((result, index) => result.status === "fulfilled"
+      ? result.value
+      : {
+          nodeId: state.nodes[index]?.id || null,
+          state: "unknown",
+          connected: false,
+          status: "unknown",
+          message: result.reason?.message || "Node health check failed.",
+        }),
+  };
+}
+
+async function refreshIdentities(state) {
+  await Promise.allSettled(state.nodes.map((node) => checkNodeHealth(node.id, { timeoutMs: 5000 })));
+  const refreshedState = readNodeState();
+  const nodes = mergeAgentNodes(refreshedState.nodes);
   const selectedDevice = state.nodes.find((node) => node.id === state.selectedNodeId)?.agentIdentity?.deviceId;
   const selectedNodeId = selectedDevice ? nodes.find((node) => node.agentIdentity.deviceId === selectedDevice)?.id || state.selectedNodeId : state.selectedNodeId;
   const next = { ...state, selectedNodeId, nodes };
@@ -604,6 +805,6 @@ async function saveNode(payload = {}) {
 
 function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" }); const state = readNodeState(); const nodes = state.nodes.filter((entry) => entry.id !== nodeId); deleteNodeToken(nodeId); writeNodeState({ ...state, selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId, nodes }); return { id: nodeId, deleted: true }; }
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ refreshIdentity: false }); }
-async function testNode(nodeId) { const node = getNode(nodeId); if (node.kind === "application-host") return { connected: true, status: "local", message: "Application host is available.", node: publicNode(node) }; return { ...(await testConnection(getNodeAgentConfigFromNode(node))), node: publicNode(node) }; }
+async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, NODE_SCHEMA_VERSION, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode };

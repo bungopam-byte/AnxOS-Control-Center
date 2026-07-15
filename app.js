@@ -25897,7 +25897,7 @@ function getNodeConnectionState(node) {
       suggestion: "Refresh nodes or choose another system.",
     };
   }
-  const status = String(node.connection?.status || node.state || "").toLowerCase();
+  const status = String(node.connection?.status || node.lastConnectionState || node.state || "").toLowerCase();
   const message = String(node.connection?.message || node.error || "");
   const combined = `${status} ${message}`;
   if (node.installing || /connecting|testing|pending|starting|installing/.test(combined)) {
@@ -25909,13 +25909,22 @@ function getNodeConnectionState(node) {
       suggestion: "Wait for the current connection check to finish.",
     };
   }
-  if (/unauthorized|forbidden|auth|token|credential/.test(combined)) {
+  if (status === "authentication_failed" || /unauthorized|forbidden|auth|token|credential/.test(combined)) {
     return {
       key: "unauthorized",
       label: "Unauthorized",
       tone: "error",
       message: "The Agent rejected this desktop connection.",
       suggestion: "Repair pairing or rotate the shared Agent token from Agent Control.",
+    };
+  }
+  if (status === "agent_incompatible" || /incompatible|unsupported api|update required/.test(combined)) {
+    return {
+      key: "degraded",
+      label: "Update Required",
+      tone: "warning",
+      message: "This Agent is reachable, but its API is not compatible with this Control Center.",
+      suggestion: "Update the Agent on that node before using agent-backed tools.",
     };
   }
   if (node.connection?.status === "online" || node.connection?.connected === true) {

@@ -1,5 +1,7 @@
 const { ipcMain } = require("electron");
 const {
+  checkAllNodeHealth,
+  checkNodeHealth,
   deleteNode,
   listNodes,
   saveNode,
@@ -34,6 +36,8 @@ function registerNodesIpc() {
   }));
   ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => selectNode(payload.nodeId || "application-host")));
   ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => checkAllNodeHealth()));
 }
 
 module.exports = {

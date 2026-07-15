@@ -292,11 +292,62 @@ function getBackendMode() {
 }
 
 function isNodeScopedAgentConfig(configOverride = null) {
+  const nodeId = trimValue(configOverride?.nodeId || configOverride?.agentNodeId);
+  if (nodeId === "application-host" && normalizeBackendMode(configOverride?.backendMode) === "local") {
+    return false;
+  }
   return Boolean(
     configOverride
-      && (trimValue(configOverride.nodeId)
+      && (nodeId
         || /^node:/i.test(trimValue(configOverride.targetLabel))),
   );
+}
+
+function getNodeScopedConfig(configOverride = {}) {
+  const explicitNodeId = trimValue(configOverride.nodeId || configOverride.agentNodeId);
+  const targetLabelNodeId = /^node:/i.test(trimValue(configOverride.targetLabel))
+    ? trimValue(configOverride.targetLabel).replace(/^node:/i, "")
+    : "";
+  const nodeId = explicitNodeId || targetLabelNodeId;
+  if (!nodeId) {
+    throw new AgentClientError("Select a registered Agent node before contacting the Agent.", {
+      code: "NODE_REQUIRED",
+      details: {
+        targetLabel: configOverride.targetLabel || null,
+        operation: "resolve-node-credential",
+      },
+    });
+  }
+  let canonical = null;
+  try {
+    canonical = getNodeService().getNodeAgentConfig(nodeId);
+  } catch (error) {
+    throw new AgentClientError(error?.message || "Selected Agent node could not be resolved.", {
+      code: error?.code || "NODE_NOT_FOUND",
+      details: {
+        nodeId,
+        targetLabel: configOverride.targetLabel || `node:${nodeId}`,
+        operation: "resolve-node-credential",
+      },
+    });
+  }
+  if (!trimValue(canonical.agentToken)) {
+    throw new AgentClientError("Saved credential is missing for the selected Agent node.", {
+      code: "NODE_CREDENTIAL_MISSING",
+      details: {
+        nodeId,
+        nodeUrl: canonical.agentUrl || null,
+        targetLabel: configOverride.targetLabel || `node:${nodeId}`,
+        operation: "resolve-node-credential",
+      },
+    });
+  }
+  return normalizeAgentSettings({
+    ...configOverride,
+    backendMode: "agent",
+    agentUrl: canonical.agentUrl,
+    agentToken: canonical.agentToken,
+  });
 }
 
 function getAgentConfig(configOverride = null) {
@@ -305,6 +356,9 @@ function getAgentConfig(configOverride = null) {
       return getEffectiveAgentSettings();
     }
     const nodeScoped = isNodeScopedAgentConfig(configOverride);
+    if (nodeScoped) {
+      return getNodeScopedConfig(configOverride);
+    }
     const fallback = nodeScoped
       ? { backendMode: "agent", agentUrl: DEFAULT_AGENT_URL, agentToken: "" }
       : getEffectiveAgentSettings();

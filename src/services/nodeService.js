@@ -9,7 +9,7 @@ const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, set
 const { parsePairingCode } = require("../shared/agentPairing");
 const { generateAgentToken } = require("../shared/agentTokenStore");
 
-const NODE_SCHEMA_VERSION = 2;
+const NODE_SCHEMA_VERSION = 3;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
 const LOCAL_AGENT_HOSTS = ["127.0.0.1", "localhost"];
 const LOCAL_AGENT_DISPLAY_NAME = "This PC";
@@ -57,6 +57,66 @@ function legacyDeviceId(url) {
 function nodeIdForDevice(deviceId) { return `agent-${String(deviceId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 56)}`; }
 function isGenericNodeDisplayName(value) { return /^(owner machine|default|remote node|agent node|windows desktop|local agent|this pc)$/i.test(String(value || "").trim()); }
 function isDefaultLocalAgentDisplayName(value) { return /^(this pc|local agent|owner machine|windows desktop)$/i.test(String(value || "").trim()); }
+
+function normalizeRemovedLocalAgents(value) {
+  const entries = Array.isArray(value) ? value : [];
+  const byKey = new Map();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const nodeId = String(entry.nodeId || entry.id || "").trim();
+    const deviceId = String(entry.deviceId || "").trim();
+    const agentUrl = normalizeUrl(entry.agentUrl || entry.baseUrl || entry.url || "");
+    const urls = Array.isArray(entry.agentUrls) ? entry.agentUrls.map(normalizeUrl).filter(Boolean) : [];
+    if (agentUrl) urls.push(agentUrl);
+    const normalizedUrls = [...new Set(urls)];
+    if (!nodeId && !deviceId && normalizedUrls.length === 0) continue;
+    const key = nodeId || deviceId || normalizedUrls[0];
+    byKey.set(key, {
+      nodeId,
+      deviceId,
+      agentUrls: normalizedUrls,
+      removedAt: entry.removedAt || new Date().toISOString(),
+    });
+  }
+  return [...byKey.values()];
+}
+
+function getLocalAgentRemovalMarker(node = {}) {
+  const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url || "");
+  const localAgent = node.localAgent === true || isLocalAgentUrl(agentUrl);
+  if (!localAgent) return null;
+  const agentUrls = [...new Set([agentUrl, ...getLocalAgentUrls().filter((url) => getLocalAgentPortFromUrl(url) === getLocalAgentPortFromUrl(agentUrl))].filter(Boolean).map(normalizeUrl))];
+  return {
+    nodeId: node.id || "",
+    deviceId: node.agentIdentity?.deviceId || node.deviceId || "",
+    agentUrls,
+    removedAt: new Date().toISOString(),
+  };
+}
+
+function localAgentMatchesRemovalMarker(node = {}, marker = {}) {
+  const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url || "");
+  const nodeId = String(node.id || "").trim();
+  const deviceId = String(node.agentIdentity?.deviceId || node.deviceId || "").trim();
+  const markerUrls = new Set((marker.agentUrls || []).map(normalizeUrl));
+  return Boolean(
+    (marker.nodeId && nodeId && marker.nodeId === nodeId)
+      || (marker.deviceId && deviceId && marker.deviceId === deviceId)
+      || (agentUrl && markerUrls.has(agentUrl)),
+  );
+}
+
+function isRemovedLocalAgentNode(state = {}, node = {}) {
+  const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url || "");
+  if (!(node.localAgent === true || isLocalAgentUrl(agentUrl))) return false;
+  return normalizeRemovedLocalAgents(state.removedLocalAgents).some((marker) => localAgentMatchesRemovalMarker(node, marker));
+}
+
+function clearLocalAgentRemovalMarkersForNode(state = {}, node = {}) {
+  const marker = getLocalAgentRemovalMarker(node);
+  if (!marker) return normalizeRemovedLocalAgents(state.removedLocalAgents);
+  return normalizeRemovedLocalAgents(state.removedLocalAgents).filter((entry) => !localAgentMatchesRemovalMarker(node, entry) && !localAgentMatchesRemovalMarker(marker, entry));
+}
 
 function getLocalIpAddresses() {
   const interfaces = require("os").networkInterfaces();
@@ -495,6 +555,9 @@ async function withDiscoveredLocalAgent(state) {
   if (!localNode) {
     return state;
   }
+  if (isRemovedLocalAgentNode(state, localNode)) {
+    return { ...state, nodes: state.nodes.filter((node) => !isRemovedLocalAgentNode(state, node)) };
+  }
   const nodes = mergeAgentNodes([
     ...state.nodes.filter((node) => !(node.localAgent === true || isLocalAgentUrl(node.agentUrl) || node.agentIdentity?.deviceId === localNode.agentIdentity.deviceId)),
     localNode,
@@ -508,10 +571,16 @@ async function withDiscoveredLocalAgent(state) {
 function migrateState(parsed = {}) {
   const rawLegacy = readLegacyAgentSettingsRaw();
   const effective = getEffectiveAgentSettings();
-  const legacyNodes = Array.isArray(parsed.nodes) ? parsed.nodes.filter((node) => node.id !== APPLICATION_HOST_NODE_ID && node.kind !== "application-host") : [];
+  const removedLocalAgents = normalizeRemovedLocalAgents(parsed.removedLocalAgents || parsed.removedLocalAgentNodes);
+  const legacyNodes = Array.isArray(parsed.nodes)
+    ? parsed.nodes
+        .filter((node) => node.id !== APPLICATION_HOST_NODE_ID && node.kind !== "application-host")
+        .filter((node) => !isRemovedLocalAgentNode({ removedLocalAgents }, node))
+    : [];
   const rawLegacyUrl = String(rawLegacy.agentUrl || rawLegacy.url || process.env.AGENT_URL || "").trim();
   const canMigrateLegacyAgent = effective.backendMode === "agent" && rawLegacyUrl && effective.agentUrl;
-  if (canMigrateLegacyAgent) {
+  const legacyAgentRemoved = canMigrateLegacyAgent && isRemovedLocalAgentNode({ removedLocalAgents }, { agentUrl: effective.agentUrl, localAgent: isLocalAgentUrl(effective.agentUrl) });
+  if (canMigrateLegacyAgent && !legacyAgentRemoved) {
     const legacyUrl = normalizeUrl(effective.agentUrl);
     const existingIndex = legacyNodes.findIndex((node) => normalizeUrl(node.baseUrl || node.agentUrl || node.url) === legacyUrl);
     if (existingIndex >= 0) {
@@ -527,7 +596,7 @@ function migrateState(parsed = {}) {
       legacyNodes.push({ displayName: "Owner Machine", baseUrl: effective.agentUrl, agentUrl: effective.agentUrl, agentToken: effective.agentToken, legacyGlobalAgent: true });
     }
   }
-  const nodes = mergeAgentNodes(legacyNodes);
+  const nodes = mergeAgentNodes(legacyNodes).filter((node) => !isRemovedLocalAgentNode({ removedLocalAgents }, node));
   const hadPersistedSelection = Boolean(parsed.selectedNodeId);
   let selectedNodeId = parsed.selectedNodeId || (nodes.length === 1 ? nodes[0].id : APPLICATION_HOST_NODE_ID);
   if (selectedNodeId === "default") selectedNodeId = effective.backendMode === "agent" && nodes[0] ? nodes[0].id : APPLICATION_HOST_NODE_ID;
@@ -537,7 +606,7 @@ function migrateState(parsed = {}) {
     const localNode = nodes.find((node) => node.localAgent === true || isLocalAgentUrl(node.agentUrl));
     if (localNode && effective.backendMode === "agent" && isLocalAgentUrl(effective.agentUrl)) selectedNodeId = localNode.id;
   }
-  return { schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId, nodes };
+  return { schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId, nodes, removedLocalAgents };
 }
 
 function toPersistentNode(node) {
@@ -553,6 +622,7 @@ function toPersistentState(state) {
     schemaVersion: NODE_SCHEMA_VERSION,
     selectedNodeId: state.selectedNodeId,
     nodes: state.nodes.map(toPersistentNode),
+    removedLocalAgents: normalizeRemovedLocalAgents(state.removedLocalAgents),
   };
 }
 
@@ -576,7 +646,7 @@ function writeNodeState(state) {
     }
     return toPersistentNode(node);
   });
-  fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes }, null, 2)}\n`, { mode: 0o600 });
+  fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes, removedLocalAgents: normalizeRemovedLocalAgents(state.removedLocalAgents) }, null, 2)}\n`, { mode: 0o600 });
 }
 
 function publicNode(node) {
@@ -866,7 +936,7 @@ async function saveNode(payload = {}) {
   }
   const node = normalizeAgentNode({ ...existing, ...payload, id: existing?.id || nodeIdForDevice(identity.deviceId), displayName, agentUrl, agentToken: agentToken || existing?.agentToken, agentIdentity: identity });
   const nodes = mergeAgentNodes([...state.nodes.filter((entry) => entry.id !== node.id && entry.agentIdentity.deviceId !== identity.deviceId), node]);
-  writeNodeState({ ...state, nodes });
+  writeNodeState({ ...state, removedLocalAgents: clearLocalAgentRemovalMarkersForNode(state, node), nodes });
   return { node: publicNode(node), ...(await listNodes({ refreshIdentity: false })) };
 }
 
@@ -933,7 +1003,7 @@ async function pairNodeFromCode(payload = {}) {
     },
   });
   const nodes = mergeAgentNodes([...state.nodes.filter((entry) => entry.id !== node.id && entry.agentIdentity?.deviceId !== identity.deviceId), node]);
-  writeNodeState({ ...state, selectedNodeId: node.id, nodes });
+  writeNodeState({ ...state, removedLocalAgents: clearLocalAgentRemovalMarkersForNode(state, node), selectedNodeId: node.id, nodes });
   return {
     paired: true,
     node: publicNode(node),
@@ -977,7 +1047,26 @@ async function testNodeConnectionPayload(payload = {}) {
   };
 }
 
-function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" }); const state = readNodeState(); const nodes = state.nodes.filter((entry) => entry.id !== nodeId); deleteNodeToken(nodeId); writeNodeState({ ...state, selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId, nodes }); return { id: nodeId, deleted: true }; }
+function deleteNode(nodeId) {
+  if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID || nodeId === "default") {
+    throw Object.assign(new Error("The application host cannot be deleted."), { code: "APPLICATION_HOST_READ_ONLY" });
+  }
+  const state = readNodeState();
+  const node = state.nodes.find((entry) => entry.id === nodeId);
+  const removalMarker = node ? getLocalAgentRemovalMarker(node) : null;
+  const nodes = state.nodes.filter((entry) => entry.id !== nodeId);
+  deleteNodeToken(nodeId);
+  const removedLocalAgents = removalMarker
+    ? normalizeRemovedLocalAgents([...(state.removedLocalAgents || []), removalMarker])
+    : normalizeRemovedLocalAgents(state.removedLocalAgents);
+  writeNodeState({
+    ...state,
+    removedLocalAgents,
+    selectedNodeId: state.selectedNodeId === nodeId ? APPLICATION_HOST_NODE_ID : state.selectedNodeId,
+    nodes,
+  });
+  return { id: nodeId, deleted: true };
+}
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 

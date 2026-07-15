@@ -58,6 +58,7 @@
     "agent-errors:smoke": "node scripts/agent-error-category-smoke.js",
     "public-access:ipc-noise:smoke": "node scripts/public-access-ipc-noise-smoke.js",
     "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
+    "node:local-removal:smoke": "node scripts/local-node-removal-smoke.js",
     "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
     "node:compat-cleanup:smoke": "node scripts/node-compat-cleanup-smoke.js",
     "node:stale-response:smoke": "node scripts/node-stale-response-smoke.js",

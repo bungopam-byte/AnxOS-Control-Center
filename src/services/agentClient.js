@@ -291,12 +291,23 @@ function getBackendMode() {
   return getEffectiveAgentSettings().backendMode;
 }
 
+function isNodeScopedAgentConfig(configOverride = null) {
+  return Boolean(
+    configOverride
+      && (trimValue(configOverride.nodeId)
+        || /^node:/i.test(trimValue(configOverride.targetLabel))),
+  );
+}
+
 function getAgentConfig(configOverride = null) {
   const source = (() => {
     if (!configOverride) {
       return getEffectiveAgentSettings();
     }
-    const fallback = getEffectiveAgentSettings();
+    const nodeScoped = isNodeScopedAgentConfig(configOverride);
+    const fallback = nodeScoped
+      ? { backendMode: "agent", agentUrl: DEFAULT_AGENT_URL, agentToken: "" }
+      : getEffectiveAgentSettings();
     const overrideHasToken = hasOwn(configOverride, "agentToken") || hasOwn(configOverride, "token");
     const normalizedOverride = normalizeAgentSettings({
       ...configOverride,
@@ -306,7 +317,7 @@ function getAgentConfig(configOverride = null) {
     });
     return {
       ...normalizedOverride,
-      agentToken: normalizedOverride.agentToken || fallback.agentToken || "",
+      agentToken: normalizedOverride.agentToken || (nodeScoped ? "" : fallback.agentToken || ""),
     };
   })();
 

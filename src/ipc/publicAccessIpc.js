@@ -7,6 +7,7 @@ const {
   listPublicAccessServices,
 } = require("../services/publicAccessProviderService");
 const { audit, requirePermission } = require("../services/securityService");
+const { requireNodeContext } = require("./nodeContext");
 
 const EXPECTED_PUBLIC_ACCESS_ERROR_CODES = new Set([
   "UNAUTHORIZED",
@@ -102,19 +103,22 @@ function wrapPublicAccessOperation(operation) {
 }
 
 function registerPublicAccessIpc() {
-  ipcMain.handle("publicAccess:getSnapshot", async (_, payload = {}) => invokePublicAccessRead("publicAccess:getSnapshot", () => getPublicAccessSnapshot(payload)));
-  ipcMain.handle("publicAccess:listServices", async (_, payload = {}) => invokePublicAccessRead("publicAccess:listServices", () => listPublicAccessServices(payload)));
+  ipcMain.handle("publicAccess:getSnapshot", async (_, payload = {}) => invokePublicAccessRead("publicAccess:getSnapshot", () => getPublicAccessSnapshot(requireNodeContext(payload, "Public Access snapshot"))));
+  ipcMain.handle("publicAccess:listServices", async (_, payload = {}) => invokePublicAccessRead("publicAccess:listServices", () => listPublicAccessServices(requireNodeContext(payload, "Public Access services"))));
   ipcMain.handle("publicAccess:createService", async (_, payload = {}) => wrapPublicAccessOperation(() => {
+    requireNodeContext(payload, "Public Access service creation");
     requirePermission("instance:write", "public-access");
     audit({ action: "publicAccess.createService", target: payload.providerId || "public-access" });
     return createPublicAccessService(payload);
   }));
   ipcMain.handle("publicAccess:deleteService", async (_, payload = {}) => wrapPublicAccessOperation(() => {
+    requireNodeContext(payload, "Public Access service deletion");
     requirePermission("instance:write", "public-access");
     audit({ action: "publicAccess.deleteService", target: payload.serviceId || payload.id || "public-access" });
     return deletePublicAccessService(payload);
   }));
   ipcMain.handle("publicAccess:createFirewallRule", async (_, payload = {}) => wrapPublicAccessOperation(() => {
+    requireNodeContext(payload, "Public Access firewall rule");
     requirePermission("instance:write", "public-access-firewall");
     audit({ action: "publicAccess.createFirewallRule", target: `${payload.protocol || "tcp"}:${payload.localPort || payload.port || ""}` });
     return createWindowsFirewallRule(payload);

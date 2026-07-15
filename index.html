@@ -3471,9 +3471,44 @@
 
         <section class="page" data-page="agent-control">
           <header class="page-header"><div><p class="eyebrow">Infrastructure</p><h1>Agent Control</h1><p class="lede">Manage the local Agent, inspect remote Agents, review sanitized logs, and repair common failures without leaving AnxOS.</p></div><button class="inline-action" type="button" data-agent-control-action="refresh">Refresh</button></header>
-          <div class="agent-control-shell">
+          <div class="settings-workspace agent-control-workspace" data-agent-control-workspace>
+            <aside class="settings-nav" aria-label="Agent Control sections">
+              <nav class="settings-category-list">
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Overview</p>
+                  <button type="button" data-agent-control-section-target="status">Status</button>
+                  <button type="button" data-agent-control-section-target="health">Health Checks</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Local Agent</p>
+                  <button type="button" data-agent-control-section-target="installation">Installation</button>
+                  <button type="button" data-agent-control-section-target="lifecycle">Lifecycle</button>
+                  <button type="button" data-agent-control-section-target="startup">Startup</button>
+                  <button type="button" data-agent-control-section-target="updates">Updates</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Connections</p>
+                  <button type="button" data-agent-control-section-target="connection">Agent Connection</button>
+                  <button type="button" data-agent-control-section-target="pairing">Pair This Agent</button>
+                  <button type="button" data-agent-control-section-target="remote">Remote Agent</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Security</p>
+                  <button type="button" data-agent-control-section-target="credentials">Credentials</button>
+                  <button type="button" data-agent-control-section-target="identity">Agent Identity</button>
+                  <button type="button" data-agent-control-section-target="token">Rotate Token</button>
+                </div>
+                <div class="settings-category-group">
+                  <p class="settings-category-group__label">Advanced</p>
+                  <button type="button" data-agent-control-section-target="diagnostics">Diagnostics</button>
+                  <button type="button" data-agent-control-section-target="paths">Paths</button>
+                  <button type="button" data-agent-control-section-target="developer">Developer</button>
+                </div>
+              </nav>
+            </aside>
+          <div class="agent-control-shell settings-shell settings-shell--workspace" data-agent-control-section-shell>
             <div class="agent-control-column agent-control-column--left">
-            <section class="settings-section settings-section--wide agent-control-overview">
+            <section class="settings-section settings-section--wide agent-control-overview" data-agent-control-section="status">
               <div class="agent-overview-main">
                 <div>
                   <div class="agent-overview-title"><span class="agent-status-dot" aria-hidden="true"></span><span class="status-pill status-pill--planned" data-agent-control-status>Loading</span></div>
@@ -3492,13 +3527,13 @@
                 <div><span>CPU</span><strong data-agent-control-field="cpu">Unavailable</strong></div><div><span>RAM</span><strong data-agent-control-field="memory">Unavailable</strong></div><div><span>Latency</span><strong data-agent-control-field="latency">Unavailable</strong></div><div><span>Uptime</span><strong data-agent-control-field="uptime">Unavailable</strong></div><div><span>Version</span><strong data-agent-control-field="agentVersion">Unavailable</strong></div><div><span>Process</span><strong data-agent-control-field="pid">Stopped</strong></div>
               </div>
             </section>
-            <section class="settings-section settings-section--wide agent-beginner-summary" data-agent-beginner-summary>
+            <section class="settings-section settings-section--wide agent-beginner-summary" data-agent-beginner-summary data-agent-control-section="status">
               <div class="settings-section__header"><div><h2>Agent Control Summary</h2><p>Plain-language status for this computer, the local Agent, connected systems, and diagnostics.</p></div></div>
               <div class="agent-summary-grid">
                 <div class="security-empty-state">Loading Agent Control summary.</div>
               </div>
             </section>
-            <section class="settings-section settings-section--wide agent-dependency-panel">
+            <section class="settings-section settings-section--wide agent-dependency-panel" data-agent-control-section="health">
               <div class="settings-section__header">
                 <div><h2>Prepare Node</h2><p>Check and install Marketplace runtime dependencies on the selected Agent.</p></div>
                 <span class="status-pill status-pill--planned" data-dependency-status>Not checked</span>
@@ -3510,7 +3545,7 @@
                 <div class="docker-empty-state"><strong>No dependency check yet</strong><span>Check dependencies on the selected node before installing Marketplace templates. Missing packages can be prepared from this panel.</span></div>
               </div>
             </section>
-            <section class="settings-section agent-operations-panel">
+            <section class="settings-section agent-operations-panel" data-agent-control-section="lifecycle">
               <div class="settings-section__header"><div><h2>Diagnostics</h2><p>Health, warnings, and recovery actions.</p></div><button class="inline-action" type="button" data-agent-control-action="runDiagnostics">Run Diagnostics</button></div><div class="agent-diagnostic-list" data-agent-diagnostics><div class="security-empty-state">Run diagnostics to inspect Agent health.</div></div>
               <div class="agent-control-actions">
                 <div><span>Lifecycle</span><button class="inline-action" type="button" data-agent-control-action="forceRestart">Force Restart</button></div>
@@ -3519,7 +3554,7 @@
                 <div><span>Utilities</span><button class="inline-action" type="button" data-agent-control-action="copyUrl">Copy URL</button><button class="inline-action" type="button" data-agent-control-action="copyId">Copy ID</button><button class="inline-action" type="button" data-agent-control-action="openLogs">Logs Folder</button><button class="inline-action" type="button" data-agent-control-action="openDataFolder">Data Folder</button></div>
               </div>
             </section>
-            <section class="settings-section settings-section--wide agent-local-installer" data-agent-local-installer>
+            <section class="settings-section settings-section--wide agent-local-installer" data-agent-local-installer data-agent-control-section="installation">
               <div class="settings-section__header">
                 <div>
                   <h2>Install Local Agent</h2>
@@ -3536,7 +3571,7 @@
                 <div class="docker-empty-state"><strong>No install has run yet</strong><span>AnxOS will prepare the managed runtime, create secure credentials, start the Agent, and reconnect automatically.</span></div>
               </div>
             </section>
-            <section class="settings-section settings-section--wide agent-pairing-setup" data-agent-pairing-setup>
+            <section class="settings-section settings-section--wide agent-pairing-setup" data-agent-pairing-setup data-agent-control-section="pairing">
               <div class="settings-section__header">
                 <div>
                   <h2>Pair This Agent</h2>
@@ -3555,7 +3590,7 @@
               </div>
               <p class="settings-note">Open Add Node on the other Control Center, paste this temporary code, and select Pair Agent. Codes expire and can be used only once.</p>
             </section>
-            <section class="settings-section agent-connection-section">
+            <section class="settings-section agent-connection-section" data-agent-control-section="connection">
               <div class="settings-section__header">
                 <div>
                   <h2>Agent Connection</h2>
@@ -3594,15 +3629,15 @@
                 <span class="settings-inline-status" data-agent-config-source>Saved in config/agent.json.</span>
               </div>
             </section>
-            <section class="settings-section">
+            <section class="settings-section" data-agent-control-section="identity">
               <div class="settings-section__header"><div><h2>Local Systems</h2><p>Desktop host and local Agent service identity.</p></div></div><div class="agent-remote-list" data-agent-local-host-list><div class="security-empty-state">Loading local systems.</div></div>
             </section>
-            <section class="settings-section">
+            <section class="settings-section" data-agent-control-section="remote">
               <div class="settings-section__header"><div><h2>Connected Remote Agents</h2><p>Authenticated Agent APIs and explicit node identities.</p></div></div><div class="agent-remote-list" data-agent-remote-list><div class="security-empty-state">No remote Agents loaded.</div></div>
             </section>
             </div>
             <div class="agent-control-column agent-control-column--right">
-            <section class="settings-section agent-log-section">
+            <section class="settings-section agent-log-section" data-agent-control-section="diagnostics">
               <div class="settings-section__header agent-log-header">
                 <div>
                   <h2>Diagnostics</h2>
@@ -3650,19 +3685,20 @@
               </details>
               <pre class="agent-log-viewer" data-agent-log-viewer aria-live="polite">Logs will appear here.</pre>
             </section>
-            <details class="settings-section settings-section--wide agent-config-details">
+            <details class="settings-section settings-section--wide agent-config-details" data-agent-control-section="developer">
               <summary><span>Agent Configuration</span><small data-agent-config-summary>Loading configuration summary...</small></summary>
               <div class="settings-grid agent-config-grid">
                 <label class="settings-field"><span>Agent name</span><input data-agent-config="name" maxlength="80"></label><label class="settings-field"><span>Listen address</span><select data-agent-config="host"><option value="127.0.0.1">Localhost only</option><option value="0.0.0.0">All interfaces</option></select></label><label class="settings-field"><span>Port</span><input type="number" min="1024" max="65535" data-agent-config="port"></label><label class="settings-field"><span>Update channel</span><select data-agent-config="updateChannel"><option value="stable">Stable</option><option value="beta">Beta</option></select></label><label class="settings-field"><span>Logging level</span><select data-agent-config="loggingLevel"><option>error</option><option>warn</option><option selected>info</option><option>debug</option></select></label><label class="settings-field"><span>Restart policy</span><select data-agent-config="restartPolicy"><option value="on-failure">On failure</option><option value="always">Always</option><option value="never">Never</option></select></label><label class="settings-field"><span>Connection timeout (ms)</span><input type="number" min="1000" max="120000" data-agent-config="connectionTimeoutMs"></label><label class="settings-field"><span>Heartbeat interval (ms)</span><input type="number" min="1000" max="60000" data-agent-config="heartbeatIntervalMs"></label><label class="settings-field"><span>Account association</span><input data-agent-config="accountAssociation" placeholder="Optional account ID"></label><label class="settings-check settings-check--toggle"><input type="checkbox" data-agent-config="ownerMachine"><span>Mark as owner machine</span></label><label class="settings-field settings-field--wide"><span>Allowed folders (one per line)</span><textarea rows="4" data-agent-config="allowedFolders"></textarea></label><label class="settings-field settings-field--wide"><span>Storage roots (one per line)</span><textarea rows="3" data-agent-config="storageRoots"></textarea></label><label class="settings-field settings-field--wide"><span>Allowed origins (one per line)</span><textarea rows="3" data-agent-config="allowedOrigins"></textarea></label>
               </div>
               <div class="settings-actions"><button class="primary-button" type="button" data-agent-control-action="saveConfig">Save Configuration</button><button class="inline-action" type="button" data-agent-control-action="reloadConfig">Reload Configuration</button><button class="inline-action" type="button" data-agent-control-action="restoreConfig">Restore Backup</button><button class="inline-action" type="button" data-agent-control-action="resetConfig">Reset Defaults</button><span class="settings-inline-status" data-agent-config-message></span></div>
             </details>
-            <section class="settings-section settings-section--wide agent-quick-setup" data-agent-setup-panel>
+            <section class="settings-section settings-section--wide agent-quick-setup" data-agent-setup-panel data-agent-control-section="startup">
               <div class="settings-section__header"><div><h2>First-Run Agent Setup</h2><p data-agent-setup-summary>Agent is configured.</p></div><span class="status-pill status-pill--ok">Configured</span></div>
               <div class="settings-grid"><label class="settings-field"><span>Mode</span><select data-agent-setup="mode"><option value="agent">Local Agent mode</option><option value="local">Local-only desktop mode</option></select></label><label class="settings-check settings-check--toggle"><input type="checkbox" data-agent-setup="autoStart" checked><span>Start Agent automatically when I sign in</span></label></div>
               <div class="settings-actions"><button class="primary-button" type="button" data-agent-control-action="completeSetup">Complete Setup</button><span class="settings-inline-status" data-agent-setup-message>Review the configuration above, then complete setup.</span></div>
             </section>
             </div>
+          </div>
           </div>
         </section>
 

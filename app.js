@@ -484,6 +484,8 @@ const agentPairingStatus = document.querySelector("[data-agent-pairing-status]")
 const agentPairingCode = document.querySelector("[data-agent-pairing-code]");
 const agentPairingExpires = document.querySelector("[data-agent-pairing-expires]");
 const agentPairingUrl = document.querySelector("[data-agent-pairing-url]");
+const agentControlSectionButtons = document.querySelectorAll("[data-agent-control-section-target]");
+const agentControlSections = document.querySelectorAll("[data-agent-control-section]");
 let agentControlState = null;
 let agentControlBusy = false;
 let agentControlRefreshInFlight = false;
@@ -29210,6 +29212,38 @@ function canUseSettingsCapability(capability) {
   return settingsPermissionState?.capabilities?.[capability] === true;
 }
 
+const AGENT_CONTROL_SECTION_ALIASES = {
+  credentials: "connection",
+  token: "lifecycle",
+  updates: "lifecycle",
+  paths: "developer",
+};
+
+let activeAgentControlSection = (() => {
+  try { return window.sessionStorage.getItem("anxos-agent-control-section") || "status"; } catch { return "status"; }
+})();
+
+function normalizeAgentControlSection(section = "status") {
+  const requested = AGENT_CONTROL_SECTION_ALIASES[section] || section || "status";
+  return Array.from(agentControlSections).some((panel) => panel.dataset.agentControlSection === requested) ? requested : "status";
+}
+
+function setActiveAgentControlSection(section = activeAgentControlSection || "status") {
+  const requested = section || "status";
+  const normalized = normalizeAgentControlSection(requested);
+  activeAgentControlSection = requested;
+  try { window.sessionStorage.setItem("anxos-agent-control-section", requested); } catch {}
+  agentControlSections.forEach((panel) => {
+    panel.hidden = panel.dataset.agentControlSection !== normalized;
+  });
+  agentControlSectionButtons.forEach((button) => {
+    const target = button.dataset.agentControlSectionTarget || "status";
+    const active = target === requested || (target !== normalized && AGENT_CONTROL_SECTION_ALIASES[target] === normalized && requested === target);
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-current", active ? "page" : "false");
+  });
+}
+
 function isSettingKeyAuthorized(key) {
   const ownerOnly = settingsPermissionState?.settings?.ownerOnly || [];
   return !ownerOnly.includes(key) || settingsPermissionState?.owner === true;
@@ -32130,6 +32164,10 @@ nodeDetailsModal?.addEventListener("click", async (event) => {
   }
 });
 agentControlButtons.forEach((button) => button.addEventListener("click", () => runAgentControlAction(button.dataset.agentControlAction)));
+agentControlSectionButtons.forEach((button) => {
+  button.addEventListener("click", () => setActiveAgentControlSection(button.dataset.agentControlSectionTarget || "status"));
+});
+setActiveAgentControlSection(activeAgentControlSection);
 agentBeginnerSummary?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-agent-summary-page], [data-agent-summary-action]");
   if (!button) return;

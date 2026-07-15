@@ -22,6 +22,9 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
   "LOCAL_AGENT_RUNTIME_MISSING",
   "LOCAL_AGENT_VERIFY_FAILED",
   "serviceWarning",
+  "installerSteps",
+  "buildWindowsAgentLauncherScript",
+  "schtasks.exe",
   "operationInFlight = null;",
   "operationInFlight = \"install\";",
   "status: await getStatus()",
@@ -31,6 +34,7 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
 assert(!agentControl.includes("token: token.token"), "Installer results must not return raw tokens.");
 assert(!agentControl.includes("agentToken: token.token"), "Installer results must not expose generated Agent tokens.");
+assert(!agentControl.includes('["create", SERVICE_NAME, "binPath="'), "Windows Local Agent must not register a non-service Electron process with sc.exe.");
 assert(agentControl.includes("pairLocalAgentSecurely"), "Agent Control should expose local pairing repair without manual token copying.");
 
 [
@@ -56,6 +60,7 @@ assert(preload.includes("pairLocalAgent: (payload = {}) => ipcRenderer.invoke(\"
   "renderLocalAgentInstallerSteps",
   "agentLocalInstallerStatus",
   "agentLocalInstallerSteps",
+  "Needs attention",
   "api.installLocalAgent({ autoStart: true, installService: true })",
   "api.pairLocalAgent({ rotate: true",
   "The Local Agent runs on this PC",

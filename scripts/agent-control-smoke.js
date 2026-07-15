@@ -59,10 +59,12 @@ async function main() {
   assert(htmlSource.includes("data-agent-beginner-summary") && htmlSource.includes("Agent Control Summary"), "Agent Control must include the beginner-friendly summary panel.");
   assert(htmlSource.includes("data-agent-local-host-list") && htmlSource.includes("Local Systems"), "Agent Control must expose a local systems panel.");
   const control = require("../src/services/agentControlService");
-  const validService = control._test.validateWindowsServiceRegistration(`BINARY_PATH_NAME   : ${control._test.expectedWindowsServiceCommand(control.readConfig())}\nSTATE              : 1  STOPPED`, control.readConfig());
+  control._test.writeWindowsAgentLauncher(control.readConfig());
+  const validService = control._test.validateWindowsServiceRegistration(`Task To Run: ${control._test.expectedWindowsServiceCommand(control.readConfig())}\nStatus: Ready`, control.readConfig());
   assert.strictEqual(validService.valid, true, "Matching Windows service binary path should validate.");
   const invalidService = control._test.validateWindowsServiceRegistration("BINARY_PATH_NAME   : C:\\\\old\\\\agent.exe\nSTATE              : 1  STOPPED", control.readConfig());
   assert.strictEqual(invalidService.valid, false, "Mismatched Windows service binary path should not validate.");
+  assert(control._test.buildWindowsAgentLauncherScript(control.readConfig()).includes("ELECTRON_RUN_AS_NODE=1"), "Windows launcher must run the bundled Electron executable as Node.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: true, valid: false }), "invalid", "Invalid registration must not be reported as passed.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: false, verification: { state: "unverifiable" } }), "unverifiable", "Unverifiable registration must remain distinct from missing.");
   assert.strictEqual(control._test.compareVersions("1.2.3", "1.2.4"), -1, "Version comparison should detect older Agent versions.");

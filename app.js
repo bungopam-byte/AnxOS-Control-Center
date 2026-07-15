@@ -3934,9 +3934,12 @@ function renderAgentControlState(payload = agentControlState) {
   });
   if (agentLocalInstallerStatus) {
     const runtime = payload?.local?.runtimeBundle || local.runtimeBundle;
-    agentLocalInstallerStatus.textContent = running ? "Installed" : runtime?.exists ? "Ready" : "Repair Required";
-    agentLocalInstallerStatus.className = `status-pill ${running ? "status-pill--ok" : runtime?.exists ? "status-pill--planned" : "status-pill--warning"}`;
+    const installerSteps = (payload?.local || local)?.installerSteps || [];
+    const installerFailed = Array.isArray(installerSteps) && installerSteps.some((step) => step.state === "failed" || step.state === "blocked");
+    agentLocalInstallerStatus.textContent = running ? "Installed" : installerFailed ? "Needs attention" : runtime?.exists ? "Ready" : "Repair Required";
+    agentLocalInstallerStatus.className = `status-pill ${running ? "status-pill--ok" : installerFailed ? "status-pill--warning" : runtime?.exists ? "status-pill--planned" : "status-pill--warning"}`;
   }
+  renderLocalAgentInstallerSteps((payload?.local || local)?.installerSteps || []);
   renderAgentSetupSummary(payload?.local || local);
   renderAgentBeginnerSummary(payload);
   renderLocalAgentSystems(payload);
@@ -5145,7 +5148,7 @@ async function runAgentControlAction(action) {
     else if (typeof api[action] === "function") await api[action]();
     finishOperation(operationId, true, "Agent operation completed.");
     showToast("Agent operation completed.", "success");
-  } catch (error) { const message = normalizeIpcErrorMessage(error, "Agent operation failed."); finishOperation(operationId, false, message); showToast(message, "error"); if (agentControlMessage) agentControlMessage.textContent = message; }
+  } catch (error) { const message = normalizeIpcErrorMessage(error, "Agent operation failed."); finishOperation(operationId, false, message); if (action === "installLocalAgent") { if (agentLocalInstallerStatus) { agentLocalInstallerStatus.textContent = "Needs attention"; agentLocalInstallerStatus.className = "status-pill status-pill--warning"; } if (Array.isArray(error?.steps)) renderLocalAgentInstallerSteps(error.steps); } showToast(message, "error"); if (agentControlMessage) agentControlMessage.textContent = message; }
   finally { agentControlBusy = false; await refreshAgentControl(); }
 }
 

@@ -4699,6 +4699,13 @@ const KNOWN_DIAGNOSTIC_EXPLANATIONS = {
     action: "Reconnect or restart the Agent from Agent Control.",
     workspace: "agent-control",
   },
+  DISK_STATS_UNAVAILABLE: {
+    title: "Agent disk statistics unavailable",
+    cause: "The Agent could not read disk usage for one monitored path.",
+    impact: "System monitoring may show partial disk information while CPU, memory, and other stats remain available.",
+    action: "The Agent could not read disk usage for this path. System monitoring may show partial disk information. Update or repair the Agent if the issue continues.",
+    workspace: "agent-control",
+  },
   PACKAGE_MANAGER_LOCKED: {
     title: "Package manager is locked",
     cause: "Another package manager process is active on the node.",
@@ -4749,8 +4756,46 @@ function boundDiagnosticText(value = "", limit = DIAGNOSTIC_LONG_TEXT_LIMIT) {
   return text.length > limit ? `${text.slice(0, limit)}... [truncated]` : text;
 }
 
+function classifyKnownDiagnosticEntry(entry = {}) {
+  const code = String(entry.errorCode || entry.code || entry.context?.code || "").trim().toUpperCase();
+  const operation = String(entry.operation || entry.context?.operation || "");
+  const message = `${entry.message || ""} ${entry.context?.message || ""} ${entry.context?.reason || ""}`.toLowerCase();
+  if (
+    code === "DISK_STATS_UNAVAILABLE" ||
+    /df mount lookup failed|df disk read failed|statfs disk read failed|windows disk lookup failed|disk statistics unavailable/.test(message)
+  ) {
+    return {
+      code: "DISK_STATS_UNAVAILABLE",
+      severity: "warn",
+      source: entry.source || "agent",
+      operation: /system-stats/i.test(operation) ? "system-stats" : "disk-stats",
+      fingerprint: "agent:disk-stats:DISK_STATS_UNAVAILABLE",
+    };
+  }
+  if (code) return { code };
+  return { code: "" };
+}
+
+function normalizeDiagnosticEntryForGrouping(entry = {}) {
+  const classification = classifyKnownDiagnosticEntry(entry);
+  const normalizedCode = classification.code || getDiagnosticEntryCode(entry);
+  if (!classification.fingerprint && !classification.severity && !classification.source && !classification.operation) {
+    return { ...entry, code: normalizedCode || entry.code || null, errorCode: normalizedCode || entry.errorCode || null };
+  }
+  return {
+    ...entry,
+    code: normalizedCode || entry.code || null,
+    errorCode: normalizedCode || entry.errorCode || null,
+    severity: classification.severity || entry.severity || "info",
+    source: classification.source || entry.source || "unknown",
+    operation: classification.operation || entry.operation || "event",
+    diagnosticFingerprint: classification.fingerprint || entry.diagnosticFingerprint || null,
+  };
+}
+
 function getDiagnosticEntryCode(entry = {}) {
-  return String(entry.errorCode || entry.code || entry.context?.code || "").trim().toUpperCase();
+  const classification = classifyKnownDiagnosticEntry(entry);
+  return String(classification.code || entry.errorCode || entry.code || entry.context?.code || "").trim().toUpperCase();
 }
 
 function getDiagnosticSeverityRank(severity = "info") {
@@ -4772,7 +4817,7 @@ function getDiagnosticExplanation(code, entry = {}) {
   if (known) return known;
   const message = boundDiagnosticText(entry.message || "No sanitized message was available.", 360);
   return {
-    title: normalizedCode ? `Unhandled diagnostic ${normalizedCode}` : "Unclassified diagnostic event",
+    title: normalizedCode ? `Unhandled diagnostic ${normalizedCode}` : "Unknown diagnostic event",
     cause: "Cause not yet determined.",
     impact: message,
     action: "Review the sanitized technical message and related workspace.",
@@ -4781,6 +4826,7 @@ function getDiagnosticExplanation(code, entry = {}) {
 }
 
 function buildDiagnosticGroupKey(entry = {}) {
+  if (entry.diagnosticFingerprint) return `fingerprint:${entry.diagnosticFingerprint}`;
   const code = getDiagnosticEntryCode(entry);
   if (code) return `code:${code}`;
   return [
@@ -4802,7 +4848,7 @@ function findRelatedOperationForDiagnostic(group = {}) {
 
 function groupDiagnosticIssues(entries = []) {
   const groups = new Map();
-  entries.forEach((entry) => {
+  entries.map(normalizeDiagnosticEntryForGrouping).forEach((entry) => {
     const severityRank = getDiagnosticSeverityRank(entry.severity);
     const include = severityRank >= 2 || getDiagnosticEntryCode(entry);
     if (!include) return;
@@ -4976,7 +5022,7 @@ function renderDiagnosticIssues(visibleEntries = getFilteredDiagnosticEntries())
     const title = document.createElement("span");
     title.append(
       createTextElement("strong", explanation.title),
-      createTextElement("small", [group.code || "NO_CODE", group.source, `${group.count} occurrence${group.count === 1 ? "" : "s"}`].filter(Boolean).join(" · ")),
+      createTextElement("small", [group.code || "UNKNOWN_DIAGNOSTIC", group.source, `${group.count} occurrence${group.count === 1 ? "" : "s"}`].filter(Boolean).join(" · ")),
     );
     const badge = createTextElement("span", getDiagnosticSeverityLabel(group.severity), `status-pill status-pill--${getDiagnosticStatusTone(group.severityRank >= 3 ? "failed" : "warning")}`);
     summary.append(title, badge);

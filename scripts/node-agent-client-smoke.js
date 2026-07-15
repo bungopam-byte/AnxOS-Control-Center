@@ -60,24 +60,28 @@ async function main() {
   const offlinePort = await freePort();
   try {
     writeJson(path.join(process.env.ANXHUB_CONFIG_DIR, "nodes.json"), {
-      schemaVersion: 2,
-      selectedNodeId: "node-a",
+      schemaVersion: 3,
+      selectedNodeId: "anxlab",
       nodes: [
+        { id: "anxlab", kind: "agent", name: "Anxlab", displayName: "Anxlab", baseUrl: agentA.url, agentUrl: agentA.url, enabled: true, agentIdentity: { deviceId: "device-anxlab" } },
         { id: "node-a", kind: "agent", name: "Node A", displayName: "Node A", baseUrl: agentA.url, agentUrl: agentA.url, enabled: true, agentIdentity: { deviceId: "device-a" } },
         { id: "node-b", kind: "agent", name: "Node B", displayName: "Node B", baseUrl: agentB.url, agentUrl: agentB.url, enabled: true, agentIdentity: { deviceId: "device-b" } },
         { id: "node-disabled", kind: "agent", name: "Disabled Node", displayName: "Disabled Node", baseUrl: agentB.url, agentUrl: agentB.url, enabled: false, agentIdentity: { deviceId: "device-disabled" } },
         { id: "node-offline", kind: "agent", name: "Offline Node", displayName: "Offline Node", baseUrl: `http://127.0.0.1:${offlinePort}`, agentUrl: `http://127.0.0.1:${offlinePort}`, enabled: true, agentIdentity: { deviceId: "device-offline" } },
         { id: "node-auth", kind: "agent", name: "Auth Node", displayName: "Auth Node", baseUrl: agentC.url, agentUrl: agentC.url, enabled: true, agentIdentity: { deviceId: "device-auth" } },
+        { id: "agent-local-agent-47131", kind: "agent", name: "This PC", displayName: "This PC", baseUrl: agentC.url, agentUrl: agentC.url, enabled: true, localAgent: true, agentIdentity: { deviceId: "local-agent-47131" } },
       ],
     });
     writeJson(path.join(process.env.ANXHUB_CONFIG_DIR, "node-agent-credentials.json"), {
       schemaVersion: 1,
       nodes: {
         "node-a": { agentToken: "token-a" },
+        "anxlab": { agentToken: "token-a" },
         "node-b": { agentToken: "token-b" },
         "node-disabled": { agentToken: "token-b" },
         "node-offline": { agentToken: "token-offline" },
         "node-auth": { agentToken: "wrong-token" },
+        "agent-local-agent-47131": { agentToken: "wrong-token" },
       },
     });
 
@@ -110,11 +114,28 @@ async function main() {
       (error) => {
         assert.strictEqual(error.status, 401);
         assert.strictEqual(error.payload?.error?.details?.nodeId, "node-auth");
+        assert.strictEqual(error.payload?.error?.details?.nodeUrl, agentC.url);
+        assert.strictEqual(error.payload?.error?.details?.targetLabel, "node:node-auth");
         assert(String(error.message).includes("Auth Node"), "Authentication errors should include friendly node name.");
         assert(!JSON.stringify(error).includes("wrong-token"), "Authentication errors must not expose tokens.");
         return true;
       },
       "Authentication failure should preserve status and node context.",
+    );
+
+    await assert.rejects(
+      () => agentClient.forNode("agent-local-agent-47131").get("/health"),
+      (error) => {
+        const details = error.payload?.error?.details || {};
+        assert.strictEqual(details.nodeId, "agent-local-agent-47131");
+        assert.strictEqual(details.nodeName, "This PC");
+        assert.strictEqual(details.nodeUrl, agentC.url);
+        assert.strictEqual(details.targetLabel, "node:agent-local-agent-47131");
+        assert(String(error.message).includes("This PC"), "Localhost node errors should use the initiating local node name.");
+        assert(!String(error.message).includes("Anxlab"), "Localhost node errors must not use the globally selected node name.");
+        return true;
+      },
+      "Node error context should not mix selected-node metadata into an initiating local-node request.",
     );
 
     console.log("Node-aware Agent client smoke checks passed.");

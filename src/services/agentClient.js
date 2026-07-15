@@ -29,6 +29,7 @@ class AgentClientError extends Error {
     this.status = details.status || null;
     this.code = details.code || null;
     this.payload = details.payload || null;
+    this.details = details.details || details.payload?.error?.details || null;
   }
 }
 
@@ -918,6 +919,7 @@ function createNodeAgentError(message, details = {}) {
   return new AgentClientError(message, {
     status: details.status || null,
     code: details.code || null,
+    details,
     payload: {
       error: {
         code: details.code || null,
@@ -925,6 +927,8 @@ function createNodeAgentError(message, details = {}) {
         details: {
           nodeId: details.nodeId || null,
           nodeName: details.nodeName || null,
+          nodeUrl: details.nodeUrl || null,
+          targetLabel: details.targetLabel || null,
           endpoint: details.endpoint || null,
           operation: details.operation || null,
         },
@@ -958,11 +962,14 @@ function resolveNodeAgentTarget(nodeId) {
   }
 
   const nodeName = node.displayName || node.name || node.id || requestedNodeId;
+  const nodeUrl = node.baseUrl || node.agentUrl || null;
   if (node.kind !== "agent") {
     throw createNodeAgentError(`${nodeName} is not an Agent node.`, {
       code: "NODE_NOT_AGENT",
       nodeId: node.id || requestedNodeId,
       nodeName,
+      nodeUrl,
+      targetLabel: `node:${node.id || requestedNodeId}`,
       operation: "resolve-node-agent",
     });
   }
@@ -972,20 +979,31 @@ function resolveNodeAgentTarget(nodeId) {
       code: "NODE_DISABLED",
       nodeId: node.id || requestedNodeId,
       nodeName,
+      nodeUrl,
+      targetLabel: `node:${node.id || requestedNodeId}`,
       operation: "resolve-node-agent",
     });
   }
 
+  const targetLabel = `node:${node.id}`;
   const config = getNodeService().getNodeAgentConfig(node.id);
   return {
-    node,
+    node: Object.freeze({
+      id: node.id,
+      displayName: node.displayName || node.name || node.id,
+      agentUrl: nodeUrl,
+      agentIdentity: { ...(node.agentIdentity || {}) },
+    }),
     nodeId: node.id,
     nodeName,
+    nodeUrl,
+    targetLabel,
     config: {
       ...config,
       nodeId: node.id,
       nodeName,
-      targetLabel: `node:${node.id}`,
+      nodeUrl,
+      targetLabel,
     },
   };
 }
@@ -1008,6 +1026,8 @@ class NodeAgentClient {
           code: error.code,
           nodeId: this.target.nodeId,
           nodeName: this.target.nodeName,
+          nodeUrl: this.target.nodeUrl,
+          targetLabel: this.target.targetLabel,
           endpoint,
           operation: options.method || "GET",
         });

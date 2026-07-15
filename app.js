@@ -25798,11 +25798,32 @@ function resetNodeScopedRendererState(message = "Loading selected node...") {
   setMarketplaceManualRecoveryState(null);
   selectedDockerContainerId = null;
   selectedInstanceId = null;
+  selectedInstanceFilePath = null;
+  openedInstanceFilePath = null;
+  openedInstanceFileSavedContent = "";
+  latestFilesListing = null;
+  latestFilesListingAt = 0;
+  latestFileDocument = null;
+  selectedFileEntryPath = null;
+  selectedPublicAccessProviderId = "playit";
+  selectedPublicAccessServiceId = null;
   activeConsoleInstanceId = null;
   activeSshSessionId = null;
   consoleOpenInstanceIds = [];
   consoleBufferedEntries = [];
   lastAmpRefreshAt = 0;
+  filesConnectionState.connected = false;
+  filesConnectionState.currentPath = null;
+  filesConnectionState.homePath = null;
+  filesConnectionState.status = "disconnected";
+  filesConnectionState.nodeId = null;
+  filesConnectionState.targetKey = null;
+  filesConnectionState.message = message;
+  filesClipboardState.action = null;
+  filesClipboardState.entry = null;
+  filesClipboardState.sourceDirectory = null;
+  filesClipboardState.targetKey = null;
+  filesClipboardState.providerType = null;
 
   backupsState = {
     ...backupsState,

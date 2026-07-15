@@ -124,6 +124,11 @@ async function main() {
   assert(fileServiceSource.includes("nodeId: transferNodeId"), "Files transfer events should include nodeId.");
   assert(rendererSource.includes("event.nodeId && transfer.nodeId && event.nodeId !== transfer.nodeId"), "Renderer should ignore stale file transfer events.");
   assert(rendererSource.includes(".filter((transfer) => !transfer.nodeId || transfer.nodeId === currentNodeId)"), "Renderer should show transfer history for the active node only.");
+  assert(rendererSource.includes("selectedInstanceFilePath = null;"), "Node switches should clear selected instance file paths.");
+  assert(rendererSource.includes("selectedFileEntryPath = null;"), "Node switches should clear selected Files entries.");
+  assert(rendererSource.includes("selectedPublicAccessServiceId = null;"), "Node switches should clear selected Public Access services.");
+  assert(rendererSource.includes("filesConnectionState.nodeId = null;"), "Node switches should clear Files connection node ownership.");
+  assert(rendererSource.includes("filesClipboardState.targetKey = null;"), "Node switches should clear Files clipboard target ownership.");
 
   console.log("Resource node isolation smoke checks passed.");
 }

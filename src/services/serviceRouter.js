@@ -147,7 +147,7 @@ async function ensureInstanceDependenciesBeforeStart(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return;
   }
-  const status = await agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options)).catch(() => null);
+  const status = await getAgentNodeClient(options).getInstanceStatus(instanceId).catch(() => null);
   const instance = status?.instance || status;
   const template = findMarketplaceTemplateById(instance?.templateId);
   const dependencyIds = template ? resolveTemplateDependencyIds(template) : [];
@@ -398,6 +398,11 @@ function getOptionalNodeConfig(options = {}) {
   return target.type === "agent" ? target.config : null;
 }
 
+function getAgentNodeClient(options = {}) {
+  const nodeId = options?.nodeId || getSelectedNodeId();
+  return agentClient.forNode(nodeId);
+}
+
 function isApplicationHostTarget(options = {}) {
   return getExecutionTarget(options?.nodeId || getSelectedNodeId()).type === "application-host";
 }
@@ -408,7 +413,7 @@ async function listInstances(options = {}) {
     return filterForgottenInstances(await localInstanceService.listInstances(), nodeId);
   }
   try {
-    return filterForgottenInstances(await agentClient.listInstances(getOptionalNodeConfig(options)), nodeId);
+    return filterForgottenInstances(await getAgentNodeClient(options).listInstances(), nodeId);
   } catch (error) {
     diagnostics.log("warn", "instances", "list-failed", "Instance list request failed.", {
       nodeId,
@@ -422,7 +427,7 @@ async function createInstance(payload) {
   const nodeId = payload?.nodeId || getSelectedNodeId();
   const result = shouldUseLocalInstances(payload)
     ? await localInstanceService.createInstance(payload)
-    : await agentClient.createInstance(payload, getOptionalNodeConfig(payload));
+    : await getAgentNodeClient(payload).createInstance(payload);
   clearForgottenInstance(nodeId, result?.id || result?.instance?.id || payload?.id);
   return result;
 }
@@ -431,21 +436,21 @@ async function updateInstance(instanceId, payload, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.updateInstance(instanceId, payload);
   }
-  return agentClient.updateInstance(instanceId, payload, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).updateInstance(instanceId, payload);
 }
 
 async function renameInstance(instanceId, displayName, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.renameInstance(instanceId, displayName);
   }
-  return agentClient.renameInstance(instanceId, displayName, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).renameInstance(instanceId, displayName);
 }
 
 async function duplicateInstance(instanceId, payload = {}, options = {}) {
   const nodeId = options?.nodeId || getSelectedNodeId();
   const result = shouldUseLocalInstances(options)
     ? await localInstanceService.duplicateInstance(instanceId, payload)
-    : await agentClient.duplicateInstance(instanceId, payload, getOptionalNodeConfig(options));
+    : await getAgentNodeClient(options).duplicateInstance(instanceId, payload);
   clearForgottenInstance(nodeId, result?.instance?.id || result?.id || payload?.id);
   return result;
 }
@@ -461,7 +466,7 @@ async function openInstanceFolder(instanceId, options = {}) {
   }
   const status = shouldUseLocalInstances(options)
     ? await localInstanceService.getStatus(instanceId)
-    : await agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options));
+    : await getAgentNodeClient(options).getInstanceStatus(instanceId);
   const instance = status?.instance || status || {};
   const folderPath = instance.instancePath;
   if (!folderPath || !path.isAbsolute(folderPath)) {
@@ -495,112 +500,112 @@ async function getInstanceStatus(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.getStatus(instanceId);
   }
-  return agentClient.getInstanceStatus(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).getInstanceStatus(instanceId);
 }
 
 async function getInstanceMetrics(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.getMetrics(instanceId);
   }
-  return agentClient.getInstanceMetrics(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).getInstanceMetrics(instanceId);
 }
 
 async function getInstanceLogs(instanceId, options) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.readLogs(instanceId, options);
   }
-  return agentClient.getInstanceLogs(instanceId, options, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).getInstanceLogs(instanceId, options);
 }
 
 async function clearInstanceLogs(instanceId, options) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.clearLogs(instanceId, options);
   }
-  return agentClient.clearInstanceLogs(instanceId, options, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).clearInstanceLogs(instanceId, options);
 }
 
 async function sendInstanceCommand(instanceId, command, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.writeInstanceInput(instanceId, command);
   }
-  return agentClient.sendInstanceCommand(instanceId, command, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).sendInstanceCommand(instanceId, command);
 }
 
 async function forceKillInstance(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.forceKillInstance(instanceId);
   }
-  return agentClient.forceKillInstance(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).forceKillInstance(instanceId);
 }
 
 async function listInstanceFiles(instanceId, currentPath, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.listInstanceFiles(instanceId, currentPath);
   }
-  return agentClient.listInstanceFiles(instanceId, currentPath, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).listInstanceFiles(instanceId, currentPath);
 }
 
 async function readInstanceFile(instanceId, filePath, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.readInstanceFile(instanceId, filePath);
   }
-  return agentClient.readInstanceFile(instanceId, filePath, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).readInstanceFile(instanceId, filePath);
 }
 
 async function writeInstanceFile(instanceId, filePath, content, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.writeInstanceFile(instanceId, filePath, content, options);
   }
-  return agentClient.writeInstanceFile(instanceId, filePath, content, options, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).writeInstanceFile(instanceId, filePath, content, options);
 }
 
 async function deleteInstanceFile(instanceId, filePath, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.deleteInstanceFile(instanceId, filePath);
   }
-  return agentClient.deleteInstanceFile(instanceId, filePath, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).deleteInstanceFile(instanceId, filePath);
 }
 
 async function createInstanceFolder(instanceId, folderPath, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.createInstanceFolder(instanceId, folderPath);
   }
-  return agentClient.createInstanceFolder(instanceId, folderPath, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).createInstanceFolder(instanceId, folderPath);
 }
 
 async function renameInstanceFile(instanceId, oldPath, newPath, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.renameInstanceFile(instanceId, oldPath, newPath);
   }
-  return agentClient.renameInstanceFile(instanceId, oldPath, newPath, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).renameInstanceFile(instanceId, oldPath, newPath);
 }
 
 async function getMinecraftProperties(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.readMinecraftProperties(instanceId);
   }
-  return agentClient.getMinecraftProperties(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).getMinecraftProperties(instanceId);
 }
 
 async function saveMinecraftProperties(instanceId, properties, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.writeMinecraftProperties(instanceId, properties);
   }
-  return agentClient.saveMinecraftProperties(instanceId, properties, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).saveMinecraftProperties(instanceId, properties);
 }
 
 async function getFiveMReadiness(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.refreshFiveMReadiness(instanceId);
   }
-  return agentClient.getFiveMReadiness(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).getFiveMReadiness(instanceId);
 }
 
 async function saveFiveMLicenseKey(instanceId, licenseKey, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.saveFiveMLicenseKey(instanceId, licenseKey);
   }
-  return agentClient.saveFiveMLicenseKey(instanceId, licenseKey, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).saveFiveMLicenseKey(instanceId, licenseKey);
 }
 
 async function getDependencyCatalog(options = {}) {
@@ -704,21 +709,21 @@ async function startInstance(instanceId, options = {}) {
     return localInstanceService.startInstance(instanceId);
   }
   await ensureInstanceDependenciesBeforeStart(instanceId, options);
-  return agentClient.startInstance(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).startInstance(instanceId);
 }
 
 async function stopInstance(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.stopInstance(instanceId);
   }
-  return agentClient.stopInstance(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).stopInstance(instanceId);
 }
 
 async function restartInstance(instanceId, options = {}) {
   if (shouldUseLocalInstances(options)) {
     return localInstanceService.restartInstance(instanceId);
   }
-  return agentClient.restartInstance(instanceId, getOptionalNodeConfig(options));
+  return getAgentNodeClient(options).restartInstance(instanceId);
 }
 
 async function deleteInstance(instanceId, options = {}) {
@@ -737,7 +742,7 @@ async function deleteInstance(instanceId, options = {}) {
     return result;
   }
   try {
-    const result = await agentClient.deleteInstance(instanceId, getOptionalNodeConfig(options));
+    const result = await getAgentNodeClient(options).deleteInstance(instanceId);
     clearForgottenInstance(nodeId, instanceId);
     diagnostics.log("info", "instances", "delete", "Agent instance delete completed.", {
       nodeId,
@@ -785,7 +790,7 @@ async function forgetInstance(instanceId, options = {}) {
     return { ...baseResult, ...result, tombstoneAdded: true };
   }
   try {
-    const result = await agentClient.forgetInstance(instanceId, getOptionalNodeConfig(options));
+    const result = await getAgentNodeClient(options).forgetInstance(instanceId);
     rememberForgottenInstance(nodeId, instanceId, { reason: "agent-forget" });
     diagnostics.log("info", "instances", "forget", "Agent instance record removed.", {
       nodeId,

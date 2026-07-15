@@ -1026,8 +1026,130 @@ class NodeAgentClient {
     return this.request(pathname, { ...options, method: "PUT", body });
   }
 
+  patch(pathname, body = null, options = {}) {
+    return this.request(pathname, { ...options, method: "PATCH", body });
+  }
+
   delete(pathname, options = {}) {
     return this.request(pathname, { ...options, method: "DELETE" });
+  }
+
+  listInstances() {
+    return this.get("/instances");
+  }
+
+  createInstance(payload = {}) {
+    return this.post("/instances", payload);
+  }
+
+  updateInstance(instanceId, payload = {}) {
+    return this.patch(`/instances/${encodeInstanceId(instanceId)}`, payload);
+  }
+
+  renameInstance(instanceId, displayName) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/display-name`, { displayName });
+  }
+
+  duplicateInstance(instanceId, payload = {}) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/duplicate`, payload);
+  }
+
+  getInstanceStatus(instanceId) {
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/status`);
+  }
+
+  getInstanceMetrics(instanceId) {
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/metrics`);
+  }
+
+  getInstanceLogs(instanceId, options = {}) {
+    const query = new URLSearchParams({
+      stream: options.stream || "all",
+      limit: String(options.limit || 200),
+    });
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`);
+  }
+
+  clearInstanceLogs(instanceId, options = {}) {
+    const query = new URLSearchParams({
+      stream: options.stream || "all",
+    });
+    return this.delete(`/instances/${encodeInstanceId(instanceId)}/logs?${query.toString()}`);
+  }
+
+  sendInstanceCommand(instanceId, command) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/command`, { command });
+  }
+
+  forceKillInstance(instanceId) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/force-kill`);
+  }
+
+  listInstanceFiles(instanceId, currentPath = ".") {
+    const query = new URLSearchParams({ path: currentPath || "." });
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/files?${query.toString()}`);
+  }
+
+  readInstanceFile(instanceId, filePath) {
+    const query = new URLSearchParams({ path: filePath || "." });
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`);
+  }
+
+  writeInstanceFile(instanceId, filePath, content, options = {}) {
+    return this.put(`/instances/${encodeInstanceId(instanceId)}/file`, {
+      path: filePath,
+      content,
+      encoding: options.encoding,
+    });
+  }
+
+  deleteInstanceFile(instanceId, filePath) {
+    const query = new URLSearchParams({ path: filePath || "." });
+    return this.delete(`/instances/${encodeInstanceId(instanceId)}/file?${query.toString()}`);
+  }
+
+  createInstanceFolder(instanceId, folderPath) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/mkdir`, { path: folderPath });
+  }
+
+  renameInstanceFile(instanceId, oldPath, newPath) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/rename`, { oldPath, newPath });
+  }
+
+  getMinecraftProperties(instanceId) {
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/minecraft/properties`);
+  }
+
+  saveMinecraftProperties(instanceId, properties = {}) {
+    return this.put(`/instances/${encodeInstanceId(instanceId)}/minecraft/properties`, { properties });
+  }
+
+  getFiveMReadiness(instanceId) {
+    return this.get(`/instances/${encodeInstanceId(instanceId)}/fivem/readiness`);
+  }
+
+  saveFiveMLicenseKey(instanceId, licenseKey) {
+    return this.put(`/instances/${encodeInstanceId(instanceId)}/fivem/license-key`, { licenseKey });
+  }
+
+  startInstance(instanceId) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/start`);
+  }
+
+  stopInstance(instanceId) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/stop`);
+  }
+
+  restartInstance(instanceId) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/restart`);
+  }
+
+  deleteInstance(instanceId) {
+    return this.delete(`/instances/${encodeInstanceId(instanceId)}`);
+  }
+
+  forgetInstance(instanceId) {
+    return this.delete(`/instances/${encodeInstanceId(instanceId)}/record`);
   }
 }
 

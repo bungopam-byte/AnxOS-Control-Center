@@ -7,7 +7,7 @@ const { pipeline } = require("stream/promises");
 const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
 const { AgentClientError, downloadFile, getFileListing, getFilesystemIdentity, mutateFile, readFileText } = require("./agentClient");
-const { getNodeAgentConfig } = require("./nodeService");
+const { getNode, getNodeAgentConfig } = require("./nodeService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
 
@@ -338,7 +338,24 @@ function shouldUseLocalFiles(options = {}) {
 function getFileNodeConfig(options = {}) {
   const nodeId = trimValue(options.nodeId);
   if (!nodeId) return null;
-  return getNodeAgentConfig(nodeId);
+  const node = getNode(nodeId);
+  if (node?.enabled === false) {
+    throw new FileServiceError("Selected node is disabled.", {
+      code: "NODE_DISABLED",
+      status: 403,
+    });
+  }
+  return {
+    ...getNodeAgentConfig(nodeId),
+    nodeId,
+    agentNodeId: nodeId,
+  };
+}
+
+function getTransferNodeId(options = {}) {
+  if (trimValue(options.nodeId)) return trimValue(options.nodeId);
+  if (shouldUseLocalFiles(options)) return "application-host";
+  return null;
 }
 
 function shouldUseNodeAgent(options = {}) {
@@ -407,6 +424,7 @@ class FileService extends EventEmitter {
   emitTransfer(event) {
     this.emit("transfer", {
       at: new Date().toISOString(),
+      nodeId: event.nodeId || null,
       ...event,
     });
   }
@@ -1180,6 +1198,7 @@ class FileService extends EventEmitter {
   }
 
   async upload(options = {}) {
+    const transferNodeId = getTransferNodeId(options);
     if (shouldUseNodeAgent(options)) {
       const selection = await showOpenDialog({ title: "Upload file to node", properties: ["openFile"] });
       if (selection.canceled || !selection.filePaths[0]) return { canceled: true };
@@ -1195,9 +1214,9 @@ class FileService extends EventEmitter {
         }
       }
       const buffer = await fsPromises.readFile(localPath);
-      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: buffer.length, percent: 0 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: buffer.length, percent: 0 });
       const result = await mutateFile({ action: "upload", path: remotePath, content: buffer.toString("base64") }, getFileNodeConfig(options));
-      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: buffer.length, totalBytes: buffer.length, percent: 100 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: buffer.length, totalBytes: buffer.length, percent: 100 });
       return { ...result, canceled: false, localPath, remotePath };
     }
     if (shouldUseLocalFiles(options)) {
@@ -1217,9 +1236,9 @@ class FileService extends EventEmitter {
           status: 409,
         });
       }
-      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: destinationPath, percent: 20 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "running", path: destinationPath, percent: 20 });
       await fsPromises.copyFile(localPath, destinationPath);
-      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: destinationPath, percent: 100 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "complete", path: destinationPath, percent: 100 });
       return {
         canceled: false,
         localPath,
@@ -1261,7 +1280,7 @@ class FileService extends EventEmitter {
       const localSize = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
       const controller = this.createTransferController(options.transferId);
       let transferredBytes = 0;
-      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: localSize, percent: localSize > 0 ? 0 : null });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: localSize, percent: localSize > 0 ? 0 : null });
 
       try {
         const source = fs.createReadStream(localPath);
@@ -1271,6 +1290,7 @@ class FileService extends EventEmitter {
         source.on("data", (chunk) => {
           transferredBytes += chunk.length;
           this.emitTransfer({
+            nodeId: transferNodeId,
             id: options.transferId || null,
             type: "upload",
             status: "running",
@@ -1287,7 +1307,7 @@ class FileService extends EventEmitter {
       if (controller?.canceled) {
         throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
       }
-      this.emitTransfer({ id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: localSize, totalBytes: localSize, percent: 100 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: localSize, totalBytes: localSize, percent: 100 });
 
       return {
         canceled: false,
@@ -1330,6 +1350,7 @@ class FileService extends EventEmitter {
   }
 
   async download(options = {}) {
+    const transferNodeId = getTransferNodeId(options);
     if (shouldUseNodeAgent(options)) {
       return this.downloadFromAgent(options.path, getFileNodeConfig(options));
     }
@@ -1343,7 +1364,7 @@ class FileService extends EventEmitter {
         return { canceled: true };
       }
       await fsPromises.copyFile(localPath, selection.filePath);
-      this.emitTransfer({ id: options.transferId || null, type: "download", status: "complete", path: localPath, percent: 100 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "download", status: "complete", path: localPath, percent: 100 });
       return {
         canceled: false,
         remotePath: localPath,
@@ -1387,6 +1408,7 @@ class FileService extends EventEmitter {
         source.on("data", (chunk) => {
           transferredBytes += chunk.length;
           this.emitTransfer({
+            nodeId: transferNodeId,
             id: options.transferId || null,
             type: "download",
             status: "running",
@@ -1403,7 +1425,7 @@ class FileService extends EventEmitter {
       if (controller?.canceled) {
         throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
       }
-      this.emitTransfer({ id: options.transferId || null, type: "download", status: "complete", path: remotePath, receivedBytes: attrs.size || 0, totalBytes: attrs.size || 0, percent: 100 });
+      this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "download", status: "complete", path: remotePath, receivedBytes: attrs.size || 0, totalBytes: attrs.size || 0, percent: 100 });
 
       return {
         canceled: false,

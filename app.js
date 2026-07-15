@@ -18991,7 +18991,11 @@ function transferStatusLabel(status) {
 
 function renderTransfers() {
   if (!transferList) return;
-  const transfers = [...fileTransfers.values()].slice(-8).reverse();
+  const currentNodeId = getFilesRequestNodeId();
+  const transfers = [...fileTransfers.values()]
+    .filter((transfer) => !transfer.nodeId || transfer.nodeId === currentNodeId)
+    .slice(-8)
+    .reverse();
   transferList.replaceChildren();
   const activeCount = transfers.filter((transfer) => transfer.status === "running").length;
   const failedCount = transfers.filter((transfer) => transfer.status === "failed").length;
@@ -19079,6 +19083,7 @@ function startFileTransfer(actionName, target, metadata = {}) {
     id,
     actionName,
     operationId,
+    nodeId: getFilesRequestNodeId(),
     status: "running",
     progress: null,
     title,
@@ -19135,6 +19140,12 @@ function updateFileTransferProgress(event = {}) {
     return;
   }
   const transfer = fileTransfers.get(event.id);
+  if (event.nodeId && transfer.nodeId && event.nodeId !== transfer.nodeId) {
+    return;
+  }
+  if (event.nodeId && event.nodeId !== getFilesRequestNodeId()) {
+    return;
+  }
   const percent = Number(event.percent);
   if (Number.isFinite(percent)) {
     transfer.progress = Math.max(0, Math.min(100, percent));

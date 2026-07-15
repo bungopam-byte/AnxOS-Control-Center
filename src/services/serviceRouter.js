@@ -57,6 +57,7 @@ function createUnavailableFileListing(message = "File service unavailable.") {
 }
 
 async function getAgentDockerSnapshot(options = {}) {
+  const nodeId = getRequestNodeId(options);
   try {
     const nodeConfig = getOptionalNodeConfig(options);
     const snapshot = await agentClient.getDockerSnapshot(nodeConfig);
@@ -65,10 +66,10 @@ async function getAgentDockerSnapshot(options = {}) {
       code: error?.code || error?.payload?.error?.code || null,
       message: error?.message || "Docker capability manifest is unavailable on this Agent.",
     }));
-    return {
+    return withNodeContext({
       ...snapshot,
       agentDockerCapabilities: capabilities,
-    };
+    }, nodeId);
   } catch (error) {
     diagnostics.log("warn", "docker", "agent-snapshot-failed", "Remote Docker snapshot request failed", {
       nodeId: options?.nodeId || getSelectedNodeId(),
@@ -178,70 +179,78 @@ async function ensureInstanceDependenciesBeforeStart(instanceId, options = {}) {
 }
 
 async function getDockerSnapshot(options = {}) {
+  const nodeId = getRequestNodeId(options);
   if (isDockerDisabledForNode(options)) {
-    return createDockerUnavailableSnapshot("Docker is disabled for this node.");
+    return withNodeContext(createDockerUnavailableSnapshot("Docker is disabled for this node."), nodeId);
   }
 
   if (isApplicationHostTarget(options)) {
-    return localDockerService.getDockerSnapshot();
+    return withNodeContext(await localDockerService.getDockerSnapshot(), nodeId);
   }
   return getAgentDockerSnapshot(options);
 }
 
 async function createDockerContainer(payload = {}) {
+  const nodeId = getRequestNodeId(payload);
   assertDockerEnabledForNode(payload);
   if (shouldUseLocalDocker(payload)) {
-    return localDockerService.createContainer(payload);
+    return withNodeContext(await localDockerService.createContainer(payload), nodeId);
   }
-  return agentClient.createDockerContainer(payload, getOptionalNodeConfig(payload));
+  return withNodeContext(await agentClient.createDockerContainer(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function startDockerContainer(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.startContainer(container);
+    return withNodeContext(await localDockerService.startContainer(container), nodeId);
   }
-  return agentClient.startDockerContainer(container, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.startDockerContainer(container, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function stopDockerContainer(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.stopContainer(container);
+    return withNodeContext(await localDockerService.stopContainer(container), nodeId);
   }
-  return agentClient.stopDockerContainer(container, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.stopDockerContainer(container, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function restartDockerContainer(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.restartContainer(container);
+    return withNodeContext(await localDockerService.restartContainer(container), nodeId);
   }
-  return agentClient.restartDockerContainer(container, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.restartDockerContainer(container, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function deleteDockerContainer(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.deleteContainer(container);
+    return withNodeContext(await localDockerService.deleteContainer(container), nodeId);
   }
-  return agentClient.deleteDockerContainer(container, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.deleteDockerContainer(container, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function getDockerContainerLogs(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.getContainerLogs(container, options);
+    return withNodeContext(await localDockerService.getContainerLogs(container, options), nodeId);
   }
-  return agentClient.getDockerContainerLogs(container, options, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.getDockerContainerLogs(container, options, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function getDockerContainerStats(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.getContainerStats(container);
+    return withNodeContext(await localDockerService.getContainerStats(container), nodeId);
   }
-  return agentClient.getDockerContainerStats(container, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.getDockerContainerStats(container, getOptionalNodeConfig(options)), nodeId);
 }
 
 function shouldUseLocalDocker(options = {}) {
@@ -253,27 +262,30 @@ function shouldUseLocalInstances(options = {}) {
 }
 
 async function listDockerContainers(options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.getDockerContainers();
+    return withNodeContext(await localDockerService.getDockerContainers(), nodeId);
   }
-  return agentClient.getDockerContainers(getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.getDockerContainers(getOptionalNodeConfig(options)), nodeId);
 }
 
 async function inspectDockerContainer(container, options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.inspectContainer(container);
+    return withNodeContext(await localDockerService.inspectContainer(container), nodeId);
   }
-  return agentClient.inspectDockerContainer(container, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.inspectDockerContainer(container, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function listDockerImages(options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.listImages();
+    return withNodeContext(await localDockerService.listImages(), nodeId);
   }
-  return agentClient.listDockerImages(getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.listDockerImages(getOptionalNodeConfig(options)), nodeId);
 }
 
 async function deleteDockerImage(image, options = {}) {
@@ -285,11 +297,12 @@ async function deleteDockerImage(image, options = {}) {
 }
 
 async function routeDockerOperation(localMethod, agentMethod, args = [], options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService[localMethod](...args);
+    return withNodeContext(await localDockerService[localMethod](...args), nodeId);
   }
-  return agentClient[agentMethod](...args, getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient[agentMethod](...args, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function pullDockerImage(image, options = {}) { return routeDockerOperation("pullImage", "pullDockerImage", [image], options); }
@@ -334,19 +347,21 @@ async function getDockerCleanupPreview(options = {}) { return routeDockerOperati
 async function runDockerCleanup(payload = {}) { return routeDockerOperation("runCleanup", "runDockerCleanup", [payload], payload); }
 
 async function listDockerNetworks(options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.listNetworks();
+    return withNodeContext(await localDockerService.listNetworks(), nodeId);
   }
-  return agentClient.listDockerNetworks(getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.listDockerNetworks(getOptionalNodeConfig(options)), nodeId);
 }
 
 async function listDockerVolumes(options = {}) {
+  const nodeId = getRequestNodeId(options);
   assertDockerEnabledForNode(options);
   if (shouldUseLocalDocker(options)) {
-    return localDockerService.listVolumes();
+    return withNodeContext(await localDockerService.listVolumes(), nodeId);
   }
-  return agentClient.listDockerVolumes(getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.listDockerVolumes(getOptionalNodeConfig(options)), nodeId);
 }
 
 async function getAgentPlayitSnapshot(options = {}) {
@@ -395,12 +410,62 @@ async function getFileListing(options = {}) {
 function getOptionalNodeConfig(options = {}) {
   const nodeId = options?.nodeId || getSelectedNodeId();
   const target = getExecutionTarget(nodeId);
-  return target.type === "agent" ? target.config : null;
+  if (target.type !== "agent") {
+    return null;
+  }
+  const node = getNode(target.nodeId);
+  if (node?.enabled === false) {
+    const error = new Error("Selected node is disabled.");
+    error.code = "NODE_DISABLED";
+    error.statusCode = 403;
+    throw error;
+  }
+  return {
+    ...target.config,
+    nodeId: target.nodeId,
+    agentNodeId: target.nodeId,
+  };
 }
 
 function getAgentNodeClient(options = {}) {
   const nodeId = options?.nodeId || getSelectedNodeId();
   return agentClient.forNode(nodeId);
+}
+
+function getRequestNodeId(options = {}) {
+  return options?.nodeId || getSelectedNodeId() || "application-host";
+}
+
+function withNodeContext(payload, nodeId) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+  const next = { ...payload, nodeId };
+  if (Array.isArray(next.containers)) {
+    next.containers = next.containers.map((container) => ({ ...container, nodeId }));
+  }
+  if (Array.isArray(next.images)) {
+    next.images = next.images.map((image) => ({ ...image, nodeId }));
+  }
+  if (Array.isArray(next.networks)) {
+    next.networks = next.networks.map((network) => ({ ...network, nodeId }));
+  }
+  if (Array.isArray(next.volumes)) {
+    next.volumes = next.volumes.map((volume) => ({ ...volume, nodeId }));
+  }
+  if (Array.isArray(next.backups)) {
+    next.backups = next.backups.map((backup) => ({ ...backup, nodeId }));
+  }
+  if (Array.isArray(next.schedules)) {
+    next.schedules = next.schedules.map((schedule) => ({ ...schedule, nodeId }));
+  }
+  if (next.container && typeof next.container === "object") {
+    next.container = { ...next.container, nodeId };
+  }
+  if (next.backup && typeof next.backup === "object") {
+    next.backup = { ...next.backup, nodeId };
+  }
+  return next;
 }
 
 function isApplicationHostTarget(options = {}) {
@@ -826,19 +891,23 @@ async function forgetInstance(instanceId, options = {}) {
 }
 
 async function listBackups(options = {}) {
-  return agentClient.listBackups(options, getOptionalNodeConfig(options));
+  const nodeId = getRequestNodeId(options);
+  return withNodeContext(await agentClient.listBackups(options, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function createBackup(payload = {}) {
-  return agentClient.createBackup(payload, getOptionalNodeConfig(payload));
+  const nodeId = getRequestNodeId(payload);
+  return withNodeContext(await agentClient.createBackup(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function restoreBackup(payload = {}) {
-  return agentClient.restoreBackup(payload, getOptionalNodeConfig(payload));
+  const nodeId = getRequestNodeId(payload);
+  return withNodeContext(await agentClient.restoreBackup(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function deleteBackup(backupId, options = {}) {
-  return agentClient.deleteBackup(backupId, getOptionalNodeConfig(options));
+  const nodeId = getRequestNodeId(options);
+  return withNodeContext(await agentClient.deleteBackup(backupId, getOptionalNodeConfig(options)), nodeId);
 }
 
 async function downloadBackup(backupId, options = {}) {
@@ -846,19 +915,23 @@ async function downloadBackup(backupId, options = {}) {
 }
 
 async function importBackup(payload = {}) {
-  return agentClient.importBackup(payload, getOptionalNodeConfig(payload));
+  const nodeId = getRequestNodeId(payload);
+  return withNodeContext(await agentClient.importBackup(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function listBackupSchedules(options = {}) {
-  return agentClient.listBackupSchedules(getOptionalNodeConfig(options));
+  const nodeId = getRequestNodeId(options);
+  return withNodeContext(await agentClient.listBackupSchedules(getOptionalNodeConfig(options)), nodeId);
 }
 
 async function saveBackupSchedule(payload = {}) {
-  return agentClient.saveBackupSchedule(payload, getOptionalNodeConfig(payload));
+  const nodeId = getRequestNodeId(payload);
+  return withNodeContext(await agentClient.saveBackupSchedule(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function deleteBackupSchedule(instanceId, options = {}) {
-  return agentClient.deleteBackupSchedule(instanceId, getOptionalNodeConfig(options));
+  const nodeId = getRequestNodeId(options);
+  return withNodeContext(await agentClient.deleteBackupSchedule(instanceId, getOptionalNodeConfig(options)), nodeId);
 }
 
 module.exports = {

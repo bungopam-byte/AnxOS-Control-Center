@@ -167,8 +167,8 @@ includesAll(preloadSource, [
 includesAll(serviceRouterSource, [
   "async function getPlayitSnapshot(options = {})",
   "async function getAmpSnapshot(options = {})",
-  "return agentClient.listBackups(options, getOptionalNodeConfig(options));",
-  "return agentClient.createBackup(payload, getOptionalNodeConfig(payload));",
+  "return withNodeContext(await agentClient.listBackups(options, getOptionalNodeConfig(options)), nodeId);",
+  "return withNodeContext(await agentClient.createBackup(payload, getOptionalNodeConfig(payload)), nodeId);",
 ], "Service router");
 
 includesAll(nodeServiceSource, [

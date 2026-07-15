@@ -53,6 +53,8 @@ includesAll(appSource, [
 ], "Renderer");
 
 includesAll(appSource, [
+  "function syncNodeSelectorControls",
+  "syncNodeSelectorControls();",
   "nodePickerTrigger?.addEventListener(\"click\"",
   "event.stopPropagation();",
   "document.addEventListener(\"click\"",
@@ -99,11 +101,18 @@ includesAll(appSource, [
   "const previousNodesState = {",
   "const persistedState = await desktopApiState.api.nodes.select(nodesState.selectedNodeId);",
   "nodesState = previousNodesState;",
+  "return { changed: false, selectedNodeId: previousNodeId };",
+  "return { changed: true, selectedNodeId: getSelectedNodeId() };",
   "showToast(normalizeIpcErrorMessage(error, \"Node could not be selected.\"), \"warning\");",
   "nodeSwitchInProgress = false;\n    renderNodes();",
   "Selected node was unavailable. Switched to",
   "getFriendlyErrorMessage(result.message || \"Node unavailable.\")",
 ], "Node switch persistence and completion");
+
+assert(
+  !appSource.includes("nodesState.selectedNodeId = node.id || nodesState.selectedNodeId;"),
+  "Global search and secondary selectors must not mutate selectedNodeId outside selectNode().",
+);
 
 includesAll(appSource, [
   "function renderLocalAgentSystems",

@@ -17344,7 +17344,6 @@ function getGlobalSearchProviders() {
             label: node.displayName || node.name || node.id || "Node",
             description: [node.agentIdentity?.hostname, node.status || node.connectionStatus, node.agentIdentity?.operatingSystem].filter(Boolean).join(" · ") || "Managed node",
             action: () => {
-              nodesState.selectedNodeId = node.id || nodesState.selectedNodeId;
               showPage("nodes");
               if (node.id && typeof selectNode === "function") {
                 const selection = selectNode(node.id);
@@ -27097,6 +27096,14 @@ function getNodePickerNodes() {
   return Array.isArray(nodesState.nodes) ? nodesState.nodes : [];
 }
 
+function syncNodeSelectorControls() {
+  const selectedNodeId = getSelectedNodeId();
+  nodeTargetSelects.forEach((select) => {
+    select.value = selectedNodeId;
+  });
+  renderNodePicker();
+}
+
 function positionNodePicker() {
   if (!nodePicker || !nodePickerTrigger || nodePicker.hidden) {
     return;
@@ -27431,21 +27438,19 @@ async function selectNode(nodeId) {
   };
   if (nextNodeId === previousNodeId && !nodeSwitchInProgress) {
     renderNodes();
-    return;
+    return { changed: false, selectedNodeId: previousNodeId };
   }
   if (!((nodesState.nodes || []).some((node) => node.id === nextNodeId))) {
     showToast("That node is no longer available.", "warning");
     renderNodes();
-    return;
+    return { changed: false, selectedNodeId: previousNodeId };
   }
 
   nodesState.selectedNodeId = nextNodeId;
   selectedNodeContextVersion += 1;
   nodeSwitchInProgress = true;
   const context = getNodeRequestContext("select-node");
-  nodeTargetSelects.forEach((select) => {
-    select.value = nodesState.selectedNodeId;
-  });
+  syncNodeSelectorControls();
   resetNodeScopedRendererState(`Switching to ${getSelectedNode()?.displayName || nodesState.selectedNodeId}...`);
   if (desktopApiState.hasNodes) {
     try {
@@ -27459,13 +27464,14 @@ async function selectNode(nodeId) {
       selectedNodeContextVersion += 1;
       renderNodes();
       showToast(normalizeIpcErrorMessage(error, "Node could not be selected."), "warning");
-      return;
+      return { changed: false, selectedNodeId: getSelectedNodeId(), error };
     }
   }
   renderNodes();
   if (isNodeRequestCurrent(context)) {
     await reloadActiveNodeData(context);
   }
+  return { changed: true, selectedNodeId: getSelectedNodeId() };
 }
 
 function getNodeFormPayload() {

@@ -356,6 +356,7 @@ const startupSteps = {
 };
 const sshTerminalCard = document.querySelector(".ssh-terminal-card");
 const sshTerminalWindow = document.querySelector("[data-ssh-terminal]");
+const sshXtermSurface = document.querySelector("[data-ssh-xterm]");
 const sshOutputList = document.querySelector("[data-ssh-output]");
 const sshLoading = document.querySelector("[data-ssh-loading]");
 const sshEmpty = document.querySelector("[data-ssh-empty]");
@@ -804,6 +805,9 @@ let sshTransientStatusMessage = "";
 let sshProfileFormVisible = false;
 let sshKeyboardMode = false;
 let sshTerminalResizeObserver = null;
+let sshXterm = null;
+let sshXtermInputDisposable = null;
+let sshXtermSessionId = null;
 let filesSelectedServerId = null;
 let filesSelectedProfileId = null;
 let filesPasswordPromptVisible = false;
@@ -23736,8 +23740,92 @@ function syncSshScrollMode() {
   updateSshWorkspaceStatus();
 }
 
+function getSshXtermConstructor() {
+  return window.Terminal || window.XTerm?.Terminal || null;
+}
+
+function ensureSshXterm() {
+  if (sshXterm) {
+    return sshXterm;
+  }
+
+  const TerminalConstructor = getSshXtermConstructor();
+  if (!TerminalConstructor || !sshXtermSurface) {
+    return null;
+  }
+
+  sshXterm = new TerminalConstructor({
+    cols: SSH_TERMINAL_DEFAULT_COLS,
+    rows: SSH_TERMINAL_DEFAULT_ROWS,
+    cursorBlink: true,
+    convertEol: false,
+    disableStdin: true,
+    fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    fontSize: 14,
+    scrollback: SSH_OUTPUT_LINE_LIMIT,
+    tabStopWidth: 8,
+    termName: "xterm-256color",
+    theme: {
+      background: "#05070c",
+      foreground: "#d7deea",
+      cursor: "#ffffff",
+      selectionBackground: "#6d7cff55",
+    },
+  });
+
+  sshXterm.open(sshXtermSurface);
+  sshXtermInputDisposable?.dispose?.();
+  sshXtermInputDisposable = sshXterm.onData((data) => {
+    writeSshInput(data);
+  });
+  sshXtermSurface.classList.add("is-ready");
+  return sshXterm;
+}
+
+function focusSshTerminalInput() {
+  const terminal = ensureSshXterm();
+  if (terminal) {
+    terminal.focus();
+    return true;
+  }
+  sshTerminalWindow?.focus();
+  return false;
+}
+
+function syncSshXtermSession(session) {
+  const terminal = ensureSshXterm();
+  if (!terminal) {
+    return false;
+  }
+
+  const size = measureSshTerminalSize();
+  terminal.resize?.(size.cols, size.rows);
+  terminal.options.disableStdin = !(session && session.status === "connected");
+
+  if (sshXtermSessionId !== (session?.id || null)) {
+    terminal.clear();
+    sshXtermSessionId = session?.id || null;
+    const text = getSshTerminalBuffer(session)?.toText() || "";
+    if (text) {
+      terminal.write(text.replace(/\n/g, "\r\n"));
+    }
+  }
+
+  return true;
+}
+
 function renderSshOutput(session) {
+  const usingXterm = syncSshXtermSession(session);
   if (!sshOutputList) {
+    return;
+  }
+
+  sshOutputList.hidden = usingXterm;
+
+  if (usingXterm) {
+    updateSshActions();
+    syncSshScrollMode();
+    updateSshWorkspaceStatus();
     return;
   }
 
@@ -23761,12 +23849,16 @@ function clearSshOutput() {
     if (sshOutputList) {
       sshOutputList.replaceChildren();
     }
+    sshXterm?.clear?.();
 
     updateSshActions();
     return;
   }
 
   getSshTerminalBuffer(session)?.clear();
+  if (session.id === activeSshSessionId) {
+    sshXterm?.clear?.();
+  }
   renderSshOutput(session);
   renderSshView();
 }
@@ -23891,6 +23983,9 @@ function appendSshOutput(sessionId, chunk) {
   getSshTerminalBuffer(session)?.write(chunk);
 
   if (sessionId === activeSshSessionId) {
+    if (ensureSshXterm()) {
+      sshXterm.write(String(chunk || ""));
+    }
     renderSshOutput(session);
     renderSshView();
   }
@@ -24128,11 +24223,9 @@ function renderSshView() {
 
   if (sshCommandInput) {
     sshCommandInput.disabled = !canSend;
-    sshCommandInput.readOnly = canSend;
+    sshCommandInput.readOnly = false;
     sshCommandInput.placeholder = canSend
-      ? sshKeyboardMode
-        ? "Terminal input is active"
-        : "Click the terminal or this field to type"
+      ? "Click the terminal to type, or enter one command here"
       : "Connect to enable command input";
 
     if (sshKeyboardMode) {
@@ -24166,6 +24259,9 @@ function renderSshView() {
 
   setSshStatus(getSshSessionStatusLabel(session), getSshSessionMessage(session));
   renderSshOutput(session);
+  if (sshXterm) {
+    sshXterm.options.disableStdin = !canSend;
+  }
   updateSshWorkspaceStatus();
 }
 
@@ -24188,6 +24284,7 @@ async function resizeActiveSshSession() {
 
   const size = measureSshTerminalSize();
   getSshTerminalBuffer(session)?.resize(size);
+  ensureSshXterm()?.resize?.(size.cols, size.rows);
   renderSshOutput(session);
 
   try {
@@ -24311,6 +24408,7 @@ function ensureSshEventSubscription() {
 
       if (session.status === "connected") {
         setSshPasswordPromptState(false);
+        window.requestAnimationFrame(focusSshTerminalInput);
       }
 
       renderSshView();
@@ -24406,6 +24504,7 @@ async function connectSshSession(options = {}) {
     activeSshSessionId = session.id;
     sshTransientStatusMessage = session.message || `Connected to ${session.label}.`;
     renderSshView();
+    window.requestAnimationFrame(focusSshTerminalInput);
   } catch (error) {
     setSshPasswordPromptState(true, error?.message || "SSH connection failed.");
     sshTransientStatusMessage = error?.message || "SSH connection failed.";
@@ -24506,81 +24605,6 @@ async function handleSshTerminalInputKeydown(event) {
   }
 
   if (await handleSshClipboardShortcut(event)) {
-    return true;
-  }
-
-  if (event.key === "Tab") {
-    event.preventDefault();
-    await writeSshInput("\t");
-    return true;
-  }
-
-  if (event.key === "Enter") {
-    event.preventDefault();
-    await writeSshInput("\n");
-    if (sshCommandInput) {
-      sshCommandInput.value = "";
-    }
-    return true;
-  }
-
-  if (event.key === "Backspace") {
-    event.preventDefault();
-    await writeSshInput("\u007f");
-    return true;
-  }
-
-  if (event.key === "Delete") {
-    event.preventDefault();
-    await writeSshInput("\u001b[3~");
-    return true;
-  }
-
-  if (event.key === "Escape") {
-    event.preventDefault();
-    await writeSshInput("\u001b");
-    return true;
-  }
-
-  if (event.key.startsWith("Arrow")) {
-    event.preventDefault();
-    const arrowMap = {
-      ArrowUp: "\u001b[A",
-      ArrowDown: "\u001b[B",
-      ArrowRight: "\u001b[C",
-      ArrowLeft: "\u001b[D",
-    };
-    await writeSshInput(arrowMap[event.key] || "");
-    return true;
-  }
-
-  const navigationKeyMap = {
-    Home: "\u001b[H",
-    End: "\u001b[F",
-    PageUp: "\u001b[5~",
-    PageDown: "\u001b[6~",
-  };
-
-  if (navigationKeyMap[event.key]) {
-    event.preventDefault();
-    await writeSshInput(navigationKeyMap[event.key]);
-    return true;
-  }
-
-  if (event.ctrlKey || event.metaKey || event.altKey) {
-    if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
-      event.preventDefault();
-      await writeSshInput(String.fromCharCode(event.key.toUpperCase().charCodeAt(0) - 64));
-      return true;
-    }
-    return false;
-  }
-
-  if (event.key.length === 1) {
-    event.preventDefault();
-    sshKeyboardInputBuffer += event.key;
-    syncSshKeyboardInputValue();
-    await writeSshInput(event.key);
     return true;
   }
 
@@ -30320,7 +30344,7 @@ sshPasswordInput?.addEventListener("keydown", (event) => {
 });
 sshTerminalWindow?.addEventListener("click", () => {
   if (getActiveSshSession()?.status === "connected") {
-    sshTerminalWindow.focus();
+    focusSshTerminalInput();
   }
 });
 sshTerminalWindow?.addEventListener("keydown", async (event) => {
@@ -30358,27 +30382,23 @@ sshCommandInput?.addEventListener("paste", async (event) => {
 sshCommandForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  const command = getSshShellInputValue();
+  const command = sshCommandInput?.value || "";
 
-  if (!command.trim()) {
+  if (!command.trim() || sshKeyboardMode) {
     return;
   }
 
-  if (sshKeyboardMode) {
-    await writeSshInput("\n");
-  } else {
-    await sendSshCommand(command);
-  }
+  await sendSshCommand(command);
 
   if (sshCommandInput) {
     sshCommandInput.value = "";
   }
-
-  sshKeyboardInputBuffer = "";
 });
 updateSshActions();
 resetSshProfileForm();
 ensureSshEventSubscription();
+ensureSshXterm();
+setupSshTerminalResizeObserver();
 loadSshProfiles();
 loadStorageConnections();
 setupFileTransferEvents();

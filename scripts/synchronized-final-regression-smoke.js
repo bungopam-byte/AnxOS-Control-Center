@@ -51,6 +51,7 @@ assert(appSource.includes("selectNode(nodeId"), "Renderer must keep canonical no
 assert(appSource.includes("data-remote-agent-select") && appSource.includes("await selectNode(nodeId);"), "Agent Control must select registered Agent nodes through node selection.");
 assert(appSource.includes("resetNodeScopedRendererState"), "Node switching must clear node-owned renderer state.");
 assert(appSource.includes("createSshTerminalBuffer"), "SSH output must use the terminal buffer.");
-assert(appSource.includes('await writeSshInput("\\u007f")'), "SSH Backspace must send DEL to the PTY.");
+assert(appSource.includes("sshXterm.onData((data) => {") && appSource.includes("writeSshInput(data);"), "SSH input must come from xterm onData and pass through to the PTY.");
+assert(!appSource.includes("const arrowMap = {"), "SSH input must not manually reconstruct terminal escape sequences.");
 
 console.log("Synchronized final regression smoke checks passed.");

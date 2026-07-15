@@ -50,6 +50,7 @@
     "node:token-workflow:smoke": "node scripts/node-token-workflow-smoke.js",
     "node:agent-pairing:smoke": "node scripts/agent-pairing-workflow-smoke.js",
     "agent:terminal-free:smoke": "node scripts/agent-terminal-free-smoke.js",
+    "ssh:interactive-input:smoke": "node scripts/ssh-interactive-input-smoke.js",
     "ssh:terminal-emulation:smoke": "node scripts/ssh-terminal-emulation-smoke.js",
     "synchronized-final:smoke": "node scripts/synchronized-final-regression-smoke.js",
     "live-regressions:smoke": "node scripts/live-routing-regression-smoke.js",
@@ -237,6 +238,7 @@
   },
   "dependencies": {
     "@cubecoders/ampapi": "^1.0.1",
+    "@xterm/xterm": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "monaco-editor": "^0.55.1",

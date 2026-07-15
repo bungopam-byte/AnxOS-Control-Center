@@ -3873,6 +3873,29 @@ body.is-resizing-files * {
   line-height: 1.55;
 }
 
+.ssh-xterm-surface {
+  min-height: calc(min(520px, calc(100vh - 330px)) - 28px);
+  outline: none;
+}
+
+.ssh-xterm-surface .xterm {
+  height: 100%;
+  min-height: inherit;
+}
+
+.ssh-xterm-surface .xterm-screen,
+.ssh-xterm-surface .xterm-viewport {
+  min-height: inherit;
+}
+
+.ssh-xterm-surface:not(.is-ready) {
+  display: none;
+}
+
+.ssh-xterm-surface.is-ready + .ssh-terminal-output {
+  display: none;
+}
+
 .ssh-terminal-card.is-fullscreen .ssh-terminal-window {
   max-height: none;
   min-height: 0;

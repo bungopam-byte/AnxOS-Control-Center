@@ -10,7 +10,8 @@ const sshServiceSource = fs.readFileSync(path.join(rootDir, "src", "services", "
 assert(appSource.includes("function createSshTerminalBuffer"), "Renderer must use a terminal buffer for SSH output.");
 assert(!appSource.includes("function stripAnsi"), "SSH renderer must not strip ANSI with regex.");
 assert(!appSource.includes("function normalizeSshOutput"), "SSH renderer must not flatten PTY output into plain lines.");
-assert(appSource.includes('await writeSshInput("\\u007f")'), "Backspace must send DEL to the PTY.");
+assert(appSource.includes("sshXterm.onData((data) => {") && appSource.includes("writeSshInput(data);"), "xterm onData must send emitted terminal input directly to the PTY.");
+assert(!appSource.includes("const arrowMap = {"), "SSH input must not manually reconstruct arrow-key escape sequences.");
 assert(!/sshKeyboardInputBuffer\s*=\s*sshKeyboardInputBuffer\.slice\(0,\s*-1\)/.test(appSource), "SSH input must not use manual last-character deletion.");
 assert(sshServiceSource.includes('term: "xterm-256color"'), "SSH shell must request xterm-256color.");
 assert(sshServiceSource.includes("client.shell("), "SSH service must allocate an interactive PTY shell.");

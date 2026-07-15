@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
     <title>AnxOS Control Center</title>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -2212,6 +2213,7 @@
                 </div>
 
                 <div class="ssh-terminal-window" data-ssh-terminal tabindex="0">
+                  <div class="ssh-xterm-surface" data-ssh-xterm aria-label="Interactive SSH terminal"></div>
                   <ol class="ssh-terminal-output" data-ssh-output></ol>
                   <div class="ssh-loading-state" data-ssh-loading hidden>
                     <span class="file-loader" aria-hidden="true"></span>
@@ -4453,6 +4455,7 @@
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
     <script src="src/shared/marketplaceError.js"></script>
+    <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

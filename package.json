@@ -52,6 +52,7 @@
     "marketplace:node-routing:smoke": "node scripts/marketplace-node-routing-smoke.js",
     "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",
+    "dependencies:node-routing:smoke": "node scripts/dependency-public-access-node-smoke.js",
     "files:smoke": "node scripts/files-pipeline-smoke.js",
     "resources:node-isolation:smoke": "node scripts/resources-node-isolation-smoke.js",
     "agent:files-root:smoke": "node scripts/agent-files-root-smoke.js",

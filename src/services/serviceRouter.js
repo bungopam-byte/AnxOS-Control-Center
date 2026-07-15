@@ -456,6 +456,15 @@ function withNodeContext(payload, nodeId) {
   if (Array.isArray(next.backups)) {
     next.backups = next.backups.map((backup) => ({ ...backup, nodeId }));
   }
+  if (Array.isArray(next.dependencies)) {
+    next.dependencies = next.dependencies.map((dependency) => ({ ...dependency, nodeId: dependency.nodeId || nodeId }));
+  }
+  if (Array.isArray(next.missingDependencies)) {
+    next.missingDependencies = next.missingDependencies.map((dependency) => ({ ...dependency, nodeId: dependency.nodeId || nodeId }));
+  }
+  if (Array.isArray(next.jobs)) {
+    next.jobs = next.jobs.map((job) => ({ ...job, nodeId: job.nodeId || nodeId }));
+  }
   if (Array.isArray(next.schedules)) {
     next.schedules = next.schedules.map((schedule) => ({ ...schedule, nodeId }));
   }
@@ -674,8 +683,9 @@ async function saveFiveMLicenseKey(instanceId, licenseKey, options = {}) {
 }
 
 async function getDependencyCatalog(options = {}) {
+  const nodeId = getRequestNodeId(options);
   if (shouldUseLocalInstances(options)) {
-    return {
+    return withNodeContext({
       dependencies: [],
       groups: [],
       distribution: {
@@ -683,26 +693,28 @@ async function getDependencyCatalog(options = {}) {
         name: process.platform,
         packageManager: null,
       },
-    };
+    }, nodeId);
   }
-  return agentClient.getDependencyCatalog(getOptionalNodeConfig(options));
+  return withNodeContext(await agentClient.getDependencyCatalog(getOptionalNodeConfig(options)), nodeId);
 }
 
 async function checkDependencies(payload = {}) {
+  const nodeId = getRequestNodeId(payload);
   if (shouldUseLocalInstances(payload)) {
-    return {
+    return withNodeContext({
       ok: true,
       dependencies: [],
       missingDependencyIds: [],
       checkedAt: new Date().toISOString(),
-    };
+    }, nodeId);
   }
-  return agentClient.checkDependencies(payload, getOptionalNodeConfig(payload));
+  return withNodeContext(await agentClient.checkDependencies(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function planDependencyPreparation(payload = {}) {
+  const nodeId = getRequestNodeId(payload);
   if (shouldUseLocalInstances(payload)) {
-    return {
+    return withNodeContext({
       ok: true,
       dependencyIds: [],
       distribution: {
@@ -716,12 +728,13 @@ async function planDependencyPreparation(payload = {}) {
       missingDependencyIds: [],
       requiresUserInitiation: false,
       plannedAt: new Date().toISOString(),
-    };
+    }, nodeId);
   }
-  return agentClient.planDependencyPreparation(payload, getOptionalNodeConfig(payload));
+  return withNodeContext(await agentClient.planDependencyPreparation(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function installDependencies(payload = {}) {
+  const nodeId = getRequestNodeId(payload);
   if (shouldUseLocalInstances(payload)) {
     const now = new Date().toISOString();
     const jobId = `dep-local-${Date.now().toString(36)}`;
@@ -756,7 +769,7 @@ async function installDependencies(payload = {}) {
       }],
       output: [],
     };
-    return {
+    return withNodeContext({
       ok: true,
       job,
       jobs: [job],
@@ -764,9 +777,9 @@ async function installDependencies(payload = {}) {
       dependencies: [],
       missingDependencyIds: [],
       completedAt: new Date().toISOString(),
-    };
+    }, nodeId);
   }
-  return agentClient.installDependencies(payload, getOptionalNodeConfig(payload));
+  return withNodeContext(await agentClient.installDependencies(payload, getOptionalNodeConfig(payload)), nodeId);
 }
 
 async function startInstance(instanceId, options = {}) {

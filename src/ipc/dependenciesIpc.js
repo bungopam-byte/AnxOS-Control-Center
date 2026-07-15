@@ -32,7 +32,7 @@ function registerDependenciesIpc() {
     const result = await checkDependencies(payload);
     diagnostics.updateRuntimeState({
       dependencyCheck: result,
-      dependencyNodeId: payload.nodeId || null,
+      dependencyNodeId: result.nodeId || payload.nodeId || null,
       dependencyCheckedAt: new Date().toISOString(),
     });
     return result;
@@ -41,7 +41,7 @@ function registerDependenciesIpc() {
     const result = await planDependencyPreparation(payload);
     diagnostics.updateRuntimeState({
       dependencyPlan: result,
-      dependencyNodeId: payload.nodeId || null,
+      dependencyNodeId: result.nodeId || payload.nodeId || null,
       dependencyPlannedAt: new Date().toISOString(),
     });
     return result;
@@ -65,7 +65,7 @@ function registerDependenciesIpc() {
       diagnostics.updateRuntimeState({
         dependencyInstall: {
           state: result?.degraded ? "degraded" : result?.ok === false ? "failed" : "completed",
-          nodeId: payload.nodeId || null,
+          nodeId: result.nodeId || payload.nodeId || null,
           dependencyIds: Array.isArray(payload.dependencyIds) ? payload.dependencyIds : [],
           jobs: Array.isArray(result?.jobs) ? result.jobs : [],
           restartRequired: Array.isArray(result?.jobs) ? result.jobs.some((job) => job.restartRequired === true) : false,

@@ -179,6 +179,25 @@ function normalizeSnapshotContext(snapshot = {}, context = {}) {
   };
 }
 
+function getAgentConfigForPublicAccess(nodeId) {
+  const target = getExecutionTarget(nodeId);
+  if (target.type !== "agent") {
+    return null;
+  }
+  const node = getNode(target.nodeId);
+  if (node?.enabled === false) {
+    const error = new Error("Selected node is disabled.");
+    error.code = "NODE_DISABLED";
+    error.statusCode = 403;
+    throw error;
+  }
+  return {
+    ...target.config,
+    nodeId: target.nodeId,
+    agentNodeId: target.nodeId,
+  };
+}
+
 async function getLocalPublicAccessSnapshot(options = {}) {
   const nodeId = options.nodeId || getSelectedNodeId();
   const platform = getPlatformForNode(nodeId) || process.platform;
@@ -194,9 +213,8 @@ async function getLocalPublicAccessSnapshot(options = {}) {
 
 async function getRemotePublicAccessSnapshot(options = {}) {
   const nodeId = options.nodeId || getSelectedNodeId();
-  const target = getExecutionTarget(nodeId);
   const platform = getPlatformForNode(nodeId);
-  const snapshot = await agentClient.getPublicAccessSnapshot(target.config);
+  const snapshot = await agentClient.getPublicAccessSnapshot(getAgentConfigForPublicAccess(nodeId));
   return normalizeSnapshotContext(snapshot, { nodeId, platform });
 }
 
@@ -215,16 +233,25 @@ async function createPublicAccessService(payload = {}) {
     const service = createAccessService({ ...payload, nodeId }, registryOptions());
     return { success: true, service, services: listAccessServices({ ...registryOptions(), nodeId }) };
   }
-  return agentClient.createPublicAccessService({ ...payload, nodeId }, target.config);
+  const result = await agentClient.createPublicAccessService({ ...payload, nodeId }, getAgentConfigForPublicAccess(nodeId));
+  return normalizeSnapshotContext({
+    ...result,
+    services: Array.isArray(result?.services) ? result.services : result?.service ? [result.service] : [],
+  }, { nodeId, platform: getPlatformForNode(nodeId) });
 }
 
 async function listPublicAccessServices(options = {}) {
   const nodeId = options.nodeId || getSelectedNodeId();
   const target = getExecutionTarget(nodeId);
   if (target.type === "application-host") {
-    return { services: listAccessServices({ ...registryOptions(), nodeId }) };
+    return { nodeId, services: listAccessServices({ ...registryOptions(), nodeId }) };
   }
-  return agentClient.listPublicAccessServices({ nodeId }, target.config);
+  const result = await agentClient.listPublicAccessServices({ nodeId }, getAgentConfigForPublicAccess(nodeId));
+  return {
+    ...result,
+    nodeId,
+    services: Array.isArray(result?.services) ? result.services.map((service) => ({ ...service, nodeId: service.nodeId || nodeId })) : [],
+  };
 }
 
 async function deletePublicAccessService(payload = {}) {
@@ -232,9 +259,14 @@ async function deletePublicAccessService(payload = {}) {
   const serviceId = payload.serviceId || payload.id;
   const target = getExecutionTarget(nodeId);
   if (target.type === "application-host") {
-    return deleteAccessService(serviceId, registryOptions());
+    return deleteAccessService(serviceId, { ...registryOptions(), nodeId });
   }
-  return agentClient.deletePublicAccessService(serviceId, target.config);
+  const result = await agentClient.deletePublicAccessService(serviceId, getAgentConfigForPublicAccess(nodeId));
+  return {
+    ...result,
+    nodeId,
+    service: result?.service && typeof result.service === "object" ? { ...result.service, nodeId: result.service.nodeId || nodeId } : result?.service,
+  };
 }
 
 module.exports = {

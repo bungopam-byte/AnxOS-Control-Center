@@ -393,6 +393,12 @@ function deleteAccessService(serviceId, options = {}) {
   if (!service) {
     throw createAccessServiceError("PROVIDER_RESOURCE_NOT_FOUND", "Access service was not found.", { serviceId }, 404);
   }
+  if (options.nodeId && service.nodeId !== options.nodeId) {
+    throw createAccessServiceError("PROVIDER_RESOURCE_NOT_FOUND", "Access service was not found on the selected node.", {
+      serviceId,
+      nodeId: options.nodeId,
+    }, 404);
+  }
   writeRegistry({ ...state, services: state.services.filter((entry) => entry.id !== serviceId) }, options);
   return {
     success: true,

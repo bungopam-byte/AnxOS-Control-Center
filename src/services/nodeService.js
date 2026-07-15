@@ -25,7 +25,7 @@ function getNodesPath() { return path.join(getConfigDirectory(), "nodes.json"); 
 function getRuntimeConfigPath() { return path.join(getConfigDirectory(), "agent-runtime.json"); }
 function getLegacyAgentConfigPath() { return path.join(getConfigDirectory(), "agent.json"); }
 function ensureConfigDirectory() { fs.mkdirSync(getConfigDirectory(), { recursive: true }); }
-function normalizeUrl(value) { try { const url = new URL(String(value || "").trim()); return `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, "")}`; } catch { return String(value || "").trim(); } }
+function normalizeUrl(value) { try { const url = new URL(String(value || "").trim()); return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, "")}`; } catch { return String(value || "").trim(); } }
 function getUrlParts(url) {
   try {
     const parsed = new URL(normalizeUrl(url));
@@ -285,7 +285,9 @@ function normalizeTags(value) {
 function normalizeAgentNode(node = {}) {
   const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url);
   const identity = node.agentIdentity || node.identity || {};
-  const deviceId = identity.deviceId || node.deviceId || legacyDeviceId(agentUrl);
+  const agentInstallationId = identity.agentInstallationId || identity.installationId || node.agentInstallationId || "";
+  const agentIdentityId = identity.agentIdentityId || identity.identityId || node.agentIdentityId || "";
+  const deviceId = identity.deviceId || node.deviceId || agentIdentityId || agentInstallationId || legacyDeviceId(agentUrl);
   const requestedDisplayName = String(node.displayName || node.name || "").trim();
   const identityHostname = String(identity.hostname || "").trim();
   const localAgent = node.localAgent === true || isLocalAgentUrl(agentUrl);
@@ -315,7 +317,9 @@ function normalizeAgentNode(node = {}) {
     platform: node.platform || node.connection?.platform || identity.platform || "",
     hostname: node.hostname || node.connection?.hostname || identity.hostname || "",
     capabilitiesMetadata: Array.isArray(node.capabilitiesMetadata) ? node.capabilitiesMetadata : Array.isArray(node.connection?.capabilities) ? node.connection.capabilities : [],
-    agentIdentity: { deviceId, hostname: identity.hostname || "", operatingSystem: identity.operatingSystem || "", platform: identity.platform || "", architecture: identity.architecture || "", agentVersion: identity.agentVersion || "" },
+    agentInstallationId,
+    agentIdentityId,
+    agentIdentity: { agentInstallationId, agentIdentityId, deviceId, hostname: identity.hostname || "", operatingSystem: identity.operatingSystem || "", platform: identity.platform || "", architecture: identity.architecture || "", agentVersion: identity.agentVersion || "", apiVersion: identity.apiVersion || "" },
     docker: { enabled: node.docker?.enabled !== false, runtime: node.docker?.runtime || "docker" },
     ownerMachine: Boolean(node.ownerMachine),
     localAgent,
@@ -354,7 +358,7 @@ function normalizeAgentNode(node = {}) {
 function mergeAgentNodes(nodes) {
   const byDevice = new Map();
   for (const raw of nodes.map(normalizeAgentNode)) {
-    const key = raw.agentIdentity.deviceId;
+    const key = raw.agentIdentity.agentInstallationId || raw.agentIdentity.agentIdentityId || raw.agentIdentity.deviceId;
     const current = byDevice.get(key);
     if (!current) { byDevice.set(key, raw); continue; }
     byDevice.set(key, {
@@ -377,6 +381,8 @@ function mergeAgentNodes(nodes) {
       platform: current.platform || raw.platform || "",
       hostname: current.hostname || raw.hostname || "",
       capabilitiesMetadata: current.capabilitiesMetadata?.length ? current.capabilitiesMetadata : raw.capabilitiesMetadata || [],
+      agentInstallationId: current.agentInstallationId || raw.agentInstallationId || "",
+      agentIdentityId: current.agentIdentityId || raw.agentIdentityId || "",
       agentIdentity: { ...raw.agentIdentity, ...Object.fromEntries(Object.entries(current.agentIdentity).filter(([, value]) => value)) },
       docker: current.docker || raw.docker,
       ownerMachine: current.ownerMachine || raw.ownerMachine,
@@ -782,6 +788,58 @@ function getNode(nodeId) {
   return node;
 }
 
+function getAgentIdentityCandidate(payload = {}) {
+  const identity = payload.agentIdentity || payload.identity || payload;
+  return {
+    nodeId: payload.nodeId || payload.id || "",
+    agentInstallationId: identity.agentInstallationId || identity.installationId || payload.agentInstallationId || "",
+    agentIdentityId: identity.agentIdentityId || identity.identityId || payload.agentIdentityId || "",
+    deviceId: identity.deviceId || payload.deviceId || "",
+    agentUrl: normalizeUrl(payload.agentUrl || payload.baseUrl || payload.url || ""),
+  };
+}
+
+function resolveNodeForAgentIdentity(payload = {}) {
+  const candidate = getAgentIdentityCandidate(payload);
+  const nodes = readNodeState().nodes;
+  const match = (predicate) => nodes.filter((node) => predicate(node));
+  const finish = (matches, matchType) => {
+    if (matches.length === 1) return { node: matches[0], nodeId: matches[0].id, matchType, ambiguous: false };
+    if (matches.length > 1) {
+      return {
+        node: null,
+        nodeId: null,
+        matchType,
+        ambiguous: true,
+        candidates: matches.map((node) => ({ id: node.id, displayName: node.displayName || node.name || node.id })),
+      };
+    }
+    return null;
+  };
+
+  if (candidate.agentInstallationId) {
+    const resolved = finish(match((node) => node.agentIdentity?.agentInstallationId === candidate.agentInstallationId || node.agentInstallationId === candidate.agentInstallationId), "agentInstallationId");
+    if (resolved) return resolved;
+  }
+  if (candidate.nodeId) {
+    const resolved = finish(match((node) => node.id === candidate.nodeId), "explicitNodeId");
+    if (resolved) return resolved;
+  }
+  if (candidate.agentIdentityId) {
+    const resolved = finish(match((node) => node.agentIdentity?.agentIdentityId === candidate.agentIdentityId || node.agentIdentityId === candidate.agentIdentityId), "agentIdentityId");
+    if (resolved) return resolved;
+  }
+  if (candidate.deviceId) {
+    const resolved = finish(match((node) => node.agentIdentity?.deviceId === candidate.deviceId), "deviceId");
+    if (resolved) return resolved;
+  }
+  if (candidate.agentUrl) {
+    const resolved = finish(match((node) => normalizeUrl(node.baseUrl || node.agentUrl) === candidate.agentUrl), "normalizedUrl");
+    if (resolved) return resolved;
+  }
+  return { node: null, nodeId: null, matchType: "none", ambiguous: false, candidates: [] };
+}
+
 function getSelectedNodeId() { return readNodeState().selectedNodeId; }
 function getAllNodesSync() { const state = readNodeState(); return [getApplicationHostNode(), ...state.nodes]; }
 function getNodeAgentConfigFromNode(node) { return normalizeAgentSettings({ backendMode: "agent", agentUrl: node.baseUrl || node.agentUrl, agentToken: node.agentToken || getNodeToken(node.id) }); }
@@ -845,4 +903,4 @@ function deleteNode(nodeId) { if (!nodeId || nodeId === APPLICATION_HOST_NODE_ID
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, saveNode, selectNode, testNode, testNodeConnectionPayload };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload };

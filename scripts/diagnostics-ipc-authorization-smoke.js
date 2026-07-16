@@ -2,9 +2,11 @@ const assert = require("assert");
 const Module = require("module");
 
 const handlers = new Map();
+const listeners = new Map();
 let serviceInvoked = false;
+let authorized = false;
 const diagnostics = {
-  log: () => ({ ok: true }),
+  log: () => { serviceInvoked = true; return { ok: true }; },
   captureSnapshot: () => { serviceInvoked = true; return {}; },
   readLogs: () => { serviceInvoked = true; return {}; },
   openFolder: async () => { serviceInvoked = true; return {}; },
@@ -18,15 +20,17 @@ Module._load = function patchedLoad(request, parent, isMain) {
     return {
       BrowserWindow: { fromWebContents: () => null },
       clipboard: { writeText: () => {} },
-      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), on: (channel, listener) => listeners.set(channel, listener) },
     };
   }
   if (request === "../services/diagnosticsService") return diagnostics;
   if (request === "../services/securityService") {
     return {
       requirePermission: () => {
+        if (authorized) return { role: "Owner" };
         throw Object.assign(new Error("Permission denied."), { code: "PERMISSION_DENIED" });
       },
+      checkRateLimit: () => {},
     };
   }
   return originalLoad.call(this, request, parent, isMain);
@@ -39,7 +43,7 @@ try {
 }
 
 async function main() {
-  for (const channel of ["diagnostics:capture", "diagnostics:read", "diagnostics:openFolder", "diagnostics:copySummary", "diagnostics:export"]) {
+  for (const channel of ["diagnostics:log", "diagnostics:capture", "diagnostics:read", "diagnostics:openFolder", "diagnostics:copySummary", "diagnostics:export"]) {
     serviceInvoked = false;
     const handler = handlers.get(channel);
     assert(handler, `${channel} should be registered.`);
@@ -50,6 +54,14 @@ async function main() {
     );
     assert.strictEqual(serviceInvoked, false, `${channel} must authorize before accessing diagnostics.`);
   }
+  const sendListener = listeners.get("diagnostics:log");
+  assert(sendListener, "Preload send-based diagnostic logging should be registered.");
+  serviceInvoked = false;
+  assert.doesNotThrow(() => sendListener({}, { severity: "error", message: "sensitive failure" }), "Send-based logging should safely absorb authorization failures.");
+  assert.strictEqual(serviceInvoked, false, "Unauthorized preload diagnostics must not be persisted.");
+  authorized = true;
+  sendListener({}, { severity: "invalid", operation: "preload-error", message: "captured failure" });
+  assert.strictEqual(serviceInvoked, true, "Authorized preload send diagnostics should reach the shared logger.");
   console.log("Diagnostics IPC authorization smoke checks passed.");
 }
 

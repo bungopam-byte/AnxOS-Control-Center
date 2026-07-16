@@ -69,6 +69,10 @@ SSH profile visibility and live session events require `ssh:read`. Session
 creation, input, disconnect, and resize remain protected by `instance:write`;
 profile changes require `settings:write`.
 
+Renderer and preload diagnostic writes require `system:read`, are rate-limited,
+bounded, and pass through shared structured-log redaction. Diagnostic capture,
+reading, export, clipboard, and folder access require `settings:write`.
+
 ## Agent
 
 Desktop Agent Control list, status, diagnostics, configuration, lifecycle,

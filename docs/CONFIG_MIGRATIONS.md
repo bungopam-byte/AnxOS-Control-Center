@@ -58,6 +58,10 @@ are backed up and migrated atomically. Corrupt or future state fails without
 rotating the Agent token or generating a replacement device identity, avoiding
 unauthorized clients and duplicate node registration.
 
+Desktop `application-host.json` uses schema version 1 and atomic writes. Legacy
+identity is backed up and migrated without changing `hostId`. Corrupt or future
+state fails without generating a replacement desktop identity.
+
 `security.json` uses schema version 1 and atomic writes. Legacy security state
 is backed up before migration. Corrupt or future state fails closed with
 `SECURITY_STORE_CORRUPT` or `SECURITY_SCHEMA_UNSUPPORTED`; it is never treated

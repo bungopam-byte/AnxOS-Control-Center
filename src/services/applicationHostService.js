@@ -6,6 +6,7 @@ const { app } = require("electron");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 
 const APPLICATION_HOST_NODE_ID = "application-host";
+const APPLICATION_HOST_SCHEMA_VERSION = 1;
 
 function getConfigDirectory() {
   if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR;
@@ -19,14 +20,50 @@ function getApplicationHostPath() {
 
 function readOrCreateHostId() {
   const filePath = getApplicationHostPath();
+  if (!fs.existsSync(filePath)) {
+    const hostId = `host-${crypto.randomUUID()}`;
+    writeHostIdentity(filePath, { schemaVersion: APPLICATION_HOST_SCHEMA_VERSION, hostId });
+    return hostId;
+  }
+  let parsed;
   try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    if (/^[a-zA-Z0-9_-]{8,128}$/.test(parsed.hostId || "")) return parsed.hostId;
-  } catch {}
-  const hostId = `host-${crypto.randomUUID()}`;
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !/^[a-zA-Z0-9_-]{8,128}$/.test(parsed.hostId || "")) {
+      throw new Error("Application host identity is invalid.");
+    }
+  } catch (error) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw Object.assign(new Error("Application host identity is unreadable. The original file was preserved for recovery."), {
+      code: "APPLICATION_HOST_IDENTITY_CORRUPT",
+      details: { causeCode: error?.code || "INVALID_IDENTITY" },
+    });
+  }
+  const schemaVersion = Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > APPLICATION_HOST_SCHEMA_VERSION) {
+    throw Object.assign(new Error("Application host identity was created by a newer application version."), {
+      code: "APPLICATION_HOST_SCHEMA_UNSUPPORTED",
+      details: { schemaVersion, supportedSchemaVersion: APPLICATION_HOST_SCHEMA_VERSION },
+    });
+  }
+  if (schemaVersion < APPLICATION_HOST_SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    writeHostIdentity(filePath, { schemaVersion: APPLICATION_HOST_SCHEMA_VERSION, hostId: parsed.hostId });
+  }
+  return parsed.hostId;
+}
+
+function writeHostIdentity(filePath, identity) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify({ hostId }, null, 2)}\n`, { mode: 0o600 });
-  return hostId;
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(temporaryPath, `${JSON.stringify(identity, null, 2)}\n`, { mode: 0o600 });
+  try {
+    fs.renameSync(temporaryPath, filePath);
+  } catch (error) {
+    try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+    throw error;
+  }
 }
 
 function getApplicationHost() {
@@ -88,4 +125,4 @@ function getApplicationHostNode() {
   };
 }
 
-module.exports = { APPLICATION_HOST_NODE_ID, getApplicationHost, getApplicationHostNode };
+module.exports = { APPLICATION_HOST_NODE_ID, APPLICATION_HOST_SCHEMA_VERSION, getApplicationHost, getApplicationHostNode };

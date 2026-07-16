@@ -55,6 +55,7 @@
     "node:registry:smoke": "node scripts/node-registry-model-smoke.js",
     "node:switch:smoke": "node scripts/node-switch-smoke.js",
     "node:active-selection:smoke": "node scripts/active-node-selection-smoke.js",
+    "node:application-host-identity:smoke": "node scripts/application-host-identity-smoke.js",
     "node:agent-identity:smoke": "node scripts/agent-identity-resolution-smoke.js",
     "node:startup-selection:smoke": "node scripts/startup-selection-smoke.js",
     "node:token-workflow:smoke": "node scripts/node-token-workflow-smoke.js",

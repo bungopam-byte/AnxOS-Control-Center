@@ -74,6 +74,7 @@ function main() {
     "instances:ipc-authorization:smoke",
     "ssh:ipc-authorization:smoke",
     "node:switch:smoke",
+    "node:application-host-identity:smoke",
     "security:page:smoke",
     "settings:preferences:smoke",
     "ui:polish:smoke",

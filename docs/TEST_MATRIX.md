@@ -3,7 +3,7 @@
 | Area | Primary commands |
 | --- | --- |
 | Shared operations | `npm run operations:framework:smoke` |
-| Node selection/races | `npm run node:switch:smoke`, `npm run node:stale-response:smoke`, `npm run cross-page:selected-target:smoke` |
+| Node selection/races | `npm run node:switch:smoke`, `npm run node:application-host-identity:smoke`, `npm run node:stale-response:smoke`, `npm run cross-page:selected-target:smoke` |
 | Node migration | `npm run node:legacy-migration:smoke`, `npm run node:startup-selection:smoke` |
 | Agent authentication | `npm run agent:token:smoke`, `npm run agent-errors:smoke`, `npm run node:agent-pairing:smoke` |
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |

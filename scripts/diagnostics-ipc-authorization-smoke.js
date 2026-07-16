@@ -1,5 +1,7 @@
 const assert = require("assert");
+const fs = require("fs");
 const Module = require("module");
+const path = require("path");
 
 const handlers = new Map();
 const listeners = new Map();
@@ -43,6 +45,12 @@ try {
 }
 
 async function main() {
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.strictEqual(
+    /ipcMain\.on\(["']diagnostics:log["']/.test(mainSource),
+    false,
+    "main.js must not register a second diagnostics listener outside the authorized IPC module.",
+  );
   for (const channel of ["diagnostics:log", "diagnostics:capture", "diagnostics:read", "diagnostics:openFolder", "diagnostics:copySummary", "diagnostics:export"]) {
     serviceInvoked = false;
     const handler = handlers.get(channel);

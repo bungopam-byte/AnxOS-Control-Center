@@ -481,7 +481,6 @@ app.whenReady().then(async () => {
   registerDiagnosticsIpc();
   registerAgentControlIpc();
   registerDependenciesIpc();
-  ipcMain.on("diagnostics:log", (_, payload = {}) => diagnostics.log(payload.severity || "info", payload.source || "preload", payload.operation || "event", payload.message || "Runtime event", payload.context || {}, { file: payload.file || payload.source || "desktop" }));
   diagnostics.captureSnapshot({ applicationRunning: true, providerMode: "initializing" });
   updateManager.on("status", (payload = {}) => {
     const severity = /error|failed/i.test(payload.type || payload.state?.status || "") ? "error" : "info";

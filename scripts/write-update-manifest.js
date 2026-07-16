@@ -1,4 +1,5 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
@@ -8,6 +9,22 @@ const repositoryUrl = "https://github.com/bungopam-byte/AnxOS-Control-Center-Rel
 const release = getReleaseInfo();
 const defaultBaseUrl = `${repositoryUrl}/releases/download/${release.tag}`;
 const baseUrl = (process.env.ANXOS_UPDATE_BASE_URL || process.env.ANXHUB_UPDATE_BASE_URL || defaultBaseUrl).replace(/\/+$/, "");
+
+function sha256File(filePath) {
+  const digest = crypto.createHash("sha256");
+  const descriptor = fs.openSync(filePath, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) digest.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return digest.digest("hex");
+}
 
 const assetDefinitions = [
   {
@@ -78,7 +95,9 @@ const assets = assetDefinitions
 
     return {
       ...definition,
+      architecture: "x64",
       size: fs.statSync(filePath).size,
+      sha256: sha256File(filePath),
       downloadUrl: `${baseUrl}/${encodeURIComponent(definition.name)}`,
     };
   })

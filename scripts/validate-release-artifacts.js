@@ -42,7 +42,19 @@ function expectedArtifacts() {
 }
 
 function sha256(filePath) {
-  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+  const digest = crypto.createHash("sha256");
+  const descriptor = fs.openSync(filePath, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) digest.update(buffer.subarray(0, bytesRead));
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return digest.digest("hex");
 }
 
 function writeFixture(directory) {
@@ -71,11 +83,11 @@ function writeFixture(directory) {
       rollbackMetadataRequired: true,
     },
     assets: [
-      { key: "windows-setup", name: `AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`, platform: "windows", packageType: "nsis" },
-      { key: "windows-portable", name: `AnxOS-Control-Center-${release.artifactVersion}-portable.exe`, platform: "windows", packageType: "portable" },
-      { key: "linux-deb", name: `AnxOS-Control-Center-${release.artifactVersion}.deb`, platform: "linux", packageType: "deb" },
-      { key: "linux-appimage", name: `AnxOS-Control-Center-${release.artifactVersion}.AppImage`, platform: "linux", packageType: "appimage" },
-    ],
+      { key: "windows-setup", name: `AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`, platform: "windows", architecture: "x64", packageType: "nsis" },
+      { key: "windows-portable", name: `AnxOS-Control-Center-${release.artifactVersion}-portable.exe`, platform: "windows", architecture: "x64", packageType: "portable" },
+      { key: "linux-deb", name: `AnxOS-Control-Center-${release.artifactVersion}.deb`, platform: "linux", architecture: "x64", packageType: "deb" },
+      { key: "linux-appimage", name: `AnxOS-Control-Center-${release.artifactVersion}.AppImage`, platform: "linux", architecture: "x64", packageType: "appimage" },
+    ].map((asset) => ({ ...asset, sha256: sha256(path.join(directory, asset.name)) })),
   };
   fs.writeFileSync(path.join(directory, "update-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   const checksums = expectedArtifacts()
@@ -131,6 +143,10 @@ function validate(directory) {
   });
 
   const checksums = readChecksumManifest(directory);
+  for (const asset of manifest.assets || []) {
+    assert.strictEqual(asset.architecture, "x64", `${asset.name} must declare its supported architecture.`);
+    assert.strictEqual(asset.sha256, checksums.get(asset.name), `${asset.name} manifest checksum must match SHA256SUMS.`);
+  }
   for (const artifact of expectedArtifacts().filter((asset) => asset !== "SHA256SUMS")) {
     assert(checksums.has(artifact), `SHA256SUMS must include ${artifact}.`);
     assert.strictEqual(checksums.get(artifact), sha256(path.join(directory, artifact)), `SHA256SUMS digest mismatch for ${artifact}.`);

@@ -105,3 +105,25 @@ Desktop backup imports stat the selected regular file against the shared Agent
 archive limit before reading it into memory. Backup exports write a sibling
 temporary file and rename it into the user-selected destination only after the
 buffer has been written successfully.
+
+## Desktop updates
+
+The updater prefers the HTTPS release manifest because it carries the artifact
+platform, architecture, byte size, and SHA-256 digest. Assets for another
+operating system or CPU architecture are not eligible. Legacy release metadata
+without a digest can still announce an available release, but direct in-app
+download fails with `UPDATE_CHECKSUM_REQUIRED`; the release page remains the
+manual fallback.
+
+Downloads use a unique sibling `.part` file. The final Downloads entry is
+created atomically only after the received byte count and SHA-256 digest match,
+and an existing user file is never overwritten. Shutdown aborts the active HTTP
+request and file stream and removes the partial artifact. Size and digest are
+checked again immediately before opening the installer, and a failed
+`shell.openPath()` handoff is reported as a failure.
+
+The desktop does not claim installer rollback. Once the verified artifact is
+handed to the operating-system installer, mutation and rollback are owned by
+that installer. User configuration, instances, and backups are stored outside
+the packaged application files, but automatic previous-version restoration is
+not implemented or exposed as a supported update capability.

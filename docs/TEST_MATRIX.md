@@ -46,7 +46,7 @@
 | Dependency IPC error contract | `npm run dependencies:ipc-error-contract:smoke` |
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
 | Modal keyboard/focus behavior | `npm run ui:modal-behavior:smoke` |
-| Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke` |
+| Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke`, `npm run updates:download-safety:smoke` |
 | Full repository gate | `npm run agent:validate` |
 
 Adversarial fixtures cover missing targets, delayed node responses, offline and

@@ -48,6 +48,11 @@ Legacy CurseForge keys migrate atomically and the safety copy is independently
 encrypted. Corrupt, undecryptable, and future-version state fails explicitly
 without replacing provider credentials.
 
+Agent backup metadata and `schedules.json` use schema version 1 and atomic
+writes. Legacy records are backed up before migration. Corrupt and future
+schedule state fails explicitly; corrupt or future backup metadata is reported
+through backup diagnostics and is never rewritten as an older schema.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

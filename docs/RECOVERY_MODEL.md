@@ -24,9 +24,11 @@ cancel pending restart timers. Agent shutdown disposes scheduled restarts.
 ## Backup restore
 
 Restore validates the archive, requires overwrite confirmation, verifies the
-instance is stopped, and creates a full safety snapshot before mutation. A
-partial failure restores that snapshot. Rollback failure is reported separately
-as `RESTORE_ROLLBACK_FAILED` and retains both cause codes.
+instance is stopped, checks free space on the snapshot and restore volumes, and
+creates a full safety snapshot before mutation. Backup creation also checks the
+destination volume before writing an archive. A partial restore failure restores
+the safety snapshot. Rollback failure is reported separately as
+`RESTORE_ROLLBACK_FAILED` and retains both cause codes.
 
 ## Shutdown
 

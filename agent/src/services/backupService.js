@@ -13,6 +13,9 @@ const BACKUP_EXTENSION = ".tar.gz";
 const DEFAULT_RETENTION_COUNT = 10;
 const DEFAULT_RETENTION_DAYS = 30;
 const TAR_BLOCK_SIZE = 512;
+const BACKUP_METADATA_SCHEMA_VERSION = 1;
+const BACKUP_SCHEDULE_SCHEMA_VERSION = 1;
+const MINIMUM_DISK_RESERVE_BYTES = 64 * 1024 * 1024;
 let schedulerStarted = false;
 let schedulerTimer = null;
 
@@ -363,11 +366,42 @@ async function readJson(filePath) {
 }
 
 async function writeJson(filePath, value) {
-  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await fs.rename(tempPath, filePath);
 }
 
 async function getFileSize(filePath) {
   return (await fs.stat(filePath)).size;
+}
+
+async function calculatePathSize(filePath) {
+  const stats = await fs.lstat(filePath);
+  if (stats.isSymbolicLink()) return 0;
+  if (stats.isFile()) return stats.size;
+  if (!stats.isDirectory()) return 0;
+  const entries = await fs.readdir(filePath);
+  let total = 0;
+  for (const entry of entries) total += await calculatePathSize(path.join(filePath, entry));
+  return total;
+}
+
+async function ensureDiskSpace(targetPath, requiredBytes, errorCode) {
+  let stats;
+  try {
+    stats = await fs.statfs(targetPath);
+  } catch (error) {
+    throw createBackupError("BACKUP_DISK_SPACE_CHECK_FAILED", 500, { targetPath, causeCode: error?.code || "STATFS_FAILED" });
+  }
+  const blockSize = Number(stats.bsize || 0);
+  const availableBlocks = Number(stats.bavail ?? stats.bfree ?? 0);
+  const availableBytes = blockSize * availableBlocks;
+  const payloadBytes = Math.max(0, Number(requiredBytes) || 0);
+  const reserveBytes = Math.max(MINIMUM_DISK_RESERVE_BYTES, Math.ceil(payloadBytes * 0.05));
+  if (!Number.isFinite(availableBytes) || availableBytes < payloadBytes + reserveBytes) {
+    throw createBackupError(errorCode, 507, { requiredBytes: payloadBytes, reserveBytes, availableBytes });
+  }
+  return { requiredBytes: payloadBytes, reserveBytes, availableBytes };
 }
 
 async function getInstancePath(instanceId) {
@@ -417,17 +451,32 @@ async function listMetadataFiles() {
 
 async function readSchedules() {
   await ensureBackupRoot();
+  const filePath = schedulesPath();
+  if (!await fs.stat(filePath).then((stats) => stats.isFile(), () => false)) return [];
+  let parsed;
   try {
-    const parsed = await readJson(schedulesPath());
-    return Array.isArray(parsed.schedules) ? parsed.schedules : [];
-  } catch {
-    return [];
+    parsed = await readJson(filePath);
+  } catch (error) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    await fs.copyFile(filePath, backupPath, fsSync.constants.COPYFILE_EXCL).catch(() => {});
+    throw createBackupError("BACKUP_SCHEDULE_STORE_CORRUPT", 500, { causeCode: error?.code || "INVALID_JSON" });
   }
+  const schemaVersion = Number.isInteger(parsed?.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > BACKUP_SCHEDULE_SCHEMA_VERSION) {
+    throw createBackupError("BACKUP_SCHEDULE_SCHEMA_UNSUPPORTED", 409, { schemaVersion, supportedSchemaVersion: BACKUP_SCHEDULE_SCHEMA_VERSION });
+  }
+  const schedules = Array.isArray(parsed?.schedules) ? parsed.schedules : [];
+  if (schemaVersion < BACKUP_SCHEDULE_SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!await fs.stat(backupPath).then(() => true, () => false)) await fs.copyFile(filePath, backupPath, fsSync.constants.COPYFILE_EXCL);
+    await writeSchedules(schedules);
+  }
+  return schedules;
 }
 
 async function writeSchedules(schedules) {
   await ensureBackupRoot();
-  await writeJson(schedulesPath(), { schedules });
+  await writeJson(schedulesPath(), { schemaVersion: BACKUP_SCHEDULE_SCHEMA_VERSION, schedules });
 }
 
 async function listSchedules() {
@@ -466,9 +515,26 @@ async function deleteSchedule(instanceId) {
 
 async function readBackupMetadata(backupId) {
   const id = validateBackupId(backupId);
-  const metadata = await readJson(metadataPath(id)).catch(() => {
-    throw createBackupError("BACKUP_NOT_FOUND", 404);
-  });
+  const filePath = metadataPath(id);
+  let metadata;
+  try {
+    metadata = await readJson(filePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") throw createBackupError("BACKUP_NOT_FOUND", 404);
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    await fs.copyFile(filePath, backupPath, fsSync.constants.COPYFILE_EXCL).catch(() => {});
+    throw createBackupError("BACKUP_METADATA_CORRUPT", 500, { backupId: id, causeCode: error?.code || "INVALID_JSON" });
+  }
+  const schemaVersion = Number.isInteger(metadata?.schemaVersion) ? metadata.schemaVersion : 0;
+  if (schemaVersion > BACKUP_METADATA_SCHEMA_VERSION) {
+    throw createBackupError("BACKUP_METADATA_SCHEMA_UNSUPPORTED", 409, { backupId: id, schemaVersion, supportedSchemaVersion: BACKUP_METADATA_SCHEMA_VERSION });
+  }
+  if (schemaVersion < BACKUP_METADATA_SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!await fs.stat(backupPath).then(() => true, () => false)) await fs.copyFile(filePath, backupPath, fsSync.constants.COPYFILE_EXCL);
+    metadata = { ...metadata, schemaVersion: BACKUP_METADATA_SCHEMA_VERSION };
+    await writeJson(filePath, metadata);
+  }
   const archive = archivePath(id);
   const size = await getFileSize(archive).catch(() => metadata.size || 0);
   return {
@@ -481,18 +547,13 @@ async function readBackupMetadata(backupId) {
 async function listBackups(options = {}) {
   const files = await listMetadataFiles();
   const backups = [];
+  const metadataErrors = [];
 
   for (const file of files) {
     try {
-      const metadata = await readJson(file);
-      const archive = archivePath(metadata.id);
-      backups.push({
-        ...metadata,
-        path: archive,
-        size: await getFileSize(archive).catch(() => metadata.size || 0),
-      });
-    } catch {
-      continue;
+      backups.push(await readBackupMetadata(path.basename(file, ".json")));
+    } catch (error) {
+      metadataErrors.push({ file: path.basename(file), code: error?.code || "BACKUP_METADATA_INVALID" });
     }
   }
 
@@ -511,6 +572,7 @@ async function listBackups(options = {}) {
       lastBackupAt: filtered[0]?.createdAt || null,
     },
     diagnostics: {
+      metadataErrors,
       roots: [{
         path: getBackupRoot(),
         resolvedPath: getBackupRoot(),
@@ -542,11 +604,15 @@ async function performCreateBackup(payload = {}) {
   const instancePath = await getInstancePath(instanceId);
   const sourcePaths = await getSourcePaths(instancePath, type);
   await ensureBackupRoot();
+  let sourceSize = 0;
+  for (const sourcePath of sourcePaths) sourceSize += await calculatePathSize(path.resolve(instancePath, sourcePath));
+  await ensureDiskSpace(getBackupRoot(), sourceSize, "BACKUP_DISK_SPACE_INSUFFICIENT");
 
   const backupId = `${instanceId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const archive = archivePath(backupId);
   const archiveDetails = await writeTarGzArchive(archive, instancePath, sourcePaths);
   const metadata = {
+    schemaVersion: BACKUP_METADATA_SCHEMA_VERSION,
     id: backupId,
     instanceId,
     name: sanitizeName(payload.name, `${instanceId} ${type} backup`),
@@ -675,6 +741,9 @@ async function restoreBackup(payload = {}) {
     const validation = await validateArchiveFile(backup.path);
 
     await ensureInstanceStoppedForRestore(instanceId);
+    const currentInstanceSize = await calculatePathSize(instancePath);
+    await ensureDiskSpace(getBackupRoot(), currentInstanceSize, "RESTORE_SNAPSHOT_DISK_SPACE_INSUFFICIENT");
+    await ensureDiskSpace(path.dirname(instancePath), validation.uncompressedSize, "RESTORE_DISK_SPACE_INSUFFICIENT");
     safety = await createSafetySnapshot(instanceId);
     mutationStarted = true;
     if (backup.type === "world") {
@@ -759,6 +828,7 @@ async function importBackup(payload = {}) {
     throw error;
   }
   const metadata = {
+    schemaVersion: BACKUP_METADATA_SCHEMA_VERSION,
     id: backupId,
     instanceId,
     name: sanitizeName(payload.name, `${instanceId} imported backup`),
@@ -847,7 +917,10 @@ function stopBackupScheduler() {
 }
 
 module.exports = {
+  BACKUP_METADATA_SCHEMA_VERSION,
+  BACKUP_SCHEDULE_SCHEMA_VERSION,
   _test: {
+    ensureDiskSpace,
     rollbackRestoreFromSafetySnapshot,
   },
   createBackup,

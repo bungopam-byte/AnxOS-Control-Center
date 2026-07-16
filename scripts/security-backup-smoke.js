@@ -1,6 +1,7 @@
 const assert = require("assert");
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
+const fsPromises = require("fs/promises");
 const os = require("os");
 const path = require("path");
 
@@ -163,6 +164,15 @@ async function main() {
   fs.writeFileSync(path.join(instancePath, "config.json"), JSON.stringify({ id: instanceId, displayName: "Smoke", state: "Stopped" }));
   fs.writeFileSync(path.join(instancePath, "data", "world", "level.dat"), "world");
 
+  const originalStatfs = fsPromises.statfs;
+  fsPromises.statfs = async () => ({ bsize: 4096, bavail: 0 });
+  await assert.rejects(
+    () => backupService.createBackup({ instanceId, type: "world", name: "Full disk", createdBy: "smoke" }),
+    (error) => error?.code === "BACKUP_DISK_SPACE_INSUFFICIENT" && error?.statusCode === 507,
+    "Backup creation should fail before archive work when the destination volume has insufficient space.",
+  );
+  fsPromises.statfs = originalStatfs;
+
   // Concurrent create/restore operations against the same instance must not race:
   // the shared long-operation registry should reject the second call while the
   // first is still running, instead of letting both mutate instance files at once.
@@ -223,6 +233,7 @@ async function main() {
   assert(created.backup.sourcePaths.includes("data/world"), "World backup should include world path.");
   assert(created.backup.uncompressedSize >= 5, "Backup metadata should include uncompressed size.");
   assert(created.backup.requiredDiskSpace >= created.backup.uncompressedSize, "Backup metadata should include required restore disk space.");
+  assert.strictEqual(created.backup.schemaVersion, backupService.BACKUP_METADATA_SCHEMA_VERSION, "New backup metadata should use the current schema.");
   const list = await backupService.listBackups({ instanceId });
   assert.strictEqual(list.backups.length, 1, "Backup list should include created backup.");
   assert.strictEqual(list.backups[0].entryCount > 0, true, "Backup list should preserve archive entry count.");
@@ -269,12 +280,36 @@ async function main() {
     (error) => error?.code === "BACKUP_ARCHIVE_INVALID",
     "Invalid imported archives should be rejected.",
   );
+  const schedulesPath = path.join(process.env.AGENT_BACKUP_ROOT, "schedules.json");
+  fs.writeFileSync(schedulesPath, `${JSON.stringify({ schedules: [{ instanceId, intervalHours: 12, type: "world" }] })}\n`, { mode: 0o600 });
+  assert.strictEqual((await backupService.listSchedules()).schedules.length, 1, "Legacy backup schedules should survive migration.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(schedulesPath, "utf8")).schemaVersion, backupService.BACKUP_SCHEDULE_SCHEMA_VERSION, "Legacy schedules should migrate to the current schema.");
+  assert(fs.existsSync(`${schedulesPath}.schema-v0.backup`), "Legacy schedule migration should preserve the original file.");
+
   const schedule = await backupService.saveSchedule({ instanceId, intervalHours: 24, keepLast: 3, maxAgeDays: 7, type: "world" });
   assert.strictEqual(schedule.schedule.instanceId, instanceId, "Schedule should target the instance.");
   const schedules = await backupService.listSchedules();
   assert.strictEqual(schedules.schedules.length, 1, "Schedule list should include saved schedule.");
   await backupService.deleteSchedule(instanceId);
   assert.strictEqual((await backupService.listSchedules()).schedules.length, 0, "Schedule delete should remove saved schedule.");
+  const futureSchedules = { schemaVersion: backupService.BACKUP_SCHEDULE_SCHEMA_VERSION + 1, schedules: [] };
+  fs.writeFileSync(schedulesPath, `${JSON.stringify(futureSchedules)}\n`, { mode: 0o600 });
+  const futureSchedulesRaw = fs.readFileSync(schedulesPath, "utf8");
+  await assert.rejects(() => backupService.listSchedules(), (error) => error?.code === "BACKUP_SCHEDULE_SCHEMA_UNSUPPORTED", "Future backup schedule schemas must fail safely.");
+  assert.strictEqual(fs.readFileSync(schedulesPath, "utf8"), futureSchedulesRaw, "Future backup schedule state must remain unchanged.");
+  fs.writeFileSync(schedulesPath, "{not-json\n", { mode: 0o600 });
+  await assert.rejects(() => backupService.listSchedules(), (error) => error?.code === "BACKUP_SCHEDULE_STORE_CORRUPT", "Corrupt backup schedules must not silently disable all schedules.");
+  assert(fs.readdirSync(process.env.AGENT_BACKUP_ROOT).some((name) => name.startsWith("schedules.json.corrupt-")), "Corrupt backup schedules should be preserved.");
+
+  const futureMetadataId = "future-metadata-123456";
+  const futureMetadataPath = path.join(process.env.AGENT_BACKUP_ROOT, `${futureMetadataId}.json`);
+  fs.writeFileSync(futureMetadataPath, `${JSON.stringify({ schemaVersion: backupService.BACKUP_METADATA_SCHEMA_VERSION + 1, id: futureMetadataId, instanceId })}\n`, { mode: 0o600 });
+  const corruptMetadataId = "corrupt-metadata-123456";
+  fs.writeFileSync(path.join(process.env.AGENT_BACKUP_ROOT, `${corruptMetadataId}.json`), "{not-json\n", { mode: 0o600 });
+  const metadataDiagnostics = (await backupService.listBackups({ instanceId })).diagnostics.metadataErrors;
+  assert(metadataDiagnostics.some((entry) => entry.code === "BACKUP_METADATA_SCHEMA_UNSUPPORTED"), "Future backup metadata should be reported in diagnostics.");
+  assert(metadataDiagnostics.some((entry) => entry.code === "BACKUP_METADATA_CORRUPT"), "Corrupt backup metadata should be reported in diagnostics.");
+  assert.strictEqual(fs.readFileSync(futureMetadataPath, "utf8").includes(`"schemaVersion":${backupService.BACKUP_METADATA_SCHEMA_VERSION + 1}`), true, "Future backup metadata must remain unchanged.");
   await backupService.deleteBackup(created.backup.id);
   await backupService.deleteBackup(imported.backup.id);
   await backupService.deleteBackup(restored.restore.safetyBackupId);

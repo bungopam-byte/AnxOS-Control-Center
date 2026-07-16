@@ -28,11 +28,13 @@ bot-config/
 config/marketplace.json
 config/agent.json
 config/owner-accounts.json
+config/node-agent-credentials.json
 agent/.env
 agent/config/
 *.env
 agent/*.log
 release-build.json
+release-artifacts/
 
 # Owner Workspace local development/private data
 .anxos-owner-workspace/

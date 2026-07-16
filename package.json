@@ -146,6 +146,7 @@
     "settings:permissions:runtime": "node scripts/settings-permissions-runtime-smoke.js",
     "onboarding:smoke": "node scripts/onboarding-smoke.js",
     "maintenance:smoke": "node scripts/maintenance-smoke.js",
+    "maintenance:ipc-contract:smoke": "node scripts/maintenance-ipc-contract-smoke.js",
     "global-search:smoke": "node scripts/global-search-smoke.js",
     "command-palette:smoke": "node scripts/command-palette-smoke.js",
     "renderer-safety:smoke": "node scripts/renderer-safety-smoke.js",

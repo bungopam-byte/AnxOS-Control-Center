@@ -1,6 +1,21 @@
 const { ipcMain } = require("electron");
 const maintenance = require("../services/maintenanceService");
 const { audit, requirePermission } = require("../services/securityService");
+const { createIpcError } = require("../shared/ipcError");
+
+function registerMaintenanceHandler(channel, handler) {
+  ipcMain.handle(channel, async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      throw createIpcError(error, {
+        code: "MAINTENANCE_REQUEST_FAILED",
+        fallbackMessage: "Maintenance operation failed.",
+        suggestion: "Close active workflows using the selected data, then retry the maintenance scan or cleanup.",
+      });
+    }
+  });
+}
 
 function normalizeCategoryIds(payload = {}) {
   if (!Array.isArray(payload.categoryIds)) return [];
@@ -8,11 +23,11 @@ function normalizeCategoryIds(payload = {}) {
 }
 
 function registerMaintenanceIpc() {
-  ipcMain.handle("maintenance:scan", async () => {
+  registerMaintenanceHandler("maintenance:scan", async () => {
     requirePermission("settings:write", "maintenance");
     return maintenance.scan();
   });
-  ipcMain.handle("maintenance:clear", async (_, payload = {}) => {
+  registerMaintenanceHandler("maintenance:clear", async (_, payload = {}) => {
     requirePermission("settings:write", "maintenance");
     const categoryIds = normalizeCategoryIds(payload);
     const result = await maintenance.clear(categoryIds);

@@ -33,6 +33,17 @@ async function main() {
   assert.strictEqual(sanitize({ privateKey: "private-material" }).privateKey, "[redacted]");
   const pem = "-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----";
   assert.strictEqual(redactString(pem), "[redacted-private-key]");
+  const seededSecrets = {
+    commandLine: "provider --token cli-secret --client-secret provider-secret",
+    cookieHeader: "Cookie: session=cookie-secret",
+    credentialUrl: "https://user:url-secret@example.test/path",
+    environment: { CURSEFORGE_API_KEY: "provider-api-secret", AGENT_TOKEN: "agent-env-secret" },
+    privateKey: pem,
+  };
+  const seededOutput = JSON.stringify(sanitize(seededSecrets));
+  for (const seededSecret of ["cli-secret", "provider-secret", "cookie-secret", "url-secret", "provider-api-secret", "agent-env-secret", "private-material"]) {
+    assert(!seededOutput.includes(seededSecret), `Diagnostics redaction must remove seeded secret ${seededSecret}.`);
+  }
   const agentControl = require("../src/services/agentControlService");
   const desktopDiagnostics = require("../src/services/diagnosticsService");
   const validatedConfig = agentControl.validateConfig({ name: "Local Test Agent", host: "127.0.0.1", port: 48131, allowedFolders: [temp] });

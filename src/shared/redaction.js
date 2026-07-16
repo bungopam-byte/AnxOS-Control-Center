@@ -2,6 +2,7 @@ const SENSITIVE_KEY = /(password|passphrase|token|secret|api[_-]?key|apikey|priv
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi;
 const JWT = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g;
 const SECRET_ASSIGNMENT = /\b(password|passphrase|token|secret|api[_-]?key|apikey|authorization|cookie|session|refresh[_-]?token|access[_-]?token|agent[_-]?token|supabase[_-]?anon[_-]?key)\b\s*[:=]\s*(?!\[redacted\])(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi;
+const COMMAND_LINE_SECRET = /(--?(?:password|passphrase|token|secret|api[_-]?key|apikey|authorization|cookie|session|refresh[_-]?token|access[_-]?token|agent[_-]?token|client[_-]?secret))\s+(?!\[redacted\])(?:"[^"]*"|'[^']*'|[^\s]+)/gi;
 const URL_CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/)[^/@\s]+@/gi;
 const PRIVATE_PATH = /(^|[\s"'=(,:[{])((?:[A-Za-z]:\\Users\\|\/(?:home|Users|root)\/)[^\s"',)}\]]+)/g;
 const LARGE_BASE64 = /\b[A-Za-z0-9+/]{160,}={0,2}\b/g;
@@ -12,6 +13,7 @@ function redactString(value) {
     .replace(PRIVATE_KEY_BLOCK, "[redacted-private-key]")
     .replace(BEARER, "Bearer [redacted]")
     .replace(JWT, "[redacted-jwt]")
+    .replace(COMMAND_LINE_SECRET, "$1 [redacted]")
     .replace(SECRET_ASSIGNMENT, "$1=[redacted]")
     .replace(URL_CREDENTIALS, "$1[redacted]@")
     .replace(PRIVATE_PATH, "$1[redacted-path]")

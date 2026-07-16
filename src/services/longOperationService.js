@@ -1,0 +1,439 @@
+const fs = require("fs");
+const path = require("path");
+const diagnostics = require("./diagnosticsService");
+
+const ACTIVE_STATUSES = new Set(["queued", "running", "paused"]);
+const TERMINAL_STATUSES = new Set(["complete", "failed", "cancelled", "interrupted"]);
+const PERSIST_DEBOUNCE_MS = 300;
+const MAX_LOG_ENTRIES = 50;
+
+class LongOperationError extends Error {
+  constructor(message, code = "OPERATION_ERROR", details = {}) {
+    super(message);
+    this.name = "LongOperationError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const operations = new Map();
+const runtimeHandlers = new Map();
+let loaded = false;
+let persistTimer = null;
+let pendingPersist = false;
+
+function getElectronApp() {
+  try {
+    const electron = require("electron");
+    return electron && typeof electron === "object" ? electron.app || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function getConfigDirectory() {
+  if (process.env.ANXHUB_CONFIG_DIR) {
+    return process.env.ANXHUB_CONFIG_DIR;
+  }
+  const app = getElectronApp();
+  try {
+    return app ? path.join(app.getPath("userData"), "config") : path.join(process.cwd(), "config");
+  } catch {
+    return path.join(process.cwd(), "config");
+  }
+}
+
+function getOperationsStatePath() {
+  return path.join(getConfigDirectory(), "long-operations.json");
+}
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function sanitizeForPersistence(value, seen = new WeakSet()) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  const type = typeof value;
+  if (type === "function" || type === "symbol") {
+    return undefined;
+  }
+  if (type !== "object") {
+    return value;
+  }
+  if (seen.has(value)) {
+    return undefined;
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeForPersistence(item, seen))
+      .filter((item) => item !== undefined);
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+  const result = {};
+  for (const [key, entryValue] of Object.entries(value)) {
+    const sanitizedEntry = sanitizeForPersistence(entryValue, seen);
+    if (sanitizedEntry !== undefined) {
+      result[key] = sanitizedEntry;
+    }
+  }
+  return result;
+}
+
+function atomicWriteJson(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tempPath, filePath);
+}
+
+function flushPersist() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  pendingPersist = false;
+  try {
+    const snapshot = [...operations.values()].map((operation) => sanitizeForPersistence(operation));
+    atomicWriteJson(getOperationsStatePath(), { schemaVersion: 1, operations: snapshot });
+  } catch (error) {
+    diagnostics.log("warn", "operations", "persist-failed", "Long-operation state could not be persisted.", {
+      errorCode: error?.code || "OPERATION_PERSIST_FAILED",
+    }, { file: "operations" });
+  }
+}
+
+function schedulePersist() {
+  pendingPersist = true;
+  if (persistTimer) {
+    return;
+  }
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    if (pendingPersist) {
+      flushPersist();
+    }
+  }, PERSIST_DEBOUNCE_MS);
+  if (typeof persistTimer.unref === "function") {
+    persistTimer.unref();
+  }
+}
+
+function loadPersistedOperations() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(getOperationsStatePath(), "utf8"));
+    const persisted = Array.isArray(parsed?.operations) ? parsed.operations : [];
+    for (const entry of persisted) {
+      if (!entry?.id) {
+        continue;
+      }
+      const interrupted = ACTIVE_STATUSES.has(entry.status);
+      operations.set(entry.id, {
+        ...entry,
+        status: interrupted ? "interrupted" : entry.status,
+        error: interrupted
+          ? {
+              code: "INTERRUPTED_BY_RESTART",
+              message: "This operation was interrupted by an application restart and could not resume automatically.",
+            }
+          : entry.error || null,
+        canCancel: false,
+        canRetry: interrupted ? Boolean(entry.retryable) : Boolean(entry.canRetry),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch {
+    // No persisted state, or it is unreadable; start with an empty registry.
+  }
+}
+
+function ensureLoaded() {
+  if (loaded) {
+    return;
+  }
+  loaded = true;
+  loadPersistedOperations();
+}
+
+function clearTimeoutHandler(id) {
+  const runtime = runtimeHandlers.get(id);
+  if (runtime?.timeoutHandle) {
+    clearTimeout(runtime.timeoutHandle);
+    runtime.timeoutHandle = null;
+  }
+}
+
+function scheduleOperationTimeout(id, timeoutMs) {
+  clearTimeoutHandler(id);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return;
+  }
+  const runtime = runtimeHandlers.get(id) || {};
+  runtime.timeoutHandle = setTimeout(() => {
+    const operation = operations.get(id);
+    if (operation && ACTIVE_STATUSES.has(operation.status)) {
+      failOperation(id, {
+        code: "OPERATION_TIMEOUT",
+        message: "This operation timed out.",
+      }, { retryable: true });
+    }
+  }, timeoutMs);
+  if (typeof runtime.timeoutHandle.unref === "function") {
+    runtime.timeoutHandle.unref();
+  }
+  runtimeHandlers.set(id, runtime);
+}
+
+function appendLogEntry(operation, entry) {
+  if (!entry) {
+    return;
+  }
+  const logs = Array.isArray(operation.logs) ? operation.logs : [];
+  logs.push({
+    at: new Date().toISOString(),
+    level: entry.level || "info",
+    message: entry.message || "",
+    ...entry,
+  });
+  operation.logs = logs.slice(-MAX_LOG_ENTRIES);
+}
+
+function logOperationEvent(event, operation) {
+  diagnostics.log("info", "operations", event, `Long operation ${event}.`, {
+    id: operation.id,
+    kind: operation.kind,
+    nodeId: operation.nodeId,
+    status: operation.status,
+    stage: operation.stage,
+  }, { file: "operations" });
+}
+
+function findActiveByLockKey(lockKey) {
+  ensureLoaded();
+  if (!lockKey) {
+    return null;
+  }
+  for (const operation of operations.values()) {
+    if (operation.lockKey === lockKey && ACTIVE_STATUSES.has(operation.status)) {
+      return operation;
+    }
+  }
+  return null;
+}
+
+function buildOperation(id, spec = {}, existing = null) {
+  const now = new Date().toISOString();
+  const status = spec.status || existing?.status || "queued";
+  return {
+    id,
+    kind: spec.kind || existing?.kind || "generic",
+    nodeId: spec.nodeId !== undefined ? spec.nodeId : existing?.nodeId ?? null,
+    lockKey: spec.lockKey !== undefined ? spec.lockKey : existing?.lockKey ?? null,
+    status,
+    stage: spec.stage !== undefined ? spec.stage : existing?.stage ?? null,
+    message: spec.message !== undefined ? spec.message : existing?.message ?? null,
+    progress: spec.progress !== undefined ? spec.progress : existing?.progress ?? null,
+    progressMode: spec.progressMode || existing?.progressMode || "indeterminate",
+    error: spec.error !== undefined ? spec.error : existing?.error ?? null,
+    canCancel: spec.canCancel !== undefined ? Boolean(spec.canCancel) : Boolean(existing?.canCancel),
+    canRetry: spec.canRetry !== undefined ? Boolean(spec.canRetry) : Boolean(existing?.canRetry),
+    retryable: spec.retryable !== undefined ? Boolean(spec.retryable) : Boolean(existing?.retryable),
+    startedAt: existing?.startedAt || now,
+    updatedAt: now,
+    completedAt: TERMINAL_STATUSES.has(status) ? existing?.completedAt || now : existing?.completedAt || null,
+    timeoutMs: spec.timeoutMs !== undefined ? spec.timeoutMs : existing?.timeoutMs ?? null,
+    parentId: spec.parentId !== undefined ? spec.parentId : existing?.parentId ?? null,
+    childIds: spec.childIds || existing?.childIds || [],
+    logs: existing?.logs || [],
+    metadata: spec.metadata !== undefined ? spec.metadata : existing?.metadata ?? null,
+  };
+}
+
+function createOperation(spec = {}) {
+  ensureLoaded();
+  if (spec.lockKey) {
+    const duplicate = findActiveByLockKey(spec.lockKey);
+    if (duplicate) {
+      throw new LongOperationError(
+        "An operation with this lock key is already in progress.",
+        "DUPLICATE_OPERATION",
+        { existingOperationId: duplicate.id, lockKey: spec.lockKey },
+      );
+    }
+  }
+  const id = spec.id || `op-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const operation = buildOperation(id, { ...spec, status: spec.status || "queued" });
+  operations.set(id, operation);
+  if (spec.timeoutMs) {
+    scheduleOperationTimeout(id, spec.timeoutMs);
+  }
+  logOperationEvent("created", operation);
+  flushPersist();
+  return operation;
+}
+
+function upsertOperation(id, patch = {}) {
+  ensureLoaded();
+  if (!id) {
+    throw new LongOperationError("An operation id is required.", "OPERATION_ID_REQUIRED");
+  }
+  const existing = operations.get(id);
+  const operation = buildOperation(id, patch, existing);
+  if (Array.isArray(patch.logs)) {
+    patch.logs.forEach((entry) => appendLogEntry(operation, entry));
+  }
+  operations.set(id, operation);
+  if (patch.timeoutMs) {
+    scheduleOperationTimeout(id, patch.timeoutMs);
+  }
+  if (TERMINAL_STATUSES.has(operation.status)) {
+    clearTimeoutHandler(id);
+    flushPersist();
+  } else {
+    schedulePersist();
+  }
+  return operation;
+}
+
+function updateOperation(id, patch = {}) {
+  const existing = operations.get(id);
+  if (!existing) {
+    throw new LongOperationError("Operation was not found.", "OPERATION_NOT_FOUND", { id });
+  }
+  return upsertOperation(id, patch);
+}
+
+function completeOperation(id, patch = {}) {
+  return updateOperation(id, {
+    ...patch,
+    status: "complete",
+    progress: patch.progress !== undefined ? patch.progress : 100,
+    progressMode: "determinate",
+    error: null,
+    canRetry: false,
+    canCancel: false,
+  });
+}
+
+function failOperation(id, error = {}, patch = {}) {
+  return updateOperation(id, {
+    ...patch,
+    status: "failed",
+    error: {
+      code: error.code || "OPERATION_FAILED",
+      message: error.message || "This operation failed.",
+    },
+    canRetry: patch.retryable !== undefined ? Boolean(patch.retryable) : true,
+    canCancel: false,
+  });
+}
+
+function cancelOperation(id) {
+  const operation = operations.get(id);
+  if (!operation) {
+    throw new LongOperationError("Operation was not found.", "OPERATION_NOT_FOUND", { id });
+  }
+  if (!operation.canCancel) {
+    throw new LongOperationError("This operation cannot be cancelled.", "OPERATION_NOT_CANCELLABLE", { id });
+  }
+  const runtime = runtimeHandlers.get(id);
+  if (typeof runtime?.onCancel === "function") {
+    try {
+      runtime.onCancel();
+    } catch (error) {
+      diagnostics.log("warn", "operations", "cancel-handler-failed", "Long-operation cancel handler threw an error.", {
+        id,
+        errorCode: error?.code || "CANCEL_HANDLER_FAILED",
+      }, { file: "operations" });
+    }
+  }
+  return updateOperation(id, { status: "cancelled", canCancel: false, canRetry: true });
+}
+
+async function retryOperation(id) {
+  const operation = operations.get(id);
+  if (!operation) {
+    throw new LongOperationError("Operation was not found.", "OPERATION_NOT_FOUND", { id });
+  }
+  if (!operation.canRetry) {
+    throw new LongOperationError("This operation cannot be retried.", "OPERATION_NOT_RETRYABLE", { id });
+  }
+  const runtime = runtimeHandlers.get(id);
+  if (typeof runtime?.onRetry !== "function") {
+    throw new LongOperationError("No retry handler is registered for this operation.", "OPERATION_NOT_RETRYABLE", { id });
+  }
+  return runtime.onRetry();
+}
+
+function registerCancelHandler(id, handler) {
+  const runtime = runtimeHandlers.get(id) || {};
+  runtime.onCancel = typeof handler === "function" ? handler : null;
+  runtimeHandlers.set(id, runtime);
+}
+
+function registerRetryHandler(id, handler) {
+  const runtime = runtimeHandlers.get(id) || {};
+  runtime.onRetry = typeof handler === "function" ? handler : null;
+  runtimeHandlers.set(id, runtime);
+}
+
+function getOperation(id) {
+  ensureLoaded();
+  return operations.get(id) || null;
+}
+
+function listOperations(filter = {}) {
+  ensureLoaded();
+  return [...operations.values()].filter((operation) => {
+    if (filter.kind && operation.kind !== filter.kind) return false;
+    if (filter.nodeId && operation.nodeId !== filter.nodeId) return false;
+    if (filter.status && operation.status !== filter.status) return false;
+    return true;
+  });
+}
+
+function deleteOperation(id) {
+  ensureLoaded();
+  clearTimeoutHandler(id);
+  runtimeHandlers.delete(id);
+  const existed = operations.delete(id);
+  if (existed) {
+    flushPersist();
+  }
+  return existed;
+}
+
+module.exports = {
+  ACTIVE_STATUSES,
+  LongOperationError,
+  TERMINAL_STATUSES,
+  cancelOperation,
+  completeOperation,
+  createOperation,
+  deleteOperation,
+  failOperation,
+  findActiveByLockKey,
+  getOperation,
+  getOperationsStatePath,
+  listOperations,
+  registerCancelHandler,
+  registerRetryHandler,
+  retryOperation,
+  updateOperation,
+  upsertOperation,
+  _test: {
+    flushPersist,
+    sanitizeForPersistence,
+  },
+};

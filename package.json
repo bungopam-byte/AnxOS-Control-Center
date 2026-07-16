@@ -26,6 +26,7 @@
     "agent:validate": ".agent/scripts/validate-project",
     "agent:release-check": ".agent/scripts/release-check",
     "amp:debug": "node scripts/amp-debug.js",
+    "operations:framework:smoke": "node scripts/long-operation-framework-smoke.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "account:smoke": "node scripts/account-system-smoke.js",
     "device-activation:smoke": "node scripts/device-activation-smoke.js",

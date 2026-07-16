@@ -19,6 +19,7 @@ const {
   buildMarketplaceInstallContext,
   validateMarketplaceInstallContext,
 } = require("./marketplaceInstallContext");
+const longOperations = require("./longOperationService");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 const { redactString, sanitize } = require("../shared/redaction");
 
@@ -53,7 +54,44 @@ const INSTALLER_RESULT_STAGES = new Set([
   "failed",
 ]);
 
-const downloads = new Map();
+const MARKETPLACE_OPERATION_KIND = "marketplace-download";
+
+function mapMarketplaceOperationStatus(status) {
+  if (["complete", "failed", "cancelled"].includes(status)) {
+    return status;
+  }
+  return "running";
+}
+
+// Backed by the shared long-operation framework (src/services/longOperationService.js)
+// so Marketplace downloads/dependency installs participate in the same persistence,
+// crash-recovery, and diagnostics pipeline as other long-running operations, while
+// every existing Map-style call site in this file keeps working unchanged.
+const downloads = {
+  get(id) {
+    const operation = longOperations.getOperation(id);
+    return operation ? operation.metadata : undefined;
+  },
+  set(id, record) {
+    longOperations.upsertOperation(id, {
+      kind: MARKETPLACE_OPERATION_KIND,
+      nodeId: record?.nodeId || null,
+      status: mapMarketplaceOperationStatus(record?.status),
+      retryable: record?.canRetry === true,
+      metadata: record,
+    });
+    return downloads;
+  },
+  delete(id) {
+    return longOperations.deleteOperation(id);
+  },
+  has(id) {
+    return Boolean(longOperations.getOperation(id));
+  },
+  values() {
+    return longOperations.listOperations({ kind: MARKETPLACE_OPERATION_KIND }).map((operation) => operation.metadata);
+  },
+};
 const minecraftVersionCatalogCache = new Map();
 const MINECRAFT_VERSION_CATALOG_TTL_MS = 10 * 60 * 1000;
 

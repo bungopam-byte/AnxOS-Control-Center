@@ -85,6 +85,11 @@ Downloading, installing, skipping, or launching an update download require
 developer-settings capability. Both domains normalize and redact failures
 through the shared IPC error contract before returning them to the renderer.
 
+The Add Storage workflow is bound to concrete BrowserWindow identities. Only
+the main application window can open it, after `settings:write` authorization,
+and only the created child window can close it or report a saved connection.
+Sender checks occur again for every invocation.
+
 ## Agent
 
 Desktop Agent Control list, status, diagnostics, configuration, lifecycle,

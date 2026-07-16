@@ -19,6 +19,7 @@ const { registerSecurityIpc } = require("./src/ipc/securityIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
+const { registerStorageWindowIpc } = require("./src/ipc/storageWindowIpc");
 const { registerDeveloperUpdatesIpc, registerUpdatesIpc } = require("./src/ipc/updatesIpc");
 const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services/providers/curseforgeProvider");
 const { UpdateManager } = require("./src/services/updateManager");
@@ -307,20 +308,6 @@ function closeAddStorageWindow() {
   return { closed: false };
 }
 
-function registerStorageWindowIpc() {
-  ipcMain.handle("storageWindow:open", (_, payload = {}) => openAddStorageWindow(payload));
-  ipcMain.handle("storageWindow:close", () => closeAddStorageWindow());
-  ipcMain.handle("storageWindow:saved", (_, payload = {}) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(ADD_STORAGE_SAVED_CHANNEL, {
-        connectionId: payload.connectionId || payload.id || null,
-      });
-    }
-    closeAddStorageWindow();
-    return { ok: true };
-  });
-}
-
 function createWindow() {
   const windowState = readWindowState();
   let saveWindowStateTimer = null;
@@ -453,7 +440,19 @@ app.whenReady().then(async () => {
   logCurseForgeStartupStatus();
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
-  registerStorageWindowIpc();
+  registerStorageWindowIpc({
+    closeWindow: closeAddStorageWindow,
+    getMainWindow: () => mainWindow,
+    getStorageWindow: () => addStorageWindow,
+    notifySaved: (payload = {}) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(ADD_STORAGE_SAVED_CHANNEL, {
+          connectionId: payload.connectionId || payload.id || null,
+        });
+      }
+    },
+    openWindow: openAddStorageWindow,
+  });
   registerUpdatesIpc(updateManager);
   registerDeveloperUpdatesIpc(developerGitUpdater);
   registerAccountAuthIpc();

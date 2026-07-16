@@ -618,7 +618,30 @@ async function resolveAllowedTargetPath(requestedPath) {
       filesystemRoot: parent.root,
     });
   }
+  const targetStats = await fsPromises.lstat(targetPath).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (targetStats?.isSymbolicLink()) {
+    throw createFileError("PATH_NOT_ALLOWED", 403, "The target path is a symbolic link and cannot be overwritten safely.", {
+      field: "path",
+      value: requestedPath,
+      filesystemRoot: parent.root,
+      suggestion: "Choose a regular file inside the configured root instead of a symbolic link.",
+    });
+  }
   return { path: targetPath, root: parent.root };
+}
+
+async function atomicWriteFile(targetPath, content, options = {}) {
+  const tempPath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    await fsPromises.writeFile(tempPath, content, { ...options, flag: "wx", mode: options.mode || 0o600 });
+    await fsPromises.rename(tempPath, targetPath);
+  } catch (error) {
+    await fsPromises.rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 function getFileType(stats) {
@@ -803,7 +826,7 @@ async function createFileDownload(requestedPath) {
 async function mutateFile(action, payload = {}) {
   if (action === "write" || action === "newFile") {
     const target = await resolveAllowedTargetPath(payload.path);
-    await fsPromises.writeFile(target.path, String(payload.content || ""), "utf8");
+    await atomicWriteFile(target.path, String(payload.content || ""), { encoding: "utf8" });
     return { path: target.path, saved: true };
   }
   if (action === "mkdir") {
@@ -834,7 +857,7 @@ async function mutateFile(action, payload = {}) {
   }
   if (action === "upload") {
     const target = await resolveAllowedTargetPath(payload.path);
-    await fsPromises.writeFile(target.path, Buffer.from(String(payload.content || ""), "base64"));
+    await atomicWriteFile(target.path, Buffer.from(String(payload.content || ""), "base64"));
     return { path: target.path, uploaded: true };
   }
   throw createFileError("UNSUPPORTED_FILE_ACTION", 400);

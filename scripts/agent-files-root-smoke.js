@@ -111,6 +111,21 @@ async function main() {
     assert.strictEqual((await fileService.resolveAllowedPath(path.join(homeParent, "anx"))).path, homeRoot, "Identity home can differ from root while remaining inside it.");
     setRoot(homeRoot);
     await assertRejectsWithCode(fileService.resolveAllowedPath(path.join(homeRoot, "outside-link")), "PATH_NOT_ALLOWED", "Symlinks resolving outside the root must be rejected.");
+    const outsideWriteTarget = path.join(outsideRoot, "must-not-change.txt");
+    const writeEscapeLink = path.join(homeRoot, "write-escape.txt");
+    await fs.writeFile(outsideWriteTarget, "outside-original", "utf8");
+    await fs.symlink(outsideWriteTarget, writeEscapeLink);
+    await assertRejectsWithCode(
+      fileService.mutateFile("write", { path: writeEscapeLink, content: "escaped" }),
+      "PATH_NOT_ALLOWED",
+      "Editor writes must reject symlink destinations instead of following them outside the authorized root.",
+    );
+    assert.strictEqual(await fs.readFile(outsideWriteTarget, "utf8"), "outside-original", "Rejected symlink writes must leave the outside target unchanged.");
+    const atomicTarget = path.join(homeRoot, "atomic-save.txt");
+    await fileService.mutateFile("write", { path: atomicTarget, content: "saved atomically" });
+    assert.strictEqual(await fs.readFile(atomicTarget, "utf8"), "saved atomically", "Editor writes should still save regular in-root files.");
+    const tempArtifacts = (await fs.readdir(homeRoot)).filter((name) => name.includes("atomic-save.txt") && name.endsWith(".tmp"));
+    assert.deepStrictEqual(tempArtifacts, [], "Successful atomic writes must not leave temporary files behind.");
 
     const danglingLink = path.join(homeRoot, "dangling-link");
     await fs.symlink(path.join(tempRoot, "does-not-exist"), danglingLink);

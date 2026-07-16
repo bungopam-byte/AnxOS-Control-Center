@@ -79,6 +79,7 @@ const downloads = {
       nodeId: record?.nodeId || null,
       status: mapMarketplaceOperationStatus(record?.status),
       canCancel: record?.canCancel === true && typeof record?.controller?.abort === "function",
+      canRetry: record?.canRetry === true,
       retryable: record?.canRetry === true,
       metadata: record,
     });

@@ -43,6 +43,24 @@ async function main() {
     (error) => error?.code === "DOWNLOAD_TOO_LARGE" && error?.details?.receivedBytes === 160,
   );
   assert.strictEqual(streamCanceled, true, "Downloads crossing the runtime limit must cancel their reader.");
+  const controller = new AbortController();
+  let abortedReaderCanceled = false;
+  const abortingReader = {
+    read: async () => {
+      controller.abort();
+      return { done: false, value: Buffer.alloc(8) };
+    },
+    cancel: async () => { abortedReaderCanceled = true; },
+    releaseLock: () => {},
+  };
+  await assert.rejects(
+    () => marketplace.readBoundedResponseBuffer(
+      { headers: { get: () => null }, body: { getReader: () => abortingReader } },
+      { label: "Test", maxBytes: 128, signal: controller.signal },
+    ),
+    (error) => error?.code === "INSTALL_CANCELLED",
+  );
+  assert.strictEqual(abortedReaderCanceled, true, "Aborted downloads must cancel their response reader.");
   console.log("Marketplace archive and download safety smoke checks passed.");
 }
 

@@ -18,6 +18,7 @@ const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 const { sanitize } = require("../shared/redaction");
 const { normalizeDiskEvidence } = require("../shared/diskSpace");
+const longOperations = require("../shared/longOperationService");
 
 const INSTALL_FOLDERS = ["mods", "config", "defaultconfigs", "kubejs", "kubejs/scripts", "world", "logs", "backups"];
 const PAPER_DOWNLOADS_API = "https://fill.papermc.io/v3";
@@ -334,7 +335,85 @@ function emitProgress(payload = {}) {
     percent: Math.max(0, Math.min(percent, 100)),
   };
   marketplaceInstallEvents.emit("progress", event);
+  if (payload.operationId) {
+    updateProviderInstallOperation(payload.operationId, {
+      stage: event.stage,
+      body: event.message,
+      progress: event.percent,
+      status: event.stage === "waiting" ? "waiting" : event.stage === "done" ? "complete" : "running",
+    });
+  }
   return event;
+}
+
+function throwIfInstallCancelled(signal) {
+  if (!signal?.aborted) return;
+  throw new MarketplaceInstallError("Marketplace installation was cancelled.", "INSTALL_CANCELLED", {
+    retryable: true,
+    cancelled: true,
+  });
+}
+
+function updateProviderInstallOperation(operationId, patch = {}) {
+  const operation = longOperations.getOperation(operationId);
+  if (!operation) return null;
+  const status = patch.status === "complete" ? "complete"
+    : patch.status === "failed" ? "failed"
+      : patch.status === "cancelled" ? "cancelled"
+        : patch.status === "waiting" ? "paused" : "running";
+  const metadata = {
+    ...(operation.metadata || {}),
+    ...patch,
+    canCancel: status === "running",
+    canRetry: status === "failed" || status === "cancelled",
+    updatedAt: new Date().toISOString(),
+  };
+  return longOperations.updateOperation(operationId, {
+    status,
+    stage: metadata.stage || null,
+    message: metadata.body || null,
+    progress: Number.isFinite(Number(metadata.progress)) ? Number(metadata.progress) : null,
+    canCancel: status === "running",
+    canRetry: status === "failed" || status === "cancelled",
+    metadata,
+  });
+}
+
+function createProviderInstallOperation(payload, context = {}) {
+  const controller = new AbortController();
+  const now = new Date().toISOString();
+  const id = `provider-install-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  const metadata = {
+    id,
+    nodeId: context.nodeId,
+    instanceId: context.instanceId,
+    templateId: payload.templateId || payload.providerProjectId || payload.projectId || "provider-pack",
+    title: payload.name || payload.instanceName || "Marketplace provider pack",
+    status: "running",
+    stage: "Preflight",
+    progress: 0,
+    body: "Preparing provider installation.",
+    canCancel: true,
+    canRetry: false,
+    controller,
+    startedAt: now,
+    updatedAt: now,
+  };
+  const operation = longOperations.createOperation({
+    id,
+    kind: "marketplace-download",
+    nodeId: context.nodeId,
+    lockKey: `marketplace-provider:${context.nodeId}:${context.instanceId}`,
+    status: "running",
+    canCancel: true,
+    retryable: true,
+    rollbackSupported: true,
+    metadata,
+  });
+  longOperations.registerCancelHandler(id, () => controller.abort());
+  const retry = typeof context.retry === "function" ? context.retry : () => installPack({ ...payload });
+  longOperations.registerRetryHandler(id, retry);
+  return { operation, controller, signal: controller.signal };
 }
 
 function slugify(value, fallback = "minecraft-server") {
@@ -426,10 +505,11 @@ async function fetchJson(url, label) {
   }
 }
 
-async function fetchBuffer(url, label) {
+async function fetchBuffer(url, label, options = {}) {
   try {
     return await withRetry(async () => {
-      const response = await fetch(validateDownloadUrl(url));
+      throwIfInstallCancelled(options.signal);
+      const response = await fetch(validateDownloadUrl(url), { signal: options.signal });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new MarketplaceInstallError(friendlyHttpMessage(label, response.status, body), "DOWNLOAD_FAILED", {
@@ -438,9 +518,12 @@ async function fetchBuffer(url, label) {
           url,
         });
       }
-      return readBoundedResponseBuffer(response, { label, url });
+      return readBoundedResponseBuffer(response, { label, url, signal: options.signal });
     }, { label, url });
   } catch (error) {
+    if (options.signal?.aborted || error?.name === "AbortError") {
+      throwIfInstallCancelled(options.signal || { aborted: true });
+    }
     const effectiveError = error instanceof MarketplaceInstallError
       ? error
       : new MarketplaceInstallError(`${label}: Network timeout or connection failure - ${error?.message || "request failed"}`, "NETWORK_FAILED", {
@@ -480,6 +563,7 @@ async function readBoundedResponseBuffer(response, options = {}) {
   let receivedBytes = 0;
   try {
     while (true) {
+      throwIfInstallCancelled(options.signal);
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = Buffer.from(value);
@@ -495,6 +579,11 @@ async function readBoundedResponseBuffer(response, options = {}) {
       chunks.push(chunk);
     }
     return Buffer.concat(chunks, receivedBytes);
+  } catch (error) {
+    if (options.signal?.aborted) {
+      await reader.cancel().catch(() => {});
+    }
+    throw error;
   } finally {
     reader.releaseLock?.();
   }
@@ -1237,17 +1326,19 @@ function stripArchiveRoot(entryPath) {
   return safe;
 }
 
-async function extractZipBuffer(buffer, onFile) {
+async function extractZipBuffer(buffer, onFile, options = {}) {
   logMarketplaceInstallStep("Opening zip archive.", { bytes: Buffer.byteLength(buffer || Buffer.alloc(0)) });
   const directory = await unzipper.Open.buffer(Buffer.from(buffer));
   validateZipDirectory(directory);
   for (const entry of directory.files) {
+    throwIfInstallCancelled(options.signal);
     if (entry.type === "Directory") {
       continue;
     }
     const safePath = safeArchivePath(entry.path);
     logMarketplaceInstallStep("Extracting archive entry.", { path: safePath, compressedSize: entry.compressedSize || null, uncompressedSize: entry.uncompressedSize || null });
     const content = await entry.buffer();
+    throwIfInstallCancelled(options.signal);
     await onFile(safePath, content);
   }
 }
@@ -1625,7 +1716,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
 
   if (primary?.filename?.endsWith(".mrpack")) {
     emitProgress({ ...progressState, stage: "downloading", message: "Downloading Modrinth pack..." });
-    const pack = await fetchBuffer(primary.url, primary.filename);
+    const pack = await fetchBuffer(primary.url, primary.filename, { signal: progressState.signal });
     emitProgress({ ...progressState, stage: "extracting", message: "Extracting Modrinth overrides..." });
     await extractZipBuffer(pack, async (entryPath, content) => {
       if (entryPath === "modrinth.index.json") {
@@ -1684,7 +1775,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
           }
           emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${files.length} mods...`, current, total: files.length });
           try {
-            const modBuffer = await fetchBuffer(fileUrl, path.posix.basename(filePath));
+            const modBuffer = await fetchBuffer(fileUrl, path.posix.basename(filePath), { signal: progressState.signal });
             await writeIfMissing(instanceId, filePath, modBuffer, agentConfig);
             mods.push({ file: filePath, sha1: file.hashes?.sha1 || null, provider: "modrinth" });
             downloads.push({ file: filePath, provider: "modrinth" });
@@ -1718,7 +1809,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
           downloads.push({ file: target, provider: "modrinth-overrides" });
         }
       }
-    });
+    }, { signal: progressState.signal });
   } else {
     const dependencies = await modrinthProvider.resolveDependencies(version, payload.minecraftVersion || payload.version, payload.loader, {
       allowClientFiles: payload.allowClientFiles,
@@ -1785,7 +1876,7 @@ async function installModrinthPack(instanceId, payload, agentConfig, progressSta
       }
       emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
       try {
-        const buffer = await fetchBuffer(file.url, fileName);
+        const buffer = await fetchBuffer(file.url, fileName, { signal: progressState.signal });
         await writeIfMissing(instanceId, target, buffer, agentConfig);
         mods.push({ file: target, sha1: file.hashes?.sha1 || null, provider: "modrinth", versionId: resolvedVersion.id });
         downloads.push({ file: target, provider: "modrinth" });
@@ -1860,7 +1951,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
     loader: payload.loader || null,
     source: selection.source || null,
   });
-  const downloaded = await curseforgeProvider.downloadFile(serverFile, "", { config: curseForgeConfig });
+  const downloaded = await curseforgeProvider.downloadFile(serverFile, "", { config: curseForgeConfig, signal: progressState.signal });
   const mods = [];
   const downloads = [];
   const dedupe = createDeduper();
@@ -1909,7 +2000,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         await writeBuffer(instanceId, target, content, agentConfig);
         downloads.push({ file: target, provider: "curseforge-overrides" });
       }
-    });
+    }, { signal: progressState.signal });
     const manifestFiles = Array.isArray(manifest?.files) ? manifest.files : [];
     ensureSupportedModpack(manifest, "CurseForge", "server pack did not include a manifest.json");
     ensureCurseForgeServerPackCandidate({
@@ -1967,7 +2058,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           downloads.push({ file: requirement.expectedDestinationPath, provider: "curseforge-manual-import" });
           continue;
         }
-        const modDownload = await curseforgeProvider.downloadFile(modFile, "", { config: curseForgeConfig });
+        const modDownload = await curseforgeProvider.downloadFile(modFile, "", { config: curseForgeConfig, signal: progressState.signal });
         const target = `mods/${safeArchivePath(modDownload.fileName)}`;
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
         mods.push({ file: target, provider: "curseforge", projectId: manifestProjectId, fileId: manifestFileId });
@@ -2041,7 +2132,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
           downloads.push({ file: target, provider: "curseforge-manual-import" });
           continue;
         }
-        const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item, "", { config: curseForgeConfig });
+        const modDownload = item.buffer ? item : await curseforgeProvider.downloadFile(item, "", { config: curseForgeConfig, signal: progressState.signal });
         emitProgress({ ...progressState, stage: "downloading", message: `Downloading ${current}/${fileEntries.length} mods...`, current, total: fileEntries.length });
         await writeIfMissing(instanceId, target, modDownload.buffer, agentConfig);
         mods.push({ file: target, provider: "curseforge", projectId: item.projectId, fileId: item.id });
@@ -2114,17 +2205,20 @@ async function continueProviderPackInstall(context = {}) {
     instancePayload,
     createResult,
     manualFiles = {},
+    operationId = null,
+    signal = null,
   } = context;
 
   const nodeId = agentConfig?.nodeId || options?.nodeId || null;
   let installRecords = { mods: [], downloads: [], source: {} };
   if (provider === "modrinth") {
-    installRecords = await installModrinthPack(instanceId, options, agentConfig, { nodeId, instanceId, manualFiles });
+    installRecords = await installModrinthPack(instanceId, options, agentConfig, { nodeId, instanceId, manualFiles, operationId, signal });
   } else if (provider === "curseforge") {
-    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { nodeId, instanceId, manualFiles, curseForgeConfig, curseForgeBrowseConfig });
+    installRecords = await installCurseForgePack(instanceId, options, agentConfig, { nodeId, instanceId, manualFiles, curseForgeConfig, curseForgeBrowseConfig, operationId, signal });
   }
 
-  emitProgress({ nodeId, instanceId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
+  throwIfInstallCancelled(signal);
+  emitProgress({ nodeId, instanceId, operationId, stage: "writing", message: "Writing instance metadata...", current: 1, total: 1 });
   await writeText(instanceId, "eula.txt", `eula=${options.acceptEula === false ? "false" : "true"}\n`, agentConfig);
   await applyMinecraftServerProperties(agentClient, instanceId, {
     ...options,
@@ -2142,7 +2236,8 @@ async function continueProviderPackInstall(context = {}) {
     startJar: serverInfo.serverJar,
   }, agentConfig);
   if (options.start) {
-    emitProgress({ nodeId, instanceId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
+    throwIfInstallCancelled(signal);
+    emitProgress({ nodeId, instanceId, operationId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
     await withRetry(
       () => agentClient.startInstance(instanceId, agentConfig),
       { label: "agent start instance", attempts: 2 }
@@ -2156,7 +2251,7 @@ async function continueProviderPackInstall(context = {}) {
     projectId: options.providerProjectId || options.projectId || null,
     versionId: options.providerVersionId || options.versionId || null,
   });
-  emitProgress({ nodeId, instanceId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
+  emitProgress({ nodeId, instanceId, operationId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
   return {
     status: "completed",
     instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
@@ -2282,11 +2377,15 @@ async function installPack(payload = {}) {
   const instancePayload = buildInstancePayload(options, serverInfo);
   const installContext = validateInstallContext(buildInstallContext(payload, options, instancePayload));
   const instanceId = instancePayload.id;
+  const installOperation = createProviderInstallOperation(payload, { nodeId: installNodeId, instanceId });
+  const operationId = installOperation.operation.id;
+  const signal = installOperation.signal;
   let created = false;
   let createResult = null;
 
   try {
-    emitProgress({ nodeId: installNodeId, instanceId, stage: "resolving", message: "Creating instance folder...", current: 0, total: 1 });
+    throwIfInstallCancelled(signal);
+    emitProgress({ nodeId: installNodeId, instanceId, operationId, stage: "resolving", message: "Creating instance folder...", current: 0, total: 1 });
     createResult = await withRetry(
       () => agentClient.createInstance(instancePayload, agentConfig),
       { label: "agent create instance", attempts: 3 }
@@ -2299,8 +2398,9 @@ async function installPack(payload = {}) {
       );
     }
 
-    emitProgress({ nodeId: installNodeId, instanceId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
-    await writeBuffer(instanceId, serverInfo.downloadDestination || serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName), agentConfig);
+    emitProgress({ nodeId: installNodeId, instanceId, operationId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
+    await writeBuffer(instanceId, serverInfo.downloadDestination || serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName, { signal }), agentConfig);
+    throwIfInstallCancelled(signal);
     await runServerInstaller(instanceId, serverInfo, agentConfig);
 
     return await continueProviderPackInstall({
@@ -2314,6 +2414,8 @@ async function installPack(payload = {}) {
       instancePayload,
       createResult,
       manualFiles: {},
+      operationId,
+      signal,
     });
   } catch (error) {
     logMarketplaceInstallFailure(error, {
@@ -2343,6 +2445,8 @@ async function installPack(payload = {}) {
         instancePayload,
         createResult,
         manual,
+        operationId,
+        signal,
         rawError: serializeError(error),
       });
       logMarketplaceInstallStep("Manual download required.", {
@@ -2353,7 +2457,8 @@ async function installPack(payload = {}) {
         versionId: options.providerVersionId || options.versionId || null,
         fileName: manual.fileName || null,
       });
-      emitProgress({ nodeId: installNodeId, instanceId, stage: "waiting", message: "Waiting for manual download.", current: 0, total: 0, percent: 0 });
+      updateProviderInstallOperation(operationId, { status: "waiting", stage: "Waiting", body: "Waiting for manual download.", canCancel: false });
+      emitProgress({ nodeId: installNodeId, instanceId, operationId, stage: "waiting", message: "Waiting for manual download.", current: 0, total: 0, percent: 0 });
       return {
         status: "waiting-manual-download",
         instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
@@ -2361,10 +2466,19 @@ async function installPack(payload = {}) {
         progress: [{ label: "Waiting for Manual Download", status: "waiting", detail: "A required modpack file needs manual download." }],
       };
     }
-    emitProgress({ nodeId: installNodeId, instanceId, stage: "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
+    const cancelled = error?.code === "INSTALL_CANCELLED" || signal.aborted;
+    emitProgress({ nodeId: installNodeId, instanceId, stage: cancelled ? "cancelled" : "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
     const cleanup = created
       ? await cleanupIncompleteInstance(instanceId, agentConfig)
       : { attempted: false, succeeded: false, instanceId };
+    updateProviderInstallOperation(operationId, {
+      status: cancelled ? "cancelled" : "failed",
+      stage: cancelled ? "Cancelled" : "Failed",
+      body: detailedMessage,
+      error: cancelled ? null : detailedMessage,
+      canCancel: false,
+      canRetry: true,
+    });
     throw new MarketplaceInstallError(detailedMessage, error?.code || "MARKETPLACE_INSTALL_FAILED", {
       ...(error?.details || {}),
       originalName: error?.name || null,
@@ -2451,6 +2565,13 @@ async function resumeManualInstall(sessionId, options = {}) {
     });
   }
   session.status = "resuming";
+  updateProviderInstallOperation(session.operationId, {
+    status: "running",
+    stage: "Resuming",
+    body: "Resuming Marketplace installation.",
+    canCancel: true,
+    canRetry: false,
+  });
   logMarketplaceInstallStep("Resuming Marketplace install.", {
     step: "INSTALL_RESUMED",
     provider: session.provider || manual.provider || null,
@@ -2472,11 +2593,20 @@ async function resumeManualInstall(sessionId, options = {}) {
       instancePayload: session.instancePayload,
       createResult: session.createResult,
       manualFiles: session.importedFiles,
+      operationId: session.operationId,
+      signal: session.signal,
     });
     pendingManualInstalls.delete(session.id);
     return result;
   } catch (error) {
     session.status = "waiting-manual-download";
+    updateProviderInstallOperation(session.operationId, {
+      status: "waiting",
+      stage: "Waiting",
+      body: "Manual installation is still waiting for a valid required file.",
+      canCancel: false,
+      canRetry: false,
+    });
     throw error;
   }
 }
@@ -2557,6 +2687,7 @@ module.exports = {
     assertProviderInstallDiskSpace,
     cleanupIncompleteInstance,
     createPendingManualInstall,
+    createProviderInstallOperation,
     createManualDownloadRequiredError,
     createRestrictedCurseForgeFileError,
     createDeduper,
@@ -2582,6 +2713,8 @@ module.exports = {
     serializeError,
     safeArchivePath,
     stripArchiveRoot,
+    throwIfInstallCancelled,
+    updateProviderInstallOperation,
     validateZipDirectory,
     withRetry,
     validateInstallContext,

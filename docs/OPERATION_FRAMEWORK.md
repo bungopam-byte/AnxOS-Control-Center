@@ -117,12 +117,15 @@ test in `scripts/long-operation-framework-smoke.js`.
 ## Rollback honesty
 
 `rollbackSupported` defaults to `false` on every operation and is never
-inferred. Only Agent backup restore currently passes
+inferred. Only operations with a tested owning-service rollback path pass
 `rollbackSupported: true`:
 
-- Marketplace installs/downloads rely on their own pre-existing, independent
-  rollback logic (temp-folder cleanup on failure), not a framework-level
-  rollback hook.
+- Provider Marketplace installs abort active network streams through the
+  registered operation handler and delete the incomplete instance on failure
+  or cancellation. Cleanup failures remain in redacted diagnostics, and retry
+  starts a new locked execution attempt. Covered by
+  `scripts/marketplace-provider-cancellation-smoke.js` and
+  `scripts/marketplace-cleanup-reporting-smoke.js`.
 - Backup restore creates a verified safety snapshot before mutation and, after
   a partial restore failure, replaces the partial state from that snapshot and
   verifies `config.json`. This rollback is implemented by the owning backup
@@ -140,7 +143,7 @@ rollback actually restores prior state — this field must never be flipped to
 
 | System | Progress | Cancel | Retry (via framework) | Lock/dedupe | Rollback | Timeout |
 |---|---|---|---|---|---|---|
-| Marketplace downloads/dependency installs | Yes (bytes/stage) | Yes for real HTTP downloads (`AbortController` wired to `record.controller`); dependency installs are not cancellable (`canCancel: false`, matches reality) | No — Marketplace has its own `retryDownload` IPC path (re-invokes `installTemplate` for template-based retries) instead of using `longOperations.retryOperation()` | Via the `downloads` shim's ids, not a shared lock key across templates | No | No |
+| Marketplace downloads/dependency installs | Yes (bytes/stage) | Yes for real HTTP downloads and provider archive extraction (`AbortController` wired to the underlying stream); dependency installs are not cancellable (`canCancel: false`, matches reality) | Provider installs register a real new-attempt retry handler; template downloads use `retryDownload` to re-invoke `installTemplate` | Provider installs use `marketplace-provider:${nodeId}:${instanceId}`; template downloads retain id-based dedupe | Provider installs delete incomplete instances; standalone downloads have no rollback state | No |
 | File transfers | Yes (bytes) | Yes — real stream destruction via `transferControllers` | No (canRetry never set true; caller re-initiates through the UI) | No lock key (one transfer id per transfer) | No | No |
 | Backup create/restore | No (single-shot) | No (`canCancel: false`, matches reality — archive/extract are not interruptible) | **Yes** — `registerRetryHandler` re-invokes `createBackup(payload)` / `restoreBackup(payload)` with the original payload, producing a genuinely new operation id and a genuinely new archive/restore attempt | Yes — `backup:${instanceId}` prevents concurrent create/restore on the same instance | Restore only — verified safety snapshot and partial-restore rollback | Expected-duration marker only; because cancellation is unsupported, exceeding it retains the live lock until the task resolves or the process restarts |
 | Docker image pull | No (single-shot) | No (`canCancel: false` — the underlying child process is not currently interruptible via the framework) | **Yes** — `registerRetryHandler` re-invokes `pullImage(target)` | Yes — `docker-pull:${image}` prevents duplicate concurrent pulls of the same image | No | The Docker process has its own 10-minute timeout; the 11-minute framework marker cannot release the lock unless underlying cancellation is confirmed |

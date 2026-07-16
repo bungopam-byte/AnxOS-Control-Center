@@ -19,7 +19,7 @@ const {
   buildMarketplaceInstallContext,
   validateMarketplaceInstallContext,
 } = require("./marketplaceInstallContext");
-const longOperations = require("./longOperationService");
+const longOperations = require("../shared/longOperationService");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 const { redactString, sanitize } = require("../shared/redaction");
 
@@ -63,7 +63,7 @@ function mapMarketplaceOperationStatus(status) {
   return "running";
 }
 
-// Backed by the shared long-operation framework (src/services/longOperationService.js)
+// Backed by the shared long-operation framework (src/shared/longOperationService.js)
 // so Marketplace downloads/dependency installs participate in the same persistence,
 // crash-recovery, and diagnostics pipeline as other long-running operations, while
 // every existing Map-style call site in this file keeps working unchanged.

@@ -1,6 +1,25 @@
 const fs = require("fs");
 const path = require("path");
-const diagnostics = require("./diagnosticsService");
+
+// This module is shared by both the Electron desktop process and the
+// standalone Agent runtime (which never has the "electron" package
+// available), so structured logging is soft-loaded and falls back to
+// console output rather than hard-depending on diagnosticsService.
+let diagnostics = null;
+try {
+  diagnostics = require("../services/diagnosticsService");
+} catch {
+  diagnostics = null;
+}
+
+function logEvent(level, operation, message, context = {}) {
+  if (diagnostics && typeof diagnostics.log === "function") {
+    diagnostics.log(level, "operations", operation, message, context, { file: "operations" });
+    return;
+  }
+  const logger = level === "error" || level === "warn" ? console.warn : console.info;
+  logger(`[LongOperation][${operation}]`, message, context);
+}
 
 const ACTIVE_STATUSES = new Set(["queued", "running", "paused"]);
 const TERMINAL_STATUSES = new Set(["complete", "failed", "cancelled", "interrupted"]);
@@ -108,9 +127,9 @@ function flushPersist() {
     const snapshot = [...operations.values()].map((operation) => sanitizeForPersistence(operation));
     atomicWriteJson(getOperationsStatePath(), { schemaVersion: 1, operations: snapshot });
   } catch (error) {
-    diagnostics.log("warn", "operations", "persist-failed", "Long-operation state could not be persisted.", {
+    logEvent("warn", "persist-failed", "Long-operation state could not be persisted.", {
       errorCode: error?.code || "OPERATION_PERSIST_FAILED",
-    }, { file: "operations" });
+    });
   }
 }
 
@@ -210,13 +229,13 @@ function appendLogEntry(operation, entry) {
 }
 
 function logOperationEvent(event, operation) {
-  diagnostics.log("info", "operations", event, `Long operation ${event}.`, {
+  logEvent("info", event, `Long operation ${event}.`, {
     id: operation.id,
     kind: operation.kind,
     nodeId: operation.nodeId,
     status: operation.status,
     stage: operation.stage,
-  }, { file: "operations" });
+  });
 }
 
 function findActiveByLockKey(lockKey) {
@@ -352,10 +371,10 @@ function cancelOperation(id) {
     try {
       runtime.onCancel();
     } catch (error) {
-      diagnostics.log("warn", "operations", "cancel-handler-failed", "Long-operation cancel handler threw an error.", {
+      logEvent("warn", "cancel-handler-failed", "Long-operation cancel handler threw an error.", {
         id,
         errorCode: error?.code || "CANCEL_HANDLER_FAILED",
-      }, { file: "operations" });
+      });
     }
   }
   return updateOperation(id, { status: "cancelled", canCancel: false, canRetry: true });

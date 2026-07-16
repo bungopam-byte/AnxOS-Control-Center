@@ -8,7 +8,7 @@ const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
 const { AgentClientError, downloadFile, getFileListing, getFilesystemIdentity, mutateFile, readFileText } = require("./agentClient");
 const { getNode, getNodeAgentConfig } = require("./nodeService");
-const longOperations = require("./longOperationService");
+const longOperations = require("../shared/longOperationService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
 

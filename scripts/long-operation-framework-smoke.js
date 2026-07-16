@@ -1,13 +1,42 @@
 const assert = require("assert");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+
+function assertModuleWorksWithoutElectron(modulePath, statePathRoot) {
+  // The Agent runtime never has the "electron" package available, so this
+  // framework must degrade gracefully (soft-loaded diagnostics, console
+  // fallback) instead of crashing. Force require("electron") to fail the
+  // way it would in that runtime and prove the module still functions.
+  const script = `
+    const Module = require("module");
+    const originalLoad = Module._load;
+    Module._load = function patchedLoad(request, ...rest) {
+      if (request === "electron") {
+        throw new Error("Cannot find module 'electron' (simulated)");
+      }
+      return originalLoad.call(this, request, ...rest);
+    };
+    process.env.ANXHUB_CONFIG_DIR = ${JSON.stringify(statePathRoot)};
+    const longOperations = require(${JSON.stringify(modulePath)});
+    const operation = longOperations.createOperation({ kind: "agent-safe-smoke", status: "running" });
+    longOperations.completeOperation(operation.id);
+    const completed = longOperations.getOperation(operation.id);
+    if (completed.status !== "complete") {
+      throw new Error("Operation did not complete without electron available.");
+    }
+    console.log("agent-safe-ok");
+  `;
+  const output = execFileSync(process.execPath, ["-e", script], { encoding: "utf8" });
+  assert(output.includes("agent-safe-ok"), "Long-operation framework should work when the electron module is unavailable (Agent runtime).");
+}
 
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-long-operation-"));
   process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 
-  const modulePath = require.resolve("../src/services/longOperationService");
+  const modulePath = require.resolve("../src/shared/longOperationService");
   let longOperations = require(modulePath);
 
   // Basic lifecycle: create -> update -> complete.
@@ -140,6 +169,9 @@ async function main() {
   assert(controllerEntry, "Operation with a controller should still be persisted.");
   assert.strictEqual(controllerEntry.metadata.controller, undefined, "Non-serializable controller objects must be stripped before persistence.");
   assert.strictEqual(longOperations.getOperation(withController.id).metadata.controller instanceof AbortController, true, "The live in-memory metadata reference must retain the controller for runtime cancellation.");
+
+  // The Agent runtime requires this module without "electron" installed.
+  assertModuleWorksWithoutElectron(modulePath, fs.mkdtempSync(path.join(os.tmpdir(), "anxos-long-operation-agent-safe-")));
 
   fs.rmSync(root, { recursive: true, force: true });
   console.log("Long-operation framework smoke checks passed.");

@@ -8,7 +8,7 @@ process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 fs.mkdirSync(process.env.ANXHUB_CONFIG_DIR, { recursive: true });
 
 const nodes = require("../src/services/nodeService");
-const { setNodeToken } = require("../src/services/nodeCredentialStore");
+const { getNodeToken, setNodeToken } = require("../src/services/nodeCredentialStore");
 
 const legacyNode = {
   id: "anxlab",
@@ -53,8 +53,9 @@ try {
     assert.strictEqual(persisted.nodes[0].baseUrl, "http://192.168.1.134:47131", "nodes.json should persist baseUrl.");
     assert.strictEqual(persisted.nodes[0].enabled, false, "nodes.json should persist enabled state.");
 
-    const credentials = JSON.parse(fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8"));
-    assert.strictEqual(credentials.nodes.anxlab.agentToken, "node-specific-token", "Credential store should retain the node token.");
+    const credentialsRaw = fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8");
+    assert(!credentialsRaw.includes("node-specific-token"), "Credential store must encrypt the node token at rest.");
+    assert.strictEqual(getNodeToken("anxlab"), "node-specific-token", "Credential store should decrypt the node token for trusted main-process consumers.");
 
     const config = nodes.getNodeAgentConfig("anxlab");
     assert.strictEqual(config.agentUrl, "http://192.168.1.134:47131", "Agent config should resolve node baseUrl.");
@@ -69,10 +70,7 @@ try {
     assert.strictEqual(nodes.getNodeAgentConfig("anxlab").agentToken, "new-canonical-token", "Protected node credential store must be the canonical token source over stale node metadata.");
 
     nodes.deleteNode("anxlab");
-    const afterDeleteCredentials = fs.existsSync(nodes.getNodeCredentialsPath())
-      ? JSON.parse(fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8"))
-      : { nodes: {} };
-    assert(!afterDeleteCredentials.nodes.anxlab, "Deleting a node should delete its stored credential.");
+    assert.strictEqual(getNodeToken("anxlab"), "", "Deleting a node should delete its stored credential.");
 
     console.log("Node registry model smoke checks passed.");
   }).catch((error) => {

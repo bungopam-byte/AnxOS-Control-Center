@@ -74,15 +74,14 @@ function createLocalAgent() {
     });
 
     const nodes = require("../src/services/nodeService");
-    const { getNodeCredentialsPath } = require("../src/services/nodeCredentialStore");
+    const { getNodeToken } = require("../src/services/nodeCredentialStore");
 
     nodes.deleteNode("agent-local-agent-47131");
 
     const afterDelete = JSON.parse(fs.readFileSync(nodes.getNodesPath(), "utf8"));
     assert.strictEqual(afterDelete.nodes.some((node) => node.id === "agent-local-agent-47131"), false, "deleted local Agent node should be removed from registry");
     assert(afterDelete.removedLocalAgents?.some((entry) => entry.nodeId === "agent-local-agent-47131"), "deleted local Agent node should leave an intentional-removal marker");
-    const credentials = JSON.parse(fs.readFileSync(getNodeCredentialsPath(), "utf8"));
-    assert.strictEqual(Boolean(credentials.nodes["agent-local-agent-47131"]), false, "deleted local Agent credential should be removed");
+    assert.strictEqual(getNodeToken("agent-local-agent-47131"), "", "deleted local Agent credential should be removed");
 
     const migrated = await nodes.listNodes({ discoverLocalAgent: false, refreshIdentity: false });
     assert(migrated.nodes.some((node) => node.kind === "application-host"), "built-in Application Host should remain listed");

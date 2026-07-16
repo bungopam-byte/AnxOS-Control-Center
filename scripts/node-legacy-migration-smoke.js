@@ -8,6 +8,7 @@ process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 fs.mkdirSync(process.env.ANXHUB_CONFIG_DIR, { recursive: true });
 
 const nodes = require("../src/services/nodeService");
+const credentials = require("../src/services/nodeCredentialStore");
 
 function removeIfExists(filePath) {
   fs.rmSync(filePath, { force: true });
@@ -57,6 +58,7 @@ async function main() {
   assert.strictEqual(agentNodes[0].hasToken, true, "Legacy migration should preserve token presence.");
   assert.strictEqual(nodes.getNodeAgentConfig(agentNodes[0].id).agentToken, "legacy-token", "Legacy migration should store the token in the credential store.");
   assert(!JSON.stringify(readJson(nodes.getNodesPath())).includes("legacy-token"), "Legacy migration must not leave raw tokens in nodes.json.");
+  assert(!fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8").includes("legacy-token"), "Legacy migration must encrypt tokens in the credential store.");
   const schemaOneBackup = `${nodes.getNodesPath()}.schema-v1.backup`;
   assert(fs.existsSync(schemaOneBackup), "Legacy node migration should preserve a backup of the original schema.");
   assert.strictEqual(readJson(schemaOneBackup).schemaVersion, 1, "Migration backup should preserve the original schema version.");
@@ -126,6 +128,41 @@ async function main() {
     "Unknown future node schemas must fail safely instead of being downgraded.",
   );
   assert.strictEqual(fs.readFileSync(nodes.getNodesPath(), "utf8"), futureRaw, "A future schema rejection must leave the persisted file byte-for-byte unchanged.");
+
+  resetConfig();
+  writeJson(nodes.getNodeCredentialsPath(), {
+    schemaVersion: 1,
+    nodes: { "legacy-credential-node": { agentToken: "plaintext-legacy-credential" } },
+  });
+  assert.strictEqual(credentials.getNodeToken("legacy-credential-node"), "plaintext-legacy-credential", "Schema 1 credential migration should preserve the token value.");
+  assert(!fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8").includes("plaintext-legacy-credential"), "Migrated credential state must not retain plaintext tokens.");
+  const credentialMigrationBackup = `${nodes.getNodeCredentialsPath()}.schema-v1.backup`;
+  assert(fs.existsSync(credentialMigrationBackup), "Legacy credential migration should preserve an encrypted safety backup.");
+  assert(!fs.readFileSync(credentialMigrationBackup, "utf8").includes("plaintext-legacy-credential"), "Credential migration backups must not retain plaintext tokens.");
+
+  resetConfig();
+  const futureCredentials = {
+    schemaVersion: credentials.NODE_CREDENTIAL_SCHEMA_VERSION + 1,
+    encrypted: { method: "future-encryption", data: "opaque" },
+  };
+  writeJson(nodes.getNodeCredentialsPath(), futureCredentials);
+  const futureCredentialsRaw = fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8");
+  assert.throws(
+    () => credentials.getNodeToken("future-node"),
+    (error) => error?.code === "NODE_CREDENTIAL_SCHEMA_UNSUPPORTED"
+      && error?.details?.schemaVersion === futureCredentials.schemaVersion,
+    "Unknown future credential schemas must fail safely instead of being replaced with an empty store.",
+  );
+  assert.strictEqual(fs.readFileSync(nodes.getNodeCredentialsPath(), "utf8"), futureCredentialsRaw, "A future credential schema rejection must leave the file byte-for-byte unchanged.");
+
+  fs.writeFileSync(nodes.getNodeCredentialsPath(), "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => credentials.getNodeToken("corrupt-node"),
+    (error) => error?.code === "NODE_CREDENTIAL_STORE_CORRUPT",
+    "Corrupt credential state must fail explicitly instead of silently discarding credentials.",
+  );
+  const credentialBackupPrefix = `${path.basename(nodes.getNodeCredentialsPath())}.corrupt-`;
+  assert(fs.readdirSync(path.dirname(nodes.getNodeCredentialsPath())).some((name) => name.startsWith(credentialBackupPrefix)), "Corrupt credential state should be preserved in a diagnostic backup.");
 
   console.log("Node legacy migration smoke checks passed.");
 }

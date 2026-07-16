@@ -134,7 +134,7 @@ function reloadAgentControlService(root) {
     assert.strictEqual(config.agentUrl, agentUrl, "Paired node should use the Agent URL from the pairing session.");
     assert(/^anxos_[A-Za-z0-9_-]{43,}$/.test(config.agentToken), "Control Center should store a generated permanent credential.");
     assert(!fs.readFileSync(getNodesPath(), "utf8").includes(config.agentToken), "nodes.json must not contain the permanent credential.");
-    assert(fs.readFileSync(getNodeCredentialsPath(), "utf8").includes(config.agentToken), "protected node credential store should contain the permanent credential.");
+    assert(!fs.readFileSync(getNodeCredentialsPath(), "utf8").includes(config.agentToken), "protected node credential store must encrypt the permanent credential at rest.");
 
     const health = await fetch(`${agentUrl}/api/v1/health`, { headers: { Authorization: `Bearer ${config.agentToken}` } });
     assert.strictEqual(health.status, 200, "Agent should immediately accept the permanent credential.");

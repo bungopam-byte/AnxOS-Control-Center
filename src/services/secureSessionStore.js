@@ -91,5 +91,7 @@ class SecureSessionStore {
 
 module.exports = {
   SecureSessionStore,
+  decryptPayload,
+  encryptPayload,
   getDefaultConfigDirectory,
 };

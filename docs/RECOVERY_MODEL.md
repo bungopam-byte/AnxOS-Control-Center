@@ -94,3 +94,8 @@ unique sibling temporary path. The final destination is renamed only after the
 write or stream completes; failure and cancellation remove the temporary
 artifact. SFTP uploads follow the same temporary-upload and remote-rename
 contract.
+
+Desktop backup imports stat the selected regular file against the shared Agent
+archive limit before reading it into memory. Backup exports write a sibling
+temporary file and rename it into the user-selected destination only after the
+buffer has been written successfully.

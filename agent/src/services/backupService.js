@@ -7,6 +7,13 @@ const zlib = require("zlib");
 const { getConfig } = require("../config");
 const instanceService = require("./instances/instanceService");
 const longOperations = require("../../../src/shared/longOperationService");
+const {
+  MAX_BACKUP_ARCHIVE_BYTES,
+  MAX_BACKUP_COMPRESSION_RATIO,
+  MAX_BACKUP_ENTRY_BYTES,
+  MAX_BACKUP_ENTRY_COUNT,
+  MAX_BACKUP_EXPANDED_BYTES,
+} = require("../../../src/shared/backupLimits");
 
 const BACKUP_FORMAT = "tar.gz";
 const BACKUP_EXTENSION = ".tar.gz";
@@ -16,11 +23,6 @@ const TAR_BLOCK_SIZE = 512;
 const BACKUP_METADATA_SCHEMA_VERSION = 1;
 const BACKUP_SCHEDULE_SCHEMA_VERSION = 1;
 const MINIMUM_DISK_RESERVE_BYTES = 64 * 1024 * 1024;
-const MAX_BACKUP_ARCHIVE_BYTES = 512 * 1024 * 1024;
-const MAX_BACKUP_EXPANDED_BYTES = 512 * 1024 * 1024;
-const MAX_BACKUP_ENTRY_BYTES = 256 * 1024 * 1024;
-const MAX_BACKUP_ENTRY_COUNT = 100000;
-const MAX_BACKUP_COMPRESSION_RATIO = 1000;
 let schedulerStarted = false;
 let schedulerTimer = null;
 

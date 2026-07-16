@@ -16,6 +16,18 @@ const { audit, requirePermission } = require("../services/securityService");
 const { wrapExpectedAgentRead } = require("./expectedAgentError");
 const { requireNodeContext } = require("./nodeContext");
 const { createIpcError } = require("../shared/ipcError");
+const { MAX_BACKUP_ARCHIVE_BYTES } = require("../shared/backupLimits");
+
+async function writeFileAtomically(filePath, content) {
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.promises.writeFile(temporaryPath, content, { flag: "wx", mode: 0o600 });
+    await fs.promises.rename(temporaryPath, filePath);
+  } catch (error) {
+    await fs.promises.rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
 
 async function invokeBackupOperation(operation) {
   try {
@@ -43,7 +55,7 @@ async function saveBackupDownload(backupId, options = {}) {
     return { canceled: true };
   }
 
-  fs.writeFileSync(selection.filePath, payload.buffer);
+  await writeFileAtomically(selection.filePath, payload.buffer);
   audit({ action: "backup.download", target: backupId });
   return {
     canceled: false,
@@ -65,7 +77,18 @@ async function importBackupFromFile(payload = {}) {
   }
 
   const filePath = selection.filePaths[0];
-  const content = fs.readFileSync(filePath).toString("base64");
+  const stats = await fs.promises.stat(filePath);
+  if (!stats.isFile()) {
+    throw Object.assign(new Error("The selected backup is not a regular file."), { code: "BACKUP_ARCHIVE_INVALID", statusCode: 400 });
+  }
+  if (stats.size > MAX_BACKUP_ARCHIVE_BYTES) {
+    throw Object.assign(new Error("The selected backup exceeds the supported archive size limit."), {
+      code: "BACKUP_ARCHIVE_LIMIT_EXCEEDED",
+      statusCode: 413,
+      details: { archiveBytes: stats.size, maxArchiveBytes: MAX_BACKUP_ARCHIVE_BYTES },
+    });
+  }
+  const content = (await fs.promises.readFile(filePath)).toString("base64");
   const result = await importBackup({
     ...payload,
     name: payload.name || path.basename(filePath),

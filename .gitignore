@@ -29,6 +29,7 @@ config/marketplace.json
 config/agent.json
 config/owner-accounts.json
 config/node-agent-credentials.json
+config/long-operations.json
 agent/.env
 agent/config/
 *.env

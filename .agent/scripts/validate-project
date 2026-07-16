@@ -92,6 +92,7 @@ function main() {
     "agent-control:smoke",
     "windows-runtime:smoke",
     "marketplace:smoke",
+    "marketplace:ipc-error-contract:smoke",
   ];
 
   for (const script of smokeScripts) {

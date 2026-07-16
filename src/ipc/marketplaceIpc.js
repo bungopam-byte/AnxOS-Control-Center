@@ -21,8 +21,25 @@ const {
 } = require("../services/marketplaceInstallService");
 const { audit, requirePermission } = require("../services/securityService");
 const { openExternalUrl } = require("../services/externalUrlService");
+const { normalizeIpcError } = require("../shared/ipcError");
+const { sanitize } = require("../shared/redaction");
 
 let progressForwarderRegistered = false;
+
+function getSafeMarketplaceDetails(details = {}) {
+  const {
+    body: _body,
+    responseBody: _responseBody,
+    payload: _payload,
+    stack: _stack,
+    originalStack: _originalStack,
+    headers: _headers,
+    authorization: _authorization,
+    debugMessage: _debugMessage,
+    ...safeFields
+  } = details && typeof details === "object" ? details : {};
+  return sanitize(safeFields);
+}
 
 function getMarketplaceErrorMessage(error) {
   const code = error?.payload?.error?.code || error?.code;
@@ -198,25 +215,32 @@ async function invokeMarketplaceOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    const message = getMarketplaceErrorMessage(error);
     const uiError = getMarketplaceUiError(error);
-    console.error("[Marketplace][IPC] Operation failed.", {
-      name: error?.name || null,
-      code: error?.code || error?.payload?.error?.code || null,
-      message,
-      originalMessage: error?.message || null,
+    uiError.details = getSafeMarketplaceDetails(uiError.details);
+    const normalized = normalizeIpcError({
+      code: uiError.code,
+      message: uiError.message,
+      friendlyMessage: uiError.message,
       status: error?.status || error?.payload?.status || error?.details?.status || null,
-      url: error?.details?.url || error?.details?.invalidUrl || error?.payload?.error?.details?.url || error?.payload?.error?.details?.invalidUrl || null,
-      responseBody: error?.details?.body || error?.details?.responseBody || error?.payload?.error?.details?.body || error?.payload?.error?.details?.responseBody || null,
-      details: error?.details || error?.payload?.error?.details || null,
-      payload: error?.payload || null,
-      stack: error?.stack || null,
+      details: uiError.details,
+      cause: error,
+    }, {
+      code: "MARKETPLACE_REQUEST_FAILED",
+      suggestion: uiError.details.suggestion || getMarketplaceRecoverySuggestion(uiError.code),
+      provider: uiError.details.provider || null,
+      retryable: uiError.details.retryable,
+    });
+    console.error("[Marketplace][IPC] Operation failed.", {
+      code: normalized.code,
+      message: normalized.friendlyMessage,
+      status: normalized.status?.code || null,
+      provider: normalized.provider?.id || null,
+      technicalDetails: normalized.technicalDetails,
     });
     return {
       ok: false,
       error: {
-        code: uiError.code,
-        message: uiError.message,
+        ...normalized,
         details: uiError.details,
       },
     };

@@ -1458,7 +1458,9 @@ async function getStatus(_options = {}) {
 }
 
 async function listAgents(options = {}) {
-  const requestedSelectedNodeId = typeof options.selectedNodeId === "string" ? options.selectedNodeId.trim() : "";
+  const requestedSelectedNodeId = typeof options.nodeId === "string"
+    ? options.nodeId.trim()
+    : typeof options.selectedNodeId === "string" ? options.selectedNodeId.trim() : "";
   const selectedNodeId = requestedSelectedNodeId || getSelectedNodeId();
   const selectedNode = getNode(selectedNodeId);
   const registeredRemoteSelected = selectedNode?.kind === "agent" && selectedNode.localAgent !== true;

@@ -1,6 +1,7 @@
 const { ipcMain } = require("electron");
 const control = require("../services/agentControlService");
 const { audit, requireOwner } = require("../services/securityService");
+const { requireNodeContext } = require("./nodeContext");
 
 function authorize(operation) {
   return requireOwner(`agent-control:${operation}`);
@@ -33,7 +34,7 @@ async function runAudited(operation, actor, handler) {
 }
 
 function registerAgentControlIpc() {
-  ipcMain.handle("agentControl:list", (_, payload = {}) => runAuthorized("list", () => control.listAgents(payload)));
+  ipcMain.handle("agentControl:list", (_, payload = {}) => runAuthorized("list", () => control.listAgents(requireNodeContext(payload, "Agent Control listing"))));
   ipcMain.handle("agentControl:status", (_, payload = {}) => runAuthorized("status", () => control.getStatus(payload)));
   ipcMain.handle("agentControl:diagnostics", () => runAuthorized("diagnostics", () => control.runDiagnostics()));
   ipcMain.handle("agentControl:remoteDiagnostics", (_, payload = {}) => {

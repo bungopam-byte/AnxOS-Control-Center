@@ -45,6 +45,8 @@ async function main() {
   assert(rendererSource.includes('selectedNodeId === "application-host" && payload.local'), "Agent Control must derive the overview target from the active node.");
   assert(rendererSource.includes("payload.remote.find((agent) => agent.nodeId === selectedNodeId)"), "Agent Control must map registered remote Agents to the active node.");
   assert(rendererSource.includes("data-remote-agent-select") && rendererSource.includes("await selectNode(nodeId);"), "Selecting a Connected Agent must switch the canonical active node.");
+  assert(rendererSource.includes("api.list(getNodeScopedPayload(requestContext))"), "Agent Control must send the canonical selected-target context.");
+  assert(ipcSource.includes('requireNodeContext(payload, "Agent Control listing")'), "Agent Control IPC must reject an omitted selected target.");
   assert(serviceSource.includes("activeNode") && serviceSource.includes("activeAgent"), "Agent Control service must expose safe active Node and derived Agent context.");
   assert(rendererSource.includes("agentControlRefreshInFlight"), "Renderer must avoid overlapping Agent Control refreshes.");
   assert(rendererSource.includes("formatAgentCpu") && rendererSource.includes("formatAgentMemory") && rendererSource.includes("formatAgentProcess"), "Renderer must format normalized Agent runtime metrics.");

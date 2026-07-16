@@ -33,3 +33,5 @@ submitted it, even if selection changes while the request is in flight.
 The allowlisted generic action bridge applies the same explicit-target gate.
 Marketplace installation and download-manager IPC also reject omitted targets;
 catalog browsing remains intentionally node-independent.
+Agent Control listing uses the same canonical `nodeId` payload; the legacy
+`selectedNodeId` service option remains internal-only for compatibility.

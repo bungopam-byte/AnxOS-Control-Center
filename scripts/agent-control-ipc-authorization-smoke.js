@@ -3,6 +3,7 @@ const Module = require("module");
 
 const handlers = new Map();
 const invocations = [];
+let ownerAuthorized = false;
 const control = new Proxy({}, {
   get: (_target, property) => (...args) => {
     invocations.push({ property, args });
@@ -18,6 +19,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
     return {
       audit: () => {},
       requireOwner: () => {
+        if (ownerAuthorized) return { username: "owner" };
         throw Object.assign(new Error("Owner authorization required."), { code: "OWNER_AUTH_REQUIRED" });
       },
     };
@@ -52,6 +54,15 @@ async function main() {
     );
     assert.strictEqual(invocations.length, 0, `${channel} must authorize before invoking Agent Control services.`);
   }
+
+  ownerAuthorized = true;
+  invocations.length = 0;
+  await assert.rejects(
+    () => handlers.get("agentControl:list")({}, {}),
+    (error) => error?.code === "NODE_REQUIRED",
+    "Agent Control listing must reject missing canonical target context.",
+  );
+  assert.strictEqual(invocations.length, 0, "Missing Agent Control target context must not reach the service.");
 
   console.log("Agent Control IPC authorization smoke checks passed.");
 }

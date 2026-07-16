@@ -5481,7 +5481,7 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
   agentControlRefreshInFlight = true;
   const requestContext = getNodeRequestContext("agent-control");
   try {
-    const payload = await api.list({ selectedNodeId: getSelectedNodeId() });
+    const payload = await api.list(getNodeScopedPayload(requestContext));
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }

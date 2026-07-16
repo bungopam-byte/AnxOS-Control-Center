@@ -8,6 +8,7 @@ const { BrowserWindow, dialog } = require("electron");
 const { Client } = require("ssh2");
 const { AgentClientError, downloadFile, getFileListing, getFilesystemIdentity, mutateFile, readFileText } = require("./agentClient");
 const { getNode, getNodeAgentConfig } = require("./nodeService");
+const longOperations = require("./longOperationService");
 const { SshService, SshServiceError } = require("./sshService");
 const { LOCAL_STORAGE_ID, getConnection } = require("./storageConnectionService");
 
@@ -429,7 +430,7 @@ class FileService extends EventEmitter {
     });
   }
 
-  createTransferController(transferId) {
+  createTransferController(transferId, context = {}) {
     const id = trimValue(transferId);
     if (!id) {
       return null;
@@ -440,6 +441,17 @@ class FileService extends EventEmitter {
       streams: new Set(),
     };
     this.transferControllers.set(id, controller);
+    // Tracked in the shared long-operation registry so concurrent transfers
+    // are visible for locking/diagnostics and are not silently left "running"
+    // forever if the app restarts mid-transfer.
+    longOperations.upsertOperation(id, {
+      kind: "file-transfer",
+      nodeId: context.nodeId || null,
+      status: "running",
+      stage: context.type || null,
+      canCancel: true,
+      metadata: { path: context.path || null, type: context.type || null },
+    });
     return controller;
   }
 
@@ -463,12 +475,20 @@ class FileService extends EventEmitter {
     }
     this.emitTransfer({ id, status: "failed", message: "Canceled" });
     this.transferControllers.delete(id);
+    if (longOperations.getOperation(id)) {
+      longOperations.updateOperation(id, { status: "cancelled", canCancel: false });
+    }
     return { id, canceled: true };
   }
 
   finishTransferController(controller) {
     if (controller?.id) {
       this.transferControllers.delete(controller.id);
+      // Success/failure is already reported through transfer events; this only
+      // clears the shared registry entry so it does not appear stuck "running".
+      if (longOperations.getOperation(controller.id)?.status === "running") {
+        longOperations.deleteOperation(controller.id);
+      }
     }
   }
 
@@ -1278,7 +1298,7 @@ class FileService extends EventEmitter {
         }
       }
       const localSize = fs.existsSync(localPath) ? fs.statSync(localPath).size : 0;
-      const controller = this.createTransferController(options.transferId);
+      const controller = this.createTransferController(options.transferId, { nodeId: transferNodeId, path: remotePath, type: "upload" });
       let transferredBytes = 0;
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: localSize, percent: localSize > 0 ? 0 : null });
 
@@ -1398,7 +1418,7 @@ class FileService extends EventEmitter {
       }
 
       console.info(`[Files] Download transport selected: sftp (${remotePath})`);
-      const controller = this.createTransferController(options.transferId);
+      const controller = this.createTransferController(options.transferId, { nodeId: transferNodeId, path: remotePath, type: "download" });
       let transferredBytes = 0;
       try {
         const source = session.sftp.createReadStream(remotePath);

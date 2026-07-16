@@ -89,6 +89,12 @@ connection metadata and encrypted SFTP credentials are preserved before
 migration. Corrupt or future state fails explicitly instead of appearing as an
 empty connection list.
 
+Encrypted account sessions and Local Agent credential snapshots use secure
+session envelope schema version 1 and atomic writes. Legacy encrypted records
+are backed up and migrated without decrypting them to disk. Corrupt,
+undecryptable, invalid-schema, and future-version records are preserved and
+fail explicitly; subsequent writes cannot silently replace them.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

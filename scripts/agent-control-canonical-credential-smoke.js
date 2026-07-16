@@ -106,7 +106,13 @@ async function main() {
     assert.strictEqual(selected.activeAgent?.state, "Running", "Selected Anxlab should authenticate with the node credential.");
     assert(remoteRecords.some((record) => record.pathname === "/api/v1/stats" && record.auth === "Bearer node-token"), "Selected Anxlab /stats must use the canonical node credential.");
     assert(!remoteRecords.some((record) => record.auth === "Bearer stale-global-token"), "Selected Anxlab must not use the stale global Agent token.");
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(agentConfigPath, "utf8")), beforeGlobalConfig, "Selecting Anxlab must not mutate global Agent settings.");
+    const migratedGlobalConfig = JSON.parse(fs.readFileSync(agentConfigPath, "utf8"));
+    assert.deepStrictEqual(
+      { backendMode: migratedGlobalConfig.backendMode, agentUrl: migratedGlobalConfig.agentUrl, agentToken: migratedGlobalConfig.agentToken },
+      beforeGlobalConfig,
+      "Selecting Anxlab must not mutate global Agent settings beyond schema migration.",
+    );
+    assert.strictEqual(migratedGlobalConfig.schemaVersion, 1, "Reading legacy global Agent settings should apply the current schema.");
 
     writeJson(nodes.getNodesPath(), {
       schemaVersion: nodes.NODE_SCHEMA_VERSION,

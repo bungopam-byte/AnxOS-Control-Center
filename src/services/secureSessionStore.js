@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 let app = null;
 let safeStorage = null;
+const SECURE_SESSION_SCHEMA_VERSION = 1;
 try {
   ({ app, safeStorage } = require("electron"));
 } catch {
@@ -65,6 +66,24 @@ function decryptPayload(record, filePath) {
   return null;
 }
 
+function secureSessionError(code, message, filePath, cause = null, details = {}) {
+  const error = Object.assign(new Error(message), { code, filePath, details });
+  if (cause) Object.defineProperty(error, "cause", { value: cause, enumerable: false });
+  return error;
+}
+
+function atomicWrite(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(payload)}\n`, { mode: 0o600, flag: "wx" });
+    fs.renameSync(temporaryPath, filePath);
+  } catch (error) {
+    try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+    throw secureSessionError("SECURE_SESSION_WRITE_FAILED", "Encrypted session state could not be saved atomically.", filePath, error);
+  }
+}
+
 class SecureSessionStore {
   constructor(options = {}) {
     this.configDirectory = options.configDirectory || getDefaultConfigDirectory();
@@ -76,16 +95,38 @@ class SecureSessionStore {
   }
 
   read() {
+    if (!fs.existsSync(this.filePath)) return null;
+    let record;
     try {
-      return decryptPayload(JSON.parse(fs.readFileSync(this.filePath, "utf8")), this.filePath);
-    } catch {
-      return null;
+      record = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
+    } catch (error) {
+      const preservedPath = `${this.filePath}.corrupt-${Date.now()}.backup`;
+      try { fs.copyFileSync(this.filePath, preservedPath, fs.constants.COPYFILE_EXCL); } catch {}
+      throw secureSessionError("SECURE_SESSION_CORRUPT", "Encrypted session state is unreadable and was preserved for recovery.", this.filePath, error);
     }
+    const schemaVersion = record?.schemaVersion === undefined ? 0 : Number(record.schemaVersion);
+    if (!Number.isInteger(schemaVersion) || schemaVersion < 0) throw secureSessionError("SECURE_SESSION_SCHEMA_INVALID", "Encrypted session state has an invalid schema version.", this.filePath);
+    if (schemaVersion > SECURE_SESSION_SCHEMA_VERSION) throw secureSessionError("SECURE_SESSION_SCHEMA_UNSUPPORTED", "Encrypted session state was created by a newer application version.", this.filePath, null, { schemaVersion, supportedSchemaVersion: SECURE_SESSION_SCHEMA_VERSION });
+    let value;
+    try {
+      value = decryptPayload(record, this.filePath);
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Decrypted session payload must be an object.");
+    } catch (error) {
+      const preservedPath = `${this.filePath}.undecryptable-${Date.now()}.backup`;
+      try { fs.copyFileSync(this.filePath, preservedPath, fs.constants.COPYFILE_EXCL); } catch {}
+      throw secureSessionError("SECURE_SESSION_DECRYPT_FAILED", "Encrypted session state could not be decrypted and was preserved for recovery.", this.filePath, error);
+    }
+    if (schemaVersion < SECURE_SESSION_SCHEMA_VERSION) {
+      const backupPath = `${this.filePath}.schema-v${schemaVersion}.backup`;
+      if (!fs.existsSync(backupPath)) fs.copyFileSync(this.filePath, backupPath, fs.constants.COPYFILE_EXCL);
+      atomicWrite(this.filePath, { ...record, schemaVersion: SECURE_SESSION_SCHEMA_VERSION });
+    }
+    return value;
   }
 
   write(session) {
-    fs.mkdirSync(this.configDirectory, { recursive: true });
-    fs.writeFileSync(this.filePath, `${JSON.stringify(encryptPayload(session, this.filePath))}\n`, { mode: 0o600 });
+    if (fs.existsSync(this.filePath)) this.read();
+    atomicWrite(this.filePath, { schemaVersion: SECURE_SESSION_SCHEMA_VERSION, ...encryptPayload(session, this.filePath) });
   }
 
   clear() {
@@ -96,6 +137,7 @@ class SecureSessionStore {
 }
 
 module.exports = {
+  SECURE_SESSION_SCHEMA_VERSION,
   SecureSessionStore,
   decryptPayload,
   encryptPayload,

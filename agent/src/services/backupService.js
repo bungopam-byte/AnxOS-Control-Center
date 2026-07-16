@@ -19,7 +19,7 @@ function createBackupError(code, statusCode = 400, details = {}) {
   return Object.assign(new Error(code), { code, statusCode, details });
 }
 
-function acquireBackupLock(instanceId, kind) {
+function acquireBackupLock(instanceId, kind, options = {}) {
   try {
     return longOperations.createOperation({
       kind,
@@ -27,7 +27,7 @@ function acquireBackupLock(instanceId, kind) {
       status: "running",
       canCancel: false,
       retryable: true,
-      rollbackSupported: false,
+      rollbackSupported: options.rollbackSupported === true,
       // Defense-in-depth: archive/extract operations have no internal timeout,
       // so a hung filesystem operation (e.g. a stalled network mount) could
       // otherwise hold this lock for the rest of the process lifetime.
@@ -638,6 +638,21 @@ async function ensureInstanceStoppedForRestore(instanceId) {
   return after;
 }
 
+async function rollbackRestoreFromSafetySnapshot(instancePath, safetyBackup) {
+  if (!safetyBackup?.path) {
+    throw createBackupError("RESTORE_SAFETY_SNAPSHOT_MISSING", 500);
+  }
+  await validateArchiveFile(safetyBackup.path);
+  await fs.rm(instancePath, { recursive: true, force: true });
+  await fs.mkdir(instancePath, { recursive: true, mode: 0o700 });
+  await extractTarGzArchive(safetyBackup.path, instancePath);
+  const configExists = await fs.stat(path.join(instancePath, "config.json")).then((stats) => stats.isFile(), () => false);
+  if (!configExists) {
+    throw createBackupError("RESTORE_ROLLBACK_VERIFICATION_FAILED", 500);
+  }
+  return { rolledBack: true, safetyBackupId: safetyBackup.id };
+}
+
 async function restoreBackup(payload = {}) {
   const backup = await readBackupMetadata(payload.backupId);
   const instanceId = validateInstanceId(payload.instanceId || backup.instanceId);
@@ -647,16 +662,20 @@ async function restoreBackup(payload = {}) {
   if (payload.confirmOverwrite !== true) {
     throw createBackupError("RESTORE_OVERWRITE_CONFIRMATION_REQUIRED", 400);
   }
-  const operation = acquireBackupLock(instanceId, "backup-restore");
+  const operation = acquireBackupLock(instanceId, "backup-restore", { rollbackSupported: true });
   // Registered immediately so a failed restore can genuinely be retried
   // through longOperations.retryOperation() rather than only resetting status.
   longOperations.registerRetryHandler(operation.id, () => restoreBackup(payload));
+  let instancePath = null;
+  let safety = null;
+  let mutationStarted = false;
   try {
-    const instancePath = await getInstancePath(instanceId);
+    instancePath = await getInstancePath(instanceId);
     const validation = await validateArchiveFile(backup.path);
 
     await ensureInstanceStoppedForRestore(instanceId);
-    const safety = await createSafetySnapshot(instanceId);
+    safety = await createSafetySnapshot(instanceId);
+    mutationStarted = true;
     if (backup.type === "world") {
       for (const sourcePath of Array.isArray(backup.sourcePaths) ? backup.sourcePaths : []) {
         const targetPath = path.resolve(instancePath, sourcePath);
@@ -691,6 +710,28 @@ async function restoreBackup(payload = {}) {
     longOperations.completeOperation(operation.id, { metadata: { instanceId, backupId: backup.id, safetyBackupId: safety.backup.id } });
     return { restore: restored };
   } catch (error) {
+    let rollback = null;
+    if (mutationStarted && instancePath && safety?.backup) {
+      try {
+        rollback = await rollbackRestoreFromSafetySnapshot(instancePath, safety.backup);
+      } catch (rollbackError) {
+        const failure = createBackupError("RESTORE_ROLLBACK_FAILED", 500, {
+          instanceId,
+          backupId: backup.id,
+          safetyBackupId: safety.backup.id,
+          causeCode: error?.code || "BACKUP_RESTORE_FAILED",
+          rollbackCauseCode: rollbackError?.code || "RESTORE_ROLLBACK_FAILED",
+        });
+        longOperations.failOperation(operation.id, { code: failure.code, message: failure.message }, { retryable: false });
+        throw failure;
+      }
+    }
+    if (rollback) {
+      error.details = {
+        ...(error.details || {}),
+        rollback,
+      };
+    }
     longOperations.failOperation(operation.id, {
       code: error?.code || "BACKUP_RESTORE_FAILED",
       message: error?.message || "Backup restore failed.",
@@ -797,6 +838,9 @@ function startBackupScheduler() {
 }
 
 module.exports = {
+  _test: {
+    rollbackRestoreFromSafetySnapshot,
+  },
   createBackup,
   deleteBackup,
   deleteSchedule,

@@ -38,6 +38,11 @@ records are normalized after a one-time backup. Corrupt state returns
 `PUBLIC_ACCESS_REGISTRY_CORRUPT`; future schemas return
 `PUBLIC_ACCESS_SCHEMA_UNSUPPORTED` without changing provider records.
 
+`updates.json` uses schema version 1 and atomic writes. Legacy skipped-version
+preferences are backed up once and migrated. Corrupt or future-version state is
+preserved and blocks persistence writes with `UPDATE_STORE_CORRUPT` or
+`UPDATE_STORE_SCHEMA_UNSUPPORTED`; update checks can still run.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

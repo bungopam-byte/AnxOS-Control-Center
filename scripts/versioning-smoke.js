@@ -1,5 +1,6 @@
 const assert = require("assert");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
@@ -12,6 +13,8 @@ const {
   readReleaseConfig,
 } = require("../src/shared/releaseConfig");
 const {
+  UPDATE_STORE_SCHEMA_VERSION,
+  UpdateManager,
   compareReleaseBuilds,
   extractReleaseBuild,
   pickLatestPublishedRelease,
@@ -93,5 +96,34 @@ const currentReleaseText = currentReleaseNotes;
 ].forEach((phrase) => {
   assert(currentReleaseText.includes(phrase), `Current release notes must include ${phrase}.`);
 });
+
+{
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-update-store-"));
+  const storePath = path.join(tempRoot, "updates.json");
+  const manager = new UpdateManager();
+  manager.storePath = storePath;
+
+  fs.writeFileSync(storePath, `${JSON.stringify({ skippedVersions: ["1.6"] })}\n`, { mode: 0o600 });
+  manager.loadStore();
+  assert(manager.skippedVersions.has("1.6"), "legacy update preferences should preserve skipped versions.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(storePath, "utf8")).schemaVersion, UPDATE_STORE_SCHEMA_VERSION, "legacy update preferences should migrate to the current schema.");
+  assert(fs.existsSync(`${storePath}.schema-v0.backup`), "legacy update migration should preserve the original file.");
+
+  const futureState = { schemaVersion: UPDATE_STORE_SCHEMA_VERSION + 1, skippedVersions: ["9.9"] };
+  fs.writeFileSync(storePath, `${JSON.stringify(futureState)}\n`, { mode: 0o600 });
+  const futureRaw = fs.readFileSync(storePath, "utf8");
+  manager.loadStore();
+  assert.strictEqual(manager.storeError?.code, "UPDATE_STORE_SCHEMA_UNSUPPORTED", "future update schemas should produce a stable recovery error.");
+  assert.throws(() => manager.saveStore(), (error) => error?.code === "UPDATE_STORE_SCHEMA_UNSUPPORTED", "writes must remain blocked while future update state is unresolved.");
+  assert.throws(() => manager.skip("1.8"), (error) => error?.code === "UPDATE_STORE_SCHEMA_UNSUPPORTED", "skip actions must fail before mutating memory while persistence is blocked.");
+  assert.strictEqual(manager.skippedVersions.has("1.8"), false, "a rejected skip action must not leave partial in-memory state.");
+  assert.strictEqual(fs.readFileSync(storePath, "utf8"), futureRaw, "future update state must remain unchanged.");
+
+  fs.writeFileSync(storePath, "{not-json\n", { mode: 0o600 });
+  manager.loadStore();
+  assert.strictEqual(manager.storeError?.code, "UPDATE_STORE_CORRUPT", "corrupt update state should produce a stable recovery error.");
+  assert(fs.readdirSync(tempRoot).some((name) => name.startsWith("updates.json.corrupt-")), "corrupt update state should be preserved.");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}
 
 console.log("Versioning smoke checks passed.");

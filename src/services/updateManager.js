@@ -23,6 +23,7 @@ const UPDATE_MANIFEST_URLS = [
 ].filter(isProductionSafeMetadataUrl);
 const UPDATE_STATUS_CHANNEL = "updates:status";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const UPDATE_STORE_SCHEMA_VERSION = 1;
 
 function normalizeUpdateRepository(value) {
   const repository = String(value || "").trim();
@@ -241,6 +242,7 @@ class UpdateManager extends EventEmitter {
     this.notifiedVersions = new Set();
     this.interval = null;
     this.storePath = "";
+    this.storeError = null;
   }
 
   initialize() {
@@ -273,17 +275,57 @@ class UpdateManager extends EventEmitter {
   }
 
   loadStore() {
-    try {
-      const store = JSON.parse(fs.readFileSync(this.storePath, "utf8"));
-      this.skippedVersions = new Set(Array.isArray(store.skippedVersions) ? store.skippedVersions.map(normalizeVersion).filter(Boolean) : []);
-    } catch {
+    this.storeError = null;
+    if (!fs.existsSync(this.storePath)) {
       this.skippedVersions = new Set();
+      return;
+    }
+    let store;
+    try {
+      store = JSON.parse(fs.readFileSync(this.storePath, "utf8"));
+    } catch (error) {
+      const backupPath = `${this.storePath}.corrupt-${Date.now()}`;
+      try { fs.copyFileSync(this.storePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+      this.skippedVersions = new Set();
+      this.storeError = {
+        code: "UPDATE_STORE_CORRUPT",
+        message: "Saved update preferences are unreadable. The original file was preserved for recovery.",
+        causeCode: error?.code || "INVALID_JSON",
+      };
+      this.state.error = this.storeError.message;
+      return;
+    }
+    const schemaVersion = Number.isInteger(store?.schemaVersion) ? store.schemaVersion : 0;
+    if (schemaVersion > UPDATE_STORE_SCHEMA_VERSION) {
+      this.skippedVersions = new Set();
+      this.storeError = {
+        code: "UPDATE_STORE_SCHEMA_UNSUPPORTED",
+        message: "Saved update preferences were created by a newer application version.",
+        schemaVersion,
+        supportedSchemaVersion: UPDATE_STORE_SCHEMA_VERSION,
+      };
+      this.state.error = this.storeError.message;
+      return;
+    }
+    this.skippedVersions = new Set(Array.isArray(store.skippedVersions) ? store.skippedVersions.map(normalizeVersion).filter(Boolean) : []);
+    if (schemaVersion < UPDATE_STORE_SCHEMA_VERSION) {
+      const backupPath = `${this.storePath}.schema-v${schemaVersion}.backup`;
+      if (!fs.existsSync(backupPath)) fs.copyFileSync(this.storePath, backupPath, fs.constants.COPYFILE_EXCL);
+      this.saveStore();
     }
   }
 
   saveStore() {
+    if (this.storeError) {
+      throw Object.assign(new Error(this.storeError.message), {
+        code: this.storeError.code,
+        details: this.storeError,
+      });
+    }
     fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
-    fs.writeFileSync(this.storePath, `${JSON.stringify({ skippedVersions: [...this.skippedVersions] }, null, 2)}\n`);
+    const tempPath = `${this.storePath}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(tempPath, `${JSON.stringify({ schemaVersion: UPDATE_STORE_SCHEMA_VERSION, skippedVersions: [...this.skippedVersions] }, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(tempPath, this.storePath);
   }
 
   log(message, details = {}, level = "info") {
@@ -306,6 +348,7 @@ class UpdateManager extends EventEmitter {
     return {
       ...this.state,
       skippedVersions: [...this.skippedVersions],
+      storeError: this.storeError,
       logs: this.logs,
     };
   }
@@ -599,6 +642,12 @@ class UpdateManager extends EventEmitter {
   skip(version) {
     const target = this.state.latest?.releaseKey || normalizeVersion(version || this.state.latest?.latestReleaseVersion || this.state.latest?.latestVersion);
     if (target) {
+      if (this.storeError) {
+        throw Object.assign(new Error(this.storeError.message), {
+          code: this.storeError.code,
+          details: this.storeError,
+        });
+      }
       this.skippedVersions.add(target);
       this.saveStore();
       this.state.status = "skipped";
@@ -614,6 +663,7 @@ class UpdateManager extends EventEmitter {
 
 module.exports = {
   UPDATE_STATUS_CHANNEL,
+  UPDATE_STORE_SCHEMA_VERSION,
   UpdateManager,
   compareVersions,
   compareReleaseBuilds,

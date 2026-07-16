@@ -26419,19 +26419,25 @@ function createSecurityConfirmation({ title, message, phrase = "", confirmLabel 
       overlay.remove();
       resolve(value);
     };
+    const submit = () => {
+      const typed = overlay.querySelector("[data-confirm-phrase]")?.value || "";
+      if (phrase && typed !== phrase) {
+        showToast(`Type ${phrase} to confirm.`);
+        overlay.querySelector("[data-confirm-phrase]")?.focus();
+        return;
+      }
+      close(phrase || true);
+    };
     const onKeyDown = (event) => {
       if (event.key === "Escape") close(null);
+      if (event.key === "Enter" && event.target?.matches?.("[data-confirm-phrase]")) {
+        event.preventDefault();
+        submit();
+      }
     };
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay || event.target.closest("[data-confirm-cancel]")) close(null);
-      if (event.target.closest("[data-confirm-ok]")) {
-        const typed = overlay.querySelector("[data-confirm-phrase]")?.value || "";
-        if (phrase && typed !== phrase) {
-          showToast(`Type ${phrase} to confirm.`);
-          return;
-        }
-        close(phrase || true);
-      }
+      if (event.target.closest("[data-confirm-ok]")) submit();
     });
     document.addEventListener("keydown", onKeyDown);
     document.body.appendChild(overlay);

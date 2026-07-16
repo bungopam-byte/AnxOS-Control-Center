@@ -45,6 +45,7 @@
 | Marketplace IPC authorization | `npm run marketplace:ipc-authorization:smoke` |
 | Dependency IPC error contract | `npm run dependencies:ipc-error-contract:smoke` |
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
+| Modal keyboard/focus behavior | `npm run ui:modal-behavior:smoke` |
 | Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke` |
 | Full repository gate | `npm run agent:validate` |
 

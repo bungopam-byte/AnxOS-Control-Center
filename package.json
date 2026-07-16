@@ -164,6 +164,7 @@
     "command-palette:smoke": "node scripts/command-palette-smoke.js",
     "renderer-safety:smoke": "node scripts/renderer-safety-smoke.js",
     "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
+    "ui:modal-behavior:smoke": "node scripts/modal-behavior-smoke.js",
     "public-access:smoke": "node scripts/public-access-smoke.js",
     "packaging:smoke": "node scripts/packaging-artifact-smoke.js",
     "release:artifacts:smoke": "node scripts/validate-release-artifacts.js --fixture",

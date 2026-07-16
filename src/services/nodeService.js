@@ -759,7 +759,7 @@ function readNodeState() {
 function writeNodeState(state) {
   ensureConfigDirectory();
   const nodes = state.nodes.map((node) => {
-    if (node.kind === "agent" && node.id && node.agentToken) {
+    if (node.kind === "agent" && node.id && node.agentToken && getNodeToken(node.id) !== node.agentToken) {
       setNodeToken(node.id, node.agentToken);
     }
     return toPersistentNode(node);

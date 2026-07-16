@@ -4,6 +4,7 @@ const { app } = require("electron");
 const { decryptPayload, encryptPayload } = require("./secureSessionStore");
 
 const NODE_CREDENTIAL_SCHEMA_VERSION = 2;
+let cachedStore = null;
 
 class NodeCredentialStoreError extends Error {
   constructor(message, code, details = {}) {
@@ -32,14 +33,24 @@ function normalizeNodeId(nodeId) {
   return trimValue(nodeId).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 96);
 }
 
+function cloneStore(store) {
+  return {
+    schemaVersion: NODE_CREDENTIAL_SCHEMA_VERSION,
+    nodes: Object.fromEntries(Object.entries(store?.nodes || {}).map(([nodeId, credential]) => [nodeId, { ...credential }])),
+  };
+}
+
 function readStore() {
   const filePath = getNodeCredentialsPath();
   if (!fs.existsSync(filePath)) {
     return { schemaVersion: NODE_CREDENTIAL_SCHEMA_VERSION, nodes: {} };
   }
   let parsed;
+  let raw;
   try {
-    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    raw = fs.readFileSync(filePath, "utf8");
+    if (cachedStore?.filePath === filePath && cachedStore.raw === raw) return cloneStore(cachedStore.store);
+    parsed = JSON.parse(raw);
   } catch (error) {
     const backupPath = `${filePath}.corrupt-${Date.now()}`;
     try {
@@ -65,10 +76,12 @@ function readStore() {
       if (!decrypted || typeof decrypted !== "object" || Array.isArray(decrypted)) {
         throw new Error("Encrypted credential payload is invalid.");
       }
-      return {
+      const store = {
         schemaVersion: NODE_CREDENTIAL_SCHEMA_VERSION,
         nodes: decrypted.nodes && typeof decrypted.nodes === "object" && !Array.isArray(decrypted.nodes) ? decrypted.nodes : {},
       };
+      cachedStore = { filePath, raw, store: cloneStore(store) };
+      return cloneStore(store);
     } catch (error) {
       throw new NodeCredentialStoreError(
         "Saved node credentials could not be decrypted on this device.",
@@ -90,15 +103,19 @@ function readStore() {
 function writeEncryptedStore(filePath, nodes) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tempPath, `${JSON.stringify({
+  const raw = `${JSON.stringify({
     schemaVersion: NODE_CREDENTIAL_SCHEMA_VERSION,
     encrypted: encryptPayload({ nodes: nodes || {} }, filePath),
-  }, null, 2)}\n`, { mode: 0o600 });
+  }, null, 2)}\n`;
+  fs.writeFileSync(tempPath, raw, { mode: 0o600 });
   fs.renameSync(tempPath, filePath);
+  return raw;
 }
 
 function writeStore(store) {
-  writeEncryptedStore(getNodeCredentialsPath(), store.nodes);
+  const filePath = getNodeCredentialsPath();
+  const raw = writeEncryptedStore(filePath, store.nodes);
+  cachedStore = { filePath, raw, store: cloneStore(store) };
 }
 
 function getNodeToken(nodeId) {

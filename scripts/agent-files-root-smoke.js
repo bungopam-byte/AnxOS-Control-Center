@@ -127,6 +127,50 @@ async function main() {
     const tempArtifacts = (await fs.readdir(homeRoot)).filter((name) => name.includes("atomic-save.txt") && name.endsWith(".tmp"));
     assert.deepStrictEqual(tempArtifacts, [], "Successful atomic writes must not leave temporary files behind.");
 
+    const unsafeCopySource = path.join(homeRoot, "unsafe-copy-source");
+    const unsafeCopyDestination = path.join(homeRoot, "unsafe-copy-destination");
+    await fs.mkdir(unsafeCopySource);
+    await fs.writeFile(path.join(unsafeCopySource, "regular.txt"), "regular", "utf8");
+    await fs.symlink(outsideWriteTarget, path.join(unsafeCopySource, "outside-link.txt"));
+    await assertRejectsWithCode(
+      fileService.mutateFile("copy", { sourcePath: unsafeCopySource, destinationPath: unsafeCopyDestination }),
+      "COPY_SYMLINK_UNSUPPORTED",
+      "Recursive copies must reject nested symbolic links instead of reproducing an escape path.",
+    );
+    await assert.rejects(fs.stat(unsafeCopyDestination), { code: "ENOENT" });
+
+    const copySource = path.join(homeRoot, "copy-source.txt");
+    const copyDestination = path.join(homeRoot, "copy-destination.txt");
+    await fs.writeFile(copySource, "replacement", "utf8");
+    await fs.writeFile(copyDestination, "original", "utf8");
+    await assertRejectsWithCode(
+      fileService.mutateFile("copy", { sourcePath: copySource, destinationPath: copyDestination }),
+      "FILES_CONFLICT",
+      "Copy must not overwrite an existing file without explicit confirmation.",
+    );
+    assert.strictEqual(await fs.readFile(copyDestination, "utf8"), "original");
+    await fileService.mutateFile("copy", { sourcePath: copySource, destinationPath: copyDestination, conflictPolicy: "replace" });
+    assert.strictEqual(await fs.readFile(copyDestination, "utf8"), "replacement");
+    assert.deepStrictEqual(
+      (await fs.readdir(homeRoot)).filter((name) => name.includes("copy-destination.txt") && name.endsWith(".copy.tmp")),
+      [],
+      "Atomic copy replacement must not leave temporary files behind.",
+    );
+
+    const copyDirectorySource = path.join(homeRoot, "copy-directory-source");
+    const copyDirectoryDestination = path.join(homeRoot, "copy-directory-destination");
+    await fs.mkdir(copyDirectorySource);
+    await fs.mkdir(copyDirectoryDestination);
+    await assertRejectsWithCode(
+      fileService.mutateFile("copy", {
+        sourcePath: copyDirectorySource,
+        destinationPath: copyDirectoryDestination,
+        conflictPolicy: "replace",
+      }),
+      "DIRECTORY_REPLACE_UNSUPPORTED",
+      "Folder replacement must be rejected until it can be committed and rolled back safely.",
+    );
+
     const danglingLink = path.join(homeRoot, "dangling-link");
     await fs.symlink(path.join(tempRoot, "does-not-exist"), danglingLink);
     await assertRejectsWithCode(fileService.resolveAllowedPath(danglingLink), "PATH_NOT_FOUND", "Realpath failures for missing targets must return a structured missing-path error.");

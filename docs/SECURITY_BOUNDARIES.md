@@ -92,7 +92,11 @@ The Agent authenticates requests before routing. Pairing endpoints are
 rate-limited and issue permanent credentials through the pairing workflow.
 Action and route permissions are checked server-side. Filesystem paths are
 canonicalized against configured roots; target symlinks are rejected and file
-writes are atomic.
+writes are atomic. Recursive Agent copies validate every source entry, reject symbolic links and
+special files, stage into a temporary sibling, and become visible through a
+rename. Existing files require an explicit replacement decision; existing
+directories are not replaced because that operation cannot currently provide
+atomic rollback.
 
 ## Secrets and diagnostics
 

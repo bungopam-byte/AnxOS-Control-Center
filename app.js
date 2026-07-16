@@ -22937,6 +22937,7 @@ async function copyRemoteEntry() {
     return;
   }
   let destinationPath = joinFilesPath(getFilesParentPath(entry.path), nextName);
+  let conflictPolicy = "error";
   const existing = findFileEntryByName(nextName);
   if (existing) {
     const conflict = await resolveNameConflict({ incomingName: nextName, destinationPath, existing, allowReplace: true, allowRename: true });
@@ -22944,6 +22945,7 @@ async function copyRemoteEntry() {
     if (conflict.action === "rename") {
       destinationPath = conflict.path;
     }
+    if (conflict.action === "replace") conflictPolicy = "replace";
     if (conflict.action === "replace" && existing.isDirectory !== entry.isDirectory) {
       showToast("Cannot replace a different item type with copy.", "warning");
       return;
@@ -22956,6 +22958,7 @@ async function copyRemoteEntry() {
       storageId: getFilesRequestStorageId(),
       sourcePath: entry.path,
       destinationPath,
+      conflictPolicy,
     },
     latestFilesListing?.local ? "Local item copied." : "Remote item copied.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",
@@ -22996,6 +22999,7 @@ async function pasteFilesClipboard() {
   }
   let destinationName = entry.name;
   let destinationPath = joinFilesPath(filesConnectionState.currentPath || filesConnectionState.homePath || "/", destinationName);
+  let conflictPolicy = "error";
   const existing = findFileEntryByName(destinationName);
   if (existing) {
     const conflict = await resolveNameConflict({ incomingName: destinationName, destinationPath, existing, allowReplace: true, allowRename: true });
@@ -23004,6 +23008,7 @@ async function pasteFilesClipboard() {
       destinationName = conflict.name;
       destinationPath = conflict.path;
     }
+    if (conflict.action === "replace") conflictPolicy = "replace";
     if (conflict.action === "replace" && existing.isDirectory !== entry.isDirectory) {
       showToast("Cannot replace a different item type with paste.", "warning");
       return;
@@ -23016,6 +23021,7 @@ async function pasteFilesClipboard() {
       storageId: getFilesRequestStorageId(),
       sourcePath: entry.path,
       destinationPath,
+      conflictPolicy,
     },
     latestFilesListing?.local ? "Local item pasted." : "Remote item pasted.",
     filesConnectionState.currentPath || filesConnectionState.homePath || "/",

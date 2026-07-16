@@ -1158,7 +1158,12 @@ class FileService extends EventEmitter {
 
   async copy(options = {}) {
     if (shouldUseNodeAgent(options)) {
-      return mutateFile({ action: "copy", sourcePath: options.sourcePath || options.path, destinationPath: options.destinationPath || options.newPath }, getFileNodeConfig(options));
+      return mutateFile({
+        action: "copy",
+        sourcePath: options.sourcePath || options.path,
+        destinationPath: options.destinationPath || options.newPath,
+        conflictPolicy: options.conflictPolicy,
+      }, getFileNodeConfig(options));
     }
     if (shouldUseLocalFiles(options)) {
       const sourcePath = normalizeLocalPath(options.sourcePath || options.path, options.currentPath || getLocalHomePath());

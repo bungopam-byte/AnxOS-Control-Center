@@ -644,6 +644,87 @@ async function atomicWriteFile(targetPath, content, options = {}) {
   }
 }
 
+async function pathExists(filePath) {
+  return fsPromises.lstat(filePath).then(() => true, (error) => {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  });
+}
+
+async function assertCopyTreeSafe(sourcePath) {
+  const stats = await fsPromises.lstat(sourcePath);
+  if (stats.isSymbolicLink()) {
+    throw createFileError("COPY_SYMLINK_UNSUPPORTED", 400, "Folders containing symbolic links cannot be copied safely.", {
+      field: "sourcePath",
+      value: sourcePath,
+      suggestion: "Remove the symbolic link or copy regular files separately.",
+    });
+  }
+  if (!stats.isFile() && !stats.isDirectory()) {
+    throw createFileError("COPY_FILE_TYPE_UNSUPPORTED", 400, "This filesystem entry type cannot be copied safely.", {
+      field: "sourcePath",
+      value: sourcePath,
+    });
+  }
+  if (!stats.isDirectory()) return stats;
+  const entries = await fsPromises.readdir(sourcePath);
+  for (const entry of entries) {
+    await assertCopyTreeSafe(path.join(sourcePath, entry));
+  }
+  return stats;
+}
+
+async function copyPathAtomically(sourcePath, destinationPath, conflictPolicy) {
+  const sourceStats = await assertCopyTreeSafe(sourcePath);
+  const destinationExists = await pathExists(destinationPath);
+  if (destinationExists && conflictPolicy !== "replace") {
+    throw createFileError("FILES_CONFLICT", 409, "An item already exists at the copy destination.", {
+      field: "destinationPath",
+      value: destinationPath,
+      suggestion: "Choose a different destination or explicitly confirm replacement.",
+    });
+  }
+  if (destinationExists) {
+    const destinationStats = await fsPromises.lstat(destinationPath);
+    if (sourceStats.isDirectory() || destinationStats.isDirectory()) {
+      throw createFileError("DIRECTORY_REPLACE_UNSUPPORTED", 409, "Folder replacement is not supported because it cannot be committed atomically.", {
+        field: "destinationPath",
+        value: destinationPath,
+        suggestion: "Choose a new folder name or delete the existing folder explicitly first.",
+      });
+    }
+  }
+  if (sourceStats.isDirectory() && isInsideRoot(destinationPath, sourcePath)) {
+    throw createFileError("COPY_DESTINATION_INSIDE_SOURCE", 400, "A folder cannot be copied inside itself.", {
+      field: "destinationPath",
+      value: destinationPath,
+    });
+  }
+
+  const tempPath = path.join(path.dirname(destinationPath), `.${path.basename(destinationPath)}.${process.pid}.${Date.now()}.copy.tmp`);
+  try {
+    await fsPromises.cp(sourcePath, tempPath, {
+      recursive: sourceStats.isDirectory(),
+      errorOnExist: true,
+      force: false,
+      filter: async (candidate) => {
+        const stats = await fsPromises.lstat(candidate);
+        if (!stats.isFile() && !stats.isDirectory()) {
+          throw createFileError("COPY_FILE_TYPE_UNSUPPORTED", 400, "The source changed to an unsupported filesystem entry during copy.", {
+            field: "sourcePath",
+            value: candidate,
+          });
+        }
+        return true;
+      },
+    });
+    await fsPromises.rename(tempPath, destinationPath);
+  } catch (error) {
+    await fsPromises.rm(tempPath, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 function getFileType(stats) {
   if (stats.isDirectory()) {
     return "directory";
@@ -838,7 +919,7 @@ async function mutateFile(action, payload = {}) {
     const source = await resolveAllowedPath(payload.sourcePath || payload.oldPath);
     const destination = await resolveAllowedTargetPath(payload.destinationPath || payload.newPath);
     if (action === "rename") await fsPromises.rename(source.path, destination.path);
-    else await fsPromises.cp(source.path, destination.path, { recursive: true, errorOnExist: false });
+    else await copyPathAtomically(source.path, destination.path, payload.conflictPolicy);
     return action === "rename"
       ? { oldPath: source.path, newPath: destination.path, renamed: true }
       : { sourcePath: source.path, destinationPath: destination.path, copied: true };

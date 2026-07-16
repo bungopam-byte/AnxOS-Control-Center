@@ -470,14 +470,11 @@ function getRequestNodeId(options = {}) {
   }
   const selectedNodeId = getSelectedNodeId() || APPLICATION_HOST_NODE_ID;
   if (selectedNodeId !== APPLICATION_HOST_NODE_ID) {
-    diagnostics.log("warn", "nodes", "implicit-node-fallback-blocked", "Blocked missing nodeId on agent-backed service request.", {
+    diagnostics.log("info", "nodes", "implicit-node-fallback-selected", "Using selected node for agent-backed service request with no explicit nodeId.", {
       selectedNodeId,
-      code: "NODE_REQUIRED",
+      code: "SELECTED_NODE_DEFAULT",
     }, { file: "nodes" });
-    const error = new Error("Agent-backed requests require an explicit nodeId.");
-    error.code = "NODE_REQUIRED";
-    error.statusCode = 400;
-    throw error;
+    return selectedNodeId;
   }
   return APPLICATION_HOST_NODE_ID;
 }

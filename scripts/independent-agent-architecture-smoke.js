@@ -57,23 +57,23 @@ const serviceRouter = fs.readFileSync(path.join(root, "src/services/serviceRoute
 ].forEach((needle) => assert(appSource.includes(needle), `Renderer should preserve node isolation behavior: ${needle}`));
 
 [
-  "const HEALTH_STATES = new Set([\"connecting\", \"online\", \"offline\", \"authentication_failed\", \"agent_incompatible\", \"unknown\"])",
+  "const HEALTH_STATES = new Set([\"connecting\", \"online\", \"offline\", \"authentication_failed\", \"agent_incompatible\", \"degraded\", \"unknown\"])",
   "function checkNodeHealth",
   "function checkAllNodeHealth",
   "const { agentToken, connection, token, ...persistentNode } = node;",
   "setNodeToken(node.id, node.agentToken)",
+  "targetLabel: `node:${node.id}`",
 ].forEach((needle) => assert(nodeService.includes(needle), `Node service should include ${needle}`));
 
 [
   "function forNode(nodeId)",
   "code: \"NODE_DISABLED\"",
   "Select a node before contacting an Agent.",
-  "targetLabel: `node:${node.id}`",
 ].forEach((needle) => assert(agentClient.includes(needle), `Node-aware agent client should include ${needle}`));
 
 [
-  "Agent-backed requests require an explicit nodeId.",
-  "implicit-node-fallback-blocked",
+  "implicit-node-fallback-selected",
+  "SELECTED_NODE_DEFAULT",
   "getRequestNodeId(options)",
   "withNodeContext(await agentClient.listBackups",
 ].forEach((needle) => assert(serviceRouter.includes(needle), `Service router should include ${needle}`));

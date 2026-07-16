@@ -10,6 +10,7 @@ process.env.ANXHUB_CONFIG_DIR = tempDir;
 const serviceRouter = require("../src/services/serviceRouter");
 const { getNodesPath } = require("../src/services/nodeService");
 const { setNodeToken } = require("../src/services/nodeCredentialStore");
+const agentClient = require("../src/services/agentClient");
 
 fs.mkdirSync(tempDir, { recursive: true });
 
@@ -34,19 +35,21 @@ function writeNodes(selectedNodeId) {
 
 (async () => {
   writeNodes("node-a");
-  await assert.rejects(
-    () => serviceRouter.listInstances(),
-    (error) => error?.code === "NODE_REQUIRED" && /explicit nodeId/i.test(error.message),
-    "agent-backed service calls must reject missing nodeId instead of falling back to the selected Agent",
-  );
+  const originalForNode = agentClient.forNode;
+  agentClient.forNode = (nodeId) => ({
+    listInstances: async () => ({ instances: [{ id: "same-instance", nodeId }] }),
+  });
+  const remoteList = await serviceRouter.listInstances();
+  assert.strictEqual(remoteList.instances[0].nodeId, "node-a", "agent-backed service calls should use the selected Agent when nodeId is omitted.");
+  agentClient.forNode = originalForNode;
 
   writeNodes("application-host");
   const localList = await serviceRouter.listInstances();
   assert(Array.isArray(localList.instances), "application-host fallback should preserve local single-node behavior");
 
   const serviceSource = fs.readFileSync(path.join(root, "src/services/serviceRouter.js"), "utf8");
-  assert(serviceSource.includes("implicit-node-fallback-blocked"), "Deprecated implicit node fallback should emit safe diagnostics.");
-  assert(serviceSource.includes("Agent-backed requests require an explicit nodeId."), "Missing node IDs should fail clearly.");
+  assert(serviceSource.includes("implicit-node-fallback-selected"), "Implicit selected-node routing should emit diagnostics.");
+  assert(serviceSource.includes("SELECTED_NODE_DEFAULT"), "Selected node defaults should be identifiable in diagnostics.");
 
   console.log("Node compatibility cleanup smoke checks passed.");
 })().catch((error) => {

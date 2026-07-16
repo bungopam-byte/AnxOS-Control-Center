@@ -1041,11 +1041,16 @@ function resolveNodeForAgentIdentity(payload = {}) {
 function getSelectedNodeId() { return readNodeState().selectedNodeId; }
 function getAllNodesSync() { const state = readNodeState(); return [getApplicationHostNode(), ...state.nodes]; }
 function getNodeAgentConfigFromNode(node) {
-  return normalizeAgentSettings({
+  return {
+    ...normalizeAgentSettings({
     backendMode: "agent",
     agentUrl: node.baseUrl || node.agentUrl,
     agentToken: getNodeToken(node.id),
-  });
+    }),
+    nodeId: node.id,
+    agentNodeId: node.id,
+    targetLabel: `node:${node.id}`,
+  };
 }
 function getNodeAgentConfig(nodeId) { const node = getNode(nodeId); if (node.kind !== "agent") throw Object.assign(new Error("Selected node is not an Agent."), { code: "NODE_NOT_AGENT" }); return getNodeAgentConfigFromNode(node); }
 function getExecutionTarget(nodeId) { const node = getNode(nodeId); return node.kind === "agent" ? { type: "agent", nodeId: node.id, deviceId: node.agentIdentity.deviceId, localAgent: node.localAgent === true, capabilities: buildNodeCapabilities(node), config: getNodeAgentConfigFromNode(node) } : { type: "application-host", nodeId: APPLICATION_HOST_NODE_ID, hostId: node.applicationHost.hostId, capabilities: buildNodeCapabilities(node) }; }

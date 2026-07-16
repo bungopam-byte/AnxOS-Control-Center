@@ -30,7 +30,7 @@ const publicAccessService = read("src/services/publicAccessProviderService.js");
 
 assert(serviceRouter.includes("if (shouldPreserveAgentError(error)) {\n        throw error;\n      }"), "Docker capability probing must preserve authentication and node errors.");
 assert(serviceRouter.includes("async function getAgentAmpSnapshot(options = {})") && serviceRouter.includes("if (shouldPreserveAgentError(error)) throw error;"), "AMP must preserve authentication and node errors.");
-assert(serviceRouter.includes("const selectedNodeId = getSelectedNodeId() || APPLICATION_HOST_NODE_ID;") && serviceRouter.includes("implicit-node-fallback-blocked"), "Feature services must block implicit selected-node fallback for agent requests.");
+assert(serviceRouter.includes("const selectedNodeId = getSelectedNodeId() || APPLICATION_HOST_NODE_ID;") && serviceRouter.includes("implicit-node-fallback-selected"), "Feature services must route implicit agent requests through the selected node.");
 
 assert(systemService.includes("isExpectedAgentSystemError") && systemService.includes("Expected selected node stats failure"), "System expected Agent failures must be logged without full stacks.");
 assert(systemService.includes("if (!agentClient.isCompatibilityFallbackAllowed(error))") && systemService.includes("throw error;"), "System stats must not use compatibility fallback after authentication failures.");

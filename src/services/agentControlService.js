@@ -1360,11 +1360,13 @@ async function getStatus(_options = {}) {
   let latencyMs = null;
   const started = Date.now();
 
-  try {
-    health = await agentClient.getHealth(getLocalAgentHealthConfig(config));
-    latencyMs = Date.now() - started;
-  } catch {
-    // Missing localhost is expected when the user is controlling a remote Agent.
+  if (_options.skipProbe !== true) {
+    try {
+      health = await agentClient.getHealth(getLocalAgentHealthConfig(config));
+      latencyMs = Date.now() - started;
+    } catch {
+      // Missing localhost is expected when the user is controlling a remote Agent.
+    }
   }
 
   const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok);
@@ -1456,17 +1458,41 @@ async function getStatus(_options = {}) {
 
 async function listAgents(options = {}) {
   const requestedSelectedNodeId = typeof options.selectedNodeId === "string" ? options.selectedNodeId.trim() : "";
-  const local = await getStatus(options);
   const selectedNodeId = requestedSelectedNodeId || getSelectedNodeId();
   const selectedNode = getNode(selectedNodeId);
+  const registeredRemoteSelected = selectedNode?.kind === "agent" && selectedNode.localAgent !== true;
+  const local = await getStatus({ ...options, skipProbe: registeredRemoteSelected });
   const effective = agentClient.getEffectiveAgentSettings();
   const configuredUrlKey = effective.backendMode === "agent" ? normalizeAgentUrlForComparison(effective.agentUrl) : null;
   const selectedNodeUrlKey = selectedNode?.kind === "agent" ? normalizeAgentUrlForComparison(selectedNode.agentUrl || selectedNode.baseUrl) : null;
   const configuredMatchesSelectedNode = Boolean(configuredUrlKey && selectedNodeUrlKey && configuredUrlKey === selectedNodeUrlKey);
-  const configured = await getConfiguredAgentStatus({ skipProbe: configuredMatchesSelectedNode });
+  const configured = await getConfiguredAgentStatus({ skipProbe: registeredRemoteSelected || configuredMatchesSelectedNode });
   const remote = await Promise.all(getAllNodesSync().filter((node) => node.kind === "agent").map(async (node) => {
-    const started = Date.now();
     const healthConfig = getRemoteHealthConfig(node, selectedNodeId);
+    if (registeredRemoteSelected && node.id !== selectedNodeId) {
+      return {
+        local: false,
+        targetType: healthConfig.targetLabel,
+        healthTargetLabel: healthConfig.targetLabel,
+        nodeId: node.id,
+        state: "Registered",
+        name: node.displayName,
+        agentUrl: node.agentUrl || node.baseUrl || null,
+        identity: node.agentIdentity,
+        agentVersion: node.agentIdentity?.agentVersion || null,
+        latencyMs: null,
+        mostRecentError: { code: "NOT_SELECTED", message: "Another registered node is selected; this node was not probed." },
+        agentStatus: createAgentControlStatusSnapshot(node, {
+          state: AGENT_STATUS.OFFLINE,
+          connected: false,
+          reachable: null,
+          message: "Another registered node is selected; this node was not probed.",
+          targetId: node.id,
+          targetType: "registered-node",
+        }),
+      };
+    }
+    const started = Date.now();
     try {
       const health = await agentClient.getHealth(healthConfig);
       let stats = null;

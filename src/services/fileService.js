@@ -37,6 +37,25 @@ async function pathExists(targetPath) {
   }
 }
 
+function createLocalTemporaryPath(targetPath, purpose = "write") {
+  return path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${process.pid}.${Date.now()}.${purpose}.tmp`);
+}
+
+async function commitLocalFile(targetPath, writeTemporary, purpose = "write") {
+  const temporaryPath = createLocalTemporaryPath(targetPath, purpose);
+  try {
+    await writeTemporary(temporaryPath);
+    await fsPromises.rename(temporaryPath, targetPath);
+  } catch (error) {
+    await fsPromises.rm(temporaryPath, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+function createRemoteTemporaryPath(remotePath, purpose = "write") {
+  return posixPath.join(posixPath.dirname(remotePath), `.${posixPath.basename(remotePath)}.${process.pid}.${Date.now()}.${purpose}.tmp`);
+}
+
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -819,7 +838,8 @@ class FileService extends EventEmitter {
   }
 
   async writeRemoteBuffer(session, remotePath, buffer) {
-    const handle = await this.sftpCall(session, "open", remotePath, "w");
+    const temporaryPath = createRemoteTemporaryPath(remotePath);
+    const handle = await this.sftpCall(session, "open", temporaryPath, "wx");
     let position = 0;
 
     try {
@@ -837,6 +857,12 @@ class FileService extends EventEmitter {
         });
         position += nextChunk.length;
       }
+      await this.sftpCall(session, "close", handle);
+      await this.sftpCall(session, "rename", temporaryPath, remotePath);
+      return;
+    } catch (error) {
+      await this.sftpCall(session, "unlink", temporaryPath).catch(() => {});
+      throw error;
     } finally {
       try {
         await this.sftpCall(session, "close", handle);
@@ -1070,7 +1096,10 @@ class FileService extends EventEmitter {
     }
     if (shouldUseLocalFiles(options)) {
       const localPath = normalizeLocalPath(options.path, options.currentPath || getLocalHomePath());
-      await fsPromises.writeFile(localPath, typeof options.content === "string" ? options.content : "", "utf8");
+      await commitLocalFile(
+        localPath,
+        (temporaryPath) => fsPromises.writeFile(temporaryPath, typeof options.content === "string" ? options.content : "", { encoding: "utf8", flag: "wx", mode: 0o600 }),
+      );
       return { path: localPath, saved: true };
     }
     const session = await this.ensureSession(options);
@@ -1263,7 +1292,7 @@ class FileService extends EventEmitter {
         });
       }
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "running", path: destinationPath, percent: 20 });
-      await fsPromises.copyFile(localPath, destinationPath);
+      await commitLocalFile(destinationPath, (temporaryPath) => fsPromises.copyFile(localPath, temporaryPath, fs.constants.COPYFILE_EXCL), "upload");
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "complete", path: destinationPath, percent: 100 });
       return {
         canceled: false,
@@ -1308,9 +1337,10 @@ class FileService extends EventEmitter {
       let transferredBytes = 0;
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "running", path: remotePath, receivedBytes: 0, totalBytes: localSize, percent: localSize > 0 ? 0 : null });
 
+      const temporaryPath = createRemoteTemporaryPath(remotePath, "upload");
       try {
         const source = fs.createReadStream(localPath);
-        const destination = session.sftp.createWriteStream(remotePath);
+        const destination = session.sftp.createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 });
         this.attachTransferStream(controller, source);
         this.attachTransferStream(controller, destination);
         source.on("data", (chunk) => {
@@ -1327,11 +1357,15 @@ class FileService extends EventEmitter {
           });
         });
         await pipeline(source, destination);
+        if (controller?.canceled) {
+          throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
+        }
+        await this.sftpCall(session, "rename", temporaryPath, remotePath);
+      } catch (error) {
+        await this.sftpCall(session, "unlink", temporaryPath).catch(() => {});
+        throw error;
       } finally {
         this.finishTransferController(controller);
-      }
-      if (controller?.canceled) {
-        throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
       }
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "upload", status: "complete", path: remotePath, receivedBytes: localSize, totalBytes: localSize, percent: 100 });
 
@@ -1360,7 +1394,7 @@ class FileService extends EventEmitter {
       }
 
       const response = await downloadFile(remotePath, configOverride);
-      await fsPromises.writeFile(selection.filePath, response.buffer);
+      await commitLocalFile(selection.filePath, (temporaryPath) => fsPromises.writeFile(temporaryPath, response.buffer, { flag: "wx", mode: 0o600 }), "download");
       console.info(`[Files] Download completed via agent (${remotePath} -> ${selection.filePath})`);
 
       return {
@@ -1389,7 +1423,7 @@ class FileService extends EventEmitter {
       if (selection.canceled || !selection.filePath) {
         return { canceled: true };
       }
-      await fsPromises.copyFile(localPath, selection.filePath);
+      await commitLocalFile(selection.filePath, (temporaryPath) => fsPromises.copyFile(localPath, temporaryPath, fs.constants.COPYFILE_EXCL), "download");
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "download", status: "complete", path: localPath, percent: 100 });
       return {
         canceled: false,
@@ -1426,9 +1460,10 @@ class FileService extends EventEmitter {
       console.info(`[Files] Download transport selected: sftp (${remotePath})`);
       const controller = this.createTransferController(options.transferId, { nodeId: transferNodeId, path: remotePath, type: "download" });
       let transferredBytes = 0;
+      const temporaryPath = createLocalTemporaryPath(selection.filePath, "download");
       try {
         const source = session.sftp.createReadStream(remotePath);
-        const destination = fs.createWriteStream(selection.filePath);
+        const destination = fs.createWriteStream(temporaryPath, { flags: "wx", mode: 0o600 });
         this.attachTransferStream(controller, source);
         this.attachTransferStream(controller, destination);
         source.on("data", (chunk) => {
@@ -1445,11 +1480,15 @@ class FileService extends EventEmitter {
           });
         });
         await pipeline(source, destination);
+        if (controller?.canceled) {
+          throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
+        }
+        await fsPromises.rename(temporaryPath, selection.filePath);
+      } catch (error) {
+        await fsPromises.rm(temporaryPath, { force: true }).catch(() => {});
+        throw error;
       } finally {
         this.finishTransferController(controller);
-      }
-      if (controller?.canceled) {
-        throw new FileServiceError("Transfer canceled.", { code: "FILES_TRANSFER_CANCELED", status: 499 });
       }
       this.emitTransfer({ nodeId: transferNodeId, id: options.transferId || null, type: "download", status: "complete", path: remotePath, receivedBytes: attrs.size || 0, totalBytes: attrs.size || 0, percent: 100 });
 

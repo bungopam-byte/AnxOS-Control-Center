@@ -88,3 +88,9 @@ the safety snapshot. Rollback failure is reported separately as
 Desktop shutdown stops the updater and disposes Files and SSH services. Agent
 shutdown stops scheduling, cancels pending restart timers, rejects new sockets,
 drains existing sockets for up to five seconds, then exits.
+
+Desktop file edits, imports, Agent downloads, and SFTP transfers write to a
+unique sibling temporary path. The final destination is renamed only after the
+write or stream completes; failure and cancellation remove the temporary
+artifact. SFTP uploads follow the same temporary-upload and remote-rename
+contract.

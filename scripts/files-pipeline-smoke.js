@@ -101,6 +101,13 @@ async function main() {
     assert(localListing.connected && localListing.local, "Local filesystem provider should connect.");
     await localService.writeText({ storageId: "local", path: path.join(tempRoot, "local.txt"), content: "local" });
     assert.strictEqual((await localService.readText({ storageId: "local", path: path.join(tempRoot, "local.txt") })).content, "local", "Local provider should edit files.");
+    await localService.writeText({ storageId: "local", path: path.join(tempRoot, "local.txt"), content: "replacement" });
+    assert.strictEqual((await localService.readText({ storageId: "local", path: path.join(tempRoot, "local.txt") })).content, "replacement", "Local provider should atomically replace edited files.");
+    assert.deepStrictEqual(
+      (await fs.readdir(tempRoot)).filter((name) => name.includes("local.txt") && name.endsWith(".tmp")),
+      [],
+      "Successful local edits must not leave temporary artifacts.",
+    );
 
     const appSource = await fs.readFile(path.join(rootDir, "app.js"), "utf8");
     assert(appSource.includes('const FILES_AGENT_PROFILE_PREFIX = "files-profile:agent:"'), "Renderer should create stable Agent filesystem profile IDs.");
@@ -169,6 +176,8 @@ async function main() {
     assert(serviceSource.includes("getFilesystemIdentity(getFileNodeConfig(options))"), "Desktop file service should route Agent identity requests to the selected node.");
     assert(serviceSource.includes("FILES_CONFLICT"), "File service should reject upload conflicts instead of silently overwriting.");
     assert(serviceSource.includes("options.conflictPolicy !== \"replace\""), "File service should require explicit replace policy for upload conflicts.");
+    assert(serviceSource.includes("commitLocalFile") && serviceSource.includes("createRemoteTemporaryPath"), "File writes and transfers should stage into temporary paths before commit.");
+    assert(serviceSource.includes('this.sftpCall(session, "rename", temporaryPath, remotePath)'), "SFTP writes should become visible only after the temporary upload completes.");
 
     const preloadSource = await fs.readFile(path.join(rootDir, "preload.js"), "utf8");
     assert(preloadSource.includes("files:identity"), "Preload should expose the Files identity IPC bridge.");

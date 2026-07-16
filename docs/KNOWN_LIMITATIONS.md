@@ -46,6 +46,9 @@ These limitations are acceptable for Private Alpha if they are clearly communica
 - Docker features require Docker or compatible tooling on the selected node.
 - The UI must not fake empty Docker data when Docker is missing or the daemon is unavailable.
 - Docker cleanup actions are destructive and should be previewed before execution.
+- Docker capability reporting distinguishes supported, installed, configured,
+  running, reachable, authorized, and compatible state. Real daemon permissions,
+  registry access, and image pulls still require node-specific validation.
 
 ## Public Access
 

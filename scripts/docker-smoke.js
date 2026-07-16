@@ -4,6 +4,20 @@ const fs = require("fs");
 const path = require("path");
 
 function runNormalizationChecks() {
+  assert.deepStrictEqual(
+    dockerService.buildDockerCapabilityState({ installed: true, daemonRunning: false, errorCode: "DOCKER_PERMISSION_DENIED", version: "27.0.0" }),
+    {
+      supported: true,
+      installed: true,
+      configured: true,
+      running: false,
+      reachable: false,
+      authorized: false,
+      compatible: true,
+      repairGuidance: "Grant the Agent service account access to Docker, then restart the Agent and refresh status.",
+    },
+    "Docker capability state must distinguish installation, daemon reachability, and authorization.",
+  );
   const container = dockerService.normalizeContainer({
     ID: "abc123",
     Names: "lavalink",

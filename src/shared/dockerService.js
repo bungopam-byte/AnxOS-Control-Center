@@ -520,6 +520,26 @@ async function getComposeVersion(dockerPath = null) {
   return fallback.ok ? parseComposeVersion(fallback.stdout) : null;
 }
 
+function buildDockerCapabilityState({ installed = false, daemonRunning = false, errorCode = null, version = null } = {}) {
+  const permissionDenied = errorCode === "DOCKER_PERMISSION_DENIED";
+  return {
+    supported: true,
+    installed: Boolean(installed),
+    configured: Boolean(installed),
+    running: Boolean(daemonRunning),
+    reachable: Boolean(daemonRunning),
+    authorized: daemonRunning ? true : permissionDenied ? false : null,
+    compatible: installed ? Boolean(version) : null,
+    repairGuidance: !installed
+      ? "Install Docker on this node, then refresh Docker status."
+      : permissionDenied
+        ? "Grant the Agent service account access to Docker, then restart the Agent and refresh status."
+        : !daemonRunning
+          ? "Start the Docker daemon on this node, then refresh Docker status."
+          : null,
+  };
+}
+
 async function probeDocker() {
   const executable = await resolveDockerExecutable();
   const versionResult = executable.found
@@ -532,13 +552,15 @@ async function probeDocker() {
   const daemonRunning = installed && infoResult.ok;
   const unavailableError = installed && !daemonRunning ? classifyDockerFailure(infoResult) : null;
 
+  const dockerVersion = parseDockerVersion(versionResult.stdout);
   return {
     executable,
     installed,
     daemonRunning,
-    dockerVersion: parseDockerVersion(versionResult.stdout),
+    ...buildDockerCapabilityState({ installed, daemonRunning, errorCode: unavailableError?.code || null, version: dockerVersion }),
+    dockerVersion,
     composeVersion: installed ? await getComposeVersion(executable.executablePath).catch(() => null) : null,
-    version: parseDockerVersion(versionResult.stdout),
+    version: dockerVersion,
     message: !installed
       ? "Docker is not installed or is not available on PATH for this node."
       : daemonRunning
@@ -1095,6 +1117,7 @@ async function execContainer(container, payload = {}) {
 module.exports = {
   DockerServiceError,
   attachStats,
+  buildDockerCapabilityState,
   connectNetwork,
   createContainer,
   createNetwork,

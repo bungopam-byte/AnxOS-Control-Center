@@ -1054,11 +1054,12 @@ function assertStorageManagerArchitecture() {
   const fileSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "fileService.js"), "utf8");
   const storageSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "storageConnectionService.js"), "utf8");
   const ipcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "filesIpc.js"), "utf8");
+  const storageIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "storageWindowIpc.js"), "utf8");
 
   assert(indexSource.includes("data-storage-list") && addStorageSource.includes("SFTP Server"), "Files page should include Storage Manager UI and a dedicated SFTP add flow window.");
   assert(indexSource.includes("data-transfer-list") && indexSource.includes('data-file-action="copy"') && indexSource.includes('data-file-action="new-file"'), "Files page should expose transfer manager, copy, and new file actions.");
   assert(preloadSource.includes("listConnections") && preloadSource.includes("saveConnection") && preloadSource.includes("testConnection") && preloadSource.includes("cancelTransfer") && preloadSource.includes("storageWindow:open"), "Preload should expose storage connection, add-window, and transfer APIs.");
-  assert(mainSource.includes("openAddStorageWindow") && mainSource.includes("skipTaskbar") && mainSource.includes("storageWindow:saved"), "Main process should manage a single child Add Storage BrowserWindow.");
+  assert(mainSource.includes("openAddStorageWindow") && mainSource.includes("skipTaskbar") && storageIpcSource.includes("storageWindow:saved"), "Main process should manage a single child Add Storage BrowserWindow through trusted IPC.");
   assert(ipcSource.includes("files:listConnections") && ipcSource.includes("files:testConnection") && ipcSource.includes("files:copy") && ipcSource.includes("files:newFile") && ipcSource.includes("files:cancelTransfer"), "Files IPC should expose provider connection, transfer, and file operation APIs.");
   assert(storageSource.includes("safeStorage") && storageSource.includes("encryptSecret") && !storageSource.includes("console.log"), "Storage connections should encrypt secrets and avoid logging credentials.");
   assert(fileSource.includes("getProviderProfile") && fileSource.includes("storageId") && fileSource.includes("providerBadge") && fileSource.includes("async copy(") && fileSource.includes("createTransferController"), "FileService should route operations through provider-style storage IDs with cancellable transfers.");

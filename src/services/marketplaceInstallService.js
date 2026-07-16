@@ -2163,6 +2163,30 @@ async function continueProviderPackInstall(context = {}) {
   };
 }
 
+async function cleanupIncompleteInstance(instanceId, agentConfig) {
+  try {
+    await agentClient.deleteInstance(instanceId, agentConfig);
+    return { attempted: true, succeeded: true, instanceId };
+  } catch (error) {
+    const failure = serializeError(error, {
+      operation: "delete-incomplete-instance",
+      instanceId,
+    });
+    logMarketplaceInstallFailure(error, {
+      step: "ROLLBACK_FAILED",
+      instanceId,
+      cleanup: failure,
+    });
+    return {
+      attempted: true,
+      succeeded: false,
+      instanceId,
+      error: failure,
+      suggestion: "Delete the incomplete instance before retrying the installation.",
+    };
+  }
+}
+
 async function installPack(payload = {}) {
   const provider = String(payload.provider || payload.template?.provider || "anxhub").toLowerCase();
   const options = {
@@ -2296,17 +2320,14 @@ async function installPack(payload = {}) {
       };
     }
     emitProgress({ nodeId: installNodeId, instanceId, stage: "error", message: detailedMessage, current: 0, total: 0, percent: 0 });
-    if (created) {
-      try {
-        await agentClient.deleteInstance(instanceId, agentConfig);
-      } catch {
-        // Failed cleanup should not hide the original install error.
-      }
-    }
+    const cleanup = created
+      ? await cleanupIncompleteInstance(instanceId, agentConfig)
+      : { attempted: false, succeeded: false, instanceId };
     throw new MarketplaceInstallError(detailedMessage, error?.code || "MARKETPLACE_INSTALL_FAILED", {
       ...(error?.details || {}),
       originalName: error?.name || null,
       originalMessage: error?.message || null,
+      cleanup,
     });
   }
 }
@@ -2491,6 +2512,7 @@ module.exports = {
     buildInstallContext,
     buildInstallMetadata,
     buildInstancePayload,
+    cleanupIncompleteInstance,
     createPendingManualInstall,
     createManualDownloadRequiredError,
     createRestrictedCurseForgeFileError,

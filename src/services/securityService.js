@@ -52,13 +52,15 @@ const ROLE_PERMISSIONS = {
     "marketplace:read",
     "nodes:read",
     "ssh:read",
+    "settings:read",
+    "settings:preferences:write",
     "marketplace:install",
     "backups:read",
     "backups:write",
     "backups:restore",
     "settings:write",
   ],
-  User: ["instance:read", "instance:lifecycle", "files:read", "docker:read", "backups:read", "system:read", "dependencies:read", "public-access:read", "marketplace:read", "nodes:read", "ssh:read"],
+  User: ["instance:read", "instance:lifecycle", "files:read", "docker:read", "backups:read", "system:read", "dependencies:read", "public-access:read", "marketplace:read", "nodes:read", "ssh:read", "settings:read", "settings:preferences:write"],
 };
 const SECURITY_EVENT_DEFINITIONS = {
   "security.setup": { category: "authentication", severity: "info", message: "Local Owner security was configured." },

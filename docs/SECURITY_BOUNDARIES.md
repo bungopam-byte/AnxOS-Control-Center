@@ -73,6 +73,12 @@ Renderer and preload diagnostic writes require `system:read`, are rate-limited,
 bounded, and pass through shared structured-log redaction. Diagnostic capture,
 reading, export, clipboard, and folder access require `settings:write`.
 
+Global preference reads require `settings:read`; preference saves and scoped
+resets require `settings:preferences:write`. Owner-only keys and categories
+also pass the existing Owner capability checks. The public permission-discovery
+handler exposes only effective role/capability metadata and remains available
+to render signed-out states.
+
 ## Agent
 
 Desktop Agent Control list, status, diagnostics, configuration, lifecycle,

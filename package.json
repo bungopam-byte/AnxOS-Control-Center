@@ -137,6 +137,7 @@
     "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
     "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",
     "settings:permissions:smoke": "node scripts/settings-permissions-smoke.js",
+    "settings:ipc-authorization:smoke": "node scripts/settings-ipc-authorization-smoke.js",
     "settings:permissions:runtime": "node scripts/settings-permissions-runtime-smoke.js",
     "onboarding:smoke": "node scripts/onboarding-smoke.js",
     "maintenance:smoke": "node scripts/maintenance-smoke.js",

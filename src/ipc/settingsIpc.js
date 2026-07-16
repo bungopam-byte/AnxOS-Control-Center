@@ -28,7 +28,7 @@ const {
   getSettingsPermissions,
 } = require("../services/settingsPermissionService");
 const curseforgeProvider = require("../services/providers/curseforgeProvider");
-const { audit } = require("../services/securityService");
+const { audit, requirePermission } = require("../services/securityService");
 
 function getAgentSettingsPayload() {
   const stored = readAgentSettings();
@@ -186,14 +186,19 @@ async function testSelectedAgentCurseForgeConnection() {
 
 function registerSettingsIpc() {
   ipcMain.handle("settings:getPermissions", async () => getSettingsPermissions());
-  ipcMain.handle("settings:getPreferences", async () => readPreferences());
+  ipcMain.handle("settings:getPreferences", async () => {
+    requirePermission("settings:read", "preferences");
+    return readPreferences();
+  });
   ipcMain.handle("settings:savePreferences", async (_, payload = {}) => {
+    requirePermission("settings:preferences:write", "preferences");
     assertCanWriteSettingsPayload(payload.settings || payload, "preferences");
     const result = updatePreferences(payload.settings || payload);
     audit({ action: "settings.preferences.save", target: "preferences" });
     return result;
   });
   ipcMain.handle("settings:resetPreferences", async (_, payload = {}) => {
+    requirePermission("settings:preferences:write", payload.category || "preferences");
     assertCanResetSettingsCategory(payload.category || null);
     const result = resetPreferences(payload.category || null);
     audit({ action: "settings.preferences.reset", target: payload.category || "all" });

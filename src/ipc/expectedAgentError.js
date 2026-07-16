@@ -73,12 +73,15 @@ function expectedAgentFailure(channel, error = {}) {
   };
 }
 
-function wrapExpectedAgentRead(channel, operation) {
+function wrapExpectedAgentRead(channel, operation, unexpectedErrorOptions = null) {
   return Promise.resolve()
     .then(operation)
     .catch((error) => {
       if (isExpectedAgentError(error)) {
         return expectedAgentFailure(channel, error);
+      }
+      if (unexpectedErrorOptions) {
+        throw createIpcError(error, unexpectedErrorOptions);
       }
       throw error;
     });
@@ -93,3 +96,4 @@ module.exports = {
   sanitizeExpectedAgentError,
   wrapExpectedAgentRead,
 };
+const { createIpcError } = require("../shared/ipcError");

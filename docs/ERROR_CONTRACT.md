@@ -48,6 +48,10 @@ logging remains non-throwing by contract and still authorizes before writing.
 Maintenance scan and cleanup IPC use a shared domain wrapper after enforcing
 the settings-write boundary. Cleanup lock, permission, and filesystem failures
 retain stable codes and redacted technical metadata.
+AMP and legacy Playit snapshot IPC preserve the established `{ok:false,error}`
+shape for expected Agent availability/authentication failures. Unexpected
+failures reject through the shared redacted contract without changing successful
+snapshot payloads.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.

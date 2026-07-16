@@ -158,6 +158,7 @@
     "agent-control:ipc-authorization:smoke": "node scripts/agent-control-ipc-authorization-smoke.js",
     "agent-runtime-config:smoke": "node scripts/agent-runtime-config-store-smoke.js",
     "secure-session-store:smoke": "node scripts/secure-session-store-smoke.js",
+    "persistent-session-store:smoke": "node scripts/persistent-session-store-smoke.js",
     "agent-control:sections:smoke": "node scripts/agent-control-sections-smoke.js",
     "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",
     "windows-cpu-temperature:smoke": "node scripts/windows-cpu-temperature-smoke.js",

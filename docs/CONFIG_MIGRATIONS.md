@@ -95,6 +95,12 @@ are backed up and migrated without decrypting them to disk. Corrupt,
 undecryptable, invalid-schema, and future-version records are preserved and
 fail explicitly; subsequent writes cannot silently replace them.
 
+Local Owner remembered-session `session.dat` envelopes use schema version 1
+and atomic writes. Startup treats invalid or future state as signed out while
+preserving the encrypted artifact. Legacy envelopes migrate with an encrypted
+backup, and corrupt or future records cannot be replaced without an explicit
+security reset.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

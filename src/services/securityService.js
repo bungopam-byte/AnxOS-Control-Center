@@ -27,6 +27,7 @@ const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 10;
 const BCRYPT_ROUNDS = 12;
 const SECURITY_SCHEMA_VERSION = 1;
+const PERSISTENT_SESSION_SCHEMA_VERSION = 1;
 const DEVELOPMENT_FALLBACK_OWNER_PASSWORD = "1245";
 const SESSION_TIMEOUT_OPTIONS_MS = new Set([
   0,
@@ -282,6 +283,7 @@ function encryptLocalSession(value) {
   const payload = Buffer.from(JSON.stringify(value), "utf8");
   if (safeStorage?.isEncryptionAvailable?.()) {
     return {
+      schemaVersion: PERSISTENT_SESSION_SCHEMA_VERSION,
       method: "safeStorage",
       data: safeStorage.encryptString(payload.toString("utf8")).toString("base64"),
     };
@@ -291,6 +293,7 @@ function encryptLocalSession(value) {
   const cipher = crypto.createCipheriv("aes-256-gcm", getFallbackEncryptionKey(), iv);
   const encrypted = Buffer.concat([cipher.update(payload), cipher.final()]);
   return {
+    schemaVersion: PERSISTENT_SESSION_SCHEMA_VERSION,
     method: "aes-256-gcm",
     iv: iv.toString("base64"),
     tag: cipher.getAuthTag().toString("base64"),
@@ -317,16 +320,67 @@ function decryptLocalSession(record) {
   return null;
 }
 
+function writePersistentSessionRecordAtomic(record) {
+  ensureConfigDirectory();
+  const filePath = getPersistentSessionPath();
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(record)}\n`, { mode: 0o600, flag: "wx" });
+    fs.renameSync(temporaryPath, filePath);
+  } catch (cause) {
+    try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+    const error = Object.assign(new Error("Remembered session state could not be saved atomically."), { code: "PERSISTENT_SESSION_WRITE_FAILED" });
+    Object.defineProperty(error, "cause", { value: cause, enumerable: false });
+    throw error;
+  }
+}
+
 function writePersistentSessionFile(payload) {
   ensureConfigDirectory();
-  fs.writeFileSync(getPersistentSessionPath(), `${JSON.stringify(encryptLocalSession(payload))}\n`, { mode: 0o600 });
+  const filePath = getPersistentSessionPath();
+  if (fs.existsSync(filePath)) {
+    const current = parsePersistentSessionRecord({ preserveFailure: true });
+    if (!current) throw Object.assign(new Error("Remembered session state is unreadable and must be reset explicitly before it can be replaced."), { code: "PERSISTENT_SESSION_CORRUPT" });
+  }
+  writePersistentSessionRecordAtomic(encryptLocalSession(payload));
+}
+
+function parsePersistentSessionRecord({ preserveFailure = false } = {}) {
+  const filePath = getPersistentSessionPath();
+  if (!fs.existsSync(filePath)) return null;
+  let record;
+  try {
+    record = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    if (preserveFailure) {
+      const backupPath = `${filePath}.corrupt-${Date.now()}.backup`;
+      try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    }
+    return null;
+  }
+  const schemaVersion = record?.schemaVersion === undefined ? 0 : Number(record.schemaVersion);
+  if (!Number.isInteger(schemaVersion) || schemaVersion < 0) return null;
+  if (schemaVersion > PERSISTENT_SESSION_SCHEMA_VERSION) {
+    throw Object.assign(new Error("Remembered session state was created by a newer application version."), { code: "PERSISTENT_SESSION_SCHEMA_UNSUPPORTED", details: { schemaVersion, supportedSchemaVersion: PERSISTENT_SESSION_SCHEMA_VERSION } });
+  }
+  if (schemaVersion < PERSISTENT_SESSION_SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    writePersistentSessionRecordAtomic({ ...record, schemaVersion: PERSISTENT_SESSION_SCHEMA_VERSION });
+  }
+  return record;
 }
 
 function readPersistentSessionFile() {
+  let record;
   try {
-    return decryptLocalSession(JSON.parse(fs.readFileSync(getPersistentSessionPath(), "utf8")));
-  } catch {
-    removePersistentSessionFile();
+    record = parsePersistentSessionRecord({ preserveFailure: true });
+    return record ? decryptLocalSession(record) : null;
+  } catch (error) {
+    if (error?.code === "PERSISTENT_SESSION_SCHEMA_UNSUPPORTED") return null;
+    const filePath = getPersistentSessionPath();
+    const backupPath = `${filePath}.undecryptable-${Date.now()}.backup`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
     return null;
   }
 }
@@ -1649,9 +1703,13 @@ function emergencySecurityAction(action, confirmation = "") {
 module.exports = {
   SECURITY_SCHEMA_VERSION,
   _test: {
+    encryptLocalSession,
     getPasswordHashFormat,
     migrateLegacyOwnerUsers,
     normalizeSecurityState,
+    parsePersistentSessionRecord,
+    readPersistentSessionFile,
+    writePersistentSessionFile,
   },
   audit,
   checkRateLimit,

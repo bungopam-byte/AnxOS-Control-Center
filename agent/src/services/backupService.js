@@ -15,8 +15,8 @@ const DEFAULT_RETENTION_DAYS = 30;
 const TAR_BLOCK_SIZE = 512;
 let schedulerStarted = false;
 
-function createBackupError(code, statusCode = 400) {
-  return Object.assign(new Error(code), { code, statusCode });
+function createBackupError(code, statusCode = 400, details = {}) {
+  return Object.assign(new Error(code), { code, statusCode, details });
 }
 
 function acquireBackupLock(instanceId, kind) {
@@ -614,6 +614,30 @@ async function createSafetySnapshot(instanceId) {
   });
 }
 
+async function ensureInstanceStoppedForRestore(instanceId) {
+  const activeStates = new Set(["Starting", "Running", "Restarting", "Stopping"]);
+  const before = await instanceService.getStatus(instanceId);
+  if (before?.pid || activeStates.has(before?.state)) {
+    try {
+      await instanceService.stopInstance(instanceId);
+    } catch (error) {
+      throw createBackupError("RESTORE_INSTANCE_STOP_FAILED", 409, {
+        instanceId,
+        causeCode: error?.code || "INSTANCE_STOP_FAILED",
+      });
+    }
+  }
+  const after = await instanceService.getStatus(instanceId);
+  if (after?.pid || activeStates.has(after?.state)) {
+    throw createBackupError("RESTORE_INSTANCE_STILL_RUNNING", 409, {
+      instanceId,
+      state: after?.state || "Unknown",
+      pid: after?.pid || null,
+    });
+  }
+  return after;
+}
+
 async function restoreBackup(payload = {}) {
   const backup = await readBackupMetadata(payload.backupId);
   const instanceId = validateInstanceId(payload.instanceId || backup.instanceId);
@@ -631,7 +655,7 @@ async function restoreBackup(payload = {}) {
     const instancePath = await getInstancePath(instanceId);
     const validation = await validateArchiveFile(backup.path);
 
-    await instanceService.stopInstance(instanceId).catch(() => {});
+    await ensureInstanceStoppedForRestore(instanceId);
     const safety = await createSafetySnapshot(instanceId);
     if (backup.type === "world") {
       for (const sourcePath of Array.isArray(backup.sourcePaths) ? backup.sourcePaths : []) {

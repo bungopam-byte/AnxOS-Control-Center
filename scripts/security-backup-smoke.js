@@ -16,6 +16,7 @@ const serviceRouter = require("../src/services/serviceRouter");
 const storageConnections = require("../src/services/storageConnectionService");
 const { FileService } = require("../src/services/fileService");
 const backupService = require("../agent/src/services/backupService");
+const backupInstanceService = require("../agent/src/services/instances/instanceService");
 const longOperations = require("../src/shared/longOperationService");
 const { resetLocalPassword } = require("./reset-local-password");
 
@@ -231,6 +232,22 @@ async function main() {
     (error) => error?.code === "RESTORE_OVERWRITE_CONFIRMATION_REQUIRED",
     "Restore should require explicit overwrite confirmation.",
   );
+  const originalGetStatus = backupInstanceService.getStatus;
+  const originalStopInstance = backupInstanceService.stopInstance;
+  backupInstanceService.getStatus = async () => ({ state: "Running", pid: 4242 });
+  backupInstanceService.stopInstance = async () => {
+    const error = new Error("process refused to stop");
+    error.code = "INSTANCE_STOP_TIMEOUT";
+    throw error;
+  };
+  await assert.rejects(
+    () => backupService.restoreBackup({ backupId: created.backup.id, confirmOverwrite: true }),
+    (error) => error?.code === "RESTORE_INSTANCE_STOP_FAILED" && error?.details?.causeCode === "INSTANCE_STOP_TIMEOUT",
+    "Restore must abort before touching files when a running instance cannot be stopped.",
+  );
+  assert.strictEqual(fs.readFileSync(path.join(instancePath, "data", "world", "level.dat"), "utf8"), "changed", "A failed stop must leave instance data untouched.");
+  backupInstanceService.getStatus = originalGetStatus;
+  backupInstanceService.stopInstance = originalStopInstance;
   const restored = await backupService.restoreBackup({ backupId: created.backup.id, confirmOverwrite: true });
   assert.strictEqual(restored.restore.instanceId, instanceId, "Restore should target the original instance.");
   assert(restored.restore.safetyBackupId, "Restore should create a safety snapshot before replacing files.");

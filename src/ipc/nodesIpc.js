@@ -30,8 +30,8 @@ async function invokeNodeOperation(operation) {
 }
 
 function registerNodesIpc() {
-  ipcMain.handle("nodes:list", async () => invokeNodeOperation(() => listNodes()));
-  ipcMain.handle("nodes:restore", async () => invokeNodeOperation(() => restorePersistedActiveNode()));
+  ipcMain.handle("nodes:list", async () => invokeNodeOperation(() => { requirePermission("nodes:read", "nodes"); return listNodes(); }));
+  ipcMain.handle("nodes:restore", async () => invokeNodeOperation(() => { requirePermission("nodes:read", "nodes"); return restorePersistedActiveNode(); }));
   ipcMain.handle("nodes:save", async (_, payload = {}) => invokeNodeOperation(() => {
     requirePermission("settings:write", "nodes");
     audit({ action: "node.save", target: payload.id || payload.agentUrl });
@@ -43,15 +43,15 @@ function registerNodesIpc() {
     audit({ action: "node.delete", target: context.nodeId });
     return deleteNode(context.nodeId);
   }));
-  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => setActiveNode(requireNodeContext(payload, "node selection").nodeId, { reason: "ipc-select" })));
-  ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(requireNodeContext(payload, "node connection test").nodeId)));
+  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => { requirePermission("nodes:read", payload.nodeId); return setActiveNode(requireNodeContext(payload, "node selection").nodeId, { reason: "ipc-select" }); }));
+  ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => { requirePermission("nodes:read", payload.nodeId); return testNode(requireNodeContext(payload, "node connection test").nodeId); }));
   ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => {
     requirePermission("settings:write", payload.agentUrl || payload.url || "node-connection-test");
     return testNodeConnectionPayload(payload);
   }));
-  ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(requireNodeContext(payload, "node health check").nodeId)));
-  ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => checkAllNodeHealth()));
-  ipcMain.handle("nodes:credentialStatus", async (_, payload = {}) => invokeNodeOperation(() => getNodeCredentialStatus(requireNodeContext(payload, "node credential status").nodeId)));
+  ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => { requirePermission("nodes:read", payload.nodeId); return checkNodeHealth(requireNodeContext(payload, "node health check").nodeId); }));
+  ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => { requirePermission("nodes:read", "nodes"); return checkAllNodeHealth(); }));
+  ipcMain.handle("nodes:credentialStatus", async (_, payload = {}) => invokeNodeOperation(() => { requirePermission("nodes:read", payload.nodeId); return getNodeCredentialStatus(requireNodeContext(payload, "node credential status").nodeId); }));
   ipcMain.handle("nodes:repairCredential", async (_, payload = {}) => invokeNodeOperation(() => {
     const context = requireNodeContext(payload, "node credential repair");
     requirePermission("settings:write", context.nodeId);

@@ -61,6 +61,10 @@ Marketplace catalog, provider search/details, import capability, and download
 state require `marketplace:read`. Admin and User roles retain browse access;
 install and continuation actions keep `marketplace:install`.
 
+Node registry, selected-target restoration/selection, health, connection tests,
+and credential status require `nodes:read`. Admin and User roles retain node
+visibility; node mutation and credential repair keep `settings:write`.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

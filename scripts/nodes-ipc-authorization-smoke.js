@@ -10,7 +10,7 @@ const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "electron") return { ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) } };
   if (request === "../services/nodeService") return nodeService;
-  if (request === "../services/activeNodeSelectionService") return { restorePersistedActiveNode: async () => ({}), setActiveNode: async () => ({}) };
+  if (request === "../services/activeNodeSelectionService") return { restorePersistedActiveNode: async () => { serviceInvoked = true; return {}; }, setActiveNode: async () => { serviceInvoked = true; return {}; } };
   if (request === "../shared/agentTokenStore") return { generateAgentToken: () => "test-token" };
   if (request === "../services/securityService") {
     return {
@@ -28,14 +28,17 @@ try {
 }
 
 async function main() {
-  const handler = handlers.get("nodes:testConnection");
-  assert(handler, "Node connection-test handler should be registered.");
-  await assert.rejects(
-    () => handler({}, { agentUrl: "https://internal.example.test", agentToken: "hidden" }),
-    (error) => error?.code === "PERMISSION_DENIED",
-    "Node connection tests should reject an unauthorized renderer request.",
-  );
-  assert.strictEqual(serviceInvoked, false, "Node connection tests must authorize before making an outbound request.");
+  for (const channel of ["nodes:list", "nodes:restore", "nodes:select", "nodes:test", "nodes:testConnection", "nodes:health", "nodes:healthAll", "nodes:credentialStatus"]) {
+    serviceInvoked = false;
+    const handler = handlers.get(channel);
+    assert(handler, `${channel} should be registered.`);
+    await assert.rejects(
+      () => handler({}, { nodeId: "node-a", agentUrl: "https://internal.example.test", agentToken: "hidden" }),
+      (error) => error?.code === "PERMISSION_DENIED",
+      `${channel} should reject an unauthorized renderer request.`,
+    );
+    assert.strictEqual(serviceInvoked, false, `${channel} must authorize before accessing node data or making an outbound request.`);
+  }
   console.log("Node IPC authorization smoke checks passed.");
 }
 

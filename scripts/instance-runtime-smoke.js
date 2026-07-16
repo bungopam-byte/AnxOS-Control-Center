@@ -220,6 +220,18 @@ async function assertRestartBackoffBounds() {
   });
 }
 
+async function assertScheduledRestartCancellation() {
+  await withTempService(async (instanceService) => {
+    let restarted = false;
+    instanceService._test.scheduleAutomaticRestart("cancel-restart-smoke", 30, () => {
+      restarted = true;
+    });
+    instanceService._test.resetRestartBackoff("cancel-restart-smoke");
+    await wait(80);
+    assert.strictEqual(restarted, false, "Manual lifecycle reset must cancel a pending automatic restart timer.");
+  });
+}
+
 async function assertStopDoesNotRestart() {
   await withTempService(async (instanceService) => {
     const payload = {
@@ -446,6 +458,7 @@ async function run() {
   await assertPalworldShellCommandNormalization();
   await assertPalworldSpawnArgvAndLogs();
   await assertRestartBackoffBounds();
+  await assertScheduledRestartCancellation();
   await assertStopDoesNotRestart();
   await assertJavaAndArgumentCompatibility();
   await assertDetachedRuntimeReconciliation();

@@ -78,6 +78,7 @@ const DEFAULT_EXECUTABLE_ROOTS = [
 const runningProcesses = new Map();
 const metricsSamples = new Map();
 const restartBackoffStates = new Map();
+const restartTimers = new Map();
 let processInspectionProvider = null;
 let processAliveProvider = null;
 
@@ -1643,7 +1644,28 @@ function isInvalidCommandExit(config = {}, exitCode, failureReason = "") {
 }
 
 function resetRestartBackoff(instanceId) {
+  const timer = restartTimers.get(instanceId);
+  if (timer) clearTimeout(timer);
+  restartTimers.delete(instanceId);
   restartBackoffStates.delete(instanceId);
+}
+
+function scheduleAutomaticRestart(instanceId, delayMs, callback = () => startInstance(instanceId, { automaticRestart: true })) {
+  const existing = restartTimers.get(instanceId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    restartTimers.delete(instanceId);
+    Promise.resolve(callback()).catch(() => {});
+  }, delayMs);
+  timer.unref?.();
+  restartTimers.set(instanceId, timer);
+  return timer;
+}
+
+function disposeInstanceService() {
+  for (const timer of restartTimers.values()) clearTimeout(timer);
+  restartTimers.clear();
+  restartBackoffStates.clear();
 }
 
 function getRestartBackoffDecision(instanceId, options = {}) {
@@ -3307,7 +3329,7 @@ async function startInstance(instanceId, options = {}) {
         const backoff = getRestartBackoffDecision(config.id, { immediateExit: runtimeMs > 0 && runtimeMs < STARTUP_EARLY_EXIT_MS });
         if (backoff.allowed) {
           appendLog(config.id, "stderr", `Auto-restart scheduled in ${Math.round(backoff.delayMs / 1000)}s after failure ${backoff.failures || 1}.`).catch(() => {});
-          setTimeout(() => startInstance(config.id, { automaticRestart: true }).catch(() => {}), backoff.delayMs);
+          scheduleAutomaticRestart(config.id, backoff.delayMs);
         } else {
           await updateRuntimeState(config.id, {
             state: INSTANCE_STATES.FAILED,
@@ -3322,7 +3344,7 @@ async function startInstance(instanceId, options = {}) {
         const backoff = getRestartBackoffDecision(config.id, { immediateExit: runtimeMs > 0 && runtimeMs < STARTUP_EARLY_EXIT_MS });
         if (backoff.allowed) {
           appendLog(config.id, "stderr", `Auto-restart scheduled in ${Math.round(backoff.delayMs / 1000)}s after exit ${backoff.failures || 1}.`).catch(() => {});
-          setTimeout(() => startInstance(config.id, { automaticRestart: true }).catch(() => {}), backoff.delayMs);
+          scheduleAutomaticRestart(config.id, backoff.delayMs);
         } else {
           await updateRuntimeState(config.id, {
             state: INSTANCE_STATES.FAILED,
@@ -3986,6 +4008,7 @@ module.exports = {
     formatCommandForLog,
     getRestartBackoffDecision,
     resetRestartBackoff,
+    scheduleAutomaticRestart,
     setProcessInspectionProvider(provider) {
       processInspectionProvider = typeof provider === "function" ? provider : null;
     },
@@ -3994,6 +4017,7 @@ module.exports = {
     },
   },
   configureInstanceService,
+  disposeInstanceService,
   INSTANCE_STATES,
   INSTANCE_TYPES: [...INSTANCE_TYPES],
   createInstance,

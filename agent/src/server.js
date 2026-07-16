@@ -7,6 +7,7 @@ const { handleAmpInstances, handleAmpSnapshot, handleAmpStatus } = require("./ro
 const { auditAction } = require("./audit/auditLogger");
 const { handleBackups, handleBackupsList } = require("./routes/backups");
 const { startBackupScheduler, stopBackupScheduler } = require("./services/backupService");
+const instanceService = require("./services/instances/instanceService");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { handleCurseForgeProxy } = require("./services/curseforgeProxyService");
 const { isAuthorized } = require("./auth");
@@ -408,6 +409,7 @@ function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   stopBackupScheduler();
+  instanceService.disposeInstanceService();
   logger.info("shutdown", "AnxOS Agent shutdown started", { signal, connectedClients: connectedClients.size });
   const forceTimer = setTimeout(() => {
     for (const socket of connectedClients) socket.destroy();

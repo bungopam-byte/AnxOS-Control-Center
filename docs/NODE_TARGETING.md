@@ -22,6 +22,15 @@ Renderer request contexts contain the selected node id, selection version, and
 per-request serial. Delayed responses are applied only while all three remain
 current. Navigation state for Files is additionally keyed by target/profile.
 
+`nodeService` also owns the canonical live connection record. Successful
+authenticated probes from Agent Control are resolved by stable Agent identity,
+written to the registry immediately, and returned as a canonical node snapshot
+for Nodes, Dashboard, Agent Control, and the global shell. The persisted record
+retains redaction-safe connection status, last-seen time, latency, compatibility,
+and identity metadata; credentials remain in the protected credential store.
+Per-node health generations prevent an older offline or unauthorized request
+from overwriting a newer authenticated result.
+
 The selected node is persisted in `nodes.json`. Startup restores a valid
 selection; missing nodes are recovered deliberately through
 `activeNodeSelectionService`, not through page-local inference.

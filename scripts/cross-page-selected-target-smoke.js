@@ -17,10 +17,10 @@ includes("function resolveActiveManagementTarget()", "Renderer must expose one c
 includes('targetType = isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : "registered-node"', "Resolver must keep application-host, local-agent, and registered-node distinct.");
 includes('targetLabel: isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : `node:${node.id}`', "Resolver must expose safe target labels.");
 includes('credentialSource: isApplicationHost ? "local-application-host" : isLocalAgent ? "local-agent-config" : "protected-node-credential"', "Resolver must expose the selected credential source without raw secrets.");
-includes("function applyAgentControlRemoteStateToNodes", "Agent Control remote probes must reconcile into node snapshots.");
-includes('status: "online"', "Running remote Agent probes must clear stale unavailable node state.");
-includes('status: "authentication_failed"', "Authentication rejected remote probes must remain distinct from network unavailable.");
-includes("renderNodes();", "Reconciled remote probe state must repaint Nodes and dependent summaries.");
+includes("function applyCanonicalNodeStateSnapshot", "Agent Control must consume the canonical node-service snapshot.");
+includes("applyCanonicalNodeStateSnapshot(payload?.nodeState, requestContext);", "Authenticated Agent Control responses must reconcile the shared registry immediately.");
+includes("nodesState = snapshot;", "Nodes and global shell must share the canonical recovered snapshot.");
+assert(!app.includes("applyAgentControlRemoteStateToNodes"), "Agent Control must not maintain a page-local health projection.");
 includes("clearDashboardMetricsForActiveTarget", "Dashboard target switching/failure must clear stale machine metrics.");
 includes("Local Windows metrics are hidden to avoid mixing sources.", "Dashboard must not show local metrics as remote metrics.");
 includes("renderFriendlyDashboard();", "Successful and failed target metric refreshes must update Dashboard context.");

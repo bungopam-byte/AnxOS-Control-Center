@@ -55,6 +55,10 @@ try {
   assert.strictEqual(resolved.nodeId, "node-b", "Explicit stored node association should be supported.");
   assert.strictEqual(resolved.matchType, "explicitNodeId");
 
+  resolved = nodes.resolveNodeForAgentIdentity({ nodeId: "node-b", identity: { agentIdentityId: "identity-a" } });
+  assert.strictEqual(resolved.nodeId, "node-a", "Authenticated stable identity must win over a stale selected-node association.");
+  assert.strictEqual(resolved.matchType, "agentIdentityId");
+
   resolved = nodes.resolveNodeForAgentIdentity({ identity: { agentIdentityId: "identity-b" } });
   assert.strictEqual(resolved.nodeId, "node-b", "Stable Agent identity ID should resolve a node.");
 

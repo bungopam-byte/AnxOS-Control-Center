@@ -21,6 +21,7 @@ const SUPPORTED_AGENT_PROTOCOL_VERSION = 1;
 const MIN_AGENT_PROTOCOL_VERSION = 1;
 const MAX_AGENT_PROTOCOL_VERSION = 1;
 const inFlightHealthChecks = new Map();
+const nodeHealthGenerations = new Map();
 
 function getConfigDirectory() {
   if (process.env.ANXHUB_CONFIG_DIR) return process.env.ANXHUB_CONFIG_DIR;
@@ -711,7 +712,7 @@ function migrateState(parsed = {}) {
 }
 
 function toPersistentNode(node) {
-  const { agentToken, connection, token, ...persistentNode } = node;
+  const { agentToken, token, ...persistentNode } = node;
   if (persistentNode.baseUrl && !persistentNode.agentUrl) {
     persistentNode.agentUrl = persistentNode.baseUrl;
   }
@@ -860,6 +861,42 @@ function updateNodeHealthState(nodeId, patch = {}) {
   return nodes[index];
 }
 
+function advanceNodeHealthGeneration(nodeId) {
+  const generation = (nodeHealthGenerations.get(nodeId) || 0) + 1;
+  nodeHealthGenerations.set(nodeId, generation);
+  return generation;
+}
+
+function recordAuthenticatedNodeHealth(payload = {}) {
+  const health = payload.health && typeof payload.health === "object" ? payload.health : {};
+  const resolution = resolveNodeForAgentIdentity({
+    nodeId: payload.nodeId,
+    agentUrl: payload.agentUrl,
+    identity: health.identity || payload.identity,
+  });
+  if (resolution.ambiguous) {
+    throw Object.assign(new Error("Authenticated Agent identity matches multiple registered nodes."), {
+      code: "NODE_IDENTITY_AMBIGUOUS",
+      candidates: resolution.candidates,
+    });
+  }
+  if (!resolution.node) {
+    throw Object.assign(new Error("Authenticated Agent identity does not match a registered node."), {
+      code: "NODE_IDENTITY_NOT_REGISTERED",
+    });
+  }
+  advanceNodeHealthGeneration(resolution.nodeId);
+  const updated = updateNodeHealthState(resolution.nodeId, {
+    state: "online",
+    message: payload.message || "Authenticated Agent endpoint responded.",
+    latencyMs: payload.latencyMs,
+    health,
+    compatibility: payload.compatibility || getAgentCompatibilityReport(health),
+    checkedAt: payload.checkedAt || new Date().toISOString(),
+  });
+  return publicNode(updated);
+}
+
 async function checkNodeHealth(nodeId, options = {}) {
   const node = getNode(nodeId);
   if (node.kind === "application-host") {
@@ -893,6 +930,7 @@ async function checkNodeHealth(nodeId, options = {}) {
   if (inFlightHealthChecks.has(node.id)) {
     return inFlightHealthChecks.get(node.id);
   }
+  const generation = advanceNodeHealthGeneration(node.id);
   const run = (async () => {
     const startedAt = Date.now();
     const checkedAt = new Date().toISOString();
@@ -920,6 +958,21 @@ async function checkNodeHealth(nodeId, options = {}) {
         : state === "degraded"
         ? authenticatedProbe.partialFailure.message
         : formatAgentCompatibilityMessage(compatibility);
+      if (nodeHealthGenerations.get(node.id) !== generation) {
+        const current = getNode(node.id);
+        return {
+          nodeId: current.id,
+          state: current.lastConnectionState,
+          connected: current.connection?.connected === true,
+          status: current.connection?.status,
+          message: current.connection?.message,
+          latencyMs: current.connection?.latencyMs ?? null,
+          node: publicNode(current),
+          health,
+          checkedAt: current.lastHealthCheckedAt,
+          stale: true,
+        };
+      }
       const updated = updateNodeHealthState(node.id, {
         state,
         message,
@@ -946,6 +999,19 @@ async function checkNodeHealth(nodeId, options = {}) {
         : state === "agent_incompatible"
         ? "Agent API version is not compatible with this Control Center."
         : error?.message || "Agent is unreachable.";
+      if (nodeHealthGenerations.get(node.id) !== generation) {
+        const current = getNode(node.id);
+        return {
+          nodeId: current.id,
+          state: current.lastConnectionState,
+          connected: current.connection?.connected === true,
+          status: current.connection?.status,
+          message: current.connection?.message,
+          node: publicNode(current),
+          checkedAt: current.lastHealthCheckedAt,
+          stale: true,
+        };
+      }
       const updated = updateNodeHealthState(node.id, {
         state,
         message,
@@ -963,7 +1029,7 @@ async function checkNodeHealth(nodeId, options = {}) {
         checkedAt: updated.lastHealthCheckedAt,
       };
     } finally {
-      inFlightHealthChecks.delete(node.id);
+      if (inFlightHealthChecks.get(node.id) === run) inFlightHealthChecks.delete(node.id);
     }
   })();
   inFlightHealthChecks.set(node.id, run);
@@ -1045,16 +1111,16 @@ function resolveNodeForAgentIdentity(payload = {}) {
     const resolved = finish(match((node) => node.agentIdentity?.agentInstallationId === candidate.agentInstallationId || node.agentInstallationId === candidate.agentInstallationId), "agentInstallationId");
     if (resolved) return resolved;
   }
-  if (candidate.nodeId) {
-    const resolved = finish(match((node) => node.id === candidate.nodeId), "explicitNodeId");
-    if (resolved) return resolved;
-  }
   if (candidate.agentIdentityId) {
     const resolved = finish(match((node) => node.agentIdentity?.agentIdentityId === candidate.agentIdentityId || node.agentIdentityId === candidate.agentIdentityId), "agentIdentityId");
     if (resolved) return resolved;
   }
   if (candidate.deviceId) {
     const resolved = finish(match((node) => node.agentIdentity?.deviceId === candidate.deviceId), "deviceId");
+    if (resolved) return resolved;
+  }
+  if (candidate.nodeId) {
+    const resolved = finish(match((node) => node.id === candidate.nodeId), "explicitNodeId");
     if (resolved) return resolved;
   }
   if (candidate.agentUrl) {
@@ -1386,4 +1452,4 @@ function deleteNode(nodeId) {
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialStatus, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, repairNodeCredential, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion, postPairingComplete } };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialStatus, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, recordAuthenticatedNodeHealth, repairNodeCredential, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, updateNodeHealthState, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion, postPairingComplete } };

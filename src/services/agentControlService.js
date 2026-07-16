@@ -5,7 +5,7 @@ const os = require("os");
 const path = require("path");
 const { app, shell } = require("electron");
 const agentClient = require("./agentClient");
-const { getAllNodesSync, getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
+const { getAllNodesSync, getNode, getNodeAgentConfig, getSelectedNodeId, listNodes, recordAuthenticatedNodeHealth } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
 const { AGENT_STATUS, classifyAgentError, createAgentStatusSnapshot } = require("../shared/agentStatus");
 const { readAgentRuntimeConfig, restoreAgentRuntimeConfig, saveAgentRuntimeConfig } = require("../shared/agentRuntimeConfigStore");
@@ -1525,11 +1525,21 @@ async function listAgents(options = {}) {
         capabilities: { metrics: Boolean(stats), lifecycle: false, repair: false, reconnect: true },
       });
       const statusCheckedAt = new Date().toISOString();
+      const canonicalNode = recordAuthenticatedNodeHealth({
+        nodeId: node.id,
+        agentUrl: node.agentUrl || node.baseUrl,
+        health,
+        latencyMs: Date.now() - started,
+        checkedAt: statusCheckedAt,
+        message: partialFailure
+          ? `Authenticated Agent health recovered; metrics remain degraded: ${partialFailure.message}`
+          : "Authenticated Agent endpoint responded from Agent Control.",
+      });
       return {
         local: false,
         targetType: healthConfig.targetLabel,
         healthTargetLabel: healthConfig.targetLabel,
-        nodeId: node.id,
+        nodeId: canonicalNode.id,
         state: "Running",
         name: node.displayName,
         agentUrl: node.agentUrl,
@@ -1604,6 +1614,7 @@ async function listAgents(options = {}) {
     selectedNodeId,
     activeNode,
     activeAgent: selectedNode.kind === "agent" ? activeRemote : null,
+    nodeState: await listNodes({ discoverLocalAgent: false, refreshIdentity: false }),
   };
 }
 

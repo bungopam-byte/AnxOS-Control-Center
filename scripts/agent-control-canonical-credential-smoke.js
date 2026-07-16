@@ -17,7 +17,7 @@ function listen(server) {
   });
 }
 
-function createAgentServer({ expectedToken, hostname, records }) {
+function createAgentServer({ expectedToken, hostname, records, unauthorizedDelayMs = 0 }) {
   return http.createServer((request, response) => {
     const auth = String(request.headers.authorization || "");
     records.push({ pathname: request.url, auth });
@@ -41,8 +41,10 @@ function createAgentServer({ expectedToken, hostname, records }) {
     ]);
     if (request.method === "GET" && protectedPaths.has(request.url)) {
       if (auth !== `Bearer ${expectedToken}`) {
-        response.writeHead(401, { "Content-Type": "application/json" });
-        response.end(JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Unauthorized." } }));
+        setTimeout(() => {
+          response.writeHead(401, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Unauthorized." } }));
+        }, unauthorizedDelayMs);
         return;
       }
       response.writeHead(200, { "Content-Type": "application/json" });
@@ -67,7 +69,7 @@ async function main() {
 
   const remoteRecords = [];
   const localRecords = [];
-  const remote = createAgentServer({ expectedToken: "node-token", hostname: "Anxlab", records: remoteRecords });
+  const remote = createAgentServer({ expectedToken: "node-token", hostname: "Anxlab", records: remoteRecords, unauthorizedDelayMs: 150 });
   const local = createAgentServer({ expectedToken: "local-token", hostname: "Windows Local Agent", records: localRecords });
   const remotePort = await listen(remote);
   const localPort = await listen(local);
@@ -98,7 +100,13 @@ async function main() {
       removedLocalAgents: [],
     });
     writeJson(agentConfigPath, beforeGlobalConfig);
-    assert.strictEqual(credentials.setNodeToken("anxlab", "node-token"), true, "Smoke setup should store the canonical node credential.");
+    assert.strictEqual(credentials.setNodeToken("anxlab", "stale-node-token"), true, "Smoke setup should begin with the rejected node credential.");
+
+    const staleHealthRequest = nodes.checkNodeHealth("anxlab");
+    while (!remoteRecords.some((record) => record.pathname === "/api/v1/stats" && record.auth === "Bearer stale-node-token")) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    assert.strictEqual(credentials.setNodeToken("anxlab", "node-token"), true, "Credential repair should replace the rejected node credential.");
 
     const selected = await control.listAgents({ selectedNodeId: "anxlab" });
     assert.strictEqual(selected.activeAgent?.nodeId, "anxlab", "Agent Control should expose the selected registered node as the active Agent.");
@@ -106,6 +114,13 @@ async function main() {
     assert.strictEqual(selected.activeAgent?.state, "Running", "Selected Anxlab should authenticate with the node credential.");
     assert(remoteRecords.some((record) => record.pathname === "/api/v1/stats" && record.auth === "Bearer node-token"), "Selected Anxlab /stats must use the canonical node credential.");
     assert(!remoteRecords.some((record) => record.auth === "Bearer stale-global-token"), "Selected Anxlab must not use the stale global Agent token.");
+    assert.strictEqual(selected.nodeState?.nodes.find((node) => node.id === "anxlab")?.connection?.status, "online", "Agent Control must return the recovered canonical node registry snapshot.");
+    await staleHealthRequest;
+    const recoveredNode = nodes.getNode("anxlab");
+    assert.strictEqual(recoveredNode.connection?.status, "online", "A delayed unauthorized response must not overwrite authenticated recovery.");
+    assert.strictEqual(recoveredNode.connection?.authenticated, true, "Recovered node should be marked authenticated.");
+    assert(recoveredNode.connection?.lastSeen, "Authenticated recovery should refresh last seen.");
+    assert.strictEqual(recoveredNode.lastErrorCategory, null, "Authenticated recovery should clear the stale offline error.");
     const migratedGlobalConfig = JSON.parse(fs.readFileSync(agentConfigPath, "utf8"));
     assert.deepStrictEqual(
       { backendMode: migratedGlobalConfig.backendMode, agentUrl: migratedGlobalConfig.agentUrl, agentToken: migratedGlobalConfig.agentToken },

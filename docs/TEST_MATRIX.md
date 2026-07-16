@@ -5,7 +5,7 @@
 | Shared operations | `npm run operations:framework:smoke`, `npm run operations:domain-cancellation:smoke` |
 | Node selection/races | `npm run node:switch:smoke`, `npm run node:application-host-identity:smoke`, `npm run node:stale-response:smoke`, `npm run cross-page:selected-target:smoke` |
 | Node migration | `npm run node:legacy-migration:smoke`, `npm run node:startup-selection:smoke` |
-| Agent authentication | `npm run agent:token:smoke`, `npm run agent-errors:smoke`, `npm run node:agent-pairing:smoke` |
+| Agent authentication and live recovery | `npm run agent:token:smoke`, `npm run agent-errors:smoke`, `npm run node:agent-pairing:smoke`, `npm run agent-control:canonical-credential:smoke` |
 | Multi-node health isolation | `npm run node:independent-health:smoke` |
 | Agent API authorization | `npm run agent:api-authorization:smoke` |
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |
@@ -61,6 +61,10 @@ Adversarial fixtures cover missing targets, delayed node responses, offline and
 unauthorized Agents, incompatible versions, symlink escape, malformed archives,
 concurrent backups, failed instance stop before restore, rollback recovery,
 crash-loop backoff, pending restart cancellation, and clean Agent SIGTERM.
+The Agent Control credential fixture specifically holds an unauthorized registry
+probe open, repairs the protected node credential, records a successful
+authenticated Agent Control probe, and proves that Nodes/global-shell state stays
+online after the delayed failure completes.
 
 `rc:validate` runs every repository `*:smoke` command and stops at the first
 failure. Artifact and real-machine validation are separate gates because source

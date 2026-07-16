@@ -5517,7 +5517,7 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    applyAgentControlRemoteStateToNodes(payload, requestContext);
+    applyCanonicalNodeStateSnapshot(payload?.nodeState, requestContext);
     renderAgentControlState(payload);
     if (includeConfig && isOwnerWorkspaceAuthorized()) {
       populateAgentConfig(await api.getConfig());
@@ -5530,78 +5530,18 @@ async function refreshAgentControl({ includeConfig = false } = {}) {
   }
 }
 
-function applyAgentControlRemoteStateToNodes(payload = {}, context = null) {
-  if (!payload || !Array.isArray(payload.remote) || !Array.isArray(nodesState.nodes)) {
+function applyCanonicalNodeStateSnapshot(snapshot = {}, context = null) {
+  if (!snapshot || !Array.isArray(snapshot.nodes)) {
     return false;
   }
   if (context && !isNodeRequestCurrent(context)) {
     return false;
   }
-  const now = new Date().toISOString();
-  let changed = false;
-  const remoteByNodeId = new Map(payload.remote.filter((agent) => agent?.nodeId).map((agent) => [agent.nodeId, agent]));
-  nodesState = {
-    ...nodesState,
-    nodes: nodesState.nodes.map((node) => {
-      if (node.kind !== "agent" || !remoteByNodeId.has(node.id)) {
-        return node;
-      }
-      const agent = remoteByNodeId.get(node.id);
-      const running = String(agent.state || "").toLowerCase() === "running";
-      const authFailed = /auth/i.test(String(agent.state || agent.mostRecentError?.code || agent.mostRecentError?.message || ""));
-      const nextConnection = running
-        ? {
-          ...(node.connection || {}),
-          status: "online",
-          connected: true,
-          authenticated: true,
-          message: "Agent is responding from Remote Agent probe.",
-          latencyMs: agent.latencyMs ?? node.connection?.latencyMs ?? null,
-          checkedAt: now,
-          lastSeen: agent.lastHeartbeat || now,
-          apiVersion: agent.apiVersion || agent.identity?.apiVersion || node.connection?.apiVersion || node.apiVersion || null,
-          protocolVersion: agent.protocolVersion || agent.identity?.protocolVersion || node.connection?.protocolVersion || node.protocolVersion || null,
-        }
-        : authFailed
-          ? {
-            ...(node.connection || {}),
-            status: "authentication_failed",
-            connected: true,
-            authenticated: false,
-            message: agent.mostRecentError?.message || "Reachable, but the saved credential was rejected.",
-            latencyMs: agent.latencyMs ?? node.connection?.latencyMs ?? null,
-            checkedAt: now,
-            lastSeen: agent.lastHeartbeat || node.connection?.lastSeen || null,
-          }
-          : {
-            ...(node.connection || {}),
-            status: "offline",
-            connected: false,
-            authenticated: false,
-            message: agent.mostRecentError?.message || "Agent did not respond to the Remote Agent probe.",
-            latencyMs: null,
-            checkedAt: now,
-          };
-      changed = true;
-      return {
-        ...node,
-        connection: nextConnection,
-        agentIdentity: {
-          ...(node.agentIdentity || {}),
-          ...(agent.identity || {}),
-          hostname: agent.identity?.hostname || node.agentIdentity?.hostname || agent.name || node.displayName,
-          agentVersion: agent.agentVersion || agent.identity?.agentVersion || node.agentIdentity?.agentVersion || null,
-        },
-        updatedAt: running ? now : node.updatedAt,
-      };
-    }),
-  };
-  if (changed) {
-    nodeHealthSnapshotCache.clear();
-    refreshNodeHealth({ notify: false });
-    renderNodes();
-  }
-  return changed;
+  nodesState = snapshot;
+  nodeHealthSnapshotCache.clear();
+  refreshNodeHealth({ notify: false });
+  renderNodes();
+  return true;
 }
 
 function startAgentControlPolling() {

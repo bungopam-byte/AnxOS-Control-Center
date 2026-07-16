@@ -60,10 +60,11 @@ const serviceRouter = fs.readFileSync(path.join(root, "src/services/serviceRoute
   "const HEALTH_STATES = new Set([\"connecting\", \"online\", \"offline\", \"authentication_failed\", \"agent_incompatible\", \"degraded\", \"unknown\"])",
   "function checkNodeHealth",
   "function checkAllNodeHealth",
-  "const { agentToken, connection, token, ...persistentNode } = node;",
+  "const { agentToken, token, ...persistentNode } = node;",
   "setNodeToken(node.id, node.agentToken)",
   "targetLabel: `node:${node.id}`",
 ].forEach((needle) => assert(nodeService.includes(needle), `Node service should include ${needle}`));
+assert(!nodeService.includes("const { agentToken, connection, token, ...persistentNode } = node;"), "Canonical connection health must survive registry persistence while credentials remain excluded.");
 
 [
   "function forNode(nodeId)",

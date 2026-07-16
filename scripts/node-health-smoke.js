@@ -118,7 +118,7 @@ function requireApp(needle, message) {
   "AGENT_PORT_IN_USE",
   "Authentication failed",
   "Agent unavailable",
-  "Reachable, but the saved credential was rejected.",
+  "applyCanonicalNodeStateSnapshot(payload?.nodeState, requestContext)",
   "Re-pair Agent",
   "Repair Connection",
   "The selected system is offline or unreachable.",

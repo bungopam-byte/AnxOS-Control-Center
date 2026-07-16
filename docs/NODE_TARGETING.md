@@ -17,5 +17,11 @@ The selected node is persisted in `nodes.json`. Startup restores a valid
 selection; missing nodes are recovered deliberately through
 `activeNodeSelectionService`, not through page-local inference.
 
+Renderer node-registry refreshes carry the same selection version and request
+serial as feature requests. A delayed refresh is discarded after a switch.
+Transient registry failures retain the prior selected id as stale/unavailable;
+they never rewrite it to `application-host`. Only the explicit startup
+contract may initialize an unavailable node API to the built-in host.
+
 Destructive IPC carries the explicit target through authorization and service
 routing. UI hiding is never used as target validation.

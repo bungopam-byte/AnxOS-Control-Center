@@ -26741,7 +26741,8 @@ function getSelectedNode() {
 }
 
 function resolveActiveManagementTarget() {
-  const node = getSelectedNode() || { id: "application-host", kind: "application-host", displayName: "Windows Desktop" };
+  const selectedNodeId = getSelectedNodeId();
+  const node = getSelectedNode() || { id: selectedNodeId, kind: "unavailable", displayName: "Selected target unavailable" };
   const isApplicationHost = node.kind === "application-host";
   const isLocalAgent = !isApplicationHost && node.localAgent === true;
   const targetType = isApplicationHost ? "application-host" : isLocalAgent ? "local-agent" : "registered-node";
@@ -28655,16 +28656,25 @@ async function refreshNodes(options = {}) {
     renderNodes();
     return;
   }
+  const requestContext = getNodeRequestContext("nodes-refresh");
   try {
-    nodesState = options.forceHealthRefresh || typeof desktopApiState.api.nodes.restore !== "function"
+    const nextNodesState = options.forceHealthRefresh || typeof desktopApiState.api.nodes.restore !== "function"
       ? await desktopApiState.api.nodes.list()
       : await desktopApiState.api.nodes.restore();
+    if (!isNodeRequestCurrent(requestContext)) return;
+    nodesState = nextNodesState;
     if (previousSelectedNodeId !== "application-host" && nodesState.selectedNodeId !== previousSelectedNodeId) {
       const selected = (nodesState.nodes || []).find((node) => node.id === nodesState.selectedNodeId);
       showToast(`Selected node was unavailable. Switched to ${selected?.displayName || "the available default node"}.`, "warning");
     }
-  } catch {
-    nodesState = { selectedNodeId: "application-host", applicationHost: null, nodes: [{ id: "application-host", kind: "application-host", displayName: "Application Host", default: true, local: true }] };
+  } catch (error) {
+    if (!isNodeRequestCurrent(requestContext)) return;
+    nodesState = {
+      ...nodesState,
+      selectedNodeId: previousSelectedNodeId,
+      stale: true,
+      error: normalizeIpcErrorMessage(error, "Node registry unavailable."),
+    };
   }
   nodeHealthSnapshotCache.clear();
   refreshNodeHealth();

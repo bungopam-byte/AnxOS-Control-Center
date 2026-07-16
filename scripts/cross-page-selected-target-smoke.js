@@ -24,6 +24,10 @@ includes("renderNodes();", "Reconciled remote probe state must repaint Nodes and
 includes("clearDashboardMetricsForActiveTarget", "Dashboard target switching/failure must clear stale machine metrics.");
 includes("Local Windows metrics are hidden to avoid mixing sources.", "Dashboard must not show local metrics as remote metrics.");
 includes("renderFriendlyDashboard();", "Successful and failed target metric refreshes must update Dashboard context.");
+includes('const requestContext = getNodeRequestContext("nodes-refresh")', "Node registry refreshes must capture the canonical selection generation.");
+includes("if (!isNodeRequestCurrent(requestContext)) return;", "Delayed node registry responses must not overwrite a newer selection.");
+includes("selectedNodeId: previousSelectedNodeId", "Node registry failures must preserve the selected target instead of redirecting to the application host.");
+includes('kind: "unavailable", displayName: "Selected target unavailable"', "A missing selected target must remain unavailable rather than being inferred as the application host.");
 
 assert(!app.includes("Authorization") || !/Authorization.*textContent/.test(app), "Renderer must not render Authorization headers.");
 

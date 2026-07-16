@@ -816,6 +816,12 @@ async function pullImage(image) {
       status: "running",
       canCancel: false,
       retryable: true,
+      rollbackSupported: false,
+      // Defense-in-depth against a stuck lock: runDockerCommand already applies
+      // its own 10-minute exec timeout below, but this ensures the shared
+      // registry itself cannot hold the lock indefinitely if that mechanism
+      // ever fails to resolve (e.g. a signal that does not terminate cleanly).
+      timeoutMs: 11 * 60 * 1000,
       metadata: { image: target },
     });
   } catch (error) {
@@ -824,6 +830,10 @@ async function pullImage(image) {
     }
     throw error;
   }
+  // Registered immediately so that if this attempt fails and canRetry becomes
+  // true, longOperations.retryOperation() genuinely re-runs the pull rather
+  // than merely resetting status with nothing behind it.
+  longOperations.registerRetryHandler(operation.id, () => pullImage(target));
   try {
     const result = await runDockerCommand(["pull", target], { timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024 * 4 });
     const output = { image: target, output: redactDockerText(`${result.stdout}\n${result.stderr}`.trim()) };

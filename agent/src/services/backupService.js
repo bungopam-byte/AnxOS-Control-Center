@@ -27,6 +27,11 @@ function acquireBackupLock(instanceId, kind) {
       status: "running",
       canCancel: false,
       retryable: true,
+      rollbackSupported: false,
+      // Defense-in-depth: archive/extract operations have no internal timeout,
+      // so a hung filesystem operation (e.g. a stalled network mount) could
+      // otherwise hold this lock for the rest of the process lifetime.
+      timeoutMs: 2 * 60 * 60 * 1000,
       metadata: { instanceId },
     });
   } catch (error) {
@@ -564,6 +569,9 @@ async function performCreateBackup(payload = {}) {
 async function createBackup(payload = {}) {
   const instanceId = validateInstanceId(payload.instanceId);
   const operation = acquireBackupLock(instanceId, "backup-create");
+  // Registered immediately so a failed create can genuinely be retried through
+  // longOperations.retryOperation() rather than only resetting status.
+  longOperations.registerRetryHandler(operation.id, () => createBackup(payload));
   try {
     const result = await performCreateBackup(payload);
     longOperations.completeOperation(operation.id, { metadata: { instanceId, backupId: result.backup.id } });
@@ -616,6 +624,9 @@ async function restoreBackup(payload = {}) {
     throw createBackupError("RESTORE_OVERWRITE_CONFIRMATION_REQUIRED", 400);
   }
   const operation = acquireBackupLock(instanceId, "backup-restore");
+  // Registered immediately so a failed restore can genuinely be retried
+  // through longOperations.retryOperation() rather than only resetting status.
+  longOperations.registerRetryHandler(operation.id, () => restoreBackup(payload));
   try {
     const instancePath = await getInstancePath(instanceId);
     const validation = await validateArchiveFile(backup.path);

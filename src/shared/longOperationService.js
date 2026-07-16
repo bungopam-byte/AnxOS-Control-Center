@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { SENSITIVE_KEY, redactString } = require("./redaction");
 
 // This module is shared by both the Electron desktop process and the
 // standalone Agent runtime (which never has the "electron" package
@@ -82,6 +83,9 @@ function sanitizeForPersistence(value, seen = new WeakSet()) {
   if (type === "function" || type === "symbol") {
     return undefined;
   }
+  if (type === "string") {
+    return redactString(value);
+  }
   if (type !== "object") {
     return value;
   }
@@ -102,6 +106,10 @@ function sanitizeForPersistence(value, seen = new WeakSet()) {
   }
   const result = {};
   for (const [key, entryValue] of Object.entries(value)) {
+    if (SENSITIVE_KEY.test(key)) {
+      result[key] = "[redacted]";
+      continue;
+    }
     const sanitizedEntry = sanitizeForPersistence(entryValue, seen);
     if (sanitizedEntry !== undefined) {
       result[key] = sanitizedEntry;
@@ -268,6 +276,11 @@ function buildOperation(id, spec = {}, existing = null) {
     canCancel: spec.canCancel !== undefined ? Boolean(spec.canCancel) : Boolean(existing?.canCancel),
     canRetry: spec.canRetry !== undefined ? Boolean(spec.canRetry) : Boolean(existing?.canRetry),
     retryable: spec.retryable !== undefined ? Boolean(spec.retryable) : Boolean(existing?.retryable),
+    // Explicit and honest: only true when a caller has actually implemented a
+    // rollback path for this operation kind. Defaults to false rather than
+    // being inferred, so an operation can never silently claim a capability
+    // that has no working code behind it.
+    rollbackSupported: spec.rollbackSupported !== undefined ? Boolean(spec.rollbackSupported) : Boolean(existing?.rollbackSupported),
     startedAt: existing?.startedAt || now,
     updatedAt: now,
     completedAt: TERMINAL_STATUSES.has(status) ? existing?.completedAt || now : existing?.completedAt || null,
@@ -390,7 +403,10 @@ async function retryOperation(id) {
   }
   const runtime = runtimeHandlers.get(id);
   if (typeof runtime?.onRetry !== "function") {
-    throw new LongOperationError("No retry handler is registered for this operation.", "OPERATION_NOT_RETRYABLE", { id });
+    // Distinct from OPERATION_NOT_RETRYABLE: this means the operation claims
+    // canRetry=true but no real retry implementation was wired up for it,
+    // which is itself a bug in the caller rather than a normal rejection.
+    throw new LongOperationError("This operation is marked retryable but no retry handler was registered.", "OPERATION_RETRY_HANDLER_MISSING", { id });
   }
   return runtime.onRetry();
 }

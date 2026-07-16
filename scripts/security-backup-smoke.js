@@ -16,6 +16,7 @@ const serviceRouter = require("../src/services/serviceRouter");
 const storageConnections = require("../src/services/storageConnectionService");
 const { FileService } = require("../src/services/fileService");
 const backupService = require("../agent/src/services/backupService");
+const longOperations = require("../src/shared/longOperationService");
 const { resetLocalPassword } = require("./reset-local-password");
 
 function countAuditActions(action) {
@@ -179,6 +180,41 @@ async function main() {
   const retriedAfterLockRelease = await backupService.createBackup({ instanceId, type: "world", name: "After lock release", createdBy: "smoke" });
   assert(retriedAfterLockRelease.backup.id, "A new backup for the same instance should succeed once the prior operation has completed.");
   await backupService.deleteBackup(retriedAfterLockRelease.backup.id);
+
+  // Retry must perform a genuinely new execution attempt, not merely flip a
+  // status flag back to a success-looking state. Fail deterministically
+  // against a not-yet-created instance directory, fix the real condition that
+  // caused the failure, then retry through the shared framework and confirm a
+  // brand-new operation record (and a real archive) is produced while the
+  // original failed record is left untouched.
+  const retryInstanceId = "retry-smoke-instance";
+  await assert.rejects(
+    () => backupService.createBackup({ instanceId: retryInstanceId, type: "full", name: "Retry smoke", createdBy: "smoke" }),
+    (error) => error?.code === "INSTANCE_NOT_FOUND",
+    "Backing up a non-existent instance directory should fail deterministically.",
+  );
+  const failedRetryOperation = longOperations
+    .listOperations({ kind: "backup-create" })
+    .filter((operation) => operation.metadata?.instanceId === retryInstanceId && operation.status === "failed")
+    .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
+  assert(failedRetryOperation, "The failed backup-create attempt should be recorded in the shared operation registry.");
+  assert.strictEqual(failedRetryOperation.canRetry, true, "A failed backup-create operation should be marked retryable.");
+  const retryInstancePath = path.join(process.env.AGENT_INSTANCE_ROOT, retryInstanceId);
+  fs.mkdirSync(path.join(retryInstancePath, "data", "world"), { recursive: true });
+  fs.writeFileSync(path.join(retryInstancePath, "config.json"), JSON.stringify({ id: retryInstanceId, displayName: "Retry Smoke", state: "Stopped" }));
+  fs.writeFileSync(path.join(retryInstancePath, "data", "world", "level.dat"), "retry-world");
+  const retryResult = await longOperations.retryOperation(failedRetryOperation.id);
+  assert(retryResult?.backup?.id, "Retrying through the shared framework should produce a real, successful backup result.");
+  const stillFailedOriginal = longOperations.getOperation(failedRetryOperation.id);
+  assert.strictEqual(stillFailedOriginal.status, "failed", "The original failed operation record must remain untouched by a retry, proving retry created a new attempt rather than mutating the old one.");
+  const newRetryOperation = longOperations
+    .listOperations({ kind: "backup-create" })
+    .find((operation) => operation.metadata?.backupId === retryResult.backup.id);
+  assert(newRetryOperation, "A retry should be tracked as a distinct new operation record.");
+  assert.notStrictEqual(newRetryOperation.id, failedRetryOperation.id, "Retry must create a new operation id, not reuse the failed one.");
+  assert.strictEqual(newRetryOperation.status, "complete", "The new retry attempt should complete successfully once the underlying failure condition is fixed.");
+  await backupService.deleteBackup(retryResult.backup.id);
+  fs.rmSync(retryInstancePath, { recursive: true, force: true });
 
   const created = await backupService.createBackup({ instanceId, type: "world", name: "Smoke world", createdBy: "smoke" });
   assert(created.backup.id, "Backup should have an id.");

@@ -113,6 +113,23 @@ async function main() {
     "Retrying a non-retryable operation should be rejected.",
   );
 
+  // canRetry=true must never be a hollow claim: if no retry handler was ever
+  // registered, retryOperation should fail loudly with a distinct code rather
+  // than silently doing nothing or merely resetting status.
+  const retryableWithoutHandler = longOperations.createOperation({ kind: "smoke-retry", canRetry: true });
+  await assert.rejects(
+    () => longOperations.retryOperation(retryableWithoutHandler.id),
+    (error) => error?.code === "OPERATION_RETRY_HANDLER_MISSING",
+    "An operation marked canRetry=true with no registered handler should fail with a distinct, honest error code.",
+  );
+
+  // rollbackSupported must be explicit and default to false: a capability must
+  // never be implied unless a caller actually opts in.
+  const noRollback = longOperations.createOperation({ kind: "smoke-rollback-default" });
+  assert.strictEqual(noRollback.rollbackSupported, false, "rollbackSupported should default to false unless a caller explicitly claims it.");
+  const withRollback = longOperations.createOperation({ kind: "smoke-rollback-explicit", rollbackSupported: true });
+  assert.strictEqual(withRollback.rollbackSupported, true, "rollbackSupported should reflect an explicit true claim.");
+
   // Failure captures a standardized error shape and marks retryable by default.
   const failing = longOperations.createOperation({ kind: "smoke-fail" });
   longOperations.failOperation(failing.id, { code: "NETWORK_ERROR", message: "Connection reset." });
@@ -169,6 +186,27 @@ async function main() {
   assert(controllerEntry, "Operation with a controller should still be persisted.");
   assert.strictEqual(controllerEntry.metadata.controller, undefined, "Non-serializable controller objects must be stripped before persistence.");
   assert.strictEqual(longOperations.getOperation(withController.id).metadata.controller instanceof AbortController, true, "The live in-memory metadata reference must retain the controller for runtime cancellation.");
+
+  // Persisted snapshots must never leak secrets that end up in operation
+  // metadata, whether via a sensitive key name or a bearer-token-shaped value
+  // embedded in an otherwise plain string (e.g. a signed download URL).
+  const withSecrets = longOperations.createOperation({
+    kind: "smoke-secrets",
+    status: "running",
+    metadata: {
+      agentToken: "anxos_super-secret-token-value",
+      note: "safe",
+      downloadUrl: "https://example.test/file.zip?token=abc123&Authorization=Bearer sk_live_abcdefghijklmnop",
+    },
+  });
+  longOperations._test.flushPersist();
+  const persistedAfterSecrets = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  const secretsEntry = persistedAfterSecrets.operations.find((entry) => entry.id === withSecrets.id);
+  assert(secretsEntry, "Operation with secret-shaped metadata should still be persisted.");
+  assert.strictEqual(secretsEntry.metadata.agentToken, "[redacted]", "A sensitive key name must be fully redacted before persistence.");
+  assert.strictEqual(secretsEntry.metadata.note, "safe", "Non-sensitive metadata must be preserved as-is.");
+  assert(!secretsEntry.metadata.downloadUrl.includes("sk_live_abcdefghijklmnop"), "A bearer-token-shaped value embedded in a string must be redacted before persistence.");
+  assert.strictEqual(longOperations.getOperation(withSecrets.id).metadata.agentToken, "anxos_super-secret-token-value", "The live in-memory metadata must retain real values for runtime use; only the persisted copy is redacted.");
 
   // The Agent runtime requires this module without "electron" installed.
   assertModuleWorksWithoutElectron(modulePath, fs.mkdtempSync(path.join(os.tmpdir(), "anxos-long-operation-agent-safe-")));

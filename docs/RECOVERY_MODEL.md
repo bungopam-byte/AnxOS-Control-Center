@@ -61,6 +61,11 @@ implementation intentionally caps compressed archives at 512 MiB, expanded
 content at 512 MiB, individual entries at 256 MiB, and entry count at 100,000;
 archives above those implemented limits fail with
 `BACKUP_ARCHIVE_LIMIT_EXCEEDED` rather than risking process exhaustion.
+Backup archives are written to process-specific temporary files and renamed
+only after the archive is complete and validated. Agent startup removes stale
+temporary files and archives that have no committed metadata before scheduled
+backup work begins. Recovery is idempotent and preserves archives that have a
+matching metadata record.
 
 ## Instances
 

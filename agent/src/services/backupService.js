@@ -246,7 +246,14 @@ async function writeTarGzArchive(archivePathValue, instancePath, sourcePaths) {
   }
 
   chunks.push(Buffer.alloc(TAR_BLOCK_SIZE * 2, 0));
-  await fs.writeFile(archivePathValue, zlib.gzipSync(Buffer.concat(chunks)), { mode: 0o600 });
+  const tempPath = `${archivePathValue}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(tempPath, zlib.gzipSync(Buffer.concat(chunks)), { mode: 0o600 });
+    await fs.rename(tempPath, archivePathValue);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
   return {
     entryCount: entries.length,
     uncompressedSize,
@@ -668,7 +675,12 @@ async function performCreateBackup(payload = {}) {
     archiveName: path.basename(archive),
     status: "complete",
   };
-  await writeJson(metadataPath(backupId), metadata);
+  try {
+    await writeJson(metadataPath(backupId), metadata);
+  } catch (error) {
+    await fs.rm(archive, { force: true }).catch(() => {});
+    throw error;
+  }
   await pruneRetention(instanceId, payload.retention || {});
   return { backup: metadata };
 }
@@ -863,12 +875,14 @@ async function importBackup(payload = {}) {
   await ensureBackupRoot();
   const backupId = `${instanceId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const archive = archivePath(backupId);
-  await fs.writeFile(archive, Buffer.from(content, payload.encoding === "base64" ? "base64" : "utf8"), { mode: 0o600 });
+  const tempArchive = `${archive}.${process.pid}.${Date.now()}.tmp`;
   let archiveDetails;
   try {
-    archiveDetails = await validateArchiveFile(archive);
+    await fs.writeFile(tempArchive, Buffer.from(content, payload.encoding === "base64" ? "base64" : "utf8"), { mode: 0o600 });
+    archiveDetails = await validateArchiveFile(tempArchive);
+    await fs.rename(tempArchive, archive);
   } catch (error) {
-    await fs.rm(archive, { force: true }).catch(() => {});
+    await fs.rm(tempArchive, { force: true }).catch(() => {});
     throw error;
   }
   const metadata = {
@@ -888,7 +902,12 @@ async function importBackup(payload = {}) {
     archiveName: path.basename(archive),
     status: "imported",
   };
-  await writeJson(metadataPath(backupId), metadata);
+  try {
+    await writeJson(metadataPath(backupId), metadata);
+  } catch (error) {
+    await fs.rm(archive, { force: true }).catch(() => {});
+    throw error;
+  }
   return { backup: metadata };
 }
 
@@ -949,7 +968,32 @@ function startBackupScheduler() {
   schedulerTimer = setInterval(() => {
     runDueSchedules().catch(() => {});
   }, 60 * 1000).unref?.();
-  runDueSchedules().catch(() => {});
+  recoverBackupArtifacts()
+    .then(() => runDueSchedules())
+    .catch(() => {});
+}
+
+async function recoverBackupArtifacts() {
+  await ensureBackupRoot();
+  const entries = await fs.readdir(getBackupRoot(), { withFileTypes: true });
+  const removed = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const filePath = path.join(getBackupRoot(), entry.name);
+    if (entry.name.endsWith(".tmp")) {
+      await fs.rm(filePath, { force: true });
+      removed.push({ file: entry.name, reason: "temporary-artifact" });
+      continue;
+    }
+    if (entry.name.endsWith(BACKUP_EXTENSION)) {
+      const backupId = entry.name.slice(0, -BACKUP_EXTENSION.length);
+      if (!await fs.stat(metadataPath(backupId)).then((stats) => stats.isFile(), () => false)) {
+        await fs.rm(filePath, { force: true });
+        removed.push({ file: entry.name, reason: "archive-without-metadata" });
+      }
+    }
+  }
+  return { removed };
 }
 
 function stopBackupScheduler() {
@@ -968,6 +1012,7 @@ module.exports = {
     ensureDiskSpace,
     padTarData,
     parseTarEntries,
+    recoverBackupArtifacts,
     rollbackRestoreFromSafetySnapshot,
   },
   createBackup,

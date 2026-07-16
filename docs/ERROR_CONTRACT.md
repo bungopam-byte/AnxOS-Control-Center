@@ -22,8 +22,9 @@ timeout, authentication rejection, version incompatibility, and TLS
 verification failure.
 
 IPC domains retain their existing renderer-facing success shapes. Migrated
-domains wrap failures with stable codes and sanitized details. Raw stacks are
-for redacted local diagnostics only and are not renderer or Agent API output.
+domains wrap failures with stable codes and sanitized details. Expected Agent
+HTTP and transport failures omit raw stacks from local logs, renderer output,
+and Agent API responses; stable codes and cause-code metadata remain available.
 
 `src/shared/ipcError.js` is the desktop failure normalizer. Its contract
 contains `code`, `friendlyMessage`, `technicalDetails`, `suggestion`,

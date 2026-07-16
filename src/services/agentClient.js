@@ -390,7 +390,6 @@ function buildAgentUrl(pathname, configOverride = null) {
             invalidUrl: config.url,
             name: error?.name || null,
             message: error?.message || null,
-            stack: error?.stack || null,
           },
         },
       },
@@ -431,7 +430,6 @@ function logAgentRequestFailure(pathname, status, errorCode = null, details = {}
     message: details.message || null,
     originalMessage: details.originalMessage || null,
     causeCode: details.causeCode || null,
-    stack: details.stack || null,
     suppressedCount,
   });
   requestFailureLogState.set(key, { lastLoggedAt: now, suppressedCount: 0 });
@@ -665,7 +663,6 @@ async function requestJson(pathname, options = {}) {
           : typeof payload === "string" ? payload : JSON.stringify(payload),
         message: error.message,
         originalMessage: dockerNotFoundDetails?.likelyCause || null,
-        stack: error.stack,
       });
       throw error;
     }
@@ -696,7 +693,6 @@ async function requestJson(pathname, options = {}) {
         message: transportMessage,
         originalMessage: error?.message || null,
         causeCode: error?.cause?.code || error?.code || null,
-        stack: error?.stack || null,
       });
     }
     throw new AgentClientError(transportMessage, {
@@ -710,7 +706,6 @@ async function requestJson(pathname, options = {}) {
             message: transportMessage,
             originalMessage: error?.message || null,
             causeCode: error?.cause?.code || error?.code || null,
-            stack: error?.stack || null,
             url: requestUrl,
             payload: error?.payload || null,
           },
@@ -1300,7 +1295,6 @@ async function requestBuffer(pathname, options = {}) {
           ? "[redacted authentication response]"
           : typeof payload === "string" ? payload : JSON.stringify(payload),
         message: error.message,
-        stack: error.stack,
       });
       throw error;
     }
@@ -1332,7 +1326,6 @@ async function requestBuffer(pathname, options = {}) {
       message: transportMessage,
       originalMessage: error?.message || null,
       causeCode: error?.cause?.code || error?.code || null,
-      stack: error?.stack || null,
     });
     throw new AgentClientError(transportMessage, {
       code: errorCode,
@@ -1345,7 +1338,6 @@ async function requestBuffer(pathname, options = {}) {
             message: transportMessage,
             originalMessage: error?.message || null,
             causeCode: error?.cause?.code || error?.code || null,
-            stack: error?.stack || null,
             url: requestUrl,
             payload: error?.payload || null,
           },

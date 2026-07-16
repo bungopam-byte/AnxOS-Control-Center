@@ -149,7 +149,6 @@ function logRequestError(request, error, statusCode, code) {
     details: error?.details || null,
     responseBody: error?.details?.body || error?.details?.responseBody || null,
     failingUrl: error?.details?.url || error?.details?.invalidUrl || null,
-    stack: error?.stack || null,
   });
 }
 

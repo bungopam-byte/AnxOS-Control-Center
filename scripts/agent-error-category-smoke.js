@@ -5,6 +5,15 @@ const os = require("os");
 const path = require("path");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "anx-agent-errors-"));
+const originalConsoleError = console.error;
+const requestFailureLogs = [];
+console.error = (...args) => {
+  if (args[0] === "[AnxOS][Agent] Request failed.") {
+    requestFailureLogs.push(args[1]);
+    return;
+  }
+  originalConsoleError(...args);
+};
 process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 fs.mkdirSync(process.env.ANXHUB_CONFIG_DIR, { recursive: true });
 
@@ -87,6 +96,9 @@ async function main() {
   const tlsMessage = agentClient._test.getAgentTransportErrorMessage("CERT_HAS_EXPIRED", "https://agent.example.test:47131");
   assert(/TLS verification failed/.test(tlsMessage) && /certificate validity/.test(tlsMessage), "TLS failures must provide certificate-specific guided recovery.");
   assert(!/token|authorization header/i.test(tlsMessage), "TLS recovery guidance must not request or expose credentials.");
+  const serializedFailureLogs = JSON.stringify(requestFailureLogs);
+  assert(!serializedFailureLogs.includes("bad-token"), "Agent failure diagnostics must not expose node credentials.");
+  assert(!serializedFailureLogs.includes('"stack"'), "Expected Agent failures must not emit raw stack traces into diagnostics.");
 
   await Promise.all([auth, incompatible, healthy].map((entry) => new Promise((resolve) => entry.server.close(resolve))));
   console.log("Agent error category smoke checks passed.");
@@ -98,5 +110,6 @@ main()
     process.exitCode = 1;
   })
   .finally(() => {
+    console.error = originalConsoleError;
     fs.rmSync(root, { recursive: true, force: true });
   });

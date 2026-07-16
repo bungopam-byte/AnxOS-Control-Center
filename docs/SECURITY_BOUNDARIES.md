@@ -44,6 +44,10 @@ Instance listing, status, metrics, logs, files, and game-configuration reads
 require `instance:read`. Admin and User roles retain read access; configured
 signed-out sessions cannot query local or remote instance data.
 
+Docker inventory, inspection, logs, stats, Compose reads, and cleanup previews
+require `docker:read`. Admin and User roles retain read access; configured
+signed-out sessions cannot use the main process as a Docker data proxy.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

@@ -209,7 +209,7 @@ async function main() {
   const createActionBody = appSource.match(/async function handleDockerAction\(actionName\) \{[\s\S]*?\n  const definition = getDockerActionDefinition/)?.[0] || "";
   assert(createActionBody.includes("focusDockerCreateForm") && createActionBody.includes("Create Container form"), "Docker create action should route users to the in-page form.");
   assert(!/window\.prompt|prompt\(|window\.confirm|confirm\(/.test(createActionBody), "Docker create action must not use browser dialogs.");
-  assert(dockerIpcSource.includes("DOCKER_REQUEST_FAILED") && dockerIpcSource.includes("docker:getSnapshot") && dockerIpcSource.includes('getDockerSnapshot(requireDockerNodeContext(payload, "snapshot"))'), "Docker IPC must preserve coded snapshot errors and require node context.");
+  assert(dockerIpcSource.includes("DOCKER_REQUEST_FAILED") && dockerIpcSource.includes("docker:getSnapshot") && dockerIpcSource.includes('getDockerSnapshot(requireDockerRead(payload, "snapshot"))'), "Docker IPC must preserve coded snapshot errors and authorize node-context reads.");
   [
     "docker:pause",
     "docker:kill",

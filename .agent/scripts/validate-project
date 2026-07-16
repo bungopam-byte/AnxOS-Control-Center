@@ -82,6 +82,7 @@ function main() {
     "nodes:ipc-authorization:smoke",
     "instances:ipc-error-contract:smoke",
     "docker:ipc-error-contract:smoke",
+    "docker:ipc-authorization:smoke",
     "ssh:ipc-authorization:smoke",
     "node:switch:smoke",
     "node:application-host-identity:smoke",

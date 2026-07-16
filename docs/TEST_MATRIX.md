@@ -19,6 +19,7 @@
 | Node IPC authorization | `npm run nodes:ipc-authorization:smoke` |
 | Instance IPC error contract | `npm run instances:ipc-error-contract:smoke` |
 | Docker IPC error contract | `npm run docker:ipc-error-contract:smoke` |
+| Docker IPC authorization | `npm run docker:ipc-authorization:smoke` |
 | Security IPC error contract | `npm run security:ipc-error-contract:smoke` |
 | Account IPC error contract | `npm run account:ipc-error-contract:smoke` |
 | Owner Workspace IPC error contract | `npm run owner:ipc-error-contract:smoke` |

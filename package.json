@@ -29,6 +29,7 @@
     "operations:framework:smoke": "node scripts/long-operation-framework-smoke.js",
     "docker:smoke": "node scripts/docker-smoke.js",
     "docker:ipc-error-contract:smoke": "node scripts/docker-ipc-error-contract-smoke.js",
+    "docker:ipc-authorization:smoke": "node scripts/docker-ipc-authorization-smoke.js",
     "account:smoke": "node scripts/account-system-smoke.js",
     "account:ipc-error-contract:smoke": "node scripts/account-ipc-error-contract-smoke.js",
     "device-activation:smoke": "node scripts/device-activation-smoke.js",

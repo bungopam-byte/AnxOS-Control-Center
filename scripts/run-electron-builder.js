@@ -90,6 +90,7 @@ fs.writeFileSync(path.join(process.cwd(), "release-build.json"), `${JSON.stringi
 
 normalizePackageInputs();
 
+const localBinDir = path.join(process.cwd(), "node_modules", ".bin");
 const result = spawnSync(
   process.platform === "win32" ? "electron-builder.cmd" : "electron-builder",
   builderArgs,
@@ -99,9 +100,26 @@ const result = spawnSync(
     shell: false,
     env: {
       ...process.env,
+      // Ensure resolution works even when this script is invoked directly
+      // (e.g. `node scripts/run-electron-builder.js ...`) rather than only
+      // through an npm script, where npm would otherwise prepend this path
+      // automatically.
+      PATH: [localBinDir, process.env.PATH || ""].filter(Boolean).join(path.delimiter),
       ANXOS_RELEASE_ARTIFACT_VERSION: info.artifactVersion,
     },
   },
 );
 
-process.exit(result.status || 0);
+if (result.error) {
+  console.error(`electron-builder could not be started: ${result.error.message}`);
+  process.exit(1);
+}
+
+if (result.signal) {
+  console.error(`electron-builder was terminated by signal ${result.signal}.`);
+  process.exit(1);
+}
+
+// result.status is 0 on success. A non-zero exit code must propagate as a
+// failure; it must never be silently coerced into a success exit code.
+process.exit(typeof result.status === "number" ? result.status : 1);

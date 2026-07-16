@@ -78,6 +78,8 @@ const requiredEntries = [
   "/src/shared/redaction.js",
   "/src/shared/structuredLogger.js",
   "/src/shared/releaseConfig.js",
+  "/src/shared/longOperationService.js",
+  "/src/shared/dockerService.js",
 ];
 
 const forbiddenEntries = [
@@ -169,6 +171,35 @@ if (fs.existsSync(linuxResources)) {
   assert((fs.statSync(linuxResources).mode & 0o755) === 0o755, "Linux resources directory must be readable and traversable after packaging.");
   assert((fs.statSync(path.join(linuxResources, "app.asar")).mode & 0o644) === 0o644, "Linux app.asar must be readable after installation.");
   assert((fs.statSync(path.join(linuxResources, "app.asar.unpacked")).mode & 0o755) === 0o755, "Linux app.asar.unpacked must be readable and traversable after packaging.");
+}
+
+// The packaged Agent runtime requires shared modules via relative paths
+// (e.g. "../../../src/shared/longOperationService.js") that only resolve
+// correctly at the real packaged directory depth. Actually require them
+// from the unpacked runtime, rather than only asserting file presence, to
+// prove the packaged Agent can genuinely load its shared dependencies.
+for (const target of selectedTargets) {
+  const resourcesDir = target === "win"
+    ? path.join(distDir, "win-unpacked", "resources")
+    : path.join(distDir, "linux-unpacked", "resources");
+  const runtimeRoot = path.join(resourcesDir, "local-agent-runtime");
+  if (!fs.existsSync(runtimeRoot)) continue;
+  const script = `
+    const fs = require("fs");
+    const os = require("os");
+    const path = require("path");
+    process.env.ANXHUB_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "packaging-smoke-agent-config-"));
+    process.env.AGENT_INSTANCE_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "packaging-smoke-agent-instances-"));
+    process.env.AGENT_BACKUP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "packaging-smoke-agent-backups-"));
+    const dockerService = require(${JSON.stringify(path.join(runtimeRoot, "agent", "src", "services", "dockerService.js"))});
+    const backupService = require(${JSON.stringify(path.join(runtimeRoot, "agent", "src", "services", "backupService.js"))});
+    if (typeof dockerService.pullImage !== "function") throw new Error("Packaged Agent dockerService did not load pullImage.");
+    if (typeof backupService.createBackup !== "function") throw new Error("Packaged Agent backupService did not load createBackup.");
+    console.log("packaged-agent-shared-require-ok");
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], { encoding: "utf8" });
+  assert.strictEqual(result.status, 0, `Packaged Agent runtime (${target}) failed to require its shared modules: ${result.stderr || result.stdout}`);
+  assert(String(result.stdout).includes("packaged-agent-shared-require-ok"), `Packaged Agent runtime (${target}) shared-module require check did not confirm success.`);
 }
 
 const debPath = path.join(distDir, `AnxOS-Control-Center-${artifactVersion}.deb`);

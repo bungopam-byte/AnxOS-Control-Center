@@ -50,6 +50,10 @@ changes it to `Running/ready/healthy`. A process still alive at the configured
 startup deadline becomes `Running/timeout/degraded`, not falsely healthy.
 Failures remain `Crashed`, bounded immediate restart failures become
 `Crash Loop`, and intentional stops return to `Stopped/stopped/unknown`.
+When a persisted active lifecycle record has no live or discoverable PID,
+reconciliation clears the stale PID and reports `Unknown` with
+`failureReason: "STALE_PID"`; it does not misreport an unobserved exit as an
+intentional stop. A persisted `Stopping` record still repairs to `Stopped`.
 
 ## Instances
 

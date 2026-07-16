@@ -27,6 +27,7 @@ const INSTANCE_STATES = Object.freeze({
   STOPPING: "Stopping",
   RESTARTING: "Restarting",
   FAILED: "Failed",
+  UNKNOWN: "Unknown",
   SETUP_REQUIRED: "Setup Required",
 });
 
@@ -691,7 +692,8 @@ function publicConfig(config) {
   const readinessState = config.state === INSTANCE_STATES.RUNNING ? config.readinessState || "unknown"
     : config.state === INSTANCE_STATES.STARTING ? "starting"
       : config.state === INSTANCE_STATES.STOPPING ? "stopping"
-        : config.state === INSTANCE_STATES.FAILED ? "failed" : "stopped";
+        : config.state === INSTANCE_STATES.FAILED ? "failed"
+          : config.state === INSTANCE_STATES.UNKNOWN ? "unknown" : "stopped";
   const healthState = crashLoop ? "crash-loop"
     : config.state === INSTANCE_STATES.FAILED ? "crashed"
       : config.state === INSTANCE_STATES.RUNNING ? (readinessState === "ready" ? "healthy" : "degraded")
@@ -2594,12 +2596,16 @@ async function reconcileConfigState(config) {
   }
 
   if (config.state === INSTANCE_STATES.RUNNING || config.state === INSTANCE_STATES.STARTING || config.state === INSTANCE_STATES.STOPPING || config.state === INSTANCE_STATES.RESTARTING) {
+    const intentionalStop = config.state === INSTANCE_STATES.STOPPING;
     const updated = {
       ...config,
-      state: INSTANCE_STATES.STOPPED,
+      state: intentionalStop ? INSTANCE_STATES.STOPPED : INSTANCE_STATES.UNKNOWN,
       pid: null,
       runtimeProcess: null,
       lastStoppedAt: config.lastStoppedAt || nowIso(),
+      failureReason: intentionalStop ? null : "STALE_PID",
+      readinessState: intentionalStop ? "stopped" : "unknown",
+      healthState: "unknown",
     };
 
     await saveInstanceConfig(updated);

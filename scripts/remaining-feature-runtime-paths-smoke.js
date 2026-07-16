@@ -17,8 +17,8 @@ const systemService = read("src/services/systemService.js");
 const publicAccessService = read("src/services/publicAccessProviderService.js");
 
 [
-  [dockerIpc, "docker:getSnapshot", "requireDockerNodeContext(payload, \"snapshot\")"],
-  [instancesIpc, "instances:list", "wrapExpectedAgentRead(\"instances:list\""],
+  [dockerIpc, "docker:getSnapshot", "requireDockerRead(payload, \"snapshot\")"],
+  [instancesIpc, "instances:list", "registerInstanceHandler(\"instances:list\""],
   [backupsIpc, "backups:list", "listBackups(requireNodeContext(payload, \"backup listing\"))"],
   [ampIpc, "amp:getSnapshot", "getAmpSnapshot(requireNodeContext(payload, \"AMP snapshot\"))"],
   [systemIpc, "system:getSnapshot", "getSystemSnapshot(requireNodeContext(payload, \"system metrics\"))"],
@@ -27,6 +27,9 @@ const publicAccessService = read("src/services/publicAccessProviderService.js");
   assert(source.includes("wrapExpectedAgentRead") || source.includes("invokePublicAccessRead"), `${channel} must use structured expected-error handling.`);
   assert(source.includes(contextNeedle), `${channel} must require explicit active-node context.`);
 });
+assert(dockerIpc.includes("function requireDockerRead") && dockerIpc.includes("return requireDockerNodeContext(payload, operation)"), "Docker read wrapper must enforce the shared node-context gate.");
+assert(dockerIpc.includes("function requireDockerNodeContext") && dockerIpc.includes("return requireNodeContext(payload, `Docker ${operation}`)"), "Docker node wrapper must delegate to the shared context validator.");
+assert(instancesIpc.includes("function registerInstanceHandler") && instancesIpc.includes("requireNodeContext(payload, channel)"), "Instances handler registration must enforce the shared node-context gate.");
 
 assert(serviceRouter.includes("if (shouldPreserveAgentError(error)) {\n        throw error;\n      }"), "Docker capability probing must preserve authentication and node errors.");
 assert(serviceRouter.includes("async function getAgentAmpSnapshot(options = {})") && serviceRouter.includes("if (shouldPreserveAgentError(error)) throw error;"), "AMP must preserve authentication and node errors.");

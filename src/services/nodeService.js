@@ -731,8 +731,30 @@ function needsCredentialWrite(state) {
 }
 
 function readNodeState() {
+  const nodesPath = getNodesPath();
   let parsed = {};
-  try { parsed = JSON.parse(fs.readFileSync(getNodesPath(), "utf8")); } catch {}
+  if (fs.existsSync(nodesPath)) {
+    const raw = fs.readFileSync(nodesPath, "utf8");
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      const backupPath = `${nodesPath}.corrupt.backup`;
+      if (!fs.existsSync(backupPath)) fs.copyFileSync(nodesPath, backupPath);
+      throw Object.assign(new Error("Node configuration is unreadable. The original file was preserved for recovery."), { code: "NODE_CONFIG_CORRUPT", backupPath });
+    }
+    const schemaVersion = Number(parsed?.schemaVersion || 0);
+    if (schemaVersion > NODE_SCHEMA_VERSION) {
+      throw Object.assign(new Error(`Node configuration schema ${schemaVersion} is newer than this application supports.`), {
+        code: "NODE_SCHEMA_UNSUPPORTED",
+        schemaVersion,
+        supportedSchemaVersion: NODE_SCHEMA_VERSION,
+      });
+    }
+    if (schemaVersion < NODE_SCHEMA_VERSION) {
+      const backupPath = `${nodesPath}.schema-v${schemaVersion}.backup`;
+      if (!fs.existsSync(backupPath)) fs.copyFileSync(nodesPath, backupPath);
+    }
+  }
   const state = migrateState(parsed);
   if (parsed.schemaVersion !== NODE_SCHEMA_VERSION || JSON.stringify(parsed) !== JSON.stringify(toPersistentState(state)) || needsCredentialWrite(state)) writeNodeState(state);
   return state;
@@ -746,7 +768,10 @@ function writeNodeState(state) {
     }
     return toPersistentNode(node);
   });
-  fs.writeFileSync(getNodesPath(), `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes, removedLocalAgents: normalizeRemovedLocalAgents(state.removedLocalAgents) }, null, 2)}\n`, { mode: 0o600 });
+  const target = getNodesPath();
+  const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(temp, `${JSON.stringify({ schemaVersion: NODE_SCHEMA_VERSION, selectedNodeId: state.selectedNodeId, nodes, removedLocalAgents: normalizeRemovedLocalAgents(state.removedLocalAgents) }, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temp, target);
 }
 
 function publicNode(node) {

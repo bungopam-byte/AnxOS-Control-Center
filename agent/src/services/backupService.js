@@ -6,6 +6,7 @@ const zlib = require("zlib");
 
 const { getConfig } = require("../config");
 const instanceService = require("./instances/instanceService");
+const longOperations = require("../../../src/shared/longOperationService");
 
 const BACKUP_FORMAT = "tar.gz";
 const BACKUP_EXTENSION = ".tar.gz";
@@ -16,6 +17,24 @@ let schedulerStarted = false;
 
 function createBackupError(code, statusCode = 400) {
   return Object.assign(new Error(code), { code, statusCode });
+}
+
+function acquireBackupLock(instanceId, kind) {
+  try {
+    return longOperations.createOperation({
+      kind,
+      lockKey: `backup:${instanceId}`,
+      status: "running",
+      canCancel: false,
+      retryable: true,
+      metadata: { instanceId },
+    });
+  } catch (error) {
+    if (error?.code === "DUPLICATE_OPERATION") {
+      throw createBackupError("BACKUP_OPERATION_IN_PROGRESS", 409);
+    }
+    throw error;
+  }
 }
 
 function nowIso() {
@@ -511,7 +530,7 @@ async function pruneRetention(instanceId, options = {}) {
   }
 }
 
-async function createBackup(payload = {}) {
+async function performCreateBackup(payload = {}) {
   const instanceId = validateInstanceId(payload.instanceId);
   const type = String(payload.type || "full") === "world" ? "world" : "full";
   const instancePath = await getInstancePath(instanceId);
@@ -542,6 +561,22 @@ async function createBackup(payload = {}) {
   return { backup: metadata };
 }
 
+async function createBackup(payload = {}) {
+  const instanceId = validateInstanceId(payload.instanceId);
+  const operation = acquireBackupLock(instanceId, "backup-create");
+  try {
+    const result = await performCreateBackup(payload);
+    longOperations.completeOperation(operation.id, { metadata: { instanceId, backupId: result.backup.id } });
+    return result;
+  } catch (error) {
+    longOperations.failOperation(operation.id, {
+      code: error?.code || "BACKUP_CREATE_FAILED",
+      message: error?.message || "Backup creation failed.",
+    }, { retryable: true });
+    throw error;
+  }
+}
+
 async function deleteBackup(backupId) {
   const id = validateBackupId(backupId);
   const metadata = await readBackupMetadata(id).catch((error) => {
@@ -559,7 +594,10 @@ async function deleteBackup(backupId) {
 }
 
 async function createSafetySnapshot(instanceId) {
-  return createBackup({
+  // Called from within restoreBackup, which already holds the backup:${instanceId}
+  // lock for the duration of the restore, so this bypasses the public locked entry
+  // point to avoid a false self-conflict on the same lock key.
+  return performCreateBackup({
     instanceId,
     name: `${instanceId} safety snapshot before restore`,
     type: "full",
@@ -577,43 +615,53 @@ async function restoreBackup(payload = {}) {
   if (payload.confirmOverwrite !== true) {
     throw createBackupError("RESTORE_OVERWRITE_CONFIRMATION_REQUIRED", 400);
   }
-  const instancePath = await getInstancePath(instanceId);
-  const validation = await validateArchiveFile(backup.path);
+  const operation = acquireBackupLock(instanceId, "backup-restore");
+  try {
+    const instancePath = await getInstancePath(instanceId);
+    const validation = await validateArchiveFile(backup.path);
 
-  await instanceService.stopInstance(instanceId).catch(() => {});
-  const safety = await createSafetySnapshot(instanceId);
-  if (backup.type === "world") {
-    for (const sourcePath of Array.isArray(backup.sourcePaths) ? backup.sourcePaths : []) {
-      const targetPath = path.resolve(instancePath, sourcePath);
-      if (!isInsideRoot(targetPath, instancePath)) {
-        throw createBackupError("BACKUP_ARCHIVE_PATH_UNSAFE", 400);
+    await instanceService.stopInstance(instanceId).catch(() => {});
+    const safety = await createSafetySnapshot(instanceId);
+    if (backup.type === "world") {
+      for (const sourcePath of Array.isArray(backup.sourcePaths) ? backup.sourcePaths : []) {
+        const targetPath = path.resolve(instancePath, sourcePath);
+        if (!isInsideRoot(targetPath, instancePath)) {
+          throw createBackupError("BACKUP_ARCHIVE_PATH_UNSAFE", 400);
+        }
+        await fs.rm(targetPath, { recursive: true, force: true });
       }
-      await fs.rm(targetPath, { recursive: true, force: true });
+    } else {
+      await fs.rm(instancePath, { recursive: true, force: true });
+      await fs.mkdir(instancePath, { recursive: true, mode: 0o700 });
     }
-  } else {
-    await fs.rm(instancePath, { recursive: true, force: true });
-    await fs.mkdir(instancePath, { recursive: true, mode: 0o700 });
+    await extractTarGzArchive(backup.path, instancePath);
+
+    if (backup.type !== "world" && !await fs.stat(path.join(instancePath, "config.json")).then((stats) => stats.isFile(), () => false)) {
+      throw createBackupError("RESTORE_VERIFICATION_FAILED", 500);
+    }
+
+    const restored = {
+      backupId: backup.id,
+      instanceId,
+      safetyBackupId: safety.backup.id,
+      requiredDiskSpace: validation.uncompressedSize,
+      restoredEntries: validation.entryCount,
+      restoredAt: nowIso(),
+    };
+
+    if (payload.restart === true) {
+      await instanceService.startInstance(instanceId).catch(() => {});
+    }
+
+    longOperations.completeOperation(operation.id, { metadata: { instanceId, backupId: backup.id, safetyBackupId: safety.backup.id } });
+    return { restore: restored };
+  } catch (error) {
+    longOperations.failOperation(operation.id, {
+      code: error?.code || "BACKUP_RESTORE_FAILED",
+      message: error?.message || "Backup restore failed.",
+    }, { retryable: true });
+    throw error;
   }
-  await extractTarGzArchive(backup.path, instancePath);
-
-  if (backup.type !== "world" && !await fs.stat(path.join(instancePath, "config.json")).then((stats) => stats.isFile(), () => false)) {
-    throw createBackupError("RESTORE_VERIFICATION_FAILED", 500);
-  }
-
-  const restored = {
-    backupId: backup.id,
-    instanceId,
-    safetyBackupId: safety.backup.id,
-    requiredDiskSpace: validation.uncompressedSize,
-    restoredEntries: validation.entryCount,
-    restoredAt: nowIso(),
-  };
-
-  if (payload.restart === true) {
-    await instanceService.startInstance(instanceId).catch(() => {});
-  }
-
-  return { restore: restored };
 }
 
 async function importBackup(payload = {}) {

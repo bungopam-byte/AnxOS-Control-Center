@@ -161,6 +161,25 @@ async function main() {
   fs.writeFileSync(path.join(instancePath, "config.json"), JSON.stringify({ id: instanceId, displayName: "Smoke", state: "Stopped" }));
   fs.writeFileSync(path.join(instancePath, "data", "world", "level.dat"), "world");
 
+  // Concurrent create/restore operations against the same instance must not race:
+  // the shared long-operation registry should reject the second call while the
+  // first is still running, instead of letting both mutate instance files at once.
+  const concurrentAttempts = await Promise.allSettled([
+    backupService.createBackup({ instanceId, type: "world", name: "Concurrent A", createdBy: "smoke" }),
+    backupService.createBackup({ instanceId, type: "world", name: "Concurrent B", createdBy: "smoke" }),
+  ]);
+  const fulfilled = concurrentAttempts.filter((result) => result.status === "fulfilled");
+  const rejected = concurrentAttempts.filter((result) => result.status === "rejected");
+  assert.strictEqual(fulfilled.length, 1, "Only one of two concurrent backup creations for the same instance should succeed.");
+  assert.strictEqual(rejected.length, 1, "The second concurrent backup creation for the same instance should be rejected.");
+  assert.strictEqual(rejected[0].reason?.code, "BACKUP_OPERATION_IN_PROGRESS", "Rejected concurrent backup creation should use a dedicated conflict error code.");
+  await backupService.deleteBackup(fulfilled[0].value.backup.id);
+  const afterConcurrencyCheck = await backupService.listBackups({ instanceId });
+  assert.strictEqual(afterConcurrencyCheck.backups.length, 0, "Concurrency check backup should be cleaned up before the main backup assertions.");
+  const retriedAfterLockRelease = await backupService.createBackup({ instanceId, type: "world", name: "After lock release", createdBy: "smoke" });
+  assert(retriedAfterLockRelease.backup.id, "A new backup for the same instance should succeed once the prior operation has completed.");
+  await backupService.deleteBackup(retriedAfterLockRelease.backup.id);
+
   const created = await backupService.createBackup({ instanceId, type: "world", name: "Smoke world", createdBy: "smoke" });
   assert(created.backup.id, "Backup should have an id.");
   assert.strictEqual(created.backup.type, "world", "World backup type should persist.");

@@ -68,6 +68,10 @@ include feature-flag overrides. Corrupt or future state is preserved and fails
 explicitly, so flags and private workspace content are never replaced by
 defaults after a read failure.
 
+`owner-accounts.json` uses schema version 1 and atomic writes. Legacy owner
+allowlists are preserved before migration. Corrupt or future state fails
+closed instead of silently removing trusted owner authorization.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

@@ -80,6 +80,28 @@ function assertFrontendCannotGrantOwner() {
 async function main() {
   fs.mkdirSync(process.env.ANXHUB_CONFIG_DIR, { recursive: true });
 
+  const ownerConfig = reload("../src/services/ownerAccountConfig");
+  const ownerAccountsPath = ownerConfig.getOwnerAccountsPath(process.env.ANXHUB_CONFIG_DIR);
+  ownerConfig.writeOwnerAccounts({ emails: ["FILE-OWNER@example.com"] }, { configDirectory: process.env.ANXHUB_CONFIG_DIR });
+  const validOwnerAccountsRaw = fs.readFileSync(ownerAccountsPath, "utf8");
+  assert.strictEqual(JSON.parse(validOwnerAccountsRaw).schemaVersion, ownerConfig.OWNER_ACCOUNTS_SCHEMA_VERSION, "Owner account writes must include the current schema.");
+  fs.writeFileSync(ownerAccountsPath, `${JSON.stringify({ schemaVersion: ownerConfig.OWNER_ACCOUNTS_SCHEMA_VERSION + 1, emails: ["future@example.com"] })}\n`);
+  const futureRaw = fs.readFileSync(ownerAccountsPath, "utf8");
+  assert.throws(
+    () => ownerConfig.readOwnerAccountsFile(process.env.ANXHUB_CONFIG_DIR),
+    (error) => error?.code === "OWNER_ACCOUNT_SCHEMA_UNSUPPORTED",
+    "Future owner account schemas must fail closed.",
+  );
+  assert.strictEqual(fs.readFileSync(ownerAccountsPath, "utf8"), futureRaw, "Future owner account state must remain unchanged.");
+  fs.writeFileSync(ownerAccountsPath, "{not-json\n");
+  assert.throws(
+    () => ownerConfig.readOwnerAccountsFile(process.env.ANXHUB_CONFIG_DIR),
+    (error) => error?.code === "OWNER_ACCOUNT_STORE_CORRUPT",
+    "Corrupt owner account state must fail closed.",
+  );
+  assert(fs.readdirSync(process.env.ANXHUB_CONFIG_DIR).some((name) => name.startsWith("owner-accounts.json.corrupt-")), "Corrupt owner account state should be preserved.");
+  fs.writeFileSync(ownerAccountsPath, validOwnerAccountsRaw, { mode: 0o600 });
+
   resetModules();
   writeAccountSession({
     id: "11111111-1111-4111-8111-111111111111",

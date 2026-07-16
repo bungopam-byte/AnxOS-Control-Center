@@ -70,6 +70,7 @@ function main() {
     "owner:smoke",
     "owner-account:smoke",
     "account:smoke",
+    "account:ipc-error-contract:smoke",
     "agent:token:smoke",
     "instances:ipc-authorization:smoke",
     "action:ipc-authorization:smoke",

@@ -13,13 +13,10 @@ const {
   startDeviceLogin,
   redactSecret,
 } = require("../services/accountAuthService");
+const { normalizeIpcError } = require("../shared/ipcError");
 
 function getAccountErrorMessage(error) {
   return redactSecret(error?.message || error?.code || "AnxOS account request failed.");
-}
-
-function getAccountErrorCode(error) {
-  return String(error?.code || error?.name || "ACCOUNT_REQUEST_FAILED");
 }
 
 async function invokeAccountOperation(operation, operationName = "account") {
@@ -31,17 +28,19 @@ async function invokeAccountOperation(operation, operationName = "account") {
     return result;
   } catch (error) {
     diagnostics.logError("account-auth", operationName, error, {}, { file: "auth" });
+    const normalized = normalizeIpcError(error, {
+      code: "ACCOUNT_REQUEST_FAILED",
+      friendlyMessage: getAccountErrorMessage(error),
+      suggestion: "Check the account connection and credentials, then retry.",
+    });
     console.warn("[Account][IPC] Operation failed.", {
       operation: operationName,
-      code: error?.code || null,
-      message: getAccountErrorMessage(error),
+      code: normalized.code,
+      message: normalized.friendlyMessage,
     });
     return {
       ok: false,
-      error: {
-        code: getAccountErrorCode(error),
-        message: getAccountErrorMessage(error),
-      },
+      error: normalized,
     };
   }
 }

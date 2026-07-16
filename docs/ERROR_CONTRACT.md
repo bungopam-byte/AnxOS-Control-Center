@@ -40,3 +40,6 @@ Compose, and cleanup failures.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.
+Account authentication IPC retains its existing `{ok:false,error}` failure
+shape and now fills the complete shared contract for device login, password
+login, refresh, logout, and device-management failures.

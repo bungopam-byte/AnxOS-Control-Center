@@ -62,12 +62,19 @@ async function main() {
     const handler = handlers.get(channel);
     assert(handler, `${channel} should be registered.`);
     await assert.rejects(
-      () => handler({}, { id: "new-instance", instanceId: "instance-a", path: "folder", oldPath: "old", newPath: "new" }),
+      () => handler({}, { nodeId: "node-a", id: "new-instance", instanceId: "instance-a", path: "folder", oldPath: "old", newPath: "new" }),
       (error) => error?.code === "PERMISSION_DENIED",
       `${channel} should reject an unauthorized renderer request.`,
     );
     assert.strictEqual(serviceInvoked, false, `${channel} must authorize before calling its service.`);
   }
+  const lifecycleHandler = handlers.get("instances:start");
+  assert.throws(
+    () => lifecycleHandler({}, { instanceId: "instance-a" }),
+    (error) => error?.code === "NODE_REQUIRED",
+    "Instance lifecycle requests must reject missing target context before authorization or execution.",
+  );
+  assert.strictEqual(serviceInvoked, false, "Missing instance target context must not reach the service router.");
   console.log("Instance IPC authorization smoke checks passed.");
 }
 

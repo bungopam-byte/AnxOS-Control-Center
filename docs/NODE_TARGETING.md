@@ -25,3 +25,8 @@ contract may initialize an unavailable node API to the built-in host.
 
 Destructive IPC carries the explicit target through authorization and service
 routing. UI hiding is never used as target validation.
+
+The Instances IPC domain rejects every request without an explicit `nodeId`
+before authorization or service routing. Console command options are preserved
+through preload so a command executes against the target captured when the user
+submitted it, even if selection changes while the request is in flight.

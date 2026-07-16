@@ -251,7 +251,7 @@ const desktopApi = {
     getMetrics: (instanceId, options = {}) => invokeAgentFeature("instances:getMetrics", { ...options, instanceId }),
     getLogs: (instanceId, options = {}) => invokeAgentFeature("instances:getLogs", { instanceId, ...options }),
     clearLogs: (instanceId, options = {}) => ipcRenderer.invoke("instances:clearLogs", { instanceId, ...options }),
-    sendCommand: (instanceId, command) => ipcRenderer.invoke("instances:sendCommand", { instanceId, command }),
+    sendCommand: (instanceId, command, options = {}) => ipcRenderer.invoke("instances:sendCommand", { ...options, instanceId, command }),
     start: (instanceId, payload = {}) => ipcRenderer.invoke("instances:start", { ...payload, instanceId }),
     stop: (instanceId, payload = {}) => ipcRenderer.invoke("instances:stop", { ...payload, instanceId }),
     restart: (instanceId, payload = {}) => ipcRenderer.invoke("instances:restart", { ...payload, instanceId }),

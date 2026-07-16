@@ -114,6 +114,8 @@ async function main() {
 
     const serviceRouter = require("../src/services/serviceRouter");
     const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+    const preloadSource = fs.readFileSync(path.join(root, "preload.js"), "utf8");
+    const instancesIpcSource = fs.readFileSync(path.join(root, "src", "ipc", "instancesIpc.js"), "utf8");
 
     const listA = await serviceRouter.listInstances({ nodeId: "node-a" });
     const listB = await serviceRouter.listInstances({ nodeId: "node-b" });
@@ -157,6 +159,8 @@ async function main() {
     assert(appSource.includes("resetNodeScopedRendererState(`Switching to"), "Renderer should clear instance state on node switch.");
     assert(appSource.includes("latestInstancesSnapshot = null"), "Renderer should clear old instance snapshots on switch.");
     assert(appSource.includes("desktopApiState.api.instances.list(getNodeScopedPayload(requestContext))"), "Renderer should list instances for selected node.");
+    assert(preloadSource.includes('sendCommand: (instanceId, command, options = {}) => ipcRenderer.invoke("instances:sendCommand", { ...options, instanceId, command })'), "Console commands must preserve the renderer-captured node context through preload.");
+    assert(instancesIpcSource.includes("registerInstanceHandler") && instancesIpcSource.includes("requireNodeContext(payload, channel)"), "Every Instances IPC handler must reject an omitted node context.");
     assert(appSource.includes("const requestContext = createNodeActionContext(\"instance-create\")"), "Instance create should bind an action context.");
     assert(appSource.includes("const requestContext = createNodeActionContext(`instance-${actionName}`)"), "Instance actions should bind node action context.");
     assert(appSource.includes("if (!isNodeActionStillCurrent(requestContext)) return;"), "Instance actions should guard stale node changes.");

@@ -421,7 +421,7 @@ function publicUser(user) {
     account: Boolean(user.account),
     email: user.email || null,
     provider: user.provider || null,
-    ownerAuthorized: Boolean(user.ownerAuthorized),
+    ownerAuthorized: user.account === true ? user.ownerAuthorized === true : user.role === "Owner",
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
     lastLoginAt: user.lastLoginAt || null,

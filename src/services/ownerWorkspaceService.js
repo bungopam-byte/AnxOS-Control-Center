@@ -198,7 +198,7 @@ function publicStatus() {
     workspace: fs.existsSync(getWorkspacePath()) ? "loaded" : "ready",
     agents: security.agentTokenConfigured ? "configured" : "disconnected",
     ready: authorized ? "ready" : "locked",
-    storagePath: getWorkspacePath(),
+    storagePath: authorized ? getWorkspacePath() : null,
   };
 }
 

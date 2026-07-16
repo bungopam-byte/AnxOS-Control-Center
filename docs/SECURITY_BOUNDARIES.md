@@ -90,6 +90,11 @@ the main application window can open it, after `settings:write` authorization,
 and only the created child window can close it or report a saved connection.
 Sender checks occur again for every invocation.
 
+Owner Workspace lock status is intentionally readable for navigation, but it
+does not expose workspace contents or local storage paths until trusted Owner
+authorization succeeds. Every workspace operation rechecks Owner access in the
+main-process service.
+
 ## Agent
 
 Desktop Agent Control list, status, diagnostics, configuration, lifecycle,

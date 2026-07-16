@@ -119,6 +119,7 @@ async function main() {
   let security = reload(securityPath);
   let workspace = reload(workspacePath);
 
+  assert.strictEqual(workspace.publicStatus().storagePath, null, "Locked Owner Workspace status must not disclose its local storage path.");
   assert.throws(() => workspace.getWorkspace(), /Owner access is required/, "Non-owner direct workspace reads should be denied.");
   assert.throws(() => workspace.saveContent({ pageId: "notes", markdown: "nope" }), /Owner access is required/, "Non-owner workspace writes should be denied.");
 
@@ -128,6 +129,8 @@ async function main() {
     passwordConfirm: "1245",
   });
   assert.strictEqual(security.getStatus().user.role, "Owner", "Trusted development fallback should create an owner session.");
+  assert.strictEqual(security.getStatus().user.ownerAuthorized, true, "A trusted local Owner session should be Owner-authorized.");
+  assert.strictEqual(workspace.publicStatus().storagePath, workspace.getWorkspacePath(), "Authorized Owner status should include the workspace path.");
 
   let data = workspace.getWorkspace();
   const builtIns = ["overview", "notes", "scratchpad", "ui-sandbox", "feature-flags", "api-tester", "internal-analytics", "command-center", "json-editor", "log-viewer"];

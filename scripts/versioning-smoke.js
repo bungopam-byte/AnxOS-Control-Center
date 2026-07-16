@@ -55,7 +55,7 @@ assert.strictEqual(
 
 const parsedWebsiteRelease = parseWebsiteConfigRelease(websiteConfig, "https://anxoscontrolcenter.org/config.js");
 assert.strictEqual(parsedWebsiteRelease.version, release.version, "Website config must expose the centralized public version.");
-assert(parsedWebsiteRelease.build <= release.build, "Website config must not advertise a newer build than the centralized release metadata.");
+assert.strictEqual(parsedWebsiteRelease.build, release.build, "Website config must match the centralized release build exactly.");
 assert.strictEqual(parsedWebsiteRelease.channel, release.channel, "Website config must expose the centralized channel.");
 
 assert(packageSource.includes("ANXOS_RELEASE_ARTIFACT_VERSION"), "Installer artifact naming must use the public release artifact label.");

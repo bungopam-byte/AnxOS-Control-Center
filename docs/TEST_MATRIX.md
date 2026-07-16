@@ -9,6 +9,7 @@
 | Multi-node health isolation | `npm run node:independent-health:smoke` |
 | Agent API authorization | `npm run agent:api-authorization:smoke` |
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |
+| Marketplace certification | `npm run marketplace:certification:smoke` |
 | Instances | `npm run instances:runtime:smoke`, `npm run instances:deletion:smoke`, `npm run instances:file-security:smoke` |
 | Instance metadata migration | `npm run instances:config-migration:smoke` |
 | Instance shutdown ownership | `npm run instances:shutdown:smoke` |

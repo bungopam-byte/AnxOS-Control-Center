@@ -34,12 +34,12 @@ async function main() {
   assert(serviceSource.includes("AGENT_NEWER_THAN_DESKTOP") && serviceSource.includes("LOCAL_AGENT_UPDATE_VERIFY_FAILED"), "Local Agent update flow must handle version skew and verification failures.");
   assert(serviceSource.includes("getLocalAgentStorageDiagnostics") && serviceSource.includes("getRecentSanitizedAgentLogs") && serviceSource.includes("dependencySummary"), "Local Agent diagnostics must include storage, logs, and dependency summaries.");
   assert(ipcSource.includes("runAuthorized") && ipcSource.includes('outcome: "failed"'), "Agent Control IPC must audit failed service operations as failures.");
-  assert(ipcSource.includes("runLocalLifecycle") && ipcSource.includes('start: () => control.start()'), "Local Agent lifecycle actions must be available without requiring npm or Owner-only service installation.");
+  assert(ipcSource.includes("runLocalLifecycle") && ipcSource.includes("return runAuthorized(operation, handler)") && ipcSource.includes('start: () => control.start()'), "Local Agent lifecycle actions must authorize through the shared Owner boundary.");
   assert(ipcSource.includes("agentControl:pairLocalAgent") && ipcSource.includes("pair-local-agent"), "Local Agent pairing must use the local lifecycle IPC path.");
   assert(ipcSource.includes("agentControl:updateLocalAgent") && ipcSource.includes("update-local-agent"), "Local Agent updates must use the local lifecycle IPC path.");
   assert(preloadSource.includes("updateLocalAgent") && preloadSource.includes("agentControl:updateLocalAgent"), "Preload must expose Local Agent update control.");
   assert(ipcSource.includes("installService: () => control.installService()") && ipcSource.includes("runAuthorized(channel, operation)"), "Background service installation must remain Owner-authorized.");
-  assert(ipcSource.includes('ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null'), "Local Agent diagnostics must remain read-only and available without owner authorization.");
+  assert(ipcSource.includes('ipcMain.handle("agentControl:diagnostics", () => runAuthorized("diagnostics"'), "Local Agent diagnostics must remain Owner-authorized because they expose host state.");
   assert(ipcSource.includes('authorize("remote-diagnostics")'), "Remote Agent diagnostic capture must remain owner-authorized.");
   assert(rendererSource.includes("getAgentControlOverviewTarget"), "Renderer must select an Agent Control overview target.");
   assert(rendererSource.includes('selectedNodeId === "application-host" && payload.local'), "Agent Control must derive the overview target from the active node.");

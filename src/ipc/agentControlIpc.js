@@ -12,7 +12,7 @@ async function runAuthorized(operation, handler) {
 }
 
 async function runLocalLifecycle(operation, handler) {
-  return runAudited(operation, null, handler);
+  return runAuthorized(operation, handler);
 }
 
 async function runAudited(operation, actor, handler) {
@@ -33,9 +33,9 @@ async function runAudited(operation, actor, handler) {
 }
 
 function registerAgentControlIpc() {
-  ipcMain.handle("agentControl:list", (_, payload = {}) => control.listAgents(payload));
-  ipcMain.handle("agentControl:status", (_, payload = {}) => control.getStatus(payload));
-  ipcMain.handle("agentControl:diagnostics", () => runAudited("diagnostics", null, () => control.runDiagnostics()));
+  ipcMain.handle("agentControl:list", (_, payload = {}) => runAuthorized("list", () => control.listAgents(payload)));
+  ipcMain.handle("agentControl:status", (_, payload = {}) => runAuthorized("status", () => control.getStatus(payload)));
+  ipcMain.handle("agentControl:diagnostics", () => runAuthorized("diagnostics", () => control.runDiagnostics()));
   ipcMain.handle("agentControl:remoteDiagnostics", (_, payload = {}) => {
     const actor = authorize("remote-diagnostics");
     return runAudited("remote-diagnostics", actor, () => control.captureRemoteDiagnostics(payload.nodeId));

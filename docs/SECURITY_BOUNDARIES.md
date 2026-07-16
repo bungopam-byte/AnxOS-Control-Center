@@ -67,6 +67,13 @@ visibility; node mutation and credential repair keep `settings:write`.
 
 ## Agent
 
+Desktop Agent Control list, status, diagnostics, configuration, lifecycle,
+pairing, repair, update, service registration, and filesystem-opening IPC
+handlers require the trusted Owner boundary before invoking their services.
+This requirement still permits the established unconfigured trusted-local
+first-run mode; once local security is configured, a signed-out renderer
+cannot inspect or mutate Agent state.
+
 The Agent authenticates requests before routing. Pairing endpoints are
 rate-limited and issue permanent credentials through the pairing workflow.
 Action and route permissions are checked server-side. Filesystem paths are

@@ -21,12 +21,7 @@ const {
   emergencySecurityAction,
   setupAdmin,
 } = require("../services/securityService");
-
-function getSecurityErrorMessage(error) {
-  return String(error?.message || error?.code || "Security request failed.")
-    .replace(/(authorization|cookie|password|refresh[_-]?token|access[_-]?token|agent[_-]?token|api[_-]?key|secret)\s*[:=]\s*[^,\s}]+/gi, "$1=[redacted]")
-    .replace(/\b[A-Za-z0-9_-]{24,}\b/g, "[redacted]");
-}
+const { createIpcError } = require("../shared/ipcError");
 
 async function invokeSecurityOperation(operation, operationName = "security") {
   console.info("[Security][IPC] Operation started.", { operation: operationName });
@@ -35,16 +30,21 @@ async function invokeSecurityOperation(operation, operationName = "security") {
     console.info("[Security][IPC] Operation completed.", { operation: operationName });
     return result;
   } catch (error) {
+    const wrapped = createIpcError(error, {
+      code: "SECURITY_IPC_FAILED",
+      fallbackMessage: "Security request failed.",
+      suggestion: "Review the security status and sign in again if required.",
+    });
     diagnostics.log("warn", "security", operationName, "Security IPC operation failed", {
-      code: error?.code || null,
-      message: getSecurityErrorMessage(error),
-    }, { file: "auth", errorCode: error?.code || "SECURITY_IPC_FAILED" });
+      code: wrapped.code,
+      message: wrapped.friendlyMessage,
+    }, { file: "auth", errorCode: wrapped.code });
     console.warn("[Security][IPC] Operation failed.", {
       operation: operationName,
-      code: error?.code || null,
-      message: error?.message || String(error),
+      code: wrapped.code,
+      message: wrapped.friendlyMessage,
     });
-    throw new Error(getSecurityErrorMessage(error));
+    throw wrapped;
   }
 }
 

@@ -102,6 +102,7 @@
     "windows-startup-registration:smoke": "node scripts/windows-startup-registration-state-smoke.js",
     "node-health:smoke": "node scripts/node-health-smoke.js",
     "security:page:smoke": "node scripts/security-page-smoke.js",
+    "security:ipc-error-contract:smoke": "node scripts/security-ipc-error-contract-smoke.js",
     "security:sections:smoke": "node scripts/security-sections-smoke.js",
     "diagnostics:ipc-authorization:smoke": "node scripts/diagnostics-ipc-authorization-smoke.js",
     "owner:smoke": "node scripts/owner-workspace-smoke.js",

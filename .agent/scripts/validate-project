@@ -82,6 +82,7 @@ function main() {
     "node:switch:smoke",
     "node:application-host-identity:smoke",
     "security:page:smoke",
+    "security:ipc-error-contract:smoke",
     "settings:preferences:smoke",
     "ui:polish:smoke",
     "diagnostics:smoke",

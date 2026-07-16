@@ -79,6 +79,7 @@ function main() {
     "settings:preferences:smoke",
     "ui:polish:smoke",
     "diagnostics:smoke",
+    "diagnostics:ipc-authorization:smoke",
     "agent-control:smoke",
     "windows-runtime:smoke",
     "marketplace:smoke",

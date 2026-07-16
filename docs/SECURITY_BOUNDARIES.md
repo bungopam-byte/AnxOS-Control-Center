@@ -17,6 +17,11 @@ tunnel operations are enforced in trusted code. SSH profile/session control,
 Docker network attachment, transfer cancellation, and connection tests also
 authorize in the main process before reaching their service.
 
+Diagnostics capture, log reads, clipboard summaries, folder access, and bundle
+export require `settings:write`. Single-device mode receives the trusted local
+grant; configured deployments require an authorized Admin or Owner. Renderer
+error ingestion remains available and is sanitized before persistence.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

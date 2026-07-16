@@ -47,6 +47,8 @@ async function main() {
     "marketplace:getProviderPackVersions",
     "marketplace:getProviderPackDetails",
     "marketplace:getImportSupport",
+    "marketplace:installTemplate",
+    "marketplace:installPack",
     "marketplace:getDownloads",
     "marketplace:openManualDownloadPage",
     "marketplace:importManualDownloadFile",
@@ -63,6 +65,10 @@ async function main() {
     assert.strictEqual(result.error.code, "PERMISSION_DENIED");
     assert.strictEqual(serviceInvoked, false, `${channel} must authorize before continuing the install transaction.`);
   }
+  const missingTarget = await handlers.get("marketplace:installTemplate")({}, { templateId: "template-a" });
+  assert.strictEqual(missingTarget.ok, false, "Marketplace installation must reject a missing target.");
+  assert.strictEqual(missingTarget.error.code, "NODE_REQUIRED");
+  assert.strictEqual(serviceInvoked, false, "A missing Marketplace target must not reach install services.");
   console.log("Marketplace IPC authorization smoke checks passed.");
 }
 

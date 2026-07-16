@@ -93,8 +93,10 @@ function main() {
   assert(!marketplaceSource.includes("targetLabel: \"configured-agent\""), "Marketplace must not keep configured-agent fallback.");
   assert(installSource.includes("nodeId: payload.nodeId || \"\""), "Provider install progress events should include nodeId.");
   assert(installSource.includes("nodeId: context.nodeId || context.agentConfig?.nodeId || null"), "Manual install sessions should retain node ownership.");
-  assert(ipcSource.includes("getDownloads(payload.nodeId || null)"), "Marketplace downloads IPC should pass nodeId.");
-  assert(ipcSource.includes("cancelDownload(payload.downloadId, { nodeId: payload.nodeId || null })"), "Marketplace cancel IPC should pass nodeId.");
+  assert(ipcSource.includes('requireNodeContext(payload, "Marketplace template installation")'), "Marketplace template installs must require an explicit target.");
+  assert(ipcSource.includes('requireNodeContext(payload, "Marketplace provider-pack installation")'), "Marketplace provider installs must require an explicit target.");
+  assert(ipcSource.includes("getDownloads(payload.nodeId)"), "Marketplace downloads IPC should pass the required nodeId.");
+  assert(ipcSource.includes("cancelDownload(payload.downloadId, { nodeId: payload.nodeId })"), "Marketplace cancel IPC should pass the required nodeId.");
   assert(preloadSource.includes("getDownloads: (payload = {})"), "Preload should accept node-scoped download requests.");
   assert(rendererSource.includes("activeMarketplaceInstallNodeId"), "Renderer should track the installing node.");
   assert(rendererSource.includes("event.nodeId !== activeMarketplaceInstallNodeId"), "Renderer should ignore stale provider progress events.");

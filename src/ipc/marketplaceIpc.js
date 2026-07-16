@@ -20,6 +20,7 @@ const {
   searchProviderPacks,
 } = require("../services/marketplaceInstallService");
 const { audit, requirePermission } = require("../services/securityService");
+const { requireNodeContext } = require("./nodeContext");
 const { openExternalUrl } = require("../services/externalUrlService");
 const { normalizeIpcError } = require("../shared/ipcError");
 const { sanitize } = require("../shared/redaction");
@@ -290,11 +291,13 @@ function registerMarketplaceIpc() {
     return importCommunityTemplate(payload);
   }));
   ipcMain.handle("marketplace:installTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requireNodeContext(payload, "Marketplace template installation");
     requirePermission("marketplace:install", payload.templateId);
     audit({ action: "marketplace.install", target: payload.templateId });
     return installTemplate(payload);
   }));
   ipcMain.handle("marketplace:installPack", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requireNodeContext(payload, "Marketplace provider-pack installation");
     const target = payload.providerProjectId || payload.projectId || payload.templateId || payload.id || payload.template?.id || "provider-pack";
     requirePermission("marketplace:install", target);
     audit({ action: "marketplace.providerPack.install", target });
@@ -329,14 +332,16 @@ function registerMarketplaceIpc() {
     requirePermission("marketplace:install", payload.sessionId || "manual-resume");
     return resumeManualInstall(payload.sessionId);
   }));
-  ipcMain.handle("marketplace:getDownloads", async (_, payload = {}) => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", payload.nodeId || "downloads"); return getDownloads(payload.nodeId || null); }));
+  ipcMain.handle("marketplace:getDownloads", async (_, payload = {}) => invokeMarketplaceOperation(() => { requireNodeContext(payload, "Marketplace download listing"); requirePermission("marketplace:read", payload.nodeId); return getDownloads(payload.nodeId); }));
   ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requireNodeContext(payload, "Marketplace download cancellation");
     requirePermission("marketplace:install", payload.downloadId || "download-cancel");
-    return cancelDownload(payload.downloadId, { nodeId: payload.nodeId || null });
+    return cancelDownload(payload.downloadId, { nodeId: payload.nodeId });
   }));
   ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requireNodeContext(payload, "Marketplace download retry");
     requirePermission("marketplace:install", payload.downloadId || "download-retry");
-    return retryDownload(payload.downloadId, { nodeId: payload.nodeId || null });
+    return retryDownload(payload.downloadId, { nodeId: payload.nodeId });
   }));
 }
 

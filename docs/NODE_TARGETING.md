@@ -31,3 +31,5 @@ before authorization or service routing. Console command options are preserved
 through preload so a command executes against the target captured when the user
 submitted it, even if selection changes while the request is in flight.
 The allowlisted generic action bridge applies the same explicit-target gate.
+Marketplace installation and download-manager IPC also reject omitted targets;
+catalog browsing remains intentionally node-independent.

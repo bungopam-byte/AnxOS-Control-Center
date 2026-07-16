@@ -140,6 +140,7 @@
     "operational-reads:ipc-authorization:smoke": "node scripts/operational-read-ipc-authorization-smoke.js",
     "public-access:ipc-authorization:smoke": "node scripts/public-access-ipc-authorization-smoke.js",
     "compatibility:ipc-error-contract:smoke": "node scripts/compatibility-ipc-error-contract-smoke.js",
+    "amp:api-client:smoke": "node scripts/amp-api-client-smoke.js",
     "dependencies:ipc-error-contract:smoke": "node scripts/dependencies-ipc-error-contract-smoke.js",
     "dependencies:graphical:smoke": "node scripts/dependency-graphical-actions-smoke.js",
     "dependencies:node-routing:smoke": "node scripts/dependency-public-access-node-smoke.js",
@@ -327,13 +328,15 @@
     "electron-builder": "^26.0.12"
   },
   "dependencies": {
-    "@cubecoders/ampapi": "^1.0.1",
     "@xterm/xterm": "^6.0.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
     "monaco-editor": "^0.55.1",
     "ssh2": "^1.17.0",
     "unzipper": "^0.12.5"
+  },
+  "overrides": {
+    "dompurify": "3.4.12"
   },
   "allowScripts": {
     "electron-winstaller@5.4.0": true,

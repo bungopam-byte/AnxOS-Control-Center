@@ -21,6 +21,7 @@
 | Operational read authorization | `npm run operational-reads:ipc-authorization:smoke` |
 | Public Access mutation authorization | `npm run public-access:ipc-authorization:smoke` |
 | AMP/Playit IPC error contract | `npm run compatibility:ipc-error-contract:smoke` |
+| AMP native API client | `npm run amp:api-client:smoke` |
 | Expected Agent read contract | `npm run agent:expected-error-contract:smoke` |
 | Backup/security | `node scripts/security-backup-smoke.js`, `npm run backups:transfer-safety:smoke`, `npm run security:page:smoke` |
 | Diagnostics authorization | `npm run diagnostics:ipc-authorization:smoke` |

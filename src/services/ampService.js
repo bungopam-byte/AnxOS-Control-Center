@@ -1,7 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const dotenv = require("dotenv");
-const { AMPAPI } = require("@cubecoders/ampapi");
+const { AMPAPI } = require("./ampApiClient");
 
 const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
@@ -1325,7 +1325,7 @@ async function getAmpSnapshot() {
       });
     }
 
-    const api = new AMPAPI(config.url);
+    const api = new AMPAPI(config.url, { timeoutMs: AMP_TIMEOUT_MS });
     const initialized = await withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
 
     if (!initialized) {
@@ -1538,7 +1538,7 @@ async function inspectManagedMinecraftRuntime({ instanceHint = "Coolpals01" } = 
     throw new Error(`AMP is not configured. Missing ${config.missing.join(", ")}`);
   }
 
-  const api = new AMPAPI(config.url);
+  const api = new AMPAPI(config.url, { timeoutMs: AMP_TIMEOUT_MS });
   const initialized = await withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
 
   if (!initialized) {

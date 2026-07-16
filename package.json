@@ -52,6 +52,7 @@
     "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",
     "instances:ipc-authorization:smoke": "node scripts/instances-ipc-authorization-smoke.js",
     "action:ipc-authorization:smoke": "node scripts/action-ipc-authorization-smoke.js",
+    "action:ipc-error-contract:smoke": "node scripts/action-ipc-error-contract-smoke.js",
     "backups:ipc-authorization:smoke": "node scripts/backups-ipc-authorization-smoke.js",
     "backups:transfer-safety:smoke": "node scripts/backups-transfer-safety-smoke.js",
     "ipc:error-contract:smoke": "node scripts/ipc-error-contract-smoke.js",

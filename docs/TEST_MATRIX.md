@@ -20,6 +20,7 @@
 | Maintenance IPC contract | `npm run maintenance:ipc-contract:smoke` |
 | Settings IPC error contract | `npm run settings:ipc-error-contract:smoke` |
 | Generic action authorization | `npm run action:ipc-authorization:smoke` |
+| Generic action IPC error contract | `npm run action:ipc-error-contract:smoke` |
 | Backup IPC authorization | `npm run backups:ipc-authorization:smoke` |
 | IPC error contract | `npm run ipc:error-contract:smoke` |
 | Node IPC error contract | `npm run nodes:ipc-error-contract:smoke` |

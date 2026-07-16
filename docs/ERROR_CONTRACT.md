@@ -59,6 +59,9 @@ Settings IPC uses one domain wrapper for preference, Agent configuration,
 pairing, Marketplace configuration, and connection-test failures. Caught
 CurseForge test failures retain their existing `{ok:false,error}` result while
 using normalized, redacted message and retry metadata.
+Generic Action IPC preserves action-provider codes through the shared wrapper.
+It authorizes first, applies a per-action rate limit, audits the accepted
+request, and only then dispatches to the selected Agent.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.

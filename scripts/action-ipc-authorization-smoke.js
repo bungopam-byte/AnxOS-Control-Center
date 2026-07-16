@@ -12,6 +12,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "../services/securityService") {
     return {
       audit: () => {},
+      checkRateLimit: () => {},
       requirePermission: () => {
         throw Object.assign(new Error("Permission denied."), { code: "PERMISSION_DENIED" });
       },

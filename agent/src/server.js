@@ -1,4 +1,5 @@
 const http = require("http");
+const { sanitize } = require("../../src/shared/redaction");
 const { URL } = require("url");
 
 const { handleActionInvoke, handleActionsList } = require("./routes/actions");
@@ -101,16 +102,19 @@ function sendResult(response, result) {
 
 function sanitizeErrorDetails(error, extra = {}) {
   const details = error?.details && typeof error.details === "object" ? error.details : {};
-  return {
+  const sanitized = sanitize({
     ...details,
     ...extra,
     name: error?.name || null,
     status: details.status || error?.status || error?.statusCode || extra.status || null,
     url: details.url || extra.url || null,
     invalidUrl: details.invalidUrl || null,
-    responseBody: details.body || details.responseBody || extra.responseBody || null,
-    stack: error?.stack || null,
-  };
+    causeCode: error?.cause?.code || details.causeCode || null,
+  });
+  delete sanitized.stack;
+  delete sanitized.body;
+  delete sanitized.responseBody;
+  return sanitized;
 }
 
 function sendError(response, statusCode, code, message = "Request failed.", details = null) {

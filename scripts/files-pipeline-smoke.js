@@ -89,8 +89,10 @@ async function main() {
     await agentClient.mutateFile({ action: "delete", path: renamed }, config);
     await assert.rejects(
       agentClient.mutateFile({ action: "delete", path: tempRoot }, config),
-      (error) => error?.code === "ROOT_DELETE_FORBIDDEN",
-      "Agent must not delete a configured filesystem root."
+      (error) => error?.code === "ROOT_DELETE_FORBIDDEN"
+        && error?.payload?.error?.details?.stack === undefined
+        && error?.payload?.error?.details?.responseBody === undefined,
+      "Agent must not delete a configured filesystem root or expose raw stack/response details."
     );
 
     const { FileService } = require("../src/services/fileService");

@@ -26,7 +26,16 @@ async function withPatchedRuntime(platform, patches, fn) {
     if (patches.execFile) childProcess.execFile = patches.execFile;
     if (patches.statfs) fsPromises.statfs = patches.statfs;
     if (patches.stat) fsPromises.stat = patches.stat;
-    await fn(reloadSystemService());
+    const systemService = reloadSystemService();
+    if (platform === "win32") {
+      // getSystemSummary() also reads CPU temperature on Windows, which is an
+      // unrelated feature that legitimately shells out via its own dedicated
+      // test seam. This test only asserts disk-stats behavior, so give CPU
+      // temperature reading a benign "no provider" response instead of
+      // letting it hit this test's disk-only execFile guard/mocks.
+      systemService._test.setCpuTemperatureExecFileForTest(async () => ({ ok: false, stdout: "", stderr: "mocked: no hardware monitor provider" }));
+    }
+    await fn(systemService);
   } finally {
     childProcess.execFile = originalExecFile;
     fsPromises.statfs = originalStatfs;

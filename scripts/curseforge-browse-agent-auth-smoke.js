@@ -119,7 +119,12 @@ async function main() {
     const proxyConfig = (() => {
       const source = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceInstallService.js"), "utf8");
       assert(source.includes("function getCurseForgeAgentConfig"), "Install config helper should exist.");
-      assert(source.includes('credentialSource: "protected-node-credential"'), "Install config should identify node credential source.");
+      // The credential source classification itself lives in the shared
+      // marketplaceInstallContext.js helper (used by both the desktop
+      // marketplaceService.js and marketplaceInstallService.js), not
+      // duplicated per-provider in marketplaceInstallService.js.
+      const contextSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "marketplaceInstallContext.js"), "utf8");
+      assert(contextSource.includes('credentialSource: "protected-node-credential"'), "Install config should identify node credential source.");
       return true;
     })();
     assert.strictEqual(proxyConfig, true);

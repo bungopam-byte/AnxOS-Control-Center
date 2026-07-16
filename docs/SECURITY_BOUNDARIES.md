@@ -57,6 +57,10 @@ access/Playit state require explicit read grants and node context. Admin and
 User roles retain these operational reads; configured signed-out sessions do
 not.
 
+Marketplace catalog, provider search/details, import capability, and download
+state require `marketplace:read`. Admin and User roles retain browse access;
+install and continuation actions keep `marketplace:install`.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

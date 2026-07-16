@@ -41,6 +41,13 @@ try {
 
 async function main() {
   const channels = [
+    "marketplace:listTemplates",
+    "marketplace:getMinecraftVersions",
+    "marketplace:searchProviderPacks",
+    "marketplace:getProviderPackVersions",
+    "marketplace:getProviderPackDetails",
+    "marketplace:getImportSupport",
+    "marketplace:getDownloads",
     "marketplace:openManualDownloadPage",
     "marketplace:importManualDownloadFile",
     "marketplace:resumeManualInstall",

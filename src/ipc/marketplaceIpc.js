@@ -259,9 +259,10 @@ function registerMarketplaceIpc() {
     });
   }
 
-  ipcMain.handle("marketplace:listTemplates", async () => invokeMarketplaceOperation(() => listTemplates()));
-  ipcMain.handle("marketplace:getMinecraftVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getMinecraftVersionCatalog(payload.templateId)));
+  ipcMain.handle("marketplace:listTemplates", async () => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", "templates"); return listTemplates(); }));
+  ipcMain.handle("marketplace:getMinecraftVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", payload.templateId); return getMinecraftVersionCatalog(payload.templateId); }));
   ipcMain.handle("marketplace:searchProviderPacks", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
+    requirePermission("marketplace:read", payload.provider || "provider-search");
     console.info("[Marketplace][IPC] searchProviderPacks request.", {
       provider: payload.provider || "modrinth",
       mode: payload.mode || "featured",
@@ -280,9 +281,9 @@ function registerMarketplaceIpc() {
     });
     return result;
   }));
-  ipcMain.handle("marketplace:getProviderPackVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => getProviderPackVersions(payload)));
-  ipcMain.handle("marketplace:getProviderPackDetails", async (_, payload = {}) => invokeMarketplaceOperation(() => getProviderPackDetails(payload)));
-  ipcMain.handle("marketplace:getImportSupport", async () => invokeMarketplaceOperation(() => getImportSupport()));
+  ipcMain.handle("marketplace:getProviderPackVersions", async (_, payload = {}) => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", payload.projectId || payload.id); return getProviderPackVersions(payload); }));
+  ipcMain.handle("marketplace:getProviderPackDetails", async (_, payload = {}) => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", payload.projectId || payload.id); return getProviderPackDetails(payload); }));
+  ipcMain.handle("marketplace:getImportSupport", async () => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", "import-support"); return getImportSupport(); }));
   ipcMain.handle("marketplace:importCommunityTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
     requirePermission("marketplace:install", payload?.template?.id || payload?.id || "community-template");
     audit({ action: "marketplace.communityTemplate.import", target: payload?.template?.id || payload?.id || "community-template" });
@@ -328,7 +329,7 @@ function registerMarketplaceIpc() {
     requirePermission("marketplace:install", payload.sessionId || "manual-resume");
     return resumeManualInstall(payload.sessionId);
   }));
-  ipcMain.handle("marketplace:getDownloads", async (_, payload = {}) => invokeMarketplaceOperation(() => getDownloads(payload.nodeId || null)));
+  ipcMain.handle("marketplace:getDownloads", async (_, payload = {}) => invokeMarketplaceOperation(() => { requirePermission("marketplace:read", payload.nodeId || "downloads"); return getDownloads(payload.nodeId || null); }));
   ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => {
     requirePermission("marketplace:install", payload.downloadId || "download-cancel");
     return cancelDownload(payload.downloadId, { nodeId: payload.nodeId || null });

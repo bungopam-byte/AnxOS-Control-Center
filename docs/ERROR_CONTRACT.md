@@ -55,6 +55,10 @@ snapshot payloads.
 SSH request handlers use a shared domain wrapper, and asynchronous session
 status/output events are sanitized immediately before renderer delivery.
 Connection failures are redacted before being stored in session snapshots.
+Settings IPC uses one domain wrapper for preference, Agent configuration,
+pairing, Marketplace configuration, and connection-test failures. Caught
+CurseForge test failures retain their existing `{ok:false,error}` result while
+using normalized, redacted message and retry metadata.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.

@@ -18,6 +18,7 @@
 | Diagnostics authorization | `npm run diagnostics:ipc-authorization:smoke` |
 | Diagnostics IPC error contract | `npm run diagnostics:ipc-error-contract:smoke` |
 | Maintenance IPC contract | `npm run maintenance:ipc-contract:smoke` |
+| Settings IPC error contract | `npm run settings:ipc-error-contract:smoke` |
 | Generic action authorization | `npm run action:ipc-authorization:smoke` |
 | Backup IPC authorization | `npm run backups:ipc-authorization:smoke` |
 | IPC error contract | `npm run ipc:error-contract:smoke` |

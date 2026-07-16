@@ -14,6 +14,11 @@ const EXPECTED_AGENT_ERROR_CODES = new Set([
 
 const expectedAgentLogState = new Map();
 const EXPECTED_AGENT_LOG_INTERVAL_MS = 60 * 1000;
+const DEFAULT_UNEXPECTED_ERROR_OPTIONS = Object.freeze({
+  code: "AGENT_READ_FAILED",
+  fallbackMessage: "Agent read failed.",
+  suggestion: "Verify the selected Agent connection and retry.",
+});
 
 function getExpectedAgentErrorCode(error = {}) {
   return String(error.code || error.payload?.error?.code || error.details?.code || "").toUpperCase();
@@ -73,7 +78,7 @@ function expectedAgentFailure(channel, error = {}) {
   };
 }
 
-function wrapExpectedAgentRead(channel, operation, unexpectedErrorOptions = null) {
+function wrapExpectedAgentRead(channel, operation, unexpectedErrorOptions = DEFAULT_UNEXPECTED_ERROR_OPTIONS) {
   return Promise.resolve()
     .then(operation)
     .catch((error) => {

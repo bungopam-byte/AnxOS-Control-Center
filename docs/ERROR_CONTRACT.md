@@ -52,6 +52,10 @@ AMP and legacy Playit snapshot IPC preserve the established `{ok:false,error}`
 shape for expected Agent availability/authentication failures. Unexpected
 failures reject through the shared redacted contract without changing successful
 snapshot payloads.
+All expected-Agent read wrappers use the same split contract: known offline,
+authentication, node, and compatibility failures return the established
+`{ok:false,error}` envelope; unexpected failures reject as redacted shared IPC
+errors. This applies to System, Instances, Docker, Backups, AMP, and Playit.
 SSH request handlers use a shared domain wrapper, and asynchronous session
 status/output events are sanitized immediately before renderer delivery.
 Connection failures are redacted before being stored in session snapshots.

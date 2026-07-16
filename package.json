@@ -45,6 +45,7 @@
     "agent:auth-fallback:smoke": "node scripts/agent-auth-fallback-smoke.js",
     "agent:disk-stats:smoke": "node scripts/agent-disk-stats-smoke.js",
     "agent:expected-ipc:smoke": "node scripts/expected-agent-ipc-smoke.js",
+    "agent:expected-error-contract:smoke": "node scripts/expected-agent-error-contract-smoke.js",
     "agent:polling-backoff:smoke": "node scripts/agent-polling-backoff-smoke.js",
     "agent:no-terminal-guidance:smoke": "node scripts/no-normal-terminal-guidance-smoke.js",
     "agent:instances:smoke": "node scripts/agent-instance-record-smoke.js",

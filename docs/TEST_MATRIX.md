@@ -14,6 +14,7 @@
 | SSH IPC error contract | `npm run ssh:ipc-error-contract:smoke` |
 | Operational read authorization | `npm run operational-reads:ipc-authorization:smoke` |
 | AMP/Playit IPC error contract | `npm run compatibility:ipc-error-contract:smoke` |
+| Expected Agent read contract | `npm run agent:expected-error-contract:smoke` |
 | Backup/security | `node scripts/security-backup-smoke.js`, `npm run backups:transfer-safety:smoke`, `npm run security:page:smoke` |
 | Diagnostics authorization | `npm run diagnostics:ipc-authorization:smoke` |
 | Diagnostics IPC error contract | `npm run diagnostics:ipc-error-contract:smoke` |

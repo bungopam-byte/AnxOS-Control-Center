@@ -67,6 +67,25 @@ async function main() {
   const listedStorage = storageConnections.listConnections();
   assert(listedStorage.connections.some((connection) => connection.provider === "sftp" && connection.hasPassword), "Saved SFTP connection should expose metadata without secrets.");
   assert.strictEqual(storageConnections.deleteConnection(savedStorage.connection.id).deleted, true, "SFTP storage connection delete should work.");
+  const storagePath = path.join(process.env.ANXHUB_CONFIG_DIR, "storage-connections.json");
+  const validStorageRaw = fs.readFileSync(storagePath, "utf8");
+  assert.strictEqual(JSON.parse(validStorageRaw).schemaVersion, storageConnections.STORAGE_CONNECTIONS_SCHEMA_VERSION, "Storage connection writes must include the current schema.");
+  fs.writeFileSync(storagePath, `${JSON.stringify({ schemaVersion: storageConnections.STORAGE_CONNECTIONS_SCHEMA_VERSION + 1, connections: [] })}\n`);
+  const futureStorageRaw = fs.readFileSync(storagePath, "utf8");
+  assert.throws(
+    () => storageConnections.listConnections(),
+    (error) => error?.code === "STORAGE_CONNECTION_SCHEMA_UNSUPPORTED",
+    "Future storage connection schemas must fail closed.",
+  );
+  assert.strictEqual(fs.readFileSync(storagePath, "utf8"), futureStorageRaw, "Future storage connection state must remain unchanged.");
+  fs.writeFileSync(storagePath, "{not-json\n");
+  assert.throws(
+    () => storageConnections.listConnections(),
+    (error) => error?.code === "STORAGE_CONNECTION_STORE_CORRUPT",
+    "Corrupt storage connection state must fail closed.",
+  );
+  assert(fs.readdirSync(process.env.ANXHUB_CONFIG_DIR).some((name) => name.startsWith("storage-connections.json.corrupt-")), "Corrupt storage connection state should be preserved.");
+  fs.writeFileSync(storagePath, validStorageRaw, { mode: 0o600 });
 
   await security.setupAdmin({ username: "owner", password: "correct horse battery staple", staySignedIn: true });
   const status = security.getStatus();

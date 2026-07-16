@@ -5,6 +5,7 @@ const { app, safeStorage } = require("electron");
 const { Client } = require("ssh2");
 
 const LOCAL_STORAGE_ID = "local";
+const STORAGE_CONNECTIONS_SCHEMA_VERSION = 1;
 const VALID_PROVIDER_TYPES = new Set(["local", "sftp"]);
 
 class StorageConnectionError extends Error {
@@ -110,23 +111,53 @@ function createLocalConnection() {
 }
 
 function readStore() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(getStorageConnectionsPath(), "utf8"));
-    return {
-      defaultConnectionId: trimValue(parsed.defaultConnectionId) || LOCAL_STORAGE_ID,
-      connections: Array.isArray(parsed.connections) ? parsed.connections : [],
-    };
-  } catch {
-    return {
-      defaultConnectionId: LOCAL_STORAGE_ID,
-      connections: [],
-    };
+  const filePath = getStorageConnectionsPath();
+  if (!fs.existsSync(filePath)) {
+    return { schemaVersion: STORAGE_CONNECTIONS_SCHEMA_VERSION, defaultConnectionId: LOCAL_STORAGE_ID, connections: [] };
   }
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Storage connection root must be an object.");
+  } catch (error) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw new StorageConnectionError("Storage connection state is unreadable. The original file was preserved for recovery.", {
+      code: "STORAGE_CONNECTION_STORE_CORRUPT",
+      status: 500,
+    });
+  }
+  const schemaVersion = Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > STORAGE_CONNECTIONS_SCHEMA_VERSION) {
+    throw new StorageConnectionError("Storage connection state was created by a newer application version.", {
+      code: "STORAGE_CONNECTION_SCHEMA_UNSUPPORTED",
+      status: 409,
+    });
+  }
+  const normalized = {
+    schemaVersion: STORAGE_CONNECTIONS_SCHEMA_VERSION,
+    defaultConnectionId: trimValue(parsed.defaultConnectionId) || LOCAL_STORAGE_ID,
+    connections: Array.isArray(parsed.connections) ? parsed.connections : [],
+  };
+  if (schemaVersion < STORAGE_CONNECTIONS_SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    writeStore(normalized);
+  }
+  return normalized;
 }
 
 function writeStore(store) {
   ensureConfigDirectory();
-  fs.writeFileSync(getStorageConnectionsPath(), `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  const filePath = getStorageConnectionsPath();
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(temporaryPath, `${JSON.stringify({ ...store, schemaVersion: STORAGE_CONNECTIONS_SCHEMA_VERSION }, null, 2)}\n`, { mode: 0o600 });
+  try {
+    fs.renameSync(temporaryPath, filePath);
+  } catch (error) {
+    try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+    throw error;
+  }
 }
 
 function publicConnection(connection, defaultConnectionId = LOCAL_STORAGE_ID) {
@@ -366,6 +397,7 @@ async function testConnection(payload = {}) {
 
 module.exports = {
   LOCAL_STORAGE_ID,
+  STORAGE_CONNECTIONS_SCHEMA_VERSION,
   StorageConnectionError,
   deleteConnection,
   getConnection,

@@ -72,6 +72,11 @@ defaults after a read failure.
 allowlists are preserved before migration. Corrupt or future state fails
 closed instead of silently removing trusted owner authorization.
 
+`storage-connections.json` uses schema version 1 and atomic writes. Legacy
+connection metadata and encrypted SFTP credentials are preserved before
+migration. Corrupt or future state fails explicitly instead of appearing as an
+empty connection list.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

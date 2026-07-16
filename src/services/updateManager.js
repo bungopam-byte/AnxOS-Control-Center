@@ -690,7 +690,9 @@ class UpdateManager extends EventEmitter {
             if (body.length < 512) body += chunk;
           });
           response.on("end", () => {
-            const suffix = isBlockedDownloadStatus(response.statusCode) && isGitHubDownloadUrl(requestUrl)
+            const blockedOriginalGitHubDownload = isBlockedDownloadStatus(response.statusCode) && isGitHubDownloadUrl(url);
+            const blockedRedirectedGitHubDownload = isBlockedDownloadStatus(response.statusCode) && isGitHubDownloadUrl(requestUrl);
+            const suffix = blockedOriginalGitHubDownload || blockedRedirectedGitHubDownload
               ? " The release asset is not publicly downloadable by the desktop app. Open the release in your browser, or publish/mirror the release assets to public storage."
               : "";
             finishReject(new Error(`Update download failed with HTTP ${response.statusCode}.${suffix}${body ? ` ${body.slice(0, 160)}` : ""}`));

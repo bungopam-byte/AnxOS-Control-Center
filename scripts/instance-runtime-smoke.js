@@ -421,6 +421,19 @@ async function assertRenameDuplicateAndCrashLifecycle() {
     assert.strictEqual(crashed.lifecycleState, "Crashed", "Failed process exits should expose Crashed lifecycle state.");
     assert.strictEqual(crashed.crashed, true, "Failed process exits should expose crashed=true.");
 
+    fs.writeFileSync(crashedConfigPath, `${JSON.stringify({
+      ...crashedConfig,
+      state: "Failed",
+      failureReason: "CRASH_LOOP",
+      restartFailures: 6,
+      crashLoopDetectedAt: new Date().toISOString(),
+      pid: null,
+    }, null, 2)}\n`);
+    const crashLoop = await instanceService.getStatus("duplicate-copy");
+    assert.strictEqual(crashLoop.lifecycleState, "Crash Loop", "Exhausted restart attempts should expose a distinct Crash Loop lifecycle state.");
+    assert.strictEqual(crashLoop.crashLoop, true, "Crash-loop status should survive service and application restart through persisted metadata.");
+    assert.strictEqual(crashLoop.restartFailures, 6, "Crash-loop status should preserve the bounded restart attempt count.");
+
     await assert.rejects(
       () => instanceService.duplicateInstance("duplicate-source", { id: "duplicate-copy" }),
       (error) => error.code === "INSTANCE_ALREADY_EXISTS",

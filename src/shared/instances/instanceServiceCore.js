@@ -674,10 +674,12 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
 }
 
 function publicConfig(config) {
+  const crashLoop = config.state === INSTANCE_STATES.FAILED && config.failureReason === "CRASH_LOOP";
   return {
     ...config,
-    lifecycleState: config.state === INSTANCE_STATES.FAILED && config.failureReason ? "Crashed" : config.state,
+    lifecycleState: crashLoop ? "Crash Loop" : config.state === INSTANCE_STATES.FAILED && config.failureReason ? "Crashed" : config.state,
     crashed: config.state === INSTANCE_STATES.FAILED && Boolean(config.failureReason),
+    crashLoop,
     instancePath: instancePath(config.id),
     environment: Object.keys(config.environment || {}).reduce((redacted, key) => {
       redacted[key] = "[configured]";
@@ -3269,7 +3271,7 @@ async function startInstance(instanceId, options = {}) {
       failureReason: resolvedFailureReason,
       lastStoppedAt: nowIso(),
       });
-    }).then((updatedConfig) => {
+    }).then(async (updatedConfig) => {
       if (updatedConfig?.state === INSTANCE_STATES.RUNNING && updatedConfig?.pid) {
         return;
       }
@@ -3307,6 +3309,13 @@ async function startInstance(instanceId, options = {}) {
           appendLog(config.id, "stderr", `Auto-restart scheduled in ${Math.round(backoff.delayMs / 1000)}s after failure ${backoff.failures || 1}.`).catch(() => {});
           setTimeout(() => startInstance(config.id, { automaticRestart: true }).catch(() => {}), backoff.delayMs);
         } else {
+          await updateRuntimeState(config.id, {
+            state: INSTANCE_STATES.FAILED,
+            pid: null,
+            failureReason: "CRASH_LOOP",
+            restartFailures: backoff.failures,
+            crashLoopDetectedAt: nowIso(),
+          });
           appendLog(config.id, "stderr", `Auto-restart disabled after ${backoff.failures} immediate failures. Manual Start will reset retries.`).catch(() => {});
         }
       } else if (!failed && !suppressRestart && !invalidCommandExit && updatedConfig.restartPolicy === "always" && !requestedStop) {
@@ -3315,6 +3324,13 @@ async function startInstance(instanceId, options = {}) {
           appendLog(config.id, "stderr", `Auto-restart scheduled in ${Math.round(backoff.delayMs / 1000)}s after exit ${backoff.failures || 1}.`).catch(() => {});
           setTimeout(() => startInstance(config.id, { automaticRestart: true }).catch(() => {}), backoff.delayMs);
         } else {
+          await updateRuntimeState(config.id, {
+            state: INSTANCE_STATES.FAILED,
+            pid: null,
+            failureReason: "CRASH_LOOP",
+            restartFailures: backoff.failures,
+            crashLoopDetectedAt: nowIso(),
+          });
           appendLog(config.id, "stderr", `Auto-restart disabled after ${backoff.failures} immediate exits. Manual Start will reset retries.`).catch(() => {});
         }
       }

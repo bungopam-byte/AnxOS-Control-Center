@@ -21,6 +21,7 @@
 | Account IPC error contract | `npm run account:ipc-error-contract:smoke` |
 | Owner Workspace IPC error contract | `npm run owner:ipc-error-contract:smoke` |
 | Marketplace IPC error contract | `npm run marketplace:ipc-error-contract:smoke` |
+| Dependency IPC error contract | `npm run dependencies:ipc-error-contract:smoke` |
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
 | Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke` |
 | Full repository gate | `npm run agent:validate` |

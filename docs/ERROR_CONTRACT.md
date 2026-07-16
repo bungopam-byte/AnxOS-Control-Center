@@ -48,3 +48,5 @@ feature-flag, API console, command, and log-viewer failures.
 Marketplace IPC retains its existing `{ok:false,error}` failure shape and adds
 the shared contract around provider-specific UI details. Boundary logs contain
 only redacted normalized fields, never raw responses, payloads, or stacks.
+Dependency IPC retains its existing `{ok:false,error}` shape and uses the shared
+contract for detection, planning, install, capability, and verification errors.

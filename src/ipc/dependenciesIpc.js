@@ -13,6 +13,7 @@ const {
 const diagnostics = require("../services/diagnosticsService");
 const { audit, requirePermission } = require("../services/securityService");
 const { requireNodeContext } = require("./nodeContext");
+const { normalizeIpcError } = require("../shared/ipcError");
 const requireDependencyNodeContext = requireNodeContext;
 
 function invokeDependencyOperation(operation) {
@@ -20,11 +21,11 @@ function invokeDependencyOperation(operation) {
     .then(operation)
     .catch((error) => ({
       ok: false,
-      error: {
-        code: error?.code || error?.payload?.error?.code || "DEPENDENCY_REQUEST_FAILED",
-        message: error?.payload?.error?.message || error?.message || "Dependency request failed.",
-        details: error?.details || error?.payload?.error?.details || null,
-      },
+      error: normalizeIpcError(error, {
+        code: "DEPENDENCY_REQUEST_FAILED",
+        fallbackMessage: "Dependency request failed.",
+        suggestion: "Review the dependency plan and selected-node capabilities, then retry.",
+      }),
     }));
 }
 

@@ -119,6 +119,7 @@
     "curseforge:browse-agent-auth:smoke": "node scripts/curseforge-browse-agent-auth-smoke.js",
     "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",
+    "dependencies:ipc-error-contract:smoke": "node scripts/dependencies-ipc-error-contract-smoke.js",
     "dependencies:graphical:smoke": "node scripts/dependency-graphical-actions-smoke.js",
     "dependencies:node-routing:smoke": "node scripts/dependency-public-access-node-smoke.js",
     "files:smoke": "node scripts/files-pipeline-smoke.js",

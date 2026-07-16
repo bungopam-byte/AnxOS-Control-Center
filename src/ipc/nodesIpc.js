@@ -15,20 +15,17 @@ const { restorePersistedActiveNode, setActiveNode } = require("../services/activ
 const { generateAgentToken } = require("../shared/agentTokenStore");
 const { audit, requirePermission } = require("../services/securityService");
 const { requireNodeContext } = require("./nodeContext");
-
-function getNodeErrorMessage(error) {
-  return error?.message || error?.code || "Node request failed.";
-}
+const { createIpcError } = require("../shared/ipcError");
 
 async function invokeNodeOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    const wrapped = new Error(getNodeErrorMessage(error));
-    wrapped.code = error?.code || "NODE_OPERATION_FAILED";
-    wrapped.statusCode = error?.statusCode || error?.status || null;
-    wrapped.details = error?.details || null;
-    throw wrapped;
+    throw createIpcError(error, {
+      code: "NODE_OPERATION_FAILED",
+      fallbackMessage: "Node request failed.",
+      suggestion: "Verify the selected node and its Agent connection, then retry.",
+    });
   }
 }
 

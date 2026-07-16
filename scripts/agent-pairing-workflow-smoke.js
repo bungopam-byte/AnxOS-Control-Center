@@ -109,7 +109,7 @@ function reloadAgentControlService(root) {
   const htmlSource = fs.readFileSync(path.join(root, "index.html"), "utf8");
   assert(nodeServiceSource.includes("agentIdentityMatchesNode") && nodeServiceSource.includes("NODE_REPAIR_URL_CONFIRMATION_REQUIRED"), "Existing-node re-pairing must verify Agent identity before changing URLs.");
   assert(nodeServiceSource.includes("repairedExistingNode"), "Pairing results should identify in-place node repairs.");
-  assert(nodeServiceSource.includes("PAIRING_EXPIRED") && nodesIpcSource.includes("wrapped.code = error?.code"), "Expired pairing sessions must preserve a retryable error category across IPC.");
+  assert(nodeServiceSource.includes("PAIRING_EXPIRED") && nodesIpcSource.includes("createIpcError(error"), "Expired pairing sessions must use the shared IPC error contract.");
   assert(appSource.includes("isExpiredPairingError") && appSource.includes("restartNodePairingEntry") && htmlSource.includes("data-node-pairing-retry"), "Expired pairing sessions must show in-app retry actions.");
   fs.mkdirSync(controlConfig, { recursive: true });
   fs.mkdirSync(agentConfig, { recursive: true });

@@ -14,6 +14,7 @@
 | Generic action authorization | `npm run action:ipc-authorization:smoke` |
 | Backup IPC authorization | `npm run backups:ipc-authorization:smoke` |
 | IPC error contract | `npm run ipc:error-contract:smoke` |
+| Node IPC error contract | `npm run nodes:ipc-error-contract:smoke` |
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
 | Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke` |
 | Full repository gate | `npm run agent:validate` |

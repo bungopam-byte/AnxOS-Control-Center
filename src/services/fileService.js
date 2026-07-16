@@ -452,6 +452,7 @@ class FileService extends EventEmitter {
       canCancel: true,
       metadata: { path: context.path || null, type: context.type || null },
     });
+    longOperations.registerCancelHandler(id, () => this.cancelTransfer(id));
     return controller;
   }
 

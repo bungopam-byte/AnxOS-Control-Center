@@ -77,9 +77,13 @@ const downloads = {
       kind: MARKETPLACE_OPERATION_KIND,
       nodeId: record?.nodeId || null,
       status: mapMarketplaceOperationStatus(record?.status),
+      canCancel: record?.canCancel === true && typeof record?.controller?.abort === "function",
       retryable: record?.canRetry === true,
       metadata: record,
     });
+    if (record?.canCancel === true && typeof record?.controller?.abort === "function") {
+      longOperations.registerCancelHandler(id, () => record.controller.abort());
+    }
     return downloads;
   },
   delete(id) {

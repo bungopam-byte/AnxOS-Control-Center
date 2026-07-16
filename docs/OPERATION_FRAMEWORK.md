@@ -90,6 +90,10 @@ resumed or reported as still running. Verified by
 `scripts/long-operation-framework-smoke.js` (creates an operation, forces a
 flush, reloads the module fresh, asserts the recovered state).
 
+Recovered records do not advertise cancellation or retry because executable
+runtime handlers are not persisted. Recovery must create a new operation
+attempt through an owning service using persisted, non-secret domain metadata.
+
 ## Secret redaction
 
 Before anything is written to disk, `sanitizeForPersistence`:

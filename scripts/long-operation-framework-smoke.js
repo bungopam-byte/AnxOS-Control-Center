@@ -95,6 +95,14 @@ async function main() {
     "Cancelling an already-terminal operation should be rejected.",
   );
 
+  const cancellableWithoutHandler = longOperations.createOperation({ kind: "smoke-cancel-missing", canCancel: true });
+  assert.throws(
+    () => longOperations.cancelOperation(cancellableWithoutHandler.id),
+    (error) => error?.code === "OPERATION_CANCEL_HANDLER_MISSING",
+    "A cancellable operation without a real cancellation handler must fail honestly.",
+  );
+  assert.notStrictEqual(longOperations.getOperation(cancellableWithoutHandler.id).status, "cancelled", "A missing cancellation handler must not mark the task cancelled.");
+
   // Retry invokes the registered retry handler.
   const retryable = longOperations.createOperation({ kind: "smoke-retry", canRetry: true });
   let retryInvoked = false;
@@ -136,7 +144,12 @@ async function main() {
   const failed = longOperations.getOperation(failing.id);
   assert.strictEqual(failed.status, "failed", "failOperation should mark the operation failed.");
   assert.strictEqual(failed.error.code, "NETWORK_ERROR", "failOperation should preserve the error code.");
-  assert.strictEqual(failed.canRetry, true, "failOperation should default canRetry to true.");
+  assert.strictEqual(failed.canRetry, false, "failOperation must not advertise retry without an executable retry handler.");
+
+  const retryableFailure = longOperations.createOperation({ kind: "smoke-fail-retry" });
+  longOperations.registerRetryHandler(retryableFailure.id, async () => ({ retried: true }));
+  longOperations.failOperation(retryableFailure.id, { code: "NETWORK_ERROR", message: "Connection reset." }, { retryable: true });
+  assert.strictEqual(longOperations.getOperation(retryableFailure.id).canRetry, true, "A failed operation with a registered retry handler may advertise retry.");
 
   // Timeout handling: an operation with a short timeout should auto-fail.
   const timingOut = longOperations.createOperation({ kind: "smoke-timeout", status: "running", timeoutMs: 30 });
@@ -171,7 +184,7 @@ async function main() {
   assert.strictEqual(recovered.status, "interrupted", "An operation active at restart should be marked interrupted, not left running.");
   assert.strictEqual(recovered.error.code, "INTERRUPTED_BY_RESTART", "Interrupted operations should carry a standardized error code.");
   assert.strictEqual(recovered.canCancel, false, "Interrupted operations should not claim to be cancellable.");
-  assert.strictEqual(recovered.canRetry, true, "A retryable interrupted operation should remain retryable.");
+  assert.strictEqual(recovered.canRetry, false, "A recovered operation must not advertise retry because runtime retry handlers do not survive restart.");
   assert.strictEqual(recovered.metadata.note, "in-flight at simulated crash", "Recovered metadata should be preserved.");
 
   // Persisted snapshots must never contain non-serializable runtime handles.

@@ -176,7 +176,10 @@ function loadPersistedOperations() {
             }
           : entry.error || null,
         canCancel: false,
-        canRetry: interrupted ? Boolean(entry.retryable) : Boolean(entry.canRetry),
+        // Runtime handlers are intentionally not persisted. A recovered record
+        // cannot advertise retry until its owning service registers a new
+        // executable recovery handler.
+        canRetry: false,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -359,6 +362,7 @@ function completeOperation(id, patch = {}) {
 }
 
 function failOperation(id, error = {}, patch = {}) {
+  const hasRetryHandler = typeof runtimeHandlers.get(id)?.onRetry === "function";
   return updateOperation(id, {
     ...patch,
     status: "failed",
@@ -366,7 +370,7 @@ function failOperation(id, error = {}, patch = {}) {
       code: error.code || "OPERATION_FAILED",
       message: error.message || "This operation failed.",
     },
-    canRetry: patch.retryable !== undefined ? Boolean(patch.retryable) : true,
+    canRetry: patch.retryable !== undefined ? Boolean(patch.retryable) && hasRetryHandler : hasRetryHandler,
     canCancel: false,
   });
 }
@@ -380,15 +384,17 @@ function cancelOperation(id) {
     throw new LongOperationError("This operation cannot be cancelled.", "OPERATION_NOT_CANCELLABLE", { id });
   }
   const runtime = runtimeHandlers.get(id);
-  if (typeof runtime?.onCancel === "function") {
-    try {
-      runtime.onCancel();
-    } catch (error) {
-      logEvent("warn", "cancel-handler-failed", "Long-operation cancel handler threw an error.", {
-        id,
-        errorCode: error?.code || "CANCEL_HANDLER_FAILED",
-      });
-    }
+  if (typeof runtime?.onCancel !== "function") {
+    throw new LongOperationError("This operation is marked cancellable but no cancellation handler was registered.", "OPERATION_CANCEL_HANDLER_MISSING", { id });
+  }
+  try {
+    runtime.onCancel();
+  } catch (error) {
+    logEvent("warn", "cancel-handler-failed", "Long-operation cancel handler threw an error.", {
+      id,
+      errorCode: error?.code || "CANCEL_HANDLER_FAILED",
+    });
+    throw new LongOperationError("The underlying task could not be cancelled.", "OPERATION_CANCEL_FAILED", { id, causeCode: error?.code || null });
   }
   return updateOperation(id, { status: "cancelled", canCancel: false, canRetry: true });
 }

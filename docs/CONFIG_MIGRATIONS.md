@@ -53,6 +53,12 @@ writes. Legacy records are backed up before migration. Corrupt and future
 schedule state fails explicitly; corrupt or future backup metadata is reported
 through backup diagnostics and is never rewritten as an older schema.
 
+Each instance `config.json` uses schema version 1 through the shared Desktop
+and Agent instance core. Legacy metadata is backed up once beside the instance
+before an atomic migration. Invalid schemas and unknown future versions fail
+with an explicit instance-config error and remain unchanged; new and updated
+instances always persist the current schema version.
+
 Agent `agent.json` and `device-identity.json` use schema version 1. Legacy files
 are backed up and migrated atomically. Corrupt or future state fails without
 rotating the Agent token or generating a replacement device identity, avoiding

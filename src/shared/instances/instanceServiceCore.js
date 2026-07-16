@@ -56,6 +56,7 @@ const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
 const VERSION_CACHE_VERSION = 4;
+const INSTANCE_CONFIG_SCHEMA_VERSION = 1;
 const FIVEM_LICENSE_MESSAGE = "FiveM needs a valid license key in server.cfg before it can start.";
 const FIVEM_CONFIG_RELATIVE_PATH = "server/server.cfg";
 const FIVEM_LICENSE_PLACEHOLDERS = new Set([
@@ -2211,12 +2212,39 @@ async function backfillInstanceVersion(config, options = {}) {
 
 async function loadInstanceConfig(instanceId) {
   const id = validateInstanceId(instanceId);
+  const filePath = configPath(id);
 
   try {
-    return await readJson(configPath(id));
+    const config = await readJson(filePath);
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      throw createInstanceError("INSTANCE_CONFIG_INVALID", 500);
+    }
+    const schemaVersion = config.schemaVersion === undefined ? 0 : Number(config.schemaVersion);
+    if (!Number.isInteger(schemaVersion) || schemaVersion < 0) {
+      throw createInstanceError("INSTANCE_CONFIG_SCHEMA_INVALID", 500, { schemaVersion: config.schemaVersion });
+    }
+    if (schemaVersion > INSTANCE_CONFIG_SCHEMA_VERSION) {
+      throw createInstanceError("INSTANCE_CONFIG_SCHEMA_UNSUPPORTED", 409, {
+        schemaVersion,
+        supportedSchemaVersion: INSTANCE_CONFIG_SCHEMA_VERSION,
+      });
+    }
+    if (schemaVersion < INSTANCE_CONFIG_SCHEMA_VERSION) {
+      const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+      if (!await pathExists(backupPath)) {
+        await fs.copyFile(filePath, backupPath, fsSync.constants.COPYFILE_EXCL);
+      }
+      const migrated = { ...config, schemaVersion: INSTANCE_CONFIG_SCHEMA_VERSION };
+      await writeJson(filePath, migrated);
+      return migrated;
+    }
+    return config;
   } catch (error) {
     if (error?.code === "ENOENT") {
       throw createInstanceError("INSTANCE_NOT_FOUND", 404);
+    }
+    if (String(error?.code || "").startsWith("INSTANCE_CONFIG_")) {
+      throw error;
     }
 
     throw createInstanceError("INSTANCE_CONFIG_UNREADABLE", 500);
@@ -2225,7 +2253,7 @@ async function loadInstanceConfig(instanceId) {
 
 async function saveInstanceConfig(config) {
   await ensureInstanceDirectories(config.id);
-  await writeJson(configPath(config.id), config);
+  await writeJson(configPath(config.id), { ...config, schemaVersion: INSTANCE_CONFIG_SCHEMA_VERSION });
 }
 
 function isProcessAlive(pid) {
@@ -4129,6 +4157,7 @@ module.exports = {
   configureInstanceService,
   disposeInstanceService,
   INSTANCE_STATES,
+  INSTANCE_CONFIG_SCHEMA_VERSION,
   INSTANCE_TYPES: [...INSTANCE_TYPES],
   createInstance,
   duplicateInstance,

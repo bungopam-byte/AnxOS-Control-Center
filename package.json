@@ -51,6 +51,7 @@
     "agent:no-terminal-guidance:smoke": "node scripts/no-normal-terminal-guidance-smoke.js",
     "agent:instances:smoke": "node scripts/agent-instance-record-smoke.js",
     "instances:runtime:smoke": "node scripts/instance-runtime-smoke.js",
+    "instances:config-migration:smoke": "node scripts/instance-config-migration-smoke.js",
     "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",
     "instances:ipc-authorization:smoke": "node scripts/instances-ipc-authorization-smoke.js",
     "action:ipc-authorization:smoke": "node scripts/action-ipc-authorization-smoke.js",

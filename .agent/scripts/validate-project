@@ -68,6 +68,7 @@ function main() {
 
   const smokeScripts = [
     "owner:smoke",
+    "owner:ipc-error-contract:smoke",
     "owner-account:smoke",
     "account:smoke",
     "account:ipc-error-contract:smoke",

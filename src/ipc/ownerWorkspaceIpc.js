@@ -1,9 +1,6 @@
 const { ipcMain } = require("electron");
 const workspace = require("../services/ownerWorkspaceService");
-
-function getOwnerWorkspaceError(error) {
-  return error?.message || error?.code || "Owner Workspace request failed.";
-}
+const { createIpcError } = require("../shared/ipcError");
 
 async function invokeOwnerWorkspace(operation, operationName = "ownerWorkspace") {
   console.info("[OwnerWorkspace][IPC] Operation started.", { operation: operationName });
@@ -12,12 +9,17 @@ async function invokeOwnerWorkspace(operation, operationName = "ownerWorkspace")
     console.info("[OwnerWorkspace][IPC] Operation completed.", { operation: operationName });
     return result;
   } catch (error) {
+    const wrapped = createIpcError(error, {
+      code: "OWNER_WORKSPACE_REQUEST_FAILED",
+      fallbackMessage: "Owner Workspace request failed.",
+      suggestion: "Confirm Owner authorization and review the workspace diagnostics, then retry.",
+    });
     console.warn("[OwnerWorkspace][IPC] Operation failed.", {
       operation: operationName,
-      code: error?.code || null,
-      message: getOwnerWorkspaceError(error),
+      code: wrapped.code,
+      message: wrapped.friendlyMessage,
     });
-    throw new Error(getOwnerWorkspaceError(error));
+    throw wrapped;
   }
 }
 

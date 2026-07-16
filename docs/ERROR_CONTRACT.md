@@ -43,3 +43,5 @@ the normalized, redacted fields.
 Account authentication IPC retains its existing `{ok:false,error}` failure
 shape and now fills the complete shared contract for device login, password
 login, refresh, logout, and device-management failures.
+Owner Workspace IPC uses the shared model for authorization, page/content,
+feature-flag, API console, command, and log-viewer failures.

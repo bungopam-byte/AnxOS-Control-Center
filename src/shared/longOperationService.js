@@ -234,13 +234,27 @@ function scheduleOperationTimeout(id, timeoutMs) {
     return;
   }
   const runtime = runtimeHandlers.get(id) || {};
-  runtime.timeoutHandle = setTimeout(() => {
+  runtime.timeoutHandle = setTimeout(async () => {
     const operation = operations.get(id);
-    if (operation && ACTIVE_STATUSES.has(operation.status)) {
-      failOperation(id, {
-        code: "OPERATION_TIMEOUT",
-        message: "This operation timed out.",
-      }, { retryable: true });
+    if (!operation || !ACTIVE_STATUSES.has(operation.status)) return;
+    const activeRuntime = runtimeHandlers.get(id);
+    if (typeof activeRuntime?.onCancel !== "function") {
+      updateOperation(id, {
+        stage: "timeout-exceeded",
+        message: "The expected duration was exceeded; the underlying task is still running and its lock remains held.",
+        logs: [{ level: "warning", message: "Timeout exceeded without a cancellation handler; operation remains active." }],
+      });
+      return;
+    }
+    try {
+      await activeRuntime.onCancel();
+      failOperation(id, { code: "OPERATION_TIMEOUT", message: "This operation timed out and its underlying task was cancelled." }, { retryable: true });
+    } catch (error) {
+      updateOperation(id, {
+        stage: "timeout-cancel-failed",
+        message: "The expected duration was exceeded, but cancellation could not be confirmed; the operation remains locked.",
+        logs: [{ level: "error", message: "Timeout cancellation failed; operation remains active.", code: error?.code || "CANCEL_HANDLER_FAILED" }],
+      });
     }
   }, timeoutMs);
   if (typeof runtime.timeoutHandle.unref === "function") {
@@ -399,7 +413,7 @@ function failOperation(id, error = {}, patch = {}) {
   });
 }
 
-function cancelOperation(id) {
+async function cancelOperation(id) {
   const operation = operations.get(id);
   if (!operation) {
     throw new LongOperationError("Operation was not found.", "OPERATION_NOT_FOUND", { id });
@@ -412,7 +426,7 @@ function cancelOperation(id) {
     throw new LongOperationError("This operation is marked cancellable but no cancellation handler was registered.", "OPERATION_CANCEL_HANDLER_MISSING", { id });
   }
   try {
-    runtime.onCancel();
+    await runtime.onCancel();
   } catch (error) {
     logEvent("warn", "cancel-handler-failed", "Long-operation cancel handler threw an error.", {
       id,

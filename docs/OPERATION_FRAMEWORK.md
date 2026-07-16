@@ -68,9 +68,10 @@ not just that the files exist.
 - `updateOperation` / `completeOperation` / `failOperation` — mutate an
   existing operation. Terminal transitions (`complete`, `failed`, `cancelled`,
   `interrupted`) flush persistence immediately and clear any timeout.
-- `cancelOperation(id)` — requires `canCancel === true`, invokes the
-  registered cancel handler (`registerCancelHandler`), then marks the
-  operation cancelled.
+- `cancelOperation(id)` — requires `canCancel === true`, awaits the registered
+  cancel handler (`registerCancelHandler`), then marks the operation cancelled.
+  A rejected handler leaves the record active and returns
+  `OPERATION_CANCEL_FAILED`.
 - `retryOperation(id)` — requires `canRetry === true` **and** a registered
   retry handler (`registerRetryHandler`). If `canRetry` is true but no
   handler was registered, this throws `OPERATION_RETRY_HANDLER_MISSING`
@@ -116,13 +117,17 @@ test in `scripts/long-operation-framework-smoke.js`.
 ## Rollback honesty
 
 `rollbackSupported` defaults to `false` on every operation and is never
-inferred. As of this writing, **no migrated system passes `rollbackSupported: true`**:
+inferred. Only Agent backup restore currently passes
+`rollbackSupported: true`:
 
 - Marketplace installs/downloads rely on their own pre-existing, independent
   rollback logic (temp-folder cleanup on failure), not a framework-level
   rollback hook.
-- Backups rely on their own pre-existing safety-snapshot-before-restore
-  mechanism, not a framework-level rollback hook.
+- Backup restore creates a verified safety snapshot before mutation and, after
+  a partial restore failure, replaces the partial state from that snapshot and
+  verifies `config.json`. This rollback is implemented by the owning backup
+  service rather than a generic framework callback, and is covered by
+  `scripts/security-backup-smoke.js`.
 - Docker image pulls and file transfers have no rollback concept (a failed
   pull/transfer simply leaves no new state to roll back).
 
@@ -137,8 +142,8 @@ rollback actually restores prior state — this field must never be flipped to
 |---|---|---|---|---|---|---|
 | Marketplace downloads/dependency installs | Yes (bytes/stage) | Yes for real HTTP downloads (`AbortController` wired to `record.controller`); dependency installs are not cancellable (`canCancel: false`, matches reality) | No — Marketplace has its own `retryDownload` IPC path (re-invokes `installTemplate` for template-based retries) instead of using `longOperations.retryOperation()` | Via the `downloads` shim's ids, not a shared lock key across templates | No | No |
 | File transfers | Yes (bytes) | Yes — real stream destruction via `transferControllers` | No (canRetry never set true; caller re-initiates through the UI) | No lock key (one transfer id per transfer) | No | No |
-| Backup create/restore | No (single-shot) | No (`canCancel: false`, matches reality — archive/extract are not interruptible) | **Yes** — `registerRetryHandler` re-invokes `createBackup(payload)` / `restoreBackup(payload)` with the original payload, producing a genuinely new operation id and a genuinely new archive/restore attempt | Yes — `backup:${instanceId}` prevents concurrent create/restore on the same instance | No | Yes — 2 hours, defense-in-depth against a hung filesystem operation |
-| Docker image pull | No (single-shot) | No (`canCancel: false` — the underlying child process is not currently interruptible via the framework) | **Yes** — `registerRetryHandler` re-invokes `pullImage(target)` | Yes — `docker-pull:${image}` prevents duplicate concurrent pulls of the same image | No | Yes — 11 minutes, defense-in-depth on top of the existing 10-minute `execFile` timeout |
+| Backup create/restore | No (single-shot) | No (`canCancel: false`, matches reality — archive/extract are not interruptible) | **Yes** — `registerRetryHandler` re-invokes `createBackup(payload)` / `restoreBackup(payload)` with the original payload, producing a genuinely new operation id and a genuinely new archive/restore attempt | Yes — `backup:${instanceId}` prevents concurrent create/restore on the same instance | Restore only — verified safety snapshot and partial-restore rollback | Expected-duration marker only; because cancellation is unsupported, exceeding it retains the live lock until the task resolves or the process restarts |
+| Docker image pull | No (single-shot) | No (`canCancel: false` — the underlying child process is not currently interruptible via the framework) | **Yes** — `registerRetryHandler` re-invokes `pullImage(target)` | Yes — `docker-pull:${image}` prevents duplicate concurrent pulls of the same image | No | The Docker process has its own 10-minute timeout; the 11-minute framework marker cannot release the lock unless underlying cancellation is confirmed |
 
 ## Deliberately not migrated
 
@@ -160,8 +165,12 @@ rollback actually restores prior state — this field must never be flipped to
 - `npm run operations:framework:smoke` — the framework itself: lifecycle,
   lock dedupe, cancel/retry handler wiring (including the
   `OPERATION_RETRY_HANDLER_MISSING` distinction), `rollbackSupported`
-  honesty, timeout-driven auto-failure, persistence + crash recovery, secret
+  honesty, cancellation-aware timeout handling, persistence + crash recovery, secret
   redaction, and Agent-runtime (no-Electron) compatibility.
+- `npm run operations:domain-cancellation:smoke` — proves Marketplace
+  cancellation aborts its real `AbortController` and file-transfer
+  cancellation destroys the attached stream rather than only updating the
+  registry record.
 - `npm run docker:smoke` — Docker snapshot/lifecycle including the pull lock.
 - `node scripts/security-backup-smoke.js` — backup lifecycle including: two
   concurrent `createBackup` calls for the same instance (exactly one

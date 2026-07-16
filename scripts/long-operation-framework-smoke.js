@@ -86,17 +86,17 @@ async function main() {
   longOperations.registerCancelHandler(cancellable.id, () => {
     cancelInvoked = true;
   });
-  longOperations.cancelOperation(cancellable.id);
+  await longOperations.cancelOperation(cancellable.id);
   assert(cancelInvoked, "cancelOperation should invoke the registered cancel handler.");
   assert.strictEqual(longOperations.getOperation(cancellable.id).status, "cancelled", "Operation should be marked cancelled.");
-  assert.throws(
+  await assert.rejects(
     () => longOperations.cancelOperation(cancellable.id),
     /cannot be cancelled/,
     "Cancelling an already-terminal operation should be rejected.",
   );
 
   const cancellableWithoutHandler = longOperations.createOperation({ kind: "smoke-cancel-missing", canCancel: true });
-  assert.throws(
+  await assert.rejects(
     () => longOperations.cancelOperation(cancellableWithoutHandler.id),
     (error) => error?.code === "OPERATION_CANCEL_HANDLER_MISSING",
     "A cancellable operation without a real cancellation handler must fail honestly.",
@@ -108,11 +108,11 @@ async function main() {
   let retryInvoked = false;
   longOperations.registerRetryHandler(retryable.id, async () => {
     retryInvoked = true;
-    return { retried: true };
+    return longOperations.createOperation({ kind: "smoke-retry-attempt", status: "running" });
   });
   const retryResult = await longOperations.retryOperation(retryable.id);
   assert(retryInvoked, "retryOperation should invoke the registered retry handler.");
-  assert.deepStrictEqual(retryResult, { retried: true }, "retryOperation should return the retry handler result.");
+  assert(retryResult.id && retryResult.id !== retryable.id, "retryOperation should return a genuinely new execution attempt.");
 
   const notRetryable = longOperations.createOperation({ kind: "smoke-retry", canRetry: false });
   await assert.rejects(
@@ -152,11 +152,20 @@ async function main() {
   assert.strictEqual(longOperations.getOperation(retryableFailure.id).canRetry, true, "A failed operation with a registered retry handler may advertise retry.");
 
   // Timeout handling: an operation with a short timeout should auto-fail.
-  const timingOut = longOperations.createOperation({ kind: "smoke-timeout", status: "running", timeoutMs: 30 });
+  const timingOut = longOperations.createOperation({ kind: "smoke-timeout", status: "running", timeoutMs: 30, canCancel: true });
+  let timedOutTaskCancelled = false;
+  longOperations.registerCancelHandler(timingOut.id, () => { timedOutTaskCancelled = true; });
   await new Promise((resolve) => setTimeout(resolve, 120));
   const timedOut = longOperations.getOperation(timingOut.id);
   assert.strictEqual(timedOut.status, "failed", "An operation exceeding its timeout should be auto-failed.");
   assert.strictEqual(timedOut.error.code, "OPERATION_TIMEOUT", "Timeout failures should use a standardized error code.");
+  assert.strictEqual(timedOutTaskCancelled, true, "Timeout must cancel the real underlying task before releasing its lock.");
+
+  const nonCancellableTimeout = longOperations.createOperation({ kind: "smoke-timeout-locked", lockKey: "timeout:locked", status: "running", timeoutMs: 30 });
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.strictEqual(longOperations.getOperation(nonCancellableTimeout.id).status, "running", "A timeout must not fake terminal failure when underlying cancellation is unsupported.");
+  assert.strictEqual(longOperations.getOperation(nonCancellableTimeout.id).stage, "timeout-exceeded", "Unsupported timeout cancellation should be explicit.");
+  assert.throws(() => longOperations.createOperation({ kind: "smoke-timeout-locked", lockKey: "timeout:locked" }), (error) => error?.code === "DUPLICATE_OPERATION", "A live non-cancellable task must keep its lock after exceeding the expected duration.");
 
   // listOperations supports filtering by kind/nodeId/status.
   longOperations.createOperation({ kind: "smoke-filter", nodeId: "node-b", status: "running" });

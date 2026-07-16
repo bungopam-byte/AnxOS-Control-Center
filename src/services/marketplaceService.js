@@ -4089,6 +4089,7 @@ module.exports = {
     normalizePalworldInstallOptions,
     normalizeTemplateDownloads,
     normalizeTemplateTags,
+    registerCancellationSmokeRecord: (id, controller) => downloads.set(id, { id, nodeId: "smoke-node", status: "running", canCancel: true, canRetry: false, controller }),
     resolveTemplateForPlatform,
     parsePorts,
     resolveMarketplaceAgentConfig,

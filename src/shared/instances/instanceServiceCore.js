@@ -2874,6 +2874,31 @@ async function deleteInstance(instanceId) {
   }
 }
 
+async function recoverIncompleteInstallations() {
+  const repaired = [];
+  const failures = [];
+  for (const id of await listInstanceIds()) {
+    let config;
+    try {
+      config = await loadInstanceConfig(id);
+    } catch (error) {
+      failures.push({ instanceId: id, code: error?.code || "INSTANCE_RECOVERY_READ_FAILED" });
+      continue;
+    }
+    if (config.installationState !== "installing") continue;
+    try {
+      if (config.pid && isProcessAlive(config.pid)) {
+        await stopInstance(id);
+      }
+      await deleteInstance(id);
+      repaired.push({ instanceId: id, action: "removed-incomplete-installation" });
+    } catch (error) {
+      failures.push({ instanceId: id, code: error?.code || "INSTANCE_RECOVERY_DELETE_FAILED" });
+    }
+  }
+  return { repaired, failures };
+}
+
 async function forgetInstance(instanceId) {
   const id = validateInstanceId(instanceId);
   const processEntry = runningProcesses.get(id);
@@ -4051,6 +4076,7 @@ module.exports = {
   listInstances,
   readInstanceFile,
   readLogs,
+  recoverIncompleteInstallations,
   readMinecraftProperties,
   refreshFiveMReadiness,
   renameInstance,

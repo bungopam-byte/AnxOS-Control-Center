@@ -37,6 +37,12 @@ the state to `active`; that activation is the visibility boundary. Ordinary
 failure or cancellation deletes the incomplete instance and reports cleanup
 failure without exposing credentials.
 
+On process startup, both the standalone Agent (before opening its HTTP listener)
+and the desktop local-instance runtime (before registering IPC handlers) call
+`recoverIncompleteInstallations()`. The shared routine stops a still-live PID
+owned by an `installing` record, removes that incomplete instance, reports
+per-instance failures, and is idempotent. It never removes active instances.
+
 ## Instances
 
 Runtime PID reconciliation detects live configured and detached processes.

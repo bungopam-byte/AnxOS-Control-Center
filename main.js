@@ -51,6 +51,7 @@ const { registerDiagnosticsIpc } = require("./src/ipc/diagnosticsIpc");
 const { registerAgentControlIpc } = require("./src/ipc/agentControlIpc");
 const { registerDependenciesIpc } = require("./src/ipc/dependenciesIpc");
 const { requireSettingsCapability } = require("./src/services/settingsPermissionService");
+const localInstanceService = require("./src/services/localInstanceService");
 const originalConsoleError = console.error.bind(console);
 console.error = (...args) => {
   originalConsoleError(...args);
@@ -471,7 +472,11 @@ app.on("second-instance", () => {
   mainWindow.focus();
 });
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const instanceRecovery = await localInstanceService.recoverIncompleteInstallations();
+  if (instanceRecovery.repaired.length || instanceRecovery.failures.length) {
+    diagnostics.log("info", "startup", "instance-recovery", "Incomplete local Marketplace installations were repaired.", instanceRecovery, { file: "desktop" });
+  }
   instrumentIpcHandlers();
   registerDiagnosticsIpc();
   registerAgentControlIpc();

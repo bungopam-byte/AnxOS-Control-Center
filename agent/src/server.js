@@ -398,10 +398,21 @@ server.on("error", (error) => {
   process.exitCode = 1;
 });
 
-server.listen(config.port, config.host, () => {
-  startBackupScheduler();
-  console.info(`AnxOS Agent listening on http://${config.host}:${config.port}`);
-  logger.info("startup", "AnxOS Agent listening", { host: config.host, port: config.port, pid: process.pid });
+async function startServer() {
+  const recovery = await instanceService.recoverIncompleteInstallations();
+  if (recovery.repaired.length || recovery.failures.length) {
+    logger.info("startup-recovery", "Incomplete Marketplace installations were repaired.", recovery, { file: "agent" });
+  }
+  server.listen(config.port, config.host, () => {
+    startBackupScheduler();
+    console.info(`AnxOS Agent listening on http://${config.host}:${config.port}`);
+    logger.info("startup", "AnxOS Agent listening", { host: config.host, port: config.port, pid: process.pid });
+  });
+}
+
+startServer().catch((error) => {
+  logger.error("startup-recovery", error, {}, { file: "agent" });
+  process.exitCode = 1;
 });
 
 function shutdown(signal) {

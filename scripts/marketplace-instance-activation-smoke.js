@@ -30,6 +30,20 @@ async function main() {
   assert.strictEqual(active[0].installationState, "active");
 
   await instanceService.deleteInstance("activation-smoke");
+  await instanceService.createInstance({
+    id: "interrupted-install-smoke",
+    name: "Interrupted Install Smoke",
+    type: "node-app",
+    executable: process.execPath,
+    args: ["-e", "process.exit(0)"],
+    installationState: "installing",
+  });
+  const recovery = await instanceService.recoverIncompleteInstallations();
+  assert.deepStrictEqual(recovery.failures, []);
+  assert(recovery.repaired.some((entry) => entry.instanceId === "interrupted-install-smoke"));
+  assert.strictEqual((await instanceService.listInstances()).instances.length, 0, "Startup recovery must remove interrupted hidden installs.");
+  const secondRecovery = await instanceService.recoverIncompleteInstallations();
+  assert.deepStrictEqual(secondRecovery, { repaired: [], failures: [] }, "Recovery must be idempotent.");
   fs.rmSync(root, { recursive: true, force: true });
   console.log("Marketplace instance activation smoke checks passed.");
 }

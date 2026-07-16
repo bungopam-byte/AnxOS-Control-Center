@@ -8,6 +8,7 @@ const agentClient = require("./agentClient");
 const { getAllNodesSync, getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
 const { AGENT_STATUS, classifyAgentError, createAgentStatusSnapshot } = require("../shared/agentStatus");
+const { readAgentRuntimeConfig, restoreAgentRuntimeConfig, saveAgentRuntimeConfig } = require("../shared/agentRuntimeConfigStore");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 const {
   getBundledLocalAgentRuntime,
@@ -60,7 +61,7 @@ function getWindowsLauncherPath() { return path.join(getAgentBinDirectory(), "st
 function getAgentScript() { return getBundledLocalAgentRuntime().agentScript; }
 function getAppRoot() { return getBundledLocalAgentRuntime().workingDirectory; }
 function defaults() { return { name: `${os.hostname()} Agent`, host: "127.0.0.1", port: 47131, allowedOrigins: [], allowedFolders: [os.homedir(), getAgentInstancesDirectory(), getAgentBackupsDirectory()], storageRoots: [getAgentInstancesDirectory(), getAgentBackupsDirectory()], autoStart: false, updateChannel: "stable", loggingLevel: "info", connectionTimeoutMs: 10000, heartbeatIntervalMs: 5000, restartPolicy: "on-failure", ownerMachine: true, accountAssociation: null }; }
-function readConfig() { try { return { ...defaults(), ...JSON.parse(fs.readFileSync(getRuntimeConfigPath(), "utf8")) }; } catch { return defaults(); } }
+function readConfig() { return readAgentRuntimeConfig(getRuntimeConfigPath(), { defaults: defaults() }); }
 function validateConfig(input = {}) {
   const value = { ...defaults(), ...input };
   value.name = String(value.name || "").trim().slice(0, 80);
@@ -77,8 +78,8 @@ function validateConfig(input = {}) {
   if (!["never", "on-failure", "always"].includes(value.restartPolicy)) value.restartPolicy = "on-failure";
   return value;
 }
-function saveConfig(input) { const value = validateConfig(input); fs.mkdirSync(getConfigDirectory(), { recursive: true }); if (fs.existsSync(getRuntimeConfigPath())) fs.copyFileSync(getRuntimeConfigPath(), `${getRuntimeConfigPath()}.backup`); fs.writeFileSync(getRuntimeConfigPath(), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 }); diagnostics.log("info", "agent-control", "configuration-save", "Agent configuration saved", { host: value.host, port: value.port, folders: value.allowedFolders.length }, { file: "service-manager" }); return value; }
-function restoreConfigBackup() { const backup = `${getRuntimeConfigPath()}.backup`; if (!fs.existsSync(backup)) throw Object.assign(new Error("No Agent configuration backup is available."), { code: "CONFIG_BACKUP_MISSING" }); const value = validateConfig(JSON.parse(fs.readFileSync(backup, "utf8"))); fs.copyFileSync(backup, getRuntimeConfigPath()); return value; }
+function saveConfig(input) { const value = saveAgentRuntimeConfig(getRuntimeConfigPath(), validateConfig(input)); diagnostics.log("info", "agent-control", "configuration-save", "Agent configuration saved", { host: value.host, port: value.port, folders: value.allowedFolders.length }, { file: "service-manager" }); return value; }
+function restoreConfigBackup() { return restoreAgentRuntimeConfig(getRuntimeConfigPath(), validateConfig); }
 function resetConfig() { return saveConfig(defaults()); }
 
 function command(command, args, options = {}) { return new Promise((resolve) => execFile(command, args, { windowsHide: true, timeout: options.timeout || 15000, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, code: error?.code || null, stdout: String(stdout || "").trim(), stderr: String(stderr || "").trim() }))); }

@@ -3,6 +3,7 @@ const path = require("path");
 const {
   resolveSharedAgentToken,
 } = require("../../src/shared/agentTokenStore");
+const { readAgentRuntimeConfig } = require("../../src/shared/agentRuntimeConfigStore");
 
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_PORT = 47131;
@@ -19,7 +20,7 @@ let environmentLoaded = false;
 function readRuntimeConfig() {
   const candidates = [process.env.ANXOS_AGENT_RUNTIME_CONFIG, process.env.ANXHUB_CONFIG_DIR ? path.join(process.env.ANXHUB_CONFIG_DIR, "agent-runtime.json") : null].filter(Boolean);
   for (const filePath of candidates) {
-    try { return JSON.parse(fs.readFileSync(filePath, "utf8")); } catch {}
+    if (fs.existsSync(filePath)) return readAgentRuntimeConfig(filePath);
   }
   return {};
 }

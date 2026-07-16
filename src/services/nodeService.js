@@ -9,6 +9,7 @@ const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, set
 const { parsePairingCode } = require("../shared/agentPairing");
 const { AGENT_STATUS, classifyAgentError, createAgentStatusSnapshot } = require("../shared/agentStatus");
 const { generateAgentToken, tokenFingerprint } = require("../shared/agentTokenStore");
+const { readAgentRuntimeConfig } = require("../shared/agentRuntimeConfigStore");
 
 const NODE_SCHEMA_VERSION = 3;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
@@ -218,12 +219,7 @@ function buildNodeCapabilities(node = {}) {
 }
 
 function readLocalAgentRuntimeConfig() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(getRuntimeConfigPath(), "utf8"));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
+  return readAgentRuntimeConfig(getRuntimeConfigPath());
 }
 
 function readLegacyAgentSettingsRaw() {

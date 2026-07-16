@@ -22,6 +22,7 @@ const resources = packageJson.build.extraResources || [];
 const runtimeAgent = resources.find((entry) => entry.to === "local-agent-runtime/agent");
 const runtimeShared = resources.find((entry) => entry.to === "local-agent-runtime/src/shared");
 const runtimeManifest = resources.find((entry) => entry.to === "local-agent-runtime/local-agent-runtime.json");
+const runtimeConfigStore = path.join(root, "src", "shared", "agentRuntimeConfigStore.js");
 
 assert(runtimeAgent, "electron-builder should package Agent files as local-agent-runtime/agent.");
 assert(runtimeAgent.filter.includes("src/**/*"), "runtime Agent resource should include source files.");
@@ -30,6 +31,8 @@ assert(runtimeAgent.filter.includes("!**/*.map"), "runtime Agent resource should
 assert(runtimeAgent.filter.includes("!node_modules/**/*"), "runtime Agent resource should exclude development dependency trees.");
 assert(runtimeShared, "electron-builder should package shared runtime files.");
 assert(runtimeShared.filter.includes("**/*.js"), "shared runtime resource should include JavaScript files.");
+assert(fs.existsSync(runtimeConfigStore), "shared Agent runtime configuration store should exist for Desktop and packaged Agent resolution.");
+assert(fs.readFileSync(path.join(root, "agent", "src", "config.js"), "utf8").includes('../../src/shared/agentRuntimeConfigStore'), "packaged Agent configuration should load the shared runtime store from the packaged shared tree.");
 assert(runtimeManifest, "electron-builder should package the runtime manifest.");
 
 [

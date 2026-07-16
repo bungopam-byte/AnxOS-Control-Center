@@ -62,6 +62,14 @@ Desktop `application-host.json` uses schema version 1 and atomic writes. Legacy
 identity is backed up and migrated without changing `hostId`. Corrupt or future
 state fails without generating a replacement desktop identity.
 
+`agent-runtime.json` uses schema version 1 through the same dependency-free
+store in the Desktop main process, node registry, and packaged Agent. Legacy
+configuration is backed up once and migrated atomically. Corrupt, invalid, or
+future-version state fails explicitly instead of silently starting the Agent
+with default ports or storage roots. Saves retain the prior valid file as
+`.backup`; restore validates that backup, snapshots the replaced state, and
+atomically activates the restored configuration.
+
 `security.json` uses schema version 1 and atomic writes. Legacy security state
 is backed up before migration. Corrupt or future state fails closed with
 `SECURITY_STORE_CORRUPT` or `SECURITY_SCHEMA_UNSUPPORTED`; it is never treated

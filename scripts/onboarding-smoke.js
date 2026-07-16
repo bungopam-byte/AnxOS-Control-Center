@@ -52,9 +52,12 @@ try {
   assert.strictEqual(completed.settings["onboarding.currentStep"], "complete", "Current onboarding step should persist.");
 
   fs.writeFileSync(prefs.getSettingsPath(), "{not valid json");
-  const recovered = prefs.readPreferences();
-  assert.strictEqual(recovered.settings["onboarding.currentStep"], "welcome", "Malformed onboarding settings should recover safely.");
-  assert.strictEqual(recovered.settings["onboarding.welcomeGuidance"], true, "Malformed onboarding settings should keep safe defaults.");
+  assert.throws(
+    () => prefs.readPreferences(),
+    (error) => error?.code === "SETTINGS_STORE_CORRUPT",
+    "Malformed onboarding settings must fail safely without silently discarding user configuration.",
+  );
+  assert.strictEqual(fs.readFileSync(prefs.getSettingsPath(), "utf8"), "{not valid json", "Malformed settings must remain available for recovery.");
 
   [
     "data-onboarding-welcome",

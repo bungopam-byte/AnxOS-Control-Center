@@ -15,6 +15,7 @@ const preload = read("preload.js");
 const settingsIpc = read("src/ipc/settingsIpc.js");
 const permissions = read("src/services/settingsPermissionService.js");
 const main = read("main.js");
+const updatesIpc = read("src/ipc/updatesIpc.js");
 
 assert(
   preload.includes("getPermissions: () => ipcRenderer.invoke(\"settings:getPermissions\")"),
@@ -49,7 +50,7 @@ assert(
 );
 
 assert(
-  main.includes('requireSettingsCapability("canManageDeveloperSettings", "developer-updates")') &&
+  updatesIpc.includes('requireSettingsCapability("canManageDeveloperSettings", "developer-updates")') &&
     app.includes('canUseSettingsCapability("canManageDeveloperSettings") && state?.eligible') &&
     app.includes('Owner access is required for Developer Update.'),
   "Developer update controls must be Owner-gated in main and renderer.",

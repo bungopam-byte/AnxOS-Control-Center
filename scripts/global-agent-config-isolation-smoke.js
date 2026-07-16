@@ -89,7 +89,13 @@ function close(server) {
     assert.strictEqual(legacy.requests.length, 0, "Global configured Agent must not receive registered-node feature requests.");
     assert(nodeA.requests.some((entry) => entry.authorization === "Bearer token-a"), "Node A should use its protected node credential.");
     assert.strictEqual(nodeB.requests.length, 0, "Node B must not receive an Agent request when its protected credential is missing.");
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(agentConfigPath, "utf8")), globalConfig, "Selecting registered nodes must not rewrite global agent.json.");
+    const persistedGlobalConfig = JSON.parse(fs.readFileSync(agentConfigPath, "utf8"));
+    assert.deepStrictEqual(
+      { ...persistedGlobalConfig, schemaVersion: undefined },
+      { ...globalConfig, schemaVersion: undefined },
+      "Selecting registered nodes must not change global Agent configuration values.",
+    );
+    assert.strictEqual(persistedGlobalConfig.schemaVersion, 1, "Reading legacy Agent configuration may persist the current schema version.");
 
     console.log("Global Agent configuration isolation smoke checks passed.");
   } finally {

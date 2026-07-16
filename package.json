@@ -25,6 +25,8 @@
     "agent:skills:check": ".agent/scripts/validate-skills",
     "agent:validate": ".agent/scripts/validate-project",
     "agent:release-check": ".agent/scripts/release-check",
+    "rc:validate": "node scripts/rc-validate.js",
+    "artifacts:validate": "node scripts/packaging-artifact-smoke.js --require-artifacts",
     "amp:debug": "node scripts/amp-debug.js",
     "operations:framework:smoke": "node scripts/long-operation-framework-smoke.js",
     "operations:domain-cancellation:smoke": "node scripts/operation-domain-cancellation-smoke.js",

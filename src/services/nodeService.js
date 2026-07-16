@@ -62,7 +62,10 @@ function legacyDeviceId(url) {
 function nodeIdForDevice(deviceId) { return `agent-${String(deviceId || "unknown").replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 56)}`; }
 function isGenericNodeDisplayName(value) { return /^(owner machine|default|remote node|agent node|windows desktop|local agent|this pc)$/i.test(String(value || "").trim()); }
 function isDefaultLocalAgentDisplayName(value) { return /^(this pc|local agent|owner machine|windows desktop)$/i.test(String(value || "").trim()); }
-function getAgentNodeModeLabel(node = {}) { return node.localAgent === true || isLocalAgentUrl(node.agentUrl) ? "Registered Local Agent Node" : "Registered Remote Agent Node"; }
+function isExplicitLocalAgentNode(node = {}) {
+  return node.localAgent === true || node.ownerMachine === true || node.profile?.localAgent === true;
+}
+function getAgentNodeModeLabel(node = {}) { return isExplicitLocalAgentNode(node) ? "Registered Local Agent Node" : "Registered Remote Agent Node"; }
 
 function normalizeRemovedLocalAgents(value) {
   const entries = Array.isArray(value) ? value : [];
@@ -89,7 +92,7 @@ function normalizeRemovedLocalAgents(value) {
 
 function getLocalAgentRemovalMarker(node = {}) {
   const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url || "");
-  const localAgent = node.localAgent === true || isLocalAgentUrl(agentUrl);
+  const localAgent = isExplicitLocalAgentNode(node);
   if (!localAgent) return null;
   const agentUrls = [...new Set([agentUrl, ...getLocalAgentUrls().filter((url) => getLocalAgentPortFromUrl(url) === getLocalAgentPortFromUrl(agentUrl))].filter(Boolean).map(normalizeUrl))];
   return {
@@ -114,7 +117,7 @@ function localAgentMatchesRemovalMarker(node = {}, marker = {}) {
 
 function isRemovedLocalAgentNode(state = {}, node = {}) {
   const agentUrl = normalizeUrl(node.baseUrl || node.agentUrl || node.url || "");
-  if (!(node.localAgent === true || isLocalAgentUrl(agentUrl))) return false;
+  if (!isExplicitLocalAgentNode(node)) return false;
   return normalizeRemovedLocalAgents(state.removedLocalAgents).some((marker) => localAgentMatchesRemovalMarker(node, marker));
 }
 
@@ -194,7 +197,7 @@ function buildNodeCapabilities(node = {}) {
       },
     };
   }
-  const localAgent = node.localAgent === true || isLocalAgentUrl(node.agentUrl);
+  const localAgent = isExplicitLocalAgentNode(node);
   return {
     applicationHost: false,
     agentApi: true,
@@ -442,7 +445,7 @@ function normalizeAgentNode(node = {}) {
   const rawToken = String(node.agentToken || node.token || "");
   const requestedDisplayName = String(node.displayName || node.name || "").trim();
   const identityHostname = String(identity.hostname || "").trim();
-  const localAgent = node.localAgent === true || isLocalAgentUrl(agentUrl);
+  const localAgent = isExplicitLocalAgentNode(node);
   const displayName = localAgent
     ? requestedDisplayName && !isDefaultLocalAgentDisplayName(requestedDisplayName) ? requestedDisplayName : LOCAL_AGENT_DISPLAY_NAME
     : isGenericNodeDisplayName(requestedDisplayName) && identityHostname
@@ -687,9 +690,11 @@ function migrateState(parsed = {}) {
         agentUrl: existing.agentUrl || existing.baseUrl || legacyUrl,
         agentToken: existing.agentToken || existing.token || getNodeToken(existing.id) || effective.agentToken,
         legacyGlobalAgent: existing.legacyGlobalAgent !== false,
+        localAgent: existing.localAgent === true || isLocalAgentUrl(legacyUrl),
+        ownerMachine: existing.ownerMachine === true || isLocalAgentUrl(legacyUrl),
       };
     } else {
-      legacyNodes.push({ displayName: "Owner Machine", baseUrl: effective.agentUrl, agentUrl: effective.agentUrl, agentToken: effective.agentToken, legacyGlobalAgent: true });
+      legacyNodes.push({ displayName: "Owner Machine", baseUrl: effective.agentUrl, agentUrl: effective.agentUrl, agentToken: effective.agentToken, legacyGlobalAgent: true, localAgent: isLocalAgentUrl(legacyUrl), ownerMachine: isLocalAgentUrl(legacyUrl) });
     }
   }
   const nodes = mergeAgentNodes(legacyNodes).filter((node) => !isRemovedLocalAgentNode({ removedLocalAgents }, node));

@@ -4,6 +4,15 @@
 `application-host`, a registered Local Agent, and a registered remote Agent are
 distinct targets.
 
+Agent identity is resolved in descending order from authenticated stable
+identity fields (`agentInstallationId`, `agentIdentityId`, then `deviceId`). An
+explicit node id is used only within the node registry, and normalized URL is a
+legacy fallback when stable identity is unavailable. Hostname, display name,
+IP address, and loopback transport are never sufficient identity. In
+particular, `localhost` and `127.0.0.1` do not automatically make a registered
+Agent the managed Local Agent; that role is assigned by verified Local Agent
+discovery or an explicit migrated Local Agent record.
+
 Node-aware renderer requests capture `nodeId` from the canonical selection.
 `src/ipc/nodeContext.js` rejects missing node context for feature IPC. Node
 selection, health, credential, and deletion IPC also require an explicit id and

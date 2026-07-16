@@ -37,7 +37,7 @@ async function main() {
   const protectedChannels = [
     "list", "status", "diagnostics", "remoteDiagnostics", "getConfig", "saveConfig",
     "restoreConfig", "resetConfig", "start", "stop", "restart", "forceRestart",
-    "installLocalAgent", "stopOldLocalAgentAndRepair", "pairLocalAgent",
+    "installLocalAgent", "pairLocalAgent",
     "startPairingSession", "updateLocalAgent", "installService", "uninstallService",
     "enableAutoStart", "disableAutoStart", "openLogs", "openDataFolder",
   ];

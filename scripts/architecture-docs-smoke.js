@@ -13,7 +13,7 @@ const required = {
   "docs/SECURITY_BOUNDARIES.md": ["Renderer and preload", "Desktop main process", "Agent", "Secrets and diagnostics"],
   "docs/CONFIG_MIGRATIONS.md": ["schema version", "future", "atomic"],
   "docs/RECOVERY_MODEL.md": ["Operations", "Agent connectivity", "Instances", "Backup restore", "Shutdown", "Desktop updates"],
-  "docs/TEST_MATRIX.md": ["Shared operations", "Node selection/races", "Full repository gate"],
+  "docs/TEST_MATRIX.md": ["Shared operations", "Node selection/races", "Full source-tree RC gate", "Exact candidate artifacts"],
 };
 
 for (const [relativePath, phrases] of Object.entries(required)) {

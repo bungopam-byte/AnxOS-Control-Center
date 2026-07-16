@@ -38,7 +38,7 @@ assert.strictEqual((appSource.match(/addEventListener\("click", pairNodeFromSett
 assert.strictEqual((appSource.match(/addEventListener\("click", pairAgentFromSettings\)/g) || []).length, 1, "Local/global pair click listener must be attached once.");
 assert(preloadSource.includes('status: (payload = {}) => ipcRenderer.invoke("agentControl:status", payload)'), "Preload must pass Agent Control status context to IPC.");
 assert(preloadSource.includes('list: (payload = {}) => ipcRenderer.invoke("agentControl:list", payload)'), "Preload must pass Agent Control list context to IPC.");
-assert(ipcSource.includes('ipcMain.handle("agentControl:list", (_, payload = {}) => control.listAgents(payload))'), "Agent Control list IPC must preserve renderer context.");
-assert(ipcSource.includes('ipcMain.handle("agentControl:status", (_, payload = {}) => control.getStatus(payload))'), "Agent Control status IPC must preserve renderer context.");
+assert(ipcSource.includes('control.listAgents(requireNodeContext(payload, "Agent Control listing"))'), "Agent Control list IPC must validate and preserve renderer node context.");
+assert(ipcSource.includes('control.getStatus(payload)'), "Agent Control status IPC must preserve renderer context.");
 
 console.log("Pairing input routing smoke checks passed.");

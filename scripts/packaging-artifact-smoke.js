@@ -62,6 +62,7 @@ function parseTargets() {
 
 const selectedTargets = parseTargets();
 const selectedTargetConfigs = selectedTargets.map((target) => platformTargets[target]);
+const requireArtifacts = process.argv.includes("--require-artifacts");
 
 const requiredEntries = [
   "/main.js",
@@ -115,6 +116,22 @@ function walkFiles(directory) {
     }
   }
   return entries;
+}
+
+const expectedArtifactPaths = selectedTargetConfigs
+  .flatMap((target) => target.artifacts)
+  .map((artifact) => path.join(distDir, artifact));
+const missingArtifacts = expectedArtifactPaths.filter((artifactPath) => !fs.existsSync(artifactPath));
+if (missingArtifacts.length && !requireArtifacts) {
+  console.log(JSON.stringify({
+    status: "PRECONDITION_NOT_MET",
+    check: "packaging-artifacts",
+    artifactVersion,
+    targets: selectedTargets,
+    missing: missingArtifacts.map((artifactPath) => path.relative(rootDir, artifactPath)),
+    nextCommand: `npm run artifacts:validate -- --platform=${selectedTargets.join(",")}`,
+  }, null, 2));
+  process.exit(0);
 }
 
 for (const artifact of selectedTargetConfigs.flatMap((target) => target.artifacts)) {

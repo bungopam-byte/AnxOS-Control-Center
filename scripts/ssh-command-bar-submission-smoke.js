@@ -42,7 +42,7 @@ assert(!appSource.includes("commandBarCommandText") && !appSource.includes("last
 
 requireSource(preloadSource, "recordSshBridgeWrite(sessionId, input);", "Preload must record safe write diagnostics.");
 requireSource(preloadSource, "return ipcRenderer.invoke(\"ssh:write\", { sessionId, input });", "Preload must forward command-bar PTY input.");
-requireSource(ipcSource, "ipcMain.handle(\"ssh:write\"", "Main process must receive SSH writes.");
+requireSource(ipcSource, 'registerSshHandler("ssh:write"', "Main process must receive SSH writes through the shared authorized handler.");
 requireSource(ipcSource, "sessionPresent: Boolean(payload.sessionId)", "Main IPC diagnostics must record session presence.");
 requireSource(serviceSource, "sessionFound: Boolean(session)", "SSH service diagnostics must record session lookup.");
 requireSource(serviceSource, "streamWritable: session.stream.writable !== false", "SSH service diagnostics must record PTY writability.");

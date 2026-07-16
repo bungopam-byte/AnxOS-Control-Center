@@ -95,6 +95,10 @@ Compatibility requirements:
 - Local Agent service state, Windows local Agent installation state, and configured legacy Agent state remain separate status surfaces; they are not alternate selected-Agent state.
 - Legacy global `agent.json` remains only for migration, local Agent setup, and compatibility paths.
 - Older Agents without stable identity metadata may use normalized URL matching as a fallback, but display name, hostname, platform, and IP address alone are not identity.
+- Loopback is transport, not identity. Two authenticated Agents reporting
+  different stable identities remain distinct even when a test or proxy exposes
+  both through loopback URLs. Only verified Local Agent discovery or an explicit
+  migrated Local Agent record grants Local Agent lifecycle capabilities.
 - Startup restores the active Node from persisted node selection and derives Agent context from that Node.
 
 ## Current Implementation Summary

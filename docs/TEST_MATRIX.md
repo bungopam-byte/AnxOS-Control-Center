@@ -51,10 +51,17 @@
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
 | Modal keyboard/focus behavior | `npm run ui:modal-behavior:smoke` |
 | Architecture documentation | `npm run docs:architecture:smoke` |
-| Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke`, `npm run updates:download-safety:smoke` |
-| Full repository gate | `npm run agent:validate` |
+| Packaging source/fixture | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke`, `npm run updates:download-safety:smoke` |
+| Exact candidate artifacts | `npm run artifacts:validate` (requires built artifacts; absence is `PRECONDITION_NOT_MET`) |
+| Full source-tree RC gate | `npm run rc:validate` |
+| Agent-focused gate | `npm run agent:validate` |
 
 Adversarial fixtures cover missing targets, delayed node responses, offline and
 unauthorized Agents, incompatible versions, symlink escape, malformed archives,
 concurrent backups, failed instance stop before restore, rollback recovery,
 crash-loop backoff, pending restart cancellation, and clean Agent SIGTERM.
+
+`rc:validate` runs every repository `*:smoke` command and stops at the first
+failure. Artifact and real-machine validation are separate gates because source
+tests cannot prove a generated installer, operating-system integration, signing,
+SmartScreen, or external reachability.

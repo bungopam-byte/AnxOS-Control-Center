@@ -854,6 +854,21 @@ let filesExplorerWidth = 320;
 let filesStorageWidth = 260;
 let filesDetailsWidth = 260;
 let agentConnectionState = "disconnected";
+const AGENT_STATUS_STATES = Object.freeze(["Connecting", "Connected", "Authentication Required", "Offline", "Degraded"]);
+const AGENT_STATUS_FALLBACK = Object.freeze({
+  state: "Connecting",
+  primary: "Connecting",
+  label: "Connecting",
+  tone: "installing",
+  secondary: "Checking the Agent connection.",
+  targetId: null,
+  targetType: null,
+  name: null,
+  lastSeen: null,
+  checkedAt: null,
+  metadata: Object.freeze({ platform: null, type: null, registered: null }),
+});
+const agentStatusSnapshots = new Map();
 let latestAgentSettingsPayload = null;
 let titlebarWindowIsMaximized = false;
 let windowMaximizedUnsubscribe = null;
@@ -1600,6 +1615,73 @@ function appendDetailPair(container, label, value, { valueTag = "strong" } = {})
 
 function createEmptyState(message, className = "security-empty-state") {
   return createTextElement("div", message, className);
+}
+
+function freezeAgentStatusSnapshot(snapshot) {
+  const metadata = Object.freeze({ ...(snapshot.metadata || {}) });
+  return Object.freeze({ ...snapshot, metadata });
+}
+
+function normalizeRendererAgentStatus(source = {}, fallback = AGENT_STATUS_FALLBACK) {
+  const state = AGENT_STATUS_STATES.includes(source.state) ? source.state : fallback.state;
+  return freezeAgentStatusSnapshot({
+    ...AGENT_STATUS_FALLBACK,
+    ...fallback,
+    ...source,
+    state,
+    primary: source.primary || source.label || state,
+    label: source.label || source.primary || state,
+    secondary: source.secondary || source.message || fallback.secondary || AGENT_STATUS_FALLBACK.secondary,
+    tone: source.tone || fallback.tone || AGENT_STATUS_FALLBACK.tone,
+  });
+}
+
+function getAgentStatusSnapshot(target = getSelectedNode()) {
+  const targetId = target?.id || target?.nodeId || getSelectedNodeId() || "application-host";
+  const fallback = target?.kind === "application-host"
+    ? normalizeRendererAgentStatus({
+      state: "Connected",
+      primary: "Connected",
+      label: "Connected",
+      tone: "online",
+      secondary: "This device is available locally.",
+      targetId,
+      targetType: "application-host",
+      name: target?.displayName || target?.name || "Application Host",
+      metadata: { platform: target?.applicationHost?.platform || target?.platform || null, type: target?.modeLabel || "Application Host", registered: false },
+    })
+    : normalizeRendererAgentStatus({
+      ...AGENT_STATUS_FALLBACK,
+      targetId,
+      targetType: target?.localAgent ? "local-agent" : "registered-node",
+      name: target?.displayName || target?.name || null,
+      metadata: { platform: target?.platform || target?.agentIdentity?.platform || null, type: target?.modeLabel || target?.nodeTypeLabel || null, registered: target?.kind === "agent" },
+    });
+  const snapshot = normalizeRendererAgentStatus(target?.agentStatus, fallback);
+  const cacheKey = `${targetId}:${snapshot.state}:${snapshot.checkedAt || ""}:${snapshot.lastSeen || ""}:${snapshot.secondary || ""}`;
+  const cached = agentStatusSnapshots.get(targetId);
+  if (cached?.cacheKey === cacheKey) return cached.snapshot;
+  agentStatusSnapshots.set(targetId, { cacheKey, snapshot });
+  return snapshot;
+}
+
+function getActiveAgentStatusSnapshot() {
+  return getAgentStatusSnapshot(getSelectedNode());
+}
+
+function isAgentStatusConnected(status = getActiveAgentStatusSnapshot()) {
+  return status.state === "Connected";
+}
+
+function isAgentStatusAuthenticated(status = getActiveAgentStatusSnapshot()) {
+  return status.state === "Connected" || status.state === "Degraded";
+}
+
+function getAgentStatusPillTone(status = getActiveAgentStatusSnapshot()) {
+  if (status.state === "Connected") return "ok";
+  if (status.state === "Authentication Required") return "critical";
+  if (status.state === "Offline") return "planned";
+  return "warning";
 }
 
 function updateFieldAttributes(name, updater) {
@@ -3257,6 +3339,20 @@ function setTitlebarConnectionState(connected, label) {
 
 function getTitlebarConnectionState(pageName = getActivePageName()) {
   switch (pageName) {
+    case "dashboard":
+    case "nodes":
+    case "agent-control":
+    case "marketplace":
+    case "files":
+    case "docker":
+    case "console":
+    case "backups": {
+      const status = getActiveAgentStatusSnapshot();
+      return {
+        connected: isAgentStatusConnected(status),
+        label: status.primary,
+      };
+    }
     case "amp":
     case "minecraft": {
       const connected = latestAmpSnapshot?.connected === true;
@@ -3300,14 +3396,10 @@ function getTitlebarConnectionState(pageName = getActivePageName()) {
         label: filesConnectionState.connected ? "Connected" : "Disconnected",
       };
     case "settings":
+      const status = getActiveAgentStatusSnapshot();
       return {
-        connected: agentConnectionState === "connected",
-        label:
-          agentConnectionState === "testing"
-            ? "Testing..."
-            : agentConnectionState === "connected"
-              ? "Connected"
-              : "Disconnected",
+        connected: isAgentStatusConnected(status),
+        label: status.primary,
       };
     default:
       return {
@@ -4050,19 +4142,20 @@ function renderAgentControlState(payload = agentControlState) {
   const targetLabel = getAgentTargetLabel(local);
   const service = local.service || {};
   const serviceNeedsElevation = Boolean(service.requiresElevation && service.privilege?.elevated !== true);
+  const agentStatus = getAgentStatusSnapshot(local);
   if (agentControlStatus) {
-    agentControlStatus.textContent = runtime?.reachable || running ? "Connected" : state;
-    agentControlStatus.className = `status-pill ${running ? "status-pill--ok" : state === "Offline" || state === "Unreachable" ? "status-pill--planned" : state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning"}`;
+    agentControlStatus.textContent = agentStatus.primary;
+    agentControlStatus.className = `status-pill status-pill--${getAgentStatusPillTone(agentStatus)}`;
   }
   if (agentStatusDot) {
-    agentStatusDot.dataset.agentState = running ? "online" : state === "Offline" || state === "Unreachable" ? "offline" : "warning";
+    agentStatusDot.dataset.agentState = getNodeVisualState({ id: local.nodeId || local.targetType || "agent-control", agentStatus });
   }
   if (agentControlMessage) {
     const urlText = runtime?.url || local.agentUrl || "";
     const serviceText = `Service ${formatAgentProcess(runtime, state)}`;
     const activeNodeName = payload?.activeNode?.displayName || getSelectedNode()?.displayName || "Active Node";
     const nodeAgentCopy = "One machine or server = one Agent.";
-    agentControlMessage.textContent = local.mostRecentError?.message || (runtime?.reachable || running ? `${activeNodeName} · ${targetLabel} · ${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}. ${nodeAgentCopy}` : `${targetLabel} for ${activeNodeName} is not reachable or is stopped. ${nodeAgentCopy}`);
+    agentControlMessage.textContent = agentStatus.secondary || `${activeNodeName} · ${targetLabel} · ${serviceText}${urlText ? ` · ${urlText}` : ""}${stale ? " · metrics may be stale" : ""}. ${nodeAgentCopy}`;
   }
   setAgentControlField("hostname", local.name || runtime?.hostname || local.hostname || local.identity?.hostname);
   setAgentControlField("agentVersion", runtime?.version || local.agentVersion || local.identity?.agentVersion);
@@ -4760,7 +4853,7 @@ function renderLocalAgentSystems(payload = agentControlState) {
       title: identity.hostname || activeTarget.name || "Selected Remote Agent",
       subtitle: "Selected Remote Agent Identity",
       status: connectionState.label,
-      statusTone: activeTarget.authenticated ? "ok" : connectionState.key === "unauthorized" ? "critical" : "warning",
+      statusTone: getAgentStatusPillTone(connectionState),
       details: [
         activeTarget.nodeId ? `Node ${activeTarget.nodeId}` : null,
         identity.deviceId ? `Device ${identity.deviceId}` : "Device ID unavailable",
@@ -4803,12 +4896,12 @@ function renderRemoteAgents(agents = []) {
     const row = document.createElement("tr");
     const isActive = agent.nodeId && agent.nodeId === getSelectedNodeId();
     row.classList.toggle("is-selected", isActive);
-    const statusClass = agent.state === "Running" ? "status-pill--ok" : agent.state === "Authentication failed" ? "status-pill--critical" : "status-pill--warning";
+    const agentStatus = getAgentStatusSnapshot(agent);
     const statusCell = document.createElement("td");
     const status = document.createElement("span");
-    status.className = `status-pill ${statusClass}`;
-    status.textContent = agent.state || "Unknown";
-    statusCell.append(status);
+    status.className = `status-pill status-pill--${getAgentStatusPillTone(agentStatus)}`;
+    status.textContent = agentStatus.primary;
+    statusCell.append(status, createTextElement("small", agentStatus.secondary || ""));
     const nameCell = document.createElement("td");
     const name = document.createElement("strong");
     name.textContent = agent.name || agent.identity?.hostname || "Remote Agent";
@@ -5166,9 +5259,11 @@ function buildDiagnosticsHealthChecks() {
   const desktopApiState = getDesktopApiState();
   const failedOperations = [...operationsState.items.values()].filter((operation) => operation.status === "failed").length;
   const recentErrors = agentLogEntries.filter((entry) => getDiagnosticSeverityRank(entry.severity) >= 3).length;
+  const agentStatus = getActiveAgentStatusSnapshot();
+  const agentDiagnosticStatus = agentStatus.state === "Connected" ? "healthy" : agentStatus.state === "Degraded" || agentStatus.state === "Connecting" ? "warning" : "unavailable";
   return [
     { label: "Desktop application", status: desktopApiState.hasBridge ? "healthy" : "failed", statusLabel: desktopApiState.hasBridge ? "Healthy" : "Failed", evidence: desktopApiState.hasBridge ? "Desktop preload bridge is available." : "Desktop preload bridge is unavailable.", checkedAt: now },
-    { label: "Local Agent", status: agentConnectionState === "connected" ? "healthy" : agentConnectionState === "testing" ? "warning" : "unavailable", statusLabel: agentConnectionState === "connected" ? "Healthy" : agentConnectionState === "testing" ? "Checking" : "Unavailable", evidence: agentControlMessage?.textContent || `Agent state: ${agentConnectionState}.`, checkedAt: now },
+    { label: "Agent", status: agentDiagnosticStatus, statusLabel: agentStatus.primary, evidence: agentStatus.secondary, checkedAt: now },
     { label: "Selected node", status: getSelectedNodeId() ? "unknown" : "not-configured", statusLabel: getSelectedNodeId() ? "Unknown" : "Not configured", evidence: `${formatMarketplaceSelectedNodeLabel()} · live heartbeat evidence is not currently loaded in Diagnostics.`, checkedAt: now },
     { label: "Marketplace", status: desktopApiState.hasMarketplace ? "healthy" : "unavailable", statusLabel: desktopApiState.hasMarketplace ? "Available" : "Unavailable", evidence: desktopApiState.hasMarketplace ? `${getStaticMarketplaceTemplates().length} catalog templates currently loaded.` : "Marketplace IPC bridge is unavailable.", checkedAt: now },
     { label: "Runtime dependencies", status: desktopApiState.hasDependencies ? "unknown" : "unavailable", statusLabel: desktopApiState.hasDependencies ? "Check available" : "Unavailable", evidence: dependencyStatus?.textContent || "No dependency check has run in this session.", checkedAt: now },
@@ -5833,6 +5928,8 @@ function getOwnerAgentSummaries() {
   const nodes = getNodePickerNodes();
   const selected = getSelectedNode();
   const health = getSharedNodeHealthModel();
+  const targetStatus = target ? getAgentStatusSnapshot(target) : null;
+  const remoteStatuses = remote.map((agent) => getAgentStatusSnapshot(agent));
   const summaries = [
     {
       state: health.state,
@@ -5841,9 +5938,9 @@ function getOwnerAgentSummaries() {
       action: "node-health",
     },
     {
-      state: target ? (isAgentTargetRunning(target) || target.runtime?.serviceState === "running" ? "Healthy" : target.state === "Authentication failed" ? "Critical" : "Offline") : "Unknown",
+      state: targetStatus ? targetStatus.state === "Connected" ? "Healthy" : targetStatus.state === "Authentication Required" ? "Critical" : targetStatus.state === "Degraded" ? "Degraded" : "Offline" : "Unknown",
       label: "Local Agent",
-      evidence: target ? `${getAgentTargetLabel(target)} · ${target.runtime?.version || target.agentVersion || "version unavailable"} · ${target.state || "state unavailable"}` : "Agent Control has not loaded Agent runtime state.",
+      evidence: targetStatus ? `${getAgentTargetLabel(target)} · ${targetStatus.primary} · ${targetStatus.secondary}` : "Agent Control has not loaded Agent runtime state.",
       action: "agent-control",
     },
     {
@@ -5853,7 +5950,7 @@ function getOwnerAgentSummaries() {
       action: "node-health",
     },
     {
-      state: remote.some((agent) => agent.state === "Authentication failed") ? "Critical" : remote.length ? "Healthy" : "Unknown",
+      state: remoteStatuses.some((status) => status.state === "Authentication Required") ? "Critical" : remoteStatuses.some((status) => status.state === "Offline" || status.state === "Degraded") ? "Degraded" : remoteStatuses.length ? "Healthy" : "Unknown",
       label: "Remote Agent inventory",
       evidence: remote.length ? `${remote.length} remote Agent records loaded from Agent Control.` : "No remote Agent inventory has loaded.",
       action: "agent-control",
@@ -8279,6 +8376,7 @@ function getDockerUnavailableReason(input = {}) {
 }
 
 function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) {
+  const agentStatus = getActiveAgentStatusSnapshot();
   if (dockerRequestInFlight && !snapshot) {
     return {
       key: "loading",
@@ -8286,6 +8384,17 @@ function getDockerWorkspaceState(snapshot = latestDockerSnapshot, error = null) 
       message: "Checking Docker availability on the selected node.",
       badge: "Checking",
       tone: "status-pill--planned",
+      ready: false,
+      countsAvailable: false,
+    };
+  }
+  if (!snapshot && getSelectedNode()?.kind === "agent" && !isAgentStatusAuthenticated(agentStatus)) {
+    return {
+      key: agentStatus.state === "Authentication Required" ? "agent-authentication-required" : agentStatus.state === "Connecting" ? "loading" : "agent-unavailable",
+      title: agentStatus.primary,
+      message: agentStatus.secondary,
+      badge: agentStatus.primary,
+      tone: `status-pill--${getAgentStatusPillTone(agentStatus)}`,
       ready: false,
       countsAvailable: false,
     };
@@ -8929,6 +9038,7 @@ function renderDockerSnapshot(snapshot) {
   const containers = Array.isArray(snapshot?.containers) ? snapshot.containers : [];
   const visibleContainers = getFilteredDockerContainers(snapshot);
   const state = getDockerStateLabel(snapshot);
+  const agentStatus = getActiveAgentStatusSnapshot();
   dockerWorkspaceState = getDockerWorkspaceState(snapshot);
   const nextSelectedContainer = dockerWorkspaceState.ready
     ? findDockerContainer(selectedDockerContainerId, snapshot) || containers[0] || null
@@ -8945,7 +9055,7 @@ function renderDockerSnapshot(snapshot) {
   setField("dockerImages", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.images) ? snapshot.summary.images : dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.images) ? snapshot.images : "—");
   setField("dockerVolumes", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.volumes) ? snapshot.summary.volumes : dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.volumeCount) ? snapshot.volumeCount : "—");
   setField("dockerSummaryContainers", dockerWorkspaceState.countsAvailable && Number.isFinite(snapshot?.summary?.totalContainers) ? `${snapshot.summary.runningContainers || 0} / ${snapshot.summary.totalContainers}` : "—");
-  setField("dockerSummaryStatus", dockerWorkspaceState.message || state.message);
+  setField("dockerSummaryStatus", agentStatus.secondary || dockerWorkspaceState.message || state.message);
   setField("dockerLoadingMessage", "Checking Docker daemon status...");
   renderDockerRows(visibleContainers);
   renderDockerEmptyState(dockerWorkspaceState);
@@ -8967,6 +9077,7 @@ function renderDockerSnapshot(snapshot) {
 }
 
 function renderDockerUnavailable(message = "Docker status unavailable.") {
+  const agentStatus = getActiveAgentStatusSnapshot();
   latestDockerSnapshot = null;
   selectedDockerContainerId = null;
   dockerWorkspaceState = getDockerWorkspaceState(null, typeof message === "object" ? message : { message });
@@ -8978,7 +9089,7 @@ function renderDockerUnavailable(message = "Docker status unavailable.") {
   setField("dockerImages", "—");
   setField("dockerVolumes", "—");
   setField("dockerSummaryContainers", "—");
-  setField("dockerSummaryStatus", dockerWorkspaceState.message);
+  setField("dockerSummaryStatus", !isAgentStatusAuthenticated(agentStatus) ? agentStatus.secondary : dockerWorkspaceState.message);
   clearDockerRows();
   renderDockerEmptyState(dockerWorkspaceState);
   resetDockerInspectorData();
@@ -11883,7 +11994,8 @@ function setMarketplaceReadinessField(name, value) {
 function renderMarketplaceReadiness() {
   const dependencySummary = summarizeDependencyStatus(latestDependencyResult);
   const activeQueueItems = marketplaceLocalDownloadEntries.length + (activeMarketplaceOperationId ? 1 : 0);
-  setMarketplaceReadinessField("node", formatMarketplaceSelectedNodeLabel());
+  const agentStatus = getActiveAgentStatusSnapshot();
+  setMarketplaceReadinessField("node", `${formatMarketplaceSelectedNodeLabel()} · ${agentStatus.primary}`);
   setMarketplaceReadinessField("installer", getDesktopApiState().hasMarketplace ? "Ready" : "Unavailable");
   setMarketplaceReadinessField("dependencies", latestDependencyResult ? dependencySummary.label : "Not checked");
   setMarketplaceReadinessField("queue", activeQueueItems ? `${activeQueueItems} active` : "Idle");
@@ -14248,7 +14360,7 @@ function setBackupRestoreField(name, value) {
 }
 
 function getBackupsConnected() {
-  return getDesktopApiState().hasBackups && (backupsState.connected || agentConnectionState === "connected");
+  return getDesktopApiState().hasBackups && (backupsState.connected || isAgentStatusAuthenticated(getActiveAgentStatusSnapshot()));
 }
 
 function getBackupRootLabel() {
@@ -20443,9 +20555,11 @@ function renderFilesView() {
   }
 
   if (filesFolderStatus) {
-    filesFolderStatus.textContent = filesConnectionState.connected ? "Connected" : "Disconnected";
-    filesFolderStatus.classList.toggle("is-connected", filesConnectionState.connected);
-    filesFolderStatus.classList.toggle("is-disconnected", !filesConnectionState.connected);
+    const agentStatus = getActiveAgentStatusSnapshot();
+    const connected = isAgentStatusAuthenticated(agentStatus);
+    filesFolderStatus.textContent = agentStatus.primary;
+    filesFolderStatus.classList.toggle("is-connected", connected);
+    filesFolderStatus.classList.toggle("is-disconnected", !connected);
   }
 
   if (filesDetailsStatus) {
@@ -23674,6 +23788,7 @@ function updateConsoleActionButtons() {
 
 function renderConsoleWorkspace() {
   const instances = getInstances();
+  const agentStatus = getActiveAgentStatusSnapshot();
   if (activeConsoleInstanceId && !findInstance(activeConsoleInstanceId)) {
     activeConsoleInstanceId = null;
     consoleBufferedEntries = [];
@@ -23703,7 +23818,7 @@ function renderConsoleWorkspace() {
     consoleTitle.textContent = instance ? `${instance.displayName || instance.id} Console` : "Console Output";
   }
 
-  setConsoleStatus("agent", getDesktopApiState().hasInstances ? agentConnectionState || "Connected" : "Unavailable");
+  setConsoleStatus("agent", getDesktopApiState().hasInstances ? agentStatus.primary : "Unavailable");
   setConsoleStatus("instance", instance?.displayName || instance?.id || "None");
 }
 
@@ -26647,8 +26762,8 @@ function resolveActiveManagementTarget() {
     apiVersion: identity.apiVersion || node.connection?.apiVersion || node.apiVersion || null,
     protocolVersion: identity.protocolVersion || node.connection?.protocolVersion || node.protocolVersion || null,
     agentVersion: identity.agentVersion || node.agentVersion || null,
-    reachable: connectionState.key === "connected" || connectionState.key === "degraded" || connectionState.key === "unauthorized",
-    authenticated: connectionState.key === "connected" || connectionState.key === "degraded",
+    reachable: connectionState.state !== "Offline",
+    authenticated: isAgentStatusAuthenticated(connectionState),
     compatibility: node.connection?.compatibility || null,
     connectionState,
     lastSuccessfulResponse: node.connection?.lastSeen || node.connection?.checkedAt || node.updatedAt || null,
@@ -26934,122 +27049,17 @@ function createAgentRobotIcon(state = "offline") {
 }
 
 function getNodeVisualState(node) {
-  const state = getNodeConnectionState(node);
-  if (state.key === "connected") return "online";
-  if (state.key === "connecting") return "installing";
-  if (state.key === "degraded") return "warning";
-  if (state.key === "unauthorized") return "error";
-  if (state.key === "offline") return "offline";
-  return state.tone || "error";
+  const status = getAgentStatusSnapshot(node);
+  if (status.state === "Connected") return "online";
+  if (status.state === "Connecting") return "installing";
+  if (status.state === "Degraded") return "warning";
+  if (status.state === "Authentication Required") return "error";
+  if (status.state === "Offline") return "offline";
+  return status.tone || "error";
 }
 
 function getNodeConnectionState(node) {
-  if (node?.kind === "application-host") {
-    return {
-      key: "connected",
-      label: "Connected",
-      tone: "online",
-      message: "This device is available locally.",
-      suggestion: "Local desktop services remain available.",
-    };
-  }
-  if (!node) {
-    return {
-      key: "unavailable",
-      label: "Unavailable",
-      tone: "error",
-      message: "Node details are unavailable.",
-      suggestion: "Refresh nodes or choose another system.",
-    };
-  }
-  if (node.enabled === false) {
-    return {
-      key: "disabled",
-      label: "Disabled",
-      tone: "planned",
-      message: "This node is disabled.",
-      suggestion: "Enable the node before routing Agent requests to it.",
-    };
-  }
-  const status = String(node.connection?.status || node.lastConnectionState || node.state || "").toLowerCase();
-  const message = String(node.connection?.message || node.error || "");
-  const combined = `${status} ${message}`;
-  if (node.installing || /connecting|testing|pending|starting|installing/.test(combined)) {
-    return {
-      key: "connecting",
-      label: "Connecting",
-      tone: "installing",
-      message: "AnxOS is checking this Agent connection.",
-      suggestion: "Wait for the current connection check to finish.",
-    };
-  }
-  if (status === "authentication_failed" || node.connection?.authenticated === false || /unauthorized|forbidden|auth|token|credential/.test(combined)) {
-    return {
-      key: "unauthorized",
-      label: "Authentication Required",
-      tone: "error",
-      message: "Reachable, but the saved credential was rejected.",
-      suggestion: `Repair or re-pair ${node.displayName || "this Node"}.`,
-    };
-  }
-  if (status === "agent_incompatible" || /incompatible|unsupported api|update required/.test(combined)) {
-    const compatibility = node.connection?.compatibility || {};
-    const supportedApi = compatibility.supportedApi || "v1";
-    const supportedProtocol = compatibility.supportedProtocol || "1";
-    const reportedApi = compatibility.reportedApi ?? node.connection?.apiVersion ?? node.apiVersion ?? "missing";
-    const reportedProtocol = compatibility.reportedProtocol ?? node.connection?.protocolVersion ?? "missing";
-    const detail = `Control Center supports: API ${supportedApi}, Protocol ${supportedProtocol}. Agent reports: API ${reportedApi}, Protocol ${reportedProtocol}. Status: ${compatibility.status || "Update Required"}.`;
-    return {
-      key: "degraded",
-      label: "Update Required",
-      tone: "warning",
-      message: message || detail,
-      suggestion: "Update the Agent on that node before using agent-backed tools.",
-    };
-  }
-  if (node.connection?.status === "online" || node.connection?.connected === true) {
-    return {
-      key: "connected",
-      label: "Connected",
-      tone: "online",
-      message: message || "Agent is responding.",
-      suggestion: "Remote management is available for this system.",
-    };
-  }
-  if (/warning|degraded|partial|limited|unhealthy/.test(combined)) {
-    return {
-      key: "degraded",
-      label: "Degraded",
-      tone: "warning",
-      message: message || "The Agent is reachable, but one or more checks need attention.",
-      suggestion: "Open Node Health or Agent Control for details.",
-    };
-  }
-  if (node.connection?.status === "offline" || node.connection?.connected === false || /offline|disconnected|unreachable|refused|timed? out|fetch failed|enotfound|econnrefused|etimedout/.test(combined)) {
-    return {
-      key: "offline",
-      label: "Unavailable",
-      tone: "offline",
-      message: "The selected system is offline or unreachable.",
-      suggestion: "Start the Agent on that system or check the network address.",
-    };
-  }
-  if (!node.hasToken || !node.agentUrl) {
-    return {
-      key: "unavailable",
-      label: "Unavailable",
-      tone: "error",
-      message: !node.agentUrl ? "Agent URL is not configured for this node." : "Agent token is missing for this node.",
-      suggestion: "Edit the node settings before connecting.",
-    };
-  }
-  return {
-    key: "unavailable",
-    label: "Unavailable",
-    tone: "error",
-    message: message || "Agent connection state is unavailable.",
-    suggestion: "Test the connection or refresh nodes.",
-  };
+  return getAgentStatusSnapshot(node);
 }
 
 function getNodeStatusLabel(node) {
@@ -27060,7 +27070,7 @@ function getNodeStatusLabel(node) {
 
 function getNodeConnectionSummary(node) {
   const state = getNodeConnectionState(node);
-  return `${state.message} ${state.suggestion}`.trim();
+  return state.secondary;
 }
 
 const NODE_HEALTH_STALE_MS = 60 * 1000;
@@ -27257,7 +27267,7 @@ function buildConnectivityHealth(node) {
   const latency = runtime?.latencyMs ?? target?.latencyMs;
   const lastHeartbeat = node?.connection?.lastSeen || node?.updatedAt || target?.lastHeartbeat || null;
   let state = visual === "online" ? "Healthy" : visual === "warning" ? "Warning" : ["offline", "error"].includes(visual) ? "Degraded" : "Unknown";
-  if (connectionState.key === "unauthorized" || target?.state === "Authentication failed") state = "Degraded";
+  if (connectionState.state === "Authentication Required") state = "Degraded";
   else if (Number.isFinite(latency) && latency > NODE_HEALTH_RESOURCE_THRESHOLDS.latencyWarningMs) state = "Warning";
   else if (node?.kind === "agent" && isNodeHealthStale(lastHeartbeat, 2 * NODE_HEALTH_STALE_MS) && visual === "online") state = "Warning";
   return buildNodeHealthCategory({
@@ -27265,11 +27275,10 @@ function buildConnectivityHealth(node) {
     label: "Connectivity",
     state,
     evidence: [
-      `${connectionState.label}: ${connectionState.message}`,
+      `${connectionState.primary}: ${connectionState.secondary}`,
       Number.isFinite(latency) ? `Latency ${latency} ms` : "Latency unavailable",
       lastHeartbeat ? `Last heartbeat ${formatHealthCheckedAt(lastHeartbeat)}` : "Heartbeat unavailable",
       node?.kind === "application-host" ? "Local application host" : node?.agentUrl || "Agent URL unavailable",
-      connectionState.suggestion,
     ].join(" · "),
     checkedAt: lastHeartbeat ? Date.parse(lastHeartbeat) || Date.now() : Date.now(),
     issueCount: state === "Healthy" ? 0 : 1,
@@ -27306,10 +27315,10 @@ function buildAgentHealth(node) {
   const connectionState = getNodeConnectionState(node);
   const stateText = target?.state || node?.connection?.status || "Unknown";
   const running = node?.kind === "agent"
-    ? connectionState.key === "connected"
+    ? connectionState.state === "Connected"
     : runtime?.serviceState === "running" || isAgentTargetRunning(target || {});
-  const authFailed = connectionState.key === "unauthorized" || /auth/i.test(stateText);
-  const unavailable = connectionState.key === "offline" || connectionState.key === "unavailable";
+  const authFailed = connectionState.state === "Authentication Required";
+  const unavailable = connectionState.state === "Offline";
   const portConflict = target ? /AGENT_PORT_IN_USE|port .*in use/i.test(String(target?.mostRecentError?.code || target?.mostRecentError?.message || agentControlMessage?.textContent || "")) : false;
   const state = authFailed || portConflict ? "Degraded" : running ? "Healthy" : unavailable ? "Unavailable" : target ? "Degraded" : "Unknown";
   const checkedAt = node?.connection?.lastSeen || target?.lastHeartbeat || agentControlLastRuntimeSnapshot?.timestamp || null;
@@ -27318,10 +27327,10 @@ function buildAgentHealth(node) {
     label: "Agent",
     state,
     evidence: [
-      node?.kind === "agent" ? `${connectionState.label}: ${connectionState.message}` : `Process ${formatAgentProcess(runtime, stateText)}`,
+      node?.kind === "agent" ? `${connectionState.primary}: ${connectionState.secondary}` : `Process ${formatAgentProcess(runtime, stateText)}`,
       runtime?.version || target?.agentVersion || node?.connection?.agentVersion || node?.agentIdentity?.agentVersion ? `Version ${runtime?.version || target?.agentVersion || node?.connection?.agentVersion || node?.agentIdentity?.agentVersion}` : "Version unavailable",
       Number.isFinite(runtime?.latencyMs ?? node?.connection?.latencyMs) ? `Last request ${runtime?.latencyMs ?? node?.connection?.latencyMs} ms` : "Last request unavailable",
-      portConflict ? "Port conflict detected" : authFailed ? "Saved credential rejected" : target?.mostRecentError?.message || connectionState.suggestion || "No recent Agent error reported",
+      portConflict ? "Port conflict detected" : authFailed ? "Saved credential rejected" : target?.mostRecentError?.message || connectionState.secondary || "No recent Agent error reported",
     ].join(" · "),
     checkedAt,
     issueCount: state === "Healthy" ? 0 : 1,
@@ -28050,7 +28059,7 @@ function renderNodeSummary() {
   const online = nodes.filter((node) => getNodeVisualState(node) === "online").length;
   const offline = nodes.filter((node) => ["offline", "error"].includes(getNodeVisualState(node))).length;
   const docker = remoteNodes.filter((node) => node.docker?.enabled !== false).length;
-  const connectedAgent = remoteNodes.find((node) => getNodeConnectionState(node).key === "connected");
+  const connectedAgent = remoteNodes.find((node) => getNodeConnectionState(node).state === "Connected");
   setNodeSummary("total", nodes.length);
   setNodeSummary("online", online);
   setNodeSummary("offline", offline);
@@ -28292,9 +28301,6 @@ function openNodeDetails(nodeId) {
   if (nodeDetailsBadges) {
     nodeDetailsBadges.replaceChildren(
       createNodeBadge(getNodeStatusLabel(node), visualState),
-      createNodeBadge(node.kind === "application-host" ? "Built In" : "Registered", node.kind === "application-host" ? "online" : visualState),
-      createNodeBadge(getNodeTypeLabel(node), node.kind === "application-host" ? "online" : visualState),
-      createNodeBadge(node.docker?.enabled === false ? "Docker Off" : node.kind === "application-host" ? "Docker Unsupported" : "Docker Enabled", node.docker?.enabled === false || node.kind === "application-host" ? "planned" : "online"),
     );
   }
   const values = {
@@ -28531,7 +28537,7 @@ function renderNodes() {
           : formatNodeAgentContext(selected);
     }
     sidebarFooter.dataset.agentState = nodeState;
-    sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? "Switching node" : connectionState.message}`;
+    sidebarFooter.dataset.tooltip = `${nodeName} | ${nodeSwitchInProgress ? "Switching node" : connectionState.secondary}`;
   }
 
   if (nodeMessage) {
@@ -28584,17 +28590,14 @@ function renderNodes() {
       const badges = document.createElement("div");
       badges.className = "node-card__badges";
       badges.append(
-        createNodeBadge(`Connection: ${getNodeStatusLabel(node)}`, state),
-        createNodeBadge(`Overall: ${normalizeNodeHealthState(health.state)}`, nodeHealthTone(health.state)),
-        createNodeBadge(node.kind === "application-host" ? "Built In" : "Registered", node.kind === "application-host" ? "online" : state),
-        createNodeBadge(getNodeTypeLabel(node), node.kind === "application-host" ? "online" : state),
+        createNodeBadge(getNodeStatusLabel(node), state),
       );
       header.append(titleGroup, badges);
       const meta = document.createElement("dl");
       meta.className = "node-card__meta";
       [
         ["Context", node.kind === "application-host" ? "Local Application Host" : `${getNodeTypeLabel(node)} · ${node.agentUrl || "Unavailable"}`],
-        ["Connection", `${connectionState.label} - ${connectionState.message}`],
+        ["Connection", `${connectionState.primary} - ${connectionState.secondary}`],
         ["Last seen", formatNodeLastSeen(node)],
         ["Health", `${health.state} · ${health.issueCount} issue${health.issueCount === 1 ? "" : "s"}`],
       ].forEach(([label, value]) => {
@@ -28616,7 +28619,7 @@ function renderNodes() {
         ["details", "View Details"],
         ["remove", node.kind === "application-host" ? "Built In" : "Remove"],
       ];
-      if (getNodeConnectionState(node).key === "unauthorized") {
+      if (getNodeConnectionState(node).state === "Authentication Required") {
         nodeActions.splice(3, 0, ["repair", "Re-pair Existing Node"]);
       }
       nodeActions.forEach(([actionName, label]) => {
@@ -29173,13 +29176,13 @@ function syncAgentConnectionDisplayWithSelectedNode() {
     });
     return;
   }
-  if (connectionState.key === "connected") {
+  if (connectionState.state === "Connected") {
     setAgentConnectionDisplay("connected", `${selected.displayName || "Selected Agent"} is authenticated and reachable.`, {
       label: "Agent Connected",
     });
     return;
   }
-  if (connectionState.key === "unauthorized") {
+  if (connectionState.state === "Authentication Required") {
     setAgentConnectionDisplay("error", `${selected.displayName || "Selected Agent"} rejected its saved credential.`, {
       label: "Authentication Rejected",
       repairAvailable: true,
@@ -29516,27 +29519,19 @@ function renderOnboardingPrepareThisPcStep(container) {
 
 function getOnboardingAgentSummary() {
   const target = getAgentControlOverviewTarget(agentControlState);
-  const runtime = target ? getAgentRuntime(target) : null;
+  const agentStatus = target ? getAgentStatusSnapshot(target) : getActiveAgentStatusSnapshot();
   if (!agentControlState) {
     return {
-      status: "Unable to check",
-      tone: "planned",
-      message: "Agent state has not been checked in this session.",
+      status: agentStatus.primary || "Unable to check",
+      tone: getAgentStatusPillTone(agentStatus),
+      message: agentStatus.secondary || "Agent state has not been checked in this session.",
     };
   }
-  if (runtime?.reachable || runtime?.connected || isAgentTargetRunning(target)) {
-    return {
-      status: "Connected",
-      tone: "ok",
-      message: "The Agent is reachable and ready for managed features.",
-    };
-  }
-  const state = String(target?.state || runtime?.serviceState || "unknown").toLowerCase();
-  if (state.includes("auth")) return { status: "Authentication mismatch", tone: "critical", message: "The app and Agent need matching connection credentials." };
-  if (state.includes("stopped")) return { status: "Installed but stopped", tone: "warning", message: "The Agent appears installed but is not running." };
-  if (state.includes("unreachable") || state.includes("offline")) return { status: "Running but unreachable", tone: "warning", message: "The Agent could not be reached from the app." };
-  if (target?.service?.installed === false) return { status: "Ready to start", tone: "planned", message: "The bundled local Agent can be started from AnxOS when you need managed features." };
-  return { status: "Unknown", tone: "planned", message: "AnxOS could not confirm the current Agent state." };
+  return {
+    status: agentStatus.primary,
+    tone: getAgentStatusPillTone(agentStatus),
+    message: agentStatus.secondary,
+  };
 }
 
 function renderOnboardingInstallLocalAgentStep(container) {

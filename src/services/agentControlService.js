@@ -7,6 +7,7 @@ const { app, shell } = require("electron");
 const agentClient = require("./agentClient");
 const { getAllNodesSync, getNode, getNodeAgentConfig, getSelectedNodeId } = require("./nodeService");
 const diagnostics = require("./diagnosticsService");
+const { AGENT_STATUS, classifyAgentError, createAgentStatusSnapshot } = require("../shared/agentStatus");
 const { getReleaseInfo } = require("../shared/releaseConfig");
 const {
   getBundledLocalAgentRuntime,
@@ -1117,6 +1118,32 @@ function normalizeAgentRuntimeStatus({ base = {}, health = null, stats = null, s
   };
 }
 
+function createAgentControlStatusSnapshot(target = {}, options = {}) {
+  const state = options.state || (options.authenticated === false
+    ? AGENT_STATUS.AUTHENTICATION_REQUIRED
+    : options.partialFailure
+      ? AGENT_STATUS.DEGRADED
+      : options.connected
+        ? AGENT_STATUS.CONNECTED
+        : options.reachable
+          ? AGENT_STATUS.DEGRADED
+          : AGENT_STATUS.OFFLINE);
+  return createAgentStatusSnapshot({
+    target,
+    state,
+    message: options.message || options.partialFailure?.message || target.mostRecentError?.message || null,
+    targetId: options.targetId || target.nodeId || target.id || target.targetType || null,
+    targetType: options.targetType || target.targetType || null,
+    checkedAt: options.checkedAt || null,
+    lastSeen: options.lastSeen || target.lastHeartbeat || null,
+    metadata: {
+      platform: target.platform || target.identity?.platform || null,
+      type: options.targetType || target.targetType || null,
+      registered: target.nodeId ? true : null,
+    },
+  });
+}
+
 function getLocalAgentLifecycleOwnership({ health = null, service = {}, pairing = {}, managed = null } = {}) {
   const managedChildRunning = Boolean(managed && !managed.killed);
   const healthOk = Boolean(health?.ok);
@@ -1292,8 +1319,19 @@ async function getConfiguredAgentStatus(options = {}) {
       connectedClients: health?.process?.connectedClients || 0,
       lastHeartbeat: new Date().toISOString(),
       latencyMs: Date.now() - started,
+      agentStatus: createAgentControlStatusSnapshot(configured, {
+        state: partialFailure ? AGENT_STATUS.DEGRADED : AGENT_STATUS.CONNECTED,
+        connected: !partialFailure,
+        reachable: true,
+        partialFailure,
+        message: partialFailure?.message || "An authenticated Agent endpoint responded successfully.",
+        targetType: "global-configured-agent",
+        checkedAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+      }),
     };
   } catch (error) {
+    const agentStatusState = classifyAgentError(error);
     return {
       ...configured,
       state: error.status === 401 || error.code === "UNAUTHORIZED" ? "Authentication failed" : "Unreachable",
@@ -1304,6 +1342,12 @@ async function getConfiguredAgentStatus(options = {}) {
         capabilities: { reconnect: true },
       }),
       mostRecentError: { code: error.code || null, message: error.message || "Configured Agent is unreachable." },
+      agentStatus: createAgentControlStatusSnapshot(configured, {
+        state: agentStatusState,
+        authenticated: agentStatusState === AGENT_STATUS.AUTHENTICATION_REQUIRED ? false : null,
+        message: error.message || "Configured Agent is unreachable.",
+        targetType: "global-configured-agent",
+      }),
     };
   }
 }
@@ -1398,6 +1442,15 @@ async function getStatus(_options = {}) {
     update: getLocalAgentUpdateState(baseStatus),
     lastRestartReason,
     mostRecentError: lastError,
+    agentStatus: createAgentControlStatusSnapshot({ targetType: "local-agent", agentUrl, hostname: os.hostname(), identity: baseStatus.identity }, {
+      state: running && health?.ok ? AGENT_STATUS.CONNECTED : lifecycleOwnership.state === "repair-required" ? AGENT_STATUS.DEGRADED : AGENT_STATUS.OFFLINE,
+      connected: running && health?.ok,
+      reachable: Boolean(health?.ok),
+      message: running && health?.ok ? "An authenticated Agent endpoint responded successfully." : lifecycleOwnership.message,
+      targetType: "local-agent",
+      checkedAt: health ? new Date().toISOString() : null,
+      lastSeen: health ? new Date().toISOString() : null,
+    }),
   };
 }
 
@@ -1442,6 +1495,7 @@ async function listAgents(options = {}) {
         reachable: true,
         capabilities: { metrics: Boolean(stats), lifecycle: false, repair: false, reconnect: true },
       });
+      const statusCheckedAt = new Date().toISOString();
       return {
         local: false,
         targetType: healthConfig.targetLabel,
@@ -1454,9 +1508,21 @@ async function listAgents(options = {}) {
         agentVersion: health.identity?.agentVersion,
         runtime,
         latencyMs: Date.now() - started,
-        lastHeartbeat: new Date().toISOString(),
+        lastHeartbeat: statusCheckedAt,
+        agentStatus: createAgentControlStatusSnapshot(node, {
+          state: partialFailure ? AGENT_STATUS.DEGRADED : AGENT_STATUS.CONNECTED,
+          connected: !partialFailure,
+          reachable: true,
+          partialFailure,
+          message: partialFailure?.message || "An authenticated Agent endpoint responded successfully.",
+          targetId: node.id,
+          targetType: "registered-node",
+          checkedAt: statusCheckedAt,
+          lastSeen: statusCheckedAt,
+        }),
       };
     } catch (error) {
+      const agentStatusState = classifyAgentError(error);
       return {
         local: false,
         targetType: healthConfig.targetLabel,
@@ -1467,6 +1533,13 @@ async function listAgents(options = {}) {
         agentUrl: node.agentUrl,
         identity: node.agentIdentity,
         mostRecentError: { code: error.code || null, message: error.message },
+        agentStatus: createAgentControlStatusSnapshot(node, {
+          state: agentStatusState,
+          authenticated: agentStatusState === AGENT_STATUS.AUTHENTICATION_REQUIRED ? false : null,
+          message: error.message,
+          targetId: node.id,
+          targetType: "registered-node",
+        }),
       };
     }
   }));

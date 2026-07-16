@@ -4,6 +4,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const agentStatus = fs.readFileSync(path.join(root, "src/shared/agentStatus.js"), "utf8");
 
 function requireSource(needle, message) {
   assert(app.includes(needle), message || `app.js is missing ${needle}`);
@@ -16,11 +17,12 @@ function requireSource(needle, message) {
   'label: "Authentication Rejected"',
   'label: "Agent Unavailable"',
   'syncAgentConnectionDisplayWithSelectedNode();',
-  "options.label || (testing ? \"Testing...\" : connected ? \"Connected\" : \"Disconnected\")",
+  "connectionState.state === \"Connected\"",
+  "connectionState.state === \"Authentication Required\"",
 ].forEach((needle) => requireSource(needle, `Top-bar connection state should use explicit selected-node labels: ${needle}`));
 
 [
-  "const connectedAgent = remoteNodes.find((node) => getNodeConnectionState(node).key === \"connected\");",
+  "const connectedAgent = remoteNodes.find((node) => getNodeConnectionState(node).state === \"Connected\");",
   "setNodeSummary(\"connected\", connectedAgent ? connectedAgent.displayName || connectedAgent.name || \"Agent\" : \"None\");",
 ].forEach((needle) => requireSource(needle, `Connected Agent summary must be based on authenticated remote nodes only: ${needle}`));
 
@@ -31,14 +33,35 @@ function requireSource(needle, message) {
 ].forEach((needle) => requireSource(needle, `Per-node health must not reuse active-node evidence across node cards/details: ${needle}`));
 
 [
-  "createNodeBadge(`Connection: ${getNodeStatusLabel(node)}`, state)",
-  "createNodeBadge(`Overall: ${normalizeNodeHealthState(health.state)}`, nodeHealthTone(health.state))",
-].forEach((needle) => requireSource(needle, `Node cards should scope potentially different status badges: ${needle}`));
+  "const AGENT_STATUS_STATES = Object.freeze",
+  "function getAgentStatusSnapshot",
+  "return getAgentStatusSnapshot(node);",
+  "createNodeBadge(getNodeStatusLabel(node), state)",
+].forEach((needle) => requireSource(needle, `Node cards should render from the shared AgentStatus snapshot with one primary badge: ${needle}`));
 
 [
-  "Reachable, but the saved credential was rejected.",
+  ["Top-bar indicator", "function getTitlebarConnectionState", "getActiveAgentStatusSnapshot"],
+  ["Dashboard", "function getOnboardingAgentSummary", "getAgentStatusSnapshot(target)"],
+  ["Nodes", "function getNodeConnectionState", "getAgentStatusSnapshot(node)"],
+  ["Agent Control", "function renderAgentControlState", "const agentStatus = getAgentStatusSnapshot(local)"],
+  ["Marketplace", "function renderMarketplaceReadiness", "const agentStatus = getActiveAgentStatusSnapshot()"],
+  ["Files", "function renderFilesView", "filesFolderStatus.textContent = agentStatus.primary"],
+  ["Docker", "function getDockerWorkspaceState", "const agentStatus = getActiveAgentStatusSnapshot()"],
+  ["Console", "function renderConsoleWorkspace", "setConsoleStatus(\"agent\", getDesktopApiState().hasInstances ? agentStatus.primary : \"Unavailable\")"],
+  ["Backups", "function getBackupsConnected", "isAgentStatusAuthenticated(getActiveAgentStatusSnapshot())"],
+].forEach(([page, functionNeedle, statusNeedle]) => {
+  requireSource(functionNeedle, `${page} should keep its renderer entry point.`);
+  requireSource(statusNeedle, `${page} must consume the shared AgentStatus snapshot directly.`);
+});
+
+assert(!app.includes("createNodeBadge(`Connection:"), "Node cards should not render a separate Connection badge.");
+assert(!app.includes("createNodeBadge(`Overall:"), "Node cards should not render a separate Overall badge.");
+assert(!app.includes("connectionState.key"), "Renderer should not branch on legacy connectionState.key.");
+
+[
   "Authentication Required",
   "Agent Unavailable",
 ].forEach((needle) => requireSource(needle, `Node status copy should keep auth/offline states distinct: ${needle}`));
+assert(agentStatus.includes("Connected to the Agent, but the saved credential was rejected."), "Shared AgentStatus copy must keep auth failures distinct from offline.");
 
 console.log("Node state consistency smoke checks passed.");

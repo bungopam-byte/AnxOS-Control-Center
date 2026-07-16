@@ -7,13 +7,14 @@ const agentClient = require("./agentClient");
 const { getEffectiveAgentSettings, getHealth, normalizeAgentSettings } = agentClient;
 const { deleteNodeToken, getNodeCredentialsPath, getNodeToken, hasNodeToken, setNodeToken } = require("./nodeCredentialStore");
 const { parsePairingCode } = require("../shared/agentPairing");
+const { AGENT_STATUS, classifyAgentError, createAgentStatusSnapshot } = require("../shared/agentStatus");
 const { generateAgentToken, tokenFingerprint } = require("../shared/agentTokenStore");
 
 const NODE_SCHEMA_VERSION = 3;
 const DEFAULT_LOCAL_AGENT_PORT = 47131;
 const LOCAL_AGENT_HOSTS = ["127.0.0.1", "localhost"];
 const LOCAL_AGENT_DISPLAY_NAME = "This PC";
-const HEALTH_STATES = new Set(["connecting", "online", "offline", "authentication_failed", "agent_incompatible", "unknown"]);
+const HEALTH_STATES = new Set(["connecting", "online", "offline", "authentication_failed", "agent_incompatible", "degraded", "unknown"]);
 const SUPPORTED_AGENT_API_MAJOR_VERSIONS = new Set([1]);
 const SUPPORTED_AGENT_PROTOCOL_VERSION = 1;
 const MIN_AGENT_PROTOCOL_VERSION = 1;
@@ -272,6 +273,7 @@ function normalizeConnectionState(value) {
   const state = String(value || "unknown").toLowerCase().replace(/-/g, "_");
   if (state === "authentication_required" || state === "unauthorized" || state === "auth_failed" || state === "token_mismatch") return "authentication_failed";
   if (state === "incompatible" || state === "version_incompatible") return "agent_incompatible";
+  if (state === "partial" || state === "limited" || state === "warning") return "degraded";
   if (state === "connected") return "online";
   if (state === "disconnected" || state === "unreachable") return "offline";
   return HEALTH_STATES.has(state) ? state : "unknown";
@@ -283,11 +285,15 @@ function getConnectionDisplayStatus(state) {
   if (normalized === "connecting") return "Connecting";
   if (normalized === "authentication_failed") return "Authentication Required";
   if (normalized === "agent_incompatible") return "Agent Incompatible";
+  if (normalized === "degraded") return "Degraded";
   if (normalized === "offline") return "Offline";
   return "Unknown";
 }
 
 function classifyHealthError(error) {
+  const status = classifyAgentError(error);
+  if (status === AGENT_STATUS.AUTHENTICATION_REQUIRED) return "authentication_failed";
+  if (status === AGENT_STATUS.DEGRADED) return "degraded";
   const code = String(error?.code || error?.payload?.error?.code || "").toUpperCase();
   const message = String(error?.message || "");
   if (error?.status === 401 || error?.status === 403 || code === "UNAUTHORIZED" || /unauthorized|forbidden|token|credential|auth/i.test(message)) {
@@ -297,6 +303,23 @@ function classifyHealthError(error) {
     return "agent_incompatible";
   }
   return "offline";
+}
+
+async function probeAuthenticatedAgentEndpoint(config, options = {}) {
+  try {
+    return await agentClient.getSystemStats(config);
+  } catch (error) {
+    const status = classifyAgentError(error);
+    if (status === AGENT_STATUS.AUTHENTICATION_REQUIRED || status === AGENT_STATUS.OFFLINE) {
+      throw error;
+    }
+    return {
+      partialFailure: {
+        code: error?.code || null,
+        message: error?.message || options.partialFailureMessage || "Authenticated Agent endpoint returned a partial failure.",
+      },
+    };
+  }
 }
 
 function normalizeAgentApiMajor(value) {
@@ -369,7 +392,7 @@ function isCompatibleAgentHealth(health = {}) {
 
 function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt = new Date().toISOString(), health = null, previous = null, localAgent = false, compatibility = null }) {
   const normalized = normalizeConnectionState(state);
-  const reachable = ["online", "authentication_failed", "agent_incompatible"].includes(normalized);
+  const reachable = ["online", "authentication_failed", "agent_incompatible", "degraded"].includes(normalized);
   const identity = health?.identity || {};
   const compatibilityReport = compatibility || (health ? getAgentCompatibilityReport(health) : previous?.compatibility || null);
   const agentVersion = identity.agentVersion || health?.agentVersion || previous?.agentVersion || null;
@@ -389,7 +412,9 @@ function buildConnectionPatch({ state, message = "", latencyMs = null, checkedAt
     desktopApplication: localAgent ? "running" : null,
     installed: reachable ? true : previous?.installed ?? null,
     serviceRunning: reachable ? true : normalized === "offline" ? false : previous?.serviceRunning ?? null,
-    authenticated: normalized === "authentication_failed" ? false : normalized === "online" ? true : previous?.authenticated ?? null,
+    authenticated: normalized === "authentication_failed" ? false : ["online", "degraded"].includes(normalized) ? true : previous?.authenticated ?? null,
+    authenticatedEndpointOk: ["online", "degraded"].includes(normalized),
+    partialFailure: normalized === "degraded" ? message || "Authenticated endpoint returned a partial failure." : null,
     remoteAvailability: localAgent ? "not-remote" : null,
     versionCompatibility: normalized === "agent_incompatible" ? "update-required" : normalized === "online" ? "compatible" : previous?.versionCompatibility || "unknown",
     agentVersion,
@@ -726,19 +751,33 @@ function writeNodeState(state) {
 
 function publicNode(node) {
   if (node.kind === "application-host") {
+    const connection = {
+      connected: true,
+      status: "online",
+      message: "Application host is available.",
+      lastSeen: new Date().toISOString(),
+      latencyMs: 0,
+      authenticated: true,
+      authenticatedEndpointOk: true,
+    };
     return {
       ...node,
       capabilities: buildNodeCapabilities(node),
-      connection: {
-        connected: true,
-        status: "online",
-        message: "Application host is available.",
-        lastSeen: new Date().toISOString(),
-        latencyMs: 0,
-      },
+      connection,
+      agentStatus: createAgentStatusSnapshot({ target: node, connection, state: AGENT_STATUS.CONNECTED, message: connection.message, targetType: "application-host" }),
     };
   }
-  return { ...node, baseUrl: node.baseUrl || node.agentUrl, name: node.name || node.displayName, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken || hasNodeToken(node.id)), agentToken: node.agentToken || hasNodeToken(node.id) ? "[configured]" : "", local: node.localAgent === true, modeLabel: getAgentNodeModeLabel(node), nodeTypeLabel: "Registered Agent Node", builtIn: false, removable: true, localProfile: node.localAgent === true ? node.profile || null : null };
+  const publicPayload = { ...node, baseUrl: node.baseUrl || node.agentUrl, name: node.name || node.displayName, capabilities: buildNodeCapabilities(node), hasToken: Boolean(node.agentToken || hasNodeToken(node.id)), agentToken: node.agentToken || hasNodeToken(node.id) ? "[configured]" : "", local: node.localAgent === true, modeLabel: getAgentNodeModeLabel(node), nodeTypeLabel: "Registered Agent Node", builtIn: false, removable: true, localProfile: node.localAgent === true ? node.profile || null : null };
+  return {
+    ...publicPayload,
+    agentStatus: createAgentStatusSnapshot({
+      target: publicPayload,
+      connection: publicPayload.connection,
+      message: publicPayload.connection?.message,
+      checkedAt: publicPayload.lastHealthCheckedAt,
+      targetType: publicPayload.localAgent ? "local-agent" : "registered-node",
+    }),
+  };
 }
 
 function applyHealthPatchToNode(node, patch = {}) {
@@ -844,8 +883,17 @@ async function checkNodeHealth(nodeId, options = {}) {
         logThrottleMs: 60000,
       });
       const compatibility = getAgentCompatibilityReport(health);
-      const state = compatibility.compatible ? "online" : "agent_incompatible";
-      const message = state === "online" ? `Agent is responding. ${formatAgentCompatibilityMessage(compatibility)}` : formatAgentCompatibilityMessage(compatibility);
+      const authenticatedProbe = compatibility.compatible
+        ? await probeAuthenticatedAgentEndpoint(getNodeAgentConfigFromNode(node), { partialFailureMessage: "Agent health responded, but an authenticated endpoint returned a partial failure." })
+        : null;
+      const state = compatibility.compatible
+        ? authenticatedProbe?.partialFailure ? "degraded" : "online"
+        : "agent_incompatible";
+      const message = state === "online"
+        ? `Authenticated Agent endpoint responded. ${formatAgentCompatibilityMessage(compatibility)}`
+        : state === "degraded"
+        ? authenticatedProbe.partialFailure.message
+        : formatAgentCompatibilityMessage(compatibility);
       const updated = updateNodeHealthState(node.id, {
         state,
         message,

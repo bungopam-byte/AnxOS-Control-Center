@@ -18,6 +18,9 @@ Renderer recovery categories remain distinct for invalid Agent URL, TLS or
 certificate failure, authentication rejection, unreachable/timeout, version
 incompatibility, and duplicate registration. Each category exposes only safe
 corrective actions; credential values and raw stacks are never recovery data.
+Node registration preserves the original Agent status and stable failure code
+when identity probing fails, instead of collapsing authentication, transport,
+TLS, and timeout failures into a generic identity error.
 
 ## Instances
 

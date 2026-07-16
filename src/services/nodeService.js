@@ -1179,7 +1179,20 @@ async function saveNode(payload = {}) {
   if (!displayName || displayName.length > 80) throw Object.assign(new Error("Enter a node name up to 80 characters."), { code: "INVALID_NODE_NAME" });
   if (!/^https?:\/\/[^ ]+$/i.test(agentUrl)) throw Object.assign(new Error("Enter a valid Agent URL."), { code: "INVALID_NODE_URL" });
   let identity;
-  try { identity = (await getHealth(normalizeAgentSettings({ backendMode: "agent", agentUrl, agentToken }))).identity; } catch (error) { throw Object.assign(new Error(`Could not read Agent identity: ${error.message}`), { code: "AGENT_IDENTITY_UNAVAILABLE" }); }
+  try {
+    identity = (await getHealth(normalizeAgentSettings({ backendMode: "agent", agentUrl, agentToken }))).identity;
+  } catch (error) {
+    const wrapped = Object.assign(new Error(`Could not read Agent identity: ${error.message}`), {
+      code: error?.code || "AGENT_IDENTITY_UNAVAILABLE",
+      status: error?.status || error?.statusCode || null,
+      details: {
+        operation: "node-registration-identity",
+        causeCode: error?.code || null,
+      },
+    });
+    Object.defineProperty(wrapped, "cause", { value: error, enumerable: false });
+    throw wrapped;
+  }
   if (!identity?.deviceId) throw Object.assign(new Error("Agent did not provide a stable device identity."), { code: "AGENT_IDENTITY_MISSING" });
   const existing = state.nodes.find((node) => node.agentIdentity.deviceId === identity.deviceId || node.id === payload.id);
   if (!existing && state.nodes.some((node) => normalizeUrl(node.baseUrl || node.agentUrl) === agentUrl)) {

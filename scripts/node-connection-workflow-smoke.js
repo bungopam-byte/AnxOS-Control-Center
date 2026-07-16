@@ -123,6 +123,11 @@ function createAgent({ token, apiVersion = "1", deviceId = "workflow-node" }) {
     () => testNodeConnectionPayload({ displayName: "Bad Token", agentUrl, agentToken: "wrong-token" }),
     /token rejected|authentication|Agent request failed/i,
   );
+  await assert.rejects(
+    () => saveNode({ displayName: "Bad Token Registration", agentUrl, agentToken: "wrong-token" }),
+    (error) => error?.code === "UNAUTHORIZED" && error?.status === 401 && error?.details?.causeCode === "UNAUTHORIZED",
+    "Node registration must preserve authentication failure classification for guided recovery.",
+  );
   const incompatible = await testNodeConnectionPayload({
     displayName: "Old Node",
     agentUrl: `http://127.0.0.1:${oldPort}`,

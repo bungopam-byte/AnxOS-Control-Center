@@ -31574,6 +31574,9 @@ window.addEventListener("beforeunload", () => {
     window.clearTimeout(marketplaceProgressRenderTimer);
   }
   stopDockerPagePolling();
+  stopAgentControlPolling();
+  stopOwnerAnalyticsPolling();
+  stopNodeRefreshPolling();
   stopInstanceConsolePolling();
   stopMonitoringConsolePolling();
   windowMaximizedUnsubscribe?.();

@@ -81,6 +81,7 @@ const runningProcesses = new Map();
 const metricsSamples = new Map();
 const restartBackoffStates = new Map();
 const restartTimers = new Map();
+const versionRefreshTimers = new Map();
 let processInspectionProvider = null;
 let processAliveProvider = null;
 
@@ -1716,6 +1717,8 @@ function scheduleAutomaticRestart(instanceId, delayMs, callback = () => startIns
 function disposeInstanceService() {
   for (const timer of restartTimers.values()) clearTimeout(timer);
   restartTimers.clear();
+  for (const timer of versionRefreshTimers.values()) clearTimeout(timer);
+  versionRefreshTimers.clear();
   restartBackoffStates.clear();
 }
 
@@ -3165,11 +3168,16 @@ async function appendLog(instanceId, streamName, chunk) {
 }
 
 function scheduleVersionRefresh(instanceId, delayMs = 2500) {
-  setTimeout(async () => {
+  const existing = versionRefreshTimers.get(instanceId);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(async () => {
+    versionRefreshTimers.delete(instanceId);
     try {
       await backfillInstanceVersion(await loadInstanceConfig(instanceId), { force: true });
     } catch {}
-  }, delayMs).unref?.();
+  }, delayMs);
+  timer.unref?.();
+  versionRefreshTimers.set(instanceId, timer);
 }
 
 function buildSpawnEnvironment(config) {
@@ -4176,6 +4184,13 @@ module.exports = {
     normalizeShellWrapperArgs,
     formatCommandForLog,
     getRestartBackoffDecision,
+    getResourceCounts() {
+      return {
+        restartTimers: restartTimers.size,
+        versionRefreshTimers: versionRefreshTimers.size,
+        runningProcesses: runningProcesses.size,
+      };
+    },
     resetRestartBackoff,
     scheduleAutomaticRestart,
     setProcessInspectionProvider(provider) {

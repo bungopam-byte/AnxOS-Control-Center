@@ -23,12 +23,14 @@ async function main() {
   });
   const started = await service.startInstance("shutdown-smoke");
   assert(started.pid && alive(started.pid), "The test instance should be running before shutdown.");
+  assert(service._test.getResourceCounts().versionRefreshTimers > 0, "Instance startup should own its delayed version refresh timer.");
   const result = await service.shutdownInstanceService({ timeoutMs: 2000 });
   assert.strictEqual(result.stopped, 1, "Shared shutdown should stop its owned instance.");
   assert.strictEqual(alive(started.pid), false, "Owned instance processes must not survive service shutdown.");
   const persisted = JSON.parse(fs.readFileSync(path.join(root, "shutdown-smoke", "config.json"), "utf8"));
   assert.strictEqual(persisted.state, service.INSTANCE_STATES.STOPPED, "Shutdown should persist an intentional stopped state.");
   assert.strictEqual(persisted.pid, null, "Shutdown should clear the persisted PID.");
+  assert.deepStrictEqual(service._test.getResourceCounts(), { restartTimers: 0, versionRefreshTimers: 0, runningProcesses: 0 }, "Instance shutdown must release every owned timer and process record.");
   console.log("Instance shutdown smoke checks passed.");
 }
 

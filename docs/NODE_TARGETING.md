@@ -37,3 +37,11 @@ Agent Control listing uses the same canonical `nodeId` payload; the legacy
 `selectedNodeId` service option remains internal-only for compatibility.
 Security Center requires `nodeId` because Agent-token and remote-access status
 are computed for that selected execution target.
+
+Dashboard metrics, Nodes/Agent Control, Marketplace installs, Instances,
+Docker, Files, Console, Backups, Public Access, Settings connection actions,
+Security Center, Owner Workspace node views, and developer diagnostics all
+consume the canonical selection or an explicit target captured from it. Pages
+may keep target-keyed presentation caches, but they do not choose an active
+machine independently. Target-independent catalog/settings reads are marked by
+their IPC contract and do not silently fall back to the application host.

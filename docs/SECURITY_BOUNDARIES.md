@@ -84,6 +84,11 @@ Downloading, installing, skipping, or launching an update download require
 `settings:write`. Developer update handlers additionally require the trusted
 developer-settings capability. Both domains normalize and redact failures
 through the shared IPC error contract before returning them to the renderer.
+Direct update downloads accept only the current operating system and CPU
+architecture, require release-provided SHA-256 and size metadata, commit only
+after verification, and verify again immediately before installer handoff.
+Existing Downloads files are never overwritten. Legacy unverifiable releases
+can be opened in the browser but cannot be launched as trusted in-app updates.
 
 The Add Storage workflow is bound to concrete BrowserWindow identities. Only
 the main application window can open it, after `settings:write` authorization,

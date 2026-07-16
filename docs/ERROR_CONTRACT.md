@@ -88,3 +88,8 @@ Public Access IPC retains its existing `{ok:false,error}` read and mutation
 failure envelopes while adding the shared friendly, technical, retry, status,
 provider, and redacted diagnostic fields. Unexpected read failures reject as a
 shared IPC error rather than exposing their original object.
+Update IPC uses the shared contract for authorization and unexpected failures.
+Expected download/install results retain their renderer-facing result shape and
+include stable codes such as `UPDATE_CANCELLED`, `UPDATE_CHECKSUM_REQUIRED`,
+`UPDATE_CHECKSUM_MISMATCH`, and `UPDATE_INSTALLER_OPEN_FAILED`; updater logs
+are sanitized and omit raw stacks before they enter renderer-visible state.

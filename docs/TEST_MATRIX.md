@@ -2,7 +2,7 @@
 
 | Area | Primary commands |
 | --- | --- |
-| Shared operations | `npm run operations:framework:smoke` |
+| Shared operations | `npm run operations:framework:smoke`, `npm run operations:domain-cancellation:smoke` |
 | Node selection/races | `npm run node:switch:smoke`, `npm run node:application-host-identity:smoke`, `npm run node:stale-response:smoke`, `npm run cross-page:selected-target:smoke` |
 | Node migration | `npm run node:legacy-migration:smoke`, `npm run node:startup-selection:smoke` |
 | Agent authentication | `npm run agent:token:smoke`, `npm run agent-errors:smoke`, `npm run node:agent-pairing:smoke` |
@@ -25,9 +25,11 @@
 | Diagnostics authorization | `npm run diagnostics:ipc-authorization:smoke` |
 | Diagnostics IPC error contract | `npm run diagnostics:ipc-error-contract:smoke` |
 | Update IPC authorization/error contract | `npm run updates:ipc-authorization:smoke` |
+| Agent Control authorization/error contract | `npm run agent-control:ipc-authorization:smoke`, `npm run agent-control:ipc-error-contract:smoke` |
 | Storage child-window authorization | `npm run storage-window:ipc-authorization:smoke` |
 | Maintenance IPC contract | `npm run maintenance:ipc-contract:smoke` |
 | Settings IPC error contract | `npm run settings:ipc-error-contract:smoke` |
+| Settings IPC authorization | `npm run settings:ipc-authorization:smoke` |
 | Generic action authorization | `npm run action:ipc-authorization:smoke` |
 | Generic action IPC error contract | `npm run action:ipc-error-contract:smoke` |
 | Agent Control IPC error contract | `npm run agent-control:ipc-error-contract:smoke` |
@@ -46,6 +48,7 @@
 | Dependency IPC error contract | `npm run dependencies:ipc-error-contract:smoke` |
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
 | Modal keyboard/focus behavior | `npm run ui:modal-behavior:smoke` |
+| Architecture documentation | `npm run docs:architecture:smoke` |
 | Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke`, `npm run updates:download-safety:smoke` |
 | Full repository gate | `npm run agent:validate` |
 

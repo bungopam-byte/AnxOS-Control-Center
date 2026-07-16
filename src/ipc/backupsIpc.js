@@ -15,18 +15,17 @@ const {
 const { audit, requirePermission } = require("../services/securityService");
 const { wrapExpectedAgentRead } = require("./expectedAgentError");
 const { requireNodeContext } = require("./nodeContext");
-
-function getBackupErrorMessage(error) {
-  const code = error?.payload?.error?.code || error?.code;
-  const message = error?.payload?.error?.message || error?.message;
-  return message && message !== "Request failed." ? message : code || "Backup request failed.";
-}
+const { createIpcError } = require("../shared/ipcError");
 
 async function invokeBackupOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    throw new Error(getBackupErrorMessage(error));
+    throw createIpcError(error, {
+      code: "BACKUP_REQUEST_FAILED",
+      fallbackMessage: "Backup request failed.",
+      suggestion: "Review the backup diagnostics, correct the reported problem, then retry.",
+    });
   }
 }
 

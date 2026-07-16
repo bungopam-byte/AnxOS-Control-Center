@@ -24,3 +24,10 @@ verification failure.
 IPC domains retain their existing renderer-facing success shapes. Migrated
 domains wrap failures with stable codes and sanitized details. Raw stacks are
 for redacted local diagnostics only and are not renderer or Agent API output.
+
+`src/shared/ipcError.js` is the desktop failure normalizer. Its contract
+contains `code`, `friendlyMessage`, `technicalDetails`, `suggestion`,
+`retryable`, status metadata, provider metadata, redacted diagnostics, and a
+cause code. The trusted main process retains the original cause as a
+non-enumerable property; renderer-visible messages contain the stable code but
+never serialize the raw cause. Backup IPC is migrated to this model.

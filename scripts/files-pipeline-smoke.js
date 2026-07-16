@@ -183,7 +183,8 @@ async function main() {
     assert(preloadSource.includes("files:identity"), "Preload should expose the Files identity IPC bridge.");
 
     const filesIpcSource = await fs.readFile(path.join(rootDir, "src", "ipc", "filesIpc.js"), "utf8");
-    assert(filesIpcSource.includes('ipcMain.handle("files:identity"'), "Main process should register the Files identity IPC handler.");
+    assert(filesIpcSource.includes('registerFileHandler("files:identity"'), "Main process should register the Files identity IPC handler through the shared domain wrapper.");
+    assert(filesIpcSource.includes("ipcMain.handle(channel"), "Files domain registration should delegate to Electron IPC exactly once.");
 
     const agentServerSource = await fs.readFile(path.join(rootDir, "agent", "src", "server.js"), "utf8");
     assert(agentServerSource.includes('pathname === "/api/v1/files/identity"'), "Agent should register the filesystem identity endpoint.");

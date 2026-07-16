@@ -131,6 +131,7 @@
     "dependencies:node-routing:smoke": "node scripts/dependency-public-access-node-smoke.js",
     "files:smoke": "node scripts/files-pipeline-smoke.js",
     "files:ipc-authorization:smoke": "node scripts/files-ipc-authorization-smoke.js",
+    "files:ipc-error-contract:smoke": "node scripts/files-ipc-error-contract-smoke.js",
     "resources:node-isolation:smoke": "node scripts/resources-node-isolation-smoke.js",
     "independent-agent-architecture:smoke": "node scripts/independent-agent-architecture-smoke.js",
     "agent:files-root:smoke": "node scripts/agent-files-root-smoke.js",

@@ -30,6 +30,7 @@ const {
 } = require("../services/serviceRouter");
 const { audit, checkRateLimit, requirePermission } = require("../services/securityService");
 const { wrapExpectedAgentRead } = require("./expectedAgentError");
+const { createIpcError } = require("../shared/ipcError");
 
 function getInstanceErrorMessage(error) {
   const code = error?.payload?.error?.code || error?.code;
@@ -46,11 +47,11 @@ async function invokeInstanceOperation(operation) {
   try {
     return await operation();
   } catch (error) {
-    const code = error?.payload?.error?.code || error?.code || null;
-    const wrapped = new Error(getInstanceErrorMessage(error));
-    wrapped.code = code;
-    wrapped.statusCode = error?.statusCode || error?.status || null;
-    throw wrapped;
+    throw createIpcError(error, {
+      code: "INSTANCE_REQUEST_FAILED",
+      fallbackMessage: getInstanceErrorMessage(error),
+      suggestion: "Review the instance status and diagnostics, correct the reported problem, then retry.",
+    });
   }
 }
 

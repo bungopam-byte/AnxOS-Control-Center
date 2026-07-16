@@ -33,3 +33,5 @@ non-enumerable property; renderer-visible messages contain the stable code but
 never serialize the raw cause. Backup IPC is migrated to this model.
 Node IPC also uses this model, preserving pairing, authorization, connectivity,
 and credential-repair codes through the desktop boundary.
+Instance IPC uses the same model for lifecycle, crash recovery, configuration,
+and instance-filesystem failures.

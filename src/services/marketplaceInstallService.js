@@ -2311,20 +2311,29 @@ async function installPack(payload = {}) {
   }
 }
 
-function getPendingManualInstall(sessionId) {
+function getPendingManualInstall(sessionId, options = {}) {
   const session = pendingManualInstalls.get(String(sessionId || ""));
   if (!session) {
     throw new MarketplaceInstallError("Manual download session was not found.", "PROVIDER_MANUAL_SESSION_NOT_FOUND", { sessionId });
   }
+  const requestedNodeId = String(options.nodeId || "").trim();
+  const sessionNodeId = String(session.nodeId || session.agentConfig?.nodeId || "").trim();
+  if (requestedNodeId && sessionNodeId && requestedNodeId !== sessionNodeId) {
+    throw new MarketplaceInstallError("Manual download session belongs to a different node.", "PROVIDER_MANUAL_SESSION_NODE_MISMATCH", {
+      sessionId: session.id,
+      nodeId: requestedNodeId,
+      sessionNodeId,
+    });
+  }
   return session;
 }
 
-function getManualInstallRecovery(sessionId) {
-  return getPublicManualInstall(getPendingManualInstall(sessionId));
+function getManualInstallRecovery(sessionId, options = {}) {
+  return getPublicManualInstall(getPendingManualInstall(sessionId, options));
 }
 
-function getManualInstallProviderPage(sessionId) {
-  const session = getPendingManualInstall(sessionId);
+function getManualInstallProviderPage(sessionId, options = {}) {
+  const session = getPendingManualInstall(sessionId, options);
   const url = session.manual.downloadPageUrl || session.manual.projectUrl || getOfficialProviderUrl(session.manual);
   if (!url) {
     throw new MarketplaceInstallError("Provider page is unavailable for this manual download.", "PROVIDER_PAGE_UNAVAILABLE", {
@@ -2335,8 +2344,8 @@ function getManualInstallProviderPage(sessionId) {
   return { url, manualDownload: getPublicManualInstall(session) };
 }
 
-async function importManualInstallFile(sessionId, filePath) {
-  const session = getPendingManualInstall(sessionId);
+async function importManualInstallFile(sessionId, filePath, options = {}) {
+  const session = getPendingManualInstall(sessionId, options);
   const manual = session.manual || {};
   const verified = verifyImportedFile(filePath, manual);
   const target = manual.expectedDestinationPath || `mods/${safeArchivePath(verified.fileName)}`;
@@ -2369,8 +2378,8 @@ async function importManualInstallFile(sessionId, filePath) {
   };
 }
 
-async function resumeManualInstall(sessionId) {
-  const session = getPendingManualInstall(sessionId);
+async function resumeManualInstall(sessionId, options = {}) {
+  const session = getPendingManualInstall(sessionId, options);
   const manual = session.manual || {};
   if (!session.importedFiles[manual.requirementId]) {
     throw new MarketplaceInstallError("Import the missing file before resuming.", "PROVIDER_MANUAL_FILE_NOT_IMPORTED", {
@@ -2482,6 +2491,7 @@ module.exports = {
     buildInstallContext,
     buildInstallMetadata,
     buildInstancePayload,
+    createPendingManualInstall,
     createManualDownloadRequiredError,
     createRestrictedCurseForgeFileError,
     createDeduper,
@@ -2493,6 +2503,7 @@ module.exports = {
     getCurseForgeAgentConfig,
     getCurseForgeFileContext,
     getManualRequirementId,
+    getPendingManualInstall,
     getOfficialProviderUrl,
     isManualDownloadRequiredError,
     isCurseForgeAccessDeniedFileError,

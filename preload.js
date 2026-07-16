@@ -222,9 +222,9 @@ const desktopApi = {
     importCommunityTemplate: (payload = {}) => invokeMarketplace("marketplace:importCommunityTemplate", payload),
     installTemplate: (payload) => invokeMarketplace("marketplace:installTemplate", payload),
     installPack: (payload) => invokeMarketplace("marketplace:installPack", payload),
-    openManualDownloadPage: (sessionId) => invokeMarketplace("marketplace:openManualDownloadPage", { sessionId }),
-    importManualDownloadFile: (sessionId) => invokeMarketplace("marketplace:importManualDownloadFile", { sessionId }),
-    resumeManualInstall: (sessionId) => invokeMarketplace("marketplace:resumeManualInstall", { sessionId }),
+    openManualDownloadPage: (sessionId, payload = {}) => invokeMarketplace("marketplace:openManualDownloadPage", { ...payload, sessionId }),
+    importManualDownloadFile: (sessionId, payload = {}) => invokeMarketplace("marketplace:importManualDownloadFile", { ...payload, sessionId }),
+    resumeManualInstall: (sessionId, payload = {}) => invokeMarketplace("marketplace:resumeManualInstall", { ...payload, sessionId }),
     onInstallProgress: (callback) => {
       const handler = (_, payload) => callback(payload);
       ipcRenderer.on("marketplace:install-progress", handler);

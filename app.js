@@ -14277,7 +14277,8 @@ async function openMarketplaceManualDownloadPage(sessionId) {
     return;
   }
   try {
-    await getDesktopApiState().api.marketplace.openManualDownloadPage(sessionId);
+    const requestContext = createNodeActionContext("marketplace-manual-download-page");
+    await getDesktopApiState().api.marketplace.openManualDownloadPage(sessionId, getNodeScopedPayload(requestContext));
   } catch (error) {
     const normalizedError = normalizeMarketplaceError(error, "Provider page could not be opened.");
     showToast(normalizedError.title);
@@ -14289,7 +14290,9 @@ async function importMarketplaceManualDownloadFile(sessionId) {
     return;
   }
   try {
-    const result = await getDesktopApiState().api.marketplace.importManualDownloadFile(sessionId);
+    const requestContext = createNodeActionContext("marketplace-manual-download-import");
+    const result = await getDesktopApiState().api.marketplace.importManualDownloadFile(sessionId, getNodeScopedPayload(requestContext));
+    if (!isNodeActionStillCurrent(requestContext)) return;
     if (result?.canceled) {
       return;
     }
@@ -14309,9 +14312,11 @@ async function resumeMarketplaceManualInstall(sessionId) {
     return;
   }
   try {
+    const requestContext = createNodeActionContext("marketplace-manual-install-resume");
     setMarketplaceInstallState("Installing", "running");
     setMarketplaceMessage("Resuming Marketplace install...");
-    const result = await getDesktopApiState().api.marketplace.resumeManualInstall(sessionId);
+    const result = await getDesktopApiState().api.marketplace.resumeManualInstall(sessionId, getNodeScopedPayload(requestContext));
+    if (!isNodeActionStillCurrent(requestContext)) return;
     marketplaceLocalDownloadEntries = [];
     renderMarketplaceProgress(result?.progress || []);
     renderMarketplaceDownloads(result?.downloads || []);

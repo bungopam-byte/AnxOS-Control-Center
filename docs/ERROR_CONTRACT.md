@@ -52,6 +52,9 @@ AMP and legacy Playit snapshot IPC preserve the established `{ok:false,error}`
 shape for expected Agent availability/authentication failures. Unexpected
 failures reject through the shared redacted contract without changing successful
 snapshot payloads.
+SSH request handlers use a shared domain wrapper, and asynchronous session
+status/output events are sanitized immediately before renderer delivery.
+Connection failures are redacted before being stored in session snapshots.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.

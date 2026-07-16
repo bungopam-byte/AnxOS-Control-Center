@@ -11,6 +11,7 @@
 | Filesystem | `npm run agent:files-root:smoke`, `npm run files:smoke` |
 | Files IPC authorization | `npm run files:ipc-authorization:smoke` |
 | Files IPC error contract | `npm run files:ipc-error-contract:smoke` |
+| SSH IPC error contract | `npm run ssh:ipc-error-contract:smoke` |
 | Operational read authorization | `npm run operational-reads:ipc-authorization:smoke` |
 | AMP/Playit IPC error contract | `npm run compatibility:ipc-error-contract:smoke` |
 | Backup/security | `node scripts/security-backup-smoke.js`, `npm run backups:transfer-safety:smoke`, `npm run security:page:smoke` |

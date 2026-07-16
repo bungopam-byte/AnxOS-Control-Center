@@ -1,10 +1,26 @@
 const { BrowserWindow, ipcMain } = require("electron");
 const { SshService } = require("../services/sshService");
 const { audit, checkRateLimit, requirePermission } = require("../services/securityService");
+const { createIpcError } = require("../shared/ipcError");
+const { sanitize } = require("../shared/redaction");
 
 const sshService = new SshService();
 let sshIpcRegistered = false;
 let lastSshWriteDiagnostic = null;
+
+function registerSshHandler(channel, handler) {
+  ipcMain.handle(channel, async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      throw createIpcError(error, {
+        code: "SSH_REQUEST_FAILED",
+        fallbackMessage: "SSH operation failed.",
+        suggestion: "Verify the SSH profile, credentials, network path, and remote permissions, then retry.",
+      });
+    }
+  });
+}
 
 function broadcastSshEvent(channel, payload) {
   try {
@@ -12,9 +28,10 @@ function broadcastSshEvent(channel, payload) {
   } catch {
     return;
   }
+  const safePayload = sanitize(payload);
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) {
-      window.webContents.send(channel, payload);
+      window.webContents.send(channel, safePayload);
     }
   });
 }
@@ -57,27 +74,27 @@ function registerSshIpc() {
     });
   });
 
-  ipcMain.handle("ssh:listProfiles", async () => {
+  registerSshHandler("ssh:listProfiles", async () => {
     requirePermission("ssh:read", "ssh-profiles");
     return sshService.listProfiles();
   });
-  ipcMain.handle("ssh:saveProfile", async (_, payload = {}) => {
+  registerSshHandler("ssh:saveProfile", async (_, payload = {}) => {
     requirePermission("settings:write", payload.id || payload.name || payload.host);
     audit({ action: "ssh.profile.save", target: payload.id || payload.name || payload.host });
     return sshService.saveProfile(payload);
   });
-  ipcMain.handle("ssh:connect", async (_, payload = {}) => {
+  registerSshHandler("ssh:connect", async (_, payload = {}) => {
     requirePermission("instance:write", payload.profileId || payload.host || "ssh-session");
     checkRateLimit("ssh-connect", 30, 60 * 1000);
     audit({ action: "ssh.connect", target: payload.profileId || payload.host });
     return sshService.connect(payload);
   });
-  ipcMain.handle("ssh:disconnect", async (_, payload = {}) => {
+  registerSshHandler("ssh:disconnect", async (_, payload = {}) => {
     requirePermission("instance:write", payload.sessionId);
     audit({ action: "ssh.disconnect", target: payload.sessionId });
     return sshService.disconnect(payload.sessionId);
   });
-  ipcMain.handle("ssh:write", async (_, payload = {}) => {
+  registerSshHandler("ssh:write", async (_, payload = {}) => {
     requirePermission("instance:write", payload.sessionId);
     checkRateLimit("ssh-write", 600, 60 * 1000);
     lastSshWriteDiagnostic = {
@@ -89,7 +106,7 @@ function registerSshIpc() {
     audit({ action: "ssh.input", target: payload.sessionId, reason: `bytes:${lastSshWriteDiagnostic.byteLength}` });
     return sshService.write(payload.sessionId, payload.input);
   });
-  ipcMain.handle("ssh:resize", async (_, payload = {}) => {
+  registerSshHandler("ssh:resize", async (_, payload = {}) => {
     requirePermission("instance:write", payload.sessionId);
     return sshService.resize(payload.sessionId, payload);
   });

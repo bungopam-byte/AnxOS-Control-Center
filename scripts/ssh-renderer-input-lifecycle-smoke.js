@@ -30,7 +30,7 @@ requireSource("lastWriteRejectedCategory: \"stale_or_inactive_session\"", "Rende
 requireSource("lastWriteAccepted: true", "Renderer diagnostics must mark successful writes.");
 
 assert(preloadSource.includes("return ipcRenderer.invoke(\"ssh:write\", { sessionId, input });"), "Preload must forward exact xterm data to main IPC.");
-assert(ipcSource.includes("ipcMain.handle(\"ssh:write\"") && ipcSource.includes("return sshService.write(payload.sessionId, payload.input);"), "Main IPC must forward exact terminal data to the SSH service.");
+assert(ipcSource.includes("registerSshHandler(\"ssh:write\"") && ipcSource.includes("return sshService.write(payload.sessionId, payload.input);"), "Main IPC must forward exact terminal data through the SSH domain wrapper to the service.");
 assert(serviceSource.includes("session.stream.write(data);"), "SSH service must write terminal data once to the PTY stream.");
 
 [

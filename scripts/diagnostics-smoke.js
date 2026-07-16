@@ -30,6 +30,9 @@ async function main() {
   assert.strictEqual(redactString(`payload=${"A".repeat(180)}`), "payload=[redacted-base64]");
   assert.strictEqual(redactString(`open /home/private-user/Projects/AnxOS-Control-Center/config/agent.json`), "open [redacted-path]");
   assert.strictEqual(redactString(`C:\\Users\\private-user\\AppData\\Roaming\\AnxOS\\config.json`), "[redacted-path]");
+  assert.strictEqual(sanitize({ privateKey: "private-material" }).privateKey, "[redacted]");
+  const pem = "-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----";
+  assert.strictEqual(redactString(pem), "[redacted-private-key]");
   const agentControl = require("../src/services/agentControlService");
   const desktopDiagnostics = require("../src/services/diagnosticsService");
   const validatedConfig = agentControl.validateConfig({ name: "Local Test Agent", host: "127.0.0.1", port: 48131, allowedFolders: [temp] });

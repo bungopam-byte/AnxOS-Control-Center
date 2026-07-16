@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("ssh2");
 const { getAllNodesSync, getSelectedNodeId } = require("./nodeService");
+const { redactString } = require("../shared/redaction");
 
 const DEV_SSH_PROFILES_PATH = path.resolve(__dirname, "..", "..", "config", "ssh-profiles.json");
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
@@ -578,11 +579,11 @@ class SshService extends EventEmitter {
     }
 
     session.status = "error";
-    session.message = error.message;
+    session.message = redactString(error.message || "SSH connection failed.");
     this.emit("session-updated", createSessionSnapshot(session));
     this.emit("session-error", {
       sessionId,
-      message: error.message,
+      message: session.message,
       code: error.code || "SSH_CONNECTION_FAILED",
     });
     this.destroySession(sessionId);

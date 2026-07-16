@@ -39,7 +39,8 @@ assert(!appJs.includes("confirm("), "Node workflow must not use browser confirm.
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "anx-node-workflow-"));
 process.env.ANXHUB_CONFIG_DIR = tempDir;
 
-const { saveNode, testNodeConnectionPayload } = require("../src/services/nodeService");
+const nodeService = require("../src/services/nodeService");
+const { saveNode, testNodeConnectionPayload } = nodeService;
 const { getNodeToken } = require("../src/services/nodeCredentialStore");
 const servers = [];
 
@@ -128,6 +129,19 @@ function createAgent({ token, apiVersion = "1", deviceId = "workflow-node" }) {
     (error) => error?.code === "UNAUTHORIZED" && error?.status === 401 && error?.details?.causeCode === "UNAUTHORIZED",
     "Node registration must preserve authentication failure classification for guided recovery.",
   );
+  const originalFetch = global.fetch;
+  global.fetch = (_url, options = {}) => new Promise((_resolve, reject) => {
+    options.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })), { once: true });
+  });
+  try {
+    await assert.rejects(
+      () => nodeService._test.postPairingComplete(agentUrl, { pairingCode: "temporary", permanentToken: "replacement" }, { timeoutMs: 100 }),
+      (error) => error?.code === "PAIRING_TIMEOUT" && error?.retryAvailable === false && /new pairing code/i.test(error.message),
+      "Timed-out credential rotation must abort and require a fresh pairing code instead of blind retry.",
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
   const incompatible = await testNodeConnectionPayload({
     displayName: "Old Node",
     agentUrl: `http://127.0.0.1:${oldPort}`,

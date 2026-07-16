@@ -1206,13 +1206,35 @@ async function saveNode(payload = {}) {
   return { node: publicNode(node), ...(await listNodes({ refreshIdentity: false })) };
 }
 
-async function postPairingComplete(agentUrl, payload = {}) {
+async function postPairingComplete(agentUrl, payload = {}, options = {}) {
   const endpoint = `${normalizeUrl(agentUrl)}/api/v1/pairing/complete`;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const controller = new AbortController();
+  const timeoutMs = Math.max(100, Number(options.timeoutMs) || 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const timedOut = error?.name === "AbortError" || controller.signal.aborted;
+    throw Object.assign(new Error(timedOut
+      ? "Agent pairing timed out. The result is uncertain; generate a new pairing code before trying again."
+      : "The Agent pairing request could not be completed. Generate a new pairing code after verifying the Agent URL and connection."), {
+      code: timedOut ? "PAIRING_TIMEOUT" : "PAIRING_UNREACHABLE",
+      retryAvailable: false,
+      details: {
+        operation: "pairing-complete",
+        causeCode: error?.cause?.code || error?.code || null,
+        timeoutMs: timedOut ? timeoutMs : null,
+      },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   let body = null;
   try { body = await response.json(); } catch {}
   if (!response.ok) {
@@ -1359,4 +1381,4 @@ function deleteNode(nodeId) {
 async function selectNode(nodeId) { getNode(nodeId); const state = readNodeState(); writeNodeState({ ...state, selectedNodeId: nodeId || APPLICATION_HOST_NODE_ID }); return listNodes({ discoverLocalAgent: false, refreshIdentity: false }); }
 async function testNode(nodeId) { return checkNodeHealth(nodeId || getSelectedNodeId(), { timeoutMs: 8000 }); }
 
-module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialStatus, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, repairNodeCredential, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion } };
+module.exports = { APPLICATION_HOST_NODE_ID, HEALTH_STATES, NODE_SCHEMA_VERSION, checkAllNodeHealth, checkNodeHealth, deleteNode, getAllNodesSync, getExecutionTarget, getNode, getNodeAgentConfig, getNodeCredentialStatus, getNodeCredentialsPath, getNodesPath, getSelectedNodeId, listNodes, mergeAgentNodes, migrateState, pairNodeFromCode, repairNodeCredential, resolveNodeForAgentIdentity, saveNode, selectNode, testNode, testNodeConnectionPayload, _test: { formatAgentCompatibilityMessage, getAgentCompatibilityReport, normalizeAgentApiMajor, normalizeAgentProtocolVersion, postPairingComplete } };

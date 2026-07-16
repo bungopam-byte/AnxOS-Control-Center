@@ -21,6 +21,9 @@ corrective actions; credential values and raw stacks are never recovery data.
 Node registration preserves the original Agent status and stable failure code
 when identity probing fails, instead of collapsing authentication, transport,
 TLS, and timeout failures into a generic identity error.
+Pairing completion is bounded to 15 seconds and aborts the underlying request.
+Because a lost rotation response is ambiguous, timeout and transport failures
+are not blindly retryable; recovery requires a fresh one-time pairing code.
 
 ## Instances
 

@@ -146,18 +146,40 @@ function atomicWriteJson(filePath, payload) {
 }
 
 function readState() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(getWorkspacePath(), "utf8"));
-    const normalized = normalizeState(raw);
-    if (!Array.isArray(raw.builtInPages) || raw.builtInPages.length !== BUILT_IN_PAGES.length || !raw.contents?.notes) {
-      writeState(normalized);
-    }
-    return normalized;
-  } catch {
+  const filePath = getWorkspacePath();
+  if (!fs.existsSync(filePath)) {
     const state = createDefaultState();
     writeState(state);
     return state;
   }
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Workspace root must be an object.");
+  } catch (error) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw Object.assign(new Error("Owner Workspace state is unreadable. The original file was preserved for recovery."), {
+      code: "OWNER_WORKSPACE_CORRUPT",
+      details: { causeCode: error?.code || "INVALID_JSON" },
+    });
+  }
+  const version = Number.isInteger(raw.version) ? raw.version : 0;
+  if (version > WORKSPACE_VERSION) {
+    throw Object.assign(new Error("Owner Workspace state was created by a newer application version."), {
+      code: "OWNER_WORKSPACE_SCHEMA_UNSUPPORTED",
+      details: { version, supportedVersion: WORKSPACE_VERSION },
+    });
+  }
+  const normalized = normalizeState(raw);
+  if (version < WORKSPACE_VERSION) {
+    const backupPath = `${filePath}.schema-v${version}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+  }
+  if (version < WORKSPACE_VERSION || !Array.isArray(raw.builtInPages) || raw.builtInPages.length !== BUILT_IN_PAGES.length || !raw.contents?.notes) {
+    writeState(normalized);
+  }
+  return normalized;
 }
 
 function writeState(state) {
@@ -574,6 +596,7 @@ function readLogViewer() {
 }
 
 module.exports = {
+  WORKSPACE_VERSION,
   clearApiHistory,
   createPage,
   deletePage,

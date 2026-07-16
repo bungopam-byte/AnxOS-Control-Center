@@ -181,6 +181,25 @@ async function main() {
   assert(flags.some((flag) => flag.name === "ownerWorkspace.enabled"), "Feature flags should be listed.");
   workspace.setFeatureFlag({ name: "dev.mockData", value: true });
 
+  const validWorkspaceRaw = fs.readFileSync(workspaceDataPath, "utf8");
+  const futureWorkspace = { ...JSON.parse(validWorkspaceRaw), version: workspace.WORKSPACE_VERSION + 1 };
+  fs.writeFileSync(workspaceDataPath, `${JSON.stringify(futureWorkspace)}\n`, { mode: 0o600 });
+  const futureWorkspaceRaw = fs.readFileSync(workspaceDataPath, "utf8");
+  assert.throws(
+    () => workspace.getWorkspace(),
+    (error) => error?.code === "OWNER_WORKSPACE_SCHEMA_UNSUPPORTED",
+    "Future Owner Workspace schemas must fail without dropping feature flags or content.",
+  );
+  assert.strictEqual(fs.readFileSync(workspaceDataPath, "utf8"), futureWorkspaceRaw, "Future Owner Workspace state must remain unchanged.");
+  fs.writeFileSync(workspaceDataPath, "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => workspace.getWorkspace(),
+    (error) => error?.code === "OWNER_WORKSPACE_CORRUPT",
+    "Corrupt Owner Workspace state must not be overwritten with defaults.",
+  );
+  assert(fs.readdirSync(path.dirname(workspaceDataPath)).some((name) => name.startsWith(`${path.basename(workspaceDataPath)}.corrupt-`)), "Corrupt Owner Workspace state should be preserved.");
+  fs.writeFileSync(workspaceDataPath, validWorkspaceRaw, { mode: 0o600 });
+
   security.logout();
   assert.throws(() => workspace.getCommandCatalog(), /Owner access is required/, "Logout should immediately remove command access.");
 

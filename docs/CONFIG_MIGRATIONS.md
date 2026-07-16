@@ -63,6 +63,11 @@ is backed up before migration. Corrupt or future state fails closed with
 `SECURITY_STORE_CORRUPT` or `SECURITY_SCHEMA_UNSUPPORTED`; it is never treated
 as an unauthenticated first run.
 
+Owner Workspace `workspace.json` uses version 1 and atomic writes. Its contents
+include feature-flag overrides. Corrupt or future state is preserved and fails
+explicitly, so flags and private workspace content are never replaced by
+defaults after a read failure.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

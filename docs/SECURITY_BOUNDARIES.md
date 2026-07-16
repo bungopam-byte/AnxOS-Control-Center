@@ -13,7 +13,9 @@ IPC handlers validate payloads and call `securityService.requirePermission`
 for privileged mutations. Node-aware handlers require explicit target context.
 Owner workspace, node deletion, token rotation, restore, command execution,
 instance creation/configuration, instance file mutation, log deletion, and
-tunnel operations are enforced in trusted code.
+tunnel operations are enforced in trusted code. SSH profile/session control,
+Docker network attachment, transfer cancellation, and connection tests also
+authorize in the main process before reaching their service.
 
 ## Agent
 

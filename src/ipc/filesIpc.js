@@ -51,7 +51,11 @@ function registerFilesIpc() {
   });
   ipcMain.handle("files:testConnection", async (_, payload = {}) => testConnection(payload));
   ipcMain.handle("files:disconnect", async (_, payload = {}) => fileService.disconnect(payload.profileId, payload.storageId));
-  ipcMain.handle("files:cancelTransfer", async (_, payload = {}) => fileService.cancelTransfer(payload.transferId || payload.id));
+  ipcMain.handle("files:cancelTransfer", async (_, payload = {}) => {
+    requirePermission("files:write", payload.transferId || payload.id);
+    audit({ action: "files.transfer.cancel", target: payload.transferId || payload.id });
+    return fileService.cancelTransfer(payload.transferId || payload.id);
+  });
   ipcMain.handle("files:readText", async (_, payload = {}) => fileService.readText(payload));
   ipcMain.handle("files:writeText", async (_, payload = {}) => {
     requirePermission("files:write", payload.path);

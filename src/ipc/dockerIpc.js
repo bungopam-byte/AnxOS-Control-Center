@@ -171,8 +171,18 @@ function registerDockerIpc() {
     audit({ action: "docker.network.delete", target: payload.network });
     return removeDockerNetwork(payload.network, payload);
   }));
-  ipcMain.handle("docker:connectNetwork", async (_, payload = {}) => invokeDockerOperation(() => connectDockerNetwork(payload.network, payload.container, requireDockerNodeContext(payload, "network connect"))));
-  ipcMain.handle("docker:disconnectNetwork", async (_, payload = {}) => invokeDockerOperation(() => disconnectDockerNetwork(payload.network, payload.container, requireDockerNodeContext(payload, "network disconnect"))));
+  ipcMain.handle("docker:connectNetwork", async (_, payload = {}) => invokeDockerOperation(() => {
+    requireDockerNodeContext(payload, "network connect");
+    requirePermission("instance:write", payload.container);
+    audit({ action: "docker.network.connect", target: `${payload.network}:${payload.container}` });
+    return connectDockerNetwork(payload.network, payload.container, payload);
+  }));
+  ipcMain.handle("docker:disconnectNetwork", async (_, payload = {}) => invokeDockerOperation(() => {
+    requireDockerNodeContext(payload, "network disconnect");
+    requirePermission("instance:write", payload.container);
+    audit({ action: "docker.network.disconnect", target: `${payload.network}:${payload.container}` });
+    return disconnectDockerNetwork(payload.network, payload.container, payload);
+  }));
   ipcMain.handle("docker:pruneNetworks", async (_, payload = {}) => invokeDockerOperation(() => {
     requireDockerNodeContext(payload, "network prune");
     requirePermission("instance:delete", "docker-networks");

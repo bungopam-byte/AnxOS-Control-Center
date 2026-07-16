@@ -209,7 +209,10 @@ function registerSettingsIpc() {
     audit({ action: "settings.agent.save", target: "agent-config" });
     return getAgentSettingsPayload();
   });
-  ipcMain.handle("settings:testAgentConnection", async (_, payload = null) => testConnection(payload));
+  ipcMain.handle("settings:testAgentConnection", async (_, payload = null) => {
+    assertCanReadSettingsSecret("canManageAgentConfiguration", "agent-connection-test");
+    return testConnection(payload);
+  });
   ipcMain.handle("settings:pairAgent", async (_, payload = {}) => {
     assertCanReadSettingsSecret("canManageAgentConfiguration", "agent-pairing");
     const result = pairAgentFromCode(payload.code || payload.pairingCode || "");

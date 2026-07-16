@@ -14,6 +14,7 @@ const {
 const { restorePersistedActiveNode, setActiveNode } = require("../services/activeNodeSelectionService");
 const { generateAgentToken } = require("../shared/agentTokenStore");
 const { audit, requirePermission } = require("../services/securityService");
+const { requireNodeContext } = require("./nodeContext");
 
 function getNodeErrorMessage(error) {
   return error?.message || error?.code || "Node request failed.";
@@ -40,20 +41,22 @@ function registerNodesIpc() {
     return saveNode(payload);
   }));
   ipcMain.handle("nodes:delete", async (_, payload = {}) => invokeNodeOperation(() => {
-    requirePermission("settings:write", payload.nodeId);
-    audit({ action: "node.delete", target: payload.nodeId });
-    return deleteNode(payload.nodeId);
+    const context = requireNodeContext(payload, "node deletion");
+    requirePermission("settings:write", context.nodeId);
+    audit({ action: "node.delete", target: context.nodeId });
+    return deleteNode(context.nodeId);
   }));
-  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => setActiveNode(payload.nodeId || "application-host", { reason: "ipc-select" })));
-  ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => setActiveNode(requireNodeContext(payload, "node selection").nodeId, { reason: "ipc-select" })));
+  ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(requireNodeContext(payload, "node connection test").nodeId)));
   ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => testNodeConnectionPayload(payload)));
-  ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(requireNodeContext(payload, "node health check").nodeId)));
   ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => checkAllNodeHealth()));
-  ipcMain.handle("nodes:credentialStatus", async (_, payload = {}) => invokeNodeOperation(() => getNodeCredentialStatus(payload.nodeId || "application-host")));
+  ipcMain.handle("nodes:credentialStatus", async (_, payload = {}) => invokeNodeOperation(() => getNodeCredentialStatus(requireNodeContext(payload, "node credential status").nodeId)));
   ipcMain.handle("nodes:repairCredential", async (_, payload = {}) => invokeNodeOperation(() => {
-    requirePermission("settings:write", payload.nodeId || "node-credential");
-    audit({ action: "node.repair-credential", target: payload.nodeId || "selected-node" });
-    return repairNodeCredential(payload);
+    const context = requireNodeContext(payload, "node credential repair");
+    requirePermission("settings:write", context.nodeId);
+    audit({ action: "node.repair-credential", target: context.nodeId });
+    return repairNodeCredential(context);
   }));
   ipcMain.handle("nodes:generateToken", async () => invokeNodeOperation(() => {
     requirePermission("settings:write", "nodes");

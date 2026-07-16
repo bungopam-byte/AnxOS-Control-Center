@@ -7,6 +7,7 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const nodesIpc = fs.readFileSync(path.join(root, "src", "ipc", "nodesIpc.js"), "utf8");
 
 function includes(needle, message) {
   assert(app.includes(needle), message || `Expected renderer source to include ${needle}`);
@@ -25,5 +26,15 @@ includes("Local Windows metrics are hidden to avoid mixing sources.", "Dashboard
 includes("renderFriendlyDashboard();", "Successful and failed target metric refreshes must update Dashboard context.");
 
 assert(!app.includes("Authorization") || !/Authorization.*textContent/.test(app), "Renderer must not render Authorization headers.");
+
+[
+  'requireNodeContext(payload, "node selection")',
+  'requireNodeContext(payload, "node connection test")',
+  'requireNodeContext(payload, "node health check")',
+  'requireNodeContext(payload, "node credential status")',
+  'requireNodeContext(payload, "node deletion")',
+  'requireNodeContext(payload, "node credential repair")',
+].forEach((needle) => assert(nodesIpc.includes(needle), `Node IPC must reject missing explicit targets: ${needle}`));
+assert(!nodesIpc.includes('payload.nodeId || "application-host"'), "Node IPC must never redirect a missing target to the application host.");
 
 console.log("Cross-page selected-target consistency smoke checks passed.");

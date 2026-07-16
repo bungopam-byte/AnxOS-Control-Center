@@ -24,7 +24,12 @@ function createAgent({ token, payload, delayMs = 0 }) {
   let hits = 0;
   const server = http.createServer((request, response) => {
     hits += 1;
-    if (request.url !== "/api/v1/health") {
+    // A real Agent implements /api/v1/stats (see agent/src/server.js) and
+    // checkNodeHealth() treats a failing authenticated stats probe as
+    // "degraded" even when /api/v1/health succeeds. This fixture must
+    // simulate that endpoint too, or every node in this test would
+    // incorrectly classify as "degraded" instead of "online".
+    if (request.url !== "/api/v1/health" && request.url !== "/api/v1/stats") {
       response.writeHead(404, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { code: "NOT_FOUND" } }));
       return;
@@ -32,6 +37,11 @@ function createAgent({ token, payload, delayMs = 0 }) {
     if (request.headers.authorization !== `Bearer ${token}`) {
       response.writeHead(401, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { code: "UNAUTHORIZED" } }));
+      return;
+    }
+    if (request.url === "/api/v1/stats") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
       return;
     }
     setTimeout(() => {
@@ -145,7 +155,10 @@ const servers = [];
   ]);
   assert.strictEqual(slowChecks[0].state, "online");
   assert.strictEqual(slowChecks[1].state, "online");
-  assert.strictEqual(slowAgent.getHits() - slowHitsBefore, 1, "overlapping checks for one node should be deduplicated");
+  // One full health-check cycle now makes two real requests (health, then the
+  // authenticated stats probe); two overlapping calls deduplicated into a
+  // single run should still only produce those two hits, not four.
+  assert.strictEqual(slowAgent.getHits() - slowHitsBefore, 2, "overlapping checks for one node should be deduplicated");
 
   const beforeRecovery = await checkNodeHealth("node-recovery", { timeoutMs: 250 });
   assert.strictEqual(beforeRecovery.state, "offline");

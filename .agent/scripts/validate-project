@@ -76,6 +76,7 @@ function main() {
     "instances:ipc-authorization:smoke",
     "action:ipc-authorization:smoke",
     "backups:ipc-authorization:smoke",
+    "files:ipc-authorization:smoke",
     "ipc:error-contract:smoke",
     "nodes:ipc-error-contract:smoke",
     "instances:ipc-error-contract:smoke",

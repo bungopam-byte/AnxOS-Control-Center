@@ -32,6 +32,11 @@ contacting an Agent, or opening a desktop file picker.
 Marketplace manual-download handoff, file import, resume, cancellation, and
 retry remain inside the original `marketplace:install` authorization boundary.
 
+File listing, identity, connection metadata, reads, downloads, and disconnects
+require `files:read`; storage connection tests require `settings:write` before
+any outbound connection is attempted. Admin and User roles retain file-read
+access, while signed-out configured deployments fail closed.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

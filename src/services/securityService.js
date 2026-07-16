@@ -41,13 +41,14 @@ const ROLE_PERMISSIONS = {
     "instance:write",
     "instance:lifecycle",
     "instance:delete",
+    "files:read",
     "files:write",
     "marketplace:install",
     "backups:write",
     "backups:restore",
     "settings:write",
   ],
-  User: ["instance:lifecycle"],
+  User: ["instance:lifecycle", "files:read"],
 };
 const SECURITY_EVENT_DEFINITIONS = {
   "security.setup": { category: "authentication", severity: "info", message: "Local Owner security was configured." },

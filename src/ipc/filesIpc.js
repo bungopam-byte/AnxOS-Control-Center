@@ -31,9 +31,9 @@ function registerFilesIpc() {
     });
   }
 
-  ipcMain.handle("files:list", async (_, payload = {}) => fileService.list(payload));
-  ipcMain.handle("files:identity", async (_, payload = {}) => fileService.identity(payload));
-  ipcMain.handle("files:listConnections", async () => listConnections());
+  ipcMain.handle("files:list", async (_, payload = {}) => { requirePermission("files:read", payload.path); return fileService.list(payload); });
+  ipcMain.handle("files:identity", async (_, payload = {}) => { requirePermission("files:read", payload.nodeId || payload.storageId); return fileService.identity(payload); });
+  ipcMain.handle("files:listConnections", async () => { requirePermission("files:read", "storage-connections"); return listConnections(); });
   ipcMain.handle("files:saveConnection", async (_, payload = {}) => {
     requirePermission("settings:write", "storage-connections");
     audit({ action: "files.storage.save", target: payload.id || payload.name || payload.host });
@@ -49,14 +49,14 @@ function registerFilesIpc() {
     audit({ action: "files.storage.default", target: payload.storageId || payload.id });
     return setDefaultConnection(payload.storageId || payload.id);
   });
-  ipcMain.handle("files:testConnection", async (_, payload = {}) => testConnection(payload));
-  ipcMain.handle("files:disconnect", async (_, payload = {}) => fileService.disconnect(payload.profileId, payload.storageId));
+  ipcMain.handle("files:testConnection", async (_, payload = {}) => { requirePermission("settings:write", payload.id || payload.host || "storage-connection-test"); return testConnection(payload); });
+  ipcMain.handle("files:disconnect", async (_, payload = {}) => { requirePermission("files:read", payload.profileId || payload.storageId); return fileService.disconnect(payload.profileId, payload.storageId); });
   ipcMain.handle("files:cancelTransfer", async (_, payload = {}) => {
     requirePermission("files:write", payload.transferId || payload.id);
     audit({ action: "files.transfer.cancel", target: payload.transferId || payload.id });
     return fileService.cancelTransfer(payload.transferId || payload.id);
   });
-  ipcMain.handle("files:readText", async (_, payload = {}) => fileService.readText(payload));
+  ipcMain.handle("files:readText", async (_, payload = {}) => { requirePermission("files:read", payload.path); return fileService.readText(payload); });
   ipcMain.handle("files:writeText", async (_, payload = {}) => {
     requirePermission("files:write", payload.path);
     checkRateLimit("files-write", 120, 60 * 1000);
@@ -94,7 +94,7 @@ function registerFilesIpc() {
     audit({ action: "files.upload", target: payload.directoryPath });
     return fileService.upload(payload);
   });
-  ipcMain.handle("files:download", async (_, payload = {}) => fileService.download(payload));
+  ipcMain.handle("files:download", async (_, payload = {}) => { requirePermission("files:read", payload.path); return fileService.download(payload); });
   return fileService;
 }
 

@@ -9,6 +9,7 @@
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |
 | Instances | `npm run instances:runtime:smoke`, `npm run instances:deletion:smoke` |
 | Filesystem | `npm run agent:files-root:smoke`, `npm run files:smoke` |
+| Files IPC authorization | `npm run files:ipc-authorization:smoke` |
 | Backup/security | `node scripts/security-backup-smoke.js`, `npm run security:page:smoke` |
 | Diagnostics authorization | `npm run diagnostics:ipc-authorization:smoke` |
 | Generic action authorization | `npm run action:ipc-authorization:smoke` |

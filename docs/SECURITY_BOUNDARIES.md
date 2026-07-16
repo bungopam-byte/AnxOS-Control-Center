@@ -52,6 +52,11 @@ Backup inventory and schedule reads require `backups:read`. Admin and User
 roles retain read access; archive import/export and all mutations keep their
 stronger write/restore permissions.
 
+System metrics, dependency catalog/check/plan data, AMP snapshots, and public
+access/Playit state require explicit read grants and node context. Admin and
+User roles retain these operational reads; configured signed-out sessions do
+not.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

@@ -103,8 +103,8 @@ function wrapPublicAccessOperation(operation) {
 }
 
 function registerPublicAccessIpc() {
-  ipcMain.handle("publicAccess:getSnapshot", async (_, payload = {}) => invokePublicAccessRead("publicAccess:getSnapshot", () => getPublicAccessSnapshot(requireNodeContext(payload, "Public Access snapshot"))));
-  ipcMain.handle("publicAccess:listServices", async (_, payload = {}) => invokePublicAccessRead("publicAccess:listServices", () => listPublicAccessServices(requireNodeContext(payload, "Public Access services"))));
+  ipcMain.handle("publicAccess:getSnapshot", async (_, payload = {}) => invokePublicAccessRead("publicAccess:getSnapshot", () => { requirePermission("public-access:read", payload.nodeId); return getPublicAccessSnapshot(requireNodeContext(payload, "Public Access snapshot")); }));
+  ipcMain.handle("publicAccess:listServices", async (_, payload = {}) => invokePublicAccessRead("publicAccess:listServices", () => { requirePermission("public-access:read", payload.nodeId); return listPublicAccessServices(requireNodeContext(payload, "Public Access services")); }));
   ipcMain.handle("publicAccess:createService", async (_, payload = {}) => wrapPublicAccessOperation(() => {
     requireNodeContext(payload, "Public Access service creation");
     requirePermission("instance:write", "public-access");

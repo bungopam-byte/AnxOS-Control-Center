@@ -30,8 +30,9 @@ function invokeDependencyOperation(operation) {
 }
 
 function registerDependenciesIpc() {
-  ipcMain.handle("dependencies:getCatalog", async (_, payload = {}) => invokeDependencyOperation(() => getDependencyCatalog(requireDependencyNodeContext(payload, "dependency catalog"))));
+  ipcMain.handle("dependencies:getCatalog", async (_, payload = {}) => invokeDependencyOperation(() => { requirePermission("dependencies:read", payload.nodeId); return getDependencyCatalog(requireDependencyNodeContext(payload, "dependency catalog")); }));
   ipcMain.handle("dependencies:check", async (_, payload = {}) => invokeDependencyOperation(async () => {
+    requirePermission("dependencies:read", payload.nodeId);
     requireDependencyNodeContext(payload, "dependency detection");
     const result = await checkDependencies(payload);
     diagnostics.updateRuntimeState({
@@ -42,6 +43,7 @@ function registerDependenciesIpc() {
     return result;
   }));
   ipcMain.handle("dependencies:plan", async (_, payload = {}) => invokeDependencyOperation(async () => {
+    requirePermission("dependencies:read", payload.nodeId);
     requireDependencyNodeContext(payload, "dependency planning");
     const result = await planDependencyPreparation(payload);
     diagnostics.updateRuntimeState({

@@ -5,9 +5,11 @@ const { app } = require("electron");
 const {
   isWeakAgentToken,
   parseAgentPairingPayload,
+  readAgentConfigFile,
   resolveSharedAgentToken,
   rotateSharedAgentToken,
   tokenFingerprint,
+  writeAgentConfigSettings,
 } = require("../shared/agentTokenStore");
 
 const DEFAULT_BACKEND_MODE = "local";
@@ -52,10 +54,6 @@ function loadEnvironment() {
 
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function stripByteOrderMark(value) {
-  return typeof value === "string" ? value.replace(/^\uFEFF/, "") : value;
 }
 
 function hasOwn(object, key) {
@@ -197,17 +195,10 @@ function ensureAgentConfigFile() {
 
 function readAgentSettings() {
   const agentConfigPath = getAgentConfigPath();
-
-  try {
-    ensureAgentConfigFile();
-    const rawConfig = stripByteOrderMark(fs.readFileSync(agentConfigPath, "utf8"));
-    const parsed = JSON.parse(rawConfig);
-    logAgentConfigMetadata("read-config", agentConfigPath, parsed);
-    return normalizeAgentSettings(parsed);
-  } catch {
-    logAgentConfigMetadata("read-config-fallback", agentConfigPath, null);
-    return getDefaultAgentSettings();
-  }
+  ensureAgentConfigFile();
+  const parsed = readAgentConfigFile(agentConfigPath);
+  logAgentConfigMetadata("read-config", agentConfigPath, parsed);
+  return normalizeAgentSettings(parsed);
 }
 
 function saveAgentSettings(settings = {}) {
@@ -223,7 +214,7 @@ function saveAgentSettings(settings = {}) {
   });
   const agentConfigPath = getAgentConfigPath();
   ensureAgentConfigDirectory();
-  fs.writeFileSync(agentConfigPath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+  writeAgentConfigSettings(agentConfigPath, normalized);
   logAgentConfigMetadata("saved-config", agentConfigPath, normalized);
   logAgentSelection("saved-config", normalized);
   return normalized;

@@ -112,6 +112,18 @@ function main() {
     "Corrupt Agent config must not generate and persist a replacement token.",
   );
   assert(fs.readdirSync(path.dirname(configPath)).some((name) => name.startsWith(`${path.basename(configPath)}.corrupt-`)), "Corrupt Agent config should be preserved.");
+  assert.throws(
+    () => agentClient.readAgentSettings(),
+    (error) => error?.code === "AGENT_CONFIG_CORRUPT",
+    "Desktop Agent settings reads must not convert corrupt shared configuration to defaults.",
+  );
+  const corruptRaw = fs.readFileSync(configPath, "utf8");
+  assert.throws(
+    () => agentClient.saveAgentSettings({ backendMode: "local" }),
+    (error) => error?.code === "AGENT_CONFIG_CORRUPT",
+    "Desktop Agent settings writes must not overwrite corrupt shared configuration.",
+  );
+  assert.strictEqual(fs.readFileSync(configPath, "utf8"), corruptRaw, "Rejected settings writes must preserve corrupt Agent configuration for recovery.");
 
   const identityPath = path.join(root, "device-identity.json");
   process.env.AGENT_IDENTITY_PATH = identityPath;

@@ -73,7 +73,7 @@ function readAgentConfigFile(configPath) {
   if (!fs.existsSync(configPath)) return { ...DEFAULT_AGENT_CONFIG, schemaVersion: AGENT_CONFIG_SCHEMA_VERSION };
   let parsed;
   try {
-    parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    parsed = JSON.parse(fs.readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Agent config root must be an object.");
   } catch (error) {
     const backupPath = `${configPath}.corrupt-${Date.now()}`;
@@ -106,6 +106,17 @@ function writeAgentConfigToken(configPath, token, updates = {}) {
     ...updates,
     schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
     agentToken: token,
+  };
+  atomicWriteJson(configPath, next);
+  return next;
+}
+
+function writeAgentConfigSettings(configPath, settings = {}) {
+  const current = readAgentConfigFile(configPath);
+  const next = {
+    ...current,
+    ...settings,
+    schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
   };
   atomicWriteJson(configPath, next);
   return next;
@@ -248,5 +259,7 @@ module.exports = {
   resolveSharedAgentToken,
   rotateSharedAgentToken,
   tokenFingerprint,
+  readAgentConfigFile,
+  writeAgentConfigSettings,
   writeAgentConfigToken,
 };

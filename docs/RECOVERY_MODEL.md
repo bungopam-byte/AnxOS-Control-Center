@@ -14,6 +14,11 @@ version incompatibility remain distinct states. Recovery actions use pairing,
 credential repair/rotation, URL correction, service repair, or compatible
 Agent update as appropriate.
 
+Renderer recovery categories remain distinct for invalid Agent URL, TLS or
+certificate failure, authentication rejection, unreachable/timeout, version
+incompatibility, and duplicate registration. Each category exposes only safe
+corrective actions; credential values and raw stacks are never recovery data.
+
 ## Instances
 
 Runtime PID reconciliation detects live configured and detached processes.

@@ -6,6 +6,7 @@
 | Node selection/races | `npm run node:switch:smoke`, `npm run node:application-host-identity:smoke`, `npm run node:stale-response:smoke`, `npm run cross-page:selected-target:smoke` |
 | Node migration | `npm run node:legacy-migration:smoke`, `npm run node:startup-selection:smoke` |
 | Agent authentication | `npm run agent:token:smoke`, `npm run agent-errors:smoke`, `npm run node:agent-pairing:smoke` |
+| Agent API authorization | `npm run agent:api-authorization:smoke` |
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |
 | Instances | `npm run instances:runtime:smoke`, `npm run instances:deletion:smoke`, `npm run instances:file-security:smoke` |
 | Filesystem | `npm run agent:files-root:smoke`, `npm run files:smoke` |

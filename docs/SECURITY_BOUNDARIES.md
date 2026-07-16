@@ -98,6 +98,14 @@ rename. Existing files require an explicit replacement decision; existing
 directories are not replaced because that operation cannot currently provide
 atomic rollback.
 
+Authenticated Agent HTTP requests also pass an API-capability permission map
+before routing. `AGENT_API_PERMISSIONS` accepts exact permissions and category
+wildcards; omitted configuration defaults to `*` for backward compatibility.
+Restricted credentials can independently allow system, Files, Console,
+Instances, Backups, Docker, Dependencies, Marketplace, Public Access,
+diagnostics, and generic-action surfaces. Pairing remains a separate
+local/one-time-code boundary.
+
 Instance file paths are confined to the instance `data/` root. Write
 preparation resolves the nearest existing ancestor before creating directories,
 then revalidates the resulting parent; paths through symlinks cannot create

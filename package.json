@@ -41,6 +41,7 @@
     "agent:token:rotate": "node scripts/rotate-agent-token.js",
     "agent:pair": "node scripts/agent-pair-export.js",
     "agent:token:smoke": "node scripts/agent-token-smoke.js",
+    "agent:api-authorization:smoke": "node scripts/agent-api-authorization-smoke.js",
     "agent:token-status:smoke": "node scripts/agent-token-status-smoke.js",
     "agent:auth-fallback:smoke": "node scripts/agent-auth-fallback-smoke.js",
     "agent:disk-stats:smoke": "node scripts/agent-disk-stats-smoke.js",

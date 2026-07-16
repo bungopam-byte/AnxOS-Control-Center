@@ -19,6 +19,7 @@ const { handleFilesDownload, handleFilesIdentity, handleFilesList, handleFilesMu
 const { handleHealth } = require("./routes/health");
 const { handleInstances } = require("./routes/instances");
 const { handlePairing } = require("./routes/pairing");
+const { authorizeApiPermission } = require("./permissions");
 const { handlePlayitSnapshot, handlePlayitStatus } = require("./routes/playit");
 const { handlePublicAccess } = require("./routes/publicAccess");
 const { handleStats, handleSystemSummary } = require("./routes/system");
@@ -159,6 +160,33 @@ function isActionInvokeRoute(request, pathname) {
 function getActionIdFromPath(pathname) {
   const prefix = "/api/v1/actions/";
   return pathname.startsWith(prefix) ? decodeURIComponent(pathname.slice(prefix.length)) : null;
+}
+
+function getRoutePermission(request, pathname) {
+  const method = String(request.method || "GET").toUpperCase();
+  if (pathname === "/api/v1/health") return null;
+  if (pathname === "/api/v1/stats" || pathname === "/api/stats" || pathname === "/api/v1/system/summary") return "system:read";
+  if (pathname.startsWith("/api/v1/playit/") || pathname.startsWith("/api/v1/public-access/")) return method === "GET" ? "public-access:read" : "public-access:write";
+  if (pathname.startsWith("/api/v1/amp/")) return "instance:read";
+  if (pathname.startsWith("/api/v1/files/")) return method === "GET" ? "files:read" : "files:write";
+  if (pathname.startsWith("/api/v1/console/")) return method === "GET" ? "console:read" : "console:write";
+  if (pathname === "/api/v1/backups" || pathname.startsWith("/api/v1/backups/")) {
+    if (pathname.endsWith("/restore")) return "backups:restore";
+    return method === "GET" ? "backups:read" : "backups:write";
+  }
+  if (pathname === "/api/v1/instances" || pathname.startsWith("/api/v1/instances/")) {
+    if (method === "GET") return "instance:read";
+    if (/\/(?:start|stop|restart|kill)$/.test(pathname)) return "instance:lifecycle";
+    if (method === "DELETE") return "instance:delete";
+    return "instance:write";
+  }
+  if (pathname === "/api/v1/docker" || pathname.startsWith("/api/v1/docker/")) return method === "GET" ? "docker:read" : "docker:write";
+  if (pathname.startsWith("/api/v1/dependencies/")) return pathname.endsWith("/install") ? "dependencies:write" : "dependencies:read";
+  if (pathname.startsWith("/api/v1/marketplace/")) return "marketplace:read";
+  if (pathname === "/api/v1/diagnostics") return "owner";
+  if (pathname === "/api/v1/actions") return "actions:read";
+  if (isActionInvokeRoute(request, pathname)) return "actions:execute";
+  return null;
 }
 
 function readRequestBody(request) {
@@ -352,6 +380,28 @@ async function handleRequest(request, response) {
       }
 
       sendError(response, auth.statusCode, auth.code, getAuthErrorMessage(auth.code));
+      return;
+    }
+
+    const apiAuthorization = authorizeApiPermission(getRoutePermission(request, url.pathname));
+    if (!apiAuthorization.ok) {
+      logger.warn("authorization", "Agent API permission denied", {
+        method: request.method,
+        pathname: url.pathname,
+        code: apiAuthorization.code,
+        permission: apiAuthorization.permission,
+      }, { file: "auth", errorCode: apiAuthorization.code });
+      if (isActionInvokeRoute(request, url.pathname)) {
+        auditAction(request, {
+          actionId: getActionIdFromPath(url.pathname),
+          permission: apiAuthorization.permission,
+          outcome: "denied",
+          reason: apiAuthorization.code,
+        });
+      }
+      sendError(response, apiAuthorization.statusCode, apiAuthorization.code, "This Agent credential is not allowed to access the requested API capability.", {
+        permission: apiAuthorization.permission,
+      });
       return;
     }
 

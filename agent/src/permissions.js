@@ -1,4 +1,5 @@
 const DEFAULT_ACTION_PERMISSIONS = ["docker:write"];
+const DEFAULT_API_PERMISSIONS = ["*"];
 
 function normalizePermissionToken(value) {
   const normalized = String(value || "").trim().toLowerCase();
@@ -48,6 +49,25 @@ function getConfiguredPermissions() {
   return new Set(sourcePermissions.flatMap(expandPermissionToken).filter(Boolean));
 }
 
+function getConfiguredApiPermissions() {
+  const rawPermissions = String(process.env.AGENT_API_PERMISSIONS || "");
+  const sourcePermissions = rawPermissions.trim()
+    ? rawPermissions.split(/[\s,]+/)
+    : DEFAULT_API_PERMISSIONS;
+  return new Set(sourcePermissions.flatMap(expandPermissionToken).filter(Boolean));
+}
+
+function authorizeApiPermission(permission) {
+  const normalized = normalizePermissionToken(permission);
+  if (!normalized) return { ok: true, code: "API_PERMISSION_NOT_REQUIRED", permission: null };
+  const configuredPermissions = getConfiguredApiPermissions();
+  const category = normalized.includes(":") ? `${normalized.split(":", 1)[0]}:*` : null;
+  if (!configuredPermissions.has("*") && !configuredPermissions.has(normalized) && !(category && configuredPermissions.has(category))) {
+    return { ok: false, statusCode: 403, code: "API_PERMISSION_DENIED", permission: normalized };
+  }
+  return { ok: true, statusCode: 200, code: "API_PERMISSION_AUTHORIZED", permission: normalized };
+}
+
 function authorizeAction(action) {
   if (!action) {
     return {
@@ -77,5 +97,7 @@ function authorizeAction(action) {
 }
 
 module.exports = {
+  authorizeApiPermission,
   authorizeAction,
+  getConfiguredApiPermissions,
 };

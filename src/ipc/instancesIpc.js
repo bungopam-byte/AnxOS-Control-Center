@@ -56,7 +56,7 @@ async function invokeInstanceOperation(operation) {
 }
 
 function registerInstancesIpc() {
-  ipcMain.handle("instances:list", async (_, payload = {}) => wrapExpectedAgentRead("instances:list", () => listInstances(payload)));
+  ipcMain.handle("instances:list", async (_, payload = {}) => wrapExpectedAgentRead("instances:list", () => { requirePermission("instance:read", payload.nodeId); return listInstances(payload); }));
   ipcMain.handle("instances:create", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:write", payload.id || payload.name || "new-instance");
     audit({ action: "instance.create", target: payload.id || payload.name || "new-instance" });
@@ -81,9 +81,9 @@ function registerInstancesIpc() {
     audit({ action: "instance.openFolder", target: payload.instanceId });
     return openInstanceFolder(payload.instanceId, payload);
   }));
-  ipcMain.handle("instances:getStatus", async (_, payload = {}) => wrapExpectedAgentRead("instances:getStatus", () => getInstanceStatus(payload.instanceId, payload)));
-  ipcMain.handle("instances:getMetrics", async (_, payload = {}) => wrapExpectedAgentRead("instances:getMetrics", () => getInstanceMetrics(payload.instanceId, payload)));
-  ipcMain.handle("instances:getLogs", async (_, payload = {}) => wrapExpectedAgentRead("instances:getLogs", () => getInstanceLogs(payload.instanceId, payload)));
+  ipcMain.handle("instances:getStatus", async (_, payload = {}) => wrapExpectedAgentRead("instances:getStatus", () => { requirePermission("instance:read", payload.instanceId); return getInstanceStatus(payload.instanceId, payload); }));
+  ipcMain.handle("instances:getMetrics", async (_, payload = {}) => wrapExpectedAgentRead("instances:getMetrics", () => { requirePermission("instance:read", payload.instanceId); return getInstanceMetrics(payload.instanceId, payload); }));
+  ipcMain.handle("instances:getLogs", async (_, payload = {}) => wrapExpectedAgentRead("instances:getLogs", () => { requirePermission("instance:read", payload.instanceId); return getInstanceLogs(payload.instanceId, payload); }));
   ipcMain.handle("instances:clearLogs", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("files:write", `${payload.instanceId}:logs`);
     audit({ action: "instance.logs.clear", target: payload.instanceId });
@@ -125,8 +125,8 @@ function registerInstancesIpc() {
     audit({ action: "instance.forget", target: payload.instanceId });
     return forgetInstance(payload.instanceId, payload);
   }));
-  ipcMain.handle("instances:listFiles", async (_, payload = {}) => invokeInstanceOperation(() => listInstanceFiles(payload.instanceId, payload.path, payload)));
-  ipcMain.handle("instances:readFile", async (_, payload = {}) => invokeInstanceOperation(() => readInstanceFile(payload.instanceId, payload.path, payload)));
+  ipcMain.handle("instances:listFiles", async (_, payload = {}) => invokeInstanceOperation(() => { requirePermission("instance:read", payload.instanceId); return listInstanceFiles(payload.instanceId, payload.path, payload); }));
+  ipcMain.handle("instances:readFile", async (_, payload = {}) => invokeInstanceOperation(() => { requirePermission("instance:read", payload.instanceId); return readInstanceFile(payload.instanceId, payload.path, payload); }));
   ipcMain.handle("instances:writeFile", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("files:write", `${payload.instanceId}:${payload.path}`);
     checkRateLimit("instance-file-write", 120, 60 * 1000);
@@ -148,13 +148,13 @@ function registerInstancesIpc() {
     audit({ action: "instance.file.rename", target: `${payload.instanceId}:${payload.oldPath}` });
     return renameInstanceFile(payload.instanceId, payload.oldPath, payload.newPath, payload);
   }));
-  ipcMain.handle("instances:getMinecraftProperties", async (_, payload = {}) => invokeInstanceOperation(() => getMinecraftProperties(payload.instanceId, payload)));
+  ipcMain.handle("instances:getMinecraftProperties", async (_, payload = {}) => invokeInstanceOperation(() => { requirePermission("instance:read", payload.instanceId); return getMinecraftProperties(payload.instanceId, payload); }));
   ipcMain.handle("instances:saveMinecraftProperties", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("files:write", `${payload.instanceId}:server.properties`);
     audit({ action: "instance.minecraft.properties.write", target: payload.instanceId });
     return saveMinecraftProperties(payload.instanceId, payload.properties, payload);
   }));
-  ipcMain.handle("instances:getFiveMReadiness", async (_, payload = {}) => invokeInstanceOperation(() => getFiveMReadiness(payload.instanceId, payload)));
+  ipcMain.handle("instances:getFiveMReadiness", async (_, payload = {}) => invokeInstanceOperation(() => { requirePermission("instance:read", payload.instanceId); return getFiveMReadiness(payload.instanceId, payload); }));
   ipcMain.handle("instances:saveFiveMLicenseKey", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("files:write", `${payload.instanceId}:server.cfg`);
     checkRateLimit("fivem-license-save", 20, 60 * 1000);

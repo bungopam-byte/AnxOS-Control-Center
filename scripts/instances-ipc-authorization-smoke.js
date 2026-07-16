@@ -42,6 +42,14 @@ try {
 
 async function main() {
   const protectedChannels = [
+    "instances:list",
+    "instances:getStatus",
+    "instances:getMetrics",
+    "instances:getLogs",
+    "instances:listFiles",
+    "instances:readFile",
+    "instances:getMinecraftProperties",
+    "instances:getFiveMReadiness",
     "instances:create",
     "instances:update",
     "instances:clearLogs",

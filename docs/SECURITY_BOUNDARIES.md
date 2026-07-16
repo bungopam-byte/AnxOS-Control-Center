@@ -40,6 +40,10 @@ access, while signed-out configured deployments fail closed.
 Unsaved node connection probes require `settings:write` before accepting an
 arbitrary Agent URL or attempting outbound authentication.
 
+Instance listing, status, metrics, logs, files, and game-configuration reads
+require `instance:read`. Admin and User roles retain read access; configured
+signed-out sessions cannot query local or remote instance data.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

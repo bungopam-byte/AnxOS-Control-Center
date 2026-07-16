@@ -38,6 +38,7 @@ const SESSION_TIMEOUT_OPTIONS_MS = new Set([
 const ROLE_PERMISSIONS = {
   Owner: ["*"],
   Admin: [
+    "instance:read",
     "instance:write",
     "instance:lifecycle",
     "instance:delete",
@@ -48,7 +49,7 @@ const ROLE_PERMISSIONS = {
     "backups:restore",
     "settings:write",
   ],
-  User: ["instance:lifecycle", "files:read"],
+  User: ["instance:read", "instance:lifecycle", "files:read"],
 };
 const SECURITY_EVENT_DEFINITIONS = {
   "security.setup": { category: "authentication", severity: "info", message: "Local Owner security was configured." },

@@ -55,6 +55,13 @@ reconciliation clears the stale PID and reports `Unknown` with
 `failureReason: "STALE_PID"`; it does not misreport an unobserved exit as an
 intentional stop. A persisted `Stopping` record still repairs to `Stopped`.
 
+Backup imports and restores validate gzip integrity, tar header checksums,
+entry types and canonical paths before mutation. The current in-process tar
+implementation intentionally caps compressed archives at 512 MiB, expanded
+content at 512 MiB, individual entries at 256 MiB, and entry count at 100,000;
+archives above those implemented limits fail with
+`BACKUP_ARCHIVE_LIMIT_EXCEEDED` rather than risking process exhaustion.
+
 ## Instances
 
 Runtime PID reconciliation detects live configured and detached processes.

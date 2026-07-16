@@ -16,6 +16,11 @@ const TAR_BLOCK_SIZE = 512;
 const BACKUP_METADATA_SCHEMA_VERSION = 1;
 const BACKUP_SCHEDULE_SCHEMA_VERSION = 1;
 const MINIMUM_DISK_RESERVE_BYTES = 64 * 1024 * 1024;
+const MAX_BACKUP_ARCHIVE_BYTES = 512 * 1024 * 1024;
+const MAX_BACKUP_EXPANDED_BYTES = 512 * 1024 * 1024;
+const MAX_BACKUP_ENTRY_BYTES = 256 * 1024 * 1024;
+const MAX_BACKUP_ENTRY_COUNT = 100000;
+const MAX_BACKUP_COMPRESSION_RATIO = 1000;
 let schedulerStarted = false;
 let schedulerTimer = null;
 
@@ -257,12 +262,27 @@ function readTarString(buffer, offset, length) {
   return buffer.subarray(offset, offset + length).toString("utf8").replace(/\0.*$/, "");
 }
 
-function parseTarEntries(archiveBuffer) {
+function parseTarEntries(archiveBuffer, options = {}) {
+  const maxArchiveBytes = Math.max(1, Number(options.maxArchiveBytes) || MAX_BACKUP_ARCHIVE_BYTES);
+  const maxExpandedBytes = Math.max(1, Number(options.maxExpandedBytes) || MAX_BACKUP_EXPANDED_BYTES);
+  const maxEntryBytes = Math.max(1, Number(options.maxEntryBytes) || MAX_BACKUP_ENTRY_BYTES);
+  const maxEntryCount = Math.max(1, Number(options.maxEntryCount) || MAX_BACKUP_ENTRY_COUNT);
+  const maxCompressionRatio = Math.max(1, Number(options.maxCompressionRatio) || MAX_BACKUP_COMPRESSION_RATIO);
+  const compressionCheckMinBytes = Math.max(1, Number(options.compressionCheckMinBytes) || 16 * 1024 * 1024);
+  if (!Buffer.isBuffer(archiveBuffer) || archiveBuffer.length > maxArchiveBytes) {
+    throw createBackupError("BACKUP_ARCHIVE_LIMIT_EXCEEDED", 413, { archiveBytes: archiveBuffer?.length || 0, maxArchiveBytes });
+  }
   let tarBuffer;
   try {
-    tarBuffer = zlib.gunzipSync(archiveBuffer);
-  } catch {
+    tarBuffer = zlib.gunzipSync(archiveBuffer, { maxOutputLength: maxExpandedBytes });
+  } catch (error) {
+    if (error?.code === "ERR_BUFFER_TOO_LARGE" || /larger than|output length/i.test(error?.message || "")) {
+      throw createBackupError("BACKUP_ARCHIVE_LIMIT_EXCEEDED", 413, { maxExpandedBytes });
+    }
     throw createBackupError("BACKUP_ARCHIVE_INVALID", 400);
+  }
+  if (archiveBuffer.length > 0 && tarBuffer.length >= compressionCheckMinBytes && tarBuffer.length / archiveBuffer.length > maxCompressionRatio) {
+    throw createBackupError("BACKUP_ARCHIVE_COMPRESSION_UNSAFE", 400, { archiveBytes: archiveBuffer.length, expandedBytes: tarBuffer.length, maxCompressionRatio });
   }
 
   const entries = [];
@@ -276,16 +296,30 @@ function parseTarEntries(archiveBuffer) {
       break;
     }
 
+    const expectedChecksum = parseOctal(header, 148, 8);
+    const checksumHeader = Buffer.from(header);
+    checksumHeader.fill(" ", 148, 156);
+    const actualChecksum = checksumHeader.reduce((sum, byte) => sum + byte, 0);
+    if (!Number.isFinite(expectedChecksum) || expectedChecksum !== actualChecksum) {
+      throw createBackupError("BACKUP_ARCHIVE_CHECKSUM_INVALID", 400);
+    }
+
     const name = readTarString(header, 0, 100);
     const prefix = readTarString(header, 345, 155);
     const fullName = assertSafeArchiveEntryName(prefix ? `${prefix}/${name}` : name);
     const typeFlag = readTarString(header, 156, 1) || "0";
     const size = parseOctal(header, 124, 12);
-    if (size < 0 || offset + size > tarBuffer.length) {
+    if (!Number.isSafeInteger(size) || size < 0 || offset + size > tarBuffer.length) {
       throw createBackupError("BACKUP_ARCHIVE_INVALID", 400);
     }
     if (!["0", "5", ""].includes(typeFlag)) {
       throw createBackupError("BACKUP_ARCHIVE_UNSUPPORTED_ENTRY", 400);
+    }
+    if (size > maxEntryBytes) {
+      throw createBackupError("BACKUP_ARCHIVE_LIMIT_EXCEEDED", 413, { entryName: fullName, entryBytes: size, maxEntryBytes });
+    }
+    if (entries.length + 1 > maxEntryCount) {
+      throw createBackupError("BACKUP_ARCHIVE_LIMIT_EXCEEDED", 413, { entryCount: entries.length + 1, maxEntryCount });
     }
 
     entries.push({
@@ -297,6 +331,9 @@ function parseTarEntries(archiveBuffer) {
       tarBuffer,
     });
     totalSize += typeFlag === "5" ? 0 : size;
+    if (totalSize > maxExpandedBytes) {
+      throw createBackupError("BACKUP_ARCHIVE_LIMIT_EXCEEDED", 413, { expandedBytes: totalSize, maxExpandedBytes });
+    }
     offset += size + ((TAR_BLOCK_SIZE - (size % TAR_BLOCK_SIZE)) % TAR_BLOCK_SIZE);
   }
 
@@ -606,6 +643,9 @@ async function performCreateBackup(payload = {}) {
   await ensureBackupRoot();
   let sourceSize = 0;
   for (const sourcePath of sourcePaths) sourceSize += await calculatePathSize(path.resolve(instancePath, sourcePath));
+  if (sourceSize > MAX_BACKUP_EXPANDED_BYTES) {
+    throw createBackupError("BACKUP_SOURCE_LIMIT_EXCEEDED", 413, { sourceSize, maxSourceBytes: MAX_BACKUP_EXPANDED_BYTES });
+  }
   await ensureDiskSpace(getBackupRoot(), sourceSize, "BACKUP_DISK_SPACE_INSUFFICIENT");
 
   const backupId = `${instanceId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
@@ -816,6 +856,10 @@ async function importBackup(payload = {}) {
   if (!content) {
     throw createBackupError("BACKUP_CONTENT_REQUIRED");
   }
+  const estimatedBytes = payload.encoding === "base64" ? Math.ceil(content.length * 0.75) : Buffer.byteLength(content, "utf8");
+  if (estimatedBytes > MAX_BACKUP_ARCHIVE_BYTES) {
+    throw createBackupError("BACKUP_ARCHIVE_LIMIT_EXCEEDED", 413, { estimatedBytes, maxArchiveBytes: MAX_BACKUP_ARCHIVE_BYTES });
+  }
   await ensureBackupRoot();
   const backupId = `${instanceId}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
   const archive = archivePath(backupId);
@@ -920,7 +964,10 @@ module.exports = {
   BACKUP_METADATA_SCHEMA_VERSION,
   BACKUP_SCHEDULE_SCHEMA_VERSION,
   _test: {
+    createTarHeader,
     ensureDiskSpace,
+    padTarData,
+    parseTarEntries,
     rollbackRestoreFromSafetySnapshot,
   },
   createBackup,

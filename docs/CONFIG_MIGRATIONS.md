@@ -23,6 +23,11 @@ so it does not leave plaintext secrets at rest. Future schemas return
 preserved in a timestamped copy; payloads that cannot be decrypted fail with
 `NODE_CREDENTIAL_DECRYPT_FAILED` rather than silently dropping credentials.
 
+`preferences.json` uses schema version 1. Legacy direct-key preferences are
+backed up once, normalized, and atomically migrated. Invalid JSON returns
+`SETTINGS_STORE_CORRUPT` after preserving a timestamped copy; future schemas
+return `SETTINGS_SCHEMA_UNSUPPORTED` without modifying the file.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

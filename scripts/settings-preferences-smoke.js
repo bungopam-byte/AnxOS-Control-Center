@@ -48,10 +48,26 @@ try {
   assert.strictEqual(migrated.settings["amp.url"], "http://amp.local");
   assert.strictEqual(migrated.settings["playit.address"], "playit.example");
   assert.strictEqual(migrated.settings["minecraft.defaultAddress"], "mc.example");
+  assert.strictEqual(JSON.parse(fs.readFileSync(prefs.getSettingsPath(), "utf8")).schemaVersion, prefs.SETTINGS_SCHEMA_VERSION, "legacy settings should be rewritten with the current schema.");
+  assert(fs.existsSync(`${prefs.getSettingsPath()}.schema-v0.backup`), "legacy settings migration should preserve the original file once.");
 
   fs.writeFileSync(prefs.getSettingsPath(), "{not valid json");
-  const recovered = prefs.readPreferences();
-  assert.strictEqual(recovered.settings["app.displayName"], "AnxOS Control Center", "corrupt settings should recover to defaults.");
+  assert.throws(
+    () => prefs.readPreferences(),
+    (error) => error?.code === "SETTINGS_STORE_CORRUPT",
+    "corrupt settings must fail explicitly instead of being treated as a clean first launch.",
+  );
+  assert(fs.readdirSync(path.dirname(prefs.getSettingsPath())).some((name) => name.startsWith(`${path.basename(prefs.getSettingsPath())}.corrupt-`)), "corrupt settings should be preserved in a diagnostic backup.");
+
+  const futureState = { schemaVersion: prefs.SETTINGS_SCHEMA_VERSION + 1, settings: { "app.displayName": "Future" } };
+  fs.writeFileSync(prefs.getSettingsPath(), `${JSON.stringify(futureState)}\n`, { mode: 0o600 });
+  const futureRaw = fs.readFileSync(prefs.getSettingsPath(), "utf8");
+  assert.throws(
+    () => prefs.readPreferences(),
+    (error) => error?.code === "SETTINGS_SCHEMA_UNSUPPORTED" && error?.details?.schemaVersion === futureState.schemaVersion,
+    "future settings schemas must fail safely.",
+  );
+  assert.strictEqual(fs.readFileSync(prefs.getSettingsPath(), "utf8"), futureRaw, "future settings state must remain byte-for-byte unchanged.");
 
   console.log("Settings preference smoke checks passed.");
 } finally {

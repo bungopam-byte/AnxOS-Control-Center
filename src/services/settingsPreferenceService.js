@@ -5,6 +5,15 @@ const { app } = require("electron");
 const SETTINGS_SCHEMA_VERSION = 1;
 const ONBOARDING_VERSION = 1;
 
+class SettingsStoreError extends Error {
+  constructor(message, code, details = {}) {
+    super(message);
+    this.name = "SettingsStoreError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
 const SETTING_DEFINITIONS = {
   "app.displayName": { category: "general", type: "string", default: "AnxOS Control Center", maxLength: 48 },
   "general.defaultPage": { category: "general", type: "enum", default: "dashboard", values: ["dashboard", "minecraft", "amp", "playit", "docker", "ssh", "files", "console", "backups", "operations", "notifications", "maintenance", "security", "nodes", "agent-control", "coolpals", "settings"] },
@@ -149,18 +158,48 @@ function normalizeSettings(input = {}) {
 }
 
 function readRawFile() {
+  const filePath = getSettingsPath();
+  if (!fs.existsSync(filePath)) return { exists: false, raw: {} };
   try {
-    return JSON.parse(fs.readFileSync(getSettingsPath(), "utf8"));
-  } catch {
-    return {};
+    return { exists: true, raw: JSON.parse(fs.readFileSync(filePath, "utf8")) };
+  } catch (error) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw new SettingsStoreError(
+      "Saved preferences are unreadable. The original file was preserved for recovery.",
+      "SETTINGS_STORE_CORRUPT",
+      { causeCode: error?.code || "INVALID_JSON" },
+    );
   }
 }
 
+function persistSettings(settings) {
+  fs.mkdirSync(getConfigDirectory(), { recursive: true });
+  const target = getSettingsPath();
+  const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(temp, `${JSON.stringify({ schemaVersion: SETTINGS_SCHEMA_VERSION, settings, updatedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(temp, target);
+}
+
 function readPreferences() {
-  const raw = readRawFile();
+  const { exists, raw } = readRawFile();
+  const schemaVersion = Number.isInteger(raw?.schemaVersion) ? raw.schemaVersion : 0;
+  if (schemaVersion > SETTINGS_SCHEMA_VERSION) {
+    throw new SettingsStoreError(
+      "Saved preferences were created by a newer application version.",
+      "SETTINGS_SCHEMA_UNSUPPORTED",
+      { schemaVersion, supportedSchemaVersion: SETTINGS_SCHEMA_VERSION },
+    );
+  }
   const settings = normalizeSettings(raw.settings || raw);
-  if (!raw.settings && Object.keys(raw).length === 0) {
+  if (!exists) {
     settings["interface.guidedMode"] = true;
+  } else if (schemaVersion < SETTINGS_SCHEMA_VERSION || !raw.settings) {
+    const backupPath = `${getSettingsPath()}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) {
+      fs.copyFileSync(getSettingsPath(), backupPath, fs.constants.COPYFILE_EXCL);
+    }
+    persistSettings(settings);
   }
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
@@ -172,11 +211,7 @@ function readPreferences() {
 
 function writePreferences(settings) {
   const next = normalizeSettings(settings);
-  fs.mkdirSync(getConfigDirectory(), { recursive: true });
-  const target = getSettingsPath();
-  const temp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify({ schemaVersion: SETTINGS_SCHEMA_VERSION, settings: next, updatedAt: new Date().toISOString() }, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(temp, target);
+  persistSettings(next);
   return readPreferences();
 }
 
@@ -203,6 +238,7 @@ function resetPreferences(category = null) {
 
 module.exports = {
   SETTINGS_SCHEMA_VERSION,
+  SettingsStoreError,
   ONBOARDING_VERSION,
   SETTING_DEFINITIONS,
   defaultSettings,

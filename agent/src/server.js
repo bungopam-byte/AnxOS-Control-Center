@@ -465,23 +465,26 @@ startServer().catch((error) => {
   process.exitCode = 1;
 });
 
-function shutdown(signal) {
+async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   stopBackupScheduler();
-  instanceService.disposeInstanceService();
   logger.info("shutdown", "AnxOS Agent shutdown started", { signal, connectedClients: connectedClients.size });
   const forceTimer = setTimeout(() => {
     for (const socket of connectedClients) socket.destroy();
     process.exit(0);
-  }, 5000);
+  }, 10000);
   forceTimer.unref?.();
+  server.close();
   for (const socket of connectedClients) socket.end();
-  server.close(() => {
-    clearTimeout(forceTimer);
-    logger.info("shutdown", "AnxOS Agent shutdown completed", { signal });
-    process.exit(0);
-  });
+  const instances = await instanceService.shutdownInstanceService({ timeoutMs: 5000 }).catch((error) => ({
+    stopped: 0,
+    forced: 0,
+    failures: [{ code: error?.code || "INSTANCE_SHUTDOWN_FAILED" }],
+  }));
+  clearTimeout(forceTimer);
+  logger.info("shutdown", "AnxOS Agent shutdown completed", { signal, instances });
+  process.exit(0);
 }
 
 process.once("SIGTERM", () => shutdown("SIGTERM"));

@@ -43,6 +43,8 @@ const developerGitUpdater = new DeveloperGitUpdater({ app, appRoot: __dirname })
 let mainWindow = null;
 let addStorageWindow = null;
 let pendingAddStoragePayload = null;
+let appShuttingDown = false;
+let appShutdownComplete = false;
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
@@ -62,6 +64,9 @@ console.error = (...args) => {
 function instrumentIpcHandlers() {
   const register = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, listener) => register(channel, async (...args) => {
+    if (appShuttingDown) {
+      throw Object.assign(new Error("The application is shutting down and cannot accept new requests."), { code: "APPLICATION_SHUTTING_DOWN" });
+    }
     const correlationId = diagnostics.correlationId("ipc");
     const startedAt = Date.now();
     diagnostics.log("info", "ipc", channel, "IPC request started", {}, { file: "ipc", correlationId });
@@ -488,11 +493,21 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (appShutdownComplete) return;
+  event.preventDefault();
+  if (appShuttingDown) return;
+  appShuttingDown = true;
   diagnostics.updateRuntimeState({ applicationRunning: false });
   updateManager.stop();
   disposeFilesIpc();
   disposeSshIpc();
+  localInstanceService.shutdownInstanceService({ timeoutMs: 5000 })
+    .catch((error) => diagnostics.logError("shutdown", "instances", error, {}, { file: "desktop" }))
+    .finally(() => {
+      appShutdownComplete = true;
+      app.quit();
+    });
 });
 } else {
   app.quit();

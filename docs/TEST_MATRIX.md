@@ -10,6 +10,7 @@
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |
 | Instances | `npm run instances:runtime:smoke`, `npm run instances:deletion:smoke`, `npm run instances:file-security:smoke` |
 | Instance metadata migration | `npm run instances:config-migration:smoke` |
+| Instance shutdown ownership | `npm run instances:shutdown:smoke` |
 | Filesystem | `npm run agent:files-root:smoke`, `npm run files:smoke` |
 | Files IPC authorization | `npm run files:ipc-authorization:smoke` |
 | Files IPC error contract | `npm run files:ipc-error-contract:smoke` |

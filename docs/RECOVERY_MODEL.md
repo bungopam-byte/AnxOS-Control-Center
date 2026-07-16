@@ -72,7 +72,10 @@ matching metadata record.
 Runtime PID reconciliation detects live configured and detached processes.
 Intentional stops do not auto-restart. Automatic restarts are bounded with
 exponential backoff; exhaustion persists `CRASH_LOOP`. Manual lifecycle actions
-cancel pending restart timers. Agent shutdown disposes scheduled restarts.
+cancel pending restart timers. Desktop and Agent shutdown use the shared
+instance shutdown path: restart timers are cancelled, owned processes receive
+an intentional graceful stop concurrently, waiting is capped at five seconds,
+and a process still owned after a failed stop is force-terminated.
 
 ## Backup restore
 
@@ -85,9 +88,12 @@ the safety snapshot. Rollback failure is reported separately as
 
 ## Shutdown
 
-Desktop shutdown stops the updater and disposes Files and SSH services. Agent
-shutdown stops scheduling, cancels pending restart timers, rejects new sockets,
-drains existing sockets for up to five seconds, then exits.
+Desktop shutdown rejects new IPC requests, stops the updater, disposes Files
+and SSH services, and waits for owned local instances before allowing Electron
+to quit. Agent shutdown first closes its HTTP listener, stops backup scheduling,
+ends existing sockets, waits for owned instances, and retains a ten-second
+process-level failsafe. Both paths persist intentional stopped state and clear
+owned PIDs during the normal shutdown flow.
 
 Desktop file edits, imports, Agent downloads, and SFTP transfers write to a
 unique sibling temporary path. The final destination is renamed only after the

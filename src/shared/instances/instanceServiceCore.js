@@ -1719,6 +1719,33 @@ function disposeInstanceService() {
   restartBackoffStates.clear();
 }
 
+async function shutdownInstanceService(options = {}) {
+  disposeInstanceService();
+  const timeoutMs = validatePositiveInteger(options.timeoutMs, 5000, 30000, "shutdownTimeoutMs");
+  const instanceIds = [...runningProcesses.keys()];
+  const results = await Promise.allSettled(instanceIds.map((instanceId) => stopInstance(instanceId, { timeoutMs })));
+
+  for (const [index, result] of results.entries()) {
+    if (result.status === "fulfilled") continue;
+    const entry = runningProcesses.get(instanceIds[index]);
+    const pid = entry?.child?.pid;
+    if (entry) entry.requestedStop = true;
+    if (pid && isProcessAlive(pid)) {
+      try { process.kill(pid, "SIGKILL"); } catch {}
+    }
+  }
+
+  runningProcesses.clear();
+  metricsSamples.clear();
+  return {
+    stopped: results.filter((result) => result.status === "fulfilled").length,
+    forced: results.filter((result) => result.status === "rejected").length,
+    failures: results.flatMap((result, index) => result.status === "rejected"
+      ? [{ instanceId: instanceIds[index], code: result.reason?.code || "INSTANCE_SHUTDOWN_FAILED" }]
+      : []),
+  };
+}
+
 function getRestartBackoffDecision(instanceId, options = {}) {
   const immediateExit = Boolean(options.immediateExit);
 
@@ -3638,7 +3665,7 @@ function waitForExit(child, timeoutMs) {
   });
 }
 
-async function stopInstance(instanceId) {
+async function stopInstance(instanceId, options = {}) {
   let config = await reconcileConfigState(await loadInstanceConfig(instanceId));
   const entry = runningProcesses.get(config.id);
   const pid = entry?.child?.pid || config.pid;
@@ -3674,7 +3701,11 @@ async function stopInstance(instanceId) {
     // The reconcile path below will correct stale PIDs.
   }
 
-  const exited = entry ? await waitForExit(entry.child, config.shutdownTimeoutMs) : await waitForPidExit(pid, config.shutdownTimeoutMs);
+  const requestedTimeout = Number(options.timeoutMs);
+  const shutdownTimeoutMs = Number.isFinite(requestedTimeout) && requestedTimeout > 0
+    ? Math.min(config.shutdownTimeoutMs, requestedTimeout)
+    : config.shutdownTimeoutMs;
+  const exited = entry ? await waitForExit(entry.child, shutdownTimeoutMs) : await waitForPidExit(pid, shutdownTimeoutMs);
 
   if (!exited && isProcessAlive(pid)) {
     try {
@@ -4156,6 +4187,7 @@ module.exports = {
   },
   configureInstanceService,
   disposeInstanceService,
+  shutdownInstanceService,
   INSTANCE_STATES,
   INSTANCE_CONFIG_SCHEMA_VERSION,
   INSTANCE_TYPES: [...INSTANCE_TYPES],

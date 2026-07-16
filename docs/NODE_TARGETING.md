@@ -35,3 +35,5 @@ Marketplace installation and download-manager IPC also reject omitted targets;
 catalog browsing remains intentionally node-independent.
 Agent Control listing uses the same canonical `nodeId` payload; the legacy
 `selectedNodeId` service option remains internal-only for compatibility.
+Security Center requires `nodeId` because Agent-token and remote-access status
+are computed for that selected execution target.

@@ -31,6 +31,12 @@ try {
 }
 
 async function main() {
+  const dashboardHandler = handlers.get("security:getDashboard");
+  await assert.rejects(
+    () => dashboardHandler({}, {}),
+    (error) => error?.code === "NODE_REQUIRED",
+    "Security Center dashboard requests must reject missing target context.",
+  );
   const handler = handlers.get("security:login");
   assert(handler, "Security login handler should be registered.");
   await assert.rejects(

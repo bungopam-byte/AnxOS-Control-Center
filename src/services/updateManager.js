@@ -25,7 +25,7 @@ const UPDATE_MANIFEST_URLS = [
 ].filter(isProductionSafeMetadataUrl);
 const UPDATE_STATUS_CHANNEL = "updates:status";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
-const UPDATE_STORE_SCHEMA_VERSION = 1;
+const UPDATE_STORE_SCHEMA_VERSION = 2;
 
 function normalizeUpdateRepository(value) {
   const repository = String(value || "").trim();
@@ -333,6 +333,7 @@ class UpdateManager extends EventEmitter {
     };
     this.logs = [];
     this.skippedVersions = new Set();
+    this.pendingInstall = null;
     this.notifiedVersions = new Set();
     this.interval = null;
     this.storePath = "";
@@ -344,6 +345,7 @@ class UpdateManager extends EventEmitter {
   initialize() {
     this.storePath = path.join(app.getPath("userData"), "config", "updates.json");
     this.loadStore();
+    this.reconcilePendingInstall();
     this.bindAutoUpdaterEvents();
     this.log("UpdateManager initialized.", { autoUpdaterAvailable: Boolean(autoUpdater) });
   }
@@ -377,6 +379,7 @@ class UpdateManager extends EventEmitter {
     this.storeError = null;
     if (!fs.existsSync(this.storePath)) {
       this.skippedVersions = new Set();
+      this.pendingInstall = null;
       return;
     }
     let store;
@@ -386,6 +389,7 @@ class UpdateManager extends EventEmitter {
       const backupPath = `${this.storePath}.corrupt-${Date.now()}`;
       try { fs.copyFileSync(this.storePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
       this.skippedVersions = new Set();
+      this.pendingInstall = null;
       this.storeError = {
         code: "UPDATE_STORE_CORRUPT",
         message: "Saved update preferences are unreadable. The original file was preserved for recovery.",
@@ -407,6 +411,7 @@ class UpdateManager extends EventEmitter {
       return;
     }
     this.skippedVersions = new Set(Array.isArray(store.skippedVersions) ? store.skippedVersions.map(normalizeVersion).filter(Boolean) : []);
+    this.pendingInstall = store.pendingInstall && typeof store.pendingInstall === "object" ? sanitize(store.pendingInstall) : null;
     if (schemaVersion < UPDATE_STORE_SCHEMA_VERSION) {
       const backupPath = `${this.storePath}.schema-v${schemaVersion}.backup`;
       if (!fs.existsSync(backupPath)) fs.copyFileSync(this.storePath, backupPath, fs.constants.COPYFILE_EXCL);
@@ -423,8 +428,29 @@ class UpdateManager extends EventEmitter {
     }
     fs.mkdirSync(path.dirname(this.storePath), { recursive: true });
     const tempPath = `${this.storePath}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tempPath, `${JSON.stringify({ schemaVersion: UPDATE_STORE_SCHEMA_VERSION, skippedVersions: [...this.skippedVersions] }, null, 2)}\n`, { mode: 0o600 });
+    fs.writeFileSync(tempPath, `${JSON.stringify({ schemaVersion: UPDATE_STORE_SCHEMA_VERSION, skippedVersions: [...this.skippedVersions], pendingInstall: this.pendingInstall }, null, 2)}\n`, { mode: 0o600 });
     fs.renameSync(tempPath, this.storePath);
+  }
+
+  reconcilePendingInstall() {
+    if (!this.pendingInstall || this.storeError) return this.pendingInstall;
+    const current = getReleaseInfo();
+    const target = { version: this.pendingInstall.targetVersion, build: this.pendingInstall.targetBuild };
+    const reachedTarget = target.version && Number.isInteger(Number(target.build))
+      && compareReleaseBuilds(current, target) >= 0;
+    if (reachedTarget && this.pendingInstall.status !== "launch-confirmed") {
+      this.pendingInstall = { ...this.pendingInstall, status: "launch-confirmed", confirmedAt: new Date().toISOString(), guidance: null };
+      this.saveStore();
+    } else if (!reachedTarget && this.pendingInstall.status === "handed-off") {
+      this.pendingInstall = {
+        ...this.pendingInstall,
+        status: "handoff-unconfirmed",
+        checkedAt: new Date().toISOString(),
+        guidance: "The previous version is still running. Retry the verified installer or reinstall the recorded previous version; user data is stored outside application binaries.",
+      };
+      this.saveStore();
+    }
+    return this.pendingInstall;
   }
 
   log(message, details = {}, level = "info") {
@@ -449,6 +475,7 @@ class UpdateManager extends EventEmitter {
     return {
       ...this.state,
       skippedVersions: [...this.skippedVersions],
+      pendingInstall: this.pendingInstall,
       storeError: this.storeError,
       logs: this.logs,
     };
@@ -790,12 +817,30 @@ class UpdateManager extends EventEmitter {
     if (!this.state.downloadedPath) return { installed: false, message: "No downloaded update is ready." };
     try {
       await verifyUpdateArtifact(this.state.downloadedPath, this.state.latest?.asset);
+      const previous = getReleaseInfo();
+      this.pendingInstall = sanitize({
+        status: "handoff-pending",
+        previousVersion: previous.version,
+        previousBuild: previous.build,
+        targetVersion: this.state.latest?.latestReleaseVersion || this.state.latest?.version || null,
+        targetBuild: this.state.latest?.latestBuild ?? null,
+        artifactName: this.state.latest?.asset?.name || path.basename(this.state.downloadedPath),
+        sha256: this.state.latest?.asset?.sha256 || null,
+        requestedAt: new Date().toISOString(),
+      });
+      this.saveStore();
       this.log("Install requested.", { path: this.state.downloadedPath });
       const launchError = await shell.openPath(this.state.downloadedPath);
       if (launchError) throw Object.assign(new Error(`The update installer could not be opened: ${launchError}`), { code: "UPDATE_INSTALLER_OPEN_FAILED" });
+      this.pendingInstall = { ...this.pendingInstall, status: "handed-off", handedOffAt: new Date().toISOString() };
+      this.saveStore();
       this.log("Install handoff completed.", { path: this.state.downloadedPath });
       return { installed: true };
     } catch (error) {
+      if (this.pendingInstall?.status === "handoff-pending") {
+        this.pendingInstall = { ...this.pendingInstall, status: "handoff-failed", failedAt: new Date().toISOString(), errorCode: error?.code || "UPDATE_INSTALL_FAILED" };
+        try { this.saveStore(); } catch {}
+      }
       this.state.status = "error";
       this.state.error = error?.message || "The update installer could not be opened.";
       this.log("Install handoff failed.", { code: error?.code || "UPDATE_INSTALL_FAILED", message: this.state.error }, "error");

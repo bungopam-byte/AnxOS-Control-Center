@@ -127,3 +127,11 @@ handed to the operating-system installer, mutation and rollback are owned by
 that installer. User configuration, instances, and backups are stored outside
 the packaged application files, but automatic previous-version restoration is
 not implemented or exposed as a supported update capability.
+
+Before installer handoff, the updater persists the previous and target public
+version/build, artifact name, expected SHA-256, and handoff status in the
+schema-versioned update store. The next successful application launch confirms
+the target version. If the previous version launches again, the state becomes
+`handoff-unconfirmed` with reinstall/previous-version guidance. The old process
+cannot prove why a new executable never launched, so crash-before-launch and
+automatic OS-level rollback remain technically not guaranteed.

@@ -109,6 +109,19 @@ const currentReleaseText = currentReleaseNotes;
   assert.strictEqual(JSON.parse(fs.readFileSync(storePath, "utf8")).schemaVersion, UPDATE_STORE_SCHEMA_VERSION, "legacy update preferences should migrate to the current schema.");
   assert(fs.existsSync(`${storePath}.schema-v0.backup`), "legacy update migration should preserve the original file.");
 
+  manager.pendingInstall = {
+    status: "handed-off",
+    previousVersion: "1.6",
+    previousBuild: 149,
+    targetVersion: release.version,
+    targetBuild: release.build,
+    artifactName: `AnxOS-Control-Center-Setup-${release.artifactVersion}.exe`,
+  };
+  manager.saveStore();
+  manager.reconcilePendingInstall();
+  assert.strictEqual(manager.pendingInstall.status, "launch-confirmed", "A successful target-version launch must confirm persisted installer handoff state.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(storePath, "utf8")).pendingInstall.status, "launch-confirmed", "Confirmed update launch state must persist atomically.");
+
   const futureState = { schemaVersion: UPDATE_STORE_SCHEMA_VERSION + 1, skippedVersions: ["9.9"] };
   fs.writeFileSync(storePath, `${JSON.stringify(futureState)}\n`, { mode: 0o600 });
   const futureRaw = fs.readFileSync(storePath, "utf8");

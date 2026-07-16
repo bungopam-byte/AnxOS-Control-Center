@@ -26,6 +26,7 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PERSISTENT_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 10;
 const BCRYPT_ROUNDS = 12;
+const SECURITY_SCHEMA_VERSION = 1;
 const DEVELOPMENT_FALLBACK_OWNER_PASSWORD = "1245";
 const SESSION_TIMEOUT_OPTIONS_MS = new Set([
   0,
@@ -162,6 +163,7 @@ function ensureConfigDirectory() {
 
 function normalizeSecurityState(parsed = {}) {
   return {
+    schemaVersion: SECURITY_SCHEMA_VERSION,
     users: Array.isArray(parsed.users) ? parsed.users : [],
     persistentSessions: Array.isArray(parsed.persistentSessions) ? parsed.persistentSessions : [],
     trustedDevices: Array.isArray(parsed.trustedDevices) ? parsed.trustedDevices : [],
@@ -179,8 +181,33 @@ function normalizeSecurityState(parsed = {}) {
   };
 }
 
-function readSecurityFile(filePath) {
-  return normalizeSecurityState(JSON.parse(fs.readFileSync(filePath, "utf8")));
+function readSecurityFile(filePath, options = {}) {
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") throw error;
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw Object.assign(new Error("Security state is unreadable. The original file was preserved and protected actions remain unavailable."), {
+      code: "SECURITY_STORE_CORRUPT",
+      details: { causeCode: error?.code || "INVALID_JSON" },
+    });
+  }
+  const schemaVersion = Number.isInteger(parsed?.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > SECURITY_SCHEMA_VERSION) {
+    throw Object.assign(new Error("Security state was created by a newer application version."), {
+      code: "SECURITY_SCHEMA_UNSUPPORTED",
+      details: { schemaVersion, supportedSchemaVersion: SECURITY_SCHEMA_VERSION },
+    });
+  }
+  const state = normalizeSecurityState(parsed);
+  if (options.migrate === true && schemaVersion < SECURITY_SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    writeSecurityState(state);
+  }
+  return state;
 }
 
 function migrateLegacyOwnerUsers(state, legacyPaths = getLegacySecurityPaths()) {
@@ -204,19 +231,22 @@ function migrateLegacyOwnerUsers(state, legacyPaths = getLegacySecurityPaths()) 
 
 function readSecurityState() {
   try {
-    return migrateLegacyOwnerUsers(readSecurityFile(getSecurityPath()));
+    return migrateLegacyOwnerUsers(readSecurityFile(getSecurityPath(), { migrate: true }));
   } catch (error) {
     if (error?.code === "ENOENT") return migrateLegacyOwnerUsers(normalizeSecurityState());
     logOwnerAuthDiagnostic("security-store-read-failed", {
       failureReason: "CONFIG_READ_FAILED",
     });
-    return normalizeSecurityState();
+    throw error;
   }
 }
 
 function writeSecurityState(state) {
   ensureConfigDirectory();
-  fs.writeFileSync(getSecurityPath(), `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  const filePath = getSecurityPath();
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tempPath, `${JSON.stringify(normalizeSecurityState(state), null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tempPath, filePath);
 }
 
 function removePersistentSessionFile() {
@@ -1607,6 +1637,7 @@ function emergencySecurityAction(action, confirmation = "") {
 }
 
 module.exports = {
+  SECURITY_SCHEMA_VERSION,
   _test: {
     getPasswordHashFormat,
     migrateLegacyOwnerUsers,

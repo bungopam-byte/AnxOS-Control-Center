@@ -318,6 +318,31 @@ async function main() {
   const staleDelete = await backupService.deleteBackup(created.backup.id);
   assert.strictEqual(staleDelete.alreadyDeleted, true, "Deleting a stale backup should be idempotent.");
 
+  const legacySecurity = JSON.parse(fs.readFileSync(securityFile, "utf8"));
+  delete legacySecurity.schemaVersion;
+  fs.writeFileSync(securityFile, `${JSON.stringify(legacySecurity)}\n`, { mode: 0o600 });
+  assert.strictEqual(security.getStatus().setupRequired, false, "Legacy security state should preserve the configured Owner during migration.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(securityFile, "utf8")).schemaVersion, security.SECURITY_SCHEMA_VERSION, "Legacy security state should migrate to the current schema.");
+  assert(fs.existsSync(`${securityFile}.schema-v0.backup`), "Legacy security migration should preserve the original file.");
+  const validSecurityRaw = fs.readFileSync(securityFile, "utf8");
+  const futureSecurity = { ...JSON.parse(validSecurityRaw), schemaVersion: security.SECURITY_SCHEMA_VERSION + 1 };
+  fs.writeFileSync(securityFile, `${JSON.stringify(futureSecurity)}\n`, { mode: 0o600 });
+  const futureSecurityRaw = fs.readFileSync(securityFile, "utf8");
+  assert.throws(
+    () => security.getStatus(),
+    (error) => error?.code === "SECURITY_SCHEMA_UNSUPPORTED",
+    "Future security schemas must fail closed instead of being treated as first run.",
+  );
+  assert.strictEqual(fs.readFileSync(securityFile, "utf8"), futureSecurityRaw, "Future security state must remain unchanged.");
+  fs.writeFileSync(securityFile, "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => security.getStatus(),
+    (error) => error?.code === "SECURITY_STORE_CORRUPT",
+    "Corrupt security state must fail closed instead of removing authentication policy.",
+  );
+  assert(fs.readdirSync(path.dirname(securityFile)).some((name) => name.startsWith(`${path.basename(securityFile)}.corrupt-`)), "Corrupt security state should be preserved.");
+  fs.writeFileSync(securityFile, validSecurityRaw, { mode: 0o600 });
+
   const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
   [
     "function promptBackupText",

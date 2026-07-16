@@ -31,6 +31,12 @@ try {
 async function main() {
   const handler = handlers.get("action:execute");
   assert(handler, "Generic action execution should be registered.");
+  await assert.rejects(
+    () => Promise.resolve().then(() => handler({}, { actionId: "docker.start", params: {} })),
+    (error) => error?.code === "NODE_REQUIRED",
+    "Generic actions must reject missing target context before authorization or execution.",
+  );
+  assert.strictEqual(serviceInvoked, false, "A missing action target must not reach the Agent.");
   for (const actionId of actionIpc.ACTION_PERMISSIONS.keys()) {
     serviceInvoked = false;
     await assert.rejects(

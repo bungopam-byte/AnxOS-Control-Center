@@ -1,6 +1,7 @@
 const { ipcMain } = require("electron");
 const { executeAction } = require("../services/actionRouter");
 const { audit, requirePermission } = require("../services/securityService");
+const { requireNodeContext } = require("./nodeContext");
 
 const ACTION_PERMISSIONS = new Map([
   ["docker.start", "instance:lifecycle"],
@@ -28,6 +29,7 @@ function authorizeAction(actionId) {
 
 function registerActionIpc() {
   ipcMain.handle("action:execute", async (_, payload = {}) => {
+    requireNodeContext(payload, "action execution");
     const actionId = authorizeAction(payload.actionId);
     return executeAction(actionId, payload.params, { nodeId: payload.nodeId });
   });

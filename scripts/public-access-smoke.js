@@ -160,6 +160,34 @@ assert.strictEqual(playitProvider.publicAddress, "example.playit.gg");
 }
 
 {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-public-access-recovery-"));
+  const filePath = registry.registryPath({ configDir: tempRoot });
+  fs.writeFileSync(filePath, `${JSON.stringify({ services: [] })}\n`, { mode: 0o600 });
+  assert.deepStrictEqual(registry.listAccessServices({ configDir: tempRoot }), [], "legacy Public Access state should migrate without changing records.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(filePath, "utf8")).schemaVersion, registry.SCHEMA_VERSION, "legacy Public Access state should be rewritten with the current schema.");
+  assert(fs.existsSync(`${filePath}.schema-v0.backup`), "legacy Public Access migration should preserve the original state once.");
+
+  const futureState = { schemaVersion: registry.SCHEMA_VERSION + 1, services: [{ id: "future-service" }] };
+  fs.writeFileSync(filePath, `${JSON.stringify(futureState)}\n`, { mode: 0o600 });
+  const futureRaw = fs.readFileSync(filePath, "utf8");
+  assert.throws(
+    () => registry.listAccessServices({ configDir: tempRoot }),
+    (error) => error?.code === "PUBLIC_ACCESS_SCHEMA_UNSUPPORTED" && error?.details?.schemaVersion === futureState.schemaVersion,
+    "future Public Access schemas must fail without being downgraded.",
+  );
+  assert.strictEqual(fs.readFileSync(filePath, "utf8"), futureRaw, "future Public Access state must remain unchanged.");
+
+  fs.writeFileSync(filePath, "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => registry.listAccessServices({ configDir: tempRoot }),
+    (error) => error?.code === "PUBLIC_ACCESS_REGISTRY_CORRUPT",
+    "corrupt Public Access state must not silently clear service records.",
+  );
+  assert(fs.readdirSync(tempRoot).some((name) => name.startsWith(`${registry.DEFAULT_FILE_NAME}.corrupt-`)), "corrupt Public Access state should be preserved.");
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+}
+
+{
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-instance-access-registry-"));
   const palworldPublic = registry.createAccessService({
     nodeId: "anxlab",

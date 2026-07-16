@@ -27,11 +27,22 @@ function registryPath(options = {}) {
 }
 
 function readJsonFile(filePath) {
+  if (!fs.existsSync(filePath)) return { exists: false, parsed: {} };
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Registry root must be an object.");
+    }
+    return { exists: true, parsed };
+  } catch (error) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw createAccessServiceError(
+      "PUBLIC_ACCESS_REGISTRY_CORRUPT",
+      "Public Access state is unreadable. The original file was preserved for recovery.",
+      { causeCode: error?.code || "INVALID_JSON" },
+      500,
+    );
   }
 }
 
@@ -313,7 +324,25 @@ function normalizeState(parsed = {}) {
 }
 
 function readRegistry(options = {}) {
-  return normalizeState(readJsonFile(registryPath(options)));
+  const filePath = registryPath(options);
+  const { exists, parsed } = readJsonFile(filePath);
+  if (!exists) return normalizeState({});
+  const schemaVersion = Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > SCHEMA_VERSION) {
+    throw createAccessServiceError(
+      "PUBLIC_ACCESS_SCHEMA_UNSUPPORTED",
+      "Public Access state was created by a newer application version.",
+      { schemaVersion, supportedSchemaVersion: SCHEMA_VERSION },
+      409,
+    );
+  }
+  const state = normalizeState(parsed);
+  if (schemaVersion < SCHEMA_VERSION) {
+    const backupPath = `${filePath}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(filePath, backupPath, fs.constants.COPYFILE_EXCL);
+    atomicWriteJson(filePath, state);
+  }
+  return state;
 }
 
 function writeRegistry(state, options = {}) {
@@ -485,6 +514,7 @@ function reconcileAccessServices(services = [], snapshot = {}) {
 
 module.exports = {
   DEFAULT_FILE_NAME,
+  SCHEMA_VERSION,
   SUPPORTED_PROTOCOLS,
   createAccessService,
   createAccessServiceError,

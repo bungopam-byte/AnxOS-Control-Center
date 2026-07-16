@@ -33,6 +33,11 @@ state is backed up once before migration. Corrupt state returns
 `FORGOTTEN_INSTANCE_STORE_CORRUPT`; future schemas return
 `FORGOTTEN_INSTANCE_SCHEMA_UNSUPPORTED` without clearing tombstones.
 
+`public-access-services.json` uses schema version 1 and atomic writes. Legacy
+records are normalized after a one-time backup. Corrupt state returns
+`PUBLIC_ACCESS_REGISTRY_CORRUPT`; future schemas return
+`PUBLIC_ACCESS_SCHEMA_UNSUPPORTED` without changing provider records.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

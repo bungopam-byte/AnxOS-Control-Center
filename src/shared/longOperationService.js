@@ -26,6 +26,7 @@ const ACTIVE_STATUSES = new Set(["queued", "running", "paused"]);
 const TERMINAL_STATUSES = new Set(["complete", "failed", "cancelled", "interrupted"]);
 const PERSIST_DEBOUNCE_MS = 300;
 const MAX_LOG_ENTRIES = 50;
+const OPERATION_SCHEMA_VERSION = 1;
 
 class LongOperationError extends Error {
   constructor(message, code = "OPERATION_ERROR", details = {}) {
@@ -133,7 +134,7 @@ function flushPersist() {
   pendingPersist = false;
   try {
     const snapshot = [...operations.values()].map((operation) => sanitizeForPersistence(operation));
-    atomicWriteJson(getOperationsStatePath(), { schemaVersion: 1, operations: snapshot });
+    atomicWriteJson(getOperationsStatePath(), { schemaVersion: OPERATION_SCHEMA_VERSION, operations: snapshot });
   } catch (error) {
     logEvent("warn", "persist-failed", "Long-operation state could not be persisted.", {
       errorCode: error?.code || "OPERATION_PERSIST_FAILED",
@@ -158,33 +159,56 @@ function schedulePersist() {
 }
 
 function loadPersistedOperations() {
+  const statePath = getOperationsStatePath();
+  if (!fs.existsSync(statePath)) {
+    return;
+  }
+  let parsed;
   try {
-    const parsed = JSON.parse(fs.readFileSync(getOperationsStatePath(), "utf8"));
-    const persisted = Array.isArray(parsed?.operations) ? parsed.operations : [];
-    for (const entry of persisted) {
-      if (!entry?.id) {
-        continue;
-      }
-      const interrupted = ACTIVE_STATUSES.has(entry.status);
-      operations.set(entry.id, {
-        ...entry,
-        status: interrupted ? "interrupted" : entry.status,
-        error: interrupted
-          ? {
-              code: "INTERRUPTED_BY_RESTART",
-              message: "This operation was interrupted by an application restart and could not resume automatically.",
-            }
-          : entry.error || null,
-        canCancel: false,
-        // Runtime handlers are intentionally not persisted. A recovered record
-        // cannot advertise retry until its owning service registers a new
-        // executable recovery handler.
-        canRetry: false,
-        updatedAt: new Date().toISOString(),
-      });
+    parsed = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  } catch (error) {
+    const backupPath = `${statePath}.corrupt-${Date.now()}`;
+    try {
+      fs.copyFileSync(statePath, backupPath, fs.constants.COPYFILE_EXCL);
+    } catch {
+      // Preserve the original in place even when a diagnostic copy cannot be made.
     }
-  } catch {
-    // No persisted state, or it is unreadable; start with an empty registry.
+    throw new LongOperationError(
+      "Long-operation recovery data is unreadable. The original file was preserved for recovery.",
+      "OPERATION_STATE_CORRUPT",
+      { causeCode: error?.code || "INVALID_JSON" },
+    );
+  }
+  const schemaVersion = Number.isInteger(parsed?.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > OPERATION_SCHEMA_VERSION) {
+    throw new LongOperationError(
+      "Long-operation recovery data was created by a newer application version.",
+      "OPERATION_SCHEMA_UNSUPPORTED",
+      { schemaVersion, supportedSchemaVersion: OPERATION_SCHEMA_VERSION },
+    );
+  }
+  const persisted = Array.isArray(parsed?.operations) ? parsed.operations : [];
+  for (const entry of persisted) {
+    if (!entry?.id) {
+      continue;
+    }
+    const interrupted = ACTIVE_STATUSES.has(entry.status);
+    operations.set(entry.id, {
+      ...entry,
+      status: interrupted ? "interrupted" : entry.status,
+      error: interrupted
+        ? {
+            code: "INTERRUPTED_BY_RESTART",
+            message: "This operation was interrupted by an application restart and could not resume automatically.",
+          }
+        : entry.error || null,
+      canCancel: false,
+      // Runtime handlers are intentionally not persisted. A recovered record
+      // cannot advertise retry until its owning service registers a new
+      // executable recovery handler.
+      canRetry: false,
+      updatedAt: new Date().toISOString(),
+    });
   }
 }
 
@@ -192,8 +216,8 @@ function ensureLoaded() {
   if (loaded) {
     return;
   }
-  loaded = true;
   loadPersistedOperations();
+  loaded = true;
 }
 
 function clearTimeoutHandler(id) {
@@ -458,6 +482,7 @@ function deleteOperation(id) {
 module.exports = {
   ACTIVE_STATUSES,
   LongOperationError,
+  OPERATION_SCHEMA_VERSION,
   TERMINAL_STATUSES,
   cancelOperation,
   completeOperation,

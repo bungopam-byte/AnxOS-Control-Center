@@ -16,6 +16,9 @@ Repeated reads are idempotent. A future schema returns
 as `nodes.json.corrupt.backup` and returns `NODE_CONFIG_CORRUPT`.
 
 Long-operation state uses schema version 1 and atomic writes. Active records
-recover as `interrupted`; runtime handlers are not persisted. Other stores must
-not be described as migration-safe until their readers implement equivalent
+recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
+preserved in a timestamped diagnostic copy and returns
+`OPERATION_STATE_CORRUPT`. Future schemas return
+`OPERATION_SCHEMA_UNSUPPORTED` without changing the file. Other stores must not
+be described as migration-safe until their readers implement equivalent
 future-version rejection and backup behavior.

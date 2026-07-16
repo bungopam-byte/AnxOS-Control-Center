@@ -187,6 +187,39 @@ async function main() {
   assert.strictEqual(recovered.canRetry, false, "A recovered operation must not advertise retry because runtime retry handlers do not survive restart.");
   assert.strictEqual(recovered.metadata.note, "in-flight at simulated crash", "Recovered metadata should be preserved.");
 
+  // Unsupported future schemas must fail without overwriting or mutating the
+  // recovery file. Silently starting empty here would lose operation history.
+  const futureState = {
+    schemaVersion: longOperations.OPERATION_SCHEMA_VERSION + 1,
+    operations: [{ id: "future-operation", status: "running" }],
+  };
+  fs.writeFileSync(statePath, `${JSON.stringify(futureState, null, 2)}\n`, { mode: 0o600 });
+  delete require.cache[modulePath];
+  longOperations = require(modulePath);
+  assert.throws(
+    () => longOperations.listOperations(),
+    (error) => error?.code === "OPERATION_SCHEMA_UNSUPPORTED"
+      && error?.details?.schemaVersion === futureState.schemaVersion,
+    "A future long-operation schema should fail safely with a stable error code.",
+  );
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(statePath, "utf8")), futureState, "A rejected future schema must remain unchanged.");
+
+  // Corrupt state must also fail explicitly and retain a diagnostic copy.
+  fs.writeFileSync(statePath, "{not-json\n", { mode: 0o600 });
+  delete require.cache[modulePath];
+  longOperations = require(modulePath);
+  assert.throws(
+    () => longOperations.listOperations(),
+    (error) => error?.code === "OPERATION_STATE_CORRUPT",
+    "Corrupt long-operation state should fail explicitly instead of silently discarding records.",
+  );
+  const corruptBackups = fs.readdirSync(path.dirname(statePath)).filter((name) => name.startsWith(`${path.basename(statePath)}.corrupt-`));
+  assert(corruptBackups.length > 0, "Corrupt long-operation state should be preserved in a diagnostic backup.");
+
+  fs.rmSync(statePath, { force: true });
+  delete require.cache[modulePath];
+  longOperations = require(modulePath);
+
   // Persisted snapshots must never contain non-serializable runtime handles.
   const withController = longOperations.createOperation({
     kind: "smoke-controller",

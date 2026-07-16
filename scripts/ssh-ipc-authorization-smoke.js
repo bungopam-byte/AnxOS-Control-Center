@@ -4,6 +4,8 @@ const Module = require("module");
 
 const handlers = new Map();
 let serviceInvoked = false;
+let rendererEventCount = 0;
+let sshServiceInstance = null;
 
 class MockSshService extends EventEmitter {
   async listProfiles() { serviceInvoked = true; return []; }
@@ -19,7 +21,7 @@ const originalLoad = Module._load;
 Module._load = function patchedLoad(request, parent, isMain) {
   if (request === "electron") {
     return {
-      BrowserWindow: { getAllWindows: () => [] },
+      BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: () => { rendererEventCount += 1; } } }] },
       ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     };
   }
@@ -37,13 +39,13 @@ Module._load = function patchedLoad(request, parent, isMain) {
 };
 
 try {
-  require("../src/ipc/sshIpc").registerSshIpc();
+  sshServiceInstance = require("../src/ipc/sshIpc").registerSshIpc();
 } finally {
   Module._load = originalLoad;
 }
 
 async function main() {
-  for (const channel of ["ssh:saveProfile", "ssh:connect", "ssh:disconnect", "ssh:write"]) {
+  for (const channel of ["ssh:listProfiles", "ssh:saveProfile", "ssh:connect", "ssh:disconnect", "ssh:write", "ssh:resize"]) {
     serviceInvoked = false;
     const handler = handlers.get(channel);
     assert(handler, `${channel} should be registered.`);
@@ -54,6 +56,9 @@ async function main() {
     );
     assert.strictEqual(serviceInvoked, false, `${channel} must authorize before calling its service.`);
   }
+  sshServiceInstance.emit("session-output", { sessionId: "session-a", chunk: "secret output" });
+  sshServiceInstance.emit("session-updated", { id: "session-a", state: "connected" });
+  assert.strictEqual(rendererEventCount, 0, "SSH events must not reach a renderer after read authorization is denied.");
   console.log("SSH IPC authorization smoke checks passed.");
 }
 

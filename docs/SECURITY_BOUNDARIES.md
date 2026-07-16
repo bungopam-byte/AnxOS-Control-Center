@@ -65,6 +65,10 @@ Node registry, selected-target restoration/selection, health, connection tests,
 and credential status require `nodes:read`. Admin and User roles retain node
 visibility; node mutation and credential repair keep `settings:write`.
 
+SSH profile visibility and live session events require `ssh:read`. Session
+creation, input, disconnect, and resize remain protected by `instance:write`;
+profile changes require `settings:write`.
+
 ## Agent
 
 Desktop Agent Control list, status, diagnostics, configuration, lifecycle,

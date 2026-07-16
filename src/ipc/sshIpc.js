@@ -7,6 +7,11 @@ let sshIpcRegistered = false;
 let lastSshWriteDiagnostic = null;
 
 function broadcastSshEvent(channel, payload) {
+  try {
+    requirePermission("ssh:read", payload?.sessionId || "ssh-session");
+  } catch {
+    return;
+  }
   BrowserWindow.getAllWindows().forEach((window) => {
     if (!window.isDestroyed()) {
       window.webContents.send(channel, payload);
@@ -52,7 +57,10 @@ function registerSshIpc() {
     });
   });
 
-  ipcMain.handle("ssh:listProfiles", async () => sshService.listProfiles());
+  ipcMain.handle("ssh:listProfiles", async () => {
+    requirePermission("ssh:read", "ssh-profiles");
+    return sshService.listProfiles();
+  });
   ipcMain.handle("ssh:saveProfile", async (_, payload = {}) => {
     requirePermission("settings:write", payload.id || payload.name || payload.host);
     audit({ action: "ssh.profile.save", target: payload.id || payload.name || payload.host });
@@ -81,7 +89,10 @@ function registerSshIpc() {
     audit({ action: "ssh.input", target: payload.sessionId, reason: `bytes:${lastSshWriteDiagnostic.byteLength}` });
     return sshService.write(payload.sessionId, payload.input);
   });
-  ipcMain.handle("ssh:resize", async (_, payload = {}) => sshService.resize(payload.sessionId, payload));
+  ipcMain.handle("ssh:resize", async (_, payload = {}) => {
+    requirePermission("instance:write", payload.sessionId);
+    return sshService.resize(payload.sessionId, payload);
+  });
   return sshService;
 }
 

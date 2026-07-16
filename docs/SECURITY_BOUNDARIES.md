@@ -29,6 +29,9 @@ before reaching the Agent; unknown action IDs fail closed.
 Backup archive import and export authorize before reading archive bytes,
 contacting an Agent, or opening a desktop file picker.
 
+Marketplace manual-download handoff, file import, resume, cancellation, and
+retry remain inside the original `marketplace:install` authorization boundary.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

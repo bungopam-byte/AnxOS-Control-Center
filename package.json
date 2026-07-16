@@ -111,6 +111,7 @@
     "icons:linux": "node scripts/generate-linux-icons.js",
     "marketplace:smoke": "node scripts/marketplace-smoke.js",
     "marketplace:ipc-error-contract:smoke": "node scripts/marketplace-ipc-error-contract-smoke.js",
+    "marketplace:ipc-authorization:smoke": "node scripts/marketplace-ipc-authorization-smoke.js",
     "marketplace:node-routing:smoke": "node scripts/marketplace-node-routing-smoke.js",
     "marketplace:install-selected-node:smoke": "node scripts/marketplace-install-selected-node-smoke.js",
     "marketplace:credential-refresh:smoke": "node scripts/marketplace-credential-refresh-smoke.js",

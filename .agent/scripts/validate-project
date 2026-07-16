@@ -93,6 +93,7 @@ function main() {
     "windows-runtime:smoke",
     "marketplace:smoke",
     "marketplace:ipc-error-contract:smoke",
+    "marketplace:ipc-authorization:smoke",
     "dependencies:ipc-error-contract:smoke",
   ];
 

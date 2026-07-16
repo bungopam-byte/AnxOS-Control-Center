@@ -300,11 +300,13 @@ function registerMarketplaceIpc() {
     return installPack(payload);
   }));
   ipcMain.handle("marketplace:openManualDownloadPage", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
+    requirePermission("marketplace:install", payload.sessionId || "manual-download");
     const result = getManualInstallProviderPage(payload.sessionId);
     await openExternalUrl(result.url, { source: "marketplace-manual-download" });
     return { opened: true, ...result };
   }));
   ipcMain.handle("marketplace:importManualDownloadFile", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
+    requirePermission("marketplace:install", payload.sessionId || "manual-import");
     const dialogOptions = {
       title: "Import required modpack file",
       properties: ["openFile"],
@@ -322,10 +324,19 @@ function registerMarketplaceIpc() {
     }
     return importManualInstallFile(payload.sessionId, selection.filePaths[0]);
   }));
-  ipcMain.handle("marketplace:resumeManualInstall", async (_, payload = {}) => invokeMarketplaceOperation(() => resumeManualInstall(payload.sessionId)));
+  ipcMain.handle("marketplace:resumeManualInstall", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requirePermission("marketplace:install", payload.sessionId || "manual-resume");
+    return resumeManualInstall(payload.sessionId);
+  }));
   ipcMain.handle("marketplace:getDownloads", async (_, payload = {}) => invokeMarketplaceOperation(() => getDownloads(payload.nodeId || null)));
-  ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => cancelDownload(payload.downloadId, { nodeId: payload.nodeId || null })));
-  ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => retryDownload(payload.downloadId, { nodeId: payload.nodeId || null })));
+  ipcMain.handle("marketplace:cancelDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requirePermission("marketplace:install", payload.downloadId || "download-cancel");
+    return cancelDownload(payload.downloadId, { nodeId: payload.nodeId || null });
+  }));
+  ipcMain.handle("marketplace:retryDownload", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requirePermission("marketplace:install", payload.downloadId || "download-retry");
+    return retryDownload(payload.downloadId, { nodeId: payload.nodeId || null });
+  }));
 }
 
 module.exports = {

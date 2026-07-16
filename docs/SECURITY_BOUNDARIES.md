@@ -22,6 +22,10 @@ export require `settings:write`. Single-device mode receives the trusted local
 grant; configured deployments require an authorized Admin or Owner. Renderer
 error ingestion remains available and is sanitized before persistence.
 
+The generic Agent action bridge uses an explicit action-to-permission map.
+Docker and AMP lifecycle, backup create/restore, and file mutations authorize
+before reaching the Agent; unknown action IDs fail closed.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

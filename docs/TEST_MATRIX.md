@@ -16,6 +16,7 @@
 | IPC error contract | `npm run ipc:error-contract:smoke` |
 | Node IPC error contract | `npm run nodes:ipc-error-contract:smoke` |
 | Instance IPC error contract | `npm run instances:ipc-error-contract:smoke` |
+| Docker IPC error contract | `npm run docker:ipc-error-contract:smoke` |
 | Renderer safety/UI | `npm run renderer-safety:smoke`, `npm run ui:polish:smoke` |
 | Packaging/release | `npm run packaging:smoke`, `npm run release:artifacts:smoke`, `npm run versioning:smoke` |
 | Full repository gate | `npm run agent:validate` |

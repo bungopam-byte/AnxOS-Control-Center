@@ -39,6 +39,7 @@ const {
 const { audit, requirePermission } = require("../services/securityService");
 const { wrapExpectedAgentRead } = require("./expectedAgentError");
 const { requireNodeContext } = require("./nodeContext");
+const { createIpcError } = require("../shared/ipcError");
 
 function requireDockerNodeContext(payload = {}, operation = "request") {
   return requireNodeContext(payload, `Docker ${operation}`);
@@ -48,11 +49,11 @@ function invokeDockerOperation(operation) {
   return Promise.resolve()
     .then(operation)
     .catch((error) => {
-      const code = error?.code || error?.payload?.error?.code || "DOCKER_REQUEST_FAILED";
-      const wrapped = new Error(`${code}: ${error?.message || "Docker request failed."}`);
-      wrapped.code = code;
-      wrapped.statusCode = error?.statusCode || error?.status || null;
-      throw wrapped;
+      throw createIpcError(error, {
+        code: "DOCKER_REQUEST_FAILED",
+        fallbackMessage: "Docker request failed.",
+        suggestion: "Verify Docker is running and the selected Agent has Docker access, then retry.",
+      });
     });
 }
 

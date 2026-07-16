@@ -35,3 +35,5 @@ Node IPC also uses this model, preserving pairing, authorization, connectivity,
 and credential-repair codes through the desktop boundary.
 Instance IPC uses the same model for lifecycle, crash recovery, configuration,
 and instance-filesystem failures.
+Docker IPC uses the shared model for daemon, image, container, volume, network,
+Compose, and cleanup failures.

@@ -68,7 +68,15 @@ async function main() {
       removedLocalAgents: [],
     });
     credentials.setNodeToken("anxlab", "node-token");
+    writeJson(providerConfig.getMarketplaceConfigPath(), { curseForgeApiKey: "legacy-cf-key" });
+    assert.strictEqual(providerConfig.readMarketplaceConfig({ includeSecrets: true }).curseForgeApiKey, "legacy-cf-key", "Legacy Marketplace credentials should survive migration.");
+    assert(!fs.readFileSync(providerConfig.getMarketplaceConfigPath(), "utf8").includes("legacy-cf-key"), "Migrated Marketplace credentials must be encrypted.");
+    const marketplaceBackup = `${providerConfig.getMarketplaceConfigPath()}.schema-v0.backup`;
+    assert(fs.existsSync(marketplaceBackup), "Marketplace credential migration should preserve an encrypted safety copy.");
+    assert(!fs.readFileSync(marketplaceBackup, "utf8").includes("legacy-cf-key"), "Marketplace migration backups must not retain plaintext credentials.");
     providerConfig.saveMarketplaceConfig({ curseForgeApiKey: "desktop-cf-key" });
+    assert(!fs.readFileSync(providerConfig.getMarketplaceConfigPath(), "utf8").includes("desktop-cf-key"), "Marketplace API credentials must be encrypted at rest.");
+    assert.strictEqual(providerConfig.readMarketplaceConfig({ includeSecrets: true }).curseForgeApiKey, "desktop-cf-key", "Trusted Marketplace services should decrypt the saved API key.");
     curseforgeProvider._test.setRuntimeApiKey("desktop-cf-key");
 
     curseforgeProvider.resolveFile = async () => selectedFile;
@@ -143,6 +151,25 @@ async function main() {
       "Client-only CurseForge packs should fail before Agent installation.",
     );
     assert.strictEqual(agentRequests.length, 0, "Unsupported client-only CurseForge packs must not make pre-validation Agent requests.");
+
+    const configPath = providerConfig.getMarketplaceConfigPath();
+    const futureState = { schemaVersion: providerConfig.MARKETPLACE_CONFIG_SCHEMA_VERSION + 1, encrypted: { method: "future", data: "opaque" } };
+    writeJson(configPath, futureState);
+    const futureRaw = fs.readFileSync(configPath, "utf8");
+    assert.throws(
+      () => providerConfig.readMarketplaceConfig({ includeSecrets: true }),
+      (error) => error?.code === "MARKETPLACE_CONFIG_SCHEMA_UNSUPPORTED",
+      "Future Marketplace config schemas must fail without being downgraded.",
+    );
+    assert.strictEqual(fs.readFileSync(configPath, "utf8"), futureRaw, "Future Marketplace config must remain unchanged.");
+
+    fs.writeFileSync(configPath, "{not-json\n", { mode: 0o600 });
+    assert.throws(
+      () => providerConfig.readMarketplaceConfig({ includeSecrets: true }),
+      (error) => error?.code === "MARKETPLACE_CONFIG_CORRUPT",
+      "Corrupt Marketplace config must not silently discard credentials.",
+    );
+    assert(fs.readdirSync(path.dirname(configPath)).some((name) => name.startsWith(`${path.basename(configPath)}.corrupt-`)), "Corrupt Marketplace config should be preserved.");
 
     console.log("CurseForge server-pack resolution smoke checks passed.");
   } finally {

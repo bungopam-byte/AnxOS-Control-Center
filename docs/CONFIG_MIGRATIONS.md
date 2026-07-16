@@ -43,6 +43,11 @@ preferences are backed up once and migrated. Corrupt or future-version state is
 preserved and blocks persistence writes with `UPDATE_STORE_CORRUPT` or
 `UPDATE_STORE_SCHEMA_UNSUPPORTED`; update checks can still run.
 
+`marketplace.json` uses schema version 2 with an encrypted provider payload.
+Legacy CurseForge keys migrate atomically and the safety copy is independently
+encrypted. Corrupt, undecryptable, and future-version state fails explicitly
+without replacing provider credentials.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

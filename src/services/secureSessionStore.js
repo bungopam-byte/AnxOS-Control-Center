@@ -2,7 +2,13 @@ const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { app, safeStorage } = require("electron");
+let app = null;
+let safeStorage = null;
+try {
+  ({ app, safeStorage } = require("electron"));
+} catch {
+  // Shared services can use the machine-bound fallback outside Electron.
+}
 
 function getDefaultConfigDirectory() {
   if (process.env.ANXHUB_CONFIG_DIR) {

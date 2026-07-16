@@ -31,6 +31,7 @@ async function invokeBackupOperation(operation) {
 }
 
 async function saveBackupDownload(backupId, options = {}) {
+  requirePermission("backups:write", backupId);
   const payload = await downloadBackup(backupId, options);
   const suggested = backupId.endsWith(".tar.gz") ? backupId : `${backupId}.tar.gz`;
   const selection = await dialog.showSaveDialog({

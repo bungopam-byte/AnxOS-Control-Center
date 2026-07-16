@@ -26,6 +26,9 @@ The generic Agent action bridge uses an explicit action-to-permission map.
 Docker and AMP lifecycle, backup create/restore, and file mutations authorize
 before reaching the Agent; unknown action IDs fail closed.
 
+Backup archive import and export authorize before reading archive bytes,
+contacting an Agent, or opening a desktop file picker.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

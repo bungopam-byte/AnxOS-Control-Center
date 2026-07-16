@@ -73,6 +73,7 @@ function main() {
     "agent:token:smoke",
     "instances:ipc-authorization:smoke",
     "action:ipc-authorization:smoke",
+    "backups:ipc-authorization:smoke",
     "ssh:ipc-authorization:smoke",
     "node:switch:smoke",
     "node:application-host-identity:smoke",

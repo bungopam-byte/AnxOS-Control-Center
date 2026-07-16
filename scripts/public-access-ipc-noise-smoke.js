@@ -28,14 +28,18 @@ const publicAccessIpc = require("../src/ipc/publicAccessIpc");
     assert.strictEqual(first.ok, false, "Expected public access errors should return a structured failure.");
     assert.strictEqual(first.error.code, "UNAUTHORIZED", "Structured failure should preserve the authentication category.");
     assert.strictEqual(second.error.code, "UNAUTHORIZED", "Repeated structured failure should preserve the authentication category.");
+    assert.strictEqual(first.error.friendlyMessage, "Authentication failed.", "Structured failures should expose the shared friendly message.");
+    assert.strictEqual(first.error.status.code, 401, "Structured failures should expose stable status metadata.");
+    assert.strictEqual(first.error.details.retryable, false, "Authentication failures should explicitly report retry support.");
+    assert.strictEqual(first.error.details.technicalDetails.nodeId, "anxlab", "Structured failures should retain safe node diagnostics.");
     assert.strictEqual(warnings.length, 1, "Repeated identical expected failures should log once inside the suppression interval.");
     assert(!JSON.stringify(first).includes("must-not-leak"), "Structured expected errors must not expose authentication response bodies.");
     assert(!JSON.stringify(warnings).includes("must-not-leak"), "Expected error logs must not expose authentication response bodies.");
 
     await assert.rejects(
       () => invokePublicAccessRead("publicAccess:getSnapshot", () => Promise.reject(Object.assign(new Error("programming failure"), { code: "TYPE_ERROR" }))),
-      /programming failure/,
-      "Unexpected public access errors should still reject with diagnostic detail.",
+      (error) => error?.code === "TYPE_ERROR" && error?.details?.technicalDetails?.message === "programming failure",
+      "Unexpected public access errors should reject through the shared diagnostic contract.",
     );
   } finally {
     console.warn = originalWarn;

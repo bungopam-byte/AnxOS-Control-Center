@@ -7,6 +7,7 @@ const {
   listPublicAccessServices,
 } = require("../services/publicAccessProviderService");
 const { audit, requirePermission } = require("../services/securityService");
+const { createIpcError, normalizeIpcError } = require("../shared/ipcError");
 const { requireNodeContext } = require("./nodeContext");
 
 const EXPECTED_PUBLIC_ACCESS_ERROR_CODES = new Set([
@@ -39,14 +40,24 @@ function isExpectedPublicAccessError(error = {}) {
 }
 
 function sanitizePublicAccessError(error = {}) {
-  const code = getPublicAccessErrorCode(error) || "PUBLIC_ACCESS_REQUEST_FAILED";
+  const contract = normalizeIpcError(error, {
+    code: getPublicAccessErrorCode(error) || "PUBLIC_ACCESS_REQUEST_FAILED",
+    fallbackMessage: "Public Access request failed.",
+    provider: error?.provider || error?.details?.provider || null,
+  });
   return {
-    code,
-    message: error.payload?.error?.message || error.message || "Public Access request failed.",
+    ...contract,
+    message: contract.friendlyMessage,
     details: {
-      status: error.status || error.statusCode || null,
-      nodeId: error.nodeId || error.details?.nodeId || null,
-      targetLabel: error.targetLabel || error.details?.targetLabel || null,
+      code: contract.code,
+      technicalDetails: contract.technicalDetails,
+      suggestion: contract.suggestion,
+      retryable: contract.retryable,
+      status: contract.status,
+      provider: contract.provider,
+      diagnostics: contract.diagnostics,
+      nodeId: contract.technicalDetails?.nodeId || null,
+      targetLabel: contract.technicalDetails?.targetLabel || null,
     },
   };
 }
@@ -61,7 +72,7 @@ function noteExpectedPublicAccessError(channel, error = {}) {
     console.warn("[Public Access IPC] Expected Agent request failed.", {
       channel,
       code: sanitized.code,
-      status: sanitized.details.status,
+      status: sanitized.status?.code || null,
       nodeId: sanitized.details.nodeId,
       targetLabel: sanitized.details.targetLabel,
       suppressedCount: previous.suppressed,
@@ -85,21 +96,14 @@ function invokePublicAccessRead(channel, operation) {
           error: sanitizePublicAccessError(error),
         };
       }
-      throw error;
+      throw createIpcError(error, { code: "PUBLIC_ACCESS_REQUEST_FAILED", fallbackMessage: "Public Access request failed." });
     });
 }
 
 function wrapPublicAccessOperation(operation) {
   return Promise.resolve()
     .then(operation)
-    .catch((error) => ({
-      ok: false,
-      error: {
-        code: error?.code || error?.payload?.error?.code || "PUBLIC_ACCESS_REQUEST_FAILED",
-        message: error?.payload?.error?.message || error?.message || "Public Access request failed.",
-        details: error?.details || error?.payload?.error?.details || null,
-      },
-    }));
+    .catch((error) => ({ ok: false, error: sanitizePublicAccessError(error) }));
 }
 
 function registerPublicAccessIpc() {

@@ -50,3 +50,7 @@ the shared contract around provider-specific UI details. Boundary logs contain
 only redacted normalized fields, never raw responses, payloads, or stacks.
 Dependency IPC retains its existing `{ok:false,error}` shape and uses the shared
 contract for detection, planning, install, capability, and verification errors.
+Public Access IPC retains its existing `{ok:false,error}` read and mutation
+failure envelopes while adding the shared friendly, technical, retry, status,
+provider, and redacted diagnostic fields. Unexpected read failures reject as a
+shared IPC error rather than exposing their original object.

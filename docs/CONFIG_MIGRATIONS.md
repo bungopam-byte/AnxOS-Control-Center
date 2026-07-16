@@ -53,6 +53,11 @@ writes. Legacy records are backed up before migration. Corrupt and future
 schedule state fails explicitly; corrupt or future backup metadata is reported
 through backup diagnostics and is never rewritten as an older schema.
 
+Agent `agent.json` and `device-identity.json` use schema version 1. Legacy files
+are backed up and migrated atomically. Corrupt or future state fails without
+rotating the Agent token or generating a replacement device identity, avoiding
+unauthorized clients and duplicate node registration.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

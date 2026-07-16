@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const WEAK_AGENT_TOKENS = new Set(["test-token", "AnxOS-Token", "anxos-token", ""]);
+const AGENT_CONFIG_SCHEMA_VERSION = 1;
 const DEFAULT_AGENT_CONFIG = {
   backendMode: "local",
   agentUrl: "http://127.0.0.1:47131",
@@ -39,14 +40,6 @@ function base64UrlDecodeJson(value) {
   }
 }
 
-function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
 function atomicWriteJson(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
@@ -77,10 +70,33 @@ function resolveAgentConfigPath(options = {}) {
 }
 
 function readAgentConfigFile(configPath) {
-  const parsed = readJson(configPath);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? { ...DEFAULT_AGENT_CONFIG, ...parsed }
-    : { ...DEFAULT_AGENT_CONFIG };
+  if (!fs.existsSync(configPath)) return { ...DEFAULT_AGENT_CONFIG, schemaVersion: AGENT_CONFIG_SCHEMA_VERSION };
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Agent config root must be an object.");
+  } catch (error) {
+    const backupPath = `${configPath}.corrupt-${Date.now()}`;
+    try { fs.copyFileSync(configPath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw Object.assign(new Error("Agent configuration is unreadable. The original file was preserved; credentials were not rotated."), {
+      code: "AGENT_CONFIG_CORRUPT",
+      details: { causeCode: error?.code || "INVALID_JSON" },
+    });
+  }
+  const schemaVersion = Number.isInteger(parsed.schemaVersion) ? parsed.schemaVersion : 0;
+  if (schemaVersion > AGENT_CONFIG_SCHEMA_VERSION) {
+    throw Object.assign(new Error("Agent configuration was created by a newer runtime version."), {
+      code: "AGENT_CONFIG_SCHEMA_UNSUPPORTED",
+      details: { schemaVersion, supportedSchemaVersion: AGENT_CONFIG_SCHEMA_VERSION },
+    });
+  }
+  const config = { ...DEFAULT_AGENT_CONFIG, ...parsed, schemaVersion: AGENT_CONFIG_SCHEMA_VERSION };
+  if (schemaVersion < AGENT_CONFIG_SCHEMA_VERSION) {
+    const backupPath = `${configPath}.schema-v${schemaVersion}.backup`;
+    if (!fs.existsSync(backupPath)) fs.copyFileSync(configPath, backupPath, fs.constants.COPYFILE_EXCL);
+    atomicWriteJson(configPath, config);
+  }
+  return config;
 }
 
 function writeAgentConfigToken(configPath, token, updates = {}) {
@@ -88,6 +104,7 @@ function writeAgentConfigToken(configPath, token, updates = {}) {
   const next = {
     ...current,
     ...updates,
+    schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
     agentToken: token,
   };
   atomicWriteJson(configPath, next);
@@ -220,6 +237,7 @@ function parseAgentPairingPayload(value) {
 }
 
 module.exports = {
+  AGENT_CONFIG_SCHEMA_VERSION,
   DEFAULT_AGENT_CONFIG,
   generateAgentToken,
   createAgentPairingPayload,

@@ -7,6 +7,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-agent-token-"));
 process.env.ANXHUB_CONFIG_DIR = path.join(root, "config");
 
 const {
+  AGENT_CONFIG_SCHEMA_VERSION,
   createAgentPairingPayload,
   parseAgentPairingPayload,
   resolveSharedAgentToken,
@@ -64,6 +65,8 @@ function main() {
   const replaced = resolveSharedAgentToken();
   assert.notStrictEqual(replaced.token, "test-token", "Weak default token should be replaced.");
   assert.strictEqual(replaced.weakStoredTokenReplaced, true, "Weak token replacement should be reported.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(configPath, "utf8")).schemaVersion, AGENT_CONFIG_SCHEMA_VERSION, "Legacy Agent config should migrate to the current schema.");
+  assert(fs.existsSync(`${configPath}.schema-v0.backup`), "Legacy Agent config migration should preserve the original file.");
 
   const rotated = rotateSharedAgentToken();
   assert(rotated.fingerprint && !rotated.fingerprint.includes(rotated.token), "Rotation should provide only a fingerprint for display.");
@@ -91,6 +94,47 @@ function main() {
     agentUrl: "http://10.0.0.5:47131",
   });
   assert.strictEqual(formOverrideConfig.token, imported.agentToken, "Blank Settings form token should preserve the saved paired token.");
+
+  const futureConfig = { schemaVersion: AGENT_CONFIG_SCHEMA_VERSION + 1, backendMode: "agent", agentToken: rotated.token };
+  fs.writeFileSync(configPath, `${JSON.stringify(futureConfig)}\n`, { mode: 0o600 });
+  const futureRaw = fs.readFileSync(configPath, "utf8");
+  assert.throws(
+    () => resolveSharedAgentToken(),
+    (error) => error?.code === "AGENT_CONFIG_SCHEMA_UNSUPPORTED",
+    "Future Agent config schemas must fail without rotating credentials.",
+  );
+  assert.strictEqual(fs.readFileSync(configPath, "utf8"), futureRaw, "Future Agent config must remain unchanged.");
+
+  fs.writeFileSync(configPath, "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => resolveSharedAgentToken(),
+    (error) => error?.code === "AGENT_CONFIG_CORRUPT",
+    "Corrupt Agent config must not generate and persist a replacement token.",
+  );
+  assert(fs.readdirSync(path.dirname(configPath)).some((name) => name.startsWith(`${path.basename(configPath)}.corrupt-`)), "Corrupt Agent config should be preserved.");
+
+  const identityPath = path.join(root, "device-identity.json");
+  process.env.AGENT_IDENTITY_PATH = identityPath;
+  const identityService = require("../agent/src/services/deviceIdentityService");
+  fs.writeFileSync(identityPath, `${JSON.stringify({ deviceId: "legacy-device-id" })}\n`, { mode: 0o600 });
+  assert.strictEqual(identityService.getDeviceIdentity().deviceId, "legacy-device-id", "Legacy device identity should survive migration.");
+  assert.strictEqual(JSON.parse(fs.readFileSync(identityPath, "utf8")).schemaVersion, identityService.DEVICE_IDENTITY_SCHEMA_VERSION, "Legacy device identity should migrate to the current schema.");
+  assert(fs.existsSync(`${identityPath}.schema-v0.backup`), "Device identity migration should preserve the original file.");
+  const futureIdentity = { schemaVersion: identityService.DEVICE_IDENTITY_SCHEMA_VERSION + 1, deviceId: "future-device-id" };
+  fs.writeFileSync(identityPath, `${JSON.stringify(futureIdentity)}\n`, { mode: 0o600 });
+  const futureIdentityRaw = fs.readFileSync(identityPath, "utf8");
+  assert.throws(
+    () => identityService.getDeviceIdentity(),
+    (error) => error?.code === "DEVICE_IDENTITY_SCHEMA_UNSUPPORTED",
+    "Future device identity schemas must fail without generating a duplicate identity.",
+  );
+  assert.strictEqual(fs.readFileSync(identityPath, "utf8"), futureIdentityRaw, "Future device identity must remain unchanged.");
+  fs.writeFileSync(identityPath, "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => identityService.getDeviceIdentity(),
+    (error) => error?.code === "DEVICE_IDENTITY_CORRUPT",
+    "Corrupt device identity must not generate a replacement identity.",
+  );
 
     console.log("Agent token smoke checks passed.");
   });

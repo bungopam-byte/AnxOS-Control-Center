@@ -12,6 +12,7 @@
 | Instance metadata migration | `npm run instances:config-migration:smoke` |
 | Instance shutdown ownership | `npm run instances:shutdown:smoke` |
 | Renderer resource cleanup | `npm run renderer:resource-cleanup:smoke` |
+| Dependency cancellation listener cleanup | `npm run dependencies:abort-listener:smoke` |
 | Filesystem | `npm run agent:files-root:smoke`, `npm run files:smoke` |
 | Files IPC authorization | `npm run files:ipc-authorization:smoke` |
 | Files IPC error contract | `npm run files:ipc-error-contract:smoke` |

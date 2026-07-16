@@ -54,6 +54,7 @@
     "instances:config-migration:smoke": "node scripts/instance-config-migration-smoke.js",
     "instances:shutdown:smoke": "node scripts/instance-shutdown-smoke.js",
     "renderer:resource-cleanup:smoke": "node scripts/renderer-resource-cleanup-smoke.js",
+    "dependencies:abort-listener:smoke": "node scripts/dependency-abort-listener-smoke.js",
     "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",
     "instances:ipc-authorization:smoke": "node scripts/instances-ipc-authorization-smoke.js",
     "action:ipc-authorization:smoke": "node scripts/action-ipc-authorization-smoke.js",

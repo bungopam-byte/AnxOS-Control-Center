@@ -144,6 +144,8 @@ function createDependencyError(code, message, details = {}, statusCode = 400) {
 function runCommand(command, args = [], options = {}) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
+    let abortHandler = null;
+    let abortListenerRegistered = false;
     const child = execFile(command, args, {
       cwd: options.cwd || os.tmpdir(),
       env: { ...process.env, ...(options.env || {}) },
@@ -151,6 +153,7 @@ function runCommand(command, args = [], options = {}) {
       windowsHide: true,
       maxBuffer: 1024 * 1024,
     }, (error, stdout, stderr) => {
+      if (abortListenerRegistered) options.signal?.removeEventListener?.("abort", abortHandler);
       resolve({
         ok: !error,
         command,
@@ -165,9 +168,14 @@ function runCommand(command, args = [], options = {}) {
       });
     });
     if (options.signal) {
-      options.signal.addEventListener("abort", () => {
+      abortHandler = () => {
         child.kill("SIGTERM");
-      }, { once: true });
+      };
+      if (options.signal.aborted) abortHandler();
+      else {
+        options.signal.addEventListener("abort", abortHandler, { once: true });
+        abortListenerRegistered = true;
+      }
     }
   });
 }
@@ -999,6 +1007,7 @@ function __setTestHooks(hooks = {}) {
 }
 
 module.exports = {
+  _test: { runCommand },
   __setTestHooks,
   checkDependencies,
   detectDistribution,

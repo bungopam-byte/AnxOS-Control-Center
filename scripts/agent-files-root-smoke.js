@@ -220,6 +220,7 @@ async function main() {
     } finally {
       agent.kill("SIGTERM");
       await new Promise((resolve) => agent.once("exit", resolve));
+      assert.strictEqual(agent.exitCode, 0, "Agent SIGTERM shutdown should drain owned HTTP resources and exit cleanly.");
     }
 
     console.log("Agent filesystem root smoke checks passed.");

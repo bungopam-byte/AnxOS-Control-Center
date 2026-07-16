@@ -14,6 +14,7 @@ const DEFAULT_RETENTION_COUNT = 10;
 const DEFAULT_RETENTION_DAYS = 30;
 const TAR_BLOCK_SIZE = 512;
 let schedulerStarted = false;
+let schedulerTimer = null;
 
 function createBackupError(code, statusCode = 400, details = {}) {
   return Object.assign(new Error(code), { code, statusCode, details });
@@ -831,10 +832,18 @@ function startBackupScheduler() {
     return;
   }
   schedulerStarted = true;
-  setInterval(() => {
+  schedulerTimer = setInterval(() => {
     runDueSchedules().catch(() => {});
   }, 60 * 1000).unref?.();
   runDueSchedules().catch(() => {});
+}
+
+function stopBackupScheduler() {
+  if (schedulerTimer) {
+    clearInterval(schedulerTimer);
+    schedulerTimer = null;
+  }
+  schedulerStarted = false;
 }
 
 module.exports = {
@@ -851,4 +860,5 @@ module.exports = {
   restoreBackup,
   saveSchedule,
   startBackupScheduler,
+  stopBackupScheduler,
 };

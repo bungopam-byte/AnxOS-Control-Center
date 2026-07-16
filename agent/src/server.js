@@ -6,7 +6,7 @@ const { handleActionInvoke, handleActionsList } = require("./routes/actions");
 const { handleAmpInstances, handleAmpSnapshot, handleAmpStatus } = require("./routes/amp");
 const { auditAction } = require("./audit/auditLogger");
 const { handleBackups, handleBackupsList } = require("./routes/backups");
-const { startBackupScheduler } = require("./services/backupService");
+const { startBackupScheduler, stopBackupScheduler } = require("./services/backupService");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { handleCurseForgeProxy } = require("./services/curseforgeProxyService");
 const { isAuthorized } = require("./auth");
@@ -373,7 +373,15 @@ async function handleRequest(request, response) {
 
 const server = http.createServer(handleRequest);
 const connectedClients = new Set();
-server.on("connection", (socket) => { connectedClients.add(socket); socket.once("close", () => connectedClients.delete(socket)); });
+let shuttingDown = false;
+server.on("connection", (socket) => {
+  if (shuttingDown) {
+    socket.destroy();
+    return;
+  }
+  connectedClients.add(socket);
+  socket.once("close", () => connectedClients.delete(socket));
+});
 
 server.headersTimeout = config.requestTimeoutMs + 1000;
 server.requestTimeout = config.requestTimeoutMs;
@@ -395,6 +403,27 @@ server.listen(config.port, config.host, () => {
   console.info(`AnxOS Agent listening on http://${config.host}:${config.port}`);
   logger.info("startup", "AnxOS Agent listening", { host: config.host, port: config.port, pid: process.pid });
 });
+
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  stopBackupScheduler();
+  logger.info("shutdown", "AnxOS Agent shutdown started", { signal, connectedClients: connectedClients.size });
+  const forceTimer = setTimeout(() => {
+    for (const socket of connectedClients) socket.destroy();
+    process.exit(0);
+  }, 5000);
+  forceTimer.unref?.();
+  for (const socket of connectedClients) socket.end();
+  server.close(() => {
+    clearTimeout(forceTimer);
+    logger.info("shutdown", "AnxOS Agent shutdown completed", { signal });
+    process.exit(0);
+  });
+}
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
 
 process.on("uncaughtException", (error) => logger.error("uncaught-exception", error, {}, { file: "agent" }));
 process.on("unhandledRejection", (reason) => logger.error("unhandled-rejection", reason instanceof Error ? reason : new Error(String(reason)), {}, { file: "agent" }));

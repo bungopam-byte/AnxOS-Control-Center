@@ -28,6 +28,11 @@ backed up once, normalized, and atomically migrated. Invalid JSON returns
 `SETTINGS_STORE_CORRUPT` after preserving a timestamped copy; future schemas
 return `SETTINGS_SCHEMA_UNSUPPORTED` without modifying the file.
 
+`forgotten-instances.json` uses schema version 1 and atomic writes. Legacy
+state is backed up once before migration. Corrupt state returns
+`FORGOTTEN_INSTANCE_STORE_CORRUPT`; future schemas return
+`FORGOTTEN_INSTANCE_SCHEMA_UNSUPPORTED` without clearing tombstones.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

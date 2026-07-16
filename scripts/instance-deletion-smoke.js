@@ -10,7 +10,10 @@ async function main() {
 
   const service = require("../src/shared/instances/instanceServiceCore");
   const {
+    FORGOTTEN_SCHEMA_VERSION,
     filterForgottenInstances,
+    getForgottenInstancesPath,
+    isInstanceForgotten,
     rememberForgottenInstance,
   } = require("../src/services/instanceForgetService");
 
@@ -88,6 +91,25 @@ async function main() {
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   assert(agentRoute.includes('getInstanceIdFromPath(url.pathname, "/record")'), "Agent must expose metadata-only forget endpoint.");
   assert(ipc.includes("instances:forget") && preload.includes("instances:forget"), "Desktop IPC/preload must expose forget operation.");
+
+  const forgottenPath = getForgottenInstancesPath();
+  const futureState = { schemaVersion: FORGOTTEN_SCHEMA_VERSION + 1, entries: [{ nodeId: "future", instanceId: "future" }] };
+  fs.writeFileSync(forgottenPath, `${JSON.stringify(futureState)}\n`, { mode: 0o600 });
+  const futureRaw = fs.readFileSync(forgottenPath, "utf8");
+  assert.throws(
+    () => isInstanceForgotten("future", "future"),
+    (error) => error?.code === "FORGOTTEN_INSTANCE_SCHEMA_UNSUPPORTED",
+    "future forgotten-instance schemas must fail without being downgraded.",
+  );
+  assert.strictEqual(fs.readFileSync(forgottenPath, "utf8"), futureRaw, "future forgotten-instance state must remain unchanged.");
+
+  fs.writeFileSync(forgottenPath, "{not-json\n", { mode: 0o600 });
+  assert.throws(
+    () => isInstanceForgotten("offline-node", "offline-stale"),
+    (error) => error?.code === "FORGOTTEN_INSTANCE_STORE_CORRUPT",
+    "corrupt forgotten-instance state must not silently clear tombstones.",
+  );
+  assert(fs.readdirSync(path.dirname(forgottenPath)).some((name) => name.startsWith(`${path.basename(forgottenPath)}.corrupt-`)), "corrupt forgotten-instance state should be preserved.");
 
   console.log("Instance deletion smoke checks passed.");
 }

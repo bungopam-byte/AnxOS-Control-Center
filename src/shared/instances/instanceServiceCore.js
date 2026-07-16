@@ -201,6 +201,12 @@ function normalizeTags(value) {
   });
 }
 
+function normalizeInstallationState(value, fallback = "active") {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (["installing", "active"].includes(value)) return value;
+  throw createInstanceError("INSTALLATION_STATE_INVALID");
+}
+
 function normalizeOptionalJarPath(value) {
   if (value === undefined) {
     return undefined;
@@ -645,6 +651,7 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     connectionHost: payload.connectionHost ? String(payload.connectionHost).slice(0, 255) : null,
     primaryPort: Number.isInteger(primaryPort) && primaryPort > 0 && primaryPort <= 65535 ? primaryPort : null,
     tags: normalizeTags(payload.tags),
+    installationState: normalizeInstallationState(payload.installationState),
     createdAt,
     updatedAt: nowIso(),
     lastStartedAt: existingConfig?.lastStartedAt || null,
@@ -2604,6 +2611,9 @@ async function listInstances() {
   for (const id of ids) {
     try {
       let config = await reconcileConfigState(await loadInstanceConfig(id));
+      if (config.installationState === "installing") {
+        continue;
+      }
       if (isFiveMInstance(config)) {
         config = (await refreshFiveMReadiness(config.id)).config;
       }
@@ -2708,6 +2718,7 @@ async function updateInstance(instanceId, payload = {}) {
       })()
       : current.primaryPort,
     tags: payload.tags !== undefined ? normalizeTags(payload.tags) : current.tags,
+    installationState: normalizeInstallationState(payload.installationState, current.installationState || "active"),
     updatedAt: nowIso(),
   };
 
@@ -3044,6 +3055,11 @@ async function startInstance(instanceId, options = {}) {
   }
 
   let config = await backfillInstanceVersion(await reconcileConfigState(await loadInstanceConfig(instanceId)), { force: true });
+  if (config.installationState === "installing") {
+    const error = createInstanceError("INSTANCE_INSTALLATION_INCOMPLETE", 409, { instanceId: config.id });
+    error.message = "The instance cannot start until installation completes.";
+    throw error;
+  }
   const repairedArgs = normalizeShellWrapperArgs(config.executable, config.args);
   if (JSON.stringify(repairedArgs) !== JSON.stringify(config.args || [])) {
     config = await updateInstance(config.id, { args: repairedArgs });

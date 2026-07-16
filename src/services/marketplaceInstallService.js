@@ -1632,6 +1632,7 @@ function buildInstancePayload(options, serverInfo) {
     ports: [port],
     primaryPort: port,
     status: "stopped",
+    installationState: "installing",
     tags: ["minecraft", options.provider || "marketplace", options.loader || options.serverType || "vanilla"].filter(Boolean),
   };
 }
@@ -2228,13 +2229,15 @@ async function continueProviderPackInstall(context = {}) {
   await writeText(instanceId, "metadata.json", `${JSON.stringify(metadata, null, 2)}\n`, agentConfig);
   await writeText(instanceId, "config.json", `${JSON.stringify({ ...instancePayload, status: "stopped", port: instancePayload.primaryPort }, null, 2)}\n`, agentConfig);
   await validateInstalledServerJar(instanceId, serverInfo, agentConfig);
-  await agentClient.updateInstance(instanceId, {
+  const activationResult = await agentClient.updateInstance(instanceId, {
     ...metadata,
     jar: serverInfo.serverJar,
     serverJar: serverInfo.serverJar,
     serverJarPath: serverInfo.serverJar,
     startJar: serverInfo.serverJar,
+    installationState: "active",
   }, agentConfig);
+  const activatedInstance = activationResult?.instance || activationResult || {};
   if (options.start) {
     throwIfInstallCancelled(signal);
     emitProgress({ nodeId, instanceId, operationId, stage: "writing", message: "Starting instance...", current: 1, total: 1 });
@@ -2254,7 +2257,7 @@ async function continueProviderPackInstall(context = {}) {
   emitProgress({ nodeId, instanceId, operationId, stage: "done", message: "Done", current: 1, total: 1, percent: 100 });
   return {
     status: "completed",
-    instance: { ...(createResult?.instance || createResult || {}), id: instanceId, displayName: instancePayload.displayName },
+    instance: { ...(createResult?.instance || createResult || {}), ...activatedInstance, id: instanceId, displayName: instancePayload.displayName, installationState: "active" },
     metadata,
     progress: [{ label: "Done", status: "complete", detail: "Marketplace pack installed." }],
   };

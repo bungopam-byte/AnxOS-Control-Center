@@ -30,6 +30,13 @@ Marketplace provider downloads are streamed into bounded memory with early
 absolute/traversal paths, excessive entry counts or expanded sizes, and unsafe
 compression ratios before reading entry bodies.
 
+Provider-created instances persist with `installationState: "installing"` and
+are excluded from normal instance listings and startup until server artifacts,
+configuration, and metadata have been verified. The final Agent update changes
+the state to `active`; that activation is the visibility boundary. Ordinary
+failure or cancellation deletes the incomplete instance and reports cleanup
+failure without exposing credentials.
+
 ## Instances
 
 Runtime PID reconciliation detects live configured and detached processes.

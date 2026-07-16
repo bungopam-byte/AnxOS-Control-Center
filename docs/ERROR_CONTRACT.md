@@ -42,6 +42,9 @@ Files IPC uses one domain registration wrapper for local, Agent, and SFTP
 listing, identity, connection, mutation, and transfer failures. Existing
 success payloads are unchanged; path, authorization, cancellation, and
 transport codes remain stable while diagnostics are redacted.
+Diagnostics request/response IPC uses a domain wrapper for renderer logging,
+capture, read, folder, summary, and export failures. Fire-and-forget preload
+logging remains non-throwing by contract and still authorizes before writing.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.

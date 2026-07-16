@@ -111,6 +111,7 @@
     "security:ipc-error-contract:smoke": "node scripts/security-ipc-error-contract-smoke.js",
     "security:sections:smoke": "node scripts/security-sections-smoke.js",
     "diagnostics:ipc-authorization:smoke": "node scripts/diagnostics-ipc-authorization-smoke.js",
+    "diagnostics:ipc-error-contract:smoke": "node scripts/diagnostics-ipc-error-contract-smoke.js",
     "owner:smoke": "node scripts/owner-workspace-smoke.js",
     "owner:ipc-error-contract:smoke": "node scripts/owner-workspace-ipc-error-contract-smoke.js",
     "icons:linux": "node scripts/generate-linux-icons.js",

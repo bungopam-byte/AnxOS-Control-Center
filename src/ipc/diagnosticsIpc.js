@@ -1,8 +1,23 @@
 const { BrowserWindow, clipboard, ipcMain } = require("electron");
 const diagnostics = require("../services/diagnosticsService");
 const { checkRateLimit, requirePermission } = require("../services/securityService");
+const { createIpcError } = require("../shared/ipcError");
 
 const DIAGNOSTIC_LEVELS = new Set(["debug", "info", "warn", "error"]);
+
+function registerDiagnosticsHandler(channel, handler) {
+  ipcMain.handle(channel, async (...args) => {
+    try {
+      return await handler(...args);
+    } catch (error) {
+      throw createIpcError(error, {
+        code: "DIAGNOSTICS_REQUEST_FAILED",
+        fallbackMessage: "Diagnostics operation failed.",
+        suggestion: "Retry the diagnostics action or review the local log directory permissions.",
+      });
+    }
+  });
+}
 
 function authorizeDiagnostics(operation) {
   return requirePermission("settings:write", `diagnostics:${operation}`);
@@ -26,15 +41,15 @@ function logRendererDiagnostic(payload = {}) {
 }
 
 function registerDiagnosticsIpc() {
-  ipcMain.handle("diagnostics:log", (_, payload = {}) => logRendererDiagnostic(payload));
+  registerDiagnosticsHandler("diagnostics:log", (_, payload = {}) => logRendererDiagnostic(payload));
   ipcMain.on("diagnostics:log", (_, payload = {}) => {
     try { logRendererDiagnostic(payload); } catch {}
   });
-  ipcMain.handle("diagnostics:capture", (_, payload = {}) => { authorizeDiagnostics("capture"); return diagnostics.captureSnapshot(payload); });
-  ipcMain.handle("diagnostics:read", (_, payload = {}) => { authorizeDiagnostics("read"); return diagnostics.readLogs(payload); });
-  ipcMain.handle("diagnostics:openFolder", () => { authorizeDiagnostics("open-folder"); return diagnostics.openFolder(); });
-  ipcMain.handle("diagnostics:copySummary", async () => { authorizeDiagnostics("copy-summary"); const summary = await diagnostics.copySummary(); clipboard.writeText(summary); return { copied: true }; });
-  ipcMain.handle("diagnostics:export", (event) => { authorizeDiagnostics("export"); return diagnostics.exportBundle(BrowserWindow.fromWebContents(event.sender)); });
+  registerDiagnosticsHandler("diagnostics:capture", (_, payload = {}) => { authorizeDiagnostics("capture"); return diagnostics.captureSnapshot(payload); });
+  registerDiagnosticsHandler("diagnostics:read", (_, payload = {}) => { authorizeDiagnostics("read"); return diagnostics.readLogs(payload); });
+  registerDiagnosticsHandler("diagnostics:openFolder", () => { authorizeDiagnostics("open-folder"); return diagnostics.openFolder(); });
+  registerDiagnosticsHandler("diagnostics:copySummary", async () => { authorizeDiagnostics("copy-summary"); const summary = await diagnostics.copySummary(); clipboard.writeText(summary); return { copied: true }; });
+  registerDiagnosticsHandler("diagnostics:export", (event) => { authorizeDiagnostics("export"); return diagnostics.exportBundle(BrowserWindow.fromWebContents(event.sender)); });
 }
 
 module.exports = { registerDiagnosticsIpc };

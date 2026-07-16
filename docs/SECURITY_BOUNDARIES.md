@@ -79,6 +79,12 @@ also pass the existing Owner capability checks. The public permission-discovery
 handler exposes only effective role/capability metadata and remains available
 to render signed-out states.
 
+Production update state, checks, and release-page access require `system:read`.
+Downloading, installing, skipping, or launching an update download require
+`settings:write`. Developer update handlers additionally require the trusted
+developer-settings capability. Both domains normalize and redact failures
+through the shared IPC error contract before returning them to the renderer.
+
 ## Agent
 
 Desktop Agent Control list, status, diagnostics, configuration, lifecycle,

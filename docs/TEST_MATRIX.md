@@ -19,6 +19,7 @@
 | Backup/security | `node scripts/security-backup-smoke.js`, `npm run backups:transfer-safety:smoke`, `npm run security:page:smoke` |
 | Diagnostics authorization | `npm run diagnostics:ipc-authorization:smoke` |
 | Diagnostics IPC error contract | `npm run diagnostics:ipc-error-contract:smoke` |
+| Update IPC authorization/error contract | `npm run updates:ipc-authorization:smoke` |
 | Maintenance IPC contract | `npm run maintenance:ipc-contract:smoke` |
 | Settings IPC error contract | `npm run settings:ipc-error-contract:smoke` |
 | Generic action authorization | `npm run action:ipc-authorization:smoke` |

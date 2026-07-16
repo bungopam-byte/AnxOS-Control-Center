@@ -19,6 +19,7 @@ const { registerSecurityIpc } = require("./src/ipc/securityIpc");
 const { registerSettingsIpc } = require("./src/ipc/settingsIpc");
 const { disposeSshIpc, registerSshIpc } = require("./src/ipc/sshIpc");
 const { registerSystemIpc } = require("./src/ipc/systemIpc");
+const { registerDeveloperUpdatesIpc, registerUpdatesIpc } = require("./src/ipc/updatesIpc");
 const { logStartupStatus: logCurseForgeStartupStatus } = require("./src/services/providers/curseforgeProvider");
 const { UpdateManager } = require("./src/services/updateManager");
 const { configureElectronPaths } = require("./src/services/electronPaths");
@@ -50,7 +51,6 @@ const diagnostics = require("./src/services/diagnosticsService");
 const { registerDiagnosticsIpc } = require("./src/ipc/diagnosticsIpc");
 const { registerAgentControlIpc } = require("./src/ipc/agentControlIpc");
 const { registerDependenciesIpc } = require("./src/ipc/dependenciesIpc");
-const { requireSettingsCapability } = require("./src/services/settingsPermissionService");
 const localInstanceService = require("./src/services/localInstanceService");
 const originalConsoleError = console.error.bind(console);
 console.error = (...args) => {
@@ -126,42 +126,6 @@ function getRuntimeInfo() {
     trustedDevelopmentMode,
     developmentMode: trustedDevelopmentMode,
   };
-}
-
-function registerUpdatesIpc() {
-  updateManager.initialize();
-  ipcMain.handle("updates:getState", () => updateManager.getState());
-  ipcMain.handle("updates:check", (_, options = {}) => updateManager.check({ ...options, forceNotify: !options.silent }));
-  ipcMain.handle("updates:download", () => updateManager.download());
-  ipcMain.handle("updates:open-downloaded", () => updateManager.install());
-  ipcMain.handle("updates:install", () => updateManager.install());
-  ipcMain.handle("updates:open-download", () => updateManager.openDownload());
-  ipcMain.handle("updates:open-release", () => updateManager.openRelease());
-  ipcMain.handle("updates:skip", (_, payload = {}) => updateManager.skip(payload.version));
-}
-
-function registerDeveloperUpdatesIpc() {
-  const requireDeveloperUpdateAccess = () => requireSettingsCapability("canManageDeveloperSettings", "developer-updates");
-  ipcMain.handle("developerUpdates:getState", () => {
-    requireDeveloperUpdateAccess();
-    return developerGitUpdater.getState();
-  });
-  ipcMain.handle("developerUpdates:check", (_, options = {}) => {
-    requireDeveloperUpdateAccess();
-    return developerGitUpdater.check(options);
-  });
-  ipcMain.handle("developerUpdates:update", () => {
-    requireDeveloperUpdateAccess();
-    return developerGitUpdater.update();
-  });
-  ipcMain.handle("developerUpdates:restart", () => {
-    requireDeveloperUpdateAccess();
-    return developerGitUpdater.restart();
-  });
-  ipcMain.handle("developerUpdates:openChanges", () => {
-    requireDeveloperUpdateAccess();
-    return developerGitUpdater.openChanges();
-  });
 }
 
 function getWindowStatePath() {
@@ -490,8 +454,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("app:getRuntimeInfo", () => getRuntimeInfo());
   registerWindowIpc();
   registerStorageWindowIpc();
-  registerUpdatesIpc();
-  registerDeveloperUpdatesIpc();
+  registerUpdatesIpc(updateManager);
+  registerDeveloperUpdatesIpc(developerGitUpdater);
   registerAccountAuthIpc();
   registerActionIpc();
   registerSystemIpc();

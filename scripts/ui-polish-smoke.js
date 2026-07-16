@@ -83,7 +83,8 @@ assert(index.includes("data-dev-update-modal") && index.includes('data-dev-updat
 assert(styles.includes('data-dev-state="available"') && styles.includes("devBadgePulse"), "Developer update badge must include a subtle available-update state.");
 assert(app.includes("setupDeveloperUpdates") && app.includes("openDeveloperUpdateModal") && app.includes("renderDevelopmentBadge"), "Developer update badge must be wired in the renderer.");
 assert(preload.includes("developerUpdates") && preload.includes("developerUpdates:check") && preload.includes("developerUpdates:restart"), "Preload must expose developer update IPC.");
-assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc") && main.includes("developerUpdates:restart"), "Main process must own developer update detection and restart.");
+const updatesIpc = fs.readFileSync(path.join(root, "src", "ipc", "updatesIpc.js"), "utf8");
+assert(main.includes("DeveloperGitUpdater") && main.includes("registerDeveloperUpdatesIpc") && updatesIpc.includes("developerUpdates:restart"), "Main process must own developer update detection and restart through trusted IPC.");
 assert(main.includes("requestSingleInstanceLock") && main.includes("second-instance"), "Main process must prevent duplicate desktop instances from fighting over Electron cache paths.");
 assert(index.includes('data-agent-control-action="start"') && index.includes('data-agent-control-action="installService"'), "Agent Control must expose real lifecycle and service actions.");
 assert(app.includes("Backup was already removed. Refreshed backup list."), "Backup UI must recover cleanly from stale already-deleted backup IDs.");

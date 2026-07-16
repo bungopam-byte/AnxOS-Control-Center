@@ -1,5 +1,10 @@
 # Private Alpha Final Release Gate
 
+> Historical evidence only. This document records the 2026-07-13 gate and is
+> not the current Release Candidate decision. Use
+> `PRIVATE_ALPHA_READINESS_REPORT_FINAL.md` and
+> `PRIVATE_ALPHA_RC_REAL_MACHINE_TEST_SHEET.md` for the current gate.
+
 Date: 2026-07-13
 Branch: `dev`
 Release channel: Private Alpha

@@ -1,5 +1,9 @@
 # Real-Machine Validation
 
+> Historical workflow. The current exact-candidate execution sheet is
+> `PRIVATE_ALPHA_RC_REAL_MACHINE_TEST_SHEET.md`. Build-specific statements in
+> this file do not apply to later candidates.
+
 Use this guide for live validation on the available Windows 11 desktop, Debian Agent machine, and iPhone. Record failures exactly; do not mark a check passed unless it was performed on the named hardware.
 
 ## Test Environment Recording

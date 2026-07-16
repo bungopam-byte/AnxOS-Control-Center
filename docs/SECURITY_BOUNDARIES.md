@@ -37,6 +37,9 @@ require `files:read`; storage connection tests require `settings:write` before
 any outbound connection is attempted. Admin and User roles retain file-read
 access, while signed-out configured deployments fail closed.
 
+Unsaved node connection probes require `settings:write` before accepting an
+arbitrary Agent URL or attempting outbound authentication.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

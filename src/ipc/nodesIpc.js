@@ -45,7 +45,10 @@ function registerNodesIpc() {
   }));
   ipcMain.handle("nodes:select", async (_, payload = {}) => invokeNodeOperation(() => setActiveNode(requireNodeContext(payload, "node selection").nodeId, { reason: "ipc-select" })));
   ipcMain.handle("nodes:test", async (_, payload = {}) => invokeNodeOperation(() => testNode(requireNodeContext(payload, "node connection test").nodeId)));
-  ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => testNodeConnectionPayload(payload)));
+  ipcMain.handle("nodes:testConnection", async (_, payload = {}) => invokeNodeOperation(() => {
+    requirePermission("settings:write", payload.agentUrl || payload.url || "node-connection-test");
+    return testNodeConnectionPayload(payload);
+  }));
   ipcMain.handle("nodes:health", async (_, payload = {}) => invokeNodeOperation(() => checkNodeHealth(requireNodeContext(payload, "node health check").nodeId)));
   ipcMain.handle("nodes:healthAll", async () => invokeNodeOperation(() => checkAllNodeHealth()));
   ipcMain.handle("nodes:credentialStatus", async (_, payload = {}) => invokeNodeOperation(() => getNodeCredentialStatus(requireNodeContext(payload, "node credential status").nodeId)));

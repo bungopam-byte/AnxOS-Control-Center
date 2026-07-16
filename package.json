@@ -53,6 +53,7 @@
     "backups:ipc-authorization:smoke": "node scripts/backups-ipc-authorization-smoke.js",
     "ipc:error-contract:smoke": "node scripts/ipc-error-contract-smoke.js",
     "nodes:ipc-error-contract:smoke": "node scripts/nodes-ipc-error-contract-smoke.js",
+    "nodes:ipc-authorization:smoke": "node scripts/nodes-ipc-authorization-smoke.js",
     "instances:ipc-error-contract:smoke": "node scripts/instances-ipc-error-contract-smoke.js",
     "dashboard:node-routing:smoke": "node scripts/dashboard-node-routing-smoke.js",
     "dashboard:metrics:smoke": "node scripts/dashboard-metrics-presentation-smoke.js",

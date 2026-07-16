@@ -16,6 +16,7 @@
 | Backup IPC authorization | `npm run backups:ipc-authorization:smoke` |
 | IPC error contract | `npm run ipc:error-contract:smoke` |
 | Node IPC error contract | `npm run nodes:ipc-error-contract:smoke` |
+| Node IPC authorization | `npm run nodes:ipc-authorization:smoke` |
 | Instance IPC error contract | `npm run instances:ipc-error-contract:smoke` |
 | Docker IPC error contract | `npm run docker:ipc-error-contract:smoke` |
 | Security IPC error contract | `npm run security:ipc-error-contract:smoke` |

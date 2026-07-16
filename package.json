@@ -133,6 +133,7 @@
     "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
     "dependencies:smoke": "node scripts/dependency-smoke.js",
     "operational-reads:ipc-authorization:smoke": "node scripts/operational-read-ipc-authorization-smoke.js",
+    "public-access:ipc-authorization:smoke": "node scripts/public-access-ipc-authorization-smoke.js",
     "compatibility:ipc-error-contract:smoke": "node scripts/compatibility-ipc-error-contract-smoke.js",
     "dependencies:ipc-error-contract:smoke": "node scripts/dependencies-ipc-error-contract-smoke.js",
     "dependencies:graphical:smoke": "node scripts/dependency-graphical-actions-smoke.js",

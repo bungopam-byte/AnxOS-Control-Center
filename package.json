@@ -168,6 +168,7 @@
     "developer-source-update:smoke": "node scripts/developer-source-update-smoke.js",
     "agent-control:smoke": "node scripts/agent-control-smoke.js",
     "agent-control:ipc-authorization:smoke": "node scripts/agent-control-ipc-authorization-smoke.js",
+    "agent-control:ipc-error-contract:smoke": "node scripts/agent-control-ipc-error-contract-smoke.js",
     "agent-runtime-config:smoke": "node scripts/agent-runtime-config-store-smoke.js",
     "secure-session-store:smoke": "node scripts/secure-session-store-smoke.js",
     "persistent-session-store:smoke": "node scripts/persistent-session-store-smoke.js",

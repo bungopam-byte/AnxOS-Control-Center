@@ -62,6 +62,9 @@ using normalized, redacted message and retry metadata.
 Generic Action IPC preserves action-provider codes through the shared wrapper.
 It authorizes first, applies a per-action rate limit, audits the accepted
 request, and only then dispatches to the selected Agent.
+Agent Control normalizes Owner-authorization and service failures through its
+audited wrapper. Failed audit entries store only the normalized stable code;
+raw service messages and credentials are not audit reasons.
 Security IPC uses the shared model for authentication, session, trusted-device,
 remote-access, token, and emergency-action failures. Its boundary logs use only
 the normalized, redacted fields.

@@ -2,14 +2,28 @@ const { ipcMain } = require("electron");
 const control = require("../services/agentControlService");
 const { audit, requireOwner } = require("../services/securityService");
 const { requireNodeContext } = require("./nodeContext");
+const { createIpcError } = require("../shared/ipcError");
+
+function normalizeAgentControlError(error) {
+  return createIpcError(error, {
+    code: "AGENT_CONTROL_REQUEST_FAILED",
+    fallbackMessage: "Agent Control operation failed.",
+    suggestion: "Review Agent Control diagnostics, correct the reported issue, then retry.",
+  });
+}
 
 function authorize(operation) {
   return requireOwner(`agent-control:${operation}`);
 }
 
 async function runAuthorized(operation, handler) {
-  const actor = authorize(operation);
-  return runAudited(operation, actor, handler);
+  try {
+    const actor = authorize(operation);
+    return await runAudited(operation, actor, handler);
+  } catch (error) {
+    if (error?.details?.technicalDetails) throw error;
+    throw normalizeAgentControlError(error);
+  }
 }
 
 async function runLocalLifecycle(operation, handler) {
@@ -22,14 +36,15 @@ async function runAudited(operation, actor, handler) {
     audit({ action: `agent.control.${operation}`, actor, target: "local-agent", outcome: "ok" });
     return result;
   } catch (error) {
+    const wrapped = normalizeAgentControlError(error);
     audit({
       action: `agent.control.${operation}`,
       actor,
       target: "local-agent",
       outcome: "failed",
-      reason: error?.code || error?.message || "AGENT_CONTROL_FAILED",
+      reason: wrapped.code,
     });
-    throw error;
+    throw wrapped;
   }
 }
 

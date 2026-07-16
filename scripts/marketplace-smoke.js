@@ -1786,6 +1786,9 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       instances.delete(instanceId);
       return { deleted: true };
     };
+    agentClient.getSystemStats = async () => ({
+      disk: { free: 20 * 1024 * 1024 * 1024, total: 100 * 1024 * 1024 * 1024, percent: 80, mount: "/srv" },
+    });
     agentClient.checkDependencies = async () => ({ ok: true, dependencies: [], missingDependencyIds: [] });
     agentClient.installDependencies = async () => ({ ok: true, results: [], dependencies: [], missingDependencyIds: [] });
 

@@ -17,6 +17,7 @@ const {
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 const { sanitize } = require("../shared/redaction");
+const { normalizeDiskEvidence } = require("../shared/diskSpace");
 
 const INSTALL_FOLDERS = ["mods", "config", "defaultconfigs", "kubejs", "kubejs/scripts", "world", "logs", "backups"];
 const PAPER_DOWNLOADS_API = "https://fill.papermc.io/v3";
@@ -31,6 +32,7 @@ const MAX_ARCHIVE_ENTRY_BYTES = 8 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_EXPANDED_BYTES = 32 * 1024 * 1024 * 1024;
 const MAX_ARCHIVE_COMPRESSION_RATIO = 1000;
 const MAX_ARCHIVE_PATH_LENGTH = 1024;
+const PROVIDER_INSTALL_MIN_FREE_BYTES = 8 * 1024 * 1024 * 1024;
 
 class MarketplaceInstallError extends Error {
   constructor(message, code = "MARKETPLACE_INSTALL_FAILED", details = {}) {
@@ -2187,6 +2189,38 @@ async function cleanupIncompleteInstance(instanceId, agentConfig) {
   }
 }
 
+async function assertProviderInstallDiskSpace(options = {}, agentConfig = null) {
+  const requiredFreeBytes = Math.max(1, Number(options.minFreeBytes || options.requiredFreeBytes) || PROVIDER_INSTALL_MIN_FREE_BYTES);
+  let diskSpaceCheck;
+  try {
+    diskSpaceCheck = normalizeDiskEvidence(await agentClient.getSystemStats(agentConfig));
+  } catch (error) {
+    throw new MarketplaceInstallError("Disk-space preflight could not read storage metrics from the selected node.", "DISK_SPACE_CHECK_UNAVAILABLE", {
+      requiredFreeBytes,
+      cause: serializeError(error),
+      retryable: true,
+      suggestion: "Verify the Agent connection and update the Agent before retrying.",
+    });
+  }
+  if (!Number.isFinite(diskSpaceCheck.freeBytes)) {
+    throw new MarketplaceInstallError("Disk-space preflight could not determine available storage on the selected node.", "DISK_SPACE_CHECK_UNAVAILABLE", {
+      diskSpaceCheck,
+      requiredFreeBytes,
+      retryable: true,
+      suggestion: "Update or repair the selected Agent so it can report disk capacity.",
+    });
+  }
+  if (diskSpaceCheck.freeBytes < requiredFreeBytes) {
+    throw new MarketplaceInstallError("The selected node does not have enough free disk space for this Marketplace install.", "INSUFFICIENT_DISK_SPACE", {
+      diskSpaceCheck: { ...diskSpaceCheck, requiredFreeBytes },
+      requiredFreeBytes,
+      retryable: false,
+      suggestion: "Free storage on the selected node or choose another node.",
+    });
+  }
+  return { ...diskSpaceCheck, requiredFreeBytes };
+}
+
 async function installPack(payload = {}) {
   const provider = String(payload.provider || payload.template?.provider || "anxhub").toLowerCase();
   const options = {
@@ -2234,6 +2268,14 @@ async function installPack(payload = {}) {
     agentUrl: installTarget.agentUrl,
     targetLabel: installTarget.targetLabel,
     credentialSource: installTarget.credentialSource,
+  });
+  const diskSpaceCheck = await assertProviderInstallDiskSpace(options, agentConfig);
+  logMarketplaceInstallStep("Marketplace disk-space preflight passed.", {
+    step: "DISK_SPACE_PREFLIGHT",
+    nodeId: installNodeId,
+    freeBytes: diskSpaceCheck.freeBytes,
+    requiredFreeBytes: diskSpaceCheck.requiredFreeBytes,
+    mount: diskSpaceCheck.mount,
   });
   await ensureProviderPackDependencies({ ...options, nodeId: installNodeId }, agentConfig);
   const serverInfo = await resolveServerJar(options);
@@ -2512,6 +2554,7 @@ module.exports = {
     buildInstallContext,
     buildInstallMetadata,
     buildInstancePayload,
+    assertProviderInstallDiskSpace,
     cleanupIncompleteInstance,
     createPendingManualInstall,
     createManualDownloadRequiredError,

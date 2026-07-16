@@ -96,6 +96,13 @@ async function main() {
         body: options.body ? JSON.parse(options.body) : null,
       };
       records.push(record);
+      if (endpoint.endsWith("/api/v1/stats")) {
+        const expectedToken = endpoint.startsWith("http://10.0.0.2") ? "node-token-b" : "node-token-anxlab";
+        assert.strictEqual(record.auth, `Bearer ${expectedToken}`, "Disk preflight must use the selected node credential.");
+        return new Response(JSON.stringify({
+          disk: { availableBytes: 20 * 1024 ** 3, totalBytes: 100 * 1024 ** 3, mount: "/srv" },
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
       if (endpoint === "http://192.168.1.134:47131/api/v1/dependencies/check") {
         if (record.auth === "Bearer rejected-token") {
           return new Response(JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Agent token rejected." } }), { status: 401, headers: { "Content-Type": "application/json" } });

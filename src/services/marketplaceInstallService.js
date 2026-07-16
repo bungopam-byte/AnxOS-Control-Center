@@ -8,7 +8,12 @@ const {
   applyMinecraftServerProperties,
   resolveMinecraftPort,
 } = require("./minecraftServerConfig");
-const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
+const { getNode, getSelectedNodeId } = require("./nodeService");
+const {
+  buildMarketplaceInstallContext,
+  resolveMarketplaceInstallTarget: resolveSharedMarketplaceInstallTarget,
+  validateMarketplaceInstallContext,
+} = require("./marketplaceInstallContext");
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 
@@ -30,90 +35,28 @@ class MarketplaceInstallError extends Error {
 }
 
 function buildInstallContext(payload = {}, options = {}, instancePayload = {}) {
-  return {
-    nodeId: payload.nodeId || getSelectedNodeId(),
-    instanceId: instancePayload.id || options.id || null,
-    installPath: instancePayload.workingDirectory || "data",
-    source: options.provider || payload.provider || "marketplace-provider",
-    version: options.version || options.minecraftVersion || "latest",
-    loader: options.loader || options.serverType || null,
-    dependencyState: null,
-    options: { ...options },
-  };
+  return buildMarketplaceInstallContext({
+    payload,
+    options,
+    instancePayload,
+    sourceFallback: "marketplace-provider",
+    preferOptionProvider: true,
+    installPathFallback: "data",
+  });
 }
 
 function resolveMarketplaceInstallTarget({ nodeId = null, operation = "marketplace-install" } = {}) {
-  const requestedNodeId = String(nodeId || "").trim();
-  if (!requestedNodeId) {
-    throw new MarketplaceInstallError("No installation target is selected.", "INSTALL_TARGET_REQUIRED", {
-      operation,
-      targetType: "missing",
-    });
-  }
-  const executionTarget = getExecutionTarget(requestedNodeId);
-  const node = getNode(executionTarget.nodeId);
-  const nodeLabel = node?.displayName || node?.name || executionTarget.nodeId;
-  if (executionTarget.type === "agent" && node?.enabled === false) {
-    throw new MarketplaceInstallError("Selected node is disabled.", "NODE_DISABLED", {
-      operation,
-      nodeId: executionTarget.nodeId,
-      nodeLabel,
-      targetType: "registered-node",
-    });
-  }
-  if (executionTarget.type !== "agent") {
-    return {
-      type: "application-host",
-      nodeId: executionTarget.nodeId || "application-host",
-      nodeLabel: nodeLabel || "Application Host",
-      agentUrl: null,
-      targetLabel: "application-host",
-      credentialSource: "application-host",
-      agentConfig: { backendMode: "local", nodeId: executionTarget.nodeId || "application-host" },
-      platform: node?.platform || node?.applicationHost?.platform || null,
-      capabilities: executionTarget.capabilities || {},
-    };
-  }
-  const targetLabel = `node:${executionTarget.nodeId}`;
-  const agentUrl = node?.agentUrl || node?.baseUrl || executionTarget.config?.agentUrl || null;
-  return {
-    type: "registered-node",
-    nodeId: executionTarget.nodeId,
-    nodeLabel,
-    agentUrl,
-    targetLabel,
-    credentialSource: "protected-node-credential",
-    agentConfig: {
-      ...executionTarget.config,
-      nodeId: executionTarget.nodeId,
-      agentNodeId: executionTarget.nodeId,
-      nodeName: nodeLabel,
-      agentNodeLabel: nodeLabel,
-      nodeUrl: agentUrl,
-      targetLabel,
-      credentialSource: "protected-node-credential",
-    },
-    platform: node?.platform || node?.agentIdentity?.platform || executionTarget.config?.platform || null,
-    capabilities: executionTarget.capabilities || {},
-  };
+  return resolveSharedMarketplaceInstallTarget({
+    nodeId,
+    operation,
+    createError: (message, code, details) => new MarketplaceInstallError(message, code, details),
+  });
 }
 
 function validateInstallContext(installContext = {}) {
-  const missingFields = ["nodeId", "instanceId", "installPath"].filter((field) => !String(installContext[field] || "").trim());
-  if (missingFields.length > 0) {
-    throw new MarketplaceInstallError("Required install configuration is missing.", "INVALID_INSTALL_CONTEXT", {
-      missingFields,
-      installContext: {
-        nodeId: installContext.nodeId || null,
-        instanceId: installContext.instanceId || null,
-        installPath: installContext.installPath || null,
-        source: installContext.source || null,
-        version: installContext.version || null,
-        loader: installContext.loader || null,
-      },
-    });
-  }
-  return installContext;
+  return validateMarketplaceInstallContext(installContext, {
+    createError: (message, code, details) => new MarketplaceInstallError(message, code, details),
+  });
 }
 
 function titleCaseProvider(provider) {

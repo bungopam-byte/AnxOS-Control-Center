@@ -15,6 +15,10 @@ const {
   validateMarketplaceTemplate,
 } = require("./marketplaceInstallerRegistry");
 const { getExecutionTarget, getNode, getSelectedNodeId } = require("./nodeService");
+const {
+  buildMarketplaceInstallContext,
+  validateMarketplaceInstallContext,
+} = require("./marketplaceInstallContext");
 const { resolveTemplateDependencyIds } = require("../shared/marketplaceDependencies");
 const { redactString, sanitize } = require("../shared/redaction");
 
@@ -75,34 +79,21 @@ function createMarketplaceValidationError({ field, received, expected, suggestio
 }
 
 function buildInstallContext(payload = {}, template = {}, options = {}, instancePayload = {}) {
-  return {
-    nodeId: payload.nodeId || getSelectedNodeId(),
-    instanceId: instancePayload.id || options.id || null,
-    installPath: instancePayload.workingDirectory || template.installPath || template.installer?.installDir || "data",
-    source: template.id || payload.templateId || payload.provider || "marketplace",
-    version: options.version || options.minecraftVersion || template.version || template.minecraftVersion || template.gameVersion || "latest",
-    loader: options.serverType || options.loader || template.loader || null,
-    dependencyState: null,
-    options: { ...options },
-  };
+  return buildMarketplaceInstallContext({
+    payload,
+    template,
+    options,
+    instancePayload,
+    sourceFallback: "marketplace",
+    preferOptionProvider: false,
+    installPathFallback: "data",
+  });
 }
 
 function validateInstallContext(installContext = {}) {
-  const missingFields = ["nodeId", "instanceId", "installPath"].filter((field) => !String(installContext[field] || "").trim());
-  if (missingFields.length > 0) {
-    throw createMarketplaceError("Required install configuration is missing.", "INVALID_INSTALL_CONTEXT", {
-      missingFields,
-      installContext: {
-        nodeId: installContext.nodeId || null,
-        instanceId: installContext.instanceId || null,
-        installPath: installContext.installPath || null,
-        source: installContext.source || null,
-        version: installContext.version || null,
-        loader: installContext.loader || null,
-      },
-    });
-  }
-  return installContext;
+  return validateMarketplaceInstallContext(installContext, {
+    createError: (message, code, details) => createMarketplaceError(message, code, details),
+  });
 }
 
 function resolveMarketplaceAgentConfig(nodeId = null) {

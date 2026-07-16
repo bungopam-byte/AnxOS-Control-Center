@@ -663,6 +663,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     failureReason: existingConfig?.failureReason || null,
     setupRequired: existingConfig?.setupRequired || null,
     setupReadiness: existingConfig?.setupReadiness || null,
+    readinessState: existingConfig?.readinessState || "stopped",
+    healthState: existingConfig?.healthState || "unknown",
   };
 
   config.versionInfo = normalizeVersionInfo(payload.versionInfo, config);
@@ -674,6 +676,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     || payload.signal !== undefined
     || payload.setupRequired !== undefined
     || payload.setupReadiness !== undefined
+    || payload.readinessState !== undefined
+    || payload.healthState !== undefined
   ) {
     throw createInstanceError("RUNTIME_FIELDS_READ_ONLY");
   }
@@ -683,8 +687,24 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
 
 function publicConfig(config) {
   const crashLoop = config.state === INSTANCE_STATES.FAILED && config.failureReason === "CRASH_LOOP";
+  const processRunning = [INSTANCE_STATES.STARTING, INSTANCE_STATES.RUNNING, INSTANCE_STATES.STOPPING, INSTANCE_STATES.RESTARTING].includes(config.state);
+  const readinessState = config.state === INSTANCE_STATES.RUNNING ? config.readinessState || "unknown"
+    : config.state === INSTANCE_STATES.STARTING ? "starting"
+      : config.state === INSTANCE_STATES.STOPPING ? "stopping"
+        : config.state === INSTANCE_STATES.FAILED ? "failed" : "stopped";
+  const healthState = crashLoop ? "crash-loop"
+    : config.state === INSTANCE_STATES.FAILED ? "crashed"
+      : config.state === INSTANCE_STATES.RUNNING ? (readinessState === "ready" ? "healthy" : "degraded")
+        : config.state === INSTANCE_STATES.SETUP_REQUIRED ? "degraded" : "unknown";
   return {
     ...config,
+    processState: config.state,
+    readinessState,
+    healthState,
+    processRunning,
+    serverReady: readinessState === "ready",
+    healthy: healthState === "healthy",
+    degraded: healthState === "degraded",
     lifecycleState: crashLoop ? "Crash Loop" : config.state === INSTANCE_STATES.FAILED && config.failureReason ? "Crashed" : config.state,
     crashed: config.state === INSTANCE_STATES.FAILED && Boolean(config.failureReason),
     crashLoop,
@@ -2527,6 +2547,8 @@ async function adoptDiscoveredRuntime(config, runtime, options = {}) {
     exitCode: null,
     signal: null,
     failureReason: null,
+    readinessState: "unknown",
+    healthState: "degraded",
     lastStartedAt: config.lastStartedAt || nowIso(),
     runtimeProcess: {
       pid: runtime.pid,
@@ -2651,6 +2673,8 @@ async function updateInstance(instanceId, payload = {}) {
     || payload.signal !== undefined
     || payload.setupRequired !== undefined
     || payload.setupReadiness !== undefined
+    || payload.readinessState !== undefined
+    || payload.healthState !== undefined
   ) {
     throw createInstanceError("RUNTIME_FIELDS_READ_ONLY");
   }
@@ -3159,6 +3183,8 @@ async function startInstance(instanceId, options = {}) {
     exitCode: null,
     signal: null,
     failureReason: null,
+    readinessState: "starting",
+    healthState: "unknown",
     runtimeProcess: null,
     lastStartedAt: nowIso(),
   });
@@ -3178,6 +3204,8 @@ async function startInstance(instanceId, options = {}) {
     const failedConfig = await updateRuntimeState(config.id, {
       state: INSTANCE_STATES.FAILED,
       failureReason: "SPAWN_FAILED",
+      readinessState: "failed",
+      healthState: "crashed",
       lastStoppedAt: nowIso(),
     });
 
@@ -3248,6 +3276,8 @@ async function startInstance(instanceId, options = {}) {
       updateRuntimeState(config.id, {
         state: INSTANCE_STATES.RUNNING,
         pid: child.pid,
+        readinessState: "ready",
+        healthState: "healthy",
       }).catch(() => {});
       scheduleVersionRefresh(config.id, 1000);
     }
@@ -3332,6 +3362,8 @@ async function startInstance(instanceId, options = {}) {
       exitCode,
       signal,
       failureReason: resolvedFailureReason,
+      readinessState: failed ? "failed" : "stopped",
+      healthState: failed ? "crashed" : "unknown",
       lastStoppedAt: nowIso(),
       });
     }).then(async (updatedConfig) => {
@@ -3407,6 +3439,9 @@ async function startInstance(instanceId, options = {}) {
       updateRuntimeState(config.id, {
         state: INSTANCE_STATES.RUNNING,
         pid: child.pid,
+        readinessState: "timeout",
+        healthState: "degraded",
+        failureReason: "READINESS_TIMEOUT",
       }).catch(() => {});
     }
   }, config.startupTimeoutMs);

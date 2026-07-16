@@ -43,6 +43,14 @@ and the desktop local-instance runtime (before registering IPC handlers) call
 owned by an `installing` record, removes that incomplete instance, reports
 per-instance failures, and is idempotent. It never removes active instances.
 
+Instance status keeps the existing `state`/`lifecycleState` contract and adds
+orthogonal `processState`, `readinessState`, and `healthState` fields. A live
+process starts as `Starting/starting/unknown`; recognized server-ready output
+changes it to `Running/ready/healthy`. A process still alive at the configured
+startup deadline becomes `Running/timeout/degraded`, not falsely healthy.
+Failures remain `Crashed`, bounded immediate restart failures become
+`Crash Loop`, and intentional stops return to `Stopped/stopped/unknown`.
+
 ## Instances
 
 Runtime PID reconciliation detects live configured and detached processes.

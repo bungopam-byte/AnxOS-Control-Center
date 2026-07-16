@@ -98,6 +98,12 @@ rename. Existing files require an explicit replacement decision; existing
 directories are not replaced because that operation cannot currently provide
 atomic rollback.
 
+Instance file paths are confined to the instance `data/` root. Write
+preparation resolves the nearest existing ancestor before creating directories,
+then revalidates the resulting parent; paths through symlinks cannot create
+outside-root side effects. Listings use link metadata without following link
+targets, and editor writes use atomic sibling-file replacement.
+
 ## Secrets and diagnostics
 
 Node tokens and Marketplace provider keys are stored in encrypted, versioned

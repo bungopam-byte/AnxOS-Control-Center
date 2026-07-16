@@ -471,10 +471,18 @@ async function readJson(filePath) {
 }
 
 async function writeJson(filePath, value) {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+  await atomicWriteManagedFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
 
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(tempPath, filePath);
+async function atomicWriteManagedFile(filePath, content, options = {}) {
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+  try {
+    await fs.writeFile(tempPath, content, { ...options, flag: "wx", mode: options.mode || 0o600 });
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await fs.rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
 }
 
 function resolveRelativeManagedPath(instanceId, value, fallback) {
@@ -515,7 +523,7 @@ function resolveInstanceDataPath(instanceId, value = ".") {
 }
 
 async function assertNoInstanceDataEscape(resolved, options = {}) {
-  const realRoot = await fs.realpath(resolved.root).catch(() => resolved.root);
+  const realRoot = await fs.realpath(resolved.root).catch(() => path.resolve(resolved.root));
   const existingTarget = await fs.realpath(resolved.path).catch(() => null);
 
   if (existingTarget && !isInsideRoot(existingTarget, realRoot)) {
@@ -524,8 +532,21 @@ async function assertNoInstanceDataEscape(resolved, options = {}) {
 
   if (options.forWrite) {
     const parent = path.dirname(resolved.path);
+    let existingAncestor = parent;
+    while (!await fs.lstat(existingAncestor).then(() => true, (error) => {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    })) {
+      const next = path.dirname(existingAncestor);
+      if (next === existingAncestor) break;
+      existingAncestor = next;
+    }
+    const realAncestor = await fs.realpath(existingAncestor).catch(() => path.resolve(existingAncestor));
+    if (!isInsideRoot(realAncestor, realRoot)) {
+      throw createInstanceError("PATH_NOT_ALLOWED", 403);
+    }
     await fs.mkdir(parent, { recursive: true });
-    const realParent = await fs.realpath(parent).catch(() => parent);
+    const realParent = await fs.realpath(parent).catch(() => path.resolve(parent));
     if (!isInsideRoot(realParent, realRoot)) {
       throw createInstanceError("PATH_NOT_ALLOWED", 403);
     }
@@ -3744,14 +3765,21 @@ async function listInstanceFiles(instanceId, requestedPath = ".") {
   const entries = await fs.readdir(resolved.path, { withFileTypes: true });
   const normalizedEntries = await Promise.all(entries.map(async (entry) => {
     const entryPath = path.join(resolved.path, entry.name);
-    const entryStats = await fs.stat(entryPath).catch(() => null);
+    const entryStats = await fs.lstat(entryPath).catch(() => null);
+    const entryType = entryStats?.isSymbolicLink()
+      ? "symlink"
+      : entry.isDirectory()
+        ? "directory"
+        : entry.isFile()
+          ? "file"
+          : "other";
 
     return {
       name: entry.name,
       path: path.relative(resolved.root, entryPath) || ".",
-      type: entry.isDirectory() ? "directory" : "file",
-      isDirectory: entry.isDirectory(),
-      size: entryStats?.size ?? null,
+      type: entryType,
+      isDirectory: entryType === "directory",
+      size: entryType === "file" ? entryStats?.size ?? null : null,
       modifiedAt: entryStats?.mtime?.toISOString?.() || null,
     };
   }));
@@ -3834,7 +3862,7 @@ async function writeInstanceFile(instanceId, requestedPath, content, options = {
     ? Buffer.from(String(content || ""), "base64")
     : String(content ?? "");
   await fs.mkdir(path.dirname(resolved.path), { recursive: true });
-  await fs.writeFile(resolved.path, payload, encoding === "base64" ? undefined : "utf8");
+  await atomicWriteManagedFile(resolved.path, payload, encoding === "base64" ? {} : { encoding: "utf8" });
   if (/\.(jar|json|properties)$/i.test(resolved.relativePath) || /metadata\.json|install_profile\.json|version\.json/i.test(resolved.relativePath)) {
     await saveInstanceConfig({
       ...config,

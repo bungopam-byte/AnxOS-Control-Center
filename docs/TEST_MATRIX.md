@@ -7,7 +7,7 @@
 | Node migration | `npm run node:legacy-migration:smoke`, `npm run node:startup-selection:smoke` |
 | Agent authentication | `npm run agent:token:smoke`, `npm run agent-errors:smoke`, `npm run node:agent-pairing:smoke` |
 | Marketplace | `npm run marketplace:smoke`, `npm run marketplace:install-selected-node:smoke`, `npm run curseforge:server-pack-resolution:smoke` |
-| Instances | `npm run instances:runtime:smoke`, `npm run instances:deletion:smoke` |
+| Instances | `npm run instances:runtime:smoke`, `npm run instances:deletion:smoke`, `npm run instances:file-security:smoke` |
 | Filesystem | `npm run agent:files-root:smoke`, `npm run files:smoke` |
 | Files IPC authorization | `npm run files:ipc-authorization:smoke` |
 | Operational read authorization | `npm run operational-reads:ipc-authorization:smoke` |

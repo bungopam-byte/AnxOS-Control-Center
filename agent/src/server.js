@@ -6,7 +6,7 @@ const { handleActionInvoke, handleActionsList } = require("./routes/actions");
 const { handleAmpInstances, handleAmpSnapshot, handleAmpStatus } = require("./routes/amp");
 const { auditAction } = require("./audit/auditLogger");
 const { handleBackups, handleBackupsList } = require("./routes/backups");
-const { startBackupScheduler, stopBackupScheduler } = require("./services/backupService");
+const { recoverBackupArtifacts, startBackupScheduler, stopBackupScheduler } = require("./services/backupService");
 const instanceService = require("./services/instances/instanceService");
 const { handleConsoleCommands, handleConsoleLogs } = require("./routes/console");
 const { handleCurseForgeProxy } = require("./services/curseforgeProxyService");
@@ -452,6 +452,10 @@ async function startServer() {
   const recovery = await instanceService.recoverIncompleteInstallations();
   if (recovery.repaired.length || recovery.failures.length) {
     logger.info("startup-recovery", "Incomplete Marketplace installations were repaired.", recovery, { file: "agent" });
+  }
+  const backupRecovery = await recoverBackupArtifacts();
+  if (backupRecovery.removed.length) {
+    logger.info("startup-recovery", "Interrupted backup artifacts were removed.", backupRecovery, { file: "agent" });
   }
   server.listen(config.port, config.host, () => {
     startBackupScheduler();

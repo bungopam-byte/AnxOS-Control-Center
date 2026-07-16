@@ -36,6 +36,10 @@ function countAuditActions(action) {
 }
 
 async function main() {
+  const agentServerSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "server.js"), "utf8");
+  const recoveryIndex = agentServerSource.indexOf("await recoverBackupArtifacts()");
+  const listenIndex = agentServerSource.indexOf("server.listen(");
+  assert(recoveryIndex >= 0 && recoveryIndex < listenIndex, "Agent backup recovery must finish before the HTTP listener accepts work.");
   const firstRunStatus = security.getStatus();
   assert.strictEqual(firstRunStatus.setupRequired, true, "Fresh config should not have Remote Control enabled yet.");
   assert.strictEqual(firstRunStatus.localMode, true, "Fresh config should default to Single-Device Mode.");

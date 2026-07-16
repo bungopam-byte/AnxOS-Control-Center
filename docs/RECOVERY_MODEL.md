@@ -64,8 +64,8 @@ archives above those implemented limits fail with
 Backup archives are written to process-specific temporary files and renamed
 only after the archive is complete and validated. Agent startup removes stale
 temporary files and archives that have no committed metadata before scheduled
-backup work begins. Recovery is idempotent and preserves archives that have a
-matching metadata record.
+backup work begins or the HTTP listener opens. Recovery is idempotent and
+preserves archives that have a matching metadata record.
 
 ## Instances
 

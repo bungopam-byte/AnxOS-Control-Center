@@ -970,9 +970,7 @@ function startBackupScheduler() {
   schedulerTimer = setInterval(() => {
     runDueSchedules().catch(() => {});
   }, 60 * 1000).unref?.();
-  recoverBackupArtifacts()
-    .then(() => runDueSchedules())
-    .catch(() => {});
+  runDueSchedules().catch(() => {});
 }
 
 async function recoverBackupArtifacts() {
@@ -1025,6 +1023,7 @@ module.exports = {
   listBackups,
   listSchedules,
   restoreBackup,
+  recoverBackupArtifacts,
   saveSchedule,
   startBackupScheduler,
   stopBackupScheduler,

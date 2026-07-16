@@ -48,6 +48,10 @@ Docker inventory, inspection, logs, stats, Compose reads, and cleanup previews
 require `docker:read`. Admin and User roles retain read access; configured
 signed-out sessions cannot use the main process as a Docker data proxy.
 
+Backup inventory and schedule reads require `backups:read`. Admin and User
+roles retain read access; archive import/export and all mutations keep their
+stronger write/restore permissions.
+
 ## Agent
 
 The Agent authenticates requests before routing. Pairing endpoints are

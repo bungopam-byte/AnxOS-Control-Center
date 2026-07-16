@@ -77,7 +77,7 @@ async function importBackupFromFile(payload = {}) {
 }
 
 function registerBackupsIpc() {
-  ipcMain.handle("backups:list", async (_, payload = {}) => wrapExpectedAgentRead("backups:list", () => listBackups(requireNodeContext(payload, "backup listing"))));
+  ipcMain.handle("backups:list", async (_, payload = {}) => wrapExpectedAgentRead("backups:list", () => { requirePermission("backups:read", payload.nodeId); return listBackups(requireNodeContext(payload, "backup listing")); }));
   ipcMain.handle("backups:create", async (_, payload = {}) => invokeBackupOperation(() => {
     requireNodeContext(payload, "backup creation");
     requirePermission("backups:write", payload.instanceId);
@@ -98,7 +98,7 @@ function registerBackupsIpc() {
   }));
   ipcMain.handle("backups:download", async (_, payload = {}) => invokeBackupOperation(() => saveBackupDownload(payload.backupId, requireNodeContext(payload, "backup download"))));
   ipcMain.handle("backups:import", async (_, payload = {}) => invokeBackupOperation(() => importBackupFromFile(requireNodeContext(payload, "backup import"))));
-  ipcMain.handle("backups:listSchedules", async (_, payload = {}) => wrapExpectedAgentRead("backups:listSchedules", () => listBackupSchedules(requireNodeContext(payload, "backup schedules"))));
+  ipcMain.handle("backups:listSchedules", async (_, payload = {}) => wrapExpectedAgentRead("backups:listSchedules", () => { requirePermission("backups:read", payload.nodeId); return listBackupSchedules(requireNodeContext(payload, "backup schedules")); }));
   ipcMain.handle("backups:saveSchedule", async (_, payload = {}) => invokeBackupOperation(() => {
     requireNodeContext(payload, "backup schedule save");
     requirePermission("backups:write", payload.instanceId);

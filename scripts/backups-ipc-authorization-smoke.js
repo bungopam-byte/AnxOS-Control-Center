@@ -9,8 +9,8 @@ const serviceRouter = {
   deleteBackupSchedule: async () => {},
   downloadBackup: async () => { serviceInvoked = true; return { buffer: Buffer.from("backup") }; },
   importBackup: async () => { serviceInvoked = true; return {}; },
-  listBackupSchedules: async () => [],
-  listBackups: async () => [],
+  listBackupSchedules: async () => { serviceInvoked = true; return []; },
+  listBackups: async () => { serviceInvoked = true; return []; },
   restoreBackup: async () => {},
   saveBackupSchedule: async () => {},
 };
@@ -44,7 +44,7 @@ try {
 }
 
 async function main() {
-  for (const channel of ["backups:download", "backups:import"]) {
+  for (const channel of ["backups:list", "backups:listSchedules", "backups:download", "backups:import"]) {
     serviceInvoked = false;
     const handler = handlers.get(channel);
     assert(handler, `${channel} should be registered.`);
@@ -53,7 +53,7 @@ async function main() {
       /Permission denied/,
       `${channel} should reject an unauthorized renderer request.`,
     );
-    assert.strictEqual(serviceInvoked, false, `${channel} must authorize before reading an archive or opening a file picker.`);
+    assert.strictEqual(serviceInvoked, false, `${channel} must authorize before reading backup metadata, archives, or opening a file picker.`);
   }
   console.log("Backup IPC authorization smoke checks passed.");
 }

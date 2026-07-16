@@ -11,6 +11,7 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 const DEFAULT_SHELL_COLS = 120;
 const DEFAULT_SHELL_ROWS = 32;
 const VALID_AUTH_TYPES = new Set(["password", "privateKey"]);
+const SSH_PROFILES_SCHEMA_VERSION = 1;
 
 class SshServiceError extends Error {
   constructor(message, details = {}) {
@@ -23,6 +24,7 @@ class SshServiceError extends Error {
 
 function getDefaultProfilesConfig() {
   return {
+    schemaVersion: SSH_PROFILES_SCHEMA_VERSION,
     servers: [
       {
         id: "debian-server",
@@ -56,6 +58,7 @@ function slugify(value, fallback = "item") {
 }
 
 function getProfilesPath() {
+  if (process.env.ANXHUB_CONFIG_DIR) return path.join(process.env.ANXHUB_CONFIG_DIR, "ssh-profiles.json");
   if (app?.isPackaged) {
     return path.join(app.getPath("userData"), "config", "ssh-profiles.json");
   }
@@ -159,6 +162,7 @@ function normalizeProfilesConfig(config = {}) {
     .filter(Boolean);
 
   return {
+    schemaVersion: SSH_PROFILES_SCHEMA_VERSION,
     servers,
     profiles,
     defaultServerId: trimValue(config.defaultServerId) || profiles[0]?.serverId || servers[0]?.id || null,
@@ -167,34 +171,53 @@ function normalizeProfilesConfig(config = {}) {
 }
 
 function readProfilesConfig() {
+  ensureProfilesFile();
+  const profilesPath = getProfilesPath();
+  let parsed;
   try {
-    ensureProfilesFile();
-    const rawConfig = fs.readFileSync(getProfilesPath(), "utf8");
-    const config = normalizeProfilesConfig(JSON.parse(rawConfig));
+    parsed = JSON.parse(fs.readFileSync(profilesPath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("SSH profiles root must be an object.");
+  } catch (error) {
+    const backupPath = `${profilesPath}.corrupt-${Date.now()}.backup`;
+    try { fs.copyFileSync(profilesPath, backupPath, fs.constants.COPYFILE_EXCL); } catch {}
+    throw new SshServiceError("SSH profiles configuration is unreadable and was preserved for recovery.", { code: "SSH_PROFILES_CORRUPT", status: 500, cause: error });
+  }
+  const schemaVersion = parsed.schemaVersion === undefined ? 0 : Number(parsed.schemaVersion);
+  if (!Number.isInteger(schemaVersion) || schemaVersion < 0) throw new SshServiceError("SSH profiles configuration has an invalid schema version.", { code: "SSH_PROFILES_SCHEMA_INVALID", status: 500 });
+  if (schemaVersion > SSH_PROFILES_SCHEMA_VERSION) throw new SshServiceError("SSH profiles configuration was created by a newer application version.", { code: "SSH_PROFILES_SCHEMA_UNSUPPORTED", status: 500 });
+  try {
+    const config = normalizeProfilesConfig(parsed);
     const originalConfig = JSON.stringify(config);
     const agentNodes = getAllNodesSync().filter((node) => node.kind === "agent");
     const matchNodeId = (host) => agentNodes.find((node) => { try { return new URL(node.agentUrl).hostname === host; } catch { return false; } })?.id || null;
     config.servers = config.servers.map((server) => ({ ...server, nodeId: server.nodeId || matchNodeId(server.host) }));
     config.profiles = config.profiles.map((profile) => ({ ...profile, nodeId: profile.nodeId || config.servers.find((server) => server.id === profile.serverId)?.nodeId || matchNodeId(profile.host) }));
 
-    if (JSON.stringify(config) !== originalConfig) {
+    if (schemaVersion < SSH_PROFILES_SCHEMA_VERSION) {
+      const backupPath = `${profilesPath}.schema-v${schemaVersion}.backup`;
+      if (!fs.existsSync(backupPath)) fs.copyFileSync(profilesPath, backupPath, fs.constants.COPYFILE_EXCL);
+    }
+    if (schemaVersion < SSH_PROFILES_SCHEMA_VERSION || JSON.stringify(config) !== originalConfig) {
       writeProfilesConfig(config);
     }
-
-    if (config.profiles.length === 0) {
-      writeProfilesConfig(getDefaultProfilesConfig());
-      return normalizeProfilesConfig(getDefaultProfilesConfig());
-    }
-
     return config;
-  } catch {
-    return normalizeProfilesConfig(getDefaultProfilesConfig());
+  } catch (error) {
+    if (error instanceof SshServiceError) throw error;
+    throw new SshServiceError("SSH profiles configuration could not be normalized.", { code: "SSH_PROFILES_INVALID", status: 500, cause: error });
   }
 }
 
 function writeProfilesConfig(config) {
   ensureProfilesDirectory();
-  fs.writeFileSync(getProfilesPath(), `${JSON.stringify(normalizeProfilesConfig(config), null, 2)}\n`, "utf8");
+  const profilesPath = getProfilesPath();
+  const temporaryPath = `${profilesPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(normalizeProfilesConfig(config), null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    fs.renameSync(temporaryPath, profilesPath);
+  } catch (error) {
+    try { fs.rmSync(temporaryPath, { force: true }); } catch {}
+    throw new SshServiceError("SSH profiles configuration could not be saved atomically.", { code: "SSH_PROFILES_WRITE_FAILED", status: 500, cause: error });
+  }
 }
 
 function logSafeSshDebug(message, details = {}) {
@@ -707,6 +730,7 @@ class SshService extends EventEmitter {
 }
 
 module.exports = {
+  SSH_PROFILES_SCHEMA_VERSION,
   SSH_PROFILES_PATH: DEV_SSH_PROFILES_PATH,
   SshService,
   SshServiceError,

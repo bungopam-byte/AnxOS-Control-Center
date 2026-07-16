@@ -78,6 +78,7 @@
     "agent:terminal-free:smoke": "node scripts/agent-terminal-free-smoke.js",
     "ssh:command-bar:smoke": "node scripts/ssh-command-bar-submission-smoke.js",
     "ssh:ipc-authorization:smoke": "node scripts/ssh-ipc-authorization-smoke.js",
+    "ssh:profile-store:smoke": "node scripts/ssh-profile-store-smoke.js",
     "ssh:interactive-input:smoke": "node scripts/ssh-interactive-input-smoke.js",
     "ssh:input-diagnostics:smoke": "node scripts/ssh-input-diagnostics-smoke.js",
     "ssh:renderer-input-lifecycle:smoke": "node scripts/ssh-renderer-input-lifecycle-smoke.js",

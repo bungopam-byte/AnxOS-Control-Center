@@ -101,6 +101,11 @@ preserving the encrypted artifact. Legacy envelopes migrate with an encrypted
 backup, and corrupt or future records cannot be replaced without an explicit
 security reset.
 
+`ssh-profiles.json` uses schema version 1 and atomic writes. Legacy connection
+profiles are backed up before migration. Corrupt, invalid-schema, and future
+state fails explicitly and cannot be replaced by built-in example profiles or
+a subsequent profile save.
+
 Long-operation state uses schema version 1 and atomic writes. Active records
 recover as `interrupted`; runtime handlers are not persisted. Corrupt input is
 preserved in a timestamped diagnostic copy and returns

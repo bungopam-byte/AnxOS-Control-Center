@@ -25,6 +25,11 @@ Pairing completion is bounded to 15 seconds and aborts the underlying request.
 Because a lost rotation response is ambiguous, timeout and transport failures
 are not blindly retryable; recovery requires a fresh one-time pairing code.
 
+Marketplace provider downloads are streamed into bounded memory with early
+`Content-Length` rejection and mid-stream cancellation. ZIP extraction rejects
+absolute/traversal paths, excessive entry counts or expanded sizes, and unsafe
+compression ratios before reading entry bodies.
+
 ## Instances
 
 Runtime PID reconciliation detects live configured and detached processes.

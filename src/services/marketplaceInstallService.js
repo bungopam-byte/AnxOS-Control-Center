@@ -25,6 +25,12 @@ const FORGE_MAVEN_METADATA_URL = "https://maven.minecraftforge.net/net/minecraft
 const NEOFORGE_MAVEN_METADATA_URL = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml";
 const marketplaceInstallEvents = new EventEmitter();
 const pendingManualInstalls = new Map();
+const MAX_PROVIDER_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRY_COUNT = 100000;
+const MAX_ARCHIVE_ENTRY_BYTES = 8 * 1024 * 1024 * 1024;
+const MAX_ARCHIVE_EXPANDED_BYTES = 32 * 1024 * 1024 * 1024;
+const MAX_ARCHIVE_COMPRESSION_RATIO = 1000;
+const MAX_ARCHIVE_PATH_LENGTH = 1024;
 
 class MarketplaceInstallError extends Error {
   constructor(message, code = "MARKETPLACE_INSTALL_FAILED", details = {}) {
@@ -430,7 +436,7 @@ async function fetchBuffer(url, label) {
           url,
         });
       }
-      return Buffer.from(await response.arrayBuffer());
+      return readBoundedResponseBuffer(response, { label, url });
     }, { label, url });
   } catch (error) {
     const effectiveError = error instanceof MarketplaceInstallError
@@ -442,6 +448,53 @@ async function fetchBuffer(url, label) {
       });
     logMarketplaceInstallFailure(effectiveError, { label, url });
     throw effectiveError;
+  }
+}
+
+async function readBoundedResponseBuffer(response, options = {}) {
+  const maxBytes = Math.max(1, Number(options.maxBytes) || MAX_PROVIDER_DOWNLOAD_BYTES);
+  const declaredBytes = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+    response.body?.cancel?.().catch?.(() => {});
+    throw new MarketplaceInstallError(`${options.label || "Provider download"} exceeds the maximum supported download size.`, "DOWNLOAD_TOO_LARGE", {
+      url: options.url || null,
+      declaredBytes,
+      maxBytes,
+    });
+  }
+  if (!response.body?.getReader) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > maxBytes) {
+      throw new MarketplaceInstallError(`${options.label || "Provider download"} exceeds the maximum supported download size.`, "DOWNLOAD_TOO_LARGE", {
+        url: options.url || null,
+        receivedBytes: buffer.length,
+        maxBytes,
+      });
+    }
+    return buffer;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let receivedBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      receivedBytes += chunk.length;
+      if (receivedBytes > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new MarketplaceInstallError(`${options.label || "Provider download"} exceeds the maximum supported download size.`, "DOWNLOAD_TOO_LARGE", {
+          url: options.url || null,
+          receivedBytes,
+          maxBytes,
+        });
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, receivedBytes);
+  } finally {
+    reader.releaseLock?.();
   }
 }
 
@@ -1138,12 +1191,41 @@ function inferNeoForgeMinecraftVersion(version) {
 }
 
 function safeArchivePath(entryPath) {
-  const normalized = String(entryPath || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  const raw = String(entryPath || "");
+  const normalized = raw.replace(/\\/g, "/");
+  if (normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized) || normalized.length > MAX_ARCHIVE_PATH_LENGTH) {
+    throw new MarketplaceInstallError(`Archive contains an unsafe path: ${entryPath}`, "ARCHIVE_PATH_UNSAFE", { entryPath });
+  }
   const clean = path.posix.normalize(normalized);
   if (!clean || clean === "." || clean.startsWith("../") || clean === ".." || path.posix.isAbsolute(clean)) {
     throw new MarketplaceInstallError(`Archive contains an unsafe path: ${entryPath}`, "ARCHIVE_PATH_UNSAFE", { entryPath });
   }
   return clean;
+}
+
+function validateZipDirectory(directory = {}) {
+  const files = Array.isArray(directory.files) ? directory.files : [];
+  if (files.length > MAX_ARCHIVE_ENTRY_COUNT) {
+    throw new MarketplaceInstallError("Archive contains too many entries.", "ARCHIVE_LIMIT_EXCEEDED", { entryCount: files.length, maxEntryCount: MAX_ARCHIVE_ENTRY_COUNT });
+  }
+  let expandedBytes = 0;
+  for (const entry of files) {
+    safeArchivePath(entry.path);
+    if (entry.type === "Directory") continue;
+    const uncompressedBytes = Math.max(0, Number(entry.uncompressedSize) || 0);
+    const compressedBytes = Math.max(0, Number(entry.compressedSize) || 0);
+    if (uncompressedBytes > MAX_ARCHIVE_ENTRY_BYTES) {
+      throw new MarketplaceInstallError("Archive entry exceeds the supported expanded size.", "ARCHIVE_LIMIT_EXCEEDED", { entryPath: entry.path, uncompressedBytes, maxEntryBytes: MAX_ARCHIVE_ENTRY_BYTES });
+    }
+    expandedBytes += uncompressedBytes;
+    if (expandedBytes > MAX_ARCHIVE_EXPANDED_BYTES) {
+      throw new MarketplaceInstallError("Archive exceeds the supported expanded size.", "ARCHIVE_LIMIT_EXCEEDED", { expandedBytes, maxExpandedBytes: MAX_ARCHIVE_EXPANDED_BYTES });
+    }
+    if (uncompressedBytes >= 16 * 1024 * 1024 && compressedBytes > 0 && uncompressedBytes / compressedBytes > MAX_ARCHIVE_COMPRESSION_RATIO) {
+      throw new MarketplaceInstallError("Archive has an unsafe compression ratio.", "ARCHIVE_COMPRESSION_UNSAFE", { entryPath: entry.path, compressedBytes, uncompressedBytes, maxRatio: MAX_ARCHIVE_COMPRESSION_RATIO });
+    }
+  }
+  return { entryCount: files.length, expandedBytes };
 }
 
 function stripArchiveRoot(entryPath) {
@@ -1156,6 +1238,7 @@ function stripArchiveRoot(entryPath) {
 async function extractZipBuffer(buffer, onFile) {
   logMarketplaceInstallStep("Opening zip archive.", { bytes: Buffer.byteLength(buffer || Buffer.alloc(0)) });
   const directory = await unzipper.Open.buffer(Buffer.from(buffer));
+  validateZipDirectory(directory);
   for (const entry of directory.files) {
     if (entry.type === "Directory") {
       continue;
@@ -2419,9 +2502,11 @@ module.exports = {
     resolveCurseForgeServerPackSelection,
     resolvePaperServerJar,
     resolveMarketplaceInstallTarget,
+    readBoundedResponseBuffer,
     serializeError,
     safeArchivePath,
     stripArchiveRoot,
+    validateZipDirectory,
     withRetry,
     validateInstallContext,
   },

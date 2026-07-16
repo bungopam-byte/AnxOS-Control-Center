@@ -20,6 +20,24 @@ The candidate fails this gate when any required test is `FAIL`, `BLOCKED`, or
 `NOT RUN`; any Critical or High defect remains open; evidence contains a secret;
 or the tested artifact cannot be tied to the recorded commit and checksum.
 
+## Invalidated Candidate Record
+
+The Version 1.7 Build 150 artifacts built from `9eb2b66` are invalidated for RC
+testing. Real-machine validation found a High-severity recovery inconsistency:
+Agent Control reported an authenticated reachable Debian Agent while Nodes and
+the global shell retained persisted Offline state. Root cause was an independent
+Agent Control probe combined with node persistence that discarded live
+connection state. Commit `61002a1` fixes the shared service boundary and adds an
+unauthorized-to-repaired delayed-response regression. New candidate artifacts
+must be built from `61002a1` or a documented descendant; old artifact results
+must not be carried forward.
+
+For the replacement candidate, rerun PA-RC-05 and PA-RC-06 and capture Agent
+Control, Nodes, Dashboard, and global-shell status before and after credential
+repair without restarting the app. Continue navigation through other
+target-dependent pages and confirm the selected Debian Agent remains connected,
+last seen advances, stale errors clear, and Connected Agent identifies it.
+
 ## Candidate And Environment Record
 
 Do not record tokens, passwords, pairing secrets, authorization headers, private

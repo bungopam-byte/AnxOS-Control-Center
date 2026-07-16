@@ -457,6 +457,9 @@ function getAgentTransportErrorMessage(errorCode, requestUrl) {
   if (["ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "AGENT_TIMEOUT"].includes(errorCode)) {
     return `Agent request timed out at ${requestUrl || "the configured URL"}. Check the Agent host, firewall, and network route.`;
   }
+  if (["DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID", "ERR_SSL_WRONG_VERSION_NUMBER"].includes(errorCode)) {
+    return `Agent TLS verification failed at ${requestUrl || "the configured URL"}. Verify the Agent URL, certificate hostname, trust chain, and certificate validity before reconnecting.`;
+  }
   return "Agent unavailable. Check Agent settings.";
 }
 
@@ -2866,6 +2869,10 @@ async function installDependencies(payload = {}, configOverride = null) {
 }
 
 module.exports = {
+  _test: {
+    getAgentTransportErrorMessage,
+    getTransportErrorCode,
+  },
   AgentClientError,
   checkDependencies,
   clearInstanceLogs,

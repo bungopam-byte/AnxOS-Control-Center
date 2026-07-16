@@ -63,6 +63,7 @@ async function main() {
   });
 
   const serviceRouter = require("../src/services/serviceRouter");
+  const agentClient = require("../src/services/agentClient");
   const appSource = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 
   await assert.rejects(
@@ -83,6 +84,9 @@ async function main() {
   const healthyResult = await serviceRouter.listInstances({ nodeId: "healthy-node" });
   assert.deepStrictEqual(healthyResult, [], "One node authentication failure must not affect another node.");
   assert(appSource.includes("Authentication failed.") && appSource.includes("Re-pair the Agent or repair the connection."), "Renderer must expose authentication-failed recovery copy.");
+  const tlsMessage = agentClient._test.getAgentTransportErrorMessage("CERT_HAS_EXPIRED", "https://agent.example.test:47131");
+  assert(/TLS verification failed/.test(tlsMessage) && /certificate validity/.test(tlsMessage), "TLS failures must provide certificate-specific guided recovery.");
+  assert(!/token|authorization header/i.test(tlsMessage), "TLS recovery guidance must not request or expose credentials.");
 
   await Promise.all([auth, incompatible, healthy].map((entry) => new Promise((resolve) => entry.server.close(resolve))));
   console.log("Agent error category smoke checks passed.");

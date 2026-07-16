@@ -71,6 +71,7 @@ function main() {
     "owner-account:smoke",
     "account:smoke",
     "agent:token:smoke",
+    "instances:ipc-authorization:smoke",
     "node:switch:smoke",
     "security:page:smoke",
     "settings:preferences:smoke",

@@ -46,6 +46,7 @@
     "agent:instances:smoke": "node scripts/agent-instance-record-smoke.js",
     "instances:runtime:smoke": "node scripts/instance-runtime-smoke.js",
     "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",
+    "instances:ipc-authorization:smoke": "node scripts/instances-ipc-authorization-smoke.js",
     "dashboard:node-routing:smoke": "node scripts/dashboard-node-routing-smoke.js",
     "dashboard:metrics:smoke": "node scripts/dashboard-metrics-presentation-smoke.js",
     "node:agent-client:smoke": "node scripts/node-agent-client-smoke.js",

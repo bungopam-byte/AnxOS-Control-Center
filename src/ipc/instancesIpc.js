@@ -56,8 +56,16 @@ async function invokeInstanceOperation(operation) {
 
 function registerInstancesIpc() {
   ipcMain.handle("instances:list", async (_, payload = {}) => wrapExpectedAgentRead("instances:list", () => listInstances(payload)));
-  ipcMain.handle("instances:create", async (_, payload = {}) => invokeInstanceOperation(() => createInstance(payload)));
-  ipcMain.handle("instances:update", async (_, payload = {}) => invokeInstanceOperation(() => updateInstance(payload.instanceId, payload.config || {}, payload)));
+  ipcMain.handle("instances:create", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("instance:write", payload.id || payload.name || "new-instance");
+    audit({ action: "instance.create", target: payload.id || payload.name || "new-instance" });
+    return createInstance(payload);
+  }));
+  ipcMain.handle("instances:update", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("instance:write", payload.instanceId);
+    audit({ action: "instance.update", target: payload.instanceId });
+    return updateInstance(payload.instanceId, payload.config || {}, payload);
+  }));
   ipcMain.handle("instances:rename", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("instance:write", payload.instanceId);
     audit({ action: "instance.rename", target: payload.instanceId });
@@ -75,8 +83,13 @@ function registerInstancesIpc() {
   ipcMain.handle("instances:getStatus", async (_, payload = {}) => wrapExpectedAgentRead("instances:getStatus", () => getInstanceStatus(payload.instanceId, payload)));
   ipcMain.handle("instances:getMetrics", async (_, payload = {}) => wrapExpectedAgentRead("instances:getMetrics", () => getInstanceMetrics(payload.instanceId, payload)));
   ipcMain.handle("instances:getLogs", async (_, payload = {}) => wrapExpectedAgentRead("instances:getLogs", () => getInstanceLogs(payload.instanceId, payload)));
-  ipcMain.handle("instances:clearLogs", async (_, payload = {}) => invokeInstanceOperation(() => clearInstanceLogs(payload.instanceId, payload)));
+  ipcMain.handle("instances:clearLogs", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("files:write", `${payload.instanceId}:logs`);
+    audit({ action: "instance.logs.clear", target: payload.instanceId });
+    return clearInstanceLogs(payload.instanceId, payload);
+  }));
   ipcMain.handle("instances:sendCommand", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("instance:write", payload.instanceId);
     checkRateLimit("console-command", 120, 60 * 1000);
     audit({ action: "instance.command", target: payload.instanceId });
     return sendInstanceCommand(payload.instanceId, payload.command, payload);
@@ -124,8 +137,16 @@ function registerInstancesIpc() {
     audit({ action: "instance.file.delete", target: `${payload.instanceId}:${payload.path}` });
     return deleteInstanceFile(payload.instanceId, payload.path, payload);
   }));
-  ipcMain.handle("instances:createFolder", async (_, payload = {}) => invokeInstanceOperation(() => createInstanceFolder(payload.instanceId, payload.path, payload)));
-  ipcMain.handle("instances:renameFile", async (_, payload = {}) => invokeInstanceOperation(() => renameInstanceFile(payload.instanceId, payload.oldPath, payload.newPath, payload)));
+  ipcMain.handle("instances:createFolder", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("files:write", `${payload.instanceId}:${payload.path}`);
+    audit({ action: "instance.folder.create", target: `${payload.instanceId}:${payload.path}` });
+    return createInstanceFolder(payload.instanceId, payload.path, payload);
+  }));
+  ipcMain.handle("instances:renameFile", async (_, payload = {}) => invokeInstanceOperation(() => {
+    requirePermission("files:write", `${payload.instanceId}:${payload.oldPath}`);
+    audit({ action: "instance.file.rename", target: `${payload.instanceId}:${payload.oldPath}` });
+    return renameInstanceFile(payload.instanceId, payload.oldPath, payload.newPath, payload);
+  }));
   ipcMain.handle("instances:getMinecraftProperties", async (_, payload = {}) => invokeInstanceOperation(() => getMinecraftProperties(payload.instanceId, payload)));
   ipcMain.handle("instances:saveMinecraftProperties", async (_, payload = {}) => invokeInstanceOperation(() => {
     requirePermission("files:write", `${payload.instanceId}:server.properties`);

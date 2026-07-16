@@ -12,7 +12,8 @@ authorization controls.
 IPC handlers validate payloads and call `securityService.requirePermission`
 for privileged mutations. Node-aware handlers require explicit target context.
 Owner workspace, node deletion, token rotation, restore, command execution,
-and tunnel operations are enforced in trusted code.
+instance creation/configuration, instance file mutation, log deletion, and
+tunnel operations are enforced in trusted code.
 
 ## Agent
 
@@ -24,7 +25,8 @@ writes are atomic.
 
 ## Secrets and diagnostics
 
-Tokens are stored separately from public node metadata. Authorization headers,
-passwords, tokens, API keys, session values, large base64 payloads, and URL
-credentials pass through shared redaction before persistence or diagnostics.
-Agent error responses omit stack traces and raw upstream bodies.
+Node tokens and Marketplace provider keys are stored in encrypted, versioned
+payloads separately from public metadata. Authorization headers, passwords,
+tokens, API keys, session values, large base64 payloads, and URL credentials
+pass through shared redaction before persistence or diagnostics. Agent error
+responses omit stack traces and raw upstream bodies.

@@ -179,7 +179,7 @@ async function main() {
   const styleSource = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
   const dockerIpcSource = fs.readFileSync(path.join(__dirname, "..", "src", "ipc", "dockerIpc.js"), "utf8");
   const serviceRouterSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "serviceRouter.js"), "utf8");
-  const dockerServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "services", "dockerService.js"), "utf8");
+  const dockerServiceSource = fs.readFileSync(path.join(__dirname, "..", "src", "shared", "dockerService.js"), "utf8");
   const agentServerSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "server.js"), "utf8");
   const agentDockerRouteSource = fs.readFileSync(path.join(__dirname, "..", "agent", "src", "routes", "docker.js"), "utf8");
   [

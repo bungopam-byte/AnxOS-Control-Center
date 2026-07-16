@@ -8,6 +8,7 @@ const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "u
 
 const dependenciesIpc = read("src/ipc/dependenciesIpc.js");
 const publicAccessIpc = read("src/ipc/publicAccessIpc.js");
+const nodeContextGuard = read("src/ipc/nodeContext.js");
 const serviceRouter = read("src/services/serviceRouter.js");
 const agentClient = read("src/services/agentClient.js");
 const appSource = read("app.js");
@@ -21,7 +22,7 @@ const packageJson = JSON.parse(read("package.json"));
 assert(dependenciesIpc.includes("requireDependencyNodeContext(payload, \"dependency installation\")"), "Dependency install IPC must require explicit active-node context.");
 assert(liveRoutingSmoke.includes("legacy.requests.length, 0"), "Live routing smoke must prove active-node dependency operations do not hit legacy localhost.");
 assert(serviceRouter.includes("shouldPreserveAgentError") && serviceRouter.includes("UNAUTHORIZED"), "Service router must preserve authentication categories.");
-assert(serviceRouter.includes("implicit-node-fallback-blocked"), "Feature services must reject missing node context instead of silently using global Agent config.");
+assert(nodeContextGuard.includes("implicit-node-fallback-blocked"), "Feature services must reject missing node context instead of silently using global Agent config.");
 assert(appSource.includes("Authentication failed.") && appSource.includes("Re-pair Agent") && appSource.includes("Repair Connection"), "Renderer must expose authentication recovery actions.");
 assert(agentClient.includes("[redacted authentication response]"), "Agent client must redact authentication response bodies.");
 assert(agentClient.includes("isCompatibilityFallbackAllowed") && agentClient.includes("return false"), "Agent client must gate compatibility fallback and reject auth fallback.");

@@ -16,6 +16,7 @@ const {
 } = require("./marketplaceInstallContext");
 const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
+const { sanitize } = require("../shared/redaction");
 
 const INSTALL_FOLDERS = ["mods", "config", "defaultconfigs", "kubejs", "kubejs/scripts", "world", "logs", "backups"];
 const PAPER_DOWNLOADS_API = "https://fill.papermc.io/v3";
@@ -106,18 +107,32 @@ function getCurseForgeBrowseConfig(nodeId = null) {
 
 function serializeError(error, context = {}) {
   const details = error?.details && typeof error.details === "object" ? error.details : {};
-  return {
+  const serialized = sanitize({
     ...context,
     name: error?.name || null,
     code: error?.code || null,
     message: error?.message || null,
-    stack: error?.stack || null,
     status: details.status || error?.status || error?.statusCode || null,
-    responseBody: details.body || details.responseBody || null,
     url: details.url || context.url || null,
     invalidUrl: details.invalidUrl || null,
     details,
-  };
+  });
+  delete serialized.stack;
+  delete serialized.body;
+  delete serialized.responseBody;
+  delete serialized.payload;
+  delete serialized.headers;
+  delete serialized.authorization;
+  if (serialized.details && typeof serialized.details === "object") {
+    delete serialized.details.stack;
+    delete serialized.details.originalStack;
+    delete serialized.details.body;
+    delete serialized.details.responseBody;
+    delete serialized.details.payload;
+    delete serialized.details.headers;
+    delete serialized.details.authorization;
+  }
+  return serialized;
 }
 
 async function ensureProviderPackDependencies(options = {}, agentConfig = null) {
@@ -2209,7 +2224,6 @@ async function installPack(payload = {}) {
       ...(error?.details || {}),
       originalName: error?.name || null,
       originalMessage: error?.message || null,
-      originalStack: error?.stack || null,
     });
   }
 }
@@ -2405,6 +2419,7 @@ module.exports = {
     resolveCurseForgeServerPackSelection,
     resolvePaperServerJar,
     resolveMarketplaceInstallTarget,
+    serializeError,
     safeArchivePath,
     stripArchiveRoot,
     withRetry,

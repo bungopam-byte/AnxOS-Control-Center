@@ -49,6 +49,8 @@ feature-flag, API console, command, and log-viewer failures.
 Marketplace IPC retains its existing `{ok:false,error}` failure shape and adds
 the shared contract around provider-specific UI details. Boundary logs contain
 only redacted normalized fields, never raw responses, payloads, or stacks.
+Marketplace install-service logs apply that same rule before recording local
+provider, extraction, cleanup, or rollback failures.
 Dependency IPC retains its existing `{ok:false,error}` shape and uses the shared
 contract for detection, planning, install, capability, and verification errors.
 Public Access IPC retains its existing `{ok:false,error}` read and mutation

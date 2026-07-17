@@ -24,6 +24,18 @@ if (increment) {
 const info = buildReleaseInfo(nextRelease);
 console.log(`Packaging AnxOS Control Center ${info.compactLabel}`);
 
+if (builderArgs.includes("--win") || process.platform === "win32") {
+  const helperBuild = spawnSync(process.execPath, [path.join(__dirname, "build-windows-hardware-telemetry.js")], {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    shell: false,
+  });
+  if (helperBuild.error || helperBuild.status !== 0) {
+    console.error(helperBuild.error?.message || "Windows hardware telemetry helper build failed.");
+    process.exit(helperBuild.status || 1);
+  }
+}
+
 function chmodSafe(filePath, mode) {
   try {
     fs.chmodSync(filePath, mode);

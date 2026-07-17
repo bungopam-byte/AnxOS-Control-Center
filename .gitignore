@@ -36,6 +36,9 @@ agent/config/
 agent/*.log
 release-build.json
 release-artifacts/
+resources/hardware-telemetry/
+tools/windows-hardware-telemetry/bin/
+tools/windows-hardware-telemetry/obj/
 
 # Owner Workspace local development/private data
 .anxos-owner-workspace/

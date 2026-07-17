@@ -16,6 +16,7 @@
     "dist:win:installer": "node scripts/run-electron-builder.js --win nsis --x64",
     "dist:win:portable": "node scripts/run-electron-builder.js --win portable --x64",
     "dist:linux": "node scripts/run-electron-builder.js --linux deb AppImage --x64",
+    "hardware-telemetry:build": "node scripts/build-windows-hardware-telemetry.js",
     "build:increment": "node scripts/release-config.js build:increment",
     "version:set": "node scripts/release-config.js version:set",
     "channel:set": "node scripts/release-config.js channel:set",
@@ -261,6 +262,13 @@
       {
         "from": "config/local-agent-runtime.json",
         "to": "local-agent-runtime/local-agent-runtime.json"
+      },
+      {
+        "from": "resources/hardware-telemetry/win-x64",
+        "to": "hardware-telemetry",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {

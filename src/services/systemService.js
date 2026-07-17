@@ -4,9 +4,11 @@ const os = require("os");
 const path = require("path");
 const agentClient = require("./agentClient");
 const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
+const { readWindowsHardwareTemperature } = require("../shared/windowsHardwareTemperature");
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
+let localTemperatureUnavailableReason = null;
 const loggedAgentMetricWarnings = new Set();
 const EXPECTED_AGENT_SYSTEM_ERROR_CODES = new Set([
   "UNAUTHORIZED",
@@ -392,6 +394,9 @@ async function getNetworkUsage() {
 }
 
 async function getCpuTemperature() {
+  if (process.platform === "win32") {
+    return readWindowsHardwareTemperature();
+  }
   if (process.platform !== "linux") {
     return null;
   }
@@ -421,6 +426,19 @@ async function getLocalSystemSnapshot() {
     getCpuTemperature(),
   ]);
 
+  const windowsTemperature = process.platform === "win32" && cpuTemperature && typeof cpuTemperature === "object"
+    ? cpuTemperature
+    : null;
+  if (windowsTemperature && !windowsTemperature.available && localTemperatureUnavailableReason !== windowsTemperature.reason) {
+    localTemperatureUnavailableReason = windowsTemperature.reason;
+    console.warn("[AnxOS][System] Embedded Windows CPU temperature unavailable.", {
+      provider: windowsTemperature.source,
+      reason: windowsTemperature.reason,
+    });
+  }
+  const cpuTemperatureCelsius = windowsTemperature?.available
+    ? windowsTemperature.cpu?.temperatureCelsius ?? null
+    : cpuTemperature;
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
   const usedMemory = totalMemory - freeMemory;
@@ -434,9 +452,35 @@ async function getLocalSystemSnapshot() {
       model: os.cpus()[0]?.model || "Unknown CPU",
       cores: os.cpus().length,
       usagePercent: getCpuUsage(),
-      temperatureCelsius: cpuTemperature,
+      temperatureCelsius: cpuTemperatureCelsius,
+      temperatureAvailable: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+      temperatureValid: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+      temperatureSource: windowsTemperature?.source || (Number.isFinite(cpuTemperatureCelsius) ? "linux-sysfs" : null),
+      temperatureSensor: windowsTemperature?.cpu?.sensorName || null,
+      temperatureTimestamp: windowsTemperature?.timestamp || null,
+      temperatureReason: windowsTemperature?.reason || null,
     },
-    cpuTempC: cpuTemperature,
+    cpuTempC: cpuTemperatureCelsius,
+    temperatureAvailable: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+    temperatureValid: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+    temperatureSource: windowsTemperature?.source || (Number.isFinite(cpuTemperatureCelsius) ? "linux-sysfs" : null),
+    temperatureSensor: windowsTemperature?.cpu?.sensorName || null,
+    temperatureTimestamp: windowsTemperature?.timestamp || null,
+    temperatureReason: windowsTemperature?.reason || null,
+    gpu: windowsTemperature?.gpu ? {
+      core: windowsTemperature.gpu.core ? {
+        temperatureCelsius: windowsTemperature.gpu.core.temperatureCelsius,
+        temperatureSource: windowsTemperature.gpu.core.source,
+        temperatureSensor: windowsTemperature.gpu.core.sensorName,
+        temperatureTimestamp: windowsTemperature.timestamp,
+      } : null,
+      hotspot: windowsTemperature.gpu.hotspot ? {
+        temperatureCelsius: windowsTemperature.gpu.hotspot.temperatureCelsius,
+        temperatureSource: windowsTemperature.gpu.hotspot.source,
+        temperatureSensor: windowsTemperature.gpu.hotspot.sensorName,
+        temperatureTimestamp: windowsTemperature.timestamp,
+      } : null,
+    } : null,
     memory: {
       total: totalMemory,
       used: usedMemory,

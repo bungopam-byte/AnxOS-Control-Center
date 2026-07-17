@@ -5,6 +5,8 @@ const path = require("path");
 
 const { getConfig } = require("../config");
 const { logger } = require("./diagnosticsLogger");
+const { readWindowsHardwareTemperature } = require("../../../src/shared/windowsHardwareTemperature");
+let windowsHardwareTemperatureReader = readWindowsHardwareTemperature;
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
@@ -542,7 +544,23 @@ async function getCpuTemperature() {
     if (cpuTemperatureCache && now - cpuTemperatureCache.at < CPU_TEMP_CACHE_MS) {
       return cpuTemperatureCache.reading;
     }
-    const reading = await readWindowsCpuTemperatureReading();
+    const hardware = await windowsHardwareTemperatureReader();
+    if (!hardware.available) {
+      emitCpuTemperatureWarning(WINDOWS_CPU_TEMP_UNAVAILABLE, hardware.reason || "windows_cpu_temperature_unavailable", {
+        provider: hardware.source,
+        message: "Embedded Windows CPU temperature provider did not return a trustworthy sensor.",
+      });
+    }
+    const reading = hardware.available
+      ? {
+        ...createTemperatureReading(hardware.cpu.temperatureCelsius, {
+          source: hardware.source,
+          sensor: hardware.cpu.sensorName,
+        }),
+        temperatureTimestamp: hardware.timestamp,
+        gpuTemperature: hardware.gpu || null,
+      }
+      : createUnavailableTemperatureReading(hardware.reason || "provider_unavailable", { source: hardware.source });
     cpuTemperatureCache = { at: now, reading };
     return reading;
   }
@@ -599,6 +617,7 @@ async function getSystemSummary() {
       temperatureSource: cpuTemperature?.temperatureSource || null,
       temperatureSensor: cpuTemperature?.temperatureSensor || null,
       temperatureReason: cpuTemperature?.temperatureReason || null,
+      temperatureTimestamp: cpuTemperature?.temperatureTimestamp || null,
     },
     cpuTempC: cpuTemperatureCelsius,
     temperatureAvailable: cpuTemperature?.temperatureAvailable === true,
@@ -606,6 +625,8 @@ async function getSystemSummary() {
     temperatureSource: cpuTemperature?.temperatureSource || null,
     temperatureSensor: cpuTemperature?.temperatureSensor || null,
     temperatureReason: cpuTemperature?.temperatureReason || null,
+    temperatureTimestamp: cpuTemperature?.temperatureTimestamp || null,
+    gpu: cpuTemperature?.gpuTemperature || null,
     memory: {
       total: totalMemory,
       used: usedMemory,
@@ -643,6 +664,9 @@ module.exports = {
     isRejectedTemperatureSensor,
     setCpuTemperatureExecFileForTest(fn) {
       cpuTemperatureExecFile = fn || execFile;
+      windowsHardwareTemperatureReader = fn
+        ? async () => ({ available: false, source: "LibreHardwareMonitor", timestamp: new Date().toISOString(), reason: "provider_unavailable" })
+        : readWindowsHardwareTemperature;
       cpuTemperatureCache = null;
       cpuTempWarningState.clear();
     },

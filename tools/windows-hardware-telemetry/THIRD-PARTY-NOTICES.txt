@@ -1,0 +1,8 @@
+LibreHardwareMonitorLib 0.9.6
+Copyright (C) LibreHardwareMonitor contributors
+License: Mozilla Public License 2.0
+Source: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
+License: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/blob/master/LICENSE
+Third-party notices: https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/tree/master/THIRD-PARTY-LICENSES
+
+The library is used unmodified through its published NuGet package.

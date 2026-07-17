@@ -6900,6 +6900,9 @@ function renderCpuTemperature(snapshot) {
   const tempC = getSnapshotCpuTempC(snapshot);
   const status = getCpuTemperatureStatus(tempC);
   const text = Number.isFinite(tempC) ? `${Math.round(tempC)}°C · ${status.label}` : "Unavailable";
+  const sensor = snapshot?.cpu?.temperatureSensor || snapshot?.temperatureSensor || null;
+  const source = snapshot?.cpu?.temperatureSource || snapshot?.temperatureSource || null;
+  const reason = snapshot?.cpu?.temperatureReason || snapshot?.temperatureReason || null;
 
   setField("temperature", text);
   updateFieldAttributes("temperature", (field) => {
@@ -6908,7 +6911,15 @@ function renderCpuTemperature(snapshot) {
     } else {
       delete field.dataset.temperatureState;
     }
-    field.title = Number.isFinite(tempC) ? `CPU temperature: ${tempC.toFixed(1)}°C (${status.label})` : "CPU temperature is not reported by this node.";
+    field.title = Number.isFinite(tempC)
+      ? `${sensor || "CPU temperature"}${source ? ` — ${source}` : ""}: ${tempC.toFixed(1)}°C (${status.label})`
+      : reason === "provider_missing"
+        ? "CPU temperature unavailable: the bundled LibreHardwareMonitor provider is missing."
+        : reason === "low_level_driver_missing"
+          ? "CPU temperature unavailable: this CPU requires a supported low-level sensor driver that is not installed."
+        : reason === "access_denied_or_driver_unavailable" || reason === "cpu_sensor_unavailable_requires_elevation_or_driver"
+          ? "CPU temperature unavailable: LibreHardwareMonitor could not access the required sensor or driver."
+          : "CPU temperature is not reported by this node.";
   });
 }
 

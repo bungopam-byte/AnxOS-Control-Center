@@ -222,6 +222,14 @@
       "website/anxos-design-system.css",
       "website/account-config.js",
       "src/**/*",
+      {
+        "from": "src/services",
+        "to": "src/services",
+        "filter": [
+          "**/*.js",
+          "!**/*.map"
+        ]
+      },
       "src/shared/**/*",
       "agent/package.json",
       "agent/src/**/*",

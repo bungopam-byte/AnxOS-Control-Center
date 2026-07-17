@@ -2,6 +2,7 @@
 const assert = require("assert");
 const { spawnSync } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const asar = require("@electron/asar");
 const { buildReleaseInfo, readReleaseConfig } = require("../src/shared/releaseConfig");
@@ -85,6 +86,9 @@ const requiredEntries = [
   "/src/shared/releaseConfig.js",
   "/src/shared/longOperationService.js",
   "/src/shared/dockerService.js",
+  "/src/services/agentControlService.js",
+  "/src/services/diagnosticsService.js",
+  "/src/services/providers/curseforgeProvider.js",
 ];
 
 const forbiddenEntries = [
@@ -120,6 +124,40 @@ function walkFiles(directory) {
     }
   }
   return entries;
+}
+
+function assertDesktopDependencyGraph(archivePath) {
+  const extractedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-desktop-runtime-"));
+  const visited = new Set();
+  const missing = [];
+  function resolveLocal(fromFile, request) {
+    const base = path.resolve(path.dirname(fromFile), request);
+    return [base, `${base}.js`, `${base}.json`, path.join(base, "index.js")]
+      .find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile()) || null;
+  }
+  function visit(filePath) {
+    const resolvedPath = path.resolve(filePath);
+    if (visited.has(resolvedPath)) return;
+    visited.add(resolvedPath);
+    if (path.extname(resolvedPath) === ".json") return;
+    const source = fs.readFileSync(resolvedPath, "utf8");
+    for (const match of source.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)) {
+      const request = match[1];
+      if (!request.startsWith(".")) continue;
+      const dependency = resolveLocal(resolvedPath, request);
+      if (dependency) visit(dependency);
+      else missing.push(`${path.relative(extractedRoot, resolvedPath)} -> ${request}`);
+    }
+  }
+  try {
+    asar.extractAll(archivePath, extractedRoot);
+    visit(path.join(extractedRoot, "main.js"));
+    visit(path.join(extractedRoot, "preload.js"));
+    assert.deepStrictEqual(missing, [], `${path.relative(rootDir, archivePath)} has missing local desktop dependencies:\n${missing.join("\n")}`);
+    assert([...visited].some((entry) => entry.includes(`${path.sep}src${path.sep}services${path.sep}`)), `${path.relative(rootDir, archivePath)} desktop dependency graph did not resolve src/services.`);
+  } finally {
+    fs.rmSync(extractedRoot, { recursive: true, force: true });
+  }
 }
 
 const expectedArtifactPaths = selectedTargetConfigs
@@ -168,6 +206,7 @@ for (const archivePath of selectedTargetConfigs.flatMap((target) => target.asarA
   assert(buildMetadata.buildDate, `${path.relative(rootDir, archivePath)} release metadata must include a build date`);
   assert(buildMetadata.gitCommit, `${path.relative(rootDir, archivePath)} release metadata must include a git commit`);
   assert.strictEqual(buildMetadata.releaseRepository?.repo, "AnxOS-Control-Center-Releases", `${path.relative(rootDir, archivePath)} release metadata must use the public release repository`);
+  assertDesktopDependencyGraph(archivePath);
 }
 
 for (const requiredPath of selectedTargetConfigs.flatMap((target) => target.requiredPaths)) {
@@ -180,6 +219,7 @@ for (const target of selectedTargets) {
     : path.join(distDir, "linux-unpacked", "resources");
   const runtimeRoot = path.join(resourcesDir, "local-agent-runtime");
   if (!fs.existsSync(runtimeRoot)) continue;
+  assert.notStrictEqual(runtimeRoot, path.join(resourcesDir, "app.asar"), "Desktop and Local Agent runtime roots must remain separate.");
   for (const entryPath of walkFiles(runtimeRoot)) {
     const name = path.basename(entryPath);
     assert(!forbiddenRuntimeNames.has(name), `Local Agent runtime must not include ${path.relative(rootDir, entryPath)}`);

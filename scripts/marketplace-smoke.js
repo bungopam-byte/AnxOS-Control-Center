@@ -1655,7 +1655,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     "installDependencies",
   ];
   const patchedModrinthMethods = ["getProject", "resolveVersion", "resolveDependencies"];
-  const patchedCurseForgeMethods = ["ensureConfigured", "resolveFile", "downloadFile", "resolveDependencies"];
+  const patchedCurseForgeMethods = ["ensureConfigured", "getMod", "resolveFile", "getFile", "getFiles", "downloadFile", "resolveDependencies"];
   patchedAgentMethods.forEach((name) => {
     originalAgent[name] = agentClient[name];
   });
@@ -1809,6 +1809,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     });
     modrinthProvider.resolveDependencies = async () => [];
     curseforgeProvider.ensureConfigured = () => true;
+    curseforgeProvider.getMod = async () => ({ id: 100, provider: "curseforge", providerProjectId: 100, loaders: ["vanilla"] });
     curseforgeProvider.resolveFile = async () => ({ id: 200, projectId: 100, fileName: "curseforge-smoke-client.zip", minecraftVersions: ["1.21.1"], loaders: ["vanilla"], serverPackFileId: 201, dependencies: [] });
     curseforgeProvider.getFile = async () => ({ id: 201, projectId: 100, fileName: "curseforge-smoke.jar", minecraftVersions: ["1.21.1"], loaders: ["vanilla"], downloadUrl: "https://mock.local/curseforge-smoke.jar", dependencies: [] });
     curseforgeProvider.getFiles = async () => [{ id: 200, projectId: 100, fileName: "curseforge-smoke-client.zip", minecraftVersions: ["1.21.1"], loaders: ["vanilla"], serverPackFileId: 201, dependencies: [] }];
@@ -2729,6 +2730,32 @@ async function assertProviderInstallSupport() {
     normalizedCurseForgeMod.websiteUrl,
     "https://www.curseforge.com/minecraft/mc-mods/cf-smoke",
     "CurseForge project metadata should preserve the official website URL."
+  );
+  const normalizedCurseForgeModWithServerPack = curseforgeProvider._test.normalizeMod({
+    id: 925201,
+    name: "CF Server Pack Smoke",
+    slug: "cf-server-pack-smoke",
+    links: { websiteUrl: "https://www.curseforge.com/minecraft/mc-mods/cf-server-pack-smoke" },
+    latestFilesIndexes: [{ gameVersion: "1.21.1", modLoader: 6 }],
+    authors: [{ name: "Smoke" }],
+    serverPackFileId: 123,
+    serverPackCompatible: true,
+    serverCapable: true,
+  });
+  assert.strictEqual(
+    normalizedCurseForgeModWithServerPack.serverPackFileId,
+    123,
+    "CurseForge normalization should preserve serverPackFileId."
+  );
+  assert.strictEqual(
+    normalizedCurseForgeModWithServerPack.serverPackCompatible,
+    true,
+    "CurseForge normalization should preserve serverPackCompatible."
+  );
+  assert.strictEqual(
+    normalizedCurseForgeModWithServerPack.serverCapable,
+    true,
+    "CurseForge normalization should preserve serverCapable."
   );
   assert(
     curseforgeProvider._test.getEnvCandidates().some((candidate) => candidate.endsWith(".env")),

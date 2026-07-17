@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 const crypto = require("crypto");
 const agentClient = require("../agentClient");
 const { getMarketplaceConfigPath, readMarketplaceConfig, saveMarketplaceConfig } = require("../providerConfigService");
+const { classifyServerCompatibility } = require("../../shared/marketplaceServerCompatibility");
 
 const CURSEFORGE_API = "https://api.curseforge.com/v1";
 const MINECRAFT_GAME_ID = 432;
@@ -1088,7 +1089,7 @@ function assertProviderMetadata(projectId, context = "CurseForge project") {
 
 function normalizeMod(mod = {}) {
   const websiteUrl = mod.links?.websiteUrl || mod.websiteUrl || null;
-  return {
+  const normalized = {
     id: mod.id,
     slug: mod.slug,
     name: mod.name || mod.slug || String(mod.id || ""),
@@ -1103,12 +1104,17 @@ function normalizeMod(mod = {}) {
     minecraftVersions: [...new Set(mod.latestFilesIndexes?.map((entry) => entry.gameVersion).filter(Boolean) || [])],
     loaders: extractLoaders(mod.latestFilesIndexes?.map((entry) => entry.modLoader) || []),
     updatedAt: mod.dateModified || mod.dateReleased || null,
+    serverPackFileId: mod.serverPackFileId || mod.server_pack_file_id || null,
+    serverPackCompatible: mod.serverPackCompatible !== undefined ? mod.serverPackCompatible : (mod.server_pack_compatible !== undefined ? mod.server_pack_compatible : null),
+    serverCapable: mod.serverCapable !== undefined ? mod.serverCapable : (mod.server_capable !== undefined ? mod.server_capable : null),
     raw: mod,
   };
+  normalized.serverCompatibility = classifyServerCompatibility(normalized);
+  return normalized;
 }
 
 function normalizeFile(file = {}) {
-  return {
+  const normalized = {
     id: file.id,
     projectId: file.modId,
     name: file.displayName || file.fileName || String(file.id || ""),
@@ -1119,9 +1125,13 @@ function normalizeFile(file = {}) {
     releaseType: file.releaseType || null,
     dependencies: Array.isArray(file.dependencies) ? file.dependencies : [],
     modules: Array.isArray(file.modules) ? file.modules : [],
-    serverPackFileId: file.serverPackFileId || null,
+    serverPackFileId: file.serverPackFileId || file.server_pack_file_id || null,
+    serverPackCompatible: file.serverPackCompatible !== undefined ? file.serverPackCompatible : (file.server_pack_compatible !== undefined ? file.server_pack_compatible : null),
+    serverCapable: file.serverCapable !== undefined ? file.serverCapable : (file.server_capable !== undefined ? file.server_capable : null),
     raw: file,
   };
+  normalized.serverCompatibility = classifyServerCompatibility(normalized);
+  return normalized;
 }
 
 function normalizeSearchOptions(queryOrOptions = "", minecraftVersion = "", loader = "", config = {}) {

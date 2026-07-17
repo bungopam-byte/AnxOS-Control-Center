@@ -35,6 +35,7 @@ async function main() {
     resolveFile: curseforgeProvider.resolveFile,
     getFile: curseforgeProvider.getFile,
     getFiles: curseforgeProvider.getFiles,
+    getMod: curseforgeProvider.getMod,
     downloadFile: curseforgeProvider.downloadFile,
     fetch: global.fetch,
   };
@@ -80,6 +81,7 @@ async function main() {
     curseforgeProvider._test.setRuntimeApiKey("desktop-cf-key");
 
     curseforgeProvider.resolveFile = async () => selectedFile;
+    curseforgeProvider.getMod = async () => ({ id: 100, provider: "curseforge", providerProjectId: 100, loaders: ["fabric"] });
     curseforgeProvider.getFiles = async () => listedFiles;
     curseforgeProvider.getFile = async (projectId, fileId) => {
       if (failFileIds.has(String(fileId))) {
@@ -127,9 +129,11 @@ async function main() {
       ],
       failIds: [31],
     });
-    const fallback = await marketplace._test.resolveCurseForgeServerPackSelection({ projectId: 100, minecraftVersion: "1.20.1", loader: "fabric" });
-    assert.strictEqual(fallback.serverFile.id, 32, "Unavailable linked server-pack ID should fall back to an official server-named file.");
-    assert.strictEqual(fallback.source, "server-pack-file-name");
+    await assert.rejects(
+      () => marketplace._test.resolveCurseForgeServerPackSelection({ projectId: 100, minecraftVersion: "1.20.1", loader: "fabric" }),
+      (error) => error?.code === "CURSEFORGE_SERVER_PACK_REQUIRED",
+      "An unavailable relationship must not fall back to a filename-only server-pack guess.",
+    );
 
     resetScenario({
       selected: file(40, "Client Only Optimizer.zip"),
@@ -176,6 +180,7 @@ async function main() {
     curseforgeProvider.resolveFile = original.resolveFile;
     curseforgeProvider.getFile = original.getFile;
     curseforgeProvider.getFiles = original.getFiles;
+    curseforgeProvider.getMod = original.getMod;
     curseforgeProvider.downloadFile = original.downloadFile;
     global.fetch = original.fetch;
     fs.rmSync(root, { recursive: true, force: true });

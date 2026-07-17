@@ -62,6 +62,7 @@ async function main() {
     });
     providerConfig.saveMarketplaceConfig({ curseForgeApiKey: "desktop-cf-key" });
     curseforge._test.setRuntimeApiKey();
+    curseforge.getMod = async () => ({ id: 100, provider: "curseforge", providerProjectId: 100, loaders: ["forge"] });
     curseforge.resolveFile = async () => ({
       id: 1000,
       projectId: 100,

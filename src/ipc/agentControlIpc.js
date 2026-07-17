@@ -64,6 +64,7 @@ function registerAgentControlIpc() {
     ipcMain.handle(`agentControl:${channel}`, () => runLocalLifecycle(channel, operation));
   }
   ipcMain.handle("agentControl:installLocalAgent", (_, payload = {}) => runLocalLifecycle("install-local-agent", () => control.installLocalAgent(payload)));
+  ipcMain.handle("agentControl:stopOldLocalAgentAndRepair", (_, payload = {}) => runLocalLifecycle("stop-old-local-agent-and-repair", () => control.stopOldLocalAgentAndRepair(payload)));
   ipcMain.handle("agentControl:pairLocalAgent", (_, payload = {}) => runLocalLifecycle("pair-local-agent", () => control.pairLocalAgentSecurely(payload)));
   ipcMain.handle("agentControl:startPairingSession", (_, payload = {}) => runLocalLifecycle("start-pairing-session", () => control.startPairingSession(payload)));
   ipcMain.handle("agentControl:updateLocalAgent", (_, payload = {}) => runLocalLifecycle("update-local-agent", () => control.updateLocalAgent(payload)));

@@ -18,6 +18,7 @@ const modrinthProvider = require("./providers/modrinthProvider");
 const curseforgeProvider = require("./providers/curseforgeProvider");
 const { sanitize } = require("../shared/redaction");
 const { normalizeDiskEvidence } = require("../shared/diskSpace");
+const { CLASSIFICATIONS, classifyServerCompatibility } = require("../shared/marketplaceServerCompatibility");
 const longOperations = require("../shared/longOperationService");
 
 const INSTALL_FOLDERS = ["mods", "config", "defaultconfigs", "kubejs", "kubejs/scripts", "world", "logs", "backups"];
@@ -702,11 +703,6 @@ function curseForgeFileMatchesSelection(file = {}, selection = {}) {
   return versionMatches && loaderMatches;
 }
 
-function isLikelyCurseForgeServerPackFile(file = {}) {
-  const text = `${file.name || ""} ${file.fileName || ""}`.toLowerCase();
-  return /\b(server[-_\s.]?pack|server[-_\s.]?files|dedicated[-_\s.]?server)\b/.test(text);
-}
-
 function scoreCurseForgeServerPackCandidate(candidate = {}, selectedFile = {}, selection = {}) {
   let score = 0;
   const candidateId = getCurseForgeFileId(candidate);
@@ -714,7 +710,6 @@ function scoreCurseForgeServerPackCandidate(candidate = {}, selectedFile = {}, s
   if (selectedServerPackFileId && String(candidateId) === String(selectedServerPackFileId)) score += 1000;
   if (curseForgeFileMatchesSelection(candidate, selection)) score += 100;
   if (candidate.releaseType === selectedFile.releaseType) score += 20;
-  if (isLikelyCurseForgeServerPackFile(candidate)) score += 10;
   return score;
 }
 
@@ -730,6 +725,7 @@ function createCurseForgeServerPackRequiredError(context = {}) {
       fileName: context.fileName || null,
       minecraftVersion: context.minecraftVersion || null,
       loader: context.loader || null,
+      serverCompatibility: context.compatibility || null,
       suggestion: "Choose a project and version with an official CurseForge server pack.",
     }
   );
@@ -737,7 +733,10 @@ function createCurseForgeServerPackRequiredError(context = {}) {
 
 async function resolveCurseForgeServerPackSelection({ projectId, minecraftVersion = "", loader = "", requestedFileId = "", config = {} } = {}) {
   ensureProviderProjectId(projectId, "CurseForge");
-  const selectedFile = await curseforgeProvider.resolveFile(projectId, minecraftVersion, loader, requestedFileId, config);
+  const [project, selectedFile] = await Promise.all([
+    curseforgeProvider.getMod(projectId, config),
+    curseforgeProvider.resolveFile(projectId, minecraftVersion, loader, requestedFileId, config),
+  ]);
   const selectedFileId = getCurseForgeFileId(selectedFile);
   const selectedServerPackFileId = selectedFile.serverPackFileId || selectedFile.raw?.serverPackFileId || null;
   if (selectedServerPackFileId) {
@@ -748,6 +747,7 @@ async function resolveCurseForgeServerPackSelection({ projectId, minecraftVersio
           selectedFile,
           serverFile,
           source: "selected-file-serverPackFileId",
+          compatibility: classifyServerCompatibility({ ...project, ...selectedFile, projectId, serverPackFileId: selectedServerPackFileId }),
         };
       }
     } catch (error) {
@@ -789,13 +789,7 @@ async function resolveCurseForgeServerPackSelection({ projectId, minecraftVersio
     }
   }
 
-  const heuristicCandidates = files.filter((file) => (
-    getCurseForgeFileId(file) &&
-    !unavailableExplicitServerPackIds.has(String(getCurseForgeFileId(file))) &&
-    isLikelyCurseForgeServerPackFile(file) &&
-    curseForgeFileMatchesSelection(file, { minecraftVersion, loader })
-  ));
-  const candidates = [...explicitCandidates, ...heuristicCandidates]
+  const candidates = explicitCandidates
     .filter((file, index, list) => list.findIndex((entry) => String(getCurseForgeFileId(entry)) === String(getCurseForgeFileId(file))) === index)
     .sort((left, right) => scoreCurseForgeServerPackCandidate(right, selectedFile, { minecraftVersion, loader }) - scoreCurseForgeServerPackCandidate(left, selectedFile, { minecraftVersion, loader }));
 
@@ -803,8 +797,14 @@ async function resolveCurseForgeServerPackSelection({ projectId, minecraftVersio
     return {
       selectedFile,
       serverFile: candidates[0],
-      source: explicitServerPackIds.includes(String(getCurseForgeFileId(candidates[0]))) ? "project-serverPackFileId" : "server-pack-file-name",
+      source: "project-serverPackFileId",
+      compatibility: classifyServerCompatibility({ ...project, ...selectedFile, projectId }),
     };
+  }
+
+  const compatibility = classifyServerCompatibility({ ...project, ...selectedFile, projectId, loader, loaders: selectedFile.loaders?.length ? selectedFile.loaders : project.loaders });
+  if (compatibility.classification === CLASSIFICATIONS.SERVER_COMPATIBLE) {
+    return { selectedFile, serverFile: selectedFile, source: "provider-declared-server-compatible", compatibility };
   }
 
   throw createCurseForgeServerPackRequiredError({
@@ -813,6 +813,7 @@ async function resolveCurseForgeServerPackSelection({ projectId, minecraftVersio
     fileName: selectedFile.fileName,
     minecraftVersion,
     loader,
+    compatibility,
   });
 }
 
@@ -1951,6 +1952,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
     minecraftVersion: payload.minecraftVersion || payload.version || null,
     loader: payload.loader || null,
     source: selection.source || null,
+    serverCompatibility: selection.compatibility || null,
   });
   const downloaded = await curseforgeProvider.downloadFile(serverFile, "", { config: curseForgeConfig, signal: progressState.signal });
   const mods = [];
@@ -2355,6 +2357,7 @@ async function installPack(payload = {}) {
       minecraftVersion: options.minecraftVersion || options.version || null,
       loader: options.loader || null,
       source: options.curseForgeServerPackSelection.source || null,
+      serverCompatibility: options.curseForgeServerPackSelection.compatibility || null,
     });
   }
   logMarketplaceInstallStep("Resolved Marketplace install target.", {
@@ -2636,6 +2639,11 @@ async function searchProviderPacks(payload = {}) {
       agentProxy: curseForgeConfig.useAgentProxy,
       credentialSource: curseForgeConfig.credentialSource,
       browseOnly: true,
+      serverCompatibilityCounts: (result.results || []).reduce((counts, project) => {
+        const classification = project.serverCompatibility?.classification || "UNKNOWN";
+        counts[classification] = (counts[classification] || 0) + 1;
+        return counts;
+      }, {}),
     };
   } else if (provider === "modrinth") {
     result = await modrinthProvider.searchModpacks(payload);
@@ -2660,7 +2668,7 @@ async function getProviderPackVersions(payload = {}) {
   if (provider === "curseforge") {
     const curseForgeConfig = getCurseForgeBrowseConfig(payload.nodeId);
     const files = await curseforgeProvider.getFiles(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "", curseForgeConfig);
-    return { provider, nodeId: curseForgeConfig.agentNodeId, nodeLabel: curseForgeConfig.agentNodeLabel, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions, loaders: file.loaders || [] })) };
+    return { provider, nodeId: curseForgeConfig.agentNodeId, nodeLabel: curseForgeConfig.agentNodeLabel, versions: files.map((file) => ({ id: file.id, name: file.name, fileName: file.fileName, minecraftVersions: file.minecraftVersions, loaders: file.loaders || [], serverPackFileId: file.serverPackFileId || null, serverCompatibility: file.serverCompatibility })) };
   }
   if (provider === "modrinth") {
     const versions = await modrinthProvider.getVersions(projectId, payload.minecraftVersion || payload.version || "", payload.loader || "");

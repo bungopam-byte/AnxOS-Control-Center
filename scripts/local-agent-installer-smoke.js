@@ -30,8 +30,17 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
   "installerSteps",
   "buildWindowsAgentLauncherScript",
   "schtasks.exe",
+  "Start-Process -FilePath",
+  "-Verb RunAs",
+  "commandWindowsTask",
+  "parseWindowsNetstatListener",
+  "listeningProcess",
+  "isVerifiedOldLocalAgentProcess",
+  "stopOldLocalAgentAndRepair",
+  "LOCAL_AGENT_PROCESS_UNVERIFIED",
   "operationInFlight = null;",
   "operationInFlight = \"install\";",
+  "operationInFlight = \"repair-old-local-agent\";",
   "status: await getStatus()",
 ].forEach((needle) => {
   assert(agentControl.includes(needle), `Local Agent installer service should include ${needle}.`);
@@ -44,11 +53,14 @@ assert(agentControl.includes("pairLocalAgentSecurely"), "Agent Control should ex
 
 [
   "agentControl:installLocalAgent",
+  "agentControl:stopOldLocalAgentAndRepair",
   "agentControl:pairLocalAgent",
   "runLocalLifecycle(\"install-local-agent\"",
+  "runLocalLifecycle(\"stop-old-local-agent-and-repair\"",
 ].forEach((needle) => assert(ipc.includes(needle), `Agent Control IPC should expose ${needle}.`));
 
 assert(preload.includes("installLocalAgent: (payload = {}) => ipcRenderer.invoke(\"agentControl:installLocalAgent\", payload)"), "Preload should expose installLocalAgent.");
+assert(preload.includes("stopOldLocalAgentAndRepair: (payload = {}) => ipcRenderer.invoke(\"agentControl:stopOldLocalAgentAndRepair\", payload)"), "Preload should expose stopOldLocalAgentAndRepair.");
 assert(preload.includes("pairLocalAgent: (payload = {}) => ipcRenderer.invoke(\"agentControl:pairLocalAgent\", payload)"), "Preload should expose pairLocalAgent.");
 
 [
@@ -56,6 +68,7 @@ assert(preload.includes("pairLocalAgent: (payload = {}) => ipcRenderer.invoke(\"
   "Install Local Agent",
   "AnxOS Local Agent lets AnxOS manage servers, files, backups, dependencies, and services on this computer.",
   "data-agent-control-action=\"installLocalAgent\"",
+  "data-agent-control-action=\"stopOldLocalAgentAndRepair\"",
   "data-agent-control-action=\"learnLocalAgent\"",
   "data-agent-control-action=\"useRemoteAgent\"",
   "data-agent-local-installer-steps",
@@ -67,6 +80,9 @@ assert(preload.includes("pairLocalAgent: (payload = {}) => ipcRenderer.invoke(\"
   "agentLocalInstallerSteps",
   "Needs attention",
   "api.installLocalAgent({ autoStart: true, installService: true })",
+  "api.stopOldLocalAgentAndRepair({ autoStart: true, installService: true })",
+  "Stop Old Local Agent and Repair",
+  "repair-local-agent",
   "api.pairLocalAgent({ rotate: true",
   "The Local Agent runs on this PC",
   "Remote Agent mode stays available",

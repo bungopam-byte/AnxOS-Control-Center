@@ -4209,6 +4209,7 @@ function renderAgentControlState(payload = agentControlState) {
       || (action === "start" && (!lifecycleSupported || running))
       || (["stop", "restart", "forceRestart"].includes(action) && (!lifecycleSupported || !running))
       || (action === "repairAgent" && (!repairSupported || serviceNeedsElevation))
+      || (action === "stopOldLocalAgentAndRepair" && !repairSupported)
       || (action === "installService" && (!lifecycleSupported || service.installed || serviceNeedsElevation))
       || (action === "uninstallService" && (!lifecycleSupported || !service.installed || serviceNeedsElevation))
       || (action === "enableAutoStart" && (!lifecycleSupported || service.enabled || serviceNeedsElevation))
@@ -4222,6 +4223,8 @@ function renderAgentControlState(payload = agentControlState) {
     button.disabled = disabled;
     if (["repairAgent", "installService", "uninstallService", "enableAutoStart", "disableAutoStart"].includes(action) && serviceNeedsElevation) {
       button.title = "Run AnxOS Control Center as Administrator, then retry this Agent service action.";
+    } else if (action === "stopOldLocalAgentAndRepair" && serviceNeedsElevation) {
+      button.title = "Windows will show an administrator prompt if service repair requires elevation.";
     } else {
       button.removeAttribute("title");
     }
@@ -5562,7 +5565,7 @@ function stopAgentControlPolling() {
 async function runAgentControlAction(action) {
   const api = getDesktopApiState().api?.agentControl;
   if (!api || agentControlBusy) return;
-  const destructive = { stop: ["Stop local Agent?", "Active Agent operations will disconnect."], forceRestart: ["Force restart local Agent?", "The Agent process will be terminated immediately."], repairAgent: ["Repair local Agent?", "Background registration will be reinstalled and the Agent restarted."], updateAgent: ["Update Local Agent?", "AnxOS will back up Agent configuration, stop the Local Agent, repair the bundled runtime registration, restart it, and verify health."], uninstallService: ["Uninstall Agent background service?", "Automatic startup will be removed."], resetConfig: ["Reset Agent configuration?", "Current settings will be backed up before defaults are restored."] }[action];
+  const destructive = { stop: ["Stop local Agent?", "Active Agent operations will disconnect."], forceRestart: ["Force restart local Agent?", "The Agent process will be terminated immediately."], repairAgent: ["Repair local Agent?", "Background registration will be reinstalled and the Agent restarted."], stopOldLocalAgentAndRepair: ["Stop Old Local Agent and Repair?", "AnxOS will stop only a verified old AnxOS Local Agent process, recreate local credentials, and repair Windows startup registration."], updateAgent: ["Update Local Agent?", "AnxOS will back up Agent configuration, stop the Local Agent, repair the bundled runtime registration, restart it, and verify health."], uninstallService: ["Uninstall Agent background service?", "Automatic startup will be removed."], resetConfig: ["Reset Agent configuration?", "Current settings will be backed up before defaults are restored."] }[action];
   if (destructive && !(await createSecurityConfirmation({ title: destructive[0], message: destructive[1], confirmLabel: "Continue" }))) return;
   if (action === "refresh") {
     await refreshAgentControl({ includeConfig: true });
@@ -5596,6 +5599,7 @@ async function runAgentControlAction(action) {
     forceRestart: "Force restart local Agent",
     installService: "Install Agent service",
     uninstallService: "Uninstall Agent service",
+    stopOldLocalAgentAndRepair: "Stop Old Local Agent and Repair",
   };
   const operationId = startOperation({
     type: "Agent",
@@ -5663,6 +5667,13 @@ async function runAgentControlAction(action) {
         showToast("Background startup could not be configured. Starting the Local Agent for this session instead.", "warning");
       }
       if (!(await api.status(context))?.running) await api.start();
+    }
+    else if (action === "stopOldLocalAgentAndRepair") {
+      if (typeof api.stopOldLocalAgentAndRepair !== "function") throw new Error("Old Local Agent repair is unavailable in this build.");
+      const result = await api.stopOldLocalAgentAndRepair({ autoStart: true, installService: true });
+      renderLocalAgentInstallerSteps(result.steps || []);
+      showToast(result?.stoppedOldLocalAgent?.stopped ? "Verified old Local Agent stopped and repaired." : "Local Agent repaired.", "success");
+      await refreshNodes();
     }
     else if (action === "checkUpdates") {
       const status = await api.status(context);
@@ -12518,7 +12529,7 @@ function getMarketplaceStateForTemplate(template = {}) {
     return { label: "Unsupported", tone: "planned", action: "Unavailable", disabled: true, instances };
   }
   if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
-    return { label: capability.label || "Client Pack Only", tone: "warning", action: "Choose Another Version", disabled: true, instances, capability };
+    return { label: capability.label || "Client Only", tone: "warning", action: "Choose Another Version", disabled: true, instances, capability };
   }
   if (activeOperation && marketplaceSelectedTemplateId === template.id) {
     if (activeOperation.status === "waiting") return { label: "Recovery available", tone: "warning", action: "Resume", instances, operation: activeOperation };
@@ -12660,7 +12671,7 @@ function renderMarketplaceInstallSummary(template) {
     ["Selected node", formatMarketplaceSelectedNodeLabel()],
     ["Version", template.version ? `Template v${template.version}` : "Version metadata unavailable"],
     ["Instance state", state.instances.length ? `${state.instances.length} installed · ${state.label}` : state.label],
-    ["Server compatibility", capability.label || "Server Support Unknown"],
+    ["Server compatibility", capability.label || "Compatibility Unknown"],
     ["Server-pack detail", capability.serverPackFileId ? `Resolved server-pack metadata: file ${capability.serverPackFileId}` : capability.detail || "No server-pack metadata available"],
     ["Install path", "Managed by the selected Agent instance data root"],
     ["Data preservation", "Uninstall and backup behavior are managed from the Instances and Backups workspaces."],
@@ -12862,30 +12873,32 @@ function normalizeProviderMinecraftVersion(project = {}) {
 }
 
 function classifyMarketplaceServerPackCapability(source = {}) {
+  if (source.serverCompatibility && typeof source.serverCompatibility === "object") {
+    return source.serverCompatibility;
+  }
   const provider = getMarketplaceProvider(source);
   if (provider === "curseforge") {
     const serverPackFileId = source.serverPackFileId || source.raw?.serverPackFileId || source.mainFile?.serverPackFileId || source.latestFile?.serverPackFileId || null;
-    const text = `${source.name || ""} ${source.title || ""} ${source.description || ""} ${source.fileName || ""}`.toLowerCase();
     if (serverPackFileId) {
       return {
         state: "available",
-        label: "Official Server Pack Available",
+        label: "Official Server Pack",
         detail: `CurseForge metadata links an official server pack${serverPackFileId ? ` (file ${serverPackFileId})` : ""}.`,
         installable: true,
         serverPackFileId,
       };
     }
-    if (source.serverPackCompatible === false || source.serverCapable === false || /client[-\s]?only|optimization|performance client/.test(text)) {
+    if (source.serverPackCompatible === false || source.serverCapable === false) {
       return {
         state: "client-only",
-        label: "Client Pack Only",
+        label: "Client Only",
         detail: "This version does not provide an official dedicated-server pack on CurseForge.",
         installable: false,
       };
     }
     return {
       state: "unknown",
-      label: "Server Support Unknown",
+      label: "Compatibility Unknown",
       detail: "CurseForge server-pack metadata is incomplete. AnxOS will verify before any Agent installation work.",
       installable: true,
     };
@@ -12898,7 +12911,7 @@ function classifyMarketplaceServerPackCapability(source = {}) {
     if (serverSide === "unsupported") {
       return { state: "client-only", label: "Client Pack Only", detail: "Modrinth marks this project as unsupported server-side.", installable: false };
     }
-    return { state: "unknown", label: "Server Support Unknown", detail: "Modrinth server-side metadata is unavailable.", installable: true };
+    return { state: "unknown", label: "Compatibility Unknown", detail: "Modrinth server-side metadata is unavailable.", installable: true };
   }
   return { state: "available", label: "Server-Compatible", detail: "AnxOS template includes server install metadata.", installable: true };
 }
@@ -13366,7 +13379,7 @@ function openMarketplaceWizard(templateId) {
     renderMarketplaceProgress([]);
     const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
     if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
-      setMarketplaceInstallState("Client Pack Only", "failed");
+      setMarketplaceInstallState(capability.label || "Client Only", "failed");
       setMarketplaceMessage("This version does not provide an official dedicated-server pack on CurseForge. Choose another version or browse server-compatible packs.", "warning");
     } else {
       setMarketplaceInstallState("Ready", "ready");
@@ -14961,7 +14974,7 @@ async function installMarketplaceTemplate(event) {
   }
   const capability = template.serverPackCapability || classifyMarketplaceServerPackCapability(template);
   if (isProviderMarketplaceTemplate(template) && capability.installable === false) {
-    setMarketplaceInstallState("Client Pack Only", "failed");
+    setMarketplaceInstallState(capability.label || "Client Only", "failed");
     setMarketplaceMessage("Client pack only. This version does not provide an official dedicated-server pack on CurseForge.", "warning");
     renderMarketplaceInstallSummary(template);
     return;
@@ -32944,6 +32957,7 @@ agentDiagnosticsList?.addEventListener("click", (event) => {
   const action = event.target.closest("[data-agent-repair]")?.dataset.agentRepair;
   if (action === "start") runAgentControlAction("start");
   if (action === "install-service") runAgentControlAction("installService");
+  if (action === "repair-local-agent") runAgentControlAction("stopOldLocalAgentAndRepair");
   if (action === "repair-pairing") runAgentControlAction("repairAgent");
   if (action === "repair-permissions") runAgentControlAction("repairAgent");
   if (action === "updateAgent") runAgentControlAction("updateAgent");

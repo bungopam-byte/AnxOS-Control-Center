@@ -103,6 +103,7 @@ const desktopApi = {
     resetConfig: () => ipcRenderer.invoke("agentControl:resetConfig"),
     start: () => ipcRenderer.invoke("agentControl:start"),
     installLocalAgent: (payload = {}) => ipcRenderer.invoke("agentControl:installLocalAgent", payload),
+    stopOldLocalAgentAndRepair: (payload = {}) => ipcRenderer.invoke("agentControl:stopOldLocalAgentAndRepair", payload),
     pairLocalAgent: (payload = {}) => ipcRenderer.invoke("agentControl:pairLocalAgent", payload),
     startPairingSession: (payload = {}) => ipcRenderer.invoke("agentControl:startPairingSession", payload),
     updateLocalAgent: (payload = {}) => ipcRenderer.invoke("agentControl:updateLocalAgent", payload),

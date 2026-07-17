@@ -83,6 +83,29 @@ function restoreConfigBackup() { return restoreAgentRuntimeConfig(getRuntimeConf
 function resetConfig() { return saveConfig(defaults()); }
 
 function command(command, args, options = {}) { return new Promise((resolve) => execFile(command, args, { windowsHide: true, timeout: options.timeout || 15000, maxBuffer: 256 * 1024 }, (error, stdout, stderr) => resolve({ ok: !error, code: error?.code || null, stdout: String(stdout || "").trim(), stderr: String(stderr || "").trim() }))); }
+function quotePowerShellValue(value) { return `'${String(value ?? "").replace(/'/g, "''")}'`; }
+async function commandWindowsElevated(commandName, args = [], options = {}) {
+  if (process.platform !== "win32") return command(commandName, args, options);
+  const argumentList = `@(${args.map(quotePowerShellValue).join(",")})`;
+  const script = `$process = Start-Process -FilePath ${quotePowerShellValue(commandName)} -ArgumentList ${argumentList} -Verb RunAs -Wait -PassThru; if ($null -eq $process) { exit 1223 }; exit $process.ExitCode`;
+  const result = await command("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { timeout: options.timeout || 120000 });
+  return {
+    ...result,
+    elevated: true,
+    cancelled: result.code === 1223 || /cancelled|canceled/i.test(`${result.stdout}\n${result.stderr}`),
+  };
+}
+async function commandWindowsTask(args = [], options = {}) {
+  const result = await command("schtasks.exe", args, options);
+  if (process.platform === "win32" && !result.ok && options.elevateOnAccessDenied !== false && isWindowsAccessDenied(result)) {
+    const elevated = await commandWindowsElevated("schtasks.exe", args, options);
+    if (!elevated.ok && elevated.cancelled) {
+      throw Object.assign(new Error("Administrator permission was not approved."), { code: "ELEVATION_CANCELLED", recoverySuggestion: "Approve the Windows UAC prompt to repair the Local Agent service." });
+    }
+    return elevated;
+  }
+  return result;
+}
 function ensureManagedAgentDirectories() {
   const directories = [
     getConfigDirectory(),
@@ -104,6 +127,74 @@ function agentEnvironment(config) {
 }
 function isWindowsAccessDenied(result = {}) { return /access is denied|administrator|elevat/i.test(`${result.stderr || ""}\n${result.stdout || ""}\n${result.code || ""}`); }
 function createWindowsElevationError(action = "modify") { return Object.assign(new Error(`Windows requires administrator permission to ${action} the Agent service. Run AnxOS Control Center as Administrator, then retry the Agent service action.`), { code: "ELEVATION_REQUIRED", recoverySuggestion: "Close AnxOS Control Center, right-click it, choose Run as administrator, then retry the Agent service action." }); }
+
+function parseWindowsNetstatListener(stdout = "", port = 47131) {
+  const wanted = String(port);
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 5 || !/^TCP$/i.test(parts[0]) || !/^LISTENING$/i.test(parts[3])) continue;
+    const localAddress = parts[1] || "";
+    if (!localAddress.replace(/\[|\]/g, "").endsWith(`:${wanted}`)) continue;
+    const pid = Number.parseInt(parts[4], 10);
+    if (Number.isInteger(pid) && pid > 0) return { pid, localAddress, protocol: parts[0], state: parts[3] };
+  }
+  return null;
+}
+
+async function getWindowsListeningProcess(port = readConfig().port) {
+  if (process.platform !== "win32") return null;
+  const netstat = await command("netstat.exe", ["-ano", "-p", "tcp"], { timeout: 10000 });
+  if (!netstat.ok) return { port, verified: false, error: { code: netstat.code || "NETSTAT_FAILED", message: netstat.stderr || netstat.stdout || "Could not inspect listening processes." } };
+  const listener = parseWindowsNetstatListener(netstat.stdout, port);
+  if (!listener) return { port, listening: false, verified: false };
+  const processScript = `Get-CimInstance Win32_Process -Filter "ProcessId=${listener.pid}" | Select-Object ProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress`;
+  const details = await command("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", processScript], { timeout: 10000 });
+  let processInfo = null;
+  try { processInfo = details.stdout ? JSON.parse(details.stdout) : null; } catch {}
+  return {
+    ...listener,
+    port,
+    listening: true,
+    verified: Boolean(processInfo),
+    process: processInfo ? {
+      pid: Number(processInfo.ProcessId) || listener.pid,
+      name: processInfo.Name || null,
+      executablePath: processInfo.ExecutablePath || null,
+      commandLine: processInfo.CommandLine || null,
+    } : null,
+    error: details.ok ? null : { code: details.code || "PROCESS_QUERY_FAILED", message: details.stderr || details.stdout || "Could not inspect listener process." },
+  };
+}
+
+function isVerifiedOldLocalAgentProcess(processInfo = null, health = null) {
+  if (!processInfo || !health?.ok) return false;
+  const processPid = Number(processInfo.pid || processInfo.ProcessId || 0);
+  const healthPid = Number(health?.process?.pid || 0);
+  if (!processPid || !healthPid || processPid !== healthPid) return false;
+  const commandLine = normalizeCommandForComparison(processInfo.commandLine || processInfo.CommandLine || "");
+  const executablePath = normalizeCommandForComparison(processInfo.executablePath || processInfo.ExecutablePath || "");
+  const runtimeRoot = normalizeCommandForComparison(getBundledLocalAgentRuntime().runtimeRoot || getAppRoot());
+  const scriptPath = normalizeCommandForComparison(getAgentScript());
+  const configMarker = normalizeCommandForComparison(`ANXHUB_CONFIG_DIR=${getConfigDirectory()}`);
+  const looksLikeAnxOS = commandLine.includes("anxos") || executablePath.includes("anxos") || commandLine.includes(scriptPath) || commandLine.includes(runtimeRoot);
+  const usesManagedConfig = commandLine.includes(configMarker) || commandLine.includes(normalizeCommandForComparison(getConfigDirectory()));
+  return Boolean(looksLikeAnxOS && (usesManagedConfig || commandLine.includes(scriptPath)));
+}
+
+async function stopVerifiedOldLocalAgentProcess({ health = null, processInfo = null } = {}) {
+  if (process.platform !== "win32") return { stopped: false, reason: "not-windows" };
+  const verified = isVerifiedOldLocalAgentProcess(processInfo, health);
+  if (!verified) {
+    throw Object.assign(new Error("The process listening on the Local Agent port could not be verified as an old AnxOS Agent. It was not stopped."), {
+      code: "LOCAL_AGENT_PROCESS_UNVERIFIED",
+      processKind: "unknown-listener",
+    });
+  }
+  const pid = Number(processInfo.pid || processInfo.ProcessId || 0);
+  const result = await command("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { timeout: 15000 });
+  if (!result.ok) throw Object.assign(new Error(result.stderr || result.stdout || "Verified old Local Agent process could not be stopped."), { code: "LOCAL_AGENT_STOP_FAILED", pid });
+  return { stopped: true, pid, processKind: "verified-old-anxos-agent" };
+}
 
 async function getWindowsElevationState() {
   if (process.platform !== "win32") return { supported: false, elevated: false, state: "not-applicable" };
@@ -337,6 +428,26 @@ async function stop({ force = false } = {}) {
 }
 async function restart({ force = false } = {}) { await stop({ force }); lastRestartReason = force ? "Force restarted from AnxOS" : "Restarted from AnxOS"; return start(); }
 
+async function stopOldLocalAgentAndRepair(options = {}) {
+  if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
+  operationInFlight = "repair-old-local-agent";
+  try {
+    const config = readConfig();
+    const listener = await getWindowsListeningProcess(config.port);
+    const health = await agentClient.getHealth(getLocalAgentHealthConfig(config)).catch(() => null);
+    if (listener?.listening && health?.ok) {
+      const stopped = await stopVerifiedOldLocalAgentProcess({ health, processInfo: listener.process });
+      operationInFlight = null;
+      const repaired = await installLocalAgent({ autoStart: true, installService: true, reason: "old-local-agent-repair", ...options });
+      return { ...repaired, stoppedOldLocalAgent: stopped, listener: { port: listener.port, pid: listener.pid, processKind: stopped.processKind } };
+    }
+    operationInFlight = null;
+    return installLocalAgent({ autoStart: true, installService: true, reason: "old-local-agent-repair", ...options });
+  } finally {
+    if (operationInFlight === "repair-old-local-agent") operationInFlight = null;
+  }
+}
+
 async function getServiceState() {
   if (process.platform === "linux") {
     const result = await command("systemctl", ["--user", "is-enabled", "anxos-agent.service"]);
@@ -416,17 +527,17 @@ async function installService() {
     const current = await getServiceState();
     if (current.installed && current.valid) {
       if (current.enabled === false) {
-        const enable = await command("schtasks.exe", ["/Change", "/TN", SERVICE_NAME, "/ENABLE"], { timeout: 15000 });
+        const enable = await commandWindowsTask(["/Change", "/TN", SERVICE_NAME, "/ENABLE"], { timeout: 15000 });
         if (!enable.ok) throw Object.assign(new Error(enable.stderr || enable.stdout || "Could not enable Agent background startup task."), { code: "SERVICE_UPDATE_FAILED" });
       }
       writeWindowsAgentLauncher(config);
       saveConfig({ ...config, autoStart: true });
       return getStatus();
     }
-    if (current.installed) await command("schtasks.exe", ["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 });
+    if (current.installed) await commandWindowsTask(["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 });
     const launcherPath = writeWindowsAgentLauncher(config);
     const serviceCommand = expectedWindowsServiceCommand(config);
-    const result = await command("schtasks.exe", [
+    const result = await commandWindowsTask([
       "/Create",
       "/TN", SERVICE_NAME,
       "/SC", "ONLOGON",
@@ -442,8 +553,8 @@ async function installService() {
   saveConfig({ ...config, autoStart: true }); diagnostics.log("info", "service-manager", "install", "Agent background startup installed", { platform: process.platform }, { file: "service-manager" }); return getStatus();
 }
 
-async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.active) await command("schtasks.exe", ["/End", "/TN", SERVICE_NAME], { timeout: 30000 }); const result = await command("schtasks.exe", ["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 }); if (!result.ok && !/cannot find|does not exist/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || result.stdout || "Could not remove Agent background startup task."), { code: "SERVICE_UNINSTALL_FAILED" }); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
-async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") { const service = await getServiceState(); const action = service.installed ? ["/Change", "/TN", SERVICE_NAME, "/DISABLE"] : null; if (action) { const result = await command("schtasks.exe", action, { timeout: 15000 }); if (!result.ok) throw Object.assign(new Error(result.stderr || result.stdout || "Could not disable Agent background startup task."), { code: "SERVICE_UPDATE_FAILED" }); } } saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
+async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.active) await commandWindowsTask(["/End", "/TN", SERVICE_NAME], { timeout: 30000 }); const result = await commandWindowsTask(["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 }); if (!result.ok && !/cannot find|does not exist/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || result.stdout || "Could not remove Agent background startup task."), { code: "SERVICE_UNINSTALL_FAILED" }); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
+async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") { const service = await getServiceState(); const action = service.installed ? ["/Change", "/TN", SERVICE_NAME, "/DISABLE"] : null; if (action) { const result = await commandWindowsTask(action, { timeout: 15000 }); if (!result.ok) throw Object.assign(new Error(result.stderr || result.stdout || "Could not disable Agent background startup task."), { code: "SERVICE_UPDATE_FAILED" }); } } saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
 
 function installerStep(id, label, state = "pending", message = "") {
   return { id, label, state, message, at: new Date().toISOString() };
@@ -1370,6 +1481,7 @@ async function getStatus(_options = {}) {
     }
   }
 
+  const listeningProcess = process.platform === "win32" ? await getWindowsListeningProcess(config.port).catch((error) => ({ port: config.port, verified: false, error: { code: error?.code || "LISTENER_INSPECTION_FAILED", message: error?.message || "Could not inspect listening process." } })) : null;
   const running = Boolean(managedProcess && !managedProcess.killed) || service.active || Boolean(health?.ok);
   const pairing = readLocalAgentPairingStatus();
   const lifecycleOwnership = getLocalAgentLifecycleOwnership({ health, service, pairing, managed: managedProcess });
@@ -1431,6 +1543,7 @@ async function getStatus(_options = {}) {
     runtime,
     pairing,
     lifecycleOwnership,
+    listeningProcess,
     connectedClients: health?.process?.connectedClients || 0,
     lastHeartbeat: health ? new Date().toISOString() : null,
     latencyMs,
@@ -1816,6 +1929,8 @@ module.exports = {
     getLocalAgentUpdateState,
     getRegistrationStatusFromServiceState,
     getLocalAgentStartupSummary,
+    isVerifiedOldLocalAgentProcess,
+    parseWindowsNetstatListener,
     validateWindowsServiceRegistration,
     writeWindowsAgentLauncher,
   },
@@ -1839,6 +1954,7 @@ module.exports = {
   startPairingSession,
   start,
   stop,
+  stopOldLocalAgentAndRepair,
   uninstallService,
   updateLocalAgent,
   validateConfig,

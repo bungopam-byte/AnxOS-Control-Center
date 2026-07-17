@@ -10,8 +10,8 @@ const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const service = fs.readFileSync(path.join(root, "src", "services", "marketplaceInstallService.js"), "utf8");
 
 assert(app.includes("function classifyMarketplaceServerPackCapability"), "Renderer must classify provider server-pack capability.");
-assert(app.includes("Official Server Pack Available"), "CurseForge explicit server packs must be labeled installable.");
-assert(app.includes("Client Pack Only"), "Client-only provider projects must be visibly labeled.");
+assert(app.includes("Official Server Pack"), "CurseForge explicit server packs must be labeled installable.");
+assert(app.includes("Client Only"), "Client-only provider projects must be visibly labeled.");
 assert(app.includes("This version does not provide an official dedicated-server pack on CurseForge."), "Client-only CurseForge UX must use clear wording.");
 assert(app.includes("Browse Server-Compatible Packs"), "Client-only UX must offer a server-compatible browse action.");
 assert(app.includes("marketplaceInstallButton.disabled = marketplaceInstallInFlight || (isProviderMarketplaceTemplate(template) && capability.installable === false)"), "Normal Install action must be disabled for classified client-only provider selections.");

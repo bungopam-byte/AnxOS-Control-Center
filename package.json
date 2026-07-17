@@ -117,6 +117,7 @@
     "agent-control:remote-identity:smoke": "node scripts/remote-identity-rendering-smoke.js",
     "agent-control:developer-diagnostics:smoke": "node scripts/agent-developer-diagnostics-smoke.js",
     "windows-startup-registration:smoke": "node scripts/windows-startup-registration-state-smoke.js",
+    "windows-agent-lifecycle-migration:smoke": "node scripts/windows-agent-lifecycle-migration-smoke.js",
     "node-health:smoke": "node scripts/node-health-smoke.js",
     "security:page:smoke": "node scripts/security-page-smoke.js",
     "security:ipc-error-contract:smoke": "node scripts/security-ipc-error-contract-smoke.js",
@@ -249,6 +250,22 @@
         "filter": [
           "**/*.js",
           "!**/*.map"
+        ]
+      },
+      {
+        "from": "src/services",
+        "to": "local-agent-runtime/src/services",
+        "filter": [
+          "**/*.js",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "node_modules/dotenv",
+        "to": "local-agent-runtime/node_modules/dotenv",
+        "filter": [
+          "lib/**/*",
+          "package.json"
         ]
       },
       {

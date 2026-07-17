@@ -9,6 +9,8 @@
     "agent/package.json",
     "agent/src",
     "src/shared",
+    "src/services",
+    "node_modules/dotenv",
     "config/agent.example.json",
     "config/marketplace-templates.json"
   ],

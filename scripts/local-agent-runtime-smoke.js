@@ -14,6 +14,7 @@ assert.strictEqual(manifest.entrypoint, "agent/src/server.js");
 assert.strictEqual(manifest.nodeRuntime, "electron-run-as-node");
 assert(manifest.includedPaths.includes("agent/src"), "runtime manifest should include Agent source.");
 assert(manifest.includedPaths.includes("src/shared"), "runtime manifest should include shared Agent dependencies.");
+assert(manifest.includedPaths.includes("src/services"), "runtime manifest should include Agent service dependencies.");
 assert(manifest.excludedPatterns.includes(".env"), "runtime manifest should exclude environment files.");
 assert(manifest.excludedPatterns.includes("*.log"), "runtime manifest should exclude logs.");
 assert(manifest.excludedPatterns.includes("*.map"), "runtime manifest should exclude source maps.");
@@ -21,6 +22,8 @@ assert(manifest.excludedPatterns.includes("*.map"), "runtime manifest should exc
 const resources = packageJson.build.extraResources || [];
 const runtimeAgent = resources.find((entry) => entry.to === "local-agent-runtime/agent");
 const runtimeShared = resources.find((entry) => entry.to === "local-agent-runtime/src/shared");
+const runtimeServices = resources.find((entry) => entry.to === "local-agent-runtime/src/services");
+const runtimeDotenv = resources.find((entry) => entry.to === "local-agent-runtime/node_modules/dotenv");
 const runtimeManifest = resources.find((entry) => entry.to === "local-agent-runtime/local-agent-runtime.json");
 const runtimeConfigStore = path.join(root, "src", "shared", "agentRuntimeConfigStore.js");
 
@@ -31,6 +34,11 @@ assert(runtimeAgent.filter.includes("!**/*.map"), "runtime Agent resource should
 assert(runtimeAgent.filter.includes("!node_modules/**/*"), "runtime Agent resource should exclude development dependency trees.");
 assert(runtimeShared, "electron-builder should package shared runtime files.");
 assert(runtimeShared.filter.includes("**/*.js"), "shared runtime resource should include JavaScript files.");
+assert(runtimeServices, "electron-builder should package application services required by the Agent runtime.");
+assert(runtimeServices.filter.includes("**/*.js"), "Agent service dependencies should include JavaScript files.");
+assert(runtimeDotenv, "electron-builder should package dotenv for the standalone Agent service tree.");
+assert(runtimeDotenv.filter.includes("package.json") && runtimeDotenv.filter.includes("lib/**/*"), "standalone dotenv packaging should include only runtime files.");
+assert(fs.existsSync(path.join(root, "src", "services", "ampService.js")), "AMP service dependency required by the packaged Agent must exist.");
 assert(fs.existsSync(runtimeConfigStore), "shared Agent runtime configuration store should exist for Desktop and packaged Agent resolution.");
 assert(fs.readFileSync(path.join(root, "agent", "src", "config.js"), "utf8").includes('../../src/shared/agentRuntimeConfigStore'), "packaged Agent configuration should load the shared runtime store from the packaged shared tree.");
 assert(runtimeManifest, "electron-builder should package the runtime manifest.");

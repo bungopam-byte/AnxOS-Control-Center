@@ -196,6 +196,13 @@ async function stopVerifiedOldLocalAgentProcess({ health = null, processInfo = n
   return { stopped: true, pid, processKind: "verified-old-anxos-agent" };
 }
 
+async function stopVerifiedWindowsTaskAgent(config = readConfig()) {
+  const listener = await getWindowsListeningProcess(config.port);
+  if (!listener?.listening) return { stopped: false, reason: "not-listening" };
+  const health = await agentClient.getHealth(getLocalAgentHealthConfig(config)).catch(() => null);
+  return stopVerifiedOldLocalAgentProcess({ health, processInfo: listener.process });
+}
+
 async function getWindowsElevationState() {
   if (process.platform !== "win32") return { supported: false, elevated: false, state: "not-applicable" };
   const result = await command("net.exe", ["session"], { timeout: 5000 });
@@ -301,6 +308,65 @@ function validateWindowsServiceRegistration(stdout = "", config = readConfig()) 
       ...launcherIssues,
     ].filter(Boolean),
   };
+}
+
+function classifyLegacyWindowsServiceOwnership(qcOutput = "", descriptionOutput = "", binaryMetadata = {}) {
+  const evidence = normalizeCommandForComparison(`${qcOutput}\n${descriptionOutput}`);
+  if (!evidence || /does not exist|failed 1060/.test(evidence)) return { state: "missing", owned: false };
+  const hasDisplayMarker = evidence.includes("display_name : anxos local agent") || evidence.includes("description : anxos local agent");
+  const hasEntrypoint = evidence.includes("agent/src/server.js");
+  const hasProductPath = evidence.includes("anxos control center") || evidence.includes("anxos-control-center") || evidence.includes("anxhub");
+  const metadata = normalizeCommandForComparison(`${binaryMetadata.productName || ""} ${binaryMetadata.fileDescription || ""}`);
+  const hasBinaryMarker = binaryMetadata.exists === true && metadata.includes("anxos control center");
+  if (hasDisplayMarker && hasEntrypoint && hasProductPath && hasBinaryMarker) return { state: "verified-legacy", owned: true, stale: true };
+  return { state: "ambiguous", owned: false, issues: [
+    hasDisplayMarker ? null : "Legacy service display name or description is not an exact AnxOS Local Agent marker.",
+    hasEntrypoint ? null : "Legacy service command does not contain the Agent server entrypoint.",
+    hasProductPath ? null : "Legacy service command does not contain an AnxOS product path.",
+    hasBinaryMarker ? null : "Legacy service executable metadata does not identify AnxOS Control Center.",
+  ].filter(Boolean) };
+}
+
+async function inspectWindowsBinaryMetadata(commandLine = "") {
+  const match = String(commandLine).match(/^\s*"([^"]+)"|^\s*([^\s]+)/);
+  const executablePath = match?.[1] || match?.[2] || "";
+  if (!executablePath) return { exists: false, executablePath: null };
+  const script = `$item = Get-Item -LiteralPath ${quotePowerShellValue(executablePath)} -ErrorAction SilentlyContinue; if ($null -eq $item) { '{}' } else { @{ exists = $true; productName = $item.VersionInfo.ProductName; fileDescription = $item.VersionInfo.FileDescription } | ConvertTo-Json -Compress }`;
+  const result = await command("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], { timeout: 15000 });
+  try { return { executablePath, ...JSON.parse(String(result.stdout || "{}").trim()) }; }
+  catch { return { exists: false, executablePath }; }
+}
+
+function classifyWindowsTaskOwnership(taskOutput = "", verification = {}) {
+  const evidence = normalizeCommandForComparison(taskOutput);
+  if (!evidence || /cannot find|does not exist/.test(evidence)) return { state: "missing", owned: false };
+  const exactName = /taskname:\s*\/anxosagent(?:\s|$)/.test(evidence);
+  const hasEntrypoint = evidence.includes("agent/src/server.js") || evidence.includes("start-local-agent.cmd");
+  const hasProductPath = evidence.includes("anxos control center") || evidence.includes("anxos-control-center") || evidence.includes("anxhub");
+  if (!(exactName && hasEntrypoint && hasProductPath)) return { state: "ambiguous", owned: false };
+  return { state: verification.valid ? "valid-packaged" : "verified-stale", owned: true, stale: !verification.valid };
+}
+
+async function inspectLegacyWindowsService() {
+  const [qc, description] = await Promise.all([
+    command("sc.exe", ["qc", SERVICE_NAME], { timeout: 15000 }),
+    command("sc.exe", ["qdescription", SERVICE_NAME], { timeout: 15000 }),
+  ]);
+  const binaryMetadata = await inspectWindowsBinaryMetadata(getWindowsServiceBinaryPath(qc.stdout));
+  const classification = classifyLegacyWindowsServiceOwnership(`${qc.stdout}\n${qc.stderr}`, `${description.stdout}\n${description.stderr}`, binaryMetadata);
+  return { ...classification, qc, description, binaryMetadata };
+}
+
+async function removeVerifiedLegacyWindowsService() {
+  const legacy = await inspectLegacyWindowsService();
+  if (legacy.state === "missing") return { changed: false, state: "missing" };
+  if (!legacy.owned) throw Object.assign(new Error("A same-named Windows service exists, but AnxOS ownership could not be proven. Repair stopped without changing it."), { code: "LEGACY_SERVICE_OWNERSHIP_AMBIGUOUS", details: { state: legacy.state, issues: legacy.issues } });
+  const stopped = await commandWindowsElevated("sc.exe", ["stop", SERVICE_NAME], { timeout: 120000 });
+  if (stopped.cancelled) throw Object.assign(new Error("Administrator permission was declined; the verified legacy Agent service was not changed."), { code: "ELEVATION_CANCELLED" });
+  const removed = await commandWindowsElevated("sc.exe", ["delete", SERVICE_NAME], { timeout: 120000 });
+  if (removed.cancelled) throw Object.assign(new Error("Administrator permission was declined; the verified legacy Agent service was not removed."), { code: "ELEVATION_CANCELLED" });
+  if (!removed.ok && !/does not exist|marked for deletion|failed 1060/i.test(`${removed.stdout}\n${removed.stderr}`)) throw Object.assign(new Error(removed.stderr || removed.stdout || "Verified legacy AnxOS service could not be removed."), { code: "LEGACY_SERVICE_REMOVE_FAILED" });
+  return { changed: true, state: "removed" };
 }
 
 function getRegistrationStatusFromServiceState(service = {}) {
@@ -423,7 +489,7 @@ async function start() {
 async function stop({ force = false } = {}) {
   if (operationInFlight) throw Object.assign(new Error("Another Agent operation is already running."), { code: "AGENT_OPERATION_BUSY" });
   operationInFlight = "stop";
-  try { const config = readConfig(); const service = await getServiceState(); if (service.installed && service.active) { const result = process.platform === "linux" ? await command("systemctl", ["--user", "stop", "anxos-agent.service"]) : await command("schtasks.exe", ["/End", "/TN", SERVICE_NAME], { timeout: 30000 }); if (!result.ok && !force && !/not been started|not running|not currently running/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || result.stdout || "Background Agent could not be stopped."), { code: "SERVICE_STOP_FAILED" }); } if (managedProcess && !managedProcess.killed) { const child = managedProcess; child.kill(force ? "SIGKILL" : "SIGTERM"); await new Promise((resolve) => { const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); resolve(); }, 5000); child.once("exit", () => { clearTimeout(timer); resolve(); }); }); } managedProcess = null; await waitForLocalAgentStopped(config).catch(() => false); lastRestartReason = force ? "Force stopped from AnxOS" : "Stopped from AnxOS"; return getStatus(); }
+  try { const config = readConfig(); const service = await getServiceState(); if (service.installed && service.active) { const result = process.platform === "linux" ? await command("systemctl", ["--user", "stop", "anxos-agent.service"]) : await command("schtasks.exe", ["/End", "/TN", SERVICE_NAME], { timeout: 30000 }); if (!result.ok && !force && !/not been started|not running|not currently running/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || result.stdout || "Background Agent could not be stopped."), { code: "SERVICE_STOP_FAILED" }); if (process.platform === "win32") await stopVerifiedWindowsTaskAgent(config); } if (managedProcess && !managedProcess.killed) { const child = managedProcess; child.kill(force ? "SIGKILL" : "SIGTERM"); await new Promise((resolve) => { const timer = setTimeout(() => { if (child.exitCode === null) child.kill("SIGKILL"); resolve(); }, 5000); child.once("exit", () => { clearTimeout(timer); resolve(); }); }); } managedProcess = null; await waitForLocalAgentStopped(config).catch(() => false); lastRestartReason = force ? "Force stopped from AnxOS" : "Stopped from AnxOS"; return getStatus(); }
   finally { operationInFlight = null; }
 }
 async function restart({ force = false } = {}) { await stop({ force }); lastRestartReason = force ? "Force restarted from AnxOS" : "Restarted from AnxOS"; return start(); }
@@ -473,6 +539,7 @@ async function getServiceState() {
     return service;
   }
   if (process.platform === "win32") {
+    const legacyRegistration = await inspectLegacyWindowsService();
     const result = await command("schtasks.exe", ["/Query", "/TN", SERVICE_NAME, "/FO", "LIST", "/V"], { timeout: 15000 });
     const qc = result;
     const combined = `${result.stdout}\n${result.stderr}\n${qc.stdout}\n${qc.stderr}`;
@@ -498,6 +565,9 @@ async function getServiceState() {
         },
         privilege,
         requiresElevation: false,
+        processRunning: Boolean(managedProcess),
+        startupRegistrationHealthy: false,
+        legacyRegistration: { state: legacyRegistration.state, owned: legacyRegistration.owned, issues: legacyRegistration.issues || [] },
       };
     }
     const verification = validateWindowsServiceRegistration(qc.stdout, readConfig());
@@ -511,9 +581,12 @@ async function getServiceState() {
       active: active || Boolean(managedProcess),
       state: active ? "running" : verification.valid ? serviceState || "stopped" : "invalid",
       registrationStatus: verification.valid ? "valid" : "invalid",
-      verification: { state: verification.valid ? "valid" : "invalid", serviceState, ...verification },
+      verification: { state: verification.valid ? "valid" : "invalid", serviceState, raw: qc.stdout, ...verification },
       privilege,
       requiresElevation: false,
+      processRunning: active || Boolean(managedProcess),
+      startupRegistrationHealthy: verification.valid && enabled,
+      legacyRegistration: { state: legacyRegistration.state, owned: legacyRegistration.owned, issues: legacyRegistration.issues || [] },
     };
     return service;
   }
@@ -524,6 +597,7 @@ async function installService() {
   const config = readConfig();
   if (process.platform === "linux") { const unitDir = path.join(os.homedir(), ".config", "systemd", "user"); const unitPath = path.join(unitDir, "anxos-agent.service"); fs.mkdirSync(unitDir, { recursive: true }); const quote = (value) => `"${String(value).replace(/([\\"])/g, "\\$1")}"`; const unit = `[Unit]\nDescription=AnxOS Agent\nAfter=network.target\n\n[Service]\nType=simple\nEnvironment=${quote("ELECTRON_RUN_AS_NODE=1")}\nEnvironment=${quote(`ANXHUB_CONFIG_DIR=${getConfigDirectory()}`)}\nEnvironment=${quote(`AGENT_HOST=${config.host}`)}\nEnvironment=${quote(`AGENT_PORT=${config.port}`)}\nEnvironment=${quote(`AGENT_IDENTITY_PATH=${path.join(getAgentDataDirectory(), "device-identity.json")}`)}\nExecStart=${quote(process.execPath)} ${quote(getAgentScript())}\nRestart=${config.restartPolicy === "never" ? "no" : config.restartPolicy}\n\n[Install]\nWantedBy=default.target\n`; fs.writeFileSync(unitPath, unit, { mode: 0o600 }); await command("systemctl", ["--user", "daemon-reload"]); const enabled = await command("systemctl", ["--user", "enable", "--now", "anxos-agent.service"]); if (!enabled.ok) throw Object.assign(new Error(enabled.stderr || "Could not install systemd user service."), { code: "SERVICE_INSTALL_FAILED" }); }
   else if (process.platform === "win32") {
+    await removeVerifiedLegacyWindowsService();
     const current = await getServiceState();
     if (current.installed && current.valid) {
       if (current.enabled === false) {
@@ -534,7 +608,11 @@ async function installService() {
       saveConfig({ ...config, autoStart: true });
       return getStatus();
     }
-    if (current.installed) await commandWindowsTask(["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 });
+    if (current.installed) {
+      const ownership = classifyWindowsTaskOwnership(current.verification?.raw || "", current.verification);
+      if (ownership.state === "ambiguous") throw Object.assign(new Error("The existing AnxOSAgent task has ambiguous ownership. Repair stopped without changing it."), { code: "STARTUP_TASK_OWNERSHIP_AMBIGUOUS" });
+      await commandWindowsTask(["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 });
+    }
     const launcherPath = writeWindowsAgentLauncher(config);
     const serviceCommand = expectedWindowsServiceCommand(config);
     const result = await commandWindowsTask([
@@ -553,7 +631,7 @@ async function installService() {
   saveConfig({ ...config, autoStart: true }); diagnostics.log("info", "service-manager", "install", "Agent background startup installed", { platform: process.platform }, { file: "service-manager" }); return getStatus();
 }
 
-async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed && service.active) await commandWindowsTask(["/End", "/TN", SERVICE_NAME], { timeout: 30000 }); const result = await commandWindowsTask(["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 }); if (!result.ok && !/cannot find|does not exist/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || result.stdout || "Could not remove Agent background startup task."), { code: "SERVICE_UNINSTALL_FAILED" }); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
+async function uninstallService() { if (process.platform === "linux") { await command("systemctl", ["--user", "disable", "--now", "anxos-agent.service"]); fs.rmSync(path.join(os.homedir(), ".config", "systemd", "user", "anxos-agent.service"), { force: true }); await command("systemctl", ["--user", "daemon-reload"]); } else if (process.platform === "win32") { const service = await getServiceState(); if (service.installed) { const ownership = classifyWindowsTaskOwnership(service.verification?.raw || "", service.verification); if (!ownership.owned) throw Object.assign(new Error("The existing AnxOSAgent task has ambiguous ownership. Uninstall stopped without changing it."), { code: "STARTUP_TASK_OWNERSHIP_AMBIGUOUS" }); if (service.active) { await commandWindowsTask(["/End", "/TN", SERVICE_NAME], { timeout: 30000 }); await stopVerifiedWindowsTaskAgent(readConfig()); } const result = await commandWindowsTask(["/Delete", "/TN", SERVICE_NAME, "/F"], { timeout: 30000 }); if (!result.ok && !/cannot find|does not exist/i.test(`${result.stdout}\n${result.stderr}`)) throw Object.assign(new Error(result.stderr || result.stdout || "Could not remove Agent background startup task."), { code: "SERVICE_UNINSTALL_FAILED" }); } await removeVerifiedLegacyWindowsService(); } else throw Object.assign(new Error("Agent service management is unsupported."), { code: "PLATFORM_UNSUPPORTED" }); saveConfig({ ...readConfig(), autoStart: false }); return getStatus(); }
 async function setAutoStart(enabled) { if (enabled) return installService(); if (process.platform === "linux") await command("systemctl", ["--user", "disable", "anxos-agent.service"]); else if (process.platform === "win32") { const service = await getServiceState(); const action = service.installed ? ["/Change", "/TN", SERVICE_NAME, "/DISABLE"] : null; if (action) { const result = await commandWindowsTask(action, { timeout: 15000 }); if (!result.ok) throw Object.assign(new Error(result.stderr || result.stdout || "Could not disable Agent background startup task."), { code: "SERVICE_UPDATE_FAILED" }); } } saveConfig({ ...readConfig(), autoStart: Boolean(enabled) }); return getStatus(); }
 
 function installerStep(id, label, state = "pending", message = "") {
@@ -1923,6 +2001,8 @@ async function openDataFolder() { fs.mkdirSync(getAgentDataDirectory(), { recurs
 module.exports = {
   _test: {
     buildWindowsAgentLauncherScript,
+    classifyLegacyWindowsServiceOwnership,
+    classifyWindowsTaskOwnership,
     compareVersions,
     expectedWindowsServiceCommand,
     getWindowsLauncherPath,
@@ -1931,6 +2011,7 @@ module.exports = {
     getLocalAgentStartupSummary,
     isVerifiedOldLocalAgentProcess,
     parseWindowsNetstatListener,
+    removeVerifiedLegacyWindowsService,
     validateWindowsServiceRegistration,
     writeWindowsAgentLauncher,
   },

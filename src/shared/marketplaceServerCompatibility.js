@@ -22,15 +22,32 @@ const LABELS = Object.freeze({
 });
 
 const SUPPORTED_RUNTIMES = new Set(["fabric", "forge", "neoforge", "neo-forge", "quilt"]);
-const DEFAULT_REGISTRY_PATH = path.join(__dirname, "..", "..", "config", "marketplace-server-certifications.json");
+const REGISTRY_FILE_NAME = "marketplace-server-certifications.json";
+const DEFAULT_REGISTRY_PATH = path.join(__dirname, "..", "..", "config", REGISTRY_FILE_NAME);
+
+function getRegistryPaths(registryPath = null, options = {}) {
+  if (registryPath) return [registryPath];
+  const defaultPath = options.defaultPath || DEFAULT_REGISTRY_PATH;
+  const resourcesPath = options.resourcesPath === undefined ? process.resourcesPath : options.resourcesPath;
+  const paths = [defaultPath];
+  if (defaultPath.includes("app.asar.unpacked")) {
+    paths.push(defaultPath.replace("app.asar.unpacked", "app.asar"));
+  }
+  if (resourcesPath) {
+    paths.push(path.join(resourcesPath, "app.asar", "config", REGISTRY_FILE_NAME));
+    paths.push(path.join(resourcesPath, "app", "config", REGISTRY_FILE_NAME));
+  }
+  return [...new Set(paths)];
+}
 
 function readRegistry(registryPath = DEFAULT_REGISTRY_PATH) {
-  try {
-    const value = JSON.parse(fs.readFileSync(registryPath, "utf8"));
-    return value && value.schemaVersion === 1 && Array.isArray(value.records) ? value : { schemaVersion: 1, maxAgeDays: 180, records: [] };
-  } catch {
-    return { schemaVersion: 1, maxAgeDays: 180, records: [] };
+  for (const candidate of getRegistryPaths(registryPath === DEFAULT_REGISTRY_PATH ? null : registryPath)) {
+    try {
+      const value = JSON.parse(fs.readFileSync(candidate, "utf8"));
+      if (value && value.schemaVersion === 1 && Array.isArray(value.records)) return value;
+    } catch {}
   }
+  return { schemaVersion: 1, maxAgeDays: 180, records: [] };
 }
 
 function sameId(left, right) {
@@ -123,4 +140,4 @@ function classifyServerCompatibility(input = {}, options = {}) {
   return result(CLASSIFICATIONS.UNKNOWN, "CurseForge does not expose enough project or file evidence to determine dedicated-server compatibility.", [...staleEvidence, { source: "insufficient-metadata", outcome: "unknown", detail: "No certification, server-pack relationship, explicit compatibility declaration, or known runtime evidence." }], certification, { evaluatedAt });
 }
 
-module.exports = { CLASSIFICATIONS, LABELS, classifyServerCompatibility, readRegistry };
+module.exports = { CLASSIFICATIONS, LABELS, classifyServerCompatibility, getRegistryPaths, readRegistry };

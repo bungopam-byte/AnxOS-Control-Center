@@ -1,5 +1,5 @@
 const assert = require("assert");
-const { CLASSIFICATIONS, LABELS, classifyServerCompatibility } = require("../src/shared/marketplaceServerCompatibility");
+const { CLASSIFICATIONS, LABELS, classifyServerCompatibility, getRegistryPaths } = require("../src/shared/marketplaceServerCompatibility");
 const curseforgeProvider = require("../src/services/providers/curseforgeProvider");
 
 const NOW = new Date("2026-07-17T12:00:00.000Z");
@@ -43,6 +43,10 @@ const rawProject = { id: 9, name: "Consistent Pack", latestFilesIndexes: [{ game
 const listing = curseforgeProvider._test.normalizeMod(rawProject).serverCompatibility;
 const preflight = classify({ projectId: 9, loaders: ["fabric"], serverCapable: true });
 assert.strictEqual(listing.classification, preflight.classification, "Listing and install-preflight classification must be consistent.");
+
+const unpackedRegistryPaths = getRegistryPaths("/opt/AnxOS/resources/app.asar.unpacked/config/marketplace-server-certifications.json");
+assert.deepStrictEqual(unpackedRegistryPaths, ["/opt/AnxOS/resources/app.asar.unpacked/config/marketplace-server-certifications.json"], "An explicit registry path must remain exact for tests and overrides.");
+assert(getRegistryPaths(null, { defaultPath: "/opt/AnxOS/resources/app.asar.unpacked/src/shared/registry.json", resourcesPath: "/opt/AnxOS/resources" }).includes("/opt/AnxOS/resources/app.asar/src/shared/registry.json"), "Packaged lookup must translate app.asar.unpacked to app.asar.");
 
 assert.deepStrictEqual(Object.values(LABELS), ["Verified Server Pack", "Official Server Pack", "Server Compatible", "Likely Server Compatible", "Compatibility Unknown", "Client Only", "Unsupported"]);
 console.log("Marketplace server compatibility smoke checks passed.");

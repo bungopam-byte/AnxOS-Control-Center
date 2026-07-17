@@ -167,5 +167,9 @@ const manifest = {
 };
 
 fs.mkdirSync(distDir, { recursive: true });
-fs.writeFileSync(path.join(distDir, "update-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(`Wrote dist/update-manifest.json with ${assets.length} asset(s).`);
+const updateManifestName = "update-manifest.json";
+fs.writeFileSync(path.join(distDir, updateManifestName), `${JSON.stringify(manifest, null, 2)}\n`);
+const checksumEntries = [...assets.map((asset) => asset.name), updateManifestName]
+  .map((name) => `${sha256File(path.join(distDir, name))}  ${name}`);
+fs.writeFileSync(path.join(distDir, "SHA256SUMS"), `${checksumEntries.join("\n")}\n`);
+console.log(`Wrote dist/update-manifest.json with ${assets.length} asset(s) and dist/SHA256SUMS.`);

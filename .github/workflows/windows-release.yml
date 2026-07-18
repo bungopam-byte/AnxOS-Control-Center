@@ -98,7 +98,15 @@ jobs:
           AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
-        run: node scripts/verify-windows-signatures.js
+        run: |
+          Write-Host "PowerShell diagnostics:"
+          `$PSVersionTable.PSVersion
+          `$PSVersionTable.PSEdition
+          `$PSHOME
+          Get-Command powershell.exe -ErrorAction SilentlyContinue | Format-List *
+          Get-Command pwsh.exe -ErrorAction SilentlyContinue | Format-List *
+          Import-Module Microsoft.PowerShell.Security -Force -Verbose -ErrorAction Continue
+          node scripts/verify-windows-signatures.js
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4

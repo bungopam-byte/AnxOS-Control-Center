@@ -22,23 +22,34 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const script = "$input | Get-AuthenticodeSignature | Select-Object Path,Status,StatusMessage,SignerCertificate | ConvertTo-Json -Compress";
-const powershell = process.env.SystemRoot
-  ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-  : "powershell.exe";
-const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", script], {
-  input: files.join("\n"), encoding: "utf8", windowsHide: true,
-});
-if (result.status !== 0) {
-  console.error(result.stderr || "Authenticode verification failed.");
-  process.exit(result.status || 1);
+function resolveSignTool() {
+  if (process.env.SIGNTOOL_PATH && fs.existsSync(process.env.SIGNTOOL_PATH)) return process.env.SIGNTOOL_PATH;
+  const result = spawnSync("where.exe", ["signtool.exe"], { encoding: "utf8", windowsHide: true });
+  const candidate = String(result.stdout || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+  return candidate || null;
 }
-const records = JSON.parse(result.stdout || "[]");
-const normalized = Array.isArray(records) ? records : [records];
+
+const signTool = resolveSignTool();
+console.log(`Windows signature verifier: ${signTool || "signtool.exe not found"}`);
+if (!signTool) {
+  console.error("Windows SDK signtool.exe is required for Authenticode verification.");
+  process.exit(1);
+}
+
 const signingExpected = Boolean(getAzureSigningConfig());
-const invalid = normalized.filter((record) => signingExpected ? record.Status !== "Valid" : false);
-for (const record of normalized) console.log(`${record.Status}: ${record.Path}${record.StatusMessage ? ` — ${record.StatusMessage}` : ""}`);
-if (invalid.length > 0) {
-  console.error("Azure Trusted Signing was configured, but one or more executables are not validly signed.");
+const publisher = process.env.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME || "Anjo ROSIMO";
+const failures = [];
+for (const filePath of files) {
+  const result = spawnSync(signTool, ["verify", "/pa", "/v", filePath], { encoding: "utf8", windowsHide: true });
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+  const valid = result.status === 0 && /Successfully verified/i.test(output);
+  const publisherValid = !signingExpected || new RegExp(`Subject:.*${publisher.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`, "i").test(output);
+  console.log(`${valid && publisherValid ? "Valid" : "Invalid"}: ${filePath}`);
+  if (output) console.log(output);
+  if (!valid || !publisherValid) failures.push(filePath);
+}
+
+if (failures.length > 0) {
+  console.error(`Authenticode verification failed for ${failures.length} executable(s).`);
   process.exit(1);
 }

@@ -1647,6 +1647,10 @@ async function assertMarketplaceInstallerSmokeMatrix() {
     "instanceFileExists",
     "saveMinecraftProperties",
     "updateInstance",
+    "beginInstallationSession",
+    "executeInstallationPhase",
+    "cancelInstallationSession",
+    "closeInstallationSession",
     "startInstance",
     "getInstanceStatus",
     "forceKillInstance",
@@ -1772,6 +1776,20 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       instances.set(instanceId, { ...(instances.get(instanceId) || {}), ...patch });
       return { instance: instances.get(instanceId) };
     };
+    agentClient.beginInstallationSession = async (instanceId, payload) => ({ ...payload, token: `smoke-${instanceId}` });
+    agentClient.executeInstallationPhase = async (instanceId) => {
+      installerStarts.add(instanceId);
+      const instance = instances.get(instanceId) || {};
+      if (String(instance.loader || "").toLowerCase() === "quilt") {
+        files.set(`${instanceId}:quilt-server-launch.jar`, Buffer.from("quilt-launcher"));
+      }
+      if (String(instance.loader || "").toLowerCase() === "forge") {
+        files.set(`${instanceId}:forge-${instance.loaderVersion}.jar`, Buffer.from("forge-server"));
+      }
+      return { ok: true, exitCode: 0, stdout: "", stderr: "", durationMs: 1 };
+    };
+    agentClient.cancelInstallationSession = async () => ({ cancelled: true });
+    agentClient.closeInstallationSession = async () => ({ closed: true });
     agentClient.startInstance = async (instanceId) => {
       installerStarts.add(instanceId);
       const instance = instances.get(instanceId) || {};
@@ -1822,7 +1840,7 @@ async function assertMarketplaceInstallerSmokeMatrix() {
       ["purpur", { provider: "anxhub", loader: "purpur" }, "server.jar"],
       ["fabric", { provider: "anxhub", loader: "fabric" }, "fabric-server.jar"],
       ["quilt", { provider: "anxhub", loader: "quilt" }, "quilt-server-launch.jar"],
-      ["forge", { provider: "anxhub", loader: "forge" }, "forge-installer.jar"],
+      ["forge", { provider: "anxhub", loader: "forge" }, "forge-1.21.1-52.1.0.jar"],
       ["neoforge", { provider: "anxhub", loader: "neoforge" }, "neoforge-installer.jar"],
       ["curseforge", { provider: "curseforge", loader: "vanilla", providerProjectId: "100" }, "mods/curseforge-smoke.jar"],
       ["modrinth", { provider: "modrinth", loader: "vanilla", providerProjectId: "mr-pack" }, "mods/modrinth-smoke.jar"],

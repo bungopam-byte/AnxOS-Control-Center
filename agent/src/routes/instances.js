@@ -1,10 +1,14 @@
 const {
+  beginInstallationSession,
+  cancelInstallationSession,
   clearLogs,
+  closeInstallationSession,
   createInstance,
   createInstanceFolder,
   deleteInstance,
   deleteInstanceFile,
   duplicateInstance,
+  executeInstallationPhase,
   forgetInstance,
   forceKillInstance,
   getMetrics,
@@ -65,6 +69,32 @@ function errorResult(error) {
 }
 
 function getRuntimeErrorDetails(error) {
+  if (/^(?:INSTALLER_|INSTALLATION_)/.test(String(error?.code || ""))) {
+    return {
+      code: error.code,
+      operationId: error.operationId || null,
+      installerFamily: error.installerFamily || null,
+      phase: error.phase || null,
+      installationState: error.installationState || null,
+      exitCode: Number.isInteger(error.exitCode) ? error.exitCode : null,
+      signal: error.signal || null,
+      timeoutMs: Number.isFinite(error.timeoutMs) ? error.timeoutMs : null,
+      durationMs: Number.isFinite(error.durationMs) ? error.durationMs : null,
+      stdout: typeof error.stdout === "string" ? error.stdout : "",
+      stderr: typeof error.stderr === "string" ? error.stderr : "",
+      causeCode: error.causeCode || null,
+    };
+  }
+  if (error?.code === "JAVA_RUNTIME_REQUIRED" || error?.code === "JAVA_RUNTIME_OVERRIDE_INVALID") {
+    return {
+      code: error.code,
+      requiredMajor: error.requiredMajor || null,
+      detectedMajors: Array.isArray(error.detectedMajors) ? error.detectedMajors : [],
+      dependencyId: error.dependencyId || "java",
+      userMessage: error.message,
+      suggestion: error.suggestion || "Open Dependencies and install or repair the required Java runtime, then retry.",
+    };
+  }
   if (error?.code === "INSTANCE_ALREADY_RUNNING") {
     return {
       code: error.code,
@@ -320,6 +350,24 @@ async function handleInstances(request, url) {
 
     if (request.method === "PUT" && minecraftPropertiesId) {
       return result(200, await writeMinecraftProperties(minecraftPropertiesId, parseJsonBody(request).properties));
+    }
+
+    const installationSessionId = getInstanceIdFromPath(url.pathname, "/installation/session");
+    if (request.method === "POST" && installationSessionId) {
+      return result(201, await beginInstallationSession(installationSessionId, parseJsonBody(request)));
+    }
+    if (request.method === "DELETE" && installationSessionId) {
+      return result(200, await closeInstallationSession(installationSessionId, parseJsonBody(request)));
+    }
+
+    const installationExecuteId = getInstanceIdFromPath(url.pathname, "/installation/execute");
+    if (request.method === "POST" && installationExecuteId) {
+      return result(200, await executeInstallationPhase(installationExecuteId, parseJsonBody(request)));
+    }
+
+    const installationCancelId = getInstanceIdFromPath(url.pathname, "/installation/cancel");
+    if (request.method === "POST" && installationCancelId) {
+      return result(200, await cancelInstallationSession(installationCancelId, parseJsonBody(request)));
     }
 
     const fivemReadinessId = getInstanceIdFromPath(url.pathname, "/fivem/readiness");

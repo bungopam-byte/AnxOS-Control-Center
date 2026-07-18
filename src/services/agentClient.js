@@ -1224,6 +1224,22 @@ class NodeAgentClient {
     return this.post(`/instances/${encodeInstanceId(instanceId)}/start`);
   }
 
+  beginInstallationSession(instanceId, payload = {}) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/installation/session`, payload);
+  }
+
+  executeInstallationPhase(instanceId, payload = {}, timeoutMs = 310000) {
+    return this.request(`/instances/${encodeInstanceId(instanceId)}/installation/execute`, { method: "POST", body: payload, timeoutMs });
+  }
+
+  cancelInstallationSession(instanceId, payload = {}) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/installation/cancel`, payload);
+  }
+
+  closeInstallationSession(instanceId, payload = {}) {
+    return this.delete(`/instances/${encodeInstanceId(instanceId)}/installation/session`, { body: payload });
+  }
+
   stopInstance(instanceId) {
     return this.post(`/instances/${encodeInstanceId(instanceId)}/stop`);
   }
@@ -2715,6 +2731,51 @@ async function startInstance(instanceId, configOverride = null) {
   });
 }
 
+async function beginInstallationSession(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().beginInstallationSession(instanceId, payload);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/installation/session`, {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function executeInstallationPhase(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().executeInstallationPhase(instanceId, payload);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/installation/execute`, {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+    timeoutMs: Math.min(610000, Math.max(30000, Number(payload.timeoutMs) || 300000) + 10000),
+  });
+}
+
+async function cancelInstallationSession(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().cancelInstallationSession(instanceId, payload);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/installation/cancel`, {
+    config: configOverride,
+    method: "POST",
+    body: payload,
+  });
+}
+
+async function closeInstallationSession(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) {
+    return getLocalInstanceService().closeInstallationSession(instanceId, payload);
+  }
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/installation/session`, {
+    config: configOverride,
+    method: "DELETE",
+    body: payload,
+  });
+}
+
 async function stopInstance(instanceId, configOverride = null) {
   if (shouldUseLocalInstanceService(configOverride)) {
     return getLocalInstanceService().stopInstance(instanceId);
@@ -2857,7 +2918,10 @@ module.exports = {
     getTransportErrorCode,
   },
   AgentClientError,
+  beginInstallationSession,
+  cancelInstallationSession,
   checkDependencies,
+  closeInstallationSession,
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
@@ -2875,6 +2939,7 @@ module.exports = {
   deleteDockerContainer,
   disconnectDockerNetwork,
   execDockerContainer,
+  executeInstallationPhase,
   deleteInstance,
   forgetInstance,
   deleteInstanceFile,

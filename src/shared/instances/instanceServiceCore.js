@@ -1,18 +1,24 @@
 const childProcess = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs/promises");
 const fsSync = require("fs");
 const net = require("net");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const javaRuntimeResolver = require("../minecraftJavaRuntime");
 
 let runtimeConfigProvider = () => ({
   instanceRoot: process.env.AGENT_INSTANCE_ROOT || path.join(process.cwd(), "instances"),
 });
+let resolveJavaRuntimeProvider = javaRuntimeResolver.resolveJavaRuntime;
 
 function configureInstanceService(options = {}) {
   if (typeof options.getConfig === "function") {
     runtimeConfigProvider = options.getConfig;
+  }
+  if (typeof options.resolveJavaRuntime === "function") {
+    resolveJavaRuntimeProvider = options.resolveJavaRuntime;
   }
 }
 
@@ -75,6 +81,11 @@ const DEFAULT_EXECUTABLE_ROOTS = [
   "/usr/sbin",
   "/usr/local/sbin",
   "/srv/anxos/bin",
+  "/usr/lib/jvm",
+  "/usr/java",
+  "/opt/java",
+  "/opt/jdk",
+  "/srv/anxos/runtimes",
 ];
 
 const runningProcesses = new Map();
@@ -82,8 +93,23 @@ const metricsSamples = new Map();
 const restartBackoffStates = new Map();
 const restartTimers = new Map();
 const versionRefreshTimers = new Map();
+const installationSessions = new Map();
 let processInspectionProvider = null;
 let processAliveProvider = null;
+
+const INSTALLER_PHASES = Object.freeze({
+  forge: Object.freeze({
+    "install-server": Object.freeze({ executable: "java", args: ["-jar", "forge-installer.jar", "--installServer"] }),
+  }),
+  neoforge: Object.freeze({
+    "install-server": Object.freeze({ executable: "java", args: ["-jar", "neoforge-installer.jar", "--installServer"] }),
+  }),
+  quilt: Object.freeze({ "install-server": true }),
+});
+const INSTALLATION_OPERATION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{7,127}$/;
+const INSTALLER_TIMEOUT_MIN_MS = 1000;
+const INSTALLER_TIMEOUT_MAX_MS = 10 * 60 * 1000;
+const INSTALLER_OUTPUT_MAX_BYTES = 1024 * 1024;
 
 function createInstanceError(code, statusCode = 400, details = {}) {
   return Object.assign(new Error(code), { code, statusCode, ...details });
@@ -116,6 +142,164 @@ function getInstanceRoot() {
 function isInsideRoot(filePath, root) {
   const relative = path.relative(root, filePath);
   return relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function getInstallationSession(instanceId) {
+  return installationSessions.get(validateInstanceId(instanceId)) || null;
+}
+
+function validateInstallationSession(session, operationId, token) {
+  if (!session || session.operationId !== operationId || !token || session.token !== token) {
+    throw createInstanceError("INSTALLATION_SESSION_INVALID", 403);
+  }
+  if (session.closed) {
+    throw createInstanceError("INSTALLATION_SESSION_CLOSED", 409);
+  }
+  return session;
+}
+
+async function beginInstallationSession(instanceId, request = {}) {
+  const config = await loadInstanceConfig(instanceId);
+  if (config.installationState !== "installing") {
+    throw createInstanceError("INSTALLATION_STATE_INVALID", 409, { installationState: config.installationState || null });
+  }
+  const operationId = String(request.operationId || "").trim();
+  const installerFamily = String(request.installerFamily || "").trim().toLowerCase();
+  if (!INSTALLATION_OPERATION_ID_PATTERN.test(operationId)) {
+    throw createInstanceError("INSTALLATION_OPERATION_INVALID", 400);
+  }
+  if (!config.installationOperationId || config.installationOperationId !== operationId) {
+    throw createInstanceError("INSTALLATION_OPERATION_MISMATCH", 403);
+  }
+  if (!INSTALLER_PHASES[installerFamily]) {
+    throw createInstanceError("INSTALLER_FAMILY_NOT_ALLOWED", 400);
+  }
+  const existing = getInstallationSession(config.id);
+  if (existing && !existing.closed) {
+    throw createInstanceError("INSTALLATION_SESSION_CONFLICT", 409);
+  }
+  const session = {
+    instanceId: config.id,
+    operationId,
+    installerFamily,
+    token: crypto.randomBytes(32).toString("base64url"),
+    child: null,
+    closed: false,
+    createdAt: Date.now(),
+  };
+  installationSessions.set(config.id, session);
+  return { operationId, token: session.token, installerFamily, status: "ready" };
+}
+
+function appendBoundedOutput(current, chunk) {
+  const next = `${current}${String(chunk || "")}`;
+  if (Buffer.byteLength(next) <= INSTALLER_OUTPUT_MAX_BYTES) return next;
+  return Buffer.from(next).subarray(-INSTALLER_OUTPUT_MAX_BYTES).toString("utf8");
+}
+
+function resolveTrustedInstallerCommand(session, config, phase) {
+  if (session.installerFamily === "quilt" && phase === "install-server") {
+    const minecraftVersion = String(config.minecraftVersion || "").trim();
+    const loaderVersion = String(config.loaderVersion || "").trim();
+    const safeVersion = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,79}$/;
+    if (!safeVersion.test(minecraftVersion) || !safeVersion.test(loaderVersion)) {
+      throw createInstanceError("INSTALLER_CONFIGURATION_INVALID", 400, { installerFamily: "quilt", phase });
+    }
+    return { executable: "java", args: ["-jar", "quilt-installer.jar", "install", "server", minecraftVersion, loaderVersion, "--download-server"] };
+  }
+  return INSTALLER_PHASES[session.installerFamily]?.[phase] || null;
+}
+
+async function executeInstallationPhase(instanceId, request = {}) {
+  const config = await loadInstanceConfig(instanceId);
+  if (config.installationState !== "installing") {
+    throw createInstanceError("INSTALLATION_STATE_INVALID", 409, { installationState: config.installationState || null });
+  }
+  const operationId = String(request.operationId || "").trim();
+  const token = String(request.token || "");
+  const phase = String(request.phase || "").trim().toLowerCase();
+  const session = validateInstallationSession(getInstallationSession(config.id), operationId, token);
+  const command = resolveTrustedInstallerCommand(session, config, phase);
+  if (!command) {
+    throw createInstanceError("INSTALLER_PHASE_NOT_ALLOWED", 400, { installerFamily: session.installerFamily, phase });
+  }
+  if (session.child) {
+    throw createInstanceError("INSTALLER_ALREADY_RUNNING", 409);
+  }
+  const timeoutMs = Math.min(INSTALLER_TIMEOUT_MAX_MS, Math.max(INSTALLER_TIMEOUT_MIN_MS, Number(request.timeoutMs) || 300000));
+  const workingDirectory = resolveRelativeManagedPath(config.id, "data", "data");
+  const startedAt = Date.now();
+  let stdout = "";
+  let stderr = "";
+  let timedOut = false;
+  let cancelled = false;
+
+  const result = await new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = childProcess.spawn(command.executable, command.args, {
+        cwd: workingDirectory,
+        env: buildSpawnEnvironment(config),
+        detached: false,
+        shell: false,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch (error) {
+      reject(createInstanceError("INSTALLER_SPAWN_FAILED", 500, { causeCode: error?.code || null }));
+      return;
+    }
+    session.child = child;
+    session.cancel = () => {
+      cancelled = true;
+      if (!child.killed) child.kill("SIGKILL");
+    };
+    child.stdout?.on("data", (chunk) => { stdout = appendBoundedOutput(stdout, chunk); });
+    child.stderr?.on("data", (chunk) => { stderr = appendBoundedOutput(stderr, chunk); });
+    child.once("error", (error) => reject(createInstanceError("INSTALLER_PROCESS_ERROR", 500, { causeCode: error?.code || null })));
+    child.once("close", (exitCode, signal) => resolve({ exitCode, signal }));
+    const timer = setTimeout(() => {
+      timedOut = true;
+      if (!child.killed) child.kill("SIGKILL");
+    }, timeoutMs);
+    child.once("close", () => clearTimeout(timer));
+  }).finally(() => {
+    session.child = null;
+    session.cancel = null;
+  });
+
+  const durationMs = Date.now() - startedAt;
+  const details = { operationId, installerFamily: session.installerFamily, phase, exitCode: result.exitCode, signal: result.signal || null, timeoutMs, durationMs, stdout, stderr };
+  if (cancelled) throw createInstanceError("INSTALLER_CANCELLED", 409, details);
+  if (timedOut) throw createInstanceError("INSTALLER_TIMEOUT", 504, details);
+  if (result.exitCode !== 0) throw createInstanceError("INSTALLER_EXIT_NONZERO", 422, details);
+  return { ok: true, ...details };
+}
+
+async function closeInstallationSession(instanceId, request = {}) {
+  const id = validateInstanceId(instanceId);
+  const session = validateInstallationSession(getInstallationSession(id), String(request.operationId || "").trim(), String(request.token || ""));
+  if (session.child) throw createInstanceError("INSTALLER_ALREADY_RUNNING", 409);
+  session.closed = true;
+  installationSessions.delete(id);
+  return { closed: true, operationId: session.operationId };
+}
+
+async function cancelInstallationSession(instanceId, request = {}) {
+  const id = validateInstanceId(instanceId);
+  const session = validateInstallationSession(getInstallationSession(id), String(request.operationId || "").trim(), String(request.token || ""));
+  if (session.cancel) session.cancel();
+  session.closed = true;
+  if (!session.child) installationSessions.delete(id);
+  return { cancelled: true, operationId: session.operationId };
+}
+
+function terminateInstallationSession(instanceId) {
+  const session = installationSessions.get(instanceId);
+  if (!session) return;
+  if (session.cancel) session.cancel();
+  session.closed = true;
+  installationSessions.delete(instanceId);
 }
 
 function validateInstanceId(value) {
@@ -633,6 +817,13 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
   const command = buildTypeCommand(type, payload);
   const primaryPort = parseStrictPositiveInteger(payload.primaryPort);
 
+  if ((payload.javaRuntime !== undefined || payload.javaRuntimeOverride !== undefined || payload.requiredJavaMajor !== undefined)) {
+    throw createInstanceError("JAVA_RUNTIME_SELECTION_AGENT_OWNED", 403);
+  }
+  if (path.isAbsolute(command.executable) && isMinecraftJavaInstance({ ...payload, type })) {
+    throw createInstanceError("JAVA_RUNTIME_PATH_NOT_ALLOWED", 403);
+  }
+
   assertExecutableAllowed(command.executable);
   assertSafeArguments(command.args);
 
@@ -660,6 +851,8 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     versionName: payload.versionName ? String(payload.versionName).slice(0, 80) : null,
     serverVersion: payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null,
     serverSoftware: payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null,
+    loader: payload.loader ? String(payload.loader).slice(0, 80) : null,
+    loaderVersion: payload.loaderVersion ? String(payload.loaderVersion).slice(0, 80) : null,
     minecraftVersion: payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null,
     gameVersion: payload.gameVersion ? String(payload.gameVersion).slice(0, 80) : null,
     softwareVersion: payload.softwareVersion ? String(payload.softwareVersion).slice(0, 80) : null,
@@ -676,6 +869,9 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     primaryPort: Number.isInteger(primaryPort) && primaryPort > 0 && primaryPort <= 65535 ? primaryPort : null,
     tags: normalizeTags(payload.tags),
     installationState: normalizeInstallationState(payload.installationState),
+    installationOperationId: payload.installationState === "installing" && INSTALLATION_OPERATION_ID_PATTERN.test(String(payload.installationOperationId || ""))
+      ? String(payload.installationOperationId)
+      : null,
     createdAt,
     updatedAt: nowIso(),
     lastStartedAt: existingConfig?.lastStartedAt || null,
@@ -689,6 +885,7 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     setupReadiness: existingConfig?.setupReadiness || null,
     readinessState: existingConfig?.readinessState || "stopped",
     healthState: existingConfig?.healthState || "unknown",
+    javaRuntime: existingConfig?.javaRuntime || null,
   };
 
   config.versionInfo = normalizeVersionInfo(payload.versionInfo, config);
@@ -709,7 +906,48 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
   return config;
 }
 
+function isMinecraftJavaInstance(config) {
+  const game = String(config.game || config.versionInfo?.game || "").toLowerCase();
+  const tags = Array.isArray(config.tags) ? config.tags.map((tag) => String(tag).toLowerCase()) : [];
+  return config.type === "java-app" && (game === "minecraft" || tags.includes("minecraft") || Boolean(config.minecraftVersion));
+}
+
+function javaRuntimeMetadata(config) {
+  return {
+    minecraftVersion: config.minecraftVersion || config.gameVersion || config.versionInfo?.gameVersion || config.serverVersion,
+    loader: config.loader || config.serverSoftware || config.versionInfo?.software || "vanilla",
+    loaderVersion: config.loaderVersion || config.softwareVersion || config.versionInfo?.softwareVersion || null,
+    requiredJavaMajor: config.requiredJavaMajor || null,
+    javaRuntimeOverride: config.javaRuntime?.userOverride || null,
+  };
+}
+
+function resolveInstanceJavaRuntime(config) {
+  if (!isMinecraftJavaInstance(config)) return config;
+  const requirement = javaRuntimeResolver.getRequiredJavaMajor(javaRuntimeMetadata(config));
+  if (!requirement) return config;
+  const persisted = config.javaRuntime?.executable
+    ? javaRuntimeResolver.inspectJavaExecutable(config.javaRuntime.executable)
+    : null;
+  const runtime = persisted?.major === requirement.major
+    ? { ...config.javaRuntime, ...persisted, requiredMajor: requirement.major, source: config.javaRuntime.source || "persisted" }
+    : resolveJavaRuntimeProvider(javaRuntimeMetadata(config));
+  return {
+    ...config,
+    executable: runtime.executable,
+    javaRuntime: {
+      executable: runtime.executable,
+      major: runtime.major,
+      requiredMajor: requirement.major,
+      source: runtime.source,
+      resolvedAt: runtime.resolvedAt || nowIso(),
+      versionOutput: runtime.versionOutput || null,
+    },
+  };
+}
+
 function publicConfig(config) {
+  const { installationOperationId: _installationOperationId, ...safeConfig } = config;
   const crashLoop = config.state === INSTANCE_STATES.FAILED && config.failureReason === "CRASH_LOOP";
   const processRunning = [INSTANCE_STATES.STARTING, INSTANCE_STATES.RUNNING, INSTANCE_STATES.STOPPING, INSTANCE_STATES.RESTARTING].includes(config.state);
   const readinessState = config.state === INSTANCE_STATES.RUNNING ? config.readinessState || "unknown"
@@ -722,7 +960,7 @@ function publicConfig(config) {
       : config.state === INSTANCE_STATES.RUNNING ? (readinessState === "ready" ? "healthy" : "degraded")
         : config.state === INSTANCE_STATES.SETUP_REQUIRED ? "degraded" : "unknown";
   return {
-    ...config,
+    ...safeConfig,
     processState: config.state,
     readinessState,
     healthState,
@@ -1715,6 +1953,7 @@ function scheduleAutomaticRestart(instanceId, delayMs, callback = () => startIns
 }
 
 function disposeInstanceService() {
+  for (const instanceId of installationSessions.keys()) terminateInstallationSession(instanceId);
   for (const timer of restartTimers.values()) clearTimeout(timer);
   restartTimers.clear();
   for (const timer of versionRefreshTimers.values()) clearTimeout(timer);
@@ -2751,6 +2990,13 @@ async function createInstance(payload) {
 async function updateInstance(instanceId, payload = {}) {
   const current = await loadInstanceConfig(instanceId);
 
+  if (payload.javaRuntime !== undefined || payload.javaRuntimeOverride !== undefined || payload.requiredJavaMajor !== undefined) {
+    throw createInstanceError("JAVA_RUNTIME_SELECTION_AGENT_OWNED", 403);
+  }
+  if (payload.executable !== undefined && path.isAbsolute(String(payload.executable)) && isMinecraftJavaInstance({ ...current, ...payload })) {
+    throw createInstanceError("JAVA_RUNTIME_PATH_NOT_ALLOWED", 403);
+  }
+
   if (
     payload.state !== undefined
     || payload.pid !== undefined
@@ -2807,6 +3053,8 @@ async function updateInstance(instanceId, payload = {}) {
     versionName: payload.versionName !== undefined ? (payload.versionName ? String(payload.versionName).slice(0, 80) : null) : current.versionName,
     serverVersion: payload.serverVersion !== undefined ? (payload.serverVersion ? String(payload.serverVersion).slice(0, 80) : null) : current.serverVersion,
     serverSoftware: payload.serverSoftware !== undefined ? (payload.serverSoftware ? String(payload.serverSoftware).slice(0, 80) : null) : current.serverSoftware,
+    loader: payload.loader !== undefined ? (payload.loader ? String(payload.loader).slice(0, 80) : null) : current.loader,
+    loaderVersion: payload.loaderVersion !== undefined ? (payload.loaderVersion ? String(payload.loaderVersion).slice(0, 80) : null) : current.loaderVersion,
     minecraftVersion: payload.minecraftVersion !== undefined ? (payload.minecraftVersion ? String(payload.minecraftVersion).slice(0, 80) : null) : current.minecraftVersion,
     gameVersion: payload.gameVersion !== undefined ? (payload.gameVersion ? String(payload.gameVersion).slice(0, 80) : null) : current.gameVersion,
     softwareVersion: payload.softwareVersion !== undefined ? (payload.softwareVersion ? String(payload.softwareVersion).slice(0, 80) : null) : current.softwareVersion,
@@ -2828,6 +3076,9 @@ async function updateInstance(instanceId, payload = {}) {
       : current.primaryPort,
     tags: payload.tags !== undefined ? normalizeTags(payload.tags) : current.tags,
     installationState: normalizeInstallationState(payload.installationState, current.installationState || "active"),
+    installationOperationId: normalizeInstallationState(payload.installationState, current.installationState || "active") === "installing"
+      ? current.installationOperationId || null
+      : null,
     updatedAt: nowIso(),
   };
 
@@ -2843,10 +3094,13 @@ async function updateInstance(instanceId, payload = {}) {
     next.detectedVersionAt = null;
   }
 
-  assertExecutableAllowed(next.executable);
-  assertSafeArguments(next.args);
-  await saveInstanceConfig(next);
-  return publicConfig(next);
+  const resolvedNext = current.installationState === "installing" && next.installationState === "active"
+    ? resolveInstanceJavaRuntime(next)
+    : next;
+  assertExecutableAllowed(resolvedNext.executable);
+  assertSafeArguments(resolvedNext.args);
+  await saveInstanceConfig(resolvedNext);
+  return publicConfig(resolvedNext);
 }
 
 async function renameInstance(instanceId, displayName) {
@@ -2897,6 +3151,7 @@ async function duplicateInstance(instanceId, payload = {}) {
 
 async function deleteInstance(instanceId) {
   const id = validateInstanceId(instanceId);
+  terminateInstallationSession(id);
   let config;
   const basePath = instancePath(id);
   const result = {
@@ -3198,6 +3453,12 @@ async function startInstance(instanceId, options = {}) {
     const error = createInstanceError("INSTANCE_INSTALLATION_INCOMPLETE", 409, { instanceId: config.id });
     error.message = "The instance cannot start until installation completes.";
     throw error;
+  }
+  const runtimeResolvedConfig = resolveInstanceJavaRuntime(config);
+  if (runtimeResolvedConfig.executable !== config.executable || JSON.stringify(runtimeResolvedConfig.javaRuntime) !== JSON.stringify(config.javaRuntime)) {
+    config = { ...runtimeResolvedConfig, updatedAt: nowIso() };
+    await saveInstanceConfig(config);
+    await appendLog(config.id, "stdout", `Selected Java ${config.javaRuntime.major} runtime: ${config.executable}`).catch(() => {});
   }
   const repairedArgs = normalizeShellWrapperArgs(config.executable, config.args);
   if (JSON.stringify(repairedArgs) !== JSON.stringify(config.args || [])) {
@@ -4211,11 +4472,15 @@ module.exports = {
   deleteInstance,
   forgetInstance,
   clearLogs,
+  beginInstallationSession,
+  cancelInstallationSession,
+  closeInstallationSession,
   createInstanceFolder,
   deleteInstanceFile,
   forceKillInstance,
   getMetrics,
   getStatus,
+  executeInstallationPhase,
   instanceFileExists,
   listInstanceFiles,
   listInstances,

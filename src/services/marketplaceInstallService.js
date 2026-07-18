@@ -677,6 +677,14 @@ function ensureCurseForgeServerPackCandidate(context = {}) {
   );
 }
 
+function getCurseForgeManifestFiles(manifest, options = {}) {
+  if (!manifest) {
+    if (options.isDedicatedServerPack) return [];
+    ensureSupportedModpack(false, "CurseForge", "server pack did not include a manifest.json");
+  }
+  return Array.isArray(manifest?.files) ? manifest.files : [];
+}
+
 function getCurseForgeFileId(file = {}) {
   return file.id || file.fileId || file.fileID || file.file_id || null;
 }
@@ -1638,45 +1646,57 @@ function buildInstancePayload(options, serverInfo) {
   };
 }
 
-async function waitForInstaller(instanceId, timeoutMs, agentConfig) {
-  const startedAt = Date.now();
-  let lastState = "";
-  while (Date.now() - startedAt < timeoutMs) {
-    const status = await agentClient.getInstanceStatus(instanceId, agentConfig);
-    lastState = status?.instance?.state || status?.state || "";
-    if (lastState === "Stopped") {
-      return status;
-    }
-    if (lastState === "Failed") {
-      throw new MarketplaceInstallError("Server installer failed.", "SERVER_INSTALLER_FAILED");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  try {
-    await agentClient.forceKillInstance(instanceId, agentConfig);
-  } catch {}
-  throw new MarketplaceInstallError("Server installer did not finish in time.", "SERVER_INSTALLER_TIMEOUT", { lastState });
-}
-
-async function runServerInstaller(instanceId, serverInfo, agentConfig) {
+async function runServerInstaller(instanceId, serverInfo, agentConfig, operationId, signal = null, memory = "4G") {
   if (!serverInfo.installer) {
     return;
   }
+  const installerFamily = String(serverInfo.loaderVersion || "").startsWith("neoforge-") || serverInfo.installer.jar === "neoforge-installer.jar"
+    ? "neoforge"
+    : serverInfo.installer.jar === "forge-installer.jar" ? "forge"
+      : serverInfo.installer.jar === "quilt-installer.jar" ? "quilt" : null;
+  if (!installerFamily) {
+    throw new MarketplaceInstallError("The generated server installer is not in the trusted installer allowlist.", "INSTALLER_FAMILY_NOT_ALLOWED");
+  }
   emitProgress({ instanceId, stage: "extracting", message: "Running server loader installer..." });
+  const session = await agentClient.beginInstallationSession(instanceId, { operationId, installerFamily }, agentConfig);
+  const sessionProof = { operationId, token: session.token };
+  let cancellationRequested = false;
+  const cancelInstaller = () => {
+    cancellationRequested = true;
+    agentClient.cancelInstallationSession(instanceId, sessionProof, agentConfig).catch(() => {});
+  };
+  signal?.addEventListener("abort", cancelInstaller, { once: true });
+  try {
+    if (signal?.aborted) cancelInstaller();
+    await agentClient.executeInstallationPhase(instanceId, {
+      ...sessionProof,
+      phase: "install-server",
+      timeoutMs: 300000,
+    }, agentConfig);
+    if (cancellationRequested || signal?.aborted) {
+      throw new MarketplaceInstallError("Marketplace installation was cancelled.", "INSTALL_CANCELLED");
+    }
+    await agentClient.closeInstallationSession(instanceId, sessionProof, agentConfig);
+  } catch (error) {
+    await agentClient.cancelInstallationSession(instanceId, sessionProof, agentConfig).catch(() => {});
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", cancelInstaller);
+  }
+  let startup = serverInfo.installer.startup || {};
+  if (installerFamily === "forge") {
+    const legacyServerJar = `forge-${serverInfo.loaderVersion}.jar`;
+    const legacyJarStatus = await agentClient.instanceFileExists(instanceId, legacyServerJar, agentConfig);
+    if (legacyJarStatus?.exists) {
+      serverInfo.serverJar = legacyServerJar;
+      startup = { executable: "java", args: [`-Xmx${normalizeMemory(memory, "4G")}`, "-jar", legacyServerJar, "nogui"] };
+    }
+  }
   await agentClient.updateInstance(instanceId, {
-    executable: "java",
-    args: ["-jar", serverInfo.installer.jar, ...(serverInfo.installer.args || ["--installServer"])],
-    workingDirectory: "data",
-    restartPolicy: "never",
-    startupTimeoutMs: 300000,
-  }, agentConfig);
-  await agentClient.startInstance(instanceId, agentConfig);
-  await waitForInstaller(instanceId, 300000, agentConfig);
-  await agentClient.updateInstance(instanceId, {
-    executable: serverInfo.installer.startup?.executable || "bash",
-    args: serverInfo.installer.startup?.args || ["run.sh", "nogui"],
-    startupArguments: serverInfo.installer.startup?.args || ["run.sh", "nogui"],
-    startupScript: (serverInfo.installer.startup?.args || ["run.sh"])[0] || "run.sh",
+    executable: startup.executable || "bash",
+    args: startup.args || ["run.sh", "nogui"],
+    startupArguments: startup.args || ["run.sh", "nogui"],
+    startupScript: startup.executable === "java" ? null : (startup.args || ["run.sh"])[0] || "run.sh",
     workingDirectory: "data",
     restartPolicy: "on-failure",
     startupTimeoutMs: 60000,
@@ -2004,8 +2024,7 @@ async function installCurseForgePack(instanceId, payload, agentConfig, progressS
         downloads.push({ file: target, provider: "curseforge-overrides" });
       }
     }, { signal: progressState.signal });
-    const manifestFiles = Array.isArray(manifest?.files) ? manifest.files : [];
-    ensureSupportedModpack(manifest, "CurseForge", "server pack did not include a manifest.json");
+    const manifestFiles = getCurseForgeManifestFiles(manifest, { isDedicatedServerPack });
     ensureCurseForgeServerPackCandidate({
       instanceId,
       projectId,
@@ -2386,6 +2405,7 @@ async function installPack(payload = {}) {
   const installOperation = createProviderInstallOperation(payload, { nodeId: installNodeId, instanceId });
   const operationId = installOperation.operation.id;
   const signal = installOperation.signal;
+  instancePayload.installationOperationId = operationId;
   let created = false;
   let createResult = null;
 
@@ -2407,7 +2427,7 @@ async function installPack(payload = {}) {
     emitProgress({ nodeId: installNodeId, instanceId, operationId, stage: "downloading", message: "Downloading server runtime...", current: 0, total: 1 });
     await writeBuffer(instanceId, serverInfo.downloadDestination || serverInfo.serverJar, await fetchBuffer(serverInfo.url, serverInfo.fileName, { signal }), agentConfig);
     throwIfInstallCancelled(signal);
-    await runServerInstaller(instanceId, serverInfo, agentConfig);
+    await runServerInstaller(instanceId, serverInfo, agentConfig, operationId, signal, instancePayload.memoryLimit);
 
     return await continueProviderPackInstall({
       provider,
@@ -2716,6 +2736,7 @@ module.exports = {
     isCurseForgeAccessDeniedFileError,
     isRecoverableProviderFileError,
     isCurseForgeServerSignalPath,
+    getCurseForgeManifestFiles,
     isTransientError,
     resolveCurseForgeServerPackSelection,
     resolvePaperServerJar,

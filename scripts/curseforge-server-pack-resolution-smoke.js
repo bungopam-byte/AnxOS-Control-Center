@@ -31,6 +31,16 @@ function file(id, fileName, extra = {}) {
 }
 
 async function main() {
+  assert.deepStrictEqual(
+    marketplace._test.getCurseForgeManifestFiles(null, { isDedicatedServerPack: true }),
+    [],
+    "Official CurseForge server packs may be complete server archives without a client manifest.json.",
+  );
+  assert.throws(
+    () => marketplace._test.getCurseForgeManifestFiles(null, { isDedicatedServerPack: false }),
+    (error) => error?.code === "UNSUPPORTED_MODPACK",
+    "Unverified client archives must still require CurseForge manifest metadata.",
+  );
   const original = {
     resolveFile: curseforgeProvider.resolveFile,
     getFile: curseforgeProvider.getFile,

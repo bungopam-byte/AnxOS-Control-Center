@@ -23,7 +23,7 @@ async function startAgent(base, name) {
   const stderr = [];
   const child = spawn(process.execPath, [path.join(rootDir, "agent", "src", "server.js")], {
     cwd: root,
-    env: { ...process.env, AGENT_HOST: "127.0.0.1", AGENT_PORT: String(port), AGENT_TOKEN: token, AGENT_FILE_ROOTS: root, AGENT_IDENTITY_PATH: path.join(root, "identity.json") },
+    env: { ...process.env, AGENT_HOST: "127.0.0.1", AGENT_PORT: String(port), AGENT_TOKEN: token, AGENT_FILE_ROOTS: root, AGENT_INSTANCE_ROOT: path.join(root, "instances"), AGENT_IDENTITY_PATH: path.join(root, "identity.json") },
     stdio: ["ignore", "ignore", "pipe"],
   });
   child.stderr.on("data", (chunk) => stderr.push(String(chunk)));

@@ -79,7 +79,7 @@ function getGitCommit() {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-    shell: process.platform === "win32",
+    shell: false,
   });
   return result.status === 0 ? result.stdout.trim() : null;
 }
@@ -119,7 +119,7 @@ const result = spawnSync(
   {
     cwd: process.cwd(),
     stdio: "inherit",
-    shell: false,
+    shell: process.platform === "win32",
     env: {
       ...process.env,
       // Ensure resolution works even when this script is invoked directly

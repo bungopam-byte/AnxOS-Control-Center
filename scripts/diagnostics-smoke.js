@@ -14,7 +14,7 @@ process.env.ANXHUB_CONFIG_DIR = path.join(temp, "desktop-config");
 process.env.ANXOS_LOG_DIR = path.join(temp, "desktop-logs");
 
 function freePort() { return new Promise((resolve, reject) => { const server = net.createServer(); server.once("error", reject); server.listen(0, "127.0.0.1", () => { const port = server.address().port; server.close(() => resolve(port)); }); }); }
-async function waitFor(url) { for (let index = 0; index < 80; index += 1) { try { if ((await fetch(url)).ok) return; } catch {} await new Promise((resolve) => setTimeout(resolve, 75)); } throw new Error("Agent did not start."); }
+async function waitFor(url) { for (let index = 0; index < 200; index += 1) { try { if ((await fetch(url)).ok) return; } catch {} await new Promise((resolve) => setTimeout(resolve, 75)); } throw new Error("Agent did not start within 15 seconds."); }
 
 async function main() {
   console.log("Checking redaction and local log rotation...");
@@ -97,7 +97,7 @@ async function main() {
   const token = "diagnostics-smoke-agent-token";
   const agentRoot = path.join(temp, "agent");
   fs.mkdirSync(agentRoot, { recursive: true });
-  const child = spawn(process.execPath, [path.join(root, "agent", "src", "server.js")], { cwd: agentRoot, env: { ...process.env, AGENT_HOST: "127.0.0.1", AGENT_PORT: String(port), AGENT_TOKEN: token, AGENT_FILE_ROOTS: agentRoot, AGENT_IDENTITY_PATH: path.join(agentRoot, "identity.json"), ANXOS_LOG_DIR: path.join(temp, "agent-logs") }, stdio: "ignore" });
+  const child = spawn(process.execPath, [path.join(root, "agent", "src", "server.js")], { cwd: agentRoot, env: { ...process.env, AGENT_HOST: "127.0.0.1", AGENT_PORT: String(port), AGENT_TOKEN: token, AGENT_FILE_ROOTS: agentRoot, AGENT_INSTANCE_ROOT: path.join(agentRoot, "instances"), AGENT_IDENTITY_PATH: path.join(agentRoot, "identity.json"), ANXOS_LOG_DIR: path.join(temp, "agent-logs") }, stdio: "ignore" });
   try {
     await waitFor(`http://127.0.0.1:${port}/api/v1/health`);
     const unauthorized = await fetch(`http://127.0.0.1:${port}/api/v1/diagnostics`);

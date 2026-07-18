@@ -20,17 +20,20 @@ async function startAgent(base, name) {
   await fs.mkdir(root, { recursive: true });
   const port = await freePort();
   const token = `${name}-token`;
+  const stderr = [];
   const child = spawn(process.execPath, [path.join(rootDir, "agent", "src", "server.js")], {
     cwd: root,
     env: { ...process.env, AGENT_HOST: "127.0.0.1", AGENT_PORT: String(port), AGENT_TOKEN: token, AGENT_FILE_ROOTS: root, AGENT_IDENTITY_PATH: path.join(root, "identity.json") },
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
   });
+  child.stderr.on("data", (chunk) => stderr.push(String(chunk)));
   const url = `http://127.0.0.1:${port}`;
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 150; i += 1) {
     try { if ((await fetch(`${url}/api/v1/health`)).ok) return { child, root, url, token }; } catch {}
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error(`${name} Agent did not start.`);
+  const detail = stderr.join("").trim();
+  throw new Error(`${name} Agent did not start within 15 seconds.${detail ? `\n${detail}` : ""}`);
 }
 
 async function main() {

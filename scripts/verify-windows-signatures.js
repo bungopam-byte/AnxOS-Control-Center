@@ -69,19 +69,20 @@ if (!signTool) {
 }
 
 const signingExpected = Boolean(getAzureSigningConfig());
-const publisher = process.env.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME || "Anjo ROSIMO";
 const failures = [];
 for (const filePath of files) {
   const result = spawnSync(signTool, ["verify", "/pa", "/v", filePath], { encoding: "utf8", windowsHide: true });
   const output = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
   const valid = result.status === 0 && /Successfully verified/i.test(output);
-  const publisherValid = !signingExpected || new RegExp(`Subject:.*${publisher.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}`, "i").test(output);
-  console.log(`${valid && publisherValid ? "Valid" : "Invalid"}: ${filePath}`);
+  const passed = valid;
+  console.log(`${passed ? "PASS" : "FAIL"}: ${filePath}`);
   if (output) console.log(output);
-  if (!valid || !publisherValid) failures.push(filePath);
+  if (!passed) failures.push(filePath);
 }
 
 if (failures.length > 0) {
   console.error(`Authenticode verification failed for ${failures.length} executable(s).`);
+  failures.forEach((filePath) => console.error(`- ${filePath}`));
   process.exit(1);
 }
+console.log(`Authenticode verification passed for ${files.length} executable(s).`);

@@ -15,7 +15,7 @@ async function main() {
   await service.createInstance({
     id: "shutdown-smoke",
     displayName: "Shutdown Smoke",
-    type: "node-app",
+    type: "custom-command",
     executable: "node",
     args: ["-e", "setInterval(() => {}, 1000)"],
     startupTimeoutMs: 10000,

@@ -16,7 +16,7 @@ async function main() {
     id: "shutdown-smoke",
     displayName: "Shutdown Smoke",
     type: "node-app",
-    executable: process.execPath,
+    executable: "node",
     args: ["-e", "setInterval(() => {}, 1000)"],
     startupTimeoutMs: 10000,
     shutdownTimeoutMs: 10000,

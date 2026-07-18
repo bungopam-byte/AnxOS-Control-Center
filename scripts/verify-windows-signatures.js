@@ -2,7 +2,7 @@
 const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const { getAzureSigningConfig } = require("./electron-builder-config");
+const { getAzureSigningConfig } = require("./azure-signing-config");
 
 if (process.platform !== "win32") process.exit(0);
 

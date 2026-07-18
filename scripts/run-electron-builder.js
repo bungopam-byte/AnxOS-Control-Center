@@ -13,7 +13,7 @@ const args = process.argv.slice(2);
 const increment = !args.includes("--no-increment-build");
 const builderArgs = args.filter((arg) => arg !== "--no-increment-build");
 process.env.ANXOS_WINDOWS_BUILD_REQUESTED = builderArgs.includes("--win") || process.platform === "win32" ? "1" : "0";
-const { getAzureSigningConfig } = require("./electron-builder-config");
+const { getAzureSigningConfig } = require("./azure-signing-config");
 const release = readReleaseConfig();
 const nextRelease = increment ? { ...release, build: release.build + 1 } : release;
 

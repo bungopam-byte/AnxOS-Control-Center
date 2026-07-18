@@ -1,6 +1,62 @@
 node_modules/
+.dev-logs/
 dist/
 npm-debug.log*
 .DS_Store
 Thumbs.db
 .env
+
+dist-verify/
+
+dist/
+
+.npm-cache/
+
+.tmp-agent-config-test/
+
+.tmp-agent-config-test-save/
+
+# Codex temporary Electron smoke test profiles
+.tmp-electron-smoke-profile*
+.tmp-sidebar-*.js
+
+# Local Discord bot runtime data if bind mounts are used instead of Docker named volumes.
+data/
+logs/
+bot-config/
+.env
+config/marketplace.json
+config/agent.json
+config/owner-accounts.json
+config/node-agent-credentials.json
+config/long-operations.json
+agent/.env
+agent/config/
+*.env
+agent/*.log
+release-build.json
+release-artifacts/
+resources/hardware-telemetry/
+tools/windows-hardware-telemetry/bin/
+tools/windows-hardware-telemetry/obj/
+
+# Owner Workspace local development/private data
+.anxos-owner-workspace/
+.anxos-dev-credentials*
+owner-workspace/
+config/owner-workspace/
+
+# Supabase CLI local project metadata.
+supabase/.temp/
+
+# Code-signing certificates and private keys must never be committed.
+*.pfx
+*.p12
+*.cer
+*.crt
+*.key
+*.pem
+*.pvk
+*.spc
+certs/
+signing/

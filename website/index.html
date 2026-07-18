@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS Control Center | Official Desktop App</title>
+    <meta name="description" content="Download AnxOS Control Center to manage game servers, remote nodes, files, dependencies, diagnostics, operations, and Node Health from one desktop application.">
+    <meta name="robots" content="index,follow">
+    <meta name="theme-color" content="#07020f">
+    <link rel="canonical" href="https://anxoscontrolcenter.org/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="AnxOS Control Center">
+    <meta property="og:title" content="AnxOS Control Center">
+    <meta property="og:description" content="Manage game servers, remote nodes, files, dependencies, diagnostics, and operations from one desktop application.">
+    <meta property="og:url" content="https://anxoscontrolcenter.org/">
+    <meta property="og:image" content="https://anxoscontrolcenter.org/assets/social-preview.png?v=1bbe0a40ca77">
+    <meta property="og:image:secure_url" content="https://anxoscontrolcenter.org/assets/social-preview.png?v=1bbe0a40ca77">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="AnxOS Control Center social preview with the official AnxOS logo.">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="AnxOS Control Center">
+    <meta name="twitter:description" content="Manage game servers, remote nodes, files, dependencies, diagnostics, and operations from one desktop application.">
+    <meta name="twitter:image" content="https://anxoscontrolcenter.org/assets/social-preview.png?v=1bbe0a40ca77">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="site.webmanifest">
+    <link rel="stylesheet" href="styles.css">
+    <script src="config.js" defer></script>
+    <script src="account-config.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="release-download-service.js" defer></script>
+    <script src="site.js" defer></script>
+  </head>
+  <body>
+    <svg class="svg-defs" aria-hidden="true">
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></symbol>
+      <symbol id="icon-github" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-5-2.5M15 22v-3.5c0-1 .2-1.4-.5-2 2.6-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.3c.1-.3.5-1.7-.1-3.2 0 0-1.1-.3-3.5 1.3a12.2 12.2 0 0 0-6.2 0C6.5 3.7 5.4 4 5.4 4c-.6 1.5-.2 2.9-.1 3.2A4.7 4.7 0 0 0 4 10.5c0 4.7 2.9 5.7 5.5 6-.7.6-.7 1.2-.6 2V22"/></symbol>
+      <symbol id="icon-server" viewBox="0 0 24 24"><path d="M4 5h16v5H4zM4 14h16v5H4zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></symbol>
+      <symbol id="icon-package" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3zM4.5 8 12 12.5 19.5 8M12 12.5V21"/></symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24"><path d="m5 7 5 5-5 5M12 17h7"/></symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 2.8 8.5 7 10 4.2-1.5 7-5.6 7-10V6zM9 12l2 2 4-4"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6.7 6.7L4 9m16 6-2.7 2.3A7 7 0 0 1 5.5 15"/></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M8 13h8M8 17h5"/></symbol>
+      <symbol id="icon-node" viewBox="0 0 24 24"><path d="M12 4v6M12 14v6M6 10h12M6 14h12M5 8h2v8H5zM17 8h2v8h-2z"/></symbol>
+    </svg>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="AnxOS home">
+        <span class="brand-mark"><img data-logo src="/assets/anxos-logo.png" alt=""></span>
+        <span class="brand-copy">
+          <strong data-config="brandName">AnxOS</strong>
+          <span data-config="appName">AnxOS-Control-Center</span>
+        </span>
+      </a>
+      <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/features">Features</a>
+        <a href="/getting-started">Getting Started</a>
+        <a href="/download">Download</a>
+        <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a>
+        <a class="site-nav__cta" href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a>
+        <a href="/profile" data-auth-nav="signed-in" hidden>Profile</a>
+        <button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero section-shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Desktop operations panel</p>
+          <h1 id="hero-title" data-config="brandName">AnxOS</h1>
+          <p class="lede" data-config="subtitle">A desktop control center for Minecraft servers, modpacks, remote nodes, and automation.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" data-download="windows" href="/download">
+              <svg><use href="#icon-download"></use></svg>
+              <span>Download for Windows</span>
+            </a>
+            <a class="button button-secondary" data-download="linuxDeb" href="/download">
+              <svg><use href="#icon-download"></use></svg>
+              <span>Download for Linux</span>
+            </a>
+            <a class="button button-ghost" data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center-Releases">
+              <svg><use href="#icon-github"></use></svg>
+              <span>View GitHub</span>
+            </a>
+          </div>
+          <dl class="hero-facts" aria-label="AnxOS platform summary">
+            <div><dt>Runs on</dt><dd>Windows desktop, Linux packages</dd></div>
+            <div><dt>Manages</dt><dd>This PC or a connected Agent node</dd></div>
+            <div><dt>Hosting</dt><dd>Your hardware, VPS, NAS, or server</dd></div>
+          </dl>
+        </div>
+        <div class="hero-panel" aria-label="AnxOS dashboard preview">
+          <div class="panel-titlebar">
+            <span></span><span></span><span></span>
+            <img class="panel-titlebar__logo" data-logo src="/assets/anxos-logo.png" alt="" aria-hidden="true">
+            <strong>AnxOS Control Center</strong>
+          </div>
+          <div class="preview-grid">
+            <article class="preview-card preview-card-wide">
+              <span class="status-dot"></span>
+              <p>Selected Node</p>
+              <strong>Agent connected</strong>
+              <small>Live health appears after you connect an Agent</small>
+            </article>
+            <article class="preview-card">
+              <p>Marketplace</p>
+              <strong>Marketplace</strong>
+              <small>Templates show runtime requirements before install</small>
+            </article>
+            <article class="preview-card">
+              <p>Runtime Dependencies</p>
+              <strong>Prepare Node</strong>
+              <small>Java, .NET, Docker, SteamCMD, Node.js, Python</small>
+            </article>
+          </div>
+          <div class="console-preview">
+            <span>Dependency check: missing runtime detected</span>
+            <span>Prepare Node: user approval required</span>
+            <span>Install resumes after verification passes</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="release" class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Latest Release</p>
+          <h2>Ready for your control center</h2>
+        </div>
+        <div class="release-card">
+          <span class="release-card__logo"><img data-logo src="/assets/anxos-logo.png" alt="" aria-hidden="true"></span>
+          <div>
+            <span class="badge" data-config="releaseTag">Latest release</span>
+            <h3 data-release-title>Version</h3>
+            <p>Latest private-alpha build with packaged Marketplace configuration, dependency checks, Local Agent workflow updates, and release download metadata.</p>
+            <div class="release-actions">
+              <a class="button button-secondary" href="/release-notes.html"><svg><use href="#icon-file"></use></svg><span>View release notes</span></a>
+              <a class="button button-ghost" data-config-href="releaseUrl" href="/download"><svg><use href="#icon-github"></use></svg><span>GitHub release</span></a>
+            </div>
+          </div>
+          <dl class="release-meta">
+            <div><dt>Released</dt><dd data-config="releaseDate">Release date</dd></div>
+            <div><dt>Windows</dt><dd data-file="windows">Setup EXE</dd></div>
+            <div><dt>Linux</dt><dd data-file="linuxDeb">DEB + AppImage</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section id="features" class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Features</p>
+          <h2>Built for server work</h2>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card"><svg><use href="#icon-server"></use></svg><h3>Minecraft server management</h3><p>Create, monitor, start, stop, and inspect Minecraft instances from one desktop workspace.</p></article>
+          <article class="feature-card"><svg><use href="#icon-package"></use></svg><h3>Modpack marketplace installs</h3><p>Browse provider packs and install CurseForge or Modrinth servers with guided manual-download recovery.</p></article>
+          <article class="feature-card"><svg><use href="#icon-node"></use></svg><h3>Remote Debian agent support</h3><p>Connect the app to a Debian node for controlled file, command, and service operations.</p></article>
+          <article class="feature-card"><svg><use href="#icon-terminal"></use></svg><h3>Logs, files, commands, and stats</h3><p>Work inside logs, file tools, command panels, server stats, and runtime views without changing apps.</p></article>
+          <article class="feature-card"><svg><use href="#icon-refresh"></use></svg><h3>Auto-update support</h3><p>Use Check for update to pull the newest GitHub release when a new build is published.</p></article>
+        </div>
+      </section>
+
+      <section id="local-agent" class="section-shell local-agent-section">
+        <div class="section-heading">
+          <p class="eyebrow">Local Agent</p>
+          <h2>Run Everything on Your Own PC</h2>
+          <p class="section-copy">The AnxOS Local Agent securely connects the desktop app to services running on your computer. It handles server processes, files, dependencies, backups, and networking while keeping your data on your own machine.</p>
+          <p class="section-copy">Normal Windows users do not need Anx's Debian server. The Local Agent can run as a Windows service, remote servers remain optional, authentication is configured automatically, and you can stop or uninstall it when you no longer need it.</p>
+        </div>
+        <div class="local-agent-grid">
+          <article class="feature-card"><svg><use href="#icon-node"></use></svg><h3>Runs Locally</h3><p>Manage servers and files on This PC without sending work to a developer-owned Debian machine.</p></article>
+          <article class="feature-card"><svg><use href="#icon-package"></use></svg><h3>Automatic Setup</h3><p>AnxOS installs the managed Agent runtime and prepares the folders it needs from inside the app.</p></article>
+          <article class="feature-card"><svg><use href="#icon-refresh"></use></svg><h3>Starts with Windows</h3><p>The Local Agent can run as a Windows service, so the desktop app does not need to stay open.</p></article>
+          <article class="feature-card"><svg><use href="#icon-shield"></use></svg><h3>No Token Copying</h3><p>Local pairing is handled automatically on your own computer without asking you to paste Agent tokens.</p></article>
+          <article class="feature-card"><svg><use href="#icon-server"></use></svg><h3>Remote Servers Optional</h3><p>You can still add a VPS, NAS, Debian server, Windows Server, or Raspberry Pi later.</p></article>
+          <article class="feature-card"><svg><use href="#icon-terminal"></use></svg><h3>Easy Repair and Updates</h3><p>Agent diagnostics, repair, and updates stay inside AnxOS instead of requiring terminal commands.</p></article>
+        </div>
+      </section>
+
+      <section id="downloads" class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Manual Downloads</p>
+          <h2>Choose a package</h2>
+        </div>
+        <div class="download-status" data-download-status role="status">
+          Release metadata is loading. If it cannot be loaded, use the GitHub release page.
+        </div>
+        <div class="download-grid">
+          <article class="download-card">
+            <div><h3>Windows installer</h3><p data-file="windows">Setup executable</p><small>Recommended for normal Windows installs.</small></div>
+            <a class="button button-primary" data-download="windows" href="/download"><svg><use href="#icon-download"></use></svg><span>Download for Windows</span></a>
+          </article>
+          <article class="download-card">
+            <div><h3>Linux Debian package</h3><p data-file="linuxDeb">Debian package</p><small>Recommended for Debian and Ubuntu-based systems.</small></div>
+            <a class="button button-secondary" data-download="linuxDeb" href="/download"><svg><use href="#icon-download"></use></svg><span>Download .deb</span></a>
+          </article>
+          <article class="download-card">
+            <div><h3>Linux AppImage</h3><p data-file="linuxAppImage">Portable AppImage</p><small>Use when you do not want to install a package.</small></div>
+            <a class="button button-secondary" data-download="linuxAppImage" href="/download"><svg><use href="#icon-download"></use></svg><span>Download AppImage</span></a>
+          </article>
+        </div>
+        <div class="download-help">
+          <a data-config-href="releaseUrl" href="/download">Open the GitHub release</a>
+          <a href="/release-notes.html">Read release notes</a>
+        </div>
+      </section>
+
+      <section id="getting-started" class="section-shell install-layout">
+        <div>
+          <p class="eyebrow">Getting Started</p>
+          <h2>First server workflow</h2>
+          <p class="section-copy">These steps match the current desktop workflow. AnxOS does not install unsupported runtimes or approve remote access without your action.</p>
+        </div>
+        <div class="steps steps--detailed">
+          <article><span>1</span><p>Download AnxOS Control Center for Windows or Linux.</p></article>
+          <article><span>2</span><p>Install and launch the desktop application.</p></article>
+          <article><span>3</span><p>Start the local AnxOS Agent or connect a remote Agent.</p></article>
+          <article><span>4</span><p>Add or select the Node you want to manage.</p></article>
+          <article><span>5</span><p>Open Prepare Node to verify Java, Docker, SteamCMD, Node.js, Python, and other required runtimes.</p></article>
+          <article><span>6</span><p>Install your first Marketplace server after dependency checks pass.</p></article>
+          <article><span>7</span><p>Monitor the server through Operations, Diagnostics, Files, and Node Health.</p></article>
+        </div>
+        <div class="download-help">
+          <a data-download="windows" href="/download">Windows download</a>
+          <a data-download="linuxDeb" href="/download">Linux download</a>
+          <a data-config-href="releaseUrl" href="/download">GitHub releases</a>
+        </div>
+      </section>
+
+      <section id="install" class="section-shell install-layout">
+        <div>
+          <p class="eyebrow">Install Guide</p>
+          <h2>Install in a few steps</h2>
+        </div>
+        <div class="steps">
+          <article><span>1</span><p>Download the installer for your platform.</p></article>
+          <article><span>2</span><p>Run the Windows setup, install the `.deb`, or mark the AppImage executable.</p></article>
+          <article><span>3</span><p>Open AnxOS, connect your remote node, then use Marketplace, Instances, Files, Console, and Stats.</p></article>
+        </div>
+      </section>
+
+      <section class="section-shell safety-card">
+        <div>
+          <p class="eyebrow">Safety / SmartScreen</p>
+          <h2>About first-run warnings</h2>
+          <p>Windows SmartScreen may warn on new releases because AnxOS is distributed directly through GitHub. Download only from the official repository release page and verify the file name matches the release shown here.</p>
+        </div>
+        <a class="button button-ghost" data-config-href="releaseUrl" href="/download"><svg><use href="#icon-shield"></use></svg><span>Open release page</span></a>
+      </section>
+
+      <section id="not-found" class="section-shell account-route" data-account-route="not-found">
+        <div class="auth-shell auth-shell--single">
+          <div class="auth-card">
+            <div class="auth-card__header">
+              <p class="eyebrow">Not Found</p>
+              <h2>That page is not available</h2>
+              <p>The link may be outdated, private, or typed incorrectly. Public AnxOS pages are listed below.</p>
+            </div>
+            <div class="route-actions">
+              <a class="button button-primary" href="/">Return Home</a>
+              <a class="button button-secondary" href="/download">Downloads</a>
+              <a class="button button-ghost" href="/release-notes.html">Release Notes</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <strong>AnxOS Control Center</strong>
+        <span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span>
+      </div>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/download">Download</a>
+        <a href="/features">Features</a>
+        <a href="/getting-started">Getting Started</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/security-privacy">Security</a>
+        <a href="/faq">FAQ</a>
+        <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center-Releases">GitHub</a>
+      <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a><a href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a><a href="/profile" data-auth-nav="signed-in" hidden>Profile</a><button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button></nav>
+    </footer>
+    <div class="toast-region" data-toast-region aria-live="polite" aria-atomic="true"></div>
+    <div class="confirm-modal" data-confirm-modal data-cleanup-modal hidden>
+      <div class="confirm-modal__backdrop" data-confirm-modal-cancel data-cleanup-modal-cancel></div>
+      <section class="confirm-modal__card" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message">
+        <p class="eyebrow" data-confirm-modal-eyebrow>Account safety</p>
+        <h2 id="confirm-modal-title" data-confirm-modal-title data-cleanup-modal-title>Confirm action</h2>
+        <p id="confirm-modal-message" data-confirm-modal-message data-cleanup-modal-message>This action needs confirmation.</p>
+        <div class="confirm-modal__actions">
+          <button class="button button-ghost" type="button" data-confirm-modal-cancel data-cleanup-modal-cancel>Cancel</button>
+          <button class="button button-primary" type="button" data-confirm-modal-confirm data-cleanup-modal-confirm>Confirm</button>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

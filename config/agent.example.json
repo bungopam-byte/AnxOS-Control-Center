@@ -1,0 +1,5 @@
+{
+  "backendMode": "agent",
+  "agentUrl": "http://127.0.0.1:47131",
+  "agentToken": ""
+}

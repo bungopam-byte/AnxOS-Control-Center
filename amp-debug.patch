@@ -1,0 +1,74 @@
+From 41fe2a334a48b3f9925f2cebddb573288e48c23c Mon Sep 17 00:00:00 2001
+From: Bungo Pamploma <Bungopam@gmail.com>
+Date: Sat, 4 Jul 2026 03:54:02 -0600
+Subject: [PATCH] chore: add temporary AMP runtime diagnostics
+
+---
+ package.json         |  3 ++-
+ scripts/amp-debug.js | 40 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 42 insertions(+), 1 deletion(-)
+ create mode 100644 scripts/amp-debug.js
+
+diff --git a/package.json b/package.json
+index 8505c3a..69e7381 100644
+--- a/package.json
++++ b/package.json
+@@ -7,7 +7,8 @@
+   "private": true,
+   "scripts": {
+     "start": "electron .",
+-    "dist": "electron-builder"
++    "dist": "electron-builder",
++    "amp:debug": "node scripts/amp-debug.js"
+   },
+   "devDependencies": {
+     "electron": "^43.0.0"
+diff --git a/scripts/amp-debug.js b/scripts/amp-debug.js
+new file mode 100644
+index 0000000..fd24c4d
+--- /dev/null
++++ b/scripts/amp-debug.js
+@@ -0,0 +1,40 @@
++#!/usr/bin/env node
++
++const { inspect } = require("util");
++const { inspectManagedMinecraftRuntime } = require("../src/services/ampService");
++
++const instanceHint = process.argv[2] || "Coolpals01";
++
++function findCall(diagnostic, label) {
++  return diagnostic.readOnlyCalls.find((call) => call.label === label) || null;
++}
++
++function findRuntimeCalls(diagnostic) {
++  return diagnostic.readOnlyCalls.filter((call) => /status|metric/i.test(call.label));
++}
++
++inspectManagedMinecraftRuntime({ instanceHint })
++  .then((diagnostic) => {
++    const selected = diagnostic.selectedInstance || {};
++    const getStatus = findCall(diagnostic, "Core.GetStatusAsync");
++    const runtimeCalls = findRuntimeCalls(diagnostic);
++    const output = {
++      selectedInstance: {
++        id: selected.id || selected.InstanceID || selected.InstanceId || selected.ID || null,
++        name: selected.name || selected.InstanceName || selected.FriendlyName || selected.Name || null,
++      },
++      managedUrl: diagnostic.managedUrl,
++      getStatusAsync: getStatus,
++      runtimeStatusOrMetricCalls: runtimeCalls,
++    };
++
++    console.log("===== AMP DEBUG JSON.stringify =====");
++    console.log(JSON.stringify(output, null, 2));
++    console.log("\n===== AMP DEBUG util.inspect depth:null =====");
++    console.log(inspect(output, { depth: null, colors: false, compact: false }));
++  })
++  .catch((error) => {
++    console.error("AMP_DEBUG_FAILED");
++    console.error(error && error.stack ? error.stack : error);
++    process.exit(1);
++  });
+-- 
+2.47.3
+

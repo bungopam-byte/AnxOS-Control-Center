@@ -1,0 +1,220 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run versioning smoke validation
+        run: npm run versioning:smoke
+
+      - name: Run RC validation
+        run: npm run rc:validate
+
+      - name: Check tracked JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files '*.js' -z | xargs -0 -r -n1 node --check
+
+  windows:
+    needs: validate
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Report Windows signing mode
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+        run: |
+          $names = @("AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TRUSTED_SIGNING_ENDPOINT", "AZURE_TRUSTED_SIGNING_ACCOUNT_NAME", "AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME", "AZURE_TRUSTED_SIGNING_PUBLISHER_NAME")
+          $present = @($names | Where-Object { -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+          if ($present.Count -eq 0) {
+            "Windows Azure Trusted Signing: disabled (unsigned build)."
+          } elseif ($present.Count -ne $names.Count) {
+            $missing = $names | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
+            throw "Azure Trusted Signing configuration is partial. Missing: $($missing -join ', ')"
+          } else {
+            "Windows Azure Trusted Signing: enabled."
+          }
+
+      - name: Build Windows installer
+        run: npm run dist:win -- --publish never --no-increment-build
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+
+      - name: Verify Windows Authenticode signatures
+        shell: pwsh
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
+        run: node scripts/verify-windows-signatures.js
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anxos-control-center-windows
+          path: |
+            dist/AnxOS-Control-Center-Setup-*.exe
+            dist/AnxOS-Control-Center-Setup-*.exe.blockmap
+            dist/AnxOS-Control-Center-*-portable.exe
+            dist/latest.yml
+          if-no-files-found: error
+
+  linux:
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux packages
+        run: npm run dist:linux -- --publish never --no-increment-build
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anxos-control-center-linux
+          path: |
+            dist/AnxOS-Control-Center-*.deb
+            dist/AnxOS-Control-Center-*.AppImage
+            dist/latest-linux.yml
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs:
+      - windows
+      - linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout release notes and metadata scripts
+        uses: actions/checkout@v4
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Setup Node for release metadata
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install metadata dependencies
+        run: npm ci
+
+      - name: Generate updater manifest
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp release-artifacts/AnxOS-Control-Center-* dist/
+          npm run updates:manifest
+          cp dist/update-manifest.json release-artifacts/update-manifest.json
+
+      - name: Generate SHA-256 checksum manifest
+        shell: bash
+        run: |
+          cd release-artifacts
+          sha256sum * > SHA256SUMS
+
+      - name: Validate release artifact set
+        run: node scripts/validate-release-artifacts.js --directory release-artifacts
+
+      - name: Publish tagged release
+        env:
+          GH_TOKEN: ${{ secrets.ANXOS_RELEASE_REPO_TOKEN }}
+          ANXOS_RELEASE_REPOSITORY: bungopam-byte/AnxOS-Control-Center-Releases
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "ANXOS_RELEASE_REPO_TOKEN is required to publish public release assets." >&2
+            exit 1
+          fi
+
+          NOTES_FILE="RELEASE_NOTES_${GITHUB_REF_NAME#v}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            NOTES_ARGS=(--notes-file "$NOTES_FILE")
+          else
+            NOTES_ARGS=(--notes "Desktop installers and portable builds for AnxOS Control Center ${GITHUB_REF_NAME}.")
+          fi
+
+          if gh release view "$GITHUB_REF_NAME" --repo "$ANXOS_RELEASE_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$ANXOS_RELEASE_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --prerelease \
+              "${NOTES_ARGS[@]}"
+            gh release upload "$GITHUB_REF_NAME" release-artifacts/* \
+              --repo "$ANXOS_RELEASE_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-artifacts/* \
+              --repo "$ANXOS_RELEASE_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --prerelease \
+              "${NOTES_ARGS[@]}"
+          fi

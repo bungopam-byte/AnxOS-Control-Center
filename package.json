@@ -1,19 +1,382 @@
 {
   "name": "anxos-control-center",
   "productName": "AnxOS Control Center",
-  "version": "1.0.0",
+  "version": "1.0.53",
   "description": "Private local desktop control center for a Debian server.",
+  "homepage": "https://anxoscontrolcenter.org",
+  "author": "Anx",
+  "license": "UNLICENSED",
+  "desktopName": "anxos-control-center.desktop",
   "main": "main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "node scripts/run-electron-builder.js",
+    "dist:win": "node scripts/run-electron-builder.js --win --x64",
+    "dist:win:installer": "node scripts/run-electron-builder.js --win nsis --x64",
+    "dist:win:portable": "node scripts/run-electron-builder.js --win portable --x64",
+    "dist:linux": "node scripts/run-electron-builder.js --linux deb AppImage --x64",
+    "hardware-telemetry:build": "node scripts/build-windows-hardware-telemetry.js",
+    "build:increment": "node scripts/release-config.js build:increment",
+    "version:set": "node scripts/release-config.js version:set",
+    "channel:set": "node scripts/release-config.js channel:set",
+    "updates:manifest": "node scripts/write-update-manifest.js && node scripts/sync-website-release.js",
+    "website:sync": "node scripts/sync-website-release.js",
+    "release:update": "node scripts/release-update.js",
+    "agent:skills:check": ".agent/scripts/validate-skills",
+    "agent:validate": ".agent/scripts/validate-project",
+    "agent:release-check": ".agent/scripts/release-check",
+    "rc:validate": "node scripts/rc-validate.js",
+    "artifacts:validate": "node scripts/packaging-artifact-smoke.js --require-artifacts",
+    "amp:debug": "node scripts/amp-debug.js",
+    "operations:framework:smoke": "node scripts/long-operation-framework-smoke.js",
+    "operations:domain-cancellation:smoke": "node scripts/operation-domain-cancellation-smoke.js",
+    "docker:smoke": "node scripts/docker-smoke.js",
+    "docker:ipc-error-contract:smoke": "node scripts/docker-ipc-error-contract-smoke.js",
+    "docker:ipc-authorization:smoke": "node scripts/docker-ipc-authorization-smoke.js",
+    "account:smoke": "node scripts/account-system-smoke.js",
+    "account:ipc-error-contract:smoke": "node scripts/account-ipc-error-contract-smoke.js",
+    "device-activation:smoke": "node scripts/device-activation-smoke.js",
+    "owner-account:smoke": "node scripts/owner-account-smoke.js",
+    "owner-bootstrap:smoke": "node scripts/bootstrap-owner-account-smoke.js",
+    "account:diagnostics": "node scripts/account-diagnostics.js",
+    "agent:token:status": "node scripts/agent-token-status.js",
+    "agent:token:rotate": "node scripts/rotate-agent-token.js",
+    "agent:pair": "node scripts/agent-pair-export.js",
+    "agent:token:smoke": "node scripts/agent-token-smoke.js",
+    "agent:api-authorization:smoke": "node scripts/agent-api-authorization-smoke.js",
+    "agent:token-status:smoke": "node scripts/agent-token-status-smoke.js",
+    "agent:auth-fallback:smoke": "node scripts/agent-auth-fallback-smoke.js",
+    "agent:disk-stats:smoke": "node scripts/agent-disk-stats-smoke.js",
+    "agent:expected-ipc:smoke": "node scripts/expected-agent-ipc-smoke.js",
+    "agent:expected-error-contract:smoke": "node scripts/expected-agent-error-contract-smoke.js",
+    "agent:polling-backoff:smoke": "node scripts/agent-polling-backoff-smoke.js",
+    "agent:no-terminal-guidance:smoke": "node scripts/no-normal-terminal-guidance-smoke.js",
+    "agent:instances:smoke": "node scripts/agent-instance-record-smoke.js",
+    "agent:installer-execution:smoke": "node scripts/agent-installation-execution-smoke.js",
+    "instances:runtime:smoke": "node scripts/instance-runtime-smoke.js",
+    "minecraft-java-runtime:smoke": "node scripts/minecraft-java-runtime-smoke.js",
+    "instances:config-migration:smoke": "node scripts/instance-config-migration-smoke.js",
+    "instances:shutdown:smoke": "node scripts/instance-shutdown-smoke.js",
+    "renderer:resource-cleanup:smoke": "node scripts/renderer-resource-cleanup-smoke.js",
+    "dependencies:abort-listener:smoke": "node scripts/dependency-abort-listener-smoke.js",
+    "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",
+    "instances:ipc-authorization:smoke": "node scripts/instances-ipc-authorization-smoke.js",
+    "action:ipc-authorization:smoke": "node scripts/action-ipc-authorization-smoke.js",
+    "action:ipc-error-contract:smoke": "node scripts/action-ipc-error-contract-smoke.js",
+    "backups:ipc-authorization:smoke": "node scripts/backups-ipc-authorization-smoke.js",
+    "backups:transfer-safety:smoke": "node scripts/backups-transfer-safety-smoke.js",
+    "ipc:error-contract:smoke": "node scripts/ipc-error-contract-smoke.js",
+    "nodes:ipc-error-contract:smoke": "node scripts/nodes-ipc-error-contract-smoke.js",
+    "nodes:ipc-authorization:smoke": "node scripts/nodes-ipc-authorization-smoke.js",
+    "instances:ipc-error-contract:smoke": "node scripts/instances-ipc-error-contract-smoke.js",
+    "dashboard:node-routing:smoke": "node scripts/dashboard-node-routing-smoke.js",
+    "dashboard:metrics:smoke": "node scripts/dashboard-metrics-presentation-smoke.js",
+    "node:agent-client:smoke": "node scripts/node-agent-client-smoke.js",
+    "node:global-agent-isolation:smoke": "node scripts/global-agent-config-isolation-smoke.js",
+    "node:legacy-migration:smoke": "node scripts/node-legacy-migration-smoke.js",
+    "node:registry:smoke": "node scripts/node-registry-model-smoke.js",
+    "node:switch:smoke": "node scripts/node-switch-smoke.js",
+    "node:active-selection:smoke": "node scripts/active-node-selection-smoke.js",
+    "node:application-host-identity:smoke": "node scripts/application-host-identity-smoke.js",
+    "node:agent-identity:smoke": "node scripts/agent-identity-resolution-smoke.js",
+    "node:startup-selection:smoke": "node scripts/startup-selection-smoke.js",
+    "node:token-workflow:smoke": "node scripts/node-token-workflow-smoke.js",
+    "node:credential-repair:smoke": "node scripts/node-credential-repair-smoke.js",
+    "node:agent-pairing:smoke": "node scripts/agent-pairing-workflow-smoke.js",
+    "node:remote-pairing-target:smoke": "node scripts/remote-pairing-target-smoke.js",
+    "node:expired-pairing-single-submit:smoke": "node scripts/expired-pairing-single-submit-smoke.js",
+    "agent-control:canonical-credential:smoke": "node scripts/agent-control-canonical-credential-smoke.js",
+    "pairing:input-routing:smoke": "node scripts/pairing-input-routing-smoke.js",
+    "agent:compatibility:smoke": "node scripts/agent-compatibility-smoke.js",
+    "agent:terminal-free:smoke": "node scripts/agent-terminal-free-smoke.js",
+    "ssh:command-bar:smoke": "node scripts/ssh-command-bar-submission-smoke.js",
+    "ssh:ipc-authorization:smoke": "node scripts/ssh-ipc-authorization-smoke.js",
+    "ssh:ipc-error-contract:smoke": "node scripts/ssh-ipc-error-contract-smoke.js",
+    "ssh:profile-store:smoke": "node scripts/ssh-profile-store-smoke.js",
+    "ssh:interactive-input:smoke": "node scripts/ssh-interactive-input-smoke.js",
+    "ssh:input-diagnostics:smoke": "node scripts/ssh-input-diagnostics-smoke.js",
+    "ssh:renderer-input-lifecycle:smoke": "node scripts/ssh-renderer-input-lifecycle-smoke.js",
+    "ssh:terminal-emulation:smoke": "node scripts/ssh-terminal-emulation-smoke.js",
+    "synchronized-final:smoke": "node scripts/synchronized-final-regression-smoke.js",
+    "live-regressions:smoke": "node scripts/live-routing-regression-smoke.js",
+    "feature-ipc-node-context:smoke": "node scripts/feature-ipc-node-context-smoke.js",
+    "live-regressions:final-smoke": "node scripts/live-regression-final-audit-smoke.js",
+    "agent-errors:smoke": "node scripts/agent-error-category-smoke.js",
+    "public-access:ipc-noise:smoke": "node scripts/public-access-ipc-noise-smoke.js",
+    "features:runtime-paths:smoke": "node scripts/remaining-feature-runtime-paths-smoke.js",
+    "account:project-context:smoke": "node scripts/account-project-context-smoke.js",
+    "node:connection-workflow:smoke": "node scripts/node-connection-workflow-smoke.js",
+    "node:local-removal:smoke": "node scripts/local-node-removal-smoke.js",
+    "node:local-application-separation:smoke": "node scripts/local-application-separation-smoke.js",
+    "node:independent-health:smoke": "node scripts/node-independent-health-smoke.js",
+    "node:compat-cleanup:smoke": "node scripts/node-compat-cleanup-smoke.js",
+    "node:stale-response:smoke": "node scripts/node-stale-response-smoke.js",
+    "node:status-classification:smoke": "node scripts/node-status-classification-smoke.js",
+    "node:state-consistency:smoke": "node scripts/node-state-consistency-smoke.js",
+    "node:selected-routing:smoke": "node scripts/selected-node-request-routing-smoke.js",
+    "cross-page:selected-target:smoke": "node scripts/cross-page-selected-target-smoke.js",
+    "agent-control:remote-identity:smoke": "node scripts/remote-identity-rendering-smoke.js",
+    "agent-control:developer-diagnostics:smoke": "node scripts/agent-developer-diagnostics-smoke.js",
+    "windows-startup-registration:smoke": "node scripts/windows-startup-registration-state-smoke.js",
+    "windows-agent-lifecycle-migration:smoke": "node scripts/windows-agent-lifecycle-migration-smoke.js",
+    "node-health:smoke": "node scripts/node-health-smoke.js",
+    "security:page:smoke": "node scripts/security-page-smoke.js",
+    "security:ipc-error-contract:smoke": "node scripts/security-ipc-error-contract-smoke.js",
+    "security:sections:smoke": "node scripts/security-sections-smoke.js",
+    "diagnostics:ipc-authorization:smoke": "node scripts/diagnostics-ipc-authorization-smoke.js",
+    "diagnostics:ipc-error-contract:smoke": "node scripts/diagnostics-ipc-error-contract-smoke.js",
+    "updates:ipc-authorization:smoke": "node scripts/updates-ipc-authorization-smoke.js",
+    "updates:download-safety:smoke": "node scripts/update-download-safety-smoke.js",
+    "storage-window:ipc-authorization:smoke": "node scripts/storage-window-ipc-authorization-smoke.js",
+    "owner:smoke": "node scripts/owner-workspace-smoke.js",
+    "owner:ipc-error-contract:smoke": "node scripts/owner-workspace-ipc-error-contract-smoke.js",
+    "icons:linux": "node scripts/generate-linux-icons.js",
+    "marketplace:smoke": "node scripts/marketplace-smoke.js",
+    "marketplace:certification:smoke": "node scripts/marketplace-template-certification-smoke.js",
+    "marketplace:ipc-error-contract:smoke": "node scripts/marketplace-ipc-error-contract-smoke.js",
+    "marketplace:ipc-authorization:smoke": "node scripts/marketplace-ipc-authorization-smoke.js",
+    "marketplace:node-routing:smoke": "node scripts/marketplace-node-routing-smoke.js",
+    "marketplace:install-selected-node:smoke": "node scripts/marketplace-install-selected-node-smoke.js",
+    "marketplace:credential-refresh:smoke": "node scripts/marketplace-credential-refresh-smoke.js",
+    "curseforge:server-pack-resolution:smoke": "node scripts/curseforge-server-pack-resolution-smoke.js",
+    "marketplace:server-compatibility:smoke": "node scripts/marketplace-server-compatibility-smoke.js",
+    "marketplace:server-capability-ux:smoke": "node scripts/marketplace-server-capability-ux-smoke.js",
+    "curseforge:browse-agent-auth:smoke": "node scripts/curseforge-browse-agent-auth-smoke.js",
+    "curseforge:regression": "node scripts/curseforge-packaged-regression.js",
+    "dependencies:smoke": "node scripts/dependency-smoke.js",
+    "operational-reads:ipc-authorization:smoke": "node scripts/operational-read-ipc-authorization-smoke.js",
+    "public-access:ipc-authorization:smoke": "node scripts/public-access-ipc-authorization-smoke.js",
+    "compatibility:ipc-error-contract:smoke": "node scripts/compatibility-ipc-error-contract-smoke.js",
+    "amp:api-client:smoke": "node scripts/amp-api-client-smoke.js",
+    "dependencies:ipc-error-contract:smoke": "node scripts/dependencies-ipc-error-contract-smoke.js",
+    "dependencies:graphical:smoke": "node scripts/dependency-graphical-actions-smoke.js",
+    "dependencies:node-routing:smoke": "node scripts/dependency-public-access-node-smoke.js",
+    "files:smoke": "node scripts/files-pipeline-smoke.js",
+    "files:ipc-authorization:smoke": "node scripts/files-ipc-authorization-smoke.js",
+    "files:ipc-error-contract:smoke": "node scripts/files-ipc-error-contract-smoke.js",
+    "resources:node-isolation:smoke": "node scripts/resources-node-isolation-smoke.js",
+    "independent-agent-architecture:smoke": "node scripts/independent-agent-architecture-smoke.js",
+    "agent:files-root:smoke": "node scripts/agent-files-root-smoke.js",
+    "instances:file-security:smoke": "node scripts/instance-file-security-smoke.js",
+    "instances:deletion:smoke": "node scripts/instance-deletion-smoke.js",
+    "device-architecture:smoke": "node scripts/device-architecture-smoke.js",
+    "local-owner-auth:smoke": "node scripts/local-owner-auth-smoke.js",
+    "settings:preferences:smoke": "node scripts/settings-preferences-smoke.js",
+    "settings:permissions:smoke": "node scripts/settings-permissions-smoke.js",
+    "settings:ipc-authorization:smoke": "node scripts/settings-ipc-authorization-smoke.js",
+    "settings:ipc-error-contract:smoke": "node scripts/settings-ipc-error-contract-smoke.js",
+    "settings:permissions:runtime": "node scripts/settings-permissions-runtime-smoke.js",
+    "onboarding:smoke": "node scripts/onboarding-smoke.js",
+    "maintenance:smoke": "node scripts/maintenance-smoke.js",
+    "maintenance:ipc-contract:smoke": "node scripts/maintenance-ipc-contract-smoke.js",
+    "global-search:smoke": "node scripts/global-search-smoke.js",
+    "command-palette:smoke": "node scripts/command-palette-smoke.js",
+    "renderer-safety:smoke": "node scripts/renderer-safety-smoke.js",
+    "ui:polish:smoke": "node scripts/ui-polish-smoke.js",
+    "ui:modal-behavior:smoke": "node scripts/modal-behavior-smoke.js",
+    "docs:architecture:smoke": "node scripts/architecture-docs-smoke.js",
+    "public-access:smoke": "node scripts/public-access-smoke.js",
+    "packaging:smoke": "node scripts/packaging-artifact-smoke.js",
+    "release:artifacts:smoke": "node scripts/validate-release-artifacts.js --fixture",
+    "website:smoke": "node scripts/website-production-smoke.js && node scripts/website-download-smoke.js && node scripts/website-accessibility-smoke.js",
+    "website:a11y:smoke": "node scripts/website-accessibility-smoke.js",
+    "website:download:smoke": "node scripts/website-download-smoke.js",
+    "diagnostics:smoke": "node scripts/diagnostics-smoke.js",
+    "diagnostics:disk-stats:smoke": "node scripts/diagnostic-disk-stats-classification-smoke.js",
+    "versioning:smoke": "node scripts/versioning-smoke.js",
+    "notifications:smoke": "node scripts/notification-center-smoke.js",
+    "developer-source-update:smoke": "node scripts/developer-source-update-smoke.js",
+    "agent-control:smoke": "node scripts/agent-control-smoke.js",
+    "agent-control:ipc-authorization:smoke": "node scripts/agent-control-ipc-authorization-smoke.js",
+    "agent-control:ipc-error-contract:smoke": "node scripts/agent-control-ipc-error-contract-smoke.js",
+    "agent-runtime-config:smoke": "node scripts/agent-runtime-config-store-smoke.js",
+    "secure-session-store:smoke": "node scripts/secure-session-store-smoke.js",
+    "persistent-session-store:smoke": "node scripts/persistent-session-store-smoke.js",
+    "agent-control:sections:smoke": "node scripts/agent-control-sections-smoke.js",
+    "windows-runtime:smoke": "node scripts/windows-runtime-smoke.js",
+    "windows-cpu-temperature:smoke": "node scripts/windows-cpu-temperature-smoke.js",
+    "security:reset-password": "node scripts/reset-local-password.js",
+    "icons:branding": "node scripts/generate-linux-icons.js"
+  },
+  "build": {
+    "appId": "com.anxos.controlcenter",
+    "productName": "AnxOS Control Center",
+    "copyright": "Copyright © 2026 Anx",
+    "afterPack": "scripts/normalize-package-permissions.js",
+    "asarUnpack": [
+      "src/shared/**/*"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "app.js",
+      "index.html",
+      "release.json",
+      "release-build.json",
+      "styles.css",
+      "windows/**/*",
+      "assets/**/*",
+      "config/agent.example.json",
+      "config/marketplace-templates.json",
+      "config/marketplace-server-certifications.json",
+      "config/ssh-profiles.json",
+      "website/anxos-design-system.css",
+      "website/account-config.js",
+      "src/**/*",
+      {
+        "from": "src/services",
+        "to": "src/services",
+        "filter": [
+          "**/*.js",
+          "!**/*.map"
+        ]
+      },
+      "src/shared/**/*",
+      "agent/package.json",
+      "agent/src/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "agent",
+        "to": "local-agent-runtime/agent",
+        "filter": [
+          "package.json",
+          "src/**/*",
+          "!agent.log",
+          "!config/**/*",
+          "!**/*.map",
+          "!**/.env",
+          "!**/.env.*",
+          "!package-lock.json",
+          "!node_modules/**/*"
+        ]
+      },
+      {
+        "from": "src/shared",
+        "to": "local-agent-runtime/src/shared",
+        "filter": [
+          "**/*.js",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "src/services",
+        "to": "local-agent-runtime/src/services",
+        "filter": [
+          "**/*.js",
+          "!**/*.map"
+        ]
+      },
+      {
+        "from": "node_modules/dotenv",
+        "to": "local-agent-runtime/node_modules/dotenv",
+        "filter": [
+          "lib/**/*",
+          "package.json"
+        ]
+      },
+      {
+        "from": "config/agent.example.json",
+        "to": "local-agent-runtime/config/agent.example.json"
+      },
+      {
+        "from": "config/marketplace-templates.json",
+        "to": "local-agent-runtime/config/marketplace-templates.json"
+      },
+      {
+        "from": "config/local-agent-runtime.json",
+        "to": "local-agent-runtime/local-agent-runtime.json"
+      },
+      {
+        "from": "resources/hardware-telemetry/win-x64",
+        "to": "hardware-telemetry",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "verifyUpdateCodeSignature": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "assets/icons/png",
+      "executableName": "anxos-control-center",
+      "syncDesktopName": true,
+      "maintainer": "AnxOS <noreply@anxos.local>",
+      "vendor": "AnxOS",
+      "synopsis": "Private local desktop control center for a Debian server.",
+      "description": "AnxOS Control Center is a private local desktop dashboard for homelab server monitoring and management.",
+      "desktop": {
+        "entry": {
+          "Name": "AnxOS Control Center",
+          "Comment": "Private local desktop control center for a Debian server",
+          "StartupWMClass": "anxos-control-center"
+        }
+      }
+    },
+    "appImage": {
+      "artifactName": "AnxOS-Control-Center-${env.ANXOS_RELEASE_ARTIFACT_VERSION}.${ext}"
+    },
+    "deb": {
+      "artifactName": "AnxOS-Control-Center-${env.ANXOS_RELEASE_ARTIFACT_VERSION}.${ext}",
+      "packageCategory": "utils"
+    },
+    "portable": {
+      "artifactName": "AnxOS-Control-Center-${env.ANXOS_RELEASE_ARTIFACT_VERSION}-portable.${ext}"
+    },
+    "nsis": {
+      "artifactName": "AnxOS-Control-Center-Setup-${env.ANXOS_RELEASE_ARTIFACT_VERSION}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "AnxOS Control Center",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico"
+    }
   },
   "devDependencies": {
-    "electron": "^43.0.0"
+    "electron": "^43.0.0",
+    "electron-builder": "^26.0.12"
   },
   "dependencies": {
-    "@cubecoders/ampapi": "^1.0.1",
-    "dotenv": "^17.4.2"
+    "@xterm/xterm": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "monaco-editor": "^0.55.1",
+    "ssh2": "^1.17.0",
+    "unzipper": "^0.12.5"
+  },
+  "overrides": {
+    "dompurify": "3.4.12"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "ssh2@1.17.0": true
   }
 }

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "runtimeId": "anxos-local-agent",
+  "entrypoint": "agent/src/server.js",
+  "nodeRuntime": "electron-run-as-node",
+  "managedBy": "AnxOS Control Center",
+  "defaultConfigTemplate": "config/agent.example.json",
+  "includedPaths": [
+    "agent/package.json",
+    "agent/src",
+    "src/shared",
+    "src/services",
+    "node_modules/dotenv",
+    "config/agent.example.json",
+    "config/marketplace-templates.json"
+  ],
+  "excludedPatterns": [
+    ".env",
+    ".env.*",
+    "*.log",
+    "*.map",
+    ".git",
+    "node_modules/.cache",
+    "test",
+    "tests"
+  ]
+}

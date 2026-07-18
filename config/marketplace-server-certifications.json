@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "maxAgeDays": 180,
+  "records": [
+    {
+      "provider": "curseforge",
+      "projectId": "396246",
+      "slug": "fabulously-optimized",
+      "classification": "CLIENT_ONLY",
+      "status": "certified",
+      "lastValidatedAt": "2026-07-17",
+      "evidence": "Project purpose and published support documentation were manually reviewed; this optimization pack is intended for clients, not dedicated servers.",
+      "validatedBy": "AnxOS Marketplace certification"
+    }
+  ]
+}

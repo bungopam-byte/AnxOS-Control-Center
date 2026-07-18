@@ -1,0 +1,79 @@
+const assert = require("assert");
+const fs = require("fs");
+const Module = require("module");
+const path = require("path");
+
+const handlers = new Map();
+const listeners = new Map();
+let serviceInvoked = false;
+let authorized = false;
+const diagnostics = {
+  log: () => { serviceInvoked = true; return { ok: true }; },
+  captureSnapshot: () => { serviceInvoked = true; return {}; },
+  readLogs: () => { serviceInvoked = true; return {}; },
+  openFolder: async () => { serviceInvoked = true; return {}; },
+  copySummary: async () => { serviceInvoked = true; return "summary"; },
+  exportBundle: async () => { serviceInvoked = true; return {}; },
+};
+
+const originalLoad = Module._load;
+Module._load = function patchedLoad(request, parent, isMain) {
+  if (request === "electron") {
+    return {
+      BrowserWindow: { fromWebContents: () => null },
+      clipboard: { writeText: () => {} },
+      ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), on: (channel, listener) => listeners.set(channel, listener) },
+    };
+  }
+  if (request === "../services/diagnosticsService") return diagnostics;
+  if (request === "../services/securityService") {
+    return {
+      requirePermission: () => {
+        if (authorized) return { role: "Owner" };
+        throw Object.assign(new Error("Permission denied."), { code: "PERMISSION_DENIED" });
+      },
+      checkRateLimit: () => {},
+    };
+  }
+  return originalLoad.call(this, request, parent, isMain);
+};
+
+try {
+  require("../src/ipc/diagnosticsIpc").registerDiagnosticsIpc();
+} finally {
+  Module._load = originalLoad;
+}
+
+async function main() {
+  const mainSource = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.strictEqual(
+    /ipcMain\.on\(["']diagnostics:log["']/.test(mainSource),
+    false,
+    "main.js must not register a second diagnostics listener outside the authorized IPC module.",
+  );
+  for (const channel of ["diagnostics:log", "diagnostics:capture", "diagnostics:read", "diagnostics:openFolder", "diagnostics:copySummary", "diagnostics:export"]) {
+    serviceInvoked = false;
+    const handler = handlers.get(channel);
+    assert(handler, `${channel} should be registered.`);
+    await assert.rejects(
+      () => Promise.resolve().then(() => handler({ sender: {} }, {})),
+      (error) => error?.code === "PERMISSION_DENIED",
+      `${channel} should reject an unauthorized renderer request.`,
+    );
+    assert.strictEqual(serviceInvoked, false, `${channel} must authorize before accessing diagnostics.`);
+  }
+  const sendListener = listeners.get("diagnostics:log");
+  assert(sendListener, "Preload send-based diagnostic logging should be registered.");
+  serviceInvoked = false;
+  assert.doesNotThrow(() => sendListener({}, { severity: "error", message: "sensitive failure" }), "Send-based logging should safely absorb authorization failures.");
+  assert.strictEqual(serviceInvoked, false, "Unauthorized preload diagnostics must not be persisted.");
+  authorized = true;
+  sendListener({}, { severity: "invalid", operation: "preload-error", message: "captured failure" });
+  assert.strictEqual(serviceInvoked, true, "Authorized preload send diagnostics should reach the shared logger.");
+  console.log("Diagnostics IPC authorization smoke checks passed.");
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

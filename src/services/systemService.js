@@ -2,9 +2,26 @@ const { execFile } = require("child_process");
 const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
+const agentClient = require("./agentClient");
+const { getExecutionTarget, getSelectedNodeId } = require("./nodeService");
+const { readWindowsHardwareTemperature } = require("../shared/windowsHardwareTemperature");
 
 let previousCpuSample = readCpuSample();
 let previousNetworkSample = null;
+let localTemperatureUnavailableReason = null;
+const loggedAgentMetricWarnings = new Set();
+const EXPECTED_AGENT_SYSTEM_ERROR_CODES = new Set([
+  "UNAUTHORIZED",
+  "AUTHENTICATION_FAILED",
+  "AGENT_UNAVAILABLE",
+  "ECONNREFUSED",
+  "TIMEOUT",
+  "NETWORK_ERROR",
+  "NODE_DISABLED",
+  "NODE_NOT_FOUND",
+  "NODE_REQUIRED",
+  "AGENT_INCOMPATIBLE",
+]);
 
 function exec(command, args, options = {}) {
   return new Promise((resolve) => {
@@ -26,6 +43,171 @@ function round(value, decimals = 1) {
 
   const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
+}
+
+function safeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function findValue(source, keys = []) {
+  if (!source || typeof source !== "object") {
+    return undefined;
+  }
+
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) {
+      return source[key];
+    }
+  }
+
+  return undefined;
+}
+
+function normalizePercent(value) {
+  const number = safeNumber(value);
+  if (number === null) {
+    return null;
+  }
+  if (number >= 0 && number <= 1) {
+    return round(number * 100);
+  }
+  return round(number);
+}
+
+function normalizeDiskMetric(snapshot = {}) {
+  const source = snapshot.disk || snapshot.storage || snapshot.filesystem || snapshot.fs || snapshot.rootDisk || null;
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const total = safeNumber(findValue(source, ["total", "totalBytes", "totalSpace", "totalSpaceBytes", "size", "sizeBytes", "blocksTotalBytes"]));
+  const free = safeNumber(findValue(source, ["free", "freeBytes", "freeSpace", "freeSpaceBytes", "available", "availableBytes", "avail", "availBytes"]));
+  const usedRaw = safeNumber(findValue(source, ["used", "usedBytes", "usedSpace", "usedSpaceBytes"]));
+  const used = usedRaw ?? (total !== null && free !== null ? Math.max(total - free, 0) : null);
+  const percent = normalizePercent(findValue(source, ["percent", "usagePercent", "usedPercent", "pct"]));
+  const mount = findValue(source, ["mount", "mountPoint", "path", "target", "filesystem"]) || null;
+
+  if (total === null || total <= 0 || free === null || used === null) {
+    return null;
+  }
+
+  return {
+    mount,
+    total,
+    used,
+    free,
+    percent: percent ?? round((used / total) * 100),
+  };
+}
+
+function isExpectedAgentSystemError(error = {}) {
+  const code = String(error.code || error.payload?.error?.code || "").toUpperCase();
+  return error.status === 401 || error.statusCode === 401 || EXPECTED_AGENT_SYSTEM_ERROR_CODES.has(code);
+}
+
+function normalizeNetworkMetric(snapshot = {}) {
+  const source = snapshot.network || snapshot.net || snapshot.networkIo || snapshot.networkIO || null;
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const totalDownload = safeNumber(findValue(source, [
+    "totalDownload",
+    "download",
+    "rx",
+    "rxBytes",
+    "received",
+    "receivedBytes",
+    "totalReceived",
+    "totalDownloaded",
+    "totalRx",
+  ]));
+  const totalUpload = safeNumber(findValue(source, [
+    "totalUpload",
+    "upload",
+    "tx",
+    "txBytes",
+    "sent",
+    "sentBytes",
+    "totalSent",
+    "totalUploaded",
+    "totalTx",
+  ]));
+  const downloadPerSecond = safeNumber(findValue(source, [
+    "downloadPerSecond",
+    "rxPerSecond",
+    "rxBytesPerSecond",
+    "receivedPerSecond",
+    "downloadRate",
+  ]));
+  const uploadPerSecond = safeNumber(findValue(source, [
+    "uploadPerSecond",
+    "txPerSecond",
+    "txBytesPerSecond",
+    "sentPerSecond",
+    "uploadRate",
+  ]));
+
+  if (totalDownload === null && totalUpload === null && downloadPerSecond === null && uploadPerSecond === null) {
+    return null;
+  }
+
+  return {
+    downloadPerSecond: downloadPerSecond ?? 0,
+    uploadPerSecond: uploadPerSecond ?? 0,
+    totalDownload,
+    totalUpload,
+  };
+}
+
+function normalizeCpuTemperature(snapshot = {}) {
+  return safeNumber(findValue(snapshot, ["cpuTempC", "temperatureCelsius", "cpuTemperatureCelsius"]))
+    ?? safeNumber(findValue(snapshot.cpu, ["temperatureCelsius", "cpuTempC", "tempC", "temperature"]));
+}
+
+function normalizeAgentSystemSnapshot(snapshot = {}, configOverride = null) {
+  const disk = normalizeDiskMetric(snapshot);
+  const network = normalizeNetworkMetric(snapshot);
+  const cpuTempC = normalizeCpuTemperature(snapshot);
+  const agentConfig = configOverride || agentClient.getAgentConfig();
+  const agentUrl = agentConfig.agentUrl || agentConfig.url || null;
+
+  if (!disk && !loggedAgentMetricWarnings.has(`${agentUrl || "default"}:disk`)) {
+    loggedAgentMetricWarnings.add(`${agentUrl || "default"}:disk`);
+    console.warn("[AnxOS][System] Agent disk metrics unavailable or incomplete.", {
+      nodeUrl: agentUrl,
+      hasDiskPayload: Boolean(snapshot?.disk || snapshot?.storage || snapshot?.filesystem || snapshot?.fs || snapshot?.rootDisk),
+      diskKeys: snapshot?.disk && typeof snapshot.disk === "object" ? Object.keys(snapshot.disk) : [],
+    });
+  }
+
+  if (!network && !loggedAgentMetricWarnings.has(`${agentUrl || "default"}:network`)) {
+    loggedAgentMetricWarnings.add(`${agentUrl || "default"}:network`);
+    console.warn("[AnxOS][System] Agent network metrics unavailable or incomplete.", {
+      nodeUrl: agentUrl,
+      hasNetworkPayload: Boolean(snapshot?.network || snapshot?.net || snapshot?.networkIo || snapshot?.networkIO),
+      networkKeys: snapshot?.network && typeof snapshot.network === "object" ? Object.keys(snapshot.network) : [],
+    });
+  }
+
+  return {
+    ...snapshot,
+    cpu: {
+      ...(snapshot?.cpu && typeof snapshot.cpu === "object" ? snapshot.cpu : {}),
+      temperatureCelsius: cpuTempC,
+    },
+    cpuTempC,
+    disk,
+    network,
+    source: snapshot?.source || "agent",
+    diagnostics: {
+      ...(snapshot?.diagnostics && typeof snapshot.diagnostics === "object" ? snapshot.diagnostics : {}),
+      agent: {
+        url: agentUrl,
+      },
+    },
+  };
 }
 
 function readCpuSample() {
@@ -212,6 +394,9 @@ async function getNetworkUsage() {
 }
 
 async function getCpuTemperature() {
+  if (process.platform === "win32") {
+    return readWindowsHardwareTemperature();
+  }
   if (process.platform !== "linux") {
     return null;
   }
@@ -233,7 +418,7 @@ async function getCpuTemperature() {
   return null;
 }
 
-async function getSystemSnapshot() {
+async function getLocalSystemSnapshot() {
   const [osVersion, disk, network, cpuTemperature] = await Promise.all([
     getOsVersion(),
     getDiskUsage(),
@@ -241,6 +426,19 @@ async function getSystemSnapshot() {
     getCpuTemperature(),
   ]);
 
+  const windowsTemperature = process.platform === "win32" && cpuTemperature && typeof cpuTemperature === "object"
+    ? cpuTemperature
+    : null;
+  if (windowsTemperature && !windowsTemperature.available && localTemperatureUnavailableReason !== windowsTemperature.reason) {
+    localTemperatureUnavailableReason = windowsTemperature.reason;
+    console.warn("[AnxOS][System] Embedded Windows CPU temperature unavailable.", {
+      provider: windowsTemperature.source,
+      reason: windowsTemperature.reason,
+    });
+  }
+  const cpuTemperatureCelsius = windowsTemperature?.available
+    ? windowsTemperature.cpu?.temperatureCelsius ?? null
+    : cpuTemperature;
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
   const usedMemory = totalMemory - freeMemory;
@@ -254,8 +452,35 @@ async function getSystemSnapshot() {
       model: os.cpus()[0]?.model || "Unknown CPU",
       cores: os.cpus().length,
       usagePercent: getCpuUsage(),
-      temperatureCelsius: cpuTemperature,
+      temperatureCelsius: cpuTemperatureCelsius,
+      temperatureAvailable: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+      temperatureValid: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+      temperatureSource: windowsTemperature?.source || (Number.isFinite(cpuTemperatureCelsius) ? "linux-sysfs" : null),
+      temperatureSensor: windowsTemperature?.cpu?.sensorName || null,
+      temperatureTimestamp: windowsTemperature?.timestamp || null,
+      temperatureReason: windowsTemperature?.reason || null,
     },
+    cpuTempC: cpuTemperatureCelsius,
+    temperatureAvailable: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+    temperatureValid: windowsTemperature ? windowsTemperature.available === true : Number.isFinite(cpuTemperatureCelsius),
+    temperatureSource: windowsTemperature?.source || (Number.isFinite(cpuTemperatureCelsius) ? "linux-sysfs" : null),
+    temperatureSensor: windowsTemperature?.cpu?.sensorName || null,
+    temperatureTimestamp: windowsTemperature?.timestamp || null,
+    temperatureReason: windowsTemperature?.reason || null,
+    gpu: windowsTemperature?.gpu ? {
+      core: windowsTemperature.gpu.core ? {
+        temperatureCelsius: windowsTemperature.gpu.core.temperatureCelsius,
+        temperatureSource: windowsTemperature.gpu.core.source,
+        temperatureSensor: windowsTemperature.gpu.core.sensorName,
+        temperatureTimestamp: windowsTemperature.timestamp,
+      } : null,
+      hotspot: windowsTemperature.gpu.hotspot ? {
+        temperatureCelsius: windowsTemperature.gpu.hotspot.temperatureCelsius,
+        temperatureSource: windowsTemperature.gpu.hotspot.source,
+        temperatureSensor: windowsTemperature.gpu.hotspot.sensorName,
+        temperatureTimestamp: windowsTemperature.timestamp,
+      } : null,
+    } : null,
     memory: {
       total: totalMemory,
       used: usedMemory,
@@ -265,9 +490,65 @@ async function getSystemSnapshot() {
     disk,
     network,
     uptimeSeconds: os.uptime(),
+    source: "local",
   };
 }
 
+async function getAgentSystemSnapshot(nodeId, configOverride = null) {
+  const nodeAgent = agentClient.forNode(nodeId);
+  let snapshot;
+  try {
+    snapshot = await nodeAgent.get("/stats");
+  } catch (error) {
+    if (!agentClient.isCompatibilityFallbackAllowed(error)) {
+      throw error;
+    }
+    console.warn("[AnxOS][Agent] Stats endpoint unavailable; falling back to system summary.", {
+      nodeId,
+      message: error?.message || String(error),
+      code: error?.code || null,
+    });
+    snapshot = await nodeAgent.get("/system/summary");
+  }
+  return normalizeAgentSystemSnapshot(snapshot, configOverride);
+}
+
+async function getSystemSnapshot(options = {}) {
+  const target = getExecutionTarget(options?.nodeId || getSelectedNodeId());
+  const nodeConfig = target.type === "agent" ? target.config : null;
+
+  if (nodeConfig) {
+    try {
+      return await getAgentSystemSnapshot(target.nodeId, nodeConfig);
+    } catch (error) {
+      const details = {
+        nodeId: target.nodeId,
+        nodeUrl: nodeConfig.agentUrl || nodeConfig.url || null,
+        code: error?.code || error?.payload?.error?.code || null,
+        status: error?.status || error?.statusCode || null,
+        message: error?.message || String(error),
+      };
+      if (isExpectedAgentSystemError(error)) {
+        console.warn("[AnxOS][System] Expected selected node stats failure.", details);
+      } else {
+        console.error("[AnxOS][System] Selected node stats fetch failed.", {
+          ...details,
+          stack: error?.stack || null,
+        });
+      }
+      throw error;
+    }
+  }
+
+  return getLocalSystemSnapshot();
+}
+
 module.exports = {
+  _test: {
+    normalizeAgentSystemSnapshot,
+    normalizeDiskMetric,
+    normalizeNetworkMetric,
+    normalizeCpuTemperature,
+  },
   getSystemSnapshot,
 };

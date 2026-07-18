@@ -1,7 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const dotenv = require("dotenv");
-const { AMPAPI } = require("@cubecoders/ampapi");
+const { AMPAPI } = require("./ampApiClient");
 
 const REQUIRED_ENV = ["AMP_URL", "AMP_USERNAME", "AMP_PASSWORD"];
 const AMP_TIMEOUT_MS = 4500;
@@ -38,58 +38,172 @@ function uniquePaths(paths) {
   return [...new Set(paths.filter(Boolean))];
 }
 
+function trimValue(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getElectronApp() {
+  try {
+    const electron = require("electron");
+    return electron && typeof electron === "object" ? electron.app || null : null;
+  } catch {
+    return null;
+  }
+}
+
+function getElectronConfigDirectory() {
+  const app = getElectronApp();
+
+  if (!app) {
+    return null;
+  }
+
+  try {
+    return path.join(app.getPath("userData"), "config");
+  } catch {
+    return null;
+  }
+}
+
+function isPackagedElectronRuntime() {
+  return Boolean(getElectronApp()?.isPackaged);
+}
+
+function getRepoEnvPath() {
+  return path.join(__dirname, "..", "..", ".env");
+}
+
+function getRepoEnvExamplePath() {
+  return path.join(__dirname, "..", "..", ".env.example");
+}
+
+function getPrimaryEnvPath() {
+  const explicitPath = trimValue(process.env.ANXHUB_ENV_PATH);
+
+  if (explicitPath) {
+    return explicitPath;
+  }
+
+  if (isPackagedElectronRuntime()) {
+    const electronConfigDirectory = getElectronConfigDirectory();
+
+    if (electronConfigDirectory) {
+      return path.join(electronConfigDirectory, ".env");
+    }
+  }
+
+  return getRepoEnvPath();
+}
+
 function getEnvCandidates() {
+  const electronConfigDirectory = getElectronConfigDirectory();
+  const packagedEnvPath = isPackagedElectronRuntime() && electronConfigDirectory
+    ? path.join(electronConfigDirectory, ".env")
+    : null;
+
   return uniquePaths([
     process.env.ANXHUB_ENV_PATH,
+    packagedEnvPath,
+    getRepoEnvPath(),
     path.join(process.cwd(), ".env"),
+    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, ".env") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env") : null,
-    process.execPath ? path.join(path.dirname(process.execPath), ".env") : null,
-    path.join(__dirname, "..", "..", ".env"),
   ]);
 }
 
 function getEnvExampleCandidates() {
+  const electronConfigDirectory = getElectronConfigDirectory();
+  const packagedEnvExamplePath = isPackagedElectronRuntime() && electronConfigDirectory
+    ? path.join(electronConfigDirectory, ".env.example")
+    : null;
+
   return uniquePaths([
     process.env.ANXHUB_ENV_EXAMPLE_PATH,
+    packagedEnvExamplePath,
+    getRepoEnvExamplePath(),
     path.join(process.cwd(), ".env.example"),
+    process.execPath ? path.join(path.dirname(process.execPath), ".env.example") : null,
     process.resourcesPath ? path.join(process.resourcesPath, ".env.example") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "app", ".env.example") : null,
-    path.join(__dirname, "..", "..", ".env.example"),
   ]);
 }
 
-function bootstrapEnvFile(candidates) {
-  const targetPath = process.env.ANXHUB_ENV_PATH || path.join(process.cwd(), ".env");
-  const existingPath = process.env.ANXHUB_ENV_PATH
-    ? (fs.existsSync(process.env.ANXHUB_ENV_PATH) ? process.env.ANXHUB_ENV_PATH : null)
-    : candidates.find((candidate) => fs.existsSync(candidate));
+function getFallbackEnvTemplate() {
+  return `${REQUIRED_ENV.map((key) => `${key}=`).join("\n")}\n`;
+}
 
-  if (existingPath) {
+function bootstrapEnvFile(candidates) {
+  const targetPath = getPrimaryEnvPath();
+  const resolvedTargetPath = path.resolve(targetPath);
+  const existingPath = candidates.find((candidate) => fs.existsSync(candidate));
+
+  if (fs.existsSync(targetPath)) {
     return {
-      resolvedEnvPath: existingPath,
+      resolvedEnvPath: targetPath,
+      envFileExists: true,
       envAutoCreated: false,
       envTemplatePath: null,
       envCreateErrorCode: null,
     };
   }
 
-  const templatePath = getEnvExampleCandidates().find((candidate) => fs.existsSync(candidate));
+  if (existingPath && path.resolve(existingPath) !== resolvedTargetPath) {
+    try {
+      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+      fs.copyFileSync(existingPath, targetPath, fs.constants.COPYFILE_EXCL);
 
-  if (!templatePath) {
+      return {
+        resolvedEnvPath: targetPath,
+        envFileExists: true,
+        envAutoCreated: true,
+        envTemplatePath: existingPath,
+        envCreateErrorCode: null,
+      };
+    } catch (error) {
+      return {
+        resolvedEnvPath: existingPath,
+        envFileExists: true,
+        envAutoCreated: false,
+        envTemplatePath: targetPath,
+        envCreateErrorCode: getSafeErrorCode(error),
+      };
+    }
+  }
+
+  if (existingPath) {
+    return {
+      resolvedEnvPath: existingPath,
+      envFileExists: true,
+      envAutoCreated: false,
+      envTemplatePath: null,
+      envCreateErrorCode: null,
+    };
+  }
+
+  if (process.env.ANXHUB_DISABLE_ENV_BOOTSTRAP === "1") {
     return {
       resolvedEnvPath: targetPath,
       envAutoCreated: false,
       envTemplatePath: null,
-      envCreateErrorCode: "ENOENT",
+      envCreateErrorCode: "BOOTSTRAP_DISABLED",
     };
   }
 
+  const templatePath = getEnvExampleCandidates().find((candidate) => fs.existsSync(candidate));
+
   try {
-    fs.copyFileSync(templatePath, targetPath, fs.constants.COPYFILE_EXCL);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+
+    if (templatePath) {
+      fs.copyFileSync(templatePath, targetPath, fs.constants.COPYFILE_EXCL);
+    } else {
+      fs.writeFileSync(targetPath, getFallbackEnvTemplate(), "utf8");
+    }
 
     return {
       resolvedEnvPath: targetPath,
+      envFileExists: true,
       envAutoCreated: true,
       envTemplatePath: templatePath,
       envCreateErrorCode: null,
@@ -97,6 +211,7 @@ function bootstrapEnvFile(candidates) {
   } catch (error) {
     return {
       resolvedEnvPath: targetPath,
+      envFileExists: fs.existsSync(targetPath),
       envAutoCreated: false,
       envTemplatePath: templatePath,
       envCreateErrorCode: getSafeErrorCode(error),
@@ -104,34 +219,80 @@ function bootstrapEnvFile(candidates) {
   }
 }
 
+function loadEnvValues(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return {
+      values: {},
+      errorCode: null,
+    };
+  }
+
+  try {
+    return {
+      values: dotenv.parse(fs.readFileSync(filePath)),
+      errorCode: null,
+    };
+  } catch (error) {
+    return {
+      values: {},
+      errorCode: error?.code || error?.name || "INVALID_ENV_FILE",
+    };
+  }
+}
+
+function pickEnvValue(parsed, key) {
+  const explicitValue = trimValue(process.env[key]);
+
+  if (explicitValue) {
+    return explicitValue;
+  }
+
+  const parsedValue = trimValue(parsed[key]);
+  return parsedValue || null;
+}
+
 function loadEnv() {
   const candidates = getEnvCandidates();
   const bootstrap = bootstrapEnvFile(candidates);
-  const result = dotenv.config({ path: bootstrap.resolvedEnvPath, quiet: true });
+  const loaded = loadEnvValues(bootstrap.resolvedEnvPath);
+  const envPath = bootstrap.resolvedEnvPath || null;
+  const envExists = envPath ? (bootstrap.envFileExists ?? fs.existsSync(envPath)) : false;
+  const envLoaded = Boolean(envExists && !loaded.errorCode);
+  const values = {
+    AMP_URL: pickEnvValue(loaded.values, "AMP_URL"),
+    AMP_USERNAME: pickEnvValue(loaded.values, "AMP_USERNAME"),
+    AMP_PASSWORD: pickEnvValue(loaded.values, "AMP_PASSWORD"),
+  };
 
   return {
     cwd: process.cwd(),
-    resolvedEnvPath: bootstrap.resolvedEnvPath,
-    envFileExists: fs.existsSync(bootstrap.resolvedEnvPath),
+    resolvedEnvPath: envPath,
+    envPath,
+    envPathResolved: Boolean(envPath),
+    envFileExists: envExists,
+    envExists,
+    envLoaded,
     envAutoCreated: bootstrap.envAutoCreated,
     envTemplatePath: bootstrap.envTemplatePath,
     envCreateErrorCode: bootstrap.envCreateErrorCode,
-    envLoadErrorCode: result.error?.code || null,
-    ampUrlLoaded: Boolean(process.env.AMP_URL),
+    envLoadErrorCode: loaded.errorCode,
+    ampUrlLoaded: Boolean(values.AMP_URL),
+    ampUrlPresent: Boolean(values.AMP_URL),
+    ampUrl: values.AMP_URL,
+    values,
   };
 }
 
-const ENV_LOAD_INFO = loadEnv();
-
 function getConfig() {
+  const envInfo = loadEnv();
   const config = {
-    url: process.env.AMP_URL,
-    username: process.env.AMP_USERNAME,
-    password: process.env.AMP_PASSWORD,
+    url: envInfo.values.AMP_URL,
+    username: envInfo.values.AMP_USERNAME,
+    password: envInfo.values.AMP_PASSWORD,
   };
 
   const missing = REQUIRED_ENV.filter((key) => {
-    const value = process.env[key];
+    const value = envInfo.values[key];
     return !value || PLACEHOLDER_ENV_VALUES.has(String(value).trim().toLowerCase());
   });
 
@@ -140,9 +301,7 @@ function getConfig() {
     configured: missing.length === 0,
     missing,
     env: {
-      ...ENV_LOAD_INFO,
-      ampUrlLoaded: Boolean(process.env.AMP_URL),
-      ampUrl: process.env.AMP_URL || null,
+      ...envInfo,
     },
   };
 }
@@ -212,12 +371,17 @@ function createDiagnostics(config, stage, details = {}) {
     ampUrl: config.url || null,
     cwd: config.env?.cwd || null,
     resolvedEnvPath: config.env?.resolvedEnvPath || null,
+    envPath: config.env?.envPath || config.env?.resolvedEnvPath || null,
+    envPathResolved: config.env?.envPathResolved ?? Boolean(config.env?.resolvedEnvPath),
     envFileExists: config.env?.envFileExists ?? false,
+    envExists: config.env?.envExists ?? (config.env?.envFileExists ?? false),
+    envLoaded: config.env?.envLoaded ?? false,
     envAutoCreated: config.env?.envAutoCreated ?? false,
     envTemplatePath: config.env?.envTemplatePath || null,
     envCreateErrorCode: config.env?.envCreateErrorCode || null,
     envLoadErrorCode: config.env?.envLoadErrorCode || null,
     ampUrlLoaded: config.env?.ampUrlLoaded ?? false,
+    ampUrlPresent: config.env?.ampUrlPresent ?? (config.env?.ampUrlLoaded ?? false),
     loadedAmpUrl: config.env?.ampUrl || null,
     httpStatus: details.httpStatus ?? null,
     errorCode: details.errorCode ?? null,
@@ -227,6 +391,10 @@ function createDiagnostics(config, stage, details = {}) {
     stage,
     loginFailed: stage === "login",
     serverUnreachable: stage === "preflight" || stage === "api_spec" || stage === "client_error",
+    runtimeMetricsMethod: details.runtimeMetricsMethod || null,
+    runtimeMetricsSource: details.runtimeMetricsSource || null,
+    runtimeMetricsErrorCode: details.runtimeMetricsErrorCode || null,
+    runtimeMetricsCandidates: details.runtimeMetricsCandidates || [],
   };
 }
 
@@ -274,6 +442,22 @@ function createAmpSnapshot({
   minecraftSelectionMode = "none",
 }) {
   const instanceCount = Array.isArray(instances) ? instances.length : 0;
+  const summary = summarizeInstances(instances);
+  const minecraft = {
+    selectedInstanceId: summary.selectedInstanceId || null,
+    selectedInstanceName: summary.selectedInstanceName || null,
+    instanceCount: summary.minecraftInstanceCount || 0,
+    selectionMode: summary.minecraftSelectionMode || minecraftSelectionMode,
+    state: summary.state || null,
+    playerCount: summary.playerCount ?? null,
+    maxPlayers: summary.maxPlayers ?? null,
+    tps: summary.tps ?? null,
+    cpuUsage: summary.cpuUsage ?? null,
+    ramUsage: summary.ramUsage ?? null,
+    uptime: summary.uptime ?? null,
+    version: summary.version || null,
+    ports: summary.ports || [],
+  };
 
   return {
     connected,
@@ -287,13 +471,20 @@ function createAmpSnapshot({
     selectedInstance,
     minecraftInstances,
     minecraftSelectionMode,
+    playerCount: summary.playerCount ?? null,
+    maxPlayers: summary.maxPlayers ?? null,
+    tps: summary.tps ?? null,
+    cpuUsage: summary.cpuUsage ?? null,
+    ramUsage: summary.ramUsage ?? null,
+    uptime: summary.uptime ?? null,
+    minecraft,
     poll: {
       sequence: AMP_POLL_STATE.sequence,
       lastSuccessfulPollAt: AMP_POLL_STATE.lastSuccessfulPollAt,
       status,
       instanceCount,
     },
-    summary: summarizeInstances(instances),
+    summary,
   };
 }
 
@@ -427,23 +618,6 @@ function withTimeout(promise, timeoutMs) {
 
 async function authenticate(api, config) {
   const loginResult = await callMethod(api.Core, "LoginAsync", [config.username, config.password, "", false]);
-  const sessionId = extractSessionId(loginResult);
-
-  if (sessionId) {
-    api.sessionId = sessionId;
-  }
-
-  const authenticated = didLoginSucceed(loginResult, sessionId);
-
-  if (!authenticated) {
-    return false;
-  }
-
-  return withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
-}
-
-async function authenticateWithToken(api, username, token) {
-  const loginResult = await callMethod(api.Core, "LoginAsync", [username, "", token, false]);
   const sessionId = extractSessionId(loginResult);
 
   if (sessionId) {
@@ -652,7 +826,7 @@ function normalizeUptime(value) {
 }
 
 function getMetric(metrics, metricName) {
-  const metric = metrics?.[metricName];
+  const metric = normalizeMetrics(metrics)[metricName];
   return metric && typeof metric === "object" ? metric : null;
 }
 
@@ -699,6 +873,111 @@ function normalizeMemoryUsage(value) {
   }
 
   return number;
+}
+
+function normalizeMetrics(metrics) {
+  if (!metrics || typeof metrics !== "object") {
+    return {};
+  }
+
+  if (!Array.isArray(metrics)) {
+    return metrics;
+  }
+
+  return Object.fromEntries(
+    metrics
+      .filter((metric) => metric && typeof metric === "object")
+      .map((metric) => {
+        const name = findValue(metric, ["Name", "name", "DisplayName", "displayName", "MetricName", "metricName", "mapKey"]);
+        return name ? [String(name), metric] : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+function normalizeStatusPayload(value) {
+  const unwrapped = unwrapResult(value);
+  const direct = pickFirstObject(unwrapped);
+
+  if (direct.Metrics || direct.Uptime || direct.State || direct.Status) {
+    return direct;
+  }
+
+  const nested = findValue(direct, ["Status", "status", "Result", "result", "Data", "data"]);
+  const nestedObject = pickFirstObject(nested, ...asArray(nested));
+
+  if (nestedObject.Metrics || nestedObject.Uptime || nestedObject.State || nestedObject.Status) {
+    return nestedObject;
+  }
+
+  return pickFirstObject(...asArray(unwrapped));
+}
+
+function hasRuntimeMetrics(metrics) {
+  return ["Active Users", "TPS", "CPU Usage", "Memory Usage"].some((metricName) => Boolean(metrics[metricName]));
+}
+
+function findRuntimeMetrics(value, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 4) {
+    return {};
+  }
+
+  const normalized = normalizeMetrics(value);
+
+  if (hasRuntimeMetrics(normalized)) {
+    return normalized;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const metrics = findRuntimeMetrics(item, depth + 1);
+
+      if (hasRuntimeMetrics(metrics)) {
+        return metrics;
+      }
+    }
+
+    return {};
+  }
+
+  for (const key of ["Metrics", "metrics", "MetricData", "metricData", "Status", "status", "Result", "result", "Data", "data"]) {
+    const metrics = findRuntimeMetrics(value[key], depth + 1);
+
+    if (hasRuntimeMetrics(metrics)) {
+      return metrics;
+    }
+  }
+
+  return {};
+}
+
+function normalizeRuntimeMetrics(value, version = null) {
+  const scopedValue = unwrapResult(value);
+  const status = normalizeStatusPayload(scopedValue);
+  const metrics = findRuntimeMetrics(scopedValue);
+  const uptime = findValue(status, [
+    "Uptime",
+    "uptime",
+    "UptimeSeconds",
+    "uptimeSeconds",
+    "RunningSeconds",
+    "runningSeconds",
+    "StartedFor",
+    "startedFor",
+    "UptimeSec",
+    "uptimeSec",
+  ]);
+
+  return pickDefinedValues({
+    state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
+    playerCount: getMetricRawValue(metrics, "Active Users"),
+    maxPlayers: getMetricMaxValue(metrics, "Active Users"),
+    tps: getMetricRawValue(metrics, "TPS"),
+    cpuUsage: getMetricRawValue(metrics, "CPU Usage"),
+    ramUsage: getMetricRawValue(metrics, "Memory Usage"),
+    uptime: normalizeUptime(uptime),
+    version,
+  });
 }
 
 function mergeStatusRows(instance, statuses) {
@@ -836,98 +1115,96 @@ async function getAdsInstance(api, instanceId) {
   return null;
 }
 
-async function authenticateManagedInstance(adsApi, config, selectedInstance) {
+function hasRuntimeMetricValues(metrics) {
+  return ["playerCount", "maxPlayers", "tps", "cpuUsage", "ramUsage", "uptime"].some((key) => metrics[key] !== undefined);
+}
+
+async function getSelectedInstanceAdsMetrics(api, selectedInstance) {
   const instanceId = getInstanceId(selectedInstance);
+  const candidates = [];
 
   if (!instanceId) {
-    return null;
+    return {
+      managedMetrics: null,
+      runtimeDiagnostics: {
+        runtimeMetricsSource: "ads",
+        runtimeMetricsMethod: null,
+        runtimeMetricsErrorCode: "NO_INSTANCE_ID",
+        runtimeMetricsCandidates: [],
+      },
+    };
   }
 
-  const adsInstance = await getAdsInstance(adsApi, instanceId);
-  const managedUrl = adsInstance ? buildManagedInstanceUrl(config, adsInstance) : null;
-
-  if (!adsInstance || !managedUrl) {
-    return null;
-  }
-
-  const handoffResult = await callMethodDetailed(adsApi.ADSModule, "ManageInstanceAsync", [instanceId]);
-  const handoffToken = handoffResult.ok ? extractActionResultValue(handoffResult.value) : null;
-
-  if (!handoffToken) {
-    return null;
-  }
-
-  const managedApi = new AMPAPI(managedUrl);
-  const initialized = await withTimeout(managedApi.initAsync(), AMP_TIMEOUT_MS);
-  const authenticated = initialized ? await authenticateWithToken(managedApi, config.username, handoffToken) : false;
-
-  return authenticated ? managedApi : null;
-}
-
-async function getMinecraftVersion(managedApi) {
-  const result = await callMethodDetailed(managedApi.Core, "GetConfigAsync", ["MinecraftModule.Minecraft.SpecificVersion"]);
-
-  if (!result.ok || !result.value) {
-    return null;
-  }
-
-  const config = pickFirstObject(unwrapResult(result.value));
-  return findValue(config, ["CurrentValue", "currentValue", "Value", "value"]);
-}
-
-async function getManagedInstanceMetrics(managedApi) {
-  if (!managedApi) {
-    return null;
-  }
-
-  const statusResult = await callMethodDetailed(managedApi.Core, "GetStatusAsync");
-
-  if (!statusResult.ok || !statusResult.value) {
-    return null;
-  }
-
-  const status = pickFirstObject(unwrapResult(statusResult.value));
-  const metrics = pickFirstObject(status.Metrics);
-  const version = await getMinecraftVersion(managedApi);
-  const usersMetricNames = ["Active Users", "Users", "Players", "Online Players", "Player Count"];
-  const tpsMetricNames = ["TPS", "Ticks Per Second", "Server TPS"];
-  const cpuMetricNames = ["CPU Usage", "CPU", "Processor Usage"];
-  const memoryMetricNames = ["Memory Usage", "RAM Usage", "Memory", "RAM"];
-
-  const normalized = pickDefinedValues({
-    state: findValue(status, ["State", "Status", "ApplicationState", "DaemonState", "AppState", "InstanceState", "StateText", "Running", "state"]),
-    playerCount: getFirstMetricRawValue(metrics, usersMetricNames),
-    maxPlayers: getFirstMetricMaxValue(metrics, usersMetricNames),
-    tps: getFirstMetricRawValue(metrics, tpsMetricNames),
-    cpuUsage: getFirstMetricPercent(metrics, cpuMetricNames),
-    ramUsage: getFirstMetricRawValue(metrics, memoryMetricNames),
-    uptime: normalizeUptime(findValue(status, ["Uptime", "uptime"])),
-    version,
+  const label = "ADSModule.GetInstanceAsync";
+  const result = await callMethodDetailed(api.ADSModule, "GetInstanceAsync", [instanceId]);
+  candidates.push({
+    method: label,
+    ok: result.ok,
+    missing: result.missing,
+    errorCode: result.errorCode,
+    hasPayload: Boolean(result.value),
+    topLevelKeys: result.value && typeof result.value === "object" ? Object.keys(unwrapResult(result.value)) : [],
   });
 
-  return normalized;
+  if (result.ok && result.value) {
+    const metrics = normalizeRuntimeMetrics(result.value, selectedInstance.version || null);
+
+    if (hasRuntimeMetricValues(metrics)) {
+      return {
+        managedMetrics: metrics,
+        runtimeDiagnostics: {
+          runtimeMetricsSource: "ads",
+          runtimeMetricsMethod: label,
+          runtimeMetricsErrorCode: null,
+          runtimeMetricsCandidates: candidates,
+        },
+      };
+    }
+  }
+
+  return {
+    managedMetrics: null,
+    runtimeDiagnostics: {
+      runtimeMetricsSource: "ads",
+      runtimeMetricsMethod: null,
+      runtimeMetricsErrorCode: "NO_RUNTIME_METRICS",
+      runtimeMetricsCandidates: candidates,
+    },
+  };
 }
 
-async function getSelectedInstanceChildMetrics(api, config, selectedInstance) {
+async function getSelectedInstanceChildMetrics(api, selectedInstance) {
   if (!selectedInstance) {
     return {
       managedInstanceApi: null,
       managedMetrics: null,
+      runtimeDiagnostics: {
+        runtimeMetricsSource: null,
+        runtimeMetricsMethod: null,
+        runtimeMetricsErrorCode: "NO_SELECTED_INSTANCE",
+        runtimeMetricsCandidates: [],
+      },
     };
   }
 
   try {
-    const managedInstanceApi = await authenticateManagedInstance(api, config, selectedInstance);
-    const managedMetrics = await getManagedInstanceMetrics(managedInstanceApi);
+    const adsMetrics = await getSelectedInstanceAdsMetrics(api, selectedInstance);
 
     return {
-      managedInstanceApi,
-      managedMetrics,
+      managedInstanceApi: null,
+      managedMetrics: adsMetrics.managedMetrics,
+      runtimeDiagnostics: adsMetrics.runtimeDiagnostics,
     };
-  } catch {
+  } catch (error) {
     return {
       managedInstanceApi: null,
       managedMetrics: null,
+      runtimeDiagnostics: {
+        runtimeMetricsSource: "ads",
+        runtimeMetricsMethod: null,
+        runtimeMetricsErrorCode: getSafeErrorCode(error),
+        runtimeMetricsCandidates: [],
+      },
     };
   }
 }
@@ -1048,7 +1325,7 @@ async function getAmpSnapshot() {
       });
     }
 
-    const api = new AMPAPI(config.url);
+    const api = new AMPAPI(config.url, { timeoutMs: AMP_TIMEOUT_MS });
     const initialized = await withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
 
     if (!initialized) {
@@ -1087,19 +1364,19 @@ async function getAmpSnapshot() {
 
     markSuccessfulAmpPoll("connected", adsInstances);
 
+    const { managedInstanceApi, managedMetrics, runtimeDiagnostics } = await getSelectedInstanceChildMetrics(api, adsSelectedInstance);
+
     const adsSnapshot = createAmpSnapshot({
       connected: true,
       configured: true,
       status: "connected",
       message: "Connected to AMP.",
-      diagnostics: createDiagnostics(config, "connected"),
+      diagnostics: createDiagnostics(config, "connected", runtimeDiagnostics),
       instances: adsInstances,
       selectedInstance: adsSelectedInstance,
       minecraftInstances: adsMinecraftInstances,
       minecraftSelectionMode: selection.mode,
     });
-
-    const { managedInstanceApi, managedMetrics } = await getSelectedInstanceChildMetrics(api, config, adsSelectedInstance);
 
     if (!managedMetrics) {
       return adsSnapshot;
@@ -1120,7 +1397,7 @@ async function getAmpSnapshot() {
       configured: true,
       status: "connected",
       message: "Connected to AMP.",
-      diagnostics: createDiagnostics(config, "connected"),
+      diagnostics: createDiagnostics(config, "connected", runtimeDiagnostics),
       instances: finalInstances,
       selectedInstance: finalSelectedInstance,
       minecraftInstances: finalMinecraftInstances,
@@ -1141,6 +1418,181 @@ async function getAmpSnapshot() {
   }
 }
 
+function getMethodNames(target) {
+  if (!target || typeof target !== "object") {
+    return [];
+  }
+
+  const names = new Set();
+  let cursor = target;
+
+  while (cursor && cursor !== Object.prototype) {
+    Object.getOwnPropertyNames(cursor).forEach((name) => {
+      if (name !== "constructor" && typeof target[name] === "function") {
+        names.add(name);
+      }
+    });
+    cursor = Object.getPrototypeOf(cursor);
+  }
+
+  return [...names].sort();
+}
+
+function getApiMethods(api) {
+  return Object.fromEntries(
+    Object.entries(api)
+      .filter(([, moduleValue]) => moduleValue && typeof moduleValue === "object")
+      .map(([moduleName, moduleValue]) => [moduleName, getMethodNames(moduleValue)])
+      .filter(([, methods]) => methods.length > 0),
+  );
+}
+
+function getJsonKeys(value, prefix = "", output = new Set()) {
+  if (!value || typeof value !== "object") {
+    return output;
+  }
+
+  if (Array.isArray(value)) {
+    output.add(`${prefix || "<root>"}[]`);
+    value.slice(0, 3).forEach((item) => getJsonKeys(item, `${prefix}[]`, output));
+    return output;
+  }
+
+  Object.keys(value).forEach((key) => {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    output.add(nextPrefix);
+    getJsonKeys(value[key], nextPrefix, output);
+  });
+
+  return output;
+}
+
+function sanitizeDiagnosticValue(value) {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(sanitizeDiagnosticValue);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (/password|token|session|secret/i.test(key)) {
+        return [key, "[redacted]"];
+      }
+
+      return [key, sanitizeDiagnosticValue(item)];
+    }),
+  );
+}
+
+function summarizeDiagnosticCall(label, result) {
+  const value = sanitizeDiagnosticValue(unwrapResult(result.value));
+
+  return {
+    label,
+    ok: result.ok,
+    missing: result.missing,
+    errorCode: result.errorCode,
+    topLevelKeys: value && typeof value === "object" ? Object.keys(value) : [],
+    jsonKeys: [...getJsonKeys(value)].sort(),
+    value,
+  };
+}
+
+function collectMetricCandidates(calls) {
+  const wanted = /player|user|tps|cpu|processor|ram|memory|uptime|state|version/i;
+  const candidates = [];
+
+  function visit(value, path = "") {
+    if (!value || typeof value !== "object") {
+      if (path && wanted.test(path)) {
+        candidates.push({ path, value });
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.slice(0, 3).forEach((item, index) => visit(item, `${path}[${index}]`));
+      return;
+    }
+
+    Object.entries(value).forEach(([key, item]) => {
+      const nextPath = path ? `${path}.${key}` : key;
+      if (wanted.test(nextPath) && (!item || typeof item !== "object")) {
+        candidates.push({ path: nextPath, value: item });
+      }
+      visit(item, nextPath);
+    });
+  }
+
+  calls.forEach((call) => visit(call.value, call.label));
+  return candidates;
+}
+
+async function inspectManagedMinecraftRuntime({ instanceHint = "Coolpals01" } = {}) {
+  const config = getConfig();
+
+  if (!config.configured) {
+    throw new Error(`AMP is not configured. Missing ${config.missing.join(", ")}`);
+  }
+
+  const api = new AMPAPI(config.url, { timeoutMs: AMP_TIMEOUT_MS });
+  const initialized = await withTimeout(api.initAsync(), AMP_TIMEOUT_MS);
+
+  if (!initialized) {
+    throw new Error("AMP API spec is unavailable.");
+  }
+
+  const authenticated = await authenticate(api, config);
+
+  if (!authenticated) {
+    throw new Error("AMP authentication failed.");
+  }
+
+  const instances = await getInstances(api);
+  const hint = String(instanceHint || "").toLowerCase();
+  const selected =
+    instances.find((instance) =>
+      [instance.name, instance.friendlyName, instance.moduleType, instance.id]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(hint),
+    ) || selectMinecraftInstance(instances).selected;
+
+  if (!selected) {
+    throw new Error(`No managed Minecraft instance matched "${instanceHint}".`);
+  }
+
+  const adsSelectedInstance = await enrichSelectedInstance(api, selected);
+  const readOnlyCalls = [];
+  const instanceId = getInstanceId(adsSelectedInstance);
+  const adsCalls = [["ADSModule.GetInstanceAsync", api.ADSModule, "GetInstanceAsync", [instanceId]]];
+
+  for (const [label, moduleValue, methodName, args] of adsCalls) {
+    readOnlyCalls.push(summarizeDiagnosticCall(label, await callMethodDetailed(moduleValue, methodName, args)));
+  }
+
+  const runtimeMetrics = await getSelectedInstanceAdsMetrics(api, adsSelectedInstance);
+
+  return {
+    envPath: config.env?.resolvedEnvPath || null,
+    ampUrl: config.url,
+    selectedInstance: sanitizeDiagnosticValue(adsSelectedInstance),
+    managedUrl: adsSelectedInstance ? buildManagedInstanceUrl(config, adsSelectedInstance) : null,
+    managedAuthenticated: false,
+    runtimeMetricsDiagnostics: runtimeMetrics.runtimeDiagnostics,
+    runtimeMetrics: runtimeMetrics.managedMetrics,
+    adsMethods: getApiMethods(api),
+    managedMethods: {},
+    readOnlyCalls,
+    metricCandidates: collectMetricCandidates(readOnlyCalls),
+  };
+}
+
 module.exports = {
   getAmpSnapshot,
+  inspectManagedMinecraftRuntime,
 };

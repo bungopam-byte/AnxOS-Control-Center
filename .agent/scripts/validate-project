@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+"use strict";
+
+const { spawnSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
+
+const repoRoot = path.resolve(__dirname, "..", "..");
+
+function run(command, args) {
+  console.log(`\n> ${[command, ...args].join(" ")}`);
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    stdio: "inherit",
+    shell: false,
+  });
+  if (result.status !== 0) {
+    process.exit(result.status || 1);
+  }
+}
+
+function output(command, args) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "inherit"],
+    shell: false,
+  });
+  if (result.status !== 0) {
+    process.exit(result.status || 1);
+  }
+  return result.stdout.trim();
+}
+
+function changedJsFiles() {
+  const files = new Set();
+  for (const args of [
+    ["diff", "--name-only", "--diff-filter=ACMRTUXB", "HEAD", "--", "*.js"],
+    ["diff", "--name-only", "--cached", "--diff-filter=ACMRTUXB", "--", "*.js"],
+    ["ls-files", "--others", "--exclude-standard", "--", "*.js"],
+  ]) {
+    const text = output("git", args);
+    for (const file of text.split(/\r?\n/).filter(Boolean)) {
+      if (fs.existsSync(path.join(repoRoot, file))) {
+        files.add(file);
+      }
+    }
+  }
+  return [...files].sort();
+}
+
+function packageHasScript(name) {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  return Boolean(packageJson.scripts?.[name]);
+}
+
+function main() {
+  run(".agent/scripts/validate-skills", []);
+
+  const jsFiles = changedJsFiles();
+  if (jsFiles.length) {
+    for (const file of jsFiles) {
+      run("node", ["--check", file]);
+    }
+  } else {
+    console.log("\nNo changed JavaScript files detected for node --check.");
+  }
+
+  const smokeScripts = [
+    "owner:smoke",
+    "owner:ipc-error-contract:smoke",
+    "owner-account:smoke",
+    "account:smoke",
+    "account:ipc-error-contract:smoke",
+    "agent:token:smoke",
+    "instances:ipc-authorization:smoke",
+    "action:ipc-authorization:smoke",
+    "backups:ipc-authorization:smoke",
+    "files:ipc-authorization:smoke",
+    "operational-reads:ipc-authorization:smoke",
+    "ipc:error-contract:smoke",
+    "nodes:ipc-error-contract:smoke",
+    "nodes:ipc-authorization:smoke",
+    "instances:ipc-error-contract:smoke",
+    "docker:ipc-error-contract:smoke",
+    "docker:ipc-authorization:smoke",
+    "ssh:ipc-authorization:smoke",
+    "node:switch:smoke",
+    "node:application-host-identity:smoke",
+    "security:page:smoke",
+    "security:ipc-error-contract:smoke",
+    "settings:preferences:smoke",
+    "ui:polish:smoke",
+    "diagnostics:smoke",
+    "diagnostics:ipc-authorization:smoke",
+    "agent-control:smoke",
+    "windows-runtime:smoke",
+    "marketplace:smoke",
+    "marketplace:ipc-error-contract:smoke",
+    "marketplace:ipc-authorization:smoke",
+    "dependencies:ipc-error-contract:smoke",
+  ];
+
+  for (const script of smokeScripts) {
+    if (packageHasScript(script)) {
+      run("npm", ["run", script]);
+    }
+  }
+
+  if (fs.existsSync(path.join(repoRoot, "scripts", "security-backup-smoke.js"))) {
+    run("node", ["scripts/security-backup-smoke.js"]);
+  }
+
+  if (fs.existsSync(path.join(repoRoot, "agent", "package.json"))) {
+    run("npm", ["--prefix", "agent", "run", "check"]);
+  }
+
+  run("git", ["diff", "--check"]);
+  console.log("\nAnxOS project validation passed.");
+}
+
+main();

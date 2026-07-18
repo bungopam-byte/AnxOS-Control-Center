@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AnxOS Control Center | System Requirements</title>
+    <meta name="description" content="Review Windows system requirements for AnxOS Control Center, the Local Agent, game servers, backups, Docker, and public access providers.">
+    <meta name="robots" content="index,follow">
+    <meta name="theme-color" content="#07020f">
+    <link rel="canonical" href="https://anxoscontrolcenter.org/system-requirements">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/config.js" defer></script>
+    <script src="/account-config.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
+    <script src="/release-download-service.js" defer></script>
+    <script src="/site.js" defer></script>
+  </head>
+  <body data-standalone-route="system-requirements">
+    <svg class="svg-defs" aria-hidden="true">
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></symbol>
+      <symbol id="icon-github" viewBox="0 0 24 24"><path d="M9 19c-4 1.5-4-2-5-2.5M15 22v-3.5c0-1 .2-1.4-.5-2 2.6-.3 5.5-1.3 5.5-6a4.7 4.7 0 0 0-1.3-3.3c.1-.3.5-1.7-.1-3.2 0 0-1.1-.3-3.5 1.3a12.2 12.2 0 0 0-6.2 0C6.5 3.7 5.4 4 5.4 4c-.6 1.5-.2 2.9-.1 3.2A4.7 4.7 0 0 0 4 10.5c0 4.7 2.9 5.7 5.5 6-.7.6-.7 1.2-.6 2V22"/></symbol>
+      <symbol id="icon-server" viewBox="0 0 24 24"><path d="M4 5h16v5H4zM4 14h16v5H4zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6"/></symbol>
+      <symbol id="icon-package" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3zM4.5 8 12 12.5 19.5 8M12 12.5V21"/></symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24"><path d="m5 7 5 5-5 5M12 17h7"/></symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.4 2.8 8.5 7 10 4.2-1.5 7-5.6 7-10V6zM9 12l2 2 4-4"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6.7 6.7L4 9m16 6-2.7 2.3A7 7 0 0 1 5.5 15"/></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7zM14 3v4h4M8 13h8M8 17h5"/></symbol>
+      <symbol id="icon-node" viewBox="0 0 24 24"><path d="M12 4v6M12 14v6M6 10h12M6 14h12M5 8h2v8H5zM17 8h2v8h-2z"/></symbol>
+    </svg>
+
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="AnxOS home">
+        <span class="brand-mark"><img data-logo src="/assets/anxos-logo.png" alt=""></span>
+        <span class="brand-copy"><strong data-config="brandName">AnxOS</strong><span>System Requirements</span></span>
+      </a>
+      <button class="site-menu-button" type="button" data-site-menu-toggle aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav class="site-nav" id="site-nav" data-site-nav aria-label="Primary">
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/features">Features</a>
+        <a href="/getting-started">Getting Started</a>
+        <a href="/download">Download</a>
+        <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a>
+        <a class="site-nav__cta" href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a>
+        <a href="/profile" data-auth-nav="signed-in" hidden>Profile</a>
+        <button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button>
+      </nav>
+    </header>
+
+    <main id="system-requirements-page">
+      <section class="section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Windows requirements</p>
+          <h1>System Requirements</h1>
+          <p class="section-copy">AnxOS Control Center runs the desktop app and can install the Local Agent on your own Windows PC. Resource needs depend on the server software and templates you choose.</p>
+        </div>
+        <div class="download-detail-grid requirements-grid">
+          <article class="download-info-card">
+            <h2>Minimum</h2>
+            <ul>
+              <li>Windows 10 or Windows 11, 64-bit.</li>
+              <li>64-bit Intel or AMD processor.</li>
+              <li>4 GB RAM for the app, Local Agent, and light testing.</li>
+              <li>2 GB free storage for AnxOS, the Local Agent runtime, logs, and temporary downloads.</li>
+              <li>Internet access for app updates, Marketplace downloads, and dependency installers.</li>
+              <li>Administrator access during Local Agent service installation and some dependency installs.</li>
+            </ul>
+          </article>
+          <article class="download-info-card">
+            <h2>Recommended</h2>
+            <ul>
+              <li>8 GB RAM or more for Minecraft and small game servers; larger modpacks usually need more.</li>
+              <li>SSD storage for faster server startup, backups, and world saves.</li>
+              <li>Stable internet connection for downloads, updates, multiplayer, and remote access providers.</li>
+              <li>Hardware virtualization enabled when using Docker or Docker Desktop.</li>
+              <li>Additional storage reserved for instances, worlds, backups, logs, and imported server packs.</li>
+            </ul>
+          </article>
+          <article class="download-info-card">
+            <h2>Hosting capacity</h2>
+            <ul>
+              <li>AnxOS itself does not provide game-server hosting capacity.</li>
+              <li>Your computer supplies the CPU, RAM, storage, and network bandwidth for local servers.</li>
+              <li>Your computer must remain powered on and connected for locally hosted servers to stay online.</li>
+              <li>Busy public servers may need more RAM, faster storage, and stronger upload bandwidth.</li>
+            </ul>
+          </article>
+          <article class="download-info-card">
+            <h2>Public access</h2>
+            <ul>
+              <li>Friends can join only when your chosen server and network path are reachable.</li>
+              <li>Public access may require Playit, Tailscale, Cloudflare Tunnel, or router port forwarding.</li>
+              <li>Windows Firewall rules may be required for local servers and managed tunnel providers.</li>
+              <li>AnxOS does not enable remote access by default; provider setup depends on your choices.</li>
+            </ul>
+          </article>
+        </div>
+        <div class="download-help">
+          <a href="/download">Download AnxOS for Windows</a>
+          <a href="/getting-started">Installation guide</a>
+          <a href="/features">Local Agent features</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div><strong>AnxOS Control Center</strong><span>© 2026 AnxOS Control Center · anxoscontrolcenter.org</span></div>
+      <nav aria-label="Footer">
+        <a href="/">Home</a>
+        <a href="/download">Download</a>
+        <a href="/features">Features</a>
+        <a href="/getting-started">Getting Started</a>
+        <a href="/system-requirements" aria-current="page">System Requirements</a>
+        <a href="/release-notes.html">Release Notes</a>
+        <a href="/security-privacy">Security</a>
+        <a href="/faq">FAQ</a>
+        <a data-config-href="repositoryUrl" href="https://github.com/bungopam-byte/AnxOS-Control-Center-Releases">GitHub</a>
+        <a href="/signin" data-auth-nav="signed-out" hidden>Sign In</a><a href="/signup" data-auth-nav="signed-out" hidden>Sign Up</a><a href="/profile" data-auth-nav="signed-in" hidden>Profile</a><button class="site-nav__button" type="button" data-auth-nav="signed-in" data-auth-action="signout" hidden>Sign Out</button>
+      </nav>
+    </footer>
+  </body>
+</html>

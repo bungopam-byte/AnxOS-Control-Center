@@ -2,7 +2,7 @@
 Type=Application
 Name=AnxOS Control Center
 Comment=Private local dashboard for the Anx Debian server
-Exec=/home/anx/Projects/AnxHub/start-anxhub.sh
-Path=/home/anx/Projects/AnxHub
+Exec=/home/anx/Projects/AnxOS-Control-Center/start-anxhub.sh
+Path=/home/anx/Projects/AnxOS-Control-Center
 Terminal=false
 Categories=Utility;

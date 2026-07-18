@@ -55,6 +55,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Signing is optional for local builds but CI rejects partial Azure configuration.
       - name: Report Windows signing mode
         shell: pwsh
         env:
@@ -88,6 +89,7 @@ jobs:
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
 
+      # signtool verification is separate from signing so a successful build cannot hide an invalid signature.
       - name: Verify Windows Authenticode signatures
         shell: pwsh
         env:
@@ -99,13 +101,6 @@ jobs:
           AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
-          Write-Host "PowerShell diagnostics:"
-          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
-          Write-Host "PowerShell edition: $($PSVersionTable.PSEdition)"
-          Write-Host "PowerShell home: $PSHOME"
-          Get-Command powershell.exe -ErrorAction SilentlyContinue | Format-List *
-          Get-Command pwsh.exe -ErrorAction SilentlyContinue | Format-List *
-          Import-Module Microsoft.PowerShell.Security -Force -Verbose -ErrorAction Continue
           node scripts/verify-windows-signatures.js
 
       - name: Upload Windows artifacts
@@ -136,6 +131,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Linux does not use Azure signing; the shared Builder config remains unsigned here.
       - name: Build Linux packages
         run: npm run dist:linux -- --publish never --no-increment-build
 
@@ -175,6 +171,7 @@ jobs:
       - name: Install metadata dependencies
         run: npm ci
 
+      # Publishing is tag-only; artifacts are validated before any release upload.
       - name: Generate updater manifest
         shell: bash
         run: |

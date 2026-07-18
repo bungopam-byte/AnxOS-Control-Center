@@ -23,7 +23,10 @@ if (files.length === 0) {
 }
 
 const script = "$input | Get-AuthenticodeSignature | Select-Object Path,Status,StatusMessage,SignerCertificate | ConvertTo-Json -Compress";
-const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+const powershell = process.env.SystemRoot
+  ? path.join(process.env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+  : "powershell.exe";
+const result = spawnSync(powershell, ["-NoProfile", "-NonInteractive", "-Command", script], {
   input: files.join("\n"), encoding: "utf8", windowsHide: true,
 });
 if (result.status !== 0) {

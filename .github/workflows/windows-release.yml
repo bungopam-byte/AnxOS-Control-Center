@@ -10,7 +10,36 @@ permissions:
   contents: write
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run versioning smoke validation
+        run: npm run versioning:smoke
+
+      - name: Run RC validation
+        run: npm run rc:validate
+
+      - name: Check tracked JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files '*.js' -z | xargs -0 -r -n1 node --check
+
   windows:
+    needs: validate
     runs-on: windows-latest
 
     steps:
@@ -83,6 +112,7 @@ jobs:
           if-no-files-found: error
 
   linux:
+    needs: validate
     runs-on: ubuntu-latest
 
     steps:

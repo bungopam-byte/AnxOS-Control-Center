@@ -4006,8 +4006,9 @@ function renderAgentPairingSetup(session = null, options = {}) {
     agentPairingTargetUrl.textContent = target.agentUrl || "http://127.0.0.1:47131";
   }
   if (agentPairingStatus) {
-    agentPairingStatus.textContent = activeAgentPairingCode ? "Waiting for Control Center" : "Not paired";
-    agentPairingStatus.className = `status-pill ${activeAgentPairingCode ? "status-pill--warning" : "status-pill--planned"}`;
+    const paired = options.paired === true;
+    agentPairingStatus.textContent = paired ? "Paired" : activeAgentPairingCode ? "Waiting for Control Center" : "Not paired";
+    agentPairingStatus.className = `status-pill ${paired ? "status-pill--ok" : activeAgentPairingCode ? "status-pill--warning" : "status-pill--planned"}`;
   }
   if (agentPairingCode) {
     agentPairingCode.textContent = session?.displayCode || activeAgentPairingCode || "Not generated";
@@ -4162,6 +4163,9 @@ function renderAgentControlState(payload = agentControlState) {
   if (!local) return;
   agentControlState = payload;
   syncAgentPairingTargetForSelection();
+  renderAgentPairingSetup(null, {
+    paired: local.pairing?.configured === true || local.tokenStatus?.configured === true || local.authenticated === true,
+  });
   renderAgentGeneratedTokenControls();
   const { runtime, stale } = getAgentRuntimeForDisplay(local);
   const running = runtime?.serviceState === "running" || isAgentTargetRunning(local);

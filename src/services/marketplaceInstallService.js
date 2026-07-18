@@ -2646,6 +2646,7 @@ async function updateSteamCmdInstance(payload = {}) {
   const operation = longOperations.createOperation({ id: operationId, kind: "marketplace-download", nodeId, lockKey: `marketplace-steamcmd-update:${nodeId}:${instanceId}`, status: "running", canCancel: false, retryable: true, rollbackSupported: false, metadata: { instanceId, nodeId, stage: "Preparing", progress: 0, body: "Preparing SteamCMD update." } });
   try {
     emitProgress({ nodeId, instanceId, operationId, stage: "preflight", message: "Checking SteamCMD update prerequisites.", current: 0, total: 1 });
+    await agentClient.repairLegacySteamCmdMetadata(instanceId, agentConfig);
     const session = await agentClient.beginSteamCmdUpdateSession(instanceId, { operationId }, agentConfig);
     emitProgress({ nodeId, instanceId, operationId, stage: "updating", message: "Updating server files with SteamCMD.", current: 0, total: 1 });
     const result = await agentClient.executeSteamCmdUpdate(instanceId, { operationId, token: session.token }, agentConfig);

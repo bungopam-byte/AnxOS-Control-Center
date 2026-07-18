@@ -110,6 +110,12 @@ const INSTALLATION_OPERATION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{7,127}$/;
 const INSTALLER_TIMEOUT_MIN_MS = 1000;
 const INSTALLER_TIMEOUT_MAX_MS = 10 * 60 * 1000;
 const INSTALLER_OUTPUT_MAX_BYTES = 1024 * 1024;
+const LEGACY_STEAMCMD_TEMPLATES = Object.freeze({
+  palworld: { appId: 2394010, installDir: "server", verifyFiles: ["server/PalServer.sh", "server/Pal/Binaries/Linux/PalServer-Linux-Shipping"] },
+  valheim: { appId: 896660, installDir: "server", verifyFiles: ["server/valheim_server.x86_64"] },
+  rust: { appId: 258550, installDir: "server", verifyFiles: ["server/RustDedicated"] },
+  cs2: { appId: 730, installDir: "server", verifyFiles: ["server/game/bin/linuxsteamrt64/cs2"] },
+});
 const STEAM_UPDATE_OPERATION_ID_PATTERN = INSTALLATION_OPERATION_ID_PATTERN;
 
 function createInstanceError(code, statusCode = 400, details = {}) {
@@ -310,6 +316,29 @@ async function beginSteamCmdUpdateSession(instanceId, request = {}) {
   const session = { instanceId: config.id, operationId, installerFamily: "steamcmd-update", token: crypto.randomBytes(32).toString("base64url"), child: null, closed: false, createdAt: Date.now() };
   installationSessions.set(config.id, session);
   return { operationId, token: session.token, status: "ready", appId: config.steamAppId };
+}
+
+async function repairLegacySteamCmdMetadata(instanceId) {
+  const config = await loadInstanceConfig(instanceId);
+  if (config.installerType === "steamcmd-native" && config.steamAppId) return publicConfig(config);
+  const template = LEGACY_STEAMCMD_TEMPLATES[String(config.templateId || "").toLowerCase()];
+  if (!template) throw createInstanceError("STEAMCMD_METADATA_MIGRATION_REQUIRED", 409, { templateId: config.templateId || null });
+  if (config.state !== INSTANCE_STATES.STOPPED || runningProcesses.has(config.id)) throw createInstanceError("STEAMCMD_UPDATE_REQUIRES_STOPPED", 409);
+  const root = path.resolve(instancePath(config.id));
+  if (!isInsideRoot(root, getInstanceRoot())) throw createInstanceError("PATH_NOT_ALLOWED", 403);
+  const verifyFiles = template.verifyFiles.filter((relative) => {
+    const target = path.resolve(root, "data", relative);
+    return isInsideRoot(target, path.join(root, "data"));
+  });
+  if (!verifyFiles.length) throw createInstanceError("STEAMCMD_METADATA_AMBIGUOUS", 409);
+  const found = [];
+  for (const relative of verifyFiles) {
+    if (await pathExists(path.resolve(root, "data", relative))) found.push(relative);
+  }
+  if (!found.length) throw createInstanceError("STEAMCMD_UPDATE_ARTIFACTS_MISSING", 422, { templateId: config.templateId, expected: verifyFiles });
+  const next = { ...config, installerType: "steamcmd-native", steamAppId: template.appId, steamInstallDir: template.installDir, steamVerifyFiles: found, updatedAt: nowIso() };
+  await saveInstanceConfig(next);
+  return publicConfig(next);
 }
 
 async function executeSteamCmdUpdate(instanceId, request = {}) {
@@ -4531,6 +4560,7 @@ module.exports = {
   clearLogs,
   beginInstallationSession,
   beginSteamCmdUpdateSession,
+  repairLegacySteamCmdMetadata,
   cancelInstallationSession,
   closeInstallationSession,
   createInstanceFolder,

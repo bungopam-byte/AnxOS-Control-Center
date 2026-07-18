@@ -6,6 +6,9 @@ const client = fs.readFileSync("src/services/agentClient.js", "utf8");
 const ui = fs.readFileSync("app.js", "utf8");
 
 assert(core.includes("beginSteamCmdUpdateSession"));
+assert(core.includes("repairLegacySteamCmdMetadata"));
+assert(core.includes("STEAMCMD_METADATA_MIGRATION_REQUIRED"));
+assert(core.includes("LEGACY_STEAMCMD_TEMPLATES"));
 assert(core.includes("executeSteamCmdUpdate"));
 assert(core.includes("STEAMCMD_UPDATE_REQUIRES_STOPPED"));
 assert(core.includes("STEAMCMD_UPDATE_ARTIFACTS_MISSING"));

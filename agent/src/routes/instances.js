@@ -1,6 +1,7 @@
 const {
   beginInstallationSession,
   beginSteamCmdUpdateSession,
+  repairLegacySteamCmdMetadata,
   cancelInstallationSession,
   clearLogs,
   closeInstallationSession,
@@ -375,6 +376,10 @@ async function handleInstances(request, url) {
     const steamUpdateSessionId = getInstanceIdFromPath(url.pathname, "/steamcmd/update/session");
     if (request.method === "POST" && steamUpdateSessionId) {
       return result(201, await beginSteamCmdUpdateSession(steamUpdateSessionId, parseJsonBody(request)));
+    }
+    const steamMigrationId = getInstanceIdFromPath(url.pathname, "/steamcmd/update/migrate");
+    if (request.method === "POST" && steamMigrationId) {
+      return result(200, { instance: await repairLegacySteamCmdMetadata(steamMigrationId) });
     }
     if (request.method === "DELETE" && steamUpdateSessionId) {
       return result(200, await closeInstallationSession(steamUpdateSessionId, parseJsonBody(request)));

@@ -22,11 +22,43 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-function resolveSignTool() {
-  if (process.env.SIGNTOOL_PATH && fs.existsSync(process.env.SIGNTOOL_PATH)) return process.env.SIGNTOOL_PATH;
+function numericVersion(value) {
+  return String(value).split(/[._-]/).map((part) => Number.parseInt(part, 10) || 0);
+}
+function compareVersions(a, b) {
+  const left = numericVersion(a);
+  const right = numericVersion(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    if ((left[i] || 0) !== (right[i] || 0)) return (left[i] || 0) - (right[i] || 0);
+  }
+  return 0;
+}
+function collectSdkCandidates(root) {
+  const candidates = [];
+  if (!root || !fs.existsSync(root)) return candidates;
+  function walk(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const filePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) walk(filePath);
+      else if (entry.isFile() && /[\\/]x64[\\/]signtool\.exe$/i.test(filePath)) candidates.push({ path: filePath, arch: "x64", version: path.basename(path.dirname(path.dirname(filePath))) });
+      else if (entry.isFile() && /[\\/]x86[\\/]signtool\.exe$/i.test(filePath)) candidates.push({ path: filePath, arch: "x86", version: path.basename(path.dirname(path.dirname(filePath))) });
+    }
+  }
+  walk(root);
+  return candidates;
+}
+function resolveSignTool(environment = process.env) {
+  const candidates = [];
+  if (environment.SIGNTOOL_PATH && fs.existsSync(environment.SIGNTOOL_PATH)) candidates.push({ path: environment.SIGNTOOL_PATH, arch: "explicit", version: "" });
   const result = spawnSync("where.exe", ["signtool.exe"], { encoding: "utf8", windowsHide: true });
-  const candidate = String(result.stdout || "").split(/\r?\n/).map((line) => line.trim()).find(Boolean);
-  return candidate || null;
+  String(result.stdout || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).forEach((candidate) => candidates.push({ path: candidate, arch: /[\\/]x64[\\/]/i.test(candidate) ? "x64" : "x86", version: "PATH" }));
+  const roots = [environment.WindowsSdkDir, "C:\\Program Files (x86)\\Windows Kits\\10\\bin", "C:\\Program Files\\Windows Kits\\10\\bin"].filter(Boolean);
+  roots.forEach((root) => candidates.push(...collectSdkCandidates(root)));
+  const unique = [...new Map(candidates.map((candidate) => [candidate.path.toLowerCase(), candidate])).values()];
+  console.log(`signtool candidates (${unique.length}):`);
+  unique.forEach((candidate) => console.log(`- ${candidate.path} [${candidate.arch}, ${candidate.version}]`));
+  unique.sort((a, b) => (a.arch === "x64" ? 1 : 0) - (b.arch === "x64" ? 1 : 0) || compareVersions(b.version, a.version));
+  return unique[0]?.path || null;
 }
 
 const signTool = resolveSignTool();

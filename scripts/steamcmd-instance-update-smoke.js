@@ -1,0 +1,20 @@
+const assert = require("assert");
+const fs = require("fs");
+const core = fs.readFileSync("src/shared/instances/instanceServiceCore.js", "utf8");
+const routes = fs.readFileSync("agent/src/routes/instances.js", "utf8");
+const client = fs.readFileSync("src/services/agentClient.js", "utf8");
+const ui = fs.readFileSync("app.js", "utf8");
+
+assert(core.includes("beginSteamCmdUpdateSession"));
+assert(core.includes("executeSteamCmdUpdate"));
+assert(core.includes("STEAMCMD_UPDATE_REQUIRES_STOPPED"));
+assert(core.includes("STEAMCMD_UPDATE_ARTIFACTS_MISSING"));
+assert(core.includes("+app_update", "SteamCMD app update command is trusted"));
+assert(routes.includes("/steamcmd/update/session"));
+assert(routes.includes("/steamcmd/update"));
+assert(client.includes("beginSteamCmdUpdateSession"));
+assert(client.includes("executeSteamCmdUpdate"));
+assert(ui.includes('data-instance-action="update-steam"'));
+assert(ui.includes("marketplace.updateSteamServer"));
+assert(!ui.includes('updateSteamServer({ instanceId: targetInstanceId, command:'));
+console.log("SteamCMD instance update smoke checks passed.");

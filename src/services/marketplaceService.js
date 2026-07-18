@@ -2613,6 +2613,13 @@ function buildInstancePayload(template, options, ports) {
     primaryPort: ports[0] || null,
     versionInfo: initialVersionInfo,
   };
+  if (getTemplateInstallerType(template) === "steamcmd-native") {
+    const installer = template.installer || {};
+    metadata.installerType = "steamcmd-native";
+    metadata.steamAppId = Number(installer.appId);
+    metadata.steamInstallDir = String(installer.installDir || "server");
+    metadata.steamVerifyFiles = (Array.isArray(installer.verifyFiles) ? installer.verifyFiles : []).map((entry) => String(entry)).filter(Boolean);
+  }
 
   if (ports[0]) {
     environment.PORT = String(ports[0]);

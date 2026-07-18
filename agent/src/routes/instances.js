@@ -1,5 +1,6 @@
 const {
   beginInstallationSession,
+  beginSteamCmdUpdateSession,
   cancelInstallationSession,
   clearLogs,
   closeInstallationSession,
@@ -9,6 +10,7 @@ const {
   deleteInstanceFile,
   duplicateInstance,
   executeInstallationPhase,
+  executeSteamCmdUpdate,
   forgetInstance,
   forceKillInstance,
   getMetrics,
@@ -368,6 +370,18 @@ async function handleInstances(request, url) {
     const installationCancelId = getInstanceIdFromPath(url.pathname, "/installation/cancel");
     if (request.method === "POST" && installationCancelId) {
       return result(200, await cancelInstallationSession(installationCancelId, parseJsonBody(request)));
+    }
+
+    const steamUpdateSessionId = getInstanceIdFromPath(url.pathname, "/steamcmd/update/session");
+    if (request.method === "POST" && steamUpdateSessionId) {
+      return result(201, await beginSteamCmdUpdateSession(steamUpdateSessionId, parseJsonBody(request)));
+    }
+    if (request.method === "DELETE" && steamUpdateSessionId) {
+      return result(200, await closeInstallationSession(steamUpdateSessionId, parseJsonBody(request)));
+    }
+    const steamUpdateId = getInstanceIdFromPath(url.pathname, "/steamcmd/update");
+    if (request.method === "POST" && steamUpdateId) {
+      return result(200, await executeSteamCmdUpdate(steamUpdateId, parseJsonBody(request)));
     }
 
     const fivemReadinessId = getInstanceIdFromPath(url.pathname, "/fivem/readiness");

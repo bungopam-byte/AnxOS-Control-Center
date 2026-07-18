@@ -11071,6 +11071,12 @@ function updateInstanceActionButtons() {
     button.hidden = !isFiveMSetupRequired(selectedInstance);
     button.disabled = busy || !hasInstancesBridge || !isFiveMSetupRequired(selectedInstance);
   });
+  document.querySelectorAll('[data-instance-action="update-steam"]').forEach((button) => {
+    const eligible = selectedInstance?.installerType === "steamcmd-native" && Number.isInteger(Number(selectedInstance?.steamAppId)) && !isInstanceRunning(selectedInstance);
+    button.hidden = !eligible;
+    button.disabled = busy || !hasInstancesBridge || !eligible || typeof desktopApiState.api?.marketplace?.updateSteamServer !== "function";
+    button.textContent = instanceActionRequestInFlight ? "Updating..." : "Update Server Files";
+  });
 
   document.querySelectorAll('[data-instance-action="expose-share"]').forEach((button) => {
     const hasCompatibleSuggestion = getInstanceAccessSuggestions(selectedInstance).some((suggestion) => suggestion.compatible !== false && suggestion.localPort);
@@ -15742,6 +15748,12 @@ async function runInstanceAction(actionName) {
     return;
   }
 
+  if (actionName === "update-steam" && !(await confirmDestructiveAction({
+    title: "Update server files?",
+    message: `${label} must remain stopped while SteamCMD validates and updates its files. Saves, configuration, backups, and mods are preserved.`,
+    confirmLabel: "Update Server Files",
+  }))) return;
+
   if (actionName === "delete") {
     const linkedAccessServices = getInstanceAccessServices(selectedInstance);
     const accessWarning = linkedAccessServices.length
@@ -15794,7 +15806,9 @@ async function runInstanceAction(actionName) {
     }
 
     if (!isNodeActionStillCurrent(requestContext)) return;
-    const actionResult = actionName === "rename"
+    const actionResult = actionName === "update-steam"
+      ? await desktopApiState.api.marketplace.updateSteamServer({ instanceId: targetInstanceId, ...getNodeScopedPayload(requestContext) })
+      : actionName === "rename"
       ? await desktopApiState.api.instances.rename(targetInstanceId, renameDisplayName.trim(), getNodeScopedPayload(requestContext))
       : actionName === "duplicate"
         ? await desktopApiState.api.instances.duplicate(targetInstanceId, duplicateConfig, getNodeScopedPayload(requestContext))
@@ -15819,7 +15833,7 @@ async function runInstanceAction(actionName) {
             ? "Instance duplicated."
             : actionName === "open-folder"
               ? "Instance folder opened."
-              : `Instance ${actionName} request completed.`);
+              : actionName === "update-steam" ? "Server files updated. The server remains stopped." : `Instance ${actionName} request completed.`);
 
     if (actionName === "delete" || actionName === "forget") {
       const accessCleanup = await deleteAccessServicesForInstance(selectedInstance);
@@ -31998,6 +32012,9 @@ instancesStopButtons.forEach((button) => {
 });
 instancesRestartButtons.forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("restart"));
+});
+document.querySelectorAll('[data-instance-action="update-steam"]').forEach((button) => {
+  button.addEventListener("click", () => runInstanceAction("update-steam"));
 });
 document.querySelectorAll('[data-instance-action="rename"]').forEach((button) => {
   button.addEventListener("click", () => runInstanceAction("rename"));

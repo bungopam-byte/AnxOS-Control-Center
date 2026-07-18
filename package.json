@@ -58,6 +58,7 @@
     "minecraft-java-runtime:smoke": "node scripts/minecraft-java-runtime-smoke.js",
     "instances:config-migration:smoke": "node scripts/instance-config-migration-smoke.js",
     "instances:shutdown:smoke": "node scripts/instance-shutdown-smoke.js",
+    "steamcmd:instance-update:smoke": "node scripts/steamcmd-instance-update-smoke.js",
     "renderer:resource-cleanup:smoke": "node scripts/renderer-resource-cleanup-smoke.js",
     "dependencies:abort-listener:smoke": "node scripts/dependency-abort-listener-smoke.js",
     "instances:node-routing:smoke": "node scripts/instances-node-routing-smoke.js",

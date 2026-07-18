@@ -2637,6 +2637,28 @@ async function resumeManualInstall(sessionId, options = {}) {
   }
 }
 
+async function updateSteamCmdInstance(payload = {}) {
+  const instanceId = String(payload.instanceId || "").trim();
+  const nodeId = payload.nodeId || null;
+  if (!instanceId) throw new MarketplaceInstallError("An instance is required.", "INVALID_INSTANCE_ID");
+  const agentConfig = resolveMarketplaceAgentConfig(nodeId);
+  const operationId = `steamcmd-update-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  const operation = longOperations.createOperation({ id: operationId, kind: "marketplace-download", nodeId, lockKey: `marketplace-steamcmd-update:${nodeId}:${instanceId}`, status: "running", canCancel: false, retryable: true, rollbackSupported: false, metadata: { instanceId, nodeId, stage: "Preparing", progress: 0, body: "Preparing SteamCMD update." } });
+  try {
+    emitProgress({ nodeId, instanceId, operationId, stage: "preflight", message: "Checking SteamCMD update prerequisites.", current: 0, total: 1 });
+    const session = await agentClient.beginSteamCmdUpdateSession(instanceId, { operationId }, agentConfig);
+    emitProgress({ nodeId, instanceId, operationId, stage: "updating", message: "Updating server files with SteamCMD.", current: 0, total: 1 });
+    const result = await agentClient.executeSteamCmdUpdate(instanceId, { operationId, token: session.token }, agentConfig);
+    await agentClient.closeSteamCmdUpdateSession(instanceId, { operationId, token: session.token }, agentConfig);
+    emitProgress({ nodeId, instanceId, operationId, stage: "done", message: "Server files updated. The instance remains stopped.", current: 1, total: 1 });
+    longOperations.updateOperation(operationId, { status: "complete", stage: "Complete", progress: 100, message: "Server files updated.", canCancel: false, metadata: { result } });
+    return { operationId, instanceId, result };
+  } catch (error) {
+    longOperations.updateOperation(operationId, { status: "failed", stage: "Failed", message: error.message || "SteamCMD update failed.", canCancel: false, metadata: { code: error.code || "STEAMCMD_UPDATE_FAILED" } });
+    throw error;
+  }
+}
+
 async function searchProviderPacks(payload = {}) {
   const provider = String(payload.provider || "modrinth").toLowerCase();
   console.info("[Marketplace][ProviderSearch] Dispatch.", {
@@ -2757,6 +2779,7 @@ module.exports = {
   importManualInstallFile,
   marketplaceInstallEvents,
   resumeManualInstall,
+  updateSteamCmdInstance,
   searchProviderPacks,
   getProviderPackVersions,
   getProviderPackDetails,

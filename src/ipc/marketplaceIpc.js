@@ -17,6 +17,7 @@ const {
   importManualInstallFile,
   marketplaceInstallEvents,
   resumeManualInstall,
+  updateSteamCmdInstance,
   searchProviderPacks,
 } = require("../services/marketplaceInstallService");
 const { audit, requirePermission } = require("../services/securityService");
@@ -302,6 +303,12 @@ function registerMarketplaceIpc() {
     requirePermission("marketplace:install", target);
     audit({ action: "marketplace.providerPack.install", target });
     return installPack(payload);
+  }));
+  ipcMain.handle("marketplace:updateSteamServer", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    requireNodeContext(payload, "SteamCMD server update");
+    requirePermission("marketplace:install", payload.instanceId || "steamcmd-update");
+    audit({ action: "marketplace.steamcmd.update", target: payload.instanceId || "unknown" });
+    return updateSteamCmdInstance({ nodeId: payload.nodeId, instanceId: payload.instanceId });
   }));
   ipcMain.handle("marketplace:openManualDownloadPage", async (_, payload = {}) => invokeMarketplaceOperation(async () => {
     requireNodeContext(payload, "Marketplace manual download recovery");

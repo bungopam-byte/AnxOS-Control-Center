@@ -223,6 +223,7 @@ const desktopApi = {
     importCommunityTemplate: (payload = {}) => invokeMarketplace("marketplace:importCommunityTemplate", payload),
     installTemplate: (payload) => invokeMarketplace("marketplace:installTemplate", payload),
     installPack: (payload) => invokeMarketplace("marketplace:installPack", payload),
+    updateSteamServer: (payload) => invokeMarketplace("marketplace:updateSteamServer", payload),
     openManualDownloadPage: (sessionId, payload = {}) => invokeMarketplace("marketplace:openManualDownloadPage", { ...payload, sessionId }),
     importManualDownloadFile: (sessionId, payload = {}) => invokeMarketplace("marketplace:importManualDownloadFile", { ...payload, sessionId }),
     resumeManualInstall: (sessionId, payload = {}) => invokeMarketplace("marketplace:resumeManualInstall", { ...payload, sessionId }),

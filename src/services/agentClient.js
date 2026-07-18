@@ -1228,6 +1228,10 @@ class NodeAgentClient {
     return this.post(`/instances/${encodeInstanceId(instanceId)}/installation/session`, payload);
   }
 
+  beginSteamCmdUpdateSession(instanceId, payload = {}) { return this.post(`/instances/${encodeInstanceId(instanceId)}/steamcmd/update/session`, payload); }
+  executeSteamCmdUpdate(instanceId, payload = {}, timeoutMs = 610000) { return this.request(`/instances/${encodeInstanceId(instanceId)}/steamcmd/update`, { method: "POST", body: payload, timeoutMs }); }
+  closeSteamCmdUpdateSession(instanceId, payload = {}) { return this.delete(`/instances/${encodeInstanceId(instanceId)}/steamcmd/update/session`, { body: payload }); }
+
   executeInstallationPhase(instanceId, payload = {}, timeoutMs = 310000) {
     return this.request(`/instances/${encodeInstanceId(instanceId)}/installation/execute`, { method: "POST", body: payload, timeoutMs });
   }
@@ -2742,6 +2746,19 @@ async function beginInstallationSession(instanceId, payload = {}, configOverride
   });
 }
 
+async function beginSteamCmdUpdateSession(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) return getLocalInstanceService().beginSteamCmdUpdateSession(instanceId, payload);
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/steamcmd/update/session`, { config: configOverride, method: "POST", body: payload });
+}
+async function executeSteamCmdUpdate(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) return getLocalInstanceService().executeSteamCmdUpdate(instanceId, payload);
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/steamcmd/update`, { config: configOverride, method: "POST", body: payload, timeoutMs: 610000 });
+}
+async function closeSteamCmdUpdateSession(instanceId, payload = {}, configOverride = null) {
+  if (shouldUseLocalInstanceService(configOverride)) return getLocalInstanceService().closeSteamCmdUpdateSession(instanceId, payload);
+  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/steamcmd/update/session`, { config: configOverride, method: "DELETE", body: payload });
+}
+
 async function executeInstallationPhase(instanceId, payload = {}, configOverride = null) {
   if (shouldUseLocalInstanceService(configOverride)) {
     return getLocalInstanceService().executeInstallationPhase(instanceId, payload);
@@ -2919,9 +2936,11 @@ module.exports = {
   },
   AgentClientError,
   beginInstallationSession,
+  beginSteamCmdUpdateSession,
   cancelInstallationSession,
   checkDependencies,
   closeInstallationSession,
+  closeSteamCmdUpdateSession,
   clearInstanceLogs,
   createBackup,
   createDockerContainer,
@@ -2940,6 +2959,7 @@ module.exports = {
   disconnectDockerNetwork,
   execDockerContainer,
   executeInstallationPhase,
+  executeSteamCmdUpdate,
   deleteInstance,
   forgetInstance,
   deleteInstanceFile,

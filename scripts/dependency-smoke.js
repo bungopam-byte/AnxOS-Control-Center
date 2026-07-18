@@ -104,6 +104,16 @@ async function run() {
   assert.strictEqual(check.ok, true);
   assert.strictEqual(check.dependencies[0].state, "installed");
 
+  if (process.platform === "linux") {
+    const originalPath = process.env.PATH;
+    process.env.PATH = "/usr/bin";
+    mock = createMockHooks({ installedCommands: ["steamcmd"] });
+    dependencyService.__setTestHooks(mock.hooks);
+    check = await dependencyService.checkDependencies({ dependencyIds: ["steamcmd"] });
+    assert.strictEqual(check.dependencies[0].state, "installed", "Linux dependency detection must include standard /usr/games executables when PATH omits it.");
+    process.env.PATH = originalPath;
+  }
+
   mock = createMockHooks({ installedCommands: ["sudo", "apt-get"], installProvides: "dotnet" });
   dependencyService.__setTestHooks(mock.hooks);
   let plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["dotnet-runtime"] });

@@ -79,7 +79,7 @@ function getGitCommit() {
     cwd: process.cwd(),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
-    shell: false,
+    shell: process.platform === "win32",
   });
   return result.status === 0 ? result.stdout.trim() : null;
 }

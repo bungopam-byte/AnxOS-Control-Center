@@ -12,6 +12,8 @@ const {
 const args = process.argv.slice(2);
 const increment = !args.includes("--no-increment-build");
 const builderArgs = args.filter((arg) => arg !== "--no-increment-build");
+process.env.ANXOS_WINDOWS_BUILD_REQUESTED = builderArgs.includes("--win") || process.platform === "win32" ? "1" : "0";
+const { getAzureSigningConfig } = require("./electron-builder-config");
 const release = readReleaseConfig();
 const nextRelease = increment ? { ...release, build: release.build + 1 } : release;
 
@@ -103,6 +105,14 @@ fs.writeFileSync(path.join(process.cwd(), "release-build.json"), `${JSON.stringi
 normalizePackageInputs();
 
 const localBinDir = path.join(process.cwd(), "node_modules", ".bin");
+const dynamicConfigPath = path.join(__dirname, "electron-builder-config.js");
+if (!builderArgs.includes("--config")) builderArgs.push("--config", dynamicConfigPath);
+try {
+  console.log(`Windows Azure Trusted Signing: ${getAzureSigningConfig() ? "enabled" : "disabled (unsigned build)"}`);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 const result = spawnSync(
   process.platform === "win32" ? "electron-builder.cmd" : "electron-builder",
   builderArgs,

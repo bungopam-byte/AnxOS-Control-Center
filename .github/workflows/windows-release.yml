@@ -100,9 +100,9 @@ jobs:
           AZURE_TRUSTED_SIGNING_PUBLISHER_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_PUBLISHER_NAME }}
         run: |
           Write-Host "PowerShell diagnostics:"
-          `$PSVersionTable.PSVersion
-          `$PSVersionTable.PSEdition
-          `$PSHOME
+          Write-Host "PowerShell version: $($PSVersionTable.PSVersion)"
+          Write-Host "PowerShell edition: $($PSVersionTable.PSEdition)"
+          Write-Host "PowerShell home: $PSHOME"
           Get-Command powershell.exe -ErrorAction SilentlyContinue | Format-List *
           Get-Command pwsh.exe -ErrorAction SilentlyContinue | Format-List *
           Import-Module Microsoft.PowerShell.Security -Force -Verbose -ErrorAction Continue

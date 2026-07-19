@@ -8,6 +8,7 @@ const { readAgentRuntimeConfig } = require("../../src/shared/agentRuntimeConfigS
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_PORT = 47131;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
+const DEFAULT_FILE_WRITE_TIMEOUT_MS = 300000;
 const DEFAULT_MAX_REQUEST_BYTES = 256 * 1024 * 1024;
 const DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_INSTANCE_ROOT = "/srv/anxos/instances";
@@ -99,6 +100,7 @@ function getConfig() {
     token: tokenStatus.token || "",
     tokenStatus,
     requestTimeoutMs: readInteger(process.env.AGENT_REQUEST_TIMEOUT_MS || runtime.connectionTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS),
+    fileWriteTimeoutMs: readInteger(process.env.AGENT_FILE_WRITE_TIMEOUT_MS, DEFAULT_FILE_WRITE_TIMEOUT_MS),
     maxRequestBytes: readInteger(process.env.AGENT_MAX_REQUEST_BYTES, DEFAULT_MAX_REQUEST_BYTES),
     maxResponseBytes: readInteger(process.env.AGENT_MAX_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BYTES),
     instanceRoot: process.env.AGENT_INSTANCE_ROOT || DEFAULT_INSTANCE_ROOT,

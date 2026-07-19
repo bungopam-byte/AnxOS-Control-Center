@@ -15,6 +15,7 @@ const {
 const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const REQUEST_TIMEOUT_MS = 30000;
+const FILE_WRITE_REQUEST_TIMEOUT_MS = 300000;
 const DOCKER_REQUEST_TIMEOUT_MS = 12000;
 const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
@@ -2647,6 +2648,7 @@ async function writeInstanceFile(instanceId, filePath, content, options = {}, co
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
     config: effectiveConfig,
     method: "PUT",
+    timeoutMs: FILE_WRITE_REQUEST_TIMEOUT_MS,
     body: {
       path: filePath,
       content,

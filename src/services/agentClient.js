@@ -1271,10 +1271,11 @@ async function requestBuffer(pathname, options = {}) {
     config: configOverride = null,
     method = "GET",
     body = null,
+    timeoutMs = REQUEST_TIMEOUT_MS,
   } = options;
   const config = getAgentConfig(configOverride);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || REQUEST_TIMEOUT_MS));
 
   try {
     const headers = {

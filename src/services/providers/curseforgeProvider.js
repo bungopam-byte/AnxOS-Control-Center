@@ -863,6 +863,8 @@ async function requestAgentProxyBuffer(url, label, options = {}) {
       config: proxyConfig.agentConfig
         ? { ...proxyConfig.agentConfig, targetLabel: nodeLabel ? `curseforge:${nodeLabel}` : nodeId ? `curseforge:${nodeId}` : "curseforge-agent-proxy" }
         : null,
+      // Server packs can legitimately take several minutes; keep this timeout scoped to the download.
+      timeoutMs: Math.max(15 * 60 * 1000, Number(options.timeoutMs) || Number(proxyConfig.timeoutMs) || 0),
     });
     return result.buffer;
   } catch (error) {

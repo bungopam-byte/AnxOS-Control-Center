@@ -72,6 +72,10 @@ function assertPackagedConfigurationSurface() {
   const agentSource = read("agent/src/services/curseforgeProxyService.js");
   assert(providerSource.includes("ANXOS_CURSEFORGE_PROXY_URL"), "Desktop provider must support hosted proxy configuration.");
   assert(providerSource.includes("requestAgentProxyJson"), "Desktop provider must support Agent proxy configuration.");
+  assert(providerSource.includes("timeoutMs: Math.max(15 * 60 * 1000"), "Agent-proxied CurseForge downloads must allow legitimate large server packs to complete.");
+  const agentClientSource = read("src/services/agentClient.js");
+  assert(agentClientSource.includes("timeoutMs = REQUEST_TIMEOUT_MS"), "Agent buffer requests must support operation-specific timeouts.");
+  assert(agentClientSource.includes("Number(timeoutMs) || REQUEST_TIMEOUT_MS"), "Agent buffer request timeout must remain bounded and scoped to the caller.");
   assert(agentSource.includes("/api/v1/marketplace/curseforge/download"), "Agent must expose a CurseForge download proxy route.");
   assert(agentSource.includes('"x-api-key"'), "Agent CurseForge proxy must attach x-api-key.");
   assert(

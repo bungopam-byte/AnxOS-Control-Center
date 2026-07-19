@@ -29904,17 +29904,28 @@ async function updateOnboardingState(patch = {}, options = {}) {
 
 async function handleOnboardingAction(action) {
   if (action === "start") {
-    await updateOnboardingState({
-      "onboarding.started": true,
-      "onboarding.completed": false,
-      "onboarding.skipped": false,
-      "onboarding.currentStep": "welcome",
-      "onboarding.setupType": "this-pc",
-      "onboarding.welcomeGuidance": true,
-      "onboarding.contextualTips": true,
-    }, { statusMessage: "Setup guide started." });
+    console.info("[Onboarding] Starting setup from welcome screen.");
+    try {
+      await updateOnboardingState({
+        "onboarding.started": true,
+        "onboarding.completed": false,
+        "onboarding.skipped": false,
+        "onboarding.currentStep": "welcome",
+        "onboarding.setupType": "this-pc",
+        "onboarding.welcomeGuidance": true,
+        "onboarding.contextualTips": true,
+      }, { statusMessage: "Setup guide started." });
+    } catch (error) {
+      console.warn("[Onboarding] Could not persist setup start; continuing in memory.", normalizeIpcErrorMessage(error, "Setup settings could not be saved."));
+      showToast("Setup started, but preferences could not be saved. You can continue and retry later.", "warning");
+    }
     setOnboardingWelcomeVisible(false);
     setOnboardingWizardVisible(true);
+    console.info("[Onboarding] Setup wizard opened.");
+    if (getDesktopApiState().hasAccount) {
+      console.info("[Onboarding] Starting account authentication.");
+      await startAnxOsAccountLogin();
+    }
   } else if (action === "skip") {
     await updateOnboardingState({
       "onboarding.started": false,

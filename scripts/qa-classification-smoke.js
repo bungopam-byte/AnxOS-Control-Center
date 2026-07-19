@@ -1,0 +1,10 @@
+const assert = require("assert");
+const fs = require("fs");
+const source = fs.readFileSync("scripts/qa-acceptance.js", "utf8");
+assert(source.includes('message.type() === "error"'), "Only console errors should populate rendererErrors.");
+assert(source.includes("rendererWarnings.push"), "Warnings must be collected separately.");
+assert(source.includes("rendererLogs.push"), "Info/log/debug messages must be recorded separately.");
+assert(source.includes("ANXOS_QA_STRICT_SECURITY"), "Strict security warning mode must be explicit.");
+assert(source.includes("failedResults"), "Results must identify failed checkpoints.");
+assert(source.includes("renderer-warnings.log") && source.includes("renderer-info.log"), "Severity-specific artifacts must be written.");
+console.log("QA classification smoke: PASS");

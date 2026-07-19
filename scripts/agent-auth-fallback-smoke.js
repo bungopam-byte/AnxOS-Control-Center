@@ -4,8 +4,12 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const agentClientSource = fs.readFileSync(path.join(root, "src", "services", "agentClient.js"), "utf8");
-const systemServiceSource = fs.readFileSync(path.join(root, "src", "services", "systemService.js"), "utf8");
+// Git checkouts on Windows may materialize tracked JavaScript with CRLF. The
+// assertions inspect source structure, so normalize line endings without
+// changing the production files or weakening the required guards.
+const normalizeSource = (filePath) => fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+const agentClientSource = normalizeSource(path.join(root, "src", "services", "agentClient.js"));
+const systemServiceSource = normalizeSource(path.join(root, "src", "services", "systemService.js"));
 
 [
   "function isCompatibilityFallbackAllowed",

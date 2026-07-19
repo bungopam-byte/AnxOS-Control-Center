@@ -28,6 +28,7 @@ const { DeveloperGitUpdater } = require("./src/services/developerGitUpdater");
 const { openExternalUrl } = require("./src/services/externalUrlService");
 const { getReleaseInfo } = require("./src/shared/releaseConfig");
 const packageJson = require("./package.json");
+const qaMode = process.argv.includes("--qa-mode") || process.env.ANXOS_QA_MODE === "1";
 
 const APP_ICON_PATH = process.platform === "win32"
   ? path.join(__dirname, "assets", "icon.ico")
@@ -375,7 +376,7 @@ function createWindow() {
     }
   });
 
-  window.loadFile(path.join(__dirname, "index.html"));
+  window.loadFile(path.join(__dirname, "index.html"), qaMode ? { search: "?qa-mode=1" } : undefined);
 
   if (process.env.ANXOS_OPEN_DEVTOOLS === "1" && app.isPackaged === false) {
     window.webContents.once("did-finish-load", () => {

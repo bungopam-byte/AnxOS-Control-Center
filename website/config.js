@@ -26,28 +26,28 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build152.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build152/AnxOS-Control-Center-Setup-1.7-build152.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build153.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build153/AnxOS-Control-Center-Setup-1.7-build153.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build152-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build152/AnxOS-Control-Center-1.7-build152-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build153-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build153/AnxOS-Control-Center-1.7-build153-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build152.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build152/AnxOS-Control-Center-1.7-build152.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build153.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build153/AnxOS-Control-Center-1.7-build153.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build152.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build152/AnxOS-Control-Center-1.7-build152.deb"
+          fileName: "AnxOS-Control-Center-1.7-build153.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build153/AnxOS-Control-Center-1.7-build153.deb"
       }
   ],
   releaseNotes: [
       {
           "version": "1.7",
-          "build": 152,
+          "build": 153,
           "channel": "Private Alpha",
-          "tag": "v1.7-build152",
+          "tag": "v1.7-build153",
           "date": "July 17, 2026",
           "datetime": "2026-07-17",
           "title": "AnxOS Version 1.7",
@@ -55,7 +55,7 @@ window.ANXOS_DOWNLOAD_CONFIG = {
           "changes": [
               "Updated application build, website metadata, and downloadable release assets."
           ],
-          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build152"
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build153"
       },
       {
           "version": "1.7",

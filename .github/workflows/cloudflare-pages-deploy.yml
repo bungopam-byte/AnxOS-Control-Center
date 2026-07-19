@@ -1,0 +1,49 @@
+name: Deploy Website to Cloudflare Pages
+
+on:
+  workflow_run:
+    workflows: ["Desktop Release"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # A release tag is published only after the Desktop Release workflow is green.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout production website branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          path: website-source
+
+      - name: Verify required deployment configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "$CLOUDFLARE_API_TOKEN" ]] || missing+=(CLOUDFLARE_API_TOKEN)
+          [[ -n "$CLOUDFLARE_ACCOUNT_ID" ]] || missing+=(CLOUDFLARE_ACCOUNT_ID)
+          [[ -n "$CLOUDFLARE_PAGES_PROJECT" ]] || missing+=(CLOUDFLARE_PAGES_PROJECT)
+          if (( ${#missing[@]} )); then
+            echo "Missing Cloudflare Pages configuration: ${missing[*]}" >&2
+            exit 1
+          fi
+          grep -Eq 'buildNumber: "[0-9]+"' website-source/website/config.js
+
+      - name: Deploy website to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          directory: website-source/website
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}

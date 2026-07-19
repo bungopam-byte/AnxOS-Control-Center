@@ -3,13 +3,14 @@ const fs = require("fs");
 const path = require("path");
 
 const repoRoot = path.resolve(__dirname, "..");
-const appSource = fs.readFileSync(path.join(repoRoot, "app.js"), "utf8");
-const preloadSource = fs.readFileSync(path.join(repoRoot, "preload.js"), "utf8");
-const serviceRouterSource = fs.readFileSync(path.join(repoRoot, "src", "services", "serviceRouter.js"), "utf8");
-const agentClientSource = fs.readFileSync(path.join(repoRoot, "src", "services", "agentClient.js"), "utf8");
-const applicationHostSource = fs.readFileSync(path.join(repoRoot, "src", "services", "applicationHostService.js"), "utf8");
-const nodeServiceSource = fs.readFileSync(path.join(repoRoot, "src", "services", "nodeService.js"), "utf8");
-const indexSource = fs.readFileSync(path.join(repoRoot, "index.html"), "utf8");
+const readText = (filePath) => fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+const appSource = readText(path.join(repoRoot, "app.js"));
+const preloadSource = readText(path.join(repoRoot, "preload.js"));
+const serviceRouterSource = readText(path.join(repoRoot, "src", "services", "serviceRouter.js"));
+const agentClientSource = readText(path.join(repoRoot, "src", "services", "agentClient.js"));
+const applicationHostSource = readText(path.join(repoRoot, "src", "services", "applicationHostService.js"));
+const nodeServiceSource = readText(path.join(repoRoot, "src", "services", "nodeService.js"));
+const indexSource = readText(path.join(repoRoot, "index.html"));
 
 function includesAll(source, snippets, label) {
   for (const snippet of snippets) {

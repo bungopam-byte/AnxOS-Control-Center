@@ -19,5 +19,7 @@ assert(client.includes("beginSteamCmdUpdateSession"));
 assert(client.includes("executeSteamCmdUpdate"));
 assert(ui.includes('data-instance-action="update-steam"'));
 assert(ui.includes("marketplace.updateSteamServer"));
+assert(ui.includes("actionResult?.ok === false"), "SteamCMD update UI must surface structured IPC failures.");
+assert(ui.includes("Updating server files with SteamCMD..."), "SteamCMD update UI must show progress before the request.");
 assert(!ui.includes('updateSteamServer({ instanceId: targetInstanceId, command:'));
 console.log("SteamCMD instance update smoke checks passed.");

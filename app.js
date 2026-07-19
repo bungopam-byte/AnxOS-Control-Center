@@ -2302,6 +2302,9 @@ function getFriendlyStatusFailureMessage(error = {}, context = "Status could not
 
 function readStoredSettings() {
   try {
+    if (actionName === "update-steam") {
+      showToast("Updating server files with SteamCMD...", "info");
+    }
     const storedSettings = JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || "{}");
     const firstLocalSettings = Object.keys(storedSettings || {}).length === 0;
     const migratedSettings = {
@@ -15848,7 +15851,14 @@ async function runInstanceAction(actionName) {
         ? await desktopApiState.api.instances.duplicate(targetInstanceId, duplicateConfig, getNodeScopedPayload(requestContext))
         : actionName === "open-folder"
           ? await desktopApiState.api.instances.openFolder(targetInstanceId, getNodeScopedPayload(requestContext))
-          : await desktopApiState.api.instances[actionName](targetInstanceId, getNodeScopedPayload(requestContext));
+        : await desktopApiState.api.instances[actionName](targetInstanceId, getNodeScopedPayload(requestContext));
+    if (actionResult?.ok === false) {
+      const failure = actionResult.error || {};
+      throw Object.assign(new Error(failure.message || "SteamCMD update failed."), {
+        code: failure.code || "STEAMCMD_UPDATE_FAILED",
+        details: failure.details || failure.technicalDetails || {},
+      });
+    }
     if (actionName === "start") {
       logInstanceLifecycle("start result", {
         instanceId: targetInstanceId,

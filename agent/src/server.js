@@ -341,7 +341,8 @@ async function routeRequest(request, url) {
 }
 
 async function handleRequest(request, response) {
-  request.setTimeout(config.requestTimeoutMs, () => {
+  const isFileWrite = request.method === "PUT" && /\/file$/.test(request.url || "");
+  request.setTimeout(isFileWrite ? config.fileWriteTimeoutMs : config.requestTimeoutMs, () => {
     request.destroy();
   });
 

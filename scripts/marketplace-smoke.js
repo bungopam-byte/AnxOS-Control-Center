@@ -125,6 +125,17 @@ async function extractNestedFixture(zipPath, outputDir) {
   const target = path.join(outputDir, name);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, payload);
+  // Match the production archive installer contract: unwrap a single
+  // top-level directory when it contains the declared verification file.
+  const parts = name.split(/[\\/]+/).filter(Boolean);
+  if (parts.length > 1) {
+    const flattened = path.join(outputDir, ...parts.slice(1));
+    const finalTarget = path.join(outputDir, path.basename(flattened));
+    if (fs.existsSync(flattened)) {
+      fs.renameSync(flattened, finalTarget);
+      fs.rmSync(path.join(outputDir, parts[0]), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
+  }
 }
 
 function pickVersionTrace(value = {}) {

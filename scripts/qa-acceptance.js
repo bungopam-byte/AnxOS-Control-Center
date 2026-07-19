@@ -21,6 +21,19 @@ function record(action, target, expected, observed, pass, screenshot = null) {
   results.push({ name: action, pass, observed: entry.observed });
 }
 
+async function navigationInventory(window) {
+  return window.locator("[data-page-target], [data-testid], [aria-label]").evaluateAll((nodes) => nodes.slice(0, 250).map((node) => ({
+    tag: node.tagName,
+    page: node.getAttribute("data-page-target"),
+    testid: node.getAttribute("data-testid"),
+    aria: node.getAttribute("aria-label"),
+    text: (node.textContent || "").trim().slice(0, 120),
+    href: node.getAttribute("href"),
+    hidden: node.hidden || node.getAttribute("aria-hidden") === "true",
+    disabled: Boolean(node.disabled) || node.getAttribute("aria-disabled") === "true",
+  })));
+}
+
 async function main() {
   const executable = process.env.ANXOS_QA_EXECUTABLE || undefined;
   const launchOptions = { args: [root, "--qa-mode"], env: { ...process.env, ANXOS_QA_MODE: "1" } };
@@ -44,21 +57,27 @@ async function main() {
   const title = await window.title();
   record("launch", "main window", "AnxOS Control Center window appears", title, Boolean(title));
   record("qa-indicator", "[data-testid=qa-mode-indicator]", "QA MODE is visible", await window.locator("[data-testid=qa-mode-indicator]").textContent().catch(() => "missing"), await window.locator("[data-testid=qa-mode-indicator]").isVisible().catch(() => false), await shot("launch"));
+  const navInventory = await navigationInventory(window).catch(() => []);
+  fs.writeFileSync(path.join(artifactDir, "navigation-inventory.json"), JSON.stringify(navInventory, null, 2));
   for (const page of ["dashboard", "nodes", "agent-control", "marketplace", "instances", "public-access", "diagnostics", "settings"]) {
     const navigationTarget = page === "public-access" ? "playit" : page === "diagnostics" ? "agent-control" : page;
-    const link = window.locator(`[data-page-target="${navigationTarget}"]`).first();
+    const link = page === "public-access"
+      ? window.locator('[data-page-target="playit"], [data-testid="nav-public-access"], button[aria-label="Public Access"], a[aria-label="Public Access"]').first()
+      : window.locator(`[data-page-target="${navigationTarget}"], [data-testid="nav-${navigationTarget}"]`).first();
     if (await link.count()) {
+      await link.scrollIntoViewIfNeeded().catch(() => {});
       await link.click();
       await window.waitForTimeout(300);
       if (page === "diagnostics") {
-        const diagnosticsSection = window.locator('[data-agent-control-section-target="diagnostics"]').first();
-        if (await diagnosticsSection.count()) await diagnosticsSection.click();
+        await window.waitForTimeout(500);
+        const diagnosticsSection = window.locator('[data-agent-control-section-target="diagnostics"], [data-testid="agent-control-diagnostics"], button[aria-label="Diagnostics"]').first();
+        if (await diagnosticsSection.count() && await diagnosticsSection.isVisible().catch(() => false) && !await diagnosticsSection.isDisabled().catch(() => false)) await diagnosticsSection.click();
       }
       const visible = page === "diagnostics"
         ? await window.locator('[data-agent-control-section="diagnostics"]').isVisible().catch(() => false)
         : await window.locator(`[data-page="${page === "public-access" ? "playit" : page}"]`).isVisible().catch(() => false);
       record(`navigate-${page}`, page, "page becomes visible", String(visible), visible, await shot(page));
-    } else record(`navigate-${page}`, page, "navigation control exists", "control not found", false);
+    } else record(`navigate-${page}`, page, "navigation control exists", `control not found; inventory=${JSON.stringify(navInventory.filter((entry) => /public|diagnostic|agent/i.test(`${entry.page} ${entry.testid} ${entry.aria} ${entry.text}`)))}`, false);
   }
   await app.close();
   fs.writeFileSync(path.join(artifactDir, "timeline.json"), JSON.stringify(timeline, null, 2));

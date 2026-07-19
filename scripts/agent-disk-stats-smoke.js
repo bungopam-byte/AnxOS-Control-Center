@@ -88,7 +88,10 @@ async function main() {
     statfs: async () => { throw new Error("statfs unsupported in this smoke"); },
     execFile: (command, args, options, callback) => {
       assert.strictEqual(command, "df");
-      assert.deepStrictEqual(args, ["-kP", "/srv/anxos"]);
+      // The service's path module follows the host OS even when this test
+      // simulates Linux on Windows. Assert the normalized path for that host
+      // rather than hard-coding POSIX separators.
+      assert.deepStrictEqual(args, ["-kP", path.resolve("/srv/anxos")]);
       callback(null, "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/sda1 1000 250 750 25% /srv\n", "");
     },
   }, async (systemService) => {

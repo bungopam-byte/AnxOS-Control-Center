@@ -214,7 +214,14 @@ function resolveTrustedInstallerCommand(session, config, phase) {
     }
     return { executable: "java", args: ["-jar", "quilt-installer.jar", "install", "server", minecraftVersion, loaderVersion, "--download-server"] };
   }
-  return INSTALLER_PHASES[session.installerFamily]?.[phase] || null;
+  const trusted = INSTALLER_PHASES[session.installerFamily]?.[phase] || null;
+  // Test-only executable injection keeps installer-session smoke tests
+  // deterministic on hosts without Java. It is unreachable unless the Agent
+  // is explicitly running with NODE_ENV=test and a test-provided path.
+  if (trusted && process.env.NODE_ENV === "test" && process.env.ANXOS_TEST_INSTALLER_STUB_PATH) {
+    return { ...trusted, executable: process.execPath, args: [process.env.ANXOS_TEST_INSTALLER_STUB_PATH, ...trusted.args] };
+  }
+  return trusted;
 }
 
 async function executeInstallationPhase(instanceId, request = {}) {

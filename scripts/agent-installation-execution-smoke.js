@@ -93,11 +93,11 @@ if (fs.existsSync("timeout-mode")) { setTimeout(() => {}, 30000); }
 else { console.log("installer-complete"); }
 `;
   const javaPath = path.join(binRoot, "java");
+  const stubPath = path.join(binRoot, "java-stub.js");
+  await fs.writeFile(stubPath, javaStub, { mode: 0o644 });
   if (process.platform === "win32") {
     // Windows command resolution does not execute extensionless PATH files;
     // provide a native .cmd shim that invokes the deterministic Node stub.
-    const stubPath = path.join(binRoot, "java-stub.js");
-    await fs.writeFile(stubPath, javaStub, { mode: 0o644 });
     await fs.writeFile(path.join(binRoot, "java.cmd"), `@echo off\r\n"${process.execPath}" "${stubPath}" %*\r\n`, { mode: 0o755 });
   } else {
     await fs.writeFile(javaPath, javaStub, { mode: 0o755 });
@@ -114,6 +114,8 @@ else { console.log("installer-complete"); }
       ANXHUB_CONFIG_DIR: configRoot,
       ANXHUB_AGENT_CONFIG_PATH: path.join(configRoot, "agent.json"),
       ANXOS_LOG_DIR: path.join(tempRoot, "logs"),
+      NODE_ENV: "test",
+      ANXOS_TEST_INSTALLER_STUB_PATH: stubPath,
     },
     stdio: "ignore",
   });

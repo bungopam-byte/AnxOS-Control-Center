@@ -24,6 +24,8 @@
     "website:sync": "node scripts/sync-website-release.js",
     "website:download-functions:smoke": "node scripts/website-download-functions-smoke.js",
     "curseforge:large-file-write:smoke": "node scripts/curseforge-large-file-write-timeout-smoke.js",
+    "qa:acceptance": "node scripts/qa-acceptance.js",
+    "qa:smoke": "node scripts/qa-acceptance.js",
     "release:update": "node scripts/release-update.js",
     "agent:skills:check": ".agent/scripts/validate-skills",
     "agent:validate": ".agent/scripts/validate-project",
@@ -368,7 +370,8 @@
   },
   "devDependencies": {
     "electron": "^43.0.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "playwright-core": "^1.61.1"
   },
   "dependencies": {
     "@xterm/xterm": "^6.0.0",

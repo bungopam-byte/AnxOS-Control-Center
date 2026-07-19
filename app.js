@@ -1,3 +1,11 @@
+const qaMode = new URLSearchParams(window.location.search).get("qa-mode") === "1";
+if (qaMode) {
+  const indicator = document.createElement("div");
+  indicator.dataset.testid = "qa-mode-indicator";
+  indicator.textContent = "QA MODE";
+  Object.assign(indicator.style, { position: "fixed", top: "8px", right: "12px", zIndex: "99999", padding: "4px 8px", borderRadius: "4px", background: "#eab308", color: "#111827", font: "600 11px system-ui" });
+  (document.body || document.documentElement).appendChild(indicator);
+}
 const timeTarget = document.querySelector("#local-time");
 const toast = document.querySelector("#toast");
 const notificationNavCount = document.querySelector("[data-notification-nav-count]");

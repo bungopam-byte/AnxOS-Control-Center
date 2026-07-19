@@ -1,0 +1,48 @@
+const PLATFORM_ASSETS = {
+  windows: (name) => /\.exe$/i.test(name) && /setup/i.test(name),
+  "windows-portable": (name) => /\.exe$/i.test(name) && /portable/i.test(name),
+  "linux-appimage": (name) => /\.appimage$/i.test(name),
+  "linux-deb": (name) => /\.deb$/i.test(name),
+};
+
+function repositoryFromEnv(env) {
+  const value = env.ANXOS_RELEASE_REPOSITORY || env.ANXOS_GITHUB_REPOSITORY || "bungopam-byte/AnxOS-Control-Center-Releases";
+  const match = String(value).trim().match(/^([^/]+)\/([^/]+)$/);
+  return match ? { owner: match[1], repo: match[2] } : null;
+}
+
+function json(body, status) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
+export async function onRequestGet({ params, env }) {
+  const select = PLATFORM_ASSETS[String(params.platform || "").toLowerCase()];
+  if (!select) return json({ error: "unsupported_platform" }, 404);
+  const repository = repositoryFromEnv(env || {});
+  if (!repository) return json({ error: "release_repository_not_configured" }, 500);
+
+  const apiUrl = `https://api.github.com/repos/${repository.owner}/${repository.repo}/releases?per_page=20`;
+  let releases;
+  try {
+    const response = await fetch(apiUrl, { headers: { accept: "application/vnd.github+json", "user-agent": "AnxOS-website-downloads" } });
+    if (!response.ok) return json({ error: "release_source_unavailable", status: response.status }, 502);
+    releases = await response.json();
+  } catch {
+    return json({ error: "release_source_unavailable" }, 502);
+  }
+
+  const release = (Array.isArray(releases) ? releases : [])
+    .filter((candidate) => candidate && !candidate.draft)
+    .sort((left, right) => new Date(right.published_at || right.created_at || 0) - new Date(left.published_at || left.created_at || 0))
+    .find((candidate) => (candidate.assets || []).some((asset) => select(asset.name || "") && /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//.test(asset.browser_download_url || "")));
+  const asset = release?.assets?.find((candidate) => select(candidate.name || "") && /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//.test(candidate.browser_download_url || ""));
+  if (!asset) return json({ error: "release_asset_unavailable" }, 404);
+  return new Response(null, {
+    status: 302,
+    headers: { location: asset.browser_download_url, "cache-control": "no-store" },
+  });
+}
+

@@ -22,6 +22,7 @@
     "channel:set": "node scripts/release-config.js channel:set",
     "updates:manifest": "node scripts/write-update-manifest.js && node scripts/sync-website-release.js",
     "website:sync": "node scripts/sync-website-release.js",
+    "website:download-functions:smoke": "node scripts/website-download-functions-smoke.js",
     "release:update": "node scripts/release-update.js",
     "agent:skills:check": ".agent/scripts/validate-skills",
     "agent:validate": ".agent/scripts/validate-project",

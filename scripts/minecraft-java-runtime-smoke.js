@@ -24,27 +24,38 @@ async function main() {
   const previousExecutableRoots = process.env.AGENT_INSTANCE_EXECUTABLE_ROOTS;
   process.env.ANXOS_JAVA_RUNTIME_ROOTS = root;
   process.env.AGENT_INSTANCE_EXECUTABLE_ROOTS = root;
+  const fixtureInspect = (candidate) => {
+    const normalized = path.normalize(String(candidate));
+    const match = normalized.match(/temurin-(8|16|17|21)-jdk-amd64[\\/]bin[\\/]java(?:\.exe)?$/i);
+    if (!match) return null;
+    const major = Number(match[1]);
+    return { executable: normalized, major, versionOutput: `openjdk version \"${major === 8 ? "1.8.0_452" : `${major}.0.1`}\"` };
+  };
+  const resolveFixture = (metadata, options = {}) => runtimeResolver.resolveJavaRuntime(metadata, {
+    ...options,
+    inspectExecutable: fixtureInspect,
+  });
   try {
     assert.strictEqual(runtimeResolver.getRequiredJavaMajor({ minecraftVersion: "1.12.2", loader: "forge", loaderVersion: "14.23.5.2859" }).major, 8);
     assert.strictEqual(runtimeResolver.getRequiredJavaMajor({ minecraftVersion: "1.17.1", loader: "fabric" }).major, 16);
     assert.strictEqual(runtimeResolver.getRequiredJavaMajor({ minecraftVersion: "1.20.4", loader: "forge" }).major, 17);
     assert.strictEqual(runtimeResolver.getRequiredJavaMajor({ minecraftVersion: "1.20.6", loader: "neoforge" }).major, 21);
-    assert.strictEqual(runtimeResolver.resolveJavaRuntime({ minecraftVersion: "1.12.2", loader: "forge" }, { candidates: [java21, java8] }).executable, java8);
-    assert.strictEqual(runtimeResolver.resolveJavaRuntime({ minecraftVersion: "1.17.1", loader: "quilt" }, { candidates: [java16] }).major, 16);
-    assert.strictEqual(runtimeResolver.resolveJavaRuntime({ minecraftVersion: "1.20.4", loader: "fabric" }, { candidates: [java17] }).major, 17);
-    assert.strictEqual(runtimeResolver.resolveJavaRuntime({ minecraftVersion: "1.20.6", loader: "vanilla" }, { candidates: [java21] }).major, 21);
+    assert.strictEqual(resolveFixture({ minecraftVersion: "1.12.2", loader: "forge" }, { candidates: [java21, java8] }).executable, path.normalize(java8));
+    assert.strictEqual(resolveFixture({ minecraftVersion: "1.17.1", loader: "quilt" }, { candidates: [java16] }).major, 16);
+    assert.strictEqual(resolveFixture({ minecraftVersion: "1.20.4", loader: "fabric" }, { candidates: [java17] }).major, 17);
+    assert.strictEqual(resolveFixture({ minecraftVersion: "1.20.6", loader: "vanilla" }, { candidates: [java21] }).major, 21);
     assert.throws(
-      () => runtimeResolver.resolveJavaRuntime({ minecraftVersion: "1.12.2", loader: "forge" }, { candidates: [java21] }),
+      () => resolveFixture({ minecraftVersion: "1.12.2", loader: "forge" }, { candidates: [java21] }),
       (error) => error.code === "JAVA_RUNTIME_REQUIRED" && error.requiredMajor === 8 && error.detectedMajors.includes(21)
     );
     assert.throws(
-      () => runtimeResolver.resolveJavaRuntime({ minecraftVersion: "1.12.2", javaRuntimeOverride: java21 }, { candidates: [java8, java21] }),
+      () => resolveFixture({ minecraftVersion: "1.12.2", javaRuntimeOverride: java21 }, { candidates: [java8, java21] }),
       (error) => error.code === "JAVA_RUNTIME_OVERRIDE_INVALID"
     );
     const windowsRoots = runtimeResolver.approvedRoots("win32", { ProgramFiles: "C:\\Program Files", ProgramData: "C:\\ProgramData" });
     assert(windowsRoots.some((entry) => /Program Files/.test(entry)));
 
-    instanceService.configureInstanceService({ getConfig: () => ({ instanceRoot }) });
+    instanceService.configureInstanceService({ getConfig: () => ({ instanceRoot }), resolveJavaRuntime: (metadata) => resolveFixture(metadata, { candidates: [java8] }) });
     await instanceService.createInstance({
       id: "rlcraft-runtime-smoke", displayName: "RLCraft", type: "java-app", game: "minecraft",
       minecraftVersion: "1.12.2", serverSoftware: "forge", loader: "forge", loaderVersion: "14.23.5.2859",

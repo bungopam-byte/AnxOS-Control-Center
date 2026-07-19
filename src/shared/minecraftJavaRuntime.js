@@ -112,7 +112,8 @@ function discoverJavaRuntimes(options = {}) {
   const platform = options.platform || process.platform;
   const environment = options.environment || process.env;
   const candidates = options.candidates || collectJavaCandidates(platform, environment);
-  const runtimes = candidates.map((candidate) => inspectJavaExecutable(candidate, { ...options, platform, environment })).filter(Boolean);
+  const inspect = typeof options.inspectExecutable === "function" ? options.inspectExecutable : inspectJavaExecutable;
+  const runtimes = candidates.map((candidate) => inspect(candidate, { ...options, platform, environment })).filter(Boolean);
   return [...new Map(runtimes.map((runtime) => [`${runtime.major}:${runtime.executable}`, runtime])).values()]
     .sort((left, right) => left.major - right.major || left.executable.localeCompare(right.executable));
 }

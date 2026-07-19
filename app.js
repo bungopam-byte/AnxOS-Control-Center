@@ -7753,6 +7753,12 @@ function createPublicAccessServiceModal(provider = {}, { onSubmit } = {}) {
     const submitForm = async () => {
       if (submitting) return;
       const values = readValues();
+      console.info("[Public Access] Create Service submit.", {
+        providerId: provider.id || null,
+        source: values.source || "custom",
+        instanceId: values.instanceId || null,
+        nodeId: getSelectedNodeId() || null,
+      });
       const errors = validatePublicAccessCreateForm(provider, values);
       setErrors(errors);
       if (Object.keys(errors).length > 0) {
@@ -7809,7 +7815,11 @@ async function submitProviderAccessService(provider = {}, values = {}, requestCo
     if (!instance) {
       throw Object.assign(new Error("Choose a valid instance."), { code: "INVALID_INSTANCE" });
     }
-    return createAccessServiceForInstance(instance, "playit");
+    const result = await createAccessServiceForInstance(instance, "playit");
+    if (!result) {
+      throw Object.assign(new Error("The selected instance could not be linked to Public Access."), { code: "PUBLIC_ACCESS_INSTANCE_LINK_FAILED" });
+    }
+    return result;
   }
 
   const protocol = String(values.protocol || "tcp").trim().toLowerCase();
@@ -7846,6 +7856,13 @@ async function submitProviderAccessService(provider = {}, values = {}, requestCo
     endpointOptions: tailscaleEndpointOptions,
   };
   const result = await getDesktopApiState().api.publicAccess.createService(payload);
+  console.info("[Public Access] Create Service request completed.", {
+    providerId: provider.id || null,
+    source: values.source || "custom",
+    instanceId: values.instanceId || null,
+    nodeId: payload.nodeId || null,
+    ok: result?.ok !== false,
+  });
   if (result?.ok === false) {
     throw Object.assign(new Error(result.error?.message || "Access service could not be created."), {
       code: result.error?.code || "PUBLIC_ACCESS_REQUEST_FAILED",
@@ -7861,33 +7878,35 @@ async function submitProviderAccessService(provider = {}, values = {}, requestCo
 }
 
 async function createAccessServiceForInstance(instance = findInstance(), preferredProviderId = null) {
-  if (!instance) return null;
+  if (!instance) throw Object.assign(new Error("Choose a valid instance."), { code: "INVALID_INSTANCE" });
   const desktopApiState = getDesktopApiState();
   if (!desktopApiState.hasPublicAccess || typeof desktopApiState.api?.publicAccess?.createService !== "function") {
     showToast("Public Access service creation is unavailable.", "warning");
-    return null;
+    throw Object.assign(new Error("Public Access service creation is unavailable on the selected node."), { code: "PUBLIC_ACCESS_UNAVAILABLE" });
   }
   if (!latestPublicAccessSnapshot) {
     await refreshPlayitStatus();
   }
   const requestContext = createNodeActionContext("instance-expose-share");
   const suggestion = chooseInstanceAccessSuggestion(instance, preferredProviderId);
-  if (!suggestion) return null;
+  if (!suggestion) throw Object.assign(new Error("The selected instance has no compatible access endpoint."), { code: "INCOMPATIBLE_SERVICE" });
   const provider = getInstanceAccessProvider(suggestion.providerId);
   if (!isInstanceAccessProviderReady(provider, suggestion)) {
     showToast(getInstanceAccessProviderUnavailableReason(provider, suggestion), "warning");
-    return null;
+    throw Object.assign(new Error(getInstanceAccessProviderUnavailableReason(provider, suggestion)), { code: "PUBLIC_ACCESS_PROVIDER_UNAVAILABLE" });
   }
   let publicHostname = "";
   if (suggestion.providerId === "cloudflare-tunnel") {
     showToast("Cloudflare web services need a public hostname. Open Public Access and use Create Access Service for this provider.", "warning");
     openInstanceAccessManager(instance);
-    return null;
+    throw Object.assign(new Error("Cloudflare web services need a public hostname. Use the provider form instead."), { code: "PUBLIC_ACCESS_HOSTNAME_REQUIRED" });
   }
   const tailscaleEndpoint = suggestion.providerId === "tailscale"
     ? chooseTailscaleEndpoint(provider, suggestion.localPort)
     : null;
-  if (suggestion.providerId === "tailscale" && !tailscaleEndpoint) return null;
+  if (suggestion.providerId === "tailscale" && !tailscaleEndpoint) {
+    throw Object.assign(new Error("No usable Tailscale endpoint is available on the selected node."), { code: "PUBLIC_ACCESS_ENDPOINT_UNAVAILABLE" });
+  }
   const tailscaleEndpointOptions = suggestion.providerId === "tailscale"
     ? getTailscaleEndpointOptions(provider, suggestion.localPort)
     : [];
@@ -7916,7 +7935,17 @@ async function createAccessServiceForInstance(instance = findInstance(), preferr
     addressPreference: suggestion.providerId === "tailscale" ? tailscaleEndpoint?.type || "magicdns" : null,
     endpointOptions: tailscaleEndpointOptions,
   };
-  if (!isNodeActionStillCurrent(requestContext)) return null;
+  if (!isNodeActionStillCurrent(requestContext)) {
+    throw Object.assign(new Error("The selected node changed before the request was sent."), { code: "NODE_CHANGED" });
+  }
+  console.info("[Public Access] Create Service instance payload.", {
+    providerId: payload.providerId,
+    nodeId: payload.nodeId,
+    linkedInstanceId: payload.linkedInstanceId,
+    localHost: payload.localHost,
+    localPort: payload.localPort,
+    protocol: payload.protocol,
+  });
   const result = await desktopApiState.api.publicAccess.createService(payload);
   if (result?.ok === false) {
     throw Object.assign(new Error(result.error?.message || "Access service could not be created."), {
@@ -8014,9 +8043,8 @@ async function createProviderAccessService() {
     showToast("Access service creation is not supported by this provider yet.", "warning");
     return null;
   }
-  const requestContext = createNodeActionContext("public-access");
   return createPublicAccessServiceModal(provider, {
-    onSubmit: (values) => submitProviderAccessService(provider, values, requestContext),
+    onSubmit: (values) => submitProviderAccessService(provider, values, createNodeActionContext("public-access-create-service")),
   });
 }
 

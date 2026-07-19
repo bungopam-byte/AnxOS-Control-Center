@@ -1708,7 +1708,7 @@ function getFriendlyDashboardState() {
   const nodeId = getSelectedNodeId();
   const selectedNode = getSelectedNode();
   const activeTarget = resolveActiveManagementTarget();
-  const remoteNodes = (nodesState.nodes || []).filter((node) => node.kind === "agent");
+  const remoteNodes = (nodesState.nodes || []).filter((node) => node?.kind === "agent");
   const connectedRemoteNodes = remoteNodes.filter((node) => getNodeVisualState(node) === "online");
   const instances = getInstances();
   const runningInstances = instances.filter(isInstanceRunning);
@@ -5948,7 +5948,7 @@ function getOwnerAgentSummaries() {
     {
       state: nodes.some((node) => getNodeVisualState(node) === "offline" || getNodeVisualState(node) === "error") ? "Needs attention" : nodes.length ? "Healthy" : "Not configured",
       label: "Connected Agents",
-      evidence: `${nodes.filter((node) => node.kind === "agent" && getNodeVisualState(node) === "online").length} online remote Agents; ${nodes.filter((node) => node.kind === "agent" && getNodeVisualState(node) !== "online").length} offline or warning; selected ${selected?.displayName || "Application Host"}.`,
+      evidence: `${nodes.filter((node) => node?.kind === "agent" && getNodeVisualState(node) === "online").length} online remote Agents; ${nodes.filter((node) => node?.kind === "agent" && getNodeVisualState(node) !== "online").length} offline or warning; selected ${selected?.displayName || "Application Host"}.`,
       action: "node-health",
     },
     {

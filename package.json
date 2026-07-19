@@ -27,6 +27,7 @@
     "qa:acceptance": "node scripts/qa-acceptance.js",
     "qa:smoke": "node scripts/qa-acceptance.js",
     "qa:classification:smoke": "node scripts/qa-classification-smoke.js",
+    "rc:subprocess:smoke": "node scripts/rc-validate-subprocess-smoke.js",
     "release:update": "node scripts/release-update.js",
     "agent:skills:check": ".agent/scripts/validate-skills",
     "agent:validate": ".agent/scripts/validate-project",

@@ -3,9 +3,10 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
-const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
-const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
+const readText = (filePath) => fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+const app = readText(path.join(root, "app.js"));
+const styles = readText(path.join(root, "styles.css"));
+const index = readText(path.join(root, "index.html"));
 
 function requireSource(source, needle, message) {
   assert(source.includes(needle), message || `Expected source to include ${needle}`);

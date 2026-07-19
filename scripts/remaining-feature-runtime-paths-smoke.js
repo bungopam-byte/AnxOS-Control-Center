@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
+const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8").replace(/\r\n/g, "\n");
 
 const dockerIpc = read("src/ipc/dockerIpc.js");
 const instancesIpc = read("src/ipc/instancesIpc.js");

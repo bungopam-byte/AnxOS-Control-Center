@@ -2,6 +2,7 @@ const fs = require("fs");
 
 const source = fs.readFileSync("app.js", "utf8");
 const required = [
+  ["submit button associated with form", 'submit.setAttribute("form", form.id)'],
   ["form submit handler", 'form.addEventListener("submit", (event) =>'],
   ["submitting guard", "if (submitting) return;"],
   ["selected instance lookup", "values.instanceId"],

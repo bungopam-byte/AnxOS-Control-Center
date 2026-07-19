@@ -7624,6 +7624,7 @@ function createPublicAccessServiceModal(provider = {}, { onSubmit } = {}) {
     const form = document.createElement("form");
     form.className = "public-access-create-form";
     form.noValidate = true;
+    form.id = `public-access-create-form-${Date.now()}`;
 
     const instances = getPublicAccessCreateInstances(provider);
     const defaults = getPublicAccessCreateDefaults(provider);
@@ -7708,6 +7709,7 @@ function createPublicAccessServiceModal(provider = {}, { onSubmit } = {}) {
     const submit = document.createElement("button");
     submit.className = "inline-action inline-action--primary";
     submit.type = "submit";
+    submit.setAttribute("form", form.id);
     submit.dataset.publicAccessCreateSubmit = "";
     submit.textContent = "Create Service";
     const cancel = document.createElement("button");

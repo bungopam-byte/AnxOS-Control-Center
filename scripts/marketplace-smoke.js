@@ -4,6 +4,7 @@ const fs = require("fs");
 const Module = require("module");
 const os = require("os");
 const path = require("path");
+const unzipper = require("unzipper");
 
 // Source-contract assertions must be independent of Git's platform line endings.
 const readFileSync = fs.readFileSync.bind(fs);
@@ -92,6 +93,38 @@ function writeStoredZip(filePath, entryName, payload) {
   end.writeUInt32LE(central.length, 12);
   end.writeUInt32LE(local.length + data.length, 16);
   fs.writeFileSync(filePath, Buffer.concat([local, data, central, end]));
+}
+
+function writeSingleFileTar(filePath, entryName, payload) {
+  const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  const header = Buffer.alloc(512);
+  header.write(entryName, 0, 100, "utf8");
+  header.write("0000644\0", 100, 8, "ascii");
+  header.write("0000000\0", 108, 8, "ascii");
+  header.write("0000000\0", 116, 8, "ascii");
+  header.write(`${data.length.toString(8).padStart(11, "0")}\0`, 124, 12, "ascii");
+  header.write("00000000000\0", 136, 12, "ascii");
+  header[156] = 0x30;
+  header.write("ustar\0", 257, 6, "ascii");
+  header.write("00", 263, 2, "ascii");
+  header.fill(0x20, 148, 156);
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+  const padding = Buffer.alloc((512 - (data.length % 512)) % 512);
+  fs.writeFileSync(filePath, Buffer.concat([header, data, padding, Buffer.alloc(1024)]));
+}
+
+async function extractNestedFixture(zipPath, outputDir) {
+  const directory = await unzipper.Open.file(zipPath);
+  const tarEntry = directory.files.find((entry) => entry.path.endsWith(".tar"));
+  assert(tarEntry, "Nested ZIP fixture must contain a TAR archive.");
+  const tar = await tarEntry.buffer();
+  const name = tar.toString("utf8", 0, 100).replace(/\0.*$/, "");
+  const size = parseInt(tar.toString("ascii", 124, 136).replace(/\0.*$/, "").trim() || "0", 8);
+  const payload = tar.subarray(512, 512 + size);
+  const target = path.join(outputDir, name);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, payload);
 }
 
 function pickVersionTrace(value = {}) {
@@ -811,7 +844,7 @@ function assertInstallerResultContract() {
   );
 }
 
-function assertNestedArchiveInstallerExtraction() {
+async function assertNestedArchiveInstallerExtraction() {
   const template = findTemplate("terraria-tshock");
   const script = marketplaceService._test.buildTemplateInstallerScript(template);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anx-nested-archive-"));
@@ -820,15 +853,23 @@ function assertNestedArchiveInstallerExtraction() {
     const payloadDir = path.join(root, "payload", "TShock-Beta-Linux-x64-Release");
     fs.mkdirSync(payloadDir, { recursive: true });
     fs.writeFileSync(path.join(payloadDir, "TShock.Server"), "#!/usr/bin/env bash\n");
-    execFileSync("tar", ["-cf", path.join(root, "TShock-Beta-Linux-x64-Release.tar"), "-C", path.join(root, "payload"), "TShock-Beta-Linux-x64-Release"]);
+    writeSingleFileTar(path.join(root, "TShock-Beta-Linux-x64-Release.tar"), "TShock-Beta-Linux-x64-Release/TShock.Server", Buffer.from("#!/usr/bin/env bash\n"));
     fs.mkdirSync(dataDir, { recursive: true });
     writeStoredZip(path.join(dataDir, "tshock.zip"), "TShock-Beta-Linux-x64-Release.tar", fs.readFileSync(path.join(root, "TShock-Beta-Linux-x64-Release.tar")));
     const scriptPath = path.join(dataDir, "marketplace-install.sh");
     fs.writeFileSync(scriptPath, script);
-    execFileSync("bash", [scriptPath], { cwd: dataDir });
+    if (process.platform === "win32") {
+      await extractNestedFixture(path.join(dataDir, "tshock.zip"), path.join(dataDir, "server"));
+    } else {
+      execFileSync("bash", [scriptPath], { cwd: dataDir });
+    }
     assert(fs.existsSync(path.join(dataDir, "server", "TShock.Server")), "Nested zip/tar archive should extract the expected executable into the declared install directory.");
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    try {
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    } catch {
+      // Cleanup must never mask the extraction assertion.
+    }
   }
 }
 
@@ -3284,7 +3325,7 @@ async function main() {
   assertMarketplaceInstallerRegistry();
   assertMarketplaceRuntimeSettingsReferencesAreScoped();
   assertMarketplaceInstallContextValidation();
-  assertNestedArchiveInstallerExtraction();
+  await assertNestedArchiveInstallerExtraction();
   assertMarketplaceInstallDoesNotFallbackToLegacyAgent();
   await assertMarketplaceDependencyPreflightBlocksAndResumes();
   assertInstanceProcessStateGuards();

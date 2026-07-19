@@ -25922,9 +25922,10 @@ function isSecurityTimestampStale(value, maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
 
 function renderSecuritySummaryGrid(container, fields) {
   if (!container) return;
+  const fallback = securityDashboardState?.unavailable ? "Not available" : "Loading";
   container.replaceChildren();
   fields.forEach(([label, value]) => {
-    appendDetailPair(container, label, formatSecurityValue(value, "Loading"));
+    appendDetailPair(container, label, formatSecurityValue(value, fallback));
   });
 }
 
@@ -25935,12 +25936,13 @@ function openSecuritySection(selector, focusSelector = null) {
 
 function renderSecurityDashboard() {
   const dashboard = securityDashboardState;
+  const unavailable = dashboard?.unavailable === true;
   const overviewStatus = document.querySelector("[data-security-overview-status]");
   const overview = document.querySelector("[data-security-overview]");
   const lastEvent = document.querySelector("[data-security-last-event]");
   if (overviewStatus) {
-    overviewStatus.className = securityPillClass(dashboard?.overview?.status || "Loading");
-    overviewStatus.textContent = dashboard?.overview?.status || "Loading";
+    overviewStatus.className = securityPillClass(dashboard?.overview?.status || (unavailable ? "Not available" : "Loading"));
+    overviewStatus.textContent = dashboard?.overview?.status || (unavailable ? "Not available" : "Loading");
   }
   if (overview) {
     const fields = [
@@ -25960,7 +25962,9 @@ function renderSecurityDashboard() {
   }
   if (lastEvent) {
     const event = dashboard?.overview?.lastSecurityEvent;
-    lastEvent.textContent = event ? `Last event: ${event.type} · ${formatSecurityTime(event.timestamp)}` : "Last event: Not reported";
+    lastEvent.textContent = event
+      ? `Last event: ${event.type} · ${formatSecurityTime(event.timestamp)}`
+      : unavailable ? `Security state unavailable: ${dashboard.error || "No response from the security service."}` : "Last event: Not reported";
   }
   renderSecurityRecommendations(dashboard?.recommendations || []);
   renderSecurityAccountProtection(dashboard?.accountProtection || null);
@@ -25991,7 +25995,9 @@ function renderSecurityPermissions(permissions) {
   if (!container) return;
   container.replaceChildren();
   if (!permissions.length) {
-    container.appendChild(createEmptyState("Permission details are unavailable until security state loads."));
+    container.appendChild(createEmptyState(securityDashboardState?.unavailable
+      ? "Roles and permissions are not available from the current security service."
+      : "Permission details are unavailable until security state loads."));
     return;
   }
   permissions.forEach((permission) => {
@@ -26370,8 +26376,9 @@ async function refreshSecurityState() {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
-    securityDashboardState = null;
-    console.warn("[Security] Dashboard unavailable.", normalizeIpcErrorMessage(error, "Security dashboard unavailable."));
+    const message = normalizeIpcErrorMessage(error, "Security dashboard unavailable.");
+    securityDashboardState = { unavailable: true, error: message };
+    console.warn("[Security] Dashboard unavailable.", message);
   }
   renderSecurityState();
   await refreshSettingsPermissions();

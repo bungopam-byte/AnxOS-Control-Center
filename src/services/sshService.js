@@ -9,6 +9,7 @@ const { redactString } = require("../shared/redaction");
 
 const DEV_SSH_PROFILES_PATH = path.resolve(__dirname, "..", "..", "config", "ssh-profiles.json");
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
+const SHELL_START_TIMEOUT_MS = 10000;
 const DEFAULT_SHELL_COLS = 120;
 const DEFAULT_SHELL_ROWS = 32;
 const VALID_AUTH_TYPES = new Set(["password", "privateKey"]);
@@ -519,6 +520,7 @@ class SshService extends EventEmitter {
       status: "connecting",
       message: "Connecting...",
       didClose: false,
+      shellStartTimer: null,
     };
 
     this.sessions.set(sessionId, session);
@@ -533,6 +535,10 @@ class SshService extends EventEmitter {
           rows: Number.isFinite(options.rows) ? options.rows : DEFAULT_SHELL_ROWS,
         },
         (error, stream) => {
+          if (session.shellStartTimer) {
+            clearTimeout(session.shellStartTimer);
+            session.shellStartTimer = null;
+          }
           if (error) {
             this.handleSessionFailure(sessionId, mapConnectionError(error));
             return;
@@ -556,6 +562,13 @@ class SshService extends EventEmitter {
           });
         },
       );
+      session.shellStartTimer = setTimeout(() => {
+        if (!session.stream && !session.didClose) {
+          this.handleSessionFailure(sessionId, new SshServiceError("SSH shell startup timed out. The host accepted the connection but did not open a terminal.", {
+            code: "SSH_SHELL_START_TIMEOUT",
+          }));
+        }
+      }, SHELL_START_TIMEOUT_MS);
     });
 
     client.on("error", (error) => {
@@ -614,6 +627,11 @@ class SshService extends EventEmitter {
     }
 
     session.didClose = true;
+
+    if (session.shellStartTimer) {
+      clearTimeout(session.shellStartTimer);
+      session.shellStartTimer = null;
+    }
 
     try {
       session.stream?.removeAllListeners();

@@ -77,7 +77,8 @@ async function main() {
   assert.strictEqual(validService.valid, true, "Matching Windows service binary path should validate.");
   const invalidService = control._test.validateWindowsServiceRegistration("BINARY_PATH_NAME   : C:\\\\old\\\\agent.exe\nSTATE              : 1  STOPPED", control.readConfig());
   assert.strictEqual(invalidService.valid, false, "Mismatched Windows service binary path should not validate.");
-  assert(control._test.buildWindowsAgentLauncherScript(control.readConfig()).includes("ELECTRON_RUN_AS_NODE=1"), "Windows launcher must run the bundled Electron executable as Node.");
+  assert(control._test.buildWindowsAgentLauncherScript(control.readConfig()).includes("ELECTRON_RUN_AS_NODE"), "Windows launcher must configure Electron as Node.");
+  assert(control._test.buildWindowsAgentLauncherScript(control.readConfig()).includes("WScript.Shell"), "Windows launcher must use a hidden script host.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: true, valid: false }), "invalid", "Invalid registration must not be reported as passed.");
   assert.strictEqual(control._test.getRegistrationStatusFromServiceState({ supported: true, installed: false, verification: { state: "unverifiable" } }), "unverifiable", "Unverifiable registration must remain distinct from missing.");
   assert.strictEqual(control._test.compareVersions("1.2.3", "1.2.4"), -1, "Version comparison should detect older Agent versions.");

@@ -4,7 +4,7 @@ const service = require("../src/services/agentControlService")._test;
 const staleTask = `TaskName: \\AnxOSAgent\nTask To Run: cmd.exe /c C:\\Users\\anjor\\Documents\\AnxOS-Control-Center\\agent\\src\\server.js`;
 assert.deepStrictEqual(service.classifyWindowsTaskOwnership(staleTask, { valid: false }), { state: "verified-stale", owned: true, stale: true });
 
-const packagedTask = `TaskName: \\AnxOSAgent\nTask To Run: C:\\Users\\anjor\\AppData\\Roaming\\AnxHub\\agent\\bin\\start-local-agent.cmd`;
+const packagedTask = `TaskName: \\AnxOSAgent\nTask To Run: C:\\Users\\anjor\\AppData\\Roaming\\AnxHub\\agent\\bin\\start-local-agent.vbs`;
 assert.strictEqual(service.classifyWindowsTaskOwnership(packagedTask, { valid: true }).state, "valid-packaged");
 
 const ambiguousTask = `TaskName: \\AnxOSAgent\nTask To Run: C:\\Tools\\unrelated.exe`;

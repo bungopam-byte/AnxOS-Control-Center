@@ -57,7 +57,7 @@ function getAgentBackupsDirectory() { return path.join(getAgentDataDirectory(), 
 function getAgentTempDirectory() { return path.join(getAgentDataDirectory(), "tmp"); }
 function getAgentUpdateDirectory() { return path.join(getAgentDataDirectory(), "updates"); }
 function getAgentBinDirectory() { return path.join(getAgentDataDirectory(), "bin"); }
-function getWindowsLauncherPath() { return path.join(getAgentBinDirectory(), "start-local-agent.cmd"); }
+function getWindowsLauncherPath() { return path.join(getAgentBinDirectory(), "start-local-agent.vbs"); }
 function getAgentScript() { return getBundledLocalAgentRuntime().agentScript; }
 function getAppRoot() { return getBundledLocalAgentRuntime().workingDirectory; }
 function defaults() { return { name: `${os.hostname()} Agent`, host: "127.0.0.1", port: 47131, allowedOrigins: [], allowedFolders: [os.homedir(), getAgentInstancesDirectory(), getAgentBackupsDirectory()], storageRoots: [getAgentInstancesDirectory(), getAgentBackupsDirectory()], autoStart: false, updateChannel: "stable", loggingLevel: "info", connectionTimeoutMs: 10000, heartbeatIntervalMs: 5000, restartPolicy: "on-failure", ownerMachine: true, accountAssociation: null }; }
@@ -237,13 +237,13 @@ function buildWindowsAgentLauncherScript(config = readConfig()) {
     "ANXOS_LOCAL_AGENT_RUNTIME_ROOT",
     "ANXOS_LOCAL_AGENT_RUNTIME_MANIFEST",
   ];
+  const quoteVbs = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
   return [
-    "@echo off",
-    "setlocal",
-    ...keys.map((key) => `set "${key}=${quoteWindowsBatchValue(env[key])}"`),
-    `cd /d "${quoteWindowsBatchValue(getAppRoot())}"`,
-    `"${quoteWindowsBatchValue(process.execPath)}" "${quoteWindowsBatchValue(getAgentScript())}"`,
-    "exit /b %ERRORLEVEL%",
+    "On Error Resume Next",
+    "Set shell = CreateObject(\"WScript.Shell\")",
+    ...keys.map((key) => `shell.Environment(\"Process\")(\"${key}\") = ${quoteVbs(env[key])}`),
+    `shell.CurrentDirectory = ${quoteVbs(getAppRoot())}`,
+    `shell.Run ${quoteVbs(`\"${process.execPath}\" \"${getAgentScript()}\"`)}, 0, False`,
     "",
   ].join("\r\n");
 }
@@ -280,15 +280,16 @@ function validateWindowsServiceRegistration(stdout = "", config = readConfig()) 
   try {
     const launcher = fs.readFileSync(launcherPath, "utf8");
     const normalizedLauncher = normalizeCommandForComparison(launcher);
+    const launcherContainsEnv = (key, value) => normalizedLauncher.includes(normalizeCommandForComparison(`${key}=${value}`)) || (normalizedLauncher.includes(normalizeCommandForComparison(key)) && normalizedLauncher.includes(normalizeCommandForComparison(value)));
     launcherValid = normalizedLauncher.includes(normalizeCommandForComparison(process.execPath))
       && normalizedLauncher.includes(normalizeCommandForComparison(getAgentScript()))
-      && normalizedLauncher.includes(normalizeCommandForComparison(`ANXHUB_CONFIG_DIR=${getConfigDirectory()}`))
-      && normalizedLauncher.includes(normalizeCommandForComparison(`AGENT_PORT=${config.port}`));
+      && launcherContainsEnv("ANXHUB_CONFIG_DIR", getConfigDirectory())
+      && launcherContainsEnv("AGENT_PORT", config.port);
     launcherIssues = [
       normalizedLauncher.includes(normalizeCommandForComparison(process.execPath)) ? null : "Launcher does not point at the current AnxOS runtime.",
       normalizedLauncher.includes(normalizeCommandForComparison(getAgentScript())) ? null : "Launcher does not point at the bundled Agent server.",
-      normalizedLauncher.includes(normalizeCommandForComparison(`ANXHUB_CONFIG_DIR=${getConfigDirectory()}`)) ? null : "Launcher does not use the current Agent config directory.",
-      normalizedLauncher.includes(normalizeCommandForComparison(`AGENT_PORT=${config.port}`)) ? null : "Launcher does not use the configured Agent port.",
+      launcherContainsEnv("ANXHUB_CONFIG_DIR", getConfigDirectory()) ? null : "Launcher does not use the current Agent config directory.",
+      launcherContainsEnv("AGENT_PORT", config.port) ? null : "Launcher does not use the configured Agent port.",
     ].filter(Boolean);
   } catch {
     launcherIssues = ["Launcher script is missing."];
@@ -341,7 +342,7 @@ function classifyWindowsTaskOwnership(taskOutput = "", verification = {}) {
   const evidence = normalizeCommandForComparison(taskOutput);
   if (!evidence || /cannot find|does not exist/.test(evidence)) return { state: "missing", owned: false };
   const exactName = /taskname:\s*\/anxosagent(?:\s|$)/.test(evidence);
-  const hasEntrypoint = evidence.includes("agent/src/server.js") || evidence.includes("start-local-agent.cmd");
+  const hasEntrypoint = evidence.includes("agent/src/server.js") || evidence.includes("start-local-agent.cmd") || evidence.includes("start-local-agent.vbs");
   const hasProductPath = evidence.includes("anxos control center") || evidence.includes("anxos-control-center") || evidence.includes("anxhub");
   if (!(exactName && hasEntrypoint && hasProductPath)) return { state: "ambiguous", owned: false };
   return { state: verification.valid ? "valid-packaged" : "verified-stale", owned: true, stale: !verification.valid };

@@ -5,6 +5,13 @@ const Module = require("module");
 const os = require("os");
 const path = require("path");
 
+// Source-contract assertions must be independent of Git's platform line endings.
+const readFileSync = fs.readFileSync.bind(fs);
+fs.readFileSync = (filePath, options) => {
+  const value = readFileSync(filePath, options);
+  return options === "utf8" && typeof value === "string" ? value.replace(/\r\n/g, "\n") : value;
+};
+
 const smokeConfigRoot = fs.mkdtempSync(path.join(os.tmpdir(), "anx-marketplace-config-"));
 process.env.ANXHUB_CONFIG_DIR = smokeConfigRoot;
 process.on("exit", () => fs.rmSync(smokeConfigRoot, { recursive: true, force: true }));

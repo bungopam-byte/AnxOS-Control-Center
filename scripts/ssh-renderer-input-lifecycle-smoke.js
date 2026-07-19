@@ -4,10 +4,11 @@ const fs = require("fs");
 const path = require("path");
 
 const rootDir = path.resolve(__dirname, "..");
-const appSource = fs.readFileSync(path.join(rootDir, "app.js"), "utf8");
-const preloadSource = fs.readFileSync(path.join(rootDir, "preload.js"), "utf8");
-const ipcSource = fs.readFileSync(path.join(rootDir, "src", "ipc", "sshIpc.js"), "utf8");
-const serviceSource = fs.readFileSync(path.join(rootDir, "src", "services", "sshService.js"), "utf8");
+const readText = (filePath) => fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+const appSource = readText(path.join(rootDir, "app.js"));
+const preloadSource = readText(path.join(rootDir, "preload.js"));
+const ipcSource = readText(path.join(rootDir, "src", "ipc", "sshIpc.js"));
+const serviceSource = readText(path.join(rootDir, "src", "services", "sshService.js"));
 
 function requireSource(fragment, message) {
   assert(appSource.includes(fragment), message);

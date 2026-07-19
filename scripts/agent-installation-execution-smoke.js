@@ -82,8 +82,7 @@ async function main() {
     agentUrl: url,
     agentToken: token,
   }, null, 2)}\n`);
-  const javaPath = path.join(binRoot, "java");
-  await fs.writeFile(javaPath, `#!/usr/bin/env node
+  const javaStub = `#!/usr/bin/env node
 const fs = require("fs");
 if (process.argv.includes("-jar")) {
   fs.writeFileSync("installer-cwd.txt", process.cwd() + "\\n");
@@ -92,7 +91,17 @@ if (process.argv.includes("-jar")) {
 if (fs.existsSync("fail-mode")) { console.error("structured-failure"); process.exit(23); }
 if (fs.existsSync("timeout-mode")) { setTimeout(() => {}, 30000); }
 else { console.log("installer-complete"); }
-`, { mode: 0o755 });
+`;
+  const javaPath = path.join(binRoot, "java");
+  if (process.platform === "win32") {
+    // Windows command resolution does not execute extensionless PATH files;
+    // provide a native .cmd shim that invokes the deterministic Node stub.
+    const stubPath = path.join(binRoot, "java-stub.js");
+    await fs.writeFile(stubPath, javaStub, { mode: 0o644 });
+    await fs.writeFile(path.join(binRoot, "java.cmd"), `@echo off\r\n"${process.execPath}" "${stubPath}" %*\r\n`, { mode: 0o755 });
+  } else {
+    await fs.writeFile(javaPath, javaStub, { mode: 0o755 });
+  }
   const agent = spawn(process.execPath, [path.join(rootDir, "agent", "src", "server.js")], {
     cwd: path.join(rootDir, "agent"),
     env: {

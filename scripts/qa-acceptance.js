@@ -45,11 +45,18 @@ async function main() {
   record("launch", "main window", "AnxOS Control Center window appears", title, Boolean(title));
   record("qa-indicator", "[data-testid=qa-mode-indicator]", "QA MODE is visible", await window.locator("[data-testid=qa-mode-indicator]").textContent().catch(() => "missing"), await window.locator("[data-testid=qa-mode-indicator]").isVisible().catch(() => false), await shot("launch"));
   for (const page of ["dashboard", "nodes", "agent-control", "marketplace", "instances", "public-access", "diagnostics", "settings"]) {
-    const link = window.locator(`[data-page-target="${page}"]`).first();
+    const navigationTarget = page === "public-access" ? "playit" : page === "diagnostics" ? "agent-control" : page;
+    const link = window.locator(`[data-page-target="${navigationTarget}"]`).first();
     if (await link.count()) {
       await link.click();
       await window.waitForTimeout(300);
-      const visible = await window.locator(`[data-page="${page}"]`).isVisible().catch(() => false);
+      if (page === "diagnostics") {
+        const diagnosticsSection = window.locator('[data-agent-control-section-target="diagnostics"]').first();
+        if (await diagnosticsSection.count()) await diagnosticsSection.click();
+      }
+      const visible = page === "diagnostics"
+        ? await window.locator('[data-agent-control-section="diagnostics"]').isVisible().catch(() => false)
+        : await window.locator(`[data-page="${page === "public-access" ? "playit" : page}"]`).isVisible().catch(() => false);
       record(`navigate-${page}`, page, "page becomes visible", String(visible), visible, await shot(page));
     } else record(`navigate-${page}`, page, "navigation control exists", "control not found", false);
   }

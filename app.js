@@ -4164,7 +4164,11 @@ function renderAgentControlState(payload = agentControlState) {
   agentControlState = payload;
   syncAgentPairingTargetForSelection();
   renderAgentPairingSetup(null, {
-    paired: local.pairing?.configured === true || local.tokenStatus?.configured === true || local.authenticated === true,
+    paired: local.pairing?.configured === true ||
+      local.tokenStatus?.configured === true ||
+      local.authenticated === true ||
+      local.agentStatus?.state === "Connected" ||
+      local.agentStatus?.label === "Connected",
   });
   renderAgentGeneratedTokenControls();
   const { runtime, stale } = getAgentRuntimeForDisplay(local);

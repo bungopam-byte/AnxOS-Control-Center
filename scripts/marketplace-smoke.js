@@ -38,6 +38,62 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
 }
 
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function writeStoredZip(filePath, entryName, payload) {
+  const name = Buffer.from(entryName);
+  const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  const checksum = crc32(data);
+  const local = Buffer.alloc(30 + name.length);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(20, 4);
+  local.writeUInt16LE(0, 6);
+  local.writeUInt16LE(0, 8);
+  local.writeUInt16LE(0, 10);
+  local.writeUInt16LE(0, 12);
+  local.writeUInt32LE(checksum, 14);
+  local.writeUInt32LE(data.length, 18);
+  local.writeUInt32LE(data.length, 22);
+  local.writeUInt16LE(name.length, 26);
+  local.writeUInt16LE(0, 28);
+  name.copy(local, 30);
+  const central = Buffer.alloc(46 + name.length);
+  central.writeUInt32LE(0x02014b50, 0);
+  central.writeUInt16LE(20, 4);
+  central.writeUInt16LE(20, 6);
+  central.writeUInt16LE(0, 8);
+  central.writeUInt16LE(0, 10);
+  central.writeUInt16LE(0, 12);
+  central.writeUInt16LE(0, 14);
+  central.writeUInt32LE(checksum, 16);
+  central.writeUInt32LE(data.length, 20);
+  central.writeUInt32LE(data.length, 24);
+  central.writeUInt16LE(name.length, 28);
+  central.writeUInt16LE(0, 30);
+  central.writeUInt16LE(0, 32);
+  central.writeUInt16LE(0, 34);
+  central.writeUInt16LE(0, 36);
+  central.writeUInt32LE(0, 38);
+  central.writeUInt32LE(0, 42);
+  name.copy(central, 46);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 8);
+  end.writeUInt16LE(0, 10);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(local.length + data.length, 16);
+  fs.writeFileSync(filePath, Buffer.concat([local, data, central, end]));
+}
+
 function pickVersionTrace(value = {}) {
   return {
     gameVersion: value.gameVersion || value.versionInfo?.gameVersion || null,
@@ -766,7 +822,7 @@ function assertNestedArchiveInstallerExtraction() {
     fs.writeFileSync(path.join(payloadDir, "TShock.Server"), "#!/usr/bin/env bash\n");
     execFileSync("tar", ["-cf", path.join(root, "TShock-Beta-Linux-x64-Release.tar"), "-C", path.join(root, "payload"), "TShock-Beta-Linux-x64-Release"]);
     fs.mkdirSync(dataDir, { recursive: true });
-    execFileSync("zip", ["-q", path.join(dataDir, "tshock.zip"), "TShock-Beta-Linux-x64-Release.tar"], { cwd: root });
+    writeStoredZip(path.join(dataDir, "tshock.zip"), "TShock-Beta-Linux-x64-Release.tar", fs.readFileSync(path.join(root, "TShock-Beta-Linux-x64-Release.tar")));
     const scriptPath = path.join(dataDir, "marketplace-install.sh");
     fs.writeFileSync(scriptPath, script);
     execFileSync("bash", [scriptPath], { cwd: dataDir });

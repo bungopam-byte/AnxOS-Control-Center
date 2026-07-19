@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "154",
-  buildNumber: "154",
+  build: "155",
+  buildNumber: "155",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 154 Private Alpha",
-  releaseDate: "July 17, 2026",
-  releaseTag: "v1.7-build154",
+  releaseLabel: "Version 1.7 Build 155 Private Alpha",
+  releaseDate: "July 19, 2026",
+  releaseTag: "v1.7-build155",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build154",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build155",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -26,23 +26,53 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build154.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build154/AnxOS-Control-Center-Setup-1.7-build154.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build155.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build155/AnxOS-Control-Center-Setup-1.7-build155.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build154-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build154/AnxOS-Control-Center-1.7-build154-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build155-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build155/AnxOS-Control-Center-1.7-build155-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build154.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build154/AnxOS-Control-Center-1.7-build154.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build155.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build155/AnxOS-Control-Center-1.7-build155.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build154.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build154/AnxOS-Control-Center-1.7-build154.deb"
+          fileName: "AnxOS-Control-Center-1.7-build155.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build155/AnxOS-Control-Center-1.7-build155.deb"
       }
   ],
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 155,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build155",
+          "date": "July 19, 2026",
+          "datetime": "2026-07-19",
+          "title": "AnxOS Version 1.7",
+          "summary": "Latest AnxOS-Control-Center release.",
+          "changes": [
+              "Updated application build, website metadata, and downloadable release assets."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build155"
+      },
+      {
+          "version": "1.7",
+          "build": 154,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build154",
+          "date": "July 19, 2026",
+          "datetime": "2026-07-19",
+          "title": "Trusted SteamCMD updates and Agent pairing reliability",
+          "summary": "Build 154 fixes paired remote Agent status rendering.",
+          "changes": [
+              "Added trusted instance-scoped SteamCMD server-file updates with progress and artifact verification.",
+              "Migrated supported legacy SteamCMD instances from trusted template metadata.",
+              "Shows Paired instead of Waiting for Control Center after successful Agent pairing."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build154"
+      },
       {
           "version": "1.7",
           "build": 152,

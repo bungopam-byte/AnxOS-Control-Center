@@ -138,6 +138,20 @@ async function extractNestedFixture(zipPath, outputDir) {
   }
 }
 
+function collectTree(rootDir) {
+  const files = [];
+  const walk = (current) => {
+    if (!fs.existsSync(current)) return;
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) files.push({ relativePath: path.relative(rootDir, full), size: fs.statSync(full).size });
+    }
+  };
+  walk(rootDir);
+  return files;
+}
+
 function pickVersionTrace(value = {}) {
   return {
     gameVersion: value.gameVersion || value.versionInfo?.gameVersion || null,
@@ -859,6 +873,7 @@ async function assertNestedArchiveInstallerExtraction() {
   const template = findTemplate("terraria-tshock");
   const script = marketplaceService._test.buildTemplateInstallerScript(template);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anx-nested-archive-"));
+  let failed = false;
   try {
     const dataDir = path.join(root, "data");
     const payloadDir = path.join(root, "payload", "TShock-Beta-Linux-x64-Release");
@@ -869,17 +884,45 @@ async function assertNestedArchiveInstallerExtraction() {
     writeStoredZip(path.join(dataDir, "tshock.zip"), "TShock-Beta-Linux-x64-Release.tar", fs.readFileSync(path.join(root, "TShock-Beta-Linux-x64-Release.tar")));
     const scriptPath = path.join(dataDir, "marketplace-install.sh");
     fs.writeFileSync(scriptPath, script);
+    let extractionStatus = "not-started";
     if (process.platform === "win32") {
       await extractNestedFixture(path.join(dataDir, "tshock.zip"), path.join(dataDir, "server"));
+      extractionStatus = "node-fixture-extracted";
     } else {
       execFileSync("bash", [scriptPath], { cwd: dataDir });
+      extractionStatus = "installer-script-completed";
     }
-    assert(fs.existsSync(path.join(dataDir, "server", "TShock.Server")), "Nested zip/tar archive should extract the expected executable into the declared install directory.");
+    const expectedPath = path.join(dataDir, "server", "TShock.Server");
+    if (!fs.existsSync(expectedPath)) {
+      failed = true;
+      const zipDirectory = await unzipper.Open.file(path.join(dataDir, "tshock.zip"));
+      const tarEntry = zipDirectory.files.find((entry) => entry.path.endsWith(".tar"));
+      const tarBuffer = tarEntry ? await tarEntry.buffer() : null;
+      const tarEntries = tarBuffer ? [tarBuffer.toString("utf8", 0, 100).replace(/\0.*$/, "")] : [];
+      console.error("Nested archive extraction diagnostics", JSON.stringify({
+        platform: process.platform,
+        root,
+        installDirectory: path.join(dataDir, "server"),
+        expectedPath,
+        expectedExists: false,
+        extractionStatus,
+        extractionComplete: extractionStatus !== "not-started",
+        zipEntries: zipDirectory.files.map((entry) => entry.path),
+        tarEntries,
+        tree: collectTree(root),
+        installTree: collectTree(path.join(dataDir, "server")),
+      }, null, 2));
+    }
+    assert(fs.existsSync(expectedPath), "Nested zip/tar archive should extract the expected executable into the declared install directory.");
   } finally {
-    try {
-      fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    } catch {
-      // Cleanup must never mask the extraction assertion.
+    if (!failed) {
+      try {
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch {
+        // Cleanup must never mask the extraction assertion.
+      }
+    } else {
+      console.error(`Nested archive fixture retained for inspection: ${root}`);
     }
   }
 }

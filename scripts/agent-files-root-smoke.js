@@ -102,6 +102,7 @@ async function main() {
       }
     }
 
+    if (process.platform !== "win32") {
     const symlinkRoot = path.join(tempRoot, "symlink-root");
     await fs.mkdir(symlinkRoot);
     await fs.symlink(homeRoot, path.join(symlinkRoot, "inside-link"));
@@ -156,6 +157,7 @@ async function main() {
       [],
       "Atomic copy replacement must not leave temporary files behind.",
     );
+    }
 
     const copyDirectorySource = path.join(homeRoot, "copy-directory-source");
     const copyDirectoryDestination = path.join(homeRoot, "copy-directory-destination");

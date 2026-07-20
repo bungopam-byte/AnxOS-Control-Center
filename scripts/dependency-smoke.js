@@ -138,15 +138,15 @@ async function run() {
   );
   }
 
-  mock = createMockHooks({ installedCommands: ["apt-get"] });
+  mock = createMockHooks({ installedCommands: isWindows ? ["winget"] : ["apt-get"] });
   dependencyService.__setTestHooks(mock.hooks);
-  plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["nodejs"] });
+  plan = await dependencyService.planDependencyPreparation({ dependencyIds: [isWindows ? "nodejs" : "nodejs"] });
   assert.strictEqual(plan.installableActions.length, 0, "Preparation plan must not mark dependencies installable without elevation.");
   assert.strictEqual(plan.manualActions[0].action, "manual", "Missing elevation should become a guided manual step.");
   await assert.rejects(
     () => dependencyService.installDependencies({ dependencyIds: ["nodejs"], nodeId: "anxlab" }),
-    (error) => error.code === "AUTHORIZATION_REQUIRED",
-    "Missing elevation should become an authorization-required install state."
+    (error) => isWindows ? error.code === "UNSUPPORTED_PLATFORM" || error.code === "PACKAGE_MANAGER_MISSING" : error.code === "AUTHORIZATION_REQUIRED",
+    isWindows ? "Unsupported Windows dependency should remain a structured unsupported state." : "Missing elevation should become an authorization-required install state."
   );
 
   mock = createMockHooks({

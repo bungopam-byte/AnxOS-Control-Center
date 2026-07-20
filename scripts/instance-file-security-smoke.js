@@ -24,19 +24,31 @@ async function main() {
     });
     const dataRoot = path.join(instanceRoot, "file-security-smoke", "data");
     const escapeLink = path.join(dataRoot, "escape");
-    await fs.symlink(outsideRoot, escapeLink);
+    let symlinkCreated = false;
+    try {
+      await fs.symlink(outsideRoot, escapeLink);
+      symlinkCreated = true;
+    } catch (error) {
+      if (process.platform === "win32" && ["EPERM", "EACCES"].includes(error?.code)) {
+        console.warn(`Skipping instance symlink-escape fixture: Windows symlink capability unavailable (${error.code}).`);
+      } else {
+        throw error;
+      }
+    }
 
-    await assert.rejects(
-      instanceService.writeInstanceFile("file-security-smoke", "escape/created/file.txt", "blocked"),
-      (error) => error?.code === "PATH_NOT_ALLOWED",
-      "Writes through an instance-data symlink must be rejected.",
-    );
-    await assert.rejects(fs.stat(path.join(outsideRoot, "created")), { code: "ENOENT" });
+    if (symlinkCreated) {
+      await assert.rejects(
+        instanceService.writeInstanceFile("file-security-smoke", "escape/created/file.txt", "blocked"),
+        (error) => error?.code === "PATH_NOT_ALLOWED",
+        "Writes through an instance-data symlink must be rejected.",
+      );
+      await assert.rejects(fs.stat(path.join(outsideRoot, "created")), { code: "ENOENT" });
 
-    const listing = await instanceService.listInstanceFiles("file-security-smoke", ".");
-    const linkEntry = listing.entries.find((entry) => entry.name === "escape");
-    assert.strictEqual(linkEntry?.type, "symlink", "Instance listings must not follow symlinks for metadata.");
-    assert.strictEqual(linkEntry?.size, null, "Instance listings must not expose target size through symlinks.");
+      const listing = await instanceService.listInstanceFiles("file-security-smoke", ".");
+      const linkEntry = listing.entries.find((entry) => entry.name === "escape");
+      assert.strictEqual(linkEntry?.type, "symlink", "Instance listings must not follow symlinks for metadata.");
+      assert.strictEqual(linkEntry?.size, null, "Instance listings must not expose target size through symlinks.");
+    }
 
     await instanceService.writeInstanceFile("file-security-smoke", "atomic.txt", "first");
     await instanceService.writeInstanceFile("file-security-smoke", "atomic.txt", "second");

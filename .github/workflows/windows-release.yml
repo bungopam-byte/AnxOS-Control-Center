@@ -26,11 +26,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install virtual display for Electron validation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          echo "DISPLAY=${DISPLAY:-<unset>}"
+          command -v Xvfb
+          command -v xvfb-run
+          Xvfb -version 2>&1 | head -n 1 || true
+          xvfb-run --help 2>&1 | head -n 1 || true
+
       - name: Run versioning smoke validation
         run: npm run versioning:smoke
 
       - name: Run RC validation
-        run: npm run rc:validate
+        run: |
+          set -o pipefail
+          echo "DISPLAY=${DISPLAY:-<unset>}"
+          xvfb-run -a -s "-screen 0 1920x1080x24" npm run rc:validate 2>&1 | tee rc-validate.log
+
+      - name: Upload RC validation diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-validation-diagnostics
+          path: rc-validate.log
+          if-no-files-found: ignore
 
       - name: Check tracked JavaScript syntax
         shell: bash

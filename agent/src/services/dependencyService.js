@@ -810,7 +810,7 @@ async function doInstallDependency(dependencyId, context = {}) {
         message: `${before.displayName} cannot be installed automatically on this operating system.`,
         error: { code: "UNSUPPORTED_PLATFORM", message: `${before.displayName} cannot be installed automatically on this operating system.` },
       });
-      throw createDependencyError("UNSUPPORTED_DISTRIBUTION", `${before.displayName} cannot be installed automatically on this operating system.`, {
+      throw createDependencyError("UNSUPPORTED_PLATFORM", `${before.displayName} cannot be installed automatically on this operating system.`, {
         dependencyId,
         distribution: before.distribution,
         job,

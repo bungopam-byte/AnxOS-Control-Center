@@ -25,6 +25,7 @@ const { requireNodeContext } = require("./nodeContext");
 const { openExternalUrl } = require("../services/externalUrlService");
 const { normalizeIpcError } = require("../shared/ipcError");
 const { sanitize } = require("../shared/redaction");
+const crypto = require("crypto");
 
 let progressForwarderRegistered = false;
 
@@ -186,8 +187,8 @@ function getMarketplaceUiError(error) {
 
   return {
     code: code || "MARKETPLACE_IPC_ERROR",
-    message: "Marketplace request failed.",
-    details: {},
+    message: message && message !== "Request failed." ? message : getMarketplaceErrorMessage(error),
+    details: { ...details, debugMessage: getMarketplaceErrorMessage(error), originalMessage: message || null },
   };
 }
 
@@ -213,9 +214,17 @@ function getMarketplaceRecoverySuggestion(code) {
   return suggestions[code] || "Review the technical details, then retry when the underlying issue is fixed.";
 }
 
-async function invokeMarketplaceOperation(operation) {
+async function invokeMarketplaceOperation(operation, context = {}) {
+  const requestId = context.requestId || crypto.randomUUID();
+  const startedAt = Date.now();
+  console.info("[Marketplace][IPC] request", {
+    stage: "ipc.request", requestId, templateId: context.templateId || null,
+    nodeId: context.nodeId || null, instanceName: context.instanceName || null,
+  });
   try {
-    return await operation();
+    const result = await operation(requestId);
+    console.info("[Marketplace][IPC] response", { stage: "ipc.response", requestId, ok: result?.ok !== false, status: result?.status || 200, elapsedMs: Date.now() - startedAt });
+    return result;
   } catch (error) {
     const uiError = getMarketplaceUiError(error);
     uiError.details = getSafeMarketplaceDetails(uiError.details);
@@ -233,11 +242,14 @@ async function invokeMarketplaceOperation(operation) {
       retryable: uiError.details.retryable,
     });
     console.error("[Marketplace][IPC] Operation failed.", {
+      stage: "ipc.error",
+      requestId,
       code: normalized.code,
       message: normalized.friendlyMessage,
       status: normalized.status?.code || null,
       provider: normalized.provider?.id || null,
       technicalDetails: normalized.technicalDetails,
+      elapsedMs: Date.now() - startedAt,
     });
     return {
       ok: false,
@@ -291,19 +303,19 @@ function registerMarketplaceIpc() {
     audit({ action: "marketplace.communityTemplate.import", target: payload?.template?.id || payload?.id || "community-template" });
     return importCommunityTemplate(payload);
   }));
-  ipcMain.handle("marketplace:installTemplate", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+  ipcMain.handle("marketplace:installTemplate", async (_, payload = {}) => invokeMarketplaceOperation((requestId) => {
     requireNodeContext(payload, "Marketplace template installation");
     requirePermission("marketplace:install", payload.templateId);
     audit({ action: "marketplace.install", target: payload.templateId });
-    return installTemplate(payload);
-  }));
-  ipcMain.handle("marketplace:installPack", async (_, payload = {}) => invokeMarketplaceOperation(() => {
+    return installTemplate({ ...payload, requestId });
+  }, payload));
+  ipcMain.handle("marketplace:installPack", async (_, payload = {}) => invokeMarketplaceOperation((requestId) => {
     requireNodeContext(payload, "Marketplace provider-pack installation");
     const target = payload.providerProjectId || payload.projectId || payload.templateId || payload.id || payload.template?.id || "provider-pack";
     requirePermission("marketplace:install", target);
     audit({ action: "marketplace.providerPack.install", target });
-    return installPack(payload);
-  }));
+    return installPack({ ...payload, requestId });
+  }, payload));
   ipcMain.handle("marketplace:updateSteamServer", async (_, payload = {}) => invokeMarketplaceOperation(() => {
     requireNodeContext(payload, "SteamCMD server update");
     requirePermission("marketplace:install", payload.instanceId || "steamcmd-update");

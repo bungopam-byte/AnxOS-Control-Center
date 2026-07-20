@@ -43,9 +43,15 @@ async function invokeMarketplace(channel, payload) {
     : await ipcRenderer.invoke(channel, payload);
 
   if (result && result.ok === false && result.error) {
-    const error = new Error(result.error.message || "Marketplace request failed.");
+    const error = new Error(result.error.message || result.error.friendlyMessage || "Marketplace request failed.");
     error.code = result.error.code || "MARKETPLACE_REQUEST_FAILED";
     error.details = result.error.details || {};
+    error.friendlyMessage = result.error.friendlyMessage || error.message;
+    error.suggestion = result.error.suggestion || error.details.suggestion || null;
+    error.retryable = result.error.retryable === true;
+    error.status = result.error.status?.code || null;
+    error.provider = result.error.provider?.id || null;
+    error.diagnostics = result.error.diagnostics || error.details.diagnostics || null;
     throw error;
   }
 

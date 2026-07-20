@@ -36,7 +36,10 @@ Module._load = function patchedLoad(request, parent, isMain) {
 };
 
 try {
-  require("../src/ipc/marketplaceIpc").registerMarketplaceIpc();
+  const ipc = require("../src/ipc/marketplaceIpc");
+  ipc.registerMarketplaceIpc();
+  const fallback = ipc._test.getMarketplaceUiError(new Error("Agent unavailable at http://127.0.0.1:47131"));
+  assert.strictEqual(fallback.message, "Agent unavailable at http://127.0.0.1:47131", "Uncoded transport errors must retain their actionable message.");
 } finally {
   Module._load = originalLoad;
 }

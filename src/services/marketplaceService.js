@@ -3749,10 +3749,12 @@ async function downloadToInstance(template, options, instanceId, progress, agent
 }
 
 async function installTemplate(payload = {}) {
+  const requestId = payload.requestId || require("crypto").randomUUID();
   const baseTemplate = findTemplate(payload.templateId, payload.template);
   const agentConfig = resolveMarketplaceAgentConfig(payload.nodeId);
   const targetPlatform = getInstallTargetPlatform(payload, agentConfig);
   const template = resolveTemplateForPlatform(baseTemplate, targetPlatform);
+  console.info("[Marketplace][Stage]", { stage: "template.resolved", timestamp: new Date().toISOString(), requestId, nodeId: payload.nodeId || null, templateId: template?.id || payload.templateId || null, instanceName: payload.options?.name || null });
   const progress = [];
   pushStep(progress, "Validate template", "running", `Validating ${template.id}.`);
   if (template.comingSoon || template.disabled) {
@@ -3771,9 +3773,12 @@ async function installTemplate(payload = {}) {
   const installContext = validateInstallContext(buildInstallContext(payload, template, options, instancePayload));
 
   try {
+    console.info("[Marketplace][Stage]", { stage: "dependencies.start", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id });
     updateDownload(parentRecord, { stage: "Check dependencies", progress: 10 });
     await ensureTemplateDependencies(template, { ...options, nodeId: installNodeId }, agentConfig, progress, parentRecord);
+    console.info("[Marketplace][Stage]", { stage: "dependencies.complete", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id });
   } catch (error) {
+    console.error("[Marketplace][Stage]", { stage: "dependencies.error", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, errorCode: error?.code || null, errorMessage: error?.message || null });
     const message = mapMarketplaceError(error, "Marketplace dependency check failed.");
     finalizeInstallTaskRecord(parentRecord, "failed", message, {
       stage: "Check dependencies",
@@ -3832,6 +3837,7 @@ async function installTemplate(payload = {}) {
   let createdInstanceId = null;
 
   try {
+    console.info("[Marketplace][Stage]", { stage: "instance.create.start", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceName: options.name || null, installDirectory: instancePayload.workingDirectory || null });
     console.info("[Marketplace] Create requested.", {
       templateId: template.id,
       generatedInstanceId: instancePayload.id,
@@ -3858,6 +3864,7 @@ async function installTemplate(payload = {}) {
       refreshedInstanceIds: createdIds,
     });
     pushStep(progress, "Create instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
+    console.info("[Marketplace][Stage]", { stage: "instance.create.complete", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId });
 
     pushStep(progress, "Create folders", "running");
     updateDownload(parentRecord, { stage: "Create folders", progress: 25 });
@@ -3872,6 +3879,7 @@ async function installTemplate(payload = {}) {
     }
 
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig, parentRecord);
+    console.info("[Marketplace][Stage]", { stage: "download.complete", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId });
     const installerStageLabel = manifestValidation.installerType === "steamcmd-native" ? "Install SteamCMD app" : "Extract files";
     updateDownload(parentRecord, {
       stage: installerStageLabel,
@@ -3895,6 +3903,7 @@ async function installTemplate(payload = {}) {
         runtimeType: template.startupType || template.runtime || template.instanceType || null,
         templateId: template.id,
       });
+      console.info("[Marketplace][Stage]", { stage: "installer.complete", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId });
       finishInstallerDownloadRecords(downloadResult.records, "complete", "Installer completed.", { step: installerStageLabel });
     } catch (error) {
       finishInstallerDownloadRecords(downloadResult.records, "failed", getConciseInstallerFailureMessage(error), error?.details || {});
@@ -4027,6 +4036,7 @@ async function installTemplate(payload = {}) {
       downloads: sanitizeDownloads(getDownloadsForNode(installNodeId)).downloads,
     };
   } catch (error) {
+    console.error("[Marketplace][Stage]", { stage: "install.error", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId, errorCode: error?.code || null, errorMessage: error?.message || null });
     if (createdInstanceId && template.rollbackOnFailure !== false) {
       try {
         await agentClient.deleteInstance(createdInstanceId, agentConfig);

@@ -15191,7 +15191,7 @@ async function installMarketplaceTemplate(event) {
     marketplaceInstallProgressEvents = [];
     marketplacePendingProgressSteps = null;
     renderMarketplaceDownloads(failureDownloads);
-    setMarketplaceMessage("Install failed. See Download Manager.", "error");
+    setMarketplaceMessage(`${normalizedError.body || normalizedError.title || "Marketplace install failed."} See Download Manager for progress details.`, "error");
     showToast(normalizedError.title);
   } finally {
     if (downloadPoll) {

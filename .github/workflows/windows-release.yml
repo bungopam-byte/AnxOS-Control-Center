@@ -12,6 +12,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
@@ -58,6 +59,22 @@ jobs:
         run: |
           set -euo pipefail
           git ls-files '*.js' -z | xargs -0 -r -n1 node --check
+
+      - name: Collect validation process diagnostics
+        if: always()
+        shell: bash
+        run: |
+          echo "DISPLAY=${DISPLAY:-<unset>}"
+          ps -eo pid,ppid,stat,cmd | grep -E 'electron|xvfb|node' || true
+          ss -ltnp || true
+
+      - name: Upload validation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-validation-log
+          path: rc-validate.log
+          if-no-files-found: ignore
 
   windows:
     needs: validate

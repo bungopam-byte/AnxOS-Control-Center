@@ -86,12 +86,25 @@ async function main() {
     await useDevice.evaluate((element) => element.click());
     await window.locator("[data-local-setup-gate]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
   }
+  const dismissSetupOverlays = async () => {
+    const skip = window.locator('[data-onboarding-welcome] [data-onboarding-action="skip"]');
+    if (await skip.count() && await skip.isVisible().catch(() => false)) {
+      await skip.evaluate((element) => element.click());
+      await window.locator("[data-onboarding-welcome]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    }
+    const device = window.locator('[data-local-setup-action="use-device"]');
+    if (await device.count() && await device.isVisible().catch(() => false)) {
+      await device.evaluate((element) => element.click());
+      await window.locator("[data-local-setup-gate]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    }
+  };
   record("launch", "main window", "AnxOS Control Center window appears", title, Boolean(title));
   record("qa-indicator", "[data-testid=qa-mode-indicator]", "QA MODE is visible", await window.locator("[data-testid=qa-mode-indicator]").textContent().catch(() => "missing"), await window.locator("[data-testid=qa-mode-indicator]").isVisible().catch(() => false), await shot("launch"));
   const navInventory = await navigationInventory(window).catch(() => []);
   fs.writeFileSync(path.join(artifactDir, "navigation-inventory.json"), JSON.stringify(navInventory, null, 2));
   for (const page of ["dashboard", "nodes", "agent-control", "marketplace", "instances", "public-access", "diagnostics", "settings"]) {
     stage(`navigation-${page}-start`);
+    await dismissSetupOverlays();
     const navigationTarget = page === "public-access" ? "playit" : page === "diagnostics" ? "agent-control" : page;
     const link = page === "public-access"
       ? window.locator('[data-page-target="playit"], [data-testid="nav-public-access"], button[aria-label="Public Access"], a[aria-label="Public Access"]').first()

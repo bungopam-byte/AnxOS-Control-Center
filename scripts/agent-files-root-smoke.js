@@ -186,8 +186,20 @@ async function main() {
     await assertRejectsWithCode(directoryCopy, "DIRECTORY_REPLACE_UNSUPPORTED", "Folder replacement must be rejected until it can be committed and rolled back safely.");
 
     const danglingLink = path.join(homeRoot, "dangling-link");
-    await fs.symlink(path.join(tempRoot, "does-not-exist"), danglingLink);
-    await assertRejectsWithCode(fileService.resolveAllowedPath(danglingLink), "PATH_NOT_FOUND", "Realpath failures for missing targets must return a structured missing-path error.");
+    let danglingLinkCreated = false;
+    try {
+      await fs.symlink(path.join(tempRoot, "does-not-exist"), danglingLink);
+      danglingLinkCreated = true;
+    } catch (error) {
+      if (process.platform === "win32" && ["EPERM", "EACCES"].includes(error?.code)) {
+        console.warn(`Skipping dangling-symlink fixture: Windows symlink capability unavailable (${error.code}).`);
+      } else {
+        throw error;
+      }
+    }
+    if (danglingLinkCreated) {
+      await assertRejectsWithCode(fileService.resolveAllowedPath(danglingLink), "PATH_NOT_FOUND", "Realpath failures for missing targets must return a structured missing-path error.");
+    }
 
     const runtimeConfig = path.join(tempRoot, "agent-runtime.json");
     await fs.writeFile(runtimeConfig, JSON.stringify({ allowedFolders: [homeParent] }), "utf8");

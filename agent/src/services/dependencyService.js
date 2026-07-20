@@ -1,7 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFile } = require("child_process");
+const { execFile, execFileSync } = require("child_process");
 
 const {
   DEPENDENCY_REGISTRY,
@@ -232,6 +232,13 @@ function detectDistribution() {
 }
 
 function findCommand(command) {
+  if (process.platform === "win32" && command === "winget") {
+    try {
+      const located = execFileSync("where.exe", ["winget"], { encoding: "utf8", windowsHide: true })
+        .split(/\r?\n/).map((entry) => entry.trim()).find(Boolean);
+      if (located) return located;
+    } catch {}
+  }
   if (!/^[a-zA-Z0-9._+-]+$/.test(command)) {
     throw createDependencyError("DEPENDENCY_COMMAND_INVALID", "Dependency command is not allowlisted.", { command }, 400);
   }

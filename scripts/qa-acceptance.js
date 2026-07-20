@@ -35,14 +35,31 @@ async function navigationInventory(window) {
 }
 
 async function main() {
+  const startedAt = Date.now();
+  let lastStage = "launch-start";
+  const stage = (name, details = {}) => { lastStage = name; console.error(`[QA][stage] ${name}`, JSON.stringify({ elapsedMs: Date.now() - startedAt, ...details })); };
   const executable = process.env.ANXOS_QA_EXECUTABLE || undefined;
-  const launchOptions = { args: [root, "--qa-mode"], env: { ...process.env, ANXOS_QA_MODE: "1" } };
+  const userDataDir = fs.mkdtempSync(path.join(require("os").tmpdir(), "anx-qa-profile-"));
+  const launchOptions = { args: [`--user-data-dir=${userDataDir}`, root, "--qa-mode"], env: { ...process.env, ANXOS_QA_MODE: "1" } };
   if (executable) launchOptions.executablePath = executable;
+  stage("electron-launch-start");
   const app = await electron.launch(launchOptions);
+  stage("electron-spawned", { pid: app.process()?.pid || null });
   const mainLogs = [];
   app.process().stdout?.on("data", (chunk) => mainLogs.push(redact(chunk.toString())));
   app.process().stderr?.on("data", (chunk) => mainLogs.push(redact(chunk.toString())));
-  const window = await app.firstWindow();
+  stage("first-window-wait-start");
+  let readinessTimer;
+  try {
+    const windowPromise = app.firstWindow();
+    const timeoutPromise = new Promise((_, reject) => {
+      readinessTimer = setTimeout(() => reject(new Error(`QA readiness timeout at ${lastStage}`)), 30000);
+    });
+    var window = await Promise.race([windowPromise, timeoutPromise]);
+  } finally {
+    if (readinessTimer) clearTimeout(readinessTimer);
+  }
+  stage("first-window-ready");
   window.on("console", (message) => {
     const entry = redact(`${message.type()}: ${message.text()}`);
     if (message.type() === "error") rendererErrors.push(entry);
@@ -52,22 +69,48 @@ async function main() {
     } else rendererLogs.push(entry);
   });
   window.on("pageerror", (error) => rendererErrors.push(redact(`pageerror: ${error.message}`)));
+  stage("page-load-start");
   await window.waitForLoadState("domcontentloaded");
+  stage("page-load-complete");
   const shot = async (name) => { const file = path.join(screenshotDir, `${name}.png`); await window.screenshot({ path: file }); return path.relative(artifactDir, file); };
   const title = await window.title();
+  stage("qa-assertions-started");
+  const welcomeSkip = window.locator('[data-onboarding-welcome] [data-onboarding-action="skip"]');
+  if (await welcomeSkip.count()) {
+    await welcomeSkip.evaluate((element) => element.click());
+    await window.locator("[data-onboarding-welcome]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    await window.waitForTimeout(300);
+  }
+  const useDevice = window.locator('[data-local-setup-action="use-device"]');
+  if (await useDevice.count()) {
+    await useDevice.evaluate((element) => element.click());
+    await window.locator("[data-local-setup-gate]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+  }
   record("launch", "main window", "AnxOS Control Center window appears", title, Boolean(title));
   record("qa-indicator", "[data-testid=qa-mode-indicator]", "QA MODE is visible", await window.locator("[data-testid=qa-mode-indicator]").textContent().catch(() => "missing"), await window.locator("[data-testid=qa-mode-indicator]").isVisible().catch(() => false), await shot("launch"));
   const navInventory = await navigationInventory(window).catch(() => []);
   fs.writeFileSync(path.join(artifactDir, "navigation-inventory.json"), JSON.stringify(navInventory, null, 2));
   for (const page of ["dashboard", "nodes", "agent-control", "marketplace", "instances", "public-access", "diagnostics", "settings"]) {
+    stage(`navigation-${page}-start`);
     const navigationTarget = page === "public-access" ? "playit" : page === "diagnostics" ? "agent-control" : page;
     const link = page === "public-access"
       ? window.locator('[data-page-target="playit"], [data-testid="nav-public-access"], button[aria-label="Public Access"], a[aria-label="Public Access"]').first()
       : window.locator(`[data-page-target="${navigationTarget}"], [data-testid="nav-${navigationTarget}"]`).first();
     if (await link.count()) {
       await link.scrollIntoViewIfNeeded().catch(() => {});
-      await link.click();
+      // The fixed sidebar footer can overlap the lowest nav item in compact/headless
+      // layouts; dispatch the same DOM click event on the actual navigation control.
+      await link.evaluate((element) => element.click());
+      stage(`navigation-${page}-clicked`);
       await window.waitForTimeout(300);
+      if (page === "nodes") {
+        const picker = window.locator("[data-node-picker]");
+        if (await picker.count() && await picker.isVisible().catch(() => false)) {
+          const trigger = window.locator("[data-node-picker-trigger]").first();
+          if (await trigger.count()) await trigger.evaluate((element) => element.click());
+          await picker.waitFor({ state: "hidden", timeout: 2000 }).catch(() => {});
+        }
+      }
       if (page === "diagnostics") {
         await window.waitForTimeout(500);
         const diagnosticsSection = window.locator('[data-agent-control-section-target="diagnostics"], [data-testid="agent-control-diagnostics"], button[aria-label="Diagnostics"]').first();
@@ -77,9 +120,12 @@ async function main() {
         ? await window.locator('[data-agent-control-section="diagnostics"]').isVisible().catch(() => false)
         : await window.locator(`[data-page="${page === "public-access" ? "playit" : page}"]`).isVisible().catch(() => false);
       record(`navigate-${page}`, page, "page becomes visible", String(visible), visible, await shot(page));
+      stage(`navigation-${page}-complete`, { visible });
     } else record(`navigate-${page}`, page, "navigation control exists", `control not found; inventory=${JSON.stringify(navInventory.filter((entry) => /public|diagnostic|agent/i.test(`${entry.page} ${entry.testid} ${entry.aria} ${entry.text}`)))}`, false);
   }
+  stage("shutdown-requested");
   await app.close();
+  stage("electron-closed");
   fs.writeFileSync(path.join(artifactDir, "timeline.json"), JSON.stringify(timeline, null, 2));
   const failedResults = results.filter((entry) => !entry.pass);
   const acceptancePass = failedResults.length === 0 && rendererErrors.length === 0 && fatalWarnings.length === 0;

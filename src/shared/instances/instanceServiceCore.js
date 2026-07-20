@@ -2960,8 +2960,11 @@ async function adoptDiscoveredRuntime(config, runtime, options = {}) {
     exitCode: null,
     signal: null,
     failureReason: null,
-    readinessState: "unknown",
-    healthState: "degraded",
+    // A discovered detached server is already alive and has passed the Agent's
+    // process/identity checks. Treat it as ready; game-specific log readiness
+    // is handled while a directly spawned wrapper is still attached.
+    readinessState: "ready",
+    healthState: "healthy",
     lastStartedAt: config.lastStartedAt || nowIso(),
     runtimeProcess: {
       pid: runtime.pid,
@@ -3713,7 +3716,7 @@ async function startInstance(instanceId, options = {}) {
         entry.failureReason = "FIVEM_LICENSE_REQUIRED";
       }
     }
-    if (!isPalworldRuntimeCandidate(config) && /Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running/i.test(String(chunk))) {
+    if (/Done \([^)]+\)!|For help, type|Timings Reset|Server marked as running|Listening on port\s+\d+|Server started/i.test(String(chunk))) {
       if (!isCurrentRunningProcess(config.id, child)) {
         return;
       }

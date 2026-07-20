@@ -184,7 +184,7 @@ async function run() {
     dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"] }),
   ]);
   const installCalls = isWindows
-    ? mock.commandCalls.filter((call) => call.command === "winget" && call.args.includes("install"))
+    ? mock.commandCalls.filter((call) => String(call.command).replace(/\.(?:exe|cmd|bat|com)$/i, "").toLowerCase() === "winget" && call.args.includes("install"))
     : mock.commandCalls.filter((call) => call.command === "sudo" && call.args.includes("install"));
   assert.strictEqual(installCalls.length, 1, "Concurrent installs for one dependency should coalesce.");
 

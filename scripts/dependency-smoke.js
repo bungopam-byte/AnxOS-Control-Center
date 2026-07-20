@@ -177,14 +177,16 @@ async function run() {
   assert.throws(() => dependencyIdsForGroups(["bad;group"]), /Unsupported dependency group/);
   await assert.rejects(() => dependencyService.checkDependencies({ dependencyIds: ["java;rm"] }), /Unsupported dependency ID/);
 
-  mock = createMockHooks({ installedCommands: ["sudo", "apt-get"], installProvides: "dotnet" });
+  mock = createMockHooks({ installedCommands: isWindows ? ["winget"] : ["sudo", "apt-get"], installProvides: "dotnet" });
   dependencyService.__setTestHooks(mock.hooks);
   await Promise.all([
     dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"] }),
     dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"] }),
   ]);
-  const aptInstallCalls = mock.commandCalls.filter((call) => call.command === "sudo" && call.args.includes("install"));
-  assert.strictEqual(aptInstallCalls.length, 1, "Concurrent installs for one dependency should coalesce.");
+  const installCalls = isWindows
+    ? mock.commandCalls.filter((call) => call.command === "winget" && call.args.includes("install"))
+    : mock.commandCalls.filter((call) => call.command === "sudo" && call.args.includes("install"));
+  assert.strictEqual(installCalls.length, 1, "Concurrent installs for one dependency should coalesce.");
 
   const download = marketplaceService.createDependencyInstallRecord({ nodeId: "agent-smoke", dependencyIds: ["tailscale"] }, {
     installableActions: [{ id: "tailscale", displayName: "Tailscale" }],

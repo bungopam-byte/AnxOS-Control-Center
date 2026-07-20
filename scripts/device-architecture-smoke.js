@@ -36,6 +36,17 @@ async function startAgent(base, name) {
   throw new Error(`${name} Agent did not start within 15 seconds.${detail ? `\n${detail}` : ""}`);
 }
 
+async function stopAgent(child) {
+  if (!child || child.exitCode !== null || child.signalCode) return;
+  await new Promise((resolve) => {
+    const done = () => resolve();
+    child.once("close", done);
+    child.kill("SIGTERM");
+    setTimeout(done, 12000).unref?.();
+  });
+  child.stderr?.destroy();
+}
+
 async function main() {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "anx-device-architecture-"));
   process.env.ANXHUB_CONFIG_DIR = path.join(temp, "config");
@@ -96,9 +107,9 @@ async function main() {
     assert(future.node.agentIdentity.deviceId !== owner.agentIdentity.deviceId);
     console.log("Device architecture smoke checks passed.");
   } finally {
-    first.child.kill("SIGTERM");
-    second.child.kill("SIGTERM");
-    await fs.rm(temp, { recursive: true, force: true });
+    await stopAgent(first.child);
+    await stopAgent(second.child);
+    await fs.rm(temp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 

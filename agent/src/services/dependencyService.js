@@ -236,6 +236,16 @@ function findCommand(command) {
     throw createDependencyError("DEPENDENCY_COMMAND_INVALID", "Dependency command is not allowlisted.", { command }, 400);
   }
   const paths = String(process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA;
+    const programFiles = process.env.ProgramFiles;
+    [
+      localAppData && path.join(localAppData, "Microsoft", "WindowsApps"),
+      programFiles && path.join(programFiles, "WindowsApps"),
+    ].filter(Boolean).forEach((directory) => {
+      if (!paths.includes(directory)) paths.push(directory);
+    });
+  }
   // Debian installs SteamCMD in /usr/games, which is commonly omitted from
   // service-manager PATH values even though it is a standard executable root.
   if (process.platform === "linux") {

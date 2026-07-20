@@ -42,7 +42,8 @@ function createMockHooks(options = {}) {
       },
       accessExecutable(filePath) {
         const command = path.basename(filePath);
-        if (installedCommands.has(command)) return;
+        const normalized = command.replace(/\.(?:exe|cmd|bat|com)$/i, "");
+        if (installedCommands.has(command) || installedCommands.has(normalized)) return;
         throw new Error(`not executable: ${command}`);
       },
       async commandRunner(command, args = []) {

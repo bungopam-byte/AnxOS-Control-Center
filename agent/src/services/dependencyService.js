@@ -23,6 +23,8 @@ let packageManagerBusy = false;
 let commandRunner = runCommand;
 let readFileText = (filePath) => fs.readFileSync(filePath, "utf8");
 let accessExecutable = (filePath) => fs.accessSync(filePath, fs.constants.X_OK);
+let windowsInstallerCommandProvider = getWindowsPackageInstallerCommand;
+let windowsInstallerProvider = getWindowsInstaller;
 
 function nowIso() {
   return new Date().toISOString();
@@ -729,9 +731,9 @@ async function planDependencyPreparation(payload = {}) {
 
 async function installWindowsDependency(dependencyId, before, job) {
   const definition = DEPENDENCY_REGISTRY[dependencyId];
-  const installer = getWindowsInstaller(definition);
-  const winget = getWindowsPackageInstallerCommand(installer);
-  if (!installer || !winget) {
+  const installer = windowsInstallerProvider(definition);
+  const winget = windowsInstallerCommandProvider(installer);
+  if (!installer || installer.method !== "winget" || !installer.packageId || !winget) {
     throw createDependencyError("WINDOWS_INSTALLER_UNAVAILABLE", "A managed Windows installer is not available for this dependency.", { dependencyId, installer: installer ? { method: installer.method, packageId: installer.packageId } : null, job }, 400);
   }
   const args = ["install", "--id", installer.packageId, "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"];
@@ -1008,13 +1010,15 @@ function __setTestHooks(hooks = {}) {
   commandRunner = hooks.commandRunner || runCommand;
   readFileText = hooks.readFileText || ((filePath) => fs.readFileSync(filePath, "utf8"));
   accessExecutable = hooks.accessExecutable || ((filePath) => fs.accessSync(filePath, fs.constants.X_OK));
+  windowsInstallerCommandProvider = hooks.windowsInstallerCommand || getWindowsPackageInstallerCommand;
+  windowsInstallerProvider = hooks.windowsInstaller || getWindowsInstaller;
   packageManagerBusy = false;
   activeDependencyInstalls.clear();
   dependencyJobs.clear();
 }
 
 module.exports = {
-  _test: { runCommand },
+  _test: { runCommand, installWindowsDependency },
   __setTestHooks,
   checkDependencies,
   detectDistribution,

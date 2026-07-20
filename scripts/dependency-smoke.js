@@ -105,6 +105,21 @@ async function run() {
   assert.strictEqual(check.ok, true);
   assert.strictEqual(check.dependencies[0].state, "installed");
 
+  const installerCalls = [];
+  dependencyService.__setTestHooks({
+    commandRunner: async (command, args) => {
+      installerCalls.push({ command, args });
+      return { ok: true, exitCode: 0, stdout: "", stderr: "" };
+    },
+    windowsInstallerCommand: () => "winget",
+    windowsInstaller: () => ({ method: "winget", packageId: "Microsoft.DotNet.Runtime.8" }),
+  });
+  await dependencyService._test.installWindowsDependency("dotnet-runtime", { displayName: ".NET runtime" }, { events: [], output: [] });
+  assert.deepStrictEqual(installerCalls[0], {
+    command: "winget",
+    args: ["install", "--id", "Microsoft.DotNet.Runtime.8", "--exact", "--silent", "--accept-package-agreements", "--accept-source-agreements"],
+  }, "Trusted Windows dependency installation must dispatch the expected winget argv.");
+
   if (process.platform === "linux") {
     const originalPath = process.env.PATH;
     process.env.PATH = "/usr/bin";

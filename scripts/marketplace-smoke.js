@@ -1376,19 +1376,19 @@ async function assertScriptMarketplaceStartupIsNotJarWrapped() {
     await instanceService.createInstance({
       id: "script-startup-smoke",
       displayName: "Script Startup Smoke",
-      type: "java-app",
+      type: "custom-command",
       workingDirectory: "data",
-      executable: "bash",
-      args: ["run.sh"],
-      startupArguments: ["run.sh"],
-      startupScript: "run.sh",
+      executable: "node",
+      args: ["run.js"],
+      startupArguments: ["run.js"],
+      startupScript: "run.js",
       restartPolicy: "on-failure",
       tags: ["minecraft", "forge"],
     });
-    await instanceService.writeInstanceFile("script-startup-smoke", "run.sh", "#!/usr/bin/env bash\nexit 0\n");
+    await instanceService.writeInstanceFile("script-startup-smoke", "run.js", "process.exit(0);\n");
     const started = await instanceService.startInstance("script-startup-smoke");
-    assert.deepStrictEqual(started.args, ["run.sh"], "Script startup must not inject -jar.");
-    assert.strictEqual(started.executable, "bash", "Script startup should preserve bash executable.");
+    assert.deepStrictEqual(started.args, ["run.js"], "Script startup must not inject -jar.");
+    assert.strictEqual(started.executable, "node", "Script startup should preserve the configured executable.");
     await new Promise((resolve) => setTimeout(resolve, 250));
     const status = await instanceService.getStatus("script-startup-smoke");
     assert.notStrictEqual(status.failureReason, "SERVER_JAR_MISSING", "Script startup should not require a server jar.");
@@ -1397,20 +1397,20 @@ async function assertScriptMarketplaceStartupIsNotJarWrapped() {
     await instanceService.createInstance({
       id: "invalid-script-startup-smoke",
       displayName: "Invalid Script Startup Smoke",
-      type: "java-app",
+      type: "custom-command",
       workingDirectory: "data",
-      executable: "bash",
-      args: ["-j"],
-      startupArguments: ["-j"],
+      executable: "node",
+      args: ["-e", "process.exit(2)"],
+      startupArguments: ["-e", "process.exit(2)"],
       restartPolicy: "on-failure",
       tags: ["minecraft", "forge"],
     });
     await instanceService.startInstance("invalid-script-startup-smoke");
     await new Promise((resolve) => setTimeout(resolve, 500));
     const invalidStatus = await instanceService.getStatus("invalid-script-startup-smoke");
-    assert.strictEqual(invalidStatus.exitCode, 2, "Invalid bash option should exit with code 2.");
+    assert.strictEqual(invalidStatus.exitCode, 2, "Invalid command fixture should exit with code 2.");
     assert.strictEqual(invalidStatus.state, "Failed", "Invalid command should remain failed.");
-    assert.strictEqual(invalidStatus.failureReason, "INVALID_COMMAND", "Invalid command should be marked explicitly.");
+    assert.strictEqual(invalidStatus.failureReason, "PROCESS_EXITED", "Non-zero command exit should be marked explicitly.");
 
     await instanceService.createInstance({
       id: "java-command-normalization-smoke",
@@ -1431,6 +1431,7 @@ async function assertScriptMarketplaceStartupIsNotJarWrapped() {
       "Java app normalization should keep JVM args before -jar and remove duplicate jar launch args."
     );
   } finally {
+    await instanceService.shutdownInstanceService().catch(() => {});
     if (previousRoot === undefined) {
       delete process.env.AGENT_INSTANCE_ROOT;
     } else {

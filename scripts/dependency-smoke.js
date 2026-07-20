@@ -114,11 +114,14 @@ async function run() {
     process.env.PATH = originalPath;
   }
 
-  mock = createMockHooks({ installedCommands: ["sudo", "apt-get"], installProvides: "dotnet" });
+  const isWindows = process.platform === "win32";
+  mock = createMockHooks({ installedCommands: isWindows ? ["winget"] : ["sudo", "apt-get"], installProvides: "dotnet" });
   dependencyService.__setTestHooks(mock.hooks);
   let plan = await dependencyService.planDependencyPreparation({ dependencyIds: ["dotnet-runtime"] });
   assert.strictEqual(plan.installableActions.length, 1, "Missing .NET should produce an installable preparation action.");
-  assert(plan.installableActions[0].commands.some((command) => command.display.includes("sudo -n apt-get install -y dotnet-runtime-8.0")), "Preparation plan should show the exact package-manager install command.");
+  const expectedInstallCommand = isWindows ? "winget install --id Microsoft.DotNet.Runtime.8" : "sudo -n apt-get install -y dotnet-runtime-8.0";
+  assert(plan.installableActions[0].commands.some((command) => command.display.includes(expectedInstallCommand)), "Preparation plan should show the exact platform install command.");
+  if (!isWindows) {
   let install = await dependencyService.installDependencies({ dependencyIds: ["dotnet-runtime"], nodeId: "anxlab" });
   assert.strictEqual(install.ok, true);
   assert(install.job && install.job.id && install.job.state === "completed", "Dependency install should return a completed job.");
@@ -133,6 +136,7 @@ async function run() {
     mock.commandCalls.some((call) => call.command === "sudo" && call.args.some((arg) => path.basename(String(arg)) === "apt-get")),
     "Install should use sudo -n with apt-get."
   );
+  }
 
   mock = createMockHooks({ installedCommands: ["apt-get"] });
   dependencyService.__setTestHooks(mock.hooks);

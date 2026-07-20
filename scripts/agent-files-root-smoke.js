@@ -92,7 +92,7 @@ async function main() {
 
     const unreadableRoot = path.join(tempRoot, "unreadable");
     await fs.mkdir(unreadableRoot);
-    if (typeof process.getuid !== "function" || process.getuid() !== 0) {
+    if (process.platform !== "win32" && (typeof process.getuid !== "function" || process.getuid() !== 0)) {
       await fs.chmod(unreadableRoot, 0o000);
       try {
         setRoot(unreadableRoot);

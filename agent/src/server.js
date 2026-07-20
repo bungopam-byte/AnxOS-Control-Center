@@ -494,6 +494,11 @@ async function shutdown(signal) {
 
 process.once("SIGTERM", () => shutdown("SIGTERM"));
 process.once("SIGINT", () => shutdown("SIGINT"));
+if (process.env.ANXOS_TEST_SHUTDOWN_IPC === "1") {
+  process.on("message", (message) => {
+    if (message?.type === "shutdown") shutdown("TEST_IPC");
+  });
+}
 
 process.on("uncaughtException", (error) => logger.error("uncaught-exception", error, {}, { file: "agent" }));
 process.on("unhandledRejection", (reason) => logger.error("unhandled-rejection", reason instanceof Error ? reason : new Error(String(reason)), {}, { file: "agent" }));

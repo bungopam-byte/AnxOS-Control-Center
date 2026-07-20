@@ -259,8 +259,9 @@ async function main() {
         ANXOS_AGENT_RUNTIME_CONFIG: "",
         ANXHUB_CONFIG_DIR: authConfigDir,
         ANXHUB_AGENT_CONFIG_PATH: path.join(authConfigDir, "agent.json"),
+        ANXOS_TEST_SHUTDOWN_IPC: "1",
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
 
     try {
@@ -288,7 +289,8 @@ async function main() {
       const outsidePayload = await outsideResponse.json();
       assert.strictEqual(outsidePayload.error.code, "PATH_NOT_ALLOWED", "Outside-root rejection should use a stable error code.");
     } finally {
-      agent.kill("SIGTERM");
+      if (process.platform === "win32") agent.send({ type: "shutdown" });
+      else agent.kill("SIGTERM");
       await new Promise((resolve) => agent.once("exit", resolve));
       assert.strictEqual(agent.exitCode, 0, "Agent SIGTERM shutdown should drain owned HTTP resources and exit cleanly.");
     }

@@ -22,7 +22,7 @@ const dependencyJobs = new Map();
 let packageManagerBusy = false;
 let commandRunner = runCommand;
 let readFileText = (filePath) => fs.readFileSync(filePath, "utf8");
-let accessExecutable = (filePath) => fs.accessSync(filePath, fs.constants.X_OK);
+let accessExecutable = (filePath) => fs.accessSync(filePath, process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK);
 let windowsInstallerCommandProvider = getWindowsPackageInstallerCommand;
 let windowsInstallerProvider = getWindowsInstaller;
 
@@ -238,9 +238,11 @@ function findCommand(command) {
   const paths = String(process.env.PATH || "").split(path.delimiter).filter(Boolean);
   if (process.platform === "win32") {
     const localAppData = process.env.LOCALAPPDATA;
+    const userProfile = process.env.USERPROFILE;
     const programFiles = process.env.ProgramFiles;
     [
       localAppData && path.join(localAppData, "Microsoft", "WindowsApps"),
+      userProfile && path.join(userProfile, "AppData", "Local", "Microsoft", "WindowsApps"),
       programFiles && path.join(programFiles, "WindowsApps"),
     ].filter(Boolean).forEach((directory) => {
       if (!paths.includes(directory)) paths.push(directory);
@@ -1019,7 +1021,7 @@ function getDependencyCatalog() {
 function __setTestHooks(hooks = {}) {
   commandRunner = hooks.commandRunner || runCommand;
   readFileText = hooks.readFileText || ((filePath) => fs.readFileSync(filePath, "utf8"));
-  accessExecutable = hooks.accessExecutable || ((filePath) => fs.accessSync(filePath, fs.constants.X_OK));
+  accessExecutable = hooks.accessExecutable || ((filePath) => fs.accessSync(filePath, process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK));
   windowsInstallerCommandProvider = hooks.windowsInstallerCommand || getWindowsPackageInstallerCommand;
   windowsInstallerProvider = hooks.windowsInstaller || getWindowsInstaller;
   packageManagerBusy = false;

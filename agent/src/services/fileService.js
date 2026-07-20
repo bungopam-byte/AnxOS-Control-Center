@@ -1,5 +1,6 @@
 const fs = require("fs");
 const fsPromises = require("fs/promises");
+let accessPath = fsPromises.access;
 const os = require("os");
 const path = require("path");
 const { getConfig } = require("../config");
@@ -210,7 +211,7 @@ async function validateConfiguredRoot(entry) {
   }
 
   try {
-    await fsPromises.access(realPath, fs.constants.R_OK | fs.constants.X_OK);
+    await accessPath(realPath, fs.constants.R_OK | fs.constants.X_OK);
   } catch (error) {
     return createRootStatus(
       "FILESYSTEM_ROOT_UNREADABLE",
@@ -945,6 +946,7 @@ async function mutateFile(action, payload = {}) {
 }
 
 module.exports = {
+  __setTestHooks(hooks = {}) { accessPath = hooks.access || fsPromises.access; },
   createFileDownload,
   getFilesystemIdentity,
   getRootValidationReport,

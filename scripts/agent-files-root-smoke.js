@@ -39,7 +39,10 @@ function setRoot(rootValue) {
 async function assertRejectsWithCode(promise, code, message) {
   await assert.rejects(
     promise,
-    (error) => error?.code === code,
+    (error) => {
+      if (process.env.ANXOS_FILES_ROOT_DIAGNOSTICS === "1" && error?.code !== code) console.error("files-root rejection", { expected: code, actual: error?.code, message: error?.message });
+      return error?.code === code;
+    },
     message || `Expected ${code}`,
   );
 }
@@ -92,13 +95,24 @@ async function main() {
 
     const unreadableRoot = path.join(tempRoot, "unreadable");
     await fs.mkdir(unreadableRoot);
-    if (process.platform !== "win32" && (typeof process.getuid !== "function" || process.getuid() !== 0)) {
+    if (process.platform === "win32") {
+      fileService.__setTestHooks({ access: async (target, mode) => {
+        if (path.resolve(target) === path.resolve(unreadableRoot)) {
+          const error = new Error("simulated ACL denial");
+          error.code = "EACCES";
+          throw error;
+        }
+        return fs.access(target, mode);
+      } });
+    }
+    if (process.platform === "win32" || (typeof process.getuid !== "function" || process.getuid() !== 0)) {
       await fs.chmod(unreadableRoot, 0o000);
       try {
         setRoot(unreadableRoot);
         await assertRejectsWithCode(fileService.resolveAllowedPath(unreadableRoot), "FILESYSTEM_ROOT_UNREADABLE", "Unreadable configured roots must fail explicitly.");
       } finally {
-        await fs.chmod(unreadableRoot, 0o700);
+        if (process.platform !== "win32") await fs.chmod(unreadableRoot, 0o700);
+        fileService.__setTestHooks();
       }
     }
 
@@ -163,15 +177,12 @@ async function main() {
     const copyDirectoryDestination = path.join(homeRoot, "copy-directory-destination");
     await fs.mkdir(copyDirectorySource);
     await fs.mkdir(copyDirectoryDestination);
-    await assertRejectsWithCode(
-      fileService.mutateFile("copy", {
-        sourcePath: copyDirectorySource,
-        destinationPath: copyDirectoryDestination,
-        conflictPolicy: "replace",
-      }),
-      "DIRECTORY_REPLACE_UNSUPPORTED",
-      "Folder replacement must be rejected until it can be committed and rolled back safely.",
-    );
+    const directoryCopy = fileService.mutateFile("copy", {
+      sourcePath: copyDirectorySource,
+      destinationPath: copyDirectoryDestination,
+      conflictPolicy: "replace",
+    });
+    await assertRejectsWithCode(directoryCopy, "DIRECTORY_REPLACE_UNSUPPORTED", "Folder replacement must be rejected until it can be committed and rolled back safely.");
 
     const danglingLink = path.join(homeRoot, "dangling-link");
     await fs.symlink(path.join(tempRoot, "does-not-exist"), danglingLink);

@@ -204,7 +204,7 @@ async function main() {
     assert(identity.roots.some((root) => root.name === "AnxOS Instances" && root.path === instanceRoot), "Available managed shortcuts should be exposed as navigable roots.");
     assert(identity.roots.some((root) => root.name === "AnxOS Backups" && root.path === backupRoot), "Available backup shortcuts should be exposed as navigable roots.");
 
-    const appSource = await fs.readFile(path.join(rootDir, "app.js"), "utf8");
+    const appSource = (await fs.readFile(path.join(rootDir, "app.js"), "utf8")).replace(/\r\n/g, "\n");
     assert(appSource.includes("isPathInsideFilesIdentityRoots"), "Renderer should validate remembered paths against the Agent filesystem root.");
     assert(appSource.includes("homeInsideFilesystemRoot ? identity?.homeDirectory"), "Renderer should use home only when it is inside the authorized root.");
     assert(appSource.includes("state.currentPath = null"), "Renderer should discard remembered paths invalidated by root changes.");

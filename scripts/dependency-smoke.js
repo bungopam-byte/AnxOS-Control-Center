@@ -154,7 +154,7 @@ async function run() {
     osRelease: "ID=solus\nPRETTY_NAME=\"Solus\"\n",
   });
   dependencyService.__setTestHooks(mock.hooks);
-  check = await dependencyService.checkDependencies({ dependencyIds: ["steamcmd"] });
+  check = await dependencyService.checkDependencies({ dependencyIds: ["bash"] });
   assert.strictEqual(check.ok, false);
   assert.strictEqual(check.dependencies[0].state, "unsupported");
 

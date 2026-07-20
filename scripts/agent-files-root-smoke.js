@@ -113,6 +113,7 @@ async function main() {
       } finally {
         if (process.platform !== "win32") await fs.chmod(unreadableRoot, 0o700);
         fileService.__setTestHooks();
+        setRoot(homeRoot);
       }
     }
 

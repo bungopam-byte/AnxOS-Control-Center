@@ -63,6 +63,9 @@ const PROC_STAT_TICKS_PER_SECOND = 100;
 const PAGE_SIZE_BYTES = 4096;
 const VERSION_CACHE_VERSION = 4;
 const INSTANCE_CONFIG_SCHEMA_VERSION = 1;
+const ATOMIC_RENAME_RETRY_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const ATOMIC_RENAME_RETRY_ATTEMPTS = 5;
+const ATOMIC_RENAME_RETRY_DELAY_MS = 25;
 const FIVEM_LICENSE_MESSAGE = "FiveM needs a valid license key in server.cfg before it can start.";
 const FIVEM_CONFIG_RELATIVE_PATH = "server/server.cfg";
 const FIVEM_LICENSE_PLACEHOLDERS = new Set([
@@ -749,11 +752,36 @@ async function writeJson(filePath, value) {
   await atomicWriteManagedFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function isTransientAtomicRenameError(error) {
+  return process.platform === "win32" && ATOMIC_RENAME_RETRY_CODES.has(error?.code);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function renameManagedFileWithRetry(tempPath, filePath) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= ATOMIC_RENAME_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      await fs.rename(tempPath, filePath);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientAtomicRenameError(error) || attempt >= ATOMIC_RENAME_RETRY_ATTEMPTS) {
+        throw error;
+      }
+      await wait(ATOMIC_RENAME_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
 async function atomicWriteManagedFile(filePath, content, options = {}) {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
   try {
     await fs.writeFile(tempPath, content, { ...options, flag: "wx", mode: options.mode || 0o600 });
-    await fs.rename(tempPath, filePath);
+    await renameManagedFileWithRetry(tempPath, filePath);
   } catch (error) {
     await fs.rm(tempPath, { force: true }).catch(() => {});
     throw error;
@@ -4531,6 +4559,7 @@ async function getMetrics(instanceId) {
 module.exports = {
   _test: {
     configuredRuntimePorts,
+    atomicWriteManagedFile,
     discoverDetachedRuntime,
     evaluateFiveMReadiness,
     findUnrelatedPortConflicts,

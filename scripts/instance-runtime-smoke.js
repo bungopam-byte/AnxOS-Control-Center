@@ -390,6 +390,54 @@ async function assertStopAfterReconciliation() {
   });
 }
 
+async function assertAtomicConfigWriteRetriesWindowsRenameContention() {
+  await withTempService(async (instanceService, root) => {
+    const targetPath = path.join(root, "atomic-config.json");
+    const originalRename = fs.promises.rename;
+    let attempts = 0;
+    fs.promises.rename = async (from, to) => {
+      attempts += 1;
+      if (attempts <= 2) {
+        const error = new Error("transient Windows rename contention");
+        error.code = "EPERM";
+        throw error;
+      }
+      return originalRename(from, to);
+    };
+    try {
+      await instanceService._test.atomicWriteManagedFile(targetPath, `${JSON.stringify({ ok: true, attempt: "retry" }, null, 2)}\n`);
+    } finally {
+      fs.promises.rename = originalRename;
+    }
+    assert.strictEqual(attempts, 3, "Transient Windows rename failures should retry within a bounded attempt count.");
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(targetPath, "utf8")), { ok: true, attempt: "retry" }, "Successful retry must leave valid final JSON.");
+    assert.strictEqual(fs.readdirSync(root).filter((name) => name.startsWith("atomic-config.json.") && name.endsWith(".tmp")).length, 0, "Successful retry must not leave temporary files.");
+  });
+}
+
+async function assertAtomicConfigWritePropagatesPermanentRenameFailures() {
+  await withTempService(async (instanceService, root) => {
+    const targetPath = path.join(root, "atomic-permanent.json");
+    const originalRename = fs.promises.rename;
+    fs.promises.rename = async () => {
+      const error = new Error("permanent permission failure");
+      error.code = "EISDIR";
+      throw error;
+    };
+    try {
+      await assert.rejects(
+        () => instanceService._test.atomicWriteManagedFile(targetPath, "{}\n"),
+        (error) => error.code === "EISDIR",
+        "Permanent rename failures must propagate."
+      );
+    } finally {
+      fs.promises.rename = originalRename;
+    }
+    assert.strictEqual(fs.existsSync(targetPath), false, "Failed atomic write must not create the final file.");
+    assert.strictEqual(fs.readdirSync(root).filter((name) => name.startsWith("atomic-permanent.json.") && name.endsWith(".tmp")).length, 0, "Failed atomic write must clean up its temporary file.");
+  });
+}
+
 async function assertRenameDuplicateAndCrashLifecycle() {
   await withTempService(async (instanceService) => {
     await instanceService.createInstance({
@@ -464,6 +512,8 @@ async function run() {
   await assertDetachedRuntimeReconciliation();
   await assertNoUnrelatedAdoptionAndPortCollision();
   await assertStopAfterReconciliation();
+  await assertAtomicConfigWriteRetriesWindowsRenameContention();
+  await assertAtomicConfigWritePropagatesPermanentRenameFailures();
   await assertRenameDuplicateAndCrashLifecycle();
   console.log("Instance runtime smoke checks passed.");
 }

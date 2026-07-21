@@ -49,6 +49,8 @@ Compatibility routes:
 - `/download.html`
 - `/downloads` redirects to `/download`
 
+The first-server guide is available at `/setup`. Its download calls to action lead to the canonical `/download` route.
+
 The download page loads `release-download-service.js`, queries the public GitHub Releases API configured by `window.ANXOS_DOWNLOAD_CONFIG.releaseRepository`, ignores drafts/source archives/invalid URLs, and renders only real assets from:
 
 ```text

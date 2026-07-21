@@ -15,6 +15,7 @@ const publicPages = [
   "download.html",
   "features/index.html",
   "getting-started/index.html",
+  "setup/index.html",
   "system-requirements/index.html",
   "windows-installation/index.html",
   "security-privacy/index.html",

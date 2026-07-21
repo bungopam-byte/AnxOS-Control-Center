@@ -182,6 +182,11 @@ async function main() {
       await device.evaluate((element) => element.click());
       await window.locator("[data-local-setup-gate]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
     }
+    const dismissUpdate = window.locator('[data-update-modal] [data-update-action="dismiss"]').first();
+    if (await dismissUpdate.count() && await dismissUpdate.isVisible().catch(() => false)) {
+      await dismissUpdate.evaluate((element) => element.click());
+      await window.locator("[data-update-modal]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    }
   };
   record("launch", "main window", "AnxOS Control Center window appears", title, Boolean(title));
   record("qa-indicator", "[data-testid=qa-mode-indicator]", "QA MODE is visible", await window.locator("[data-testid=qa-mode-indicator]").textContent().catch(() => "missing"), await window.locator("[data-testid=qa-mode-indicator]").isVisible().catch(() => false), await shot("launch"));
@@ -224,10 +229,11 @@ async function main() {
           await picker.waitFor({ state: "hidden", timeout: 2000 }).catch(() => {});
         }
       }
+      await dismissSetupOverlays();
       if (page === "diagnostics") {
         await window.waitForTimeout(500);
         const diagnosticsSection = window.locator('[data-agent-control-section-target="diagnostics"], [data-testid="agent-control-diagnostics"], button[aria-label="Diagnostics"]').first();
-        if (await diagnosticsSection.count() && await diagnosticsSection.isVisible().catch(() => false) && !await diagnosticsSection.isDisabled().catch(() => false)) await diagnosticsSection.click();
+        if (await diagnosticsSection.count() && await diagnosticsSection.isVisible().catch(() => false) && !await diagnosticsSection.isDisabled().catch(() => false)) await diagnosticsSection.evaluate((element) => element.click());
       }
       const visible = page === "diagnostics"
         ? await window.locator('[data-agent-control-section="diagnostics"]').isVisible().catch(() => false)

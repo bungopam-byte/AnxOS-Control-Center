@@ -99,12 +99,12 @@ try {
     "Use This PC",
     "Connect a Remote Server",
     "Configure Both",
-    "Choose Setup Type",
-    "Prepare This PC",
-    "Install Local Agent",
-    "Pair Securely",
-    "Scan Dependencies",
-    "Choose Storage",
+    "Sign In",
+    "Local Owner",
+    "Connect Local Agent",
+    "Prepare Node",
+    "Create First Server",
+    "Configure Public Access",
     "Finish Setup",
     "shouldShowOnboardingWelcome",
     "maybeOpenOnboardingWelcome",
@@ -116,6 +116,12 @@ try {
     "renderOnboardingPairSecurelyStep",
     "renderOnboardingDependenciesStep",
     "renderOnboardingStorageStep",
+    "renderOnboardingSignInStep",
+    "renderOnboardingLocalOwnerStep",
+    "renderOnboardingConnectAgentStep",
+    "renderOnboardingPrepareNodeStep",
+    "renderOnboardingFirstServerStep",
+    "renderOnboardingPublicAccessStep",
     "renderOnboardingRemoteSummary",
     "handleOnboardingWizardFinish",
     "PAGE_INTRODUCTIONS",
@@ -168,6 +174,11 @@ try {
   ].forEach((needle) => assert(app.includes(needle), `Onboarding renderer wiring missing: ${needle}`));
 
   assert(app.includes("Unable to confirm"), "Wizard should use Unable to confirm instead of fake ready states.");
+  ["sign-in", "local-owner", "connect-agent", "prepare-node", "first-server", "public-access", "finish"].forEach((stepId) => {
+    assert(app.includes(`id: "${stepId}"`), `Guided setup step missing: ${stepId}`);
+  });
+  assert(app.includes("marker.dataset.state = visualState"), "Setup progress must expose completed, current, blocked, optional, and upcoming states.");
+  assert(app.includes('appendOnboardingPageAction(actions, "Configure Public Access", "playit")'), "Public Access setup must deep-link to the provider workflow.");
   assert(app.includes("Object.entries(patch || {}).filter(([key]) => isSettingKeyAuthorized(key))"), "Onboarding preference saves should send only the requested patch so pre-sign-in writes remain narrowly scoped.");
   assert(app.includes("No dependency check has completed yet"), "Wizard dependency step should not invent dependency results.");
   assert(app.includes("settings[\"onboarding.started\"] === true"), "Interrupted onboarding should resume the saved wizard step.");

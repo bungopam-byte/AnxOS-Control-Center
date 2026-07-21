@@ -2223,6 +2223,21 @@ function bindDownloadControls() {
   });
 }
 
+function bindCopyControls() {
+  document.querySelectorAll("[data-copy-text]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const label = button.querySelector("span");
+      try {
+        await navigator.clipboard.writeText(button.dataset.copyText || "");
+        if (label) label.textContent = "Copied";
+        window.setTimeout(() => { if (label) label.textContent = "Copy"; }, 1800);
+      } catch {
+        if (label) label.textContent = "Select text";
+      }
+    });
+  });
+}
+
 async function applyRouteState() {
   if (redirectLegacyHashRoutes()) return;
   const route = getCurrentRoute();
@@ -2260,6 +2275,7 @@ async function applyRouteState() {
     "release-notes",
     "features",
     "getting-started",
+    "setup",
     "download",
     "top",
     "not-found",
@@ -2288,6 +2304,7 @@ function initializeWebsite() {
     applyAccountNavigationState();
     bindSiteNavigation();
     bindDownloadControls();
+    bindCopyControls();
     bindAccountForms();
     applyAuthRouteMessages();
     applyDeviceLoginPage();

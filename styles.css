@@ -8418,6 +8418,14 @@ body.has-open-modal {
   background: linear-gradient(90deg, rgba(182, 108, 255, .95), rgba(115, 220, 202, .8));
 }
 
+.onboarding-step-track span.is-optional {
+  background: rgba(182, 108, 255, .38);
+}
+
+.onboarding-step-track span.is-blocked {
+  background: rgba(255, 104, 119, .82);
+}
+
 .onboarding-choice-grid,
 .onboarding-status-grid {
   display: grid;

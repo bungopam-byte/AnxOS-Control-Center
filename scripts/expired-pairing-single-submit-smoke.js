@@ -51,5 +51,8 @@ assert(preload.includes('startPairingSession: (payload = {}) => ipcRenderer.invo
 assert(ipc.includes('agentControl:startPairingSession", (_, payload = {})'), "IPC must preserve pairing target payload.");
 assert(html.includes("Pairing Agent") && html.includes("data-agent-pairing-target-url"), "Pairing UI must show target name and address before generation.");
 assert(app.includes("getWrongPairingTargetMessage") && app.includes("This code belongs to the"), "Wrong-target pairing codes must produce an in-app error.");
+assert(app.includes("activeAgentPairingExpiresAt") && app.includes("activeAgentPairingExpiryTimer"), "Agent Control must track and schedule pairing-code expiration.");
+assert(app.includes("Date.parse(activeAgentPairingExpiresAt) <= Date.now()"), "Expired Agent Control pairing codes must be cleared before display or copy.");
+assert(pairBody.includes("renderAgentPairingSetup(null, { clearCode: true })"), "A consumed pairing code must be cleared after successful pairing.");
 
 console.log("Expired pairing single-submit smoke checks passed.");

@@ -70,8 +70,8 @@ async function main() {
   assert(appJs.includes("syncSecurityEventNotifications"), "Security audit events should create durable deduplicated notifications.");
   assert(appJs.includes("renderSecurityPermissions"), "Security page should render role and permission boundaries.");
   assert(appJs.includes("renderSecurityAccountProtection"), "Security page should render account-protection state.");
-  assert(appJs.includes('securityDashboardState = { unavailable: true, error: message }'), "Security dashboard failures must leave loading state with an explicit unavailable result.");
-  assert(appJs.includes('const fallback = securityDashboardState?.unavailable ? "Not available" : "Loading"'), "Security summary fields must distinguish unavailable from loading.");
+  assert(appJs.includes('requestState: error?.code === "SECURITY_STATUS_TIMEOUT" ? "bounded-error" : "unavailable"'), "Security status failures must leave loading with an explicit terminal result.");
+  assert(appJs.includes('requestState: "unauthorized"') && appJs.includes('requestState: "loaded"'), "Security dashboard requests must distinguish unauthorized and loaded results.");
   assert(appJs.includes("Roles and permissions are not available from the current security service."), "Unsupported security permissions must have an actionable unavailable state.");
   assert(appJs.includes("function escapeHtml"), "Security/account render paths should define the HTML escaping helper they use.");
   assert(appJs.includes("data-security-event-filter"), "Security event filtering should be wired.");

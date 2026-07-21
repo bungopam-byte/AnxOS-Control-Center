@@ -12,6 +12,7 @@ const index = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
+const settingsIpc = fs.readFileSync(path.join(root, "src", "ipc", "settingsIpc.js"), "utf8");
 
 try {
   const initial = prefs.readPreferences();
@@ -167,6 +168,7 @@ try {
   ].forEach((needle) => assert(app.includes(needle), `Onboarding renderer wiring missing: ${needle}`));
 
   assert(app.includes("Unable to confirm"), "Wizard should use Unable to confirm instead of fake ready states.");
+  assert(app.includes("Object.entries(patch || {}).filter(([key]) => isSettingKeyAuthorized(key))"), "Onboarding preference saves should send only the requested patch so pre-sign-in writes remain narrowly scoped.");
   assert(app.includes("No dependency check has completed yet"), "Wizard dependency step should not invent dependency results.");
   assert(app.includes("settings[\"onboarding.started\"] === true"), "Interrupted onboarding should resume the saved wizard step.");
   assert(app.includes("No servers yet") && app.includes("Only this computer is connected"), "Dashboard empty states should give clear first steps.");
@@ -185,6 +187,8 @@ try {
   assert(styles.includes(".first-server-card:focus-visible"), "First-server guide cards should have visible keyboard focus.");
   assert(styles.includes("@media (prefers-reduced-motion: reduce)"), "Reduced-motion users should be respected.");
   assert(packageJson.includes('"onboarding:smoke"'), "package.json should expose onboarding smoke command.");
+  assert(settingsIpc.includes("isOnboardingPreferenceUpdate(settings)"), "Onboarding-only preference writes should remain available before sign-in.");
+  assert(settingsIpc.includes('key.startsWith("onboarding.") || key.startsWith("guidance.")'), "The pre-sign-in preference exception must stay narrowly scoped to onboarding and guidance keys.");
 
   console.log("Onboarding smoke checks passed.");
 } finally {

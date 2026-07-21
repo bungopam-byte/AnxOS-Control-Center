@@ -79,6 +79,13 @@ function getSafeAgentTokenStatus() {
   };
 }
 
+function isOnboardingPreferenceUpdate(settings = {}) {
+  const keys = Object.keys(settings || {});
+  return keys.length > 0 && keys.every((key) =>
+    key.startsWith("onboarding.") || key.startsWith("guidance."),
+  );
+}
+
 function getMarketplaceSettingsPayload() {
   const stored = readMarketplaceConfig();
   const status = curseforgeProvider._test.getApiKeyStatus();
@@ -214,9 +221,12 @@ function registerSettingsIpc() {
     return readPreferences();
   });
   registerSettingsHandler("settings:savePreferences", async (_, payload = {}) => {
-    requirePermission("settings:preferences:write", "preferences");
-    assertCanWriteSettingsPayload(payload.settings || payload, "preferences");
-    const result = updatePreferences(payload.settings || payload);
+    const settings = payload.settings || payload;
+    if (!isOnboardingPreferenceUpdate(settings)) {
+      requirePermission("settings:preferences:write", "preferences");
+    }
+    assertCanWriteSettingsPayload(settings, "preferences");
+    const result = updatePreferences(settings);
     audit({ action: "settings.preferences.save", target: "preferences" });
     return result;
   });

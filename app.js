@@ -509,6 +509,8 @@ let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentControlLastRuntimeSnapshot = null;
 let activeAgentPairingCode = "";
+let activeAgentPairingExpiresAt = "";
+let activeAgentPairingExpiryTimer = null;
 let activeAgentPairingTarget = null;
 let activeAgentGeneratedToken = "";
 const remoteDiagnosticsInFlight = new Set();
@@ -1008,6 +1010,7 @@ const STARTUP_MINIMUM_MS = 2000;
 const SSH_OUTPUT_LINE_LIMIT = 1500;
 const SSH_TERMINAL_DEFAULT_COLS = 120;
 const SSH_TERMINAL_DEFAULT_ROWS = 32;
+const SECURITY_REQUEST_TIMEOUT_MS = 10000;
 const SETTINGS_STORAGE_KEY = "anxos.settings.v1";
 const SIDEBAR_STATE_STORAGE_KEY = "anxos.sidebar.v1";
 const FILES_EXPLORER_WIDTH_STORAGE_KEY = "anxos.files.explorerWidth.v1";
@@ -3942,6 +3945,10 @@ function showPage(pageName) {
     resizeActiveSshSession();
   }
 
+  if (safePageName === "security") {
+    refreshSecurityState();
+  }
+
   if (safePageName === "owner-workspace") {
     refreshOwnerWorkspace();
     startOwnerAnalyticsPolling();
@@ -3999,8 +4006,26 @@ function renderLocalAgentInstallerSteps(steps = []) {
 }
 
 function renderAgentPairingSetup(session = null, options = {}) {
-  if (session?.pairingCode || options.clearCode) {
-    activeAgentPairingCode = session?.pairingCode || "";
+  if (session?.pairingCode) {
+    activeAgentPairingCode = session.pairingCode;
+    activeAgentPairingExpiresAt = session.expiresAt || "";
+  } else if (options.clearCode) {
+    activeAgentPairingCode = "";
+    activeAgentPairingExpiresAt = "";
+  }
+  if (activeAgentPairingCode && activeAgentPairingExpiresAt && Date.parse(activeAgentPairingExpiresAt) <= Date.now()) {
+    activeAgentPairingCode = "";
+    activeAgentPairingExpiresAt = "";
+  }
+  if (activeAgentPairingExpiryTimer) {
+    clearTimeout(activeAgentPairingExpiryTimer);
+    activeAgentPairingExpiryTimer = null;
+  }
+  if (activeAgentPairingCode && activeAgentPairingExpiresAt) {
+    const remainingMs = Date.parse(activeAgentPairingExpiresAt) - Date.now();
+    if (remainingMs > 0) {
+      activeAgentPairingExpiryTimer = setTimeout(() => renderAgentPairingSetup(null, { clearCode: true }), remainingMs);
+    }
   }
   activeAgentPairingTarget = session ? {
     nodeId: session.nodeId || null,
@@ -4025,7 +4050,7 @@ function renderAgentPairingSetup(session = null, options = {}) {
     agentPairingCode.textContent = session?.displayCode || activeAgentPairingCode || "Not generated";
   }
   if (agentPairingExpires) {
-    agentPairingExpires.textContent = session?.expiresAt ? formatDateTime(session.expiresAt) : "Unavailable";
+    agentPairingExpires.textContent = activeAgentPairingExpiresAt ? formatDateTime(activeAgentPairingExpiresAt) : "Unavailable";
   }
   if (agentPairingUrl) {
     agentPairingUrl.textContent = session?.agentUrl || "Unavailable";
@@ -5653,6 +5678,7 @@ async function runAgentControlAction(action) {
       showToast("Pairing code generated.", "success");
     }
     else if (action === "copyPairingCode") {
+      renderAgentPairingSetup(null);
       if (!activeAgentPairingCode) throw new Error("Generate a pairing code before copying.");
       await navigator.clipboard.writeText(activeAgentPairingCode);
       showToast("Pairing code copied.", "success");
@@ -25182,13 +25208,24 @@ async function loadSshProfiles(options = {}) {
     renderSshView();
     renderFilesView();
   } catch (error) {
+    const authorizationUnavailable = /LOGIN_REQUIRED|UNAUTHORIZED|AUTHENTICATION_FAILED|FORBIDDEN|sign in to continue|owner access/i.test(`${error?.code || ""} ${error?.message || ""}`);
+    if (authorizationUnavailable) {
+      sshProfilesState.servers = [];
+      sshProfilesState.profiles = [];
+      sshProfilesState.defaultServerId = null;
+      sshProfilesState.defaultProfileId = null;
+      sshSelectedServerId = null;
+      sshSelectedProfileId = null;
+    }
     setSshStatus("Disconnected", getFriendlyStatusFailureMessage(
       error,
       "SSH profiles could not be loaded.",
       "Review storage permissions or reconnect the selected system before trying again.",
     ));
-    console.error("[SSH] Profile load failed.", {
-      message: error?.message || String(error),
+    const log = authorizationUnavailable ? console.info : console.error;
+    log("[SSH] Profile load failed.", {
+      category: authorizationUnavailable ? "authorization-required" : "unexpected",
+      message: authorizationUnavailable ? "Local Owner authentication is required to load SSH profiles." : error?.message || String(error),
     });
     renderSshView();
     renderFilesView();
@@ -25660,11 +25697,14 @@ async function refreshAccountState() {
     };
   }
   renderAccountState();
+  if (accountState.pending) {
+    startAccountPolling(accountState.pending.intervalMs);
+  }
 }
 
 function stopAccountPolling() {
   if (accountPollTimer) {
-    clearInterval(accountPollTimer);
+    clearTimeout(accountPollTimer);
     accountPollTimer = null;
   }
   if (accountCountdownTimer) {
@@ -25678,9 +25718,12 @@ function startAccountPolling(intervalMs = 3000) {
   accountCountdownTimer = setInterval(() => {
     if (accountState.pending) renderAccountState();
   }, 1000);
-  accountPollTimer = setInterval(async () => {
+  const poll = async () => {
     const desktopApiState = getDesktopApiState();
-    if (!desktopApiState.hasAccount) return;
+    if (!desktopApiState.hasAccount) {
+      accountPollTimer = setTimeout(poll, 3000);
+      return;
+    }
     try {
       accountState = assertAccountResultOk(await desktopApiState.api.account.checkDeviceLogin(), "AnxOS account sign-in failed.");
       renderAccountState();
@@ -25696,6 +25739,11 @@ function startAccountPolling(intervalMs = 3000) {
         if (accountState.message) {
           setAccountMessage(accountState.message);
         }
+      } else {
+        accountPollTimer = setTimeout(
+          poll,
+          Math.max(1500, Number.parseInt(accountState.pending?.intervalMs, 10) || 3000),
+        );
       }
     } catch (error) {
       stopAccountPolling();
@@ -25703,7 +25751,8 @@ function startAccountPolling(intervalMs = 3000) {
       setAccountMessage(message);
       showToast(message);
     }
-  }, Math.max(1500, Number.parseInt(intervalMs, 10) || 3000));
+  };
+  accountPollTimer = setTimeout(poll, Math.max(1500, Number.parseInt(intervalMs, 10) || 3000));
 }
 
 window.addEventListener("beforeunload", stopAccountPolling);
@@ -25930,7 +25979,11 @@ function isSecurityTimestampStale(value, maxAgeMs = 30 * 24 * 60 * 60 * 1000) {
 
 function renderSecuritySummaryGrid(container, fields) {
   if (!container) return;
-  const fallback = securityDashboardState?.unavailable ? "Not available" : "Loading";
+  const fallback = securityDashboardState?.requestState === "unauthorized"
+    ? "Locked"
+    : securityDashboardState?.requestState && securityDashboardState.requestState !== "loading"
+      ? "Not available"
+      : "Loading";
   container.replaceChildren();
   fields.forEach(([label, value]) => {
     appendDetailPair(container, label, formatSecurityValue(value, fallback));
@@ -25944,13 +25997,15 @@ function openSecuritySection(selector, focusSelector = null) {
 
 function renderSecurityDashboard() {
   const dashboard = securityDashboardState;
-  const unavailable = dashboard?.unavailable === true;
+  const unavailable = dashboard?.unavailable === true || dashboard?.requestState === "bounded-error";
+  const unauthorized = dashboard?.unauthorized === true || dashboard?.requestState === "unauthorized";
   const overviewStatus = document.querySelector("[data-security-overview-status]");
   const overview = document.querySelector("[data-security-overview]");
   const lastEvent = document.querySelector("[data-security-last-event]");
   if (overviewStatus) {
-    overviewStatus.className = securityPillClass(dashboard?.overview?.status || (unavailable ? "Not available" : "Loading"));
-    overviewStatus.textContent = dashboard?.overview?.status || (unavailable ? "Not available" : "Loading");
+    const fallbackStatus = unauthorized ? "Locked" : unavailable ? "Not available" : "Loading";
+    overviewStatus.className = securityPillClass(dashboard?.overview?.status || fallbackStatus);
+    overviewStatus.textContent = dashboard?.overview?.status || fallbackStatus;
   }
   if (overview) {
     const fields = [
@@ -25972,7 +26027,9 @@ function renderSecurityDashboard() {
     const event = dashboard?.overview?.lastSecurityEvent;
     lastEvent.textContent = event
       ? `Last event: ${event.type} · ${formatSecurityTime(event.timestamp)}`
-      : unavailable ? `Security state unavailable: ${dashboard.error || "No response from the security service."}` : "Last event: Not reported";
+      : unauthorized
+        ? `Security state locked: ${dashboard.error || "Local Owner authentication is required."}`
+        : unavailable ? `Security state unavailable: ${dashboard.error || "No response from the security service."}` : "Last event: Not reported";
   }
   renderSecurityRecommendations(dashboard?.recommendations || []);
   renderSecurityAccountProtection(dashboard?.accountProtection || null);
@@ -26360,32 +26417,77 @@ async function refreshSecurityState() {
   const requestContext = getNodeRequestContext("security");
   if (!desktopApiState.hasSecurity) {
     securityState = { setupRequired: false, authenticated: true, user: null };
+    securityDashboardState = {
+      requestState: "unavailable",
+      unavailable: true,
+      error: "Security service is unavailable in this application mode.",
+    };
     renderSecurityState();
     return;
   }
 
   try {
-    securityState = await desktopApiState.api.security.getStatus();
-  } catch {
+    securityState = await withTimeout(
+      desktopApiState.api.security.getStatus(),
+      SECURITY_REQUEST_TIMEOUT_MS,
+      "Security status request timed out.",
+      "SECURITY_STATUS_TIMEOUT",
+    );
+  } catch (error) {
     securityState = { setupRequired: false, authenticated: false, user: null };
+    const message = normalizeIpcErrorMessage(error, "Security status unavailable.");
+    securityDashboardState = {
+      requestState: error?.code === "SECURITY_STATUS_TIMEOUT" ? "bounded-error" : "unavailable",
+      unavailable: true,
+      error: message,
+    };
+    if (isNodeRequestCurrent(requestContext)) {
+      renderSecurityState();
+    }
+    return;
   }
   try {
     if (desktopApiState.api.security.getDashboard && (securityState.authenticated || securityState.accountAuthenticated)) {
-      const dashboard = await desktopApiState.api.security.getDashboard(getNodeScopedPayload(requestContext));
+      const dashboard = await withTimeout(
+        desktopApiState.api.security.getDashboard(getNodeScopedPayload(requestContext)),
+        SECURITY_REQUEST_TIMEOUT_MS,
+        "Security dashboard request timed out.",
+        "SECURITY_DASHBOARD_TIMEOUT",
+      );
       if (!isNodeRequestCurrent(requestContext)) {
         return;
       }
-      securityDashboardState = dashboard;
+      securityDashboardState = { ...dashboard, requestState: "loaded" };
       syncSecurityEventNotifications(dashboard?.events || []);
+    } else if (!desktopApiState.api.security.getDashboard) {
+      securityDashboardState = {
+        requestState: "unavailable",
+        unavailable: true,
+        error: "Security dashboard service is unavailable.",
+      };
     } else {
-      securityDashboardState = null;
+      securityDashboardState = {
+        requestState: "unauthorized",
+        unauthorized: true,
+        error: "Local Owner authentication is required.",
+      };
     }
   } catch (error) {
     if (!isNodeRequestCurrent(requestContext)) {
       return;
     }
     const message = normalizeIpcErrorMessage(error, "Security dashboard unavailable.");
-    securityDashboardState = { unavailable: true, error: message };
+    const unauthorized = /UNAUTHORIZED|AUTHENTICATION_FAILED|FORBIDDEN|sign in|owner access/i.test(`${error?.code || ""} ${message}`);
+    securityDashboardState = {
+      requestState: unauthorized
+        ? "unauthorized"
+        : error?.code === "SECURITY_DASHBOARD_TIMEOUT"
+          ? "bounded-error"
+          : "unavailable",
+      unavailable: !unauthorized,
+      unauthorized,
+      error: message,
+    };
     console.warn("[Security] Dashboard unavailable.", message);
   }
   renderSecurityState();
@@ -28068,7 +28170,8 @@ function createNodeBadge(label, state = "planned") {
 }
 
 function getNodeIdentity(node = {}) {
-  return node.kind === "application-host" ? node.applicationHost || {} : node.agentIdentity || {};
+  const normalizedNode = node && typeof node === "object" ? node : {};
+  return normalizedNode.kind === "application-host" ? normalizedNode.applicationHost || {} : normalizedNode.agentIdentity || {};
 }
 
 function formatNodeLastSeen(node = {}) {
@@ -28623,7 +28726,9 @@ function renderNodes() {
     if (detailTarget) {
       detailTarget.textContent = nodeSwitchInProgress
         ? "Switching node..."
-      : selected?.kind === "application-host"
+        : !selected
+          ? "Node unavailable until Local Owner authorization is restored."
+        : selected.kind === "application-host"
           ? selected.modeLabel || "Local Application"
           : formatNodeAgentContext(selected);
     }
@@ -28954,6 +29059,7 @@ async function pairNodeFromSettings(options = {}) {
     if (submissionSerial !== nodePairingSubmissionSerial) return;
     if (nodePairingCodeInput) nodePairingCodeInput.value = "";
     nodePairingLastSubmittedCode = "";
+    renderAgentPairingSetup(null, { clearCode: true });
     setNodeModalVisible(false);
     await refreshNodes();
     if (result?.selectedNodeId) {
@@ -29418,7 +29524,7 @@ async function saveSettingsPatch(patch = {}, { statusMessage = null } = {}) {
   if (desktopApiState.hasPreferences) {
     try {
       const payload = await desktopApiState.api.settings.savePreferences(Object.fromEntries(
-        Object.entries(settings).filter(([key]) => isSettingKeyAuthorized(key)),
+        Object.entries(patch || {}).filter(([key]) => isSettingKeyAuthorized(key)),
       ));
       const saved = { ...DEFAULT_SETTINGS, ...(payload?.settings || settings) };
       writeStoredSettings(saved);

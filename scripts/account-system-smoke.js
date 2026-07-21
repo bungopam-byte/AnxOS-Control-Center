@@ -157,6 +157,7 @@ function assertSupabaseBackend() {
 }
 
 function assertDesktopIntegration() {
+  const app = read("app.js");
   const service = read("src/services/accountAuthService.js");
   const ipc = read("src/ipc/accountAuthIpc.js");
   const preload = read("preload.js");
@@ -174,6 +175,8 @@ function assertDesktopIntegration() {
   assert(service.includes("LOCAL_ACCOUNT_HOSTS") && service.includes("app?.isPackaged !== true") && service.includes("ACCOUNT_LOCALHOST_NOT_ALLOWED"), "Packaged desktop account/device flows must reject localhost URLs while preserving local development.");
   assert(packageJson.includes("\"website/account-config.js\""), "Packaged Electron builds should include public account configuration.");
   assert(service.includes("/api/auth/device/start") && service.includes("/api/auth/device/poll"), "Desktop should use device authorization endpoints.");
+  assert(app.includes("accountState.pending?.intervalMs") && app.includes("accountPollTimer = setTimeout"), "Desktop device polling should reschedule with the server-adjusted interval.");
+  assert(/if \(accountState\.pending\) \{\r?\n\s+startAccountPolling\(accountState\.pending\.intervalMs\);/.test(app), "Desktop should resume a pending device login after the renderer refreshes.");
   assert(service.includes("/api/auth/refresh") && service.includes("/api/auth/logout"), "Desktop should refresh and revoke account sessions.");
   assert(service.includes("/api/account/devices/revoke"), "Desktop should support current-device revocation.");
   assert(service.includes("SecureSessionStore"), "Desktop should store account tokens through secure session storage.");

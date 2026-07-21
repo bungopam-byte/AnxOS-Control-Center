@@ -34,11 +34,19 @@ function palworldPayload(id, port = 8211, queryPort = 27015) {
   };
 }
 
-async function withTempService(fn) {
+async function withTempService(fn, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxos-instance-runtime-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
   process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
   clearService();
+  if (options.platform) {
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      enumerable: originalPlatformDescriptor?.enumerable ?? true,
+      value: options.platform,
+    });
+  }
   const instanceService = require(servicePath);
   try {
     await fn(instanceService, root);
@@ -51,6 +59,9 @@ async function withTempService(fn) {
       process.env.AGENT_INSTANCE_ROOT = previousRoot;
     }
     clearService();
+    if (options.platform) {
+      Object.defineProperty(process, "platform", originalPlatformDescriptor);
+    }
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
@@ -412,7 +423,33 @@ async function assertAtomicConfigWriteRetriesWindowsRenameContention() {
     assert.strictEqual(attempts, 3, "Transient Windows rename failures should retry within a bounded attempt count.");
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(targetPath, "utf8")), { ok: true, attempt: "retry" }, "Successful retry must leave valid final JSON.");
     assert.strictEqual(fs.readdirSync(root).filter((name) => name.startsWith("atomic-config.json.") && name.endsWith(".tmp")).length, 0, "Successful retry must not leave temporary files.");
-  });
+  }, { platform: "win32" });
+}
+
+async function assertAtomicConfigWriteDoesNotRetryWindowsOnlyErrorsOnOtherPlatforms() {
+  await withTempService(async (instanceService, root) => {
+    const targetPath = path.join(root, "atomic-non-windows.json");
+    const originalRename = fs.promises.rename;
+    let attempts = 0;
+    fs.promises.rename = async () => {
+      attempts += 1;
+      const error = new Error("non-Windows EPERM should not retry");
+      error.code = "EPERM";
+      throw error;
+    };
+    try {
+      await assert.rejects(
+        () => instanceService._test.atomicWriteManagedFile(targetPath, "{}\n"),
+        (error) => error.code === "EPERM",
+        "Non-Windows EPERM rename failures must propagate without retry."
+      );
+    } finally {
+      fs.promises.rename = originalRename;
+    }
+    assert.strictEqual(attempts, 1, "Non-Windows EPERM rename failures should not retry.");
+    assert.strictEqual(fs.existsSync(targetPath), false, "Failed non-Windows atomic write must not create the final file.");
+    assert.strictEqual(fs.readdirSync(root).filter((name) => name.startsWith("atomic-non-windows.json.") && name.endsWith(".tmp")).length, 0, "Failed non-Windows atomic write must clean up its temporary file.");
+  }, { platform: "linux" });
 }
 
 async function assertAtomicConfigWritePropagatesPermanentRenameFailures() {
@@ -513,6 +550,7 @@ async function run() {
   await assertNoUnrelatedAdoptionAndPortCollision();
   await assertStopAfterReconciliation();
   await assertAtomicConfigWriteRetriesWindowsRenameContention();
+  await assertAtomicConfigWriteDoesNotRetryWindowsOnlyErrorsOnOtherPlatforms();
   await assertAtomicConfigWritePropagatesPermanentRenameFailures();
   await assertRenameDuplicateAndCrashLifecycle();
   console.log("Instance runtime smoke checks passed.");

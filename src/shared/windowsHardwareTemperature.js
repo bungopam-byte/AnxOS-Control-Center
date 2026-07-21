@@ -11,6 +11,10 @@ let providerBuffer = "";
 let pendingRead = null;
 let shutdownHooksRegistered = false;
 
+function unrefProviderHandle(handle) {
+  if (handle && typeof handle.unref === "function") handle.unref();
+}
+
 function unavailable(reason) {
   return { available: false, status: "unavailable", source: SOURCE, provider: SOURCE, timestamp: new Date().toISOString(), reason };
 }
@@ -112,7 +116,13 @@ function resolveHelperPath(options = {}) {
 }
 
 function stopWindowsHardwareTemperatureProvider() {
-  if (providerProcess && !providerProcess.killed) providerProcess.kill();
+  if (providerProcess) {
+    providerProcess.stdin?.destroy?.();
+    providerProcess.stdout?.destroy?.();
+    providerProcess.stderr?.destroy?.();
+    if (!providerProcess.killed) providerProcess.kill();
+    unrefProviderHandle(providerProcess);
+  }
   providerProcess = null;
   providerPath = null;
   providerBuffer = "";
@@ -128,6 +138,10 @@ function ensureProvider(helperPath) {
   stopWindowsHardwareTemperatureProvider();
   providerPath = helperPath;
   providerProcess = childProcess.spawn(helperPath, [], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] });
+  unrefProviderHandle(providerProcess);
+  unrefProviderHandle(providerProcess.stdin);
+  unrefProviderHandle(providerProcess.stdout);
+  unrefProviderHandle(providerProcess.stderr);
   providerProcess.stdout.setEncoding("utf8");
   providerProcess.stdout.on("data", (chunk) => {
     providerBuffer += chunk;

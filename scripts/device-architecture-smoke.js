@@ -7,6 +7,14 @@ const { spawn } = require("child_process");
 
 const rootDir = path.resolve(__dirname, "..");
 
+function activeWindowsTelemetryHandles() {
+  if (process.platform !== "win32" || typeof process._getActiveHandles !== "function") return [];
+  return process._getActiveHandles().filter((handle) => {
+    const spawnfile = String(handle?.spawnfile || "").toLowerCase();
+    return spawnfile.endsWith("anxos-hardware-telemetry.exe");
+  });
+}
+
 async function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -89,6 +97,7 @@ async function main() {
 
     const systemService = require("../src/services/systemService");
     assert.strictEqual((await systemService.getSystemSnapshot({ nodeId: "application-host" })).source, "local", "Dashboard must route application host locally.");
+    assert.strictEqual(activeWindowsTelemetryHandles().length, 0, "Windows telemetry helper must not retain a referenced child-process handle after a local snapshot.");
     assert.strictEqual((await systemService.getSystemSnapshot({ nodeId: owner.id })).source, "agent", "Dashboard must route Agent nodes to that Agent.");
 
     const { FileService } = require("../src/services/fileService");

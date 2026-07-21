@@ -1,4 +1,6 @@
 const assert = require("assert");
+const childProcess = require("child_process");
+const { EventEmitter } = require("events");
 const fs = require("fs");
 const path = require("path");
 
@@ -74,9 +76,71 @@ const unavailable = telemetry.classifyPayload({ ok: false, reason: "access_denie
 assert.strictEqual(unavailable.available, false);
 assert.strictEqual(unavailable.reason, "access_denied_or_driver_unavailable");
 
+async function assertProviderHandlesAreReleased() {
+  const originalSpawn = childProcess.spawn;
+  let fakeProvider = null;
+  childProcess.spawn = () => {
+    const child = new EventEmitter();
+    const stdout = new EventEmitter();
+    child.spawnfile = "anxos-hardware-telemetry.exe";
+    child.killed = false;
+    child.unrefCalled = false;
+    child.killCalled = false;
+    child.unref = () => { child.unrefCalled = true; };
+    child.kill = () => {
+      child.killCalled = true;
+      child.killed = true;
+      process.nextTick(() => child.emit("exit", null, "SIGTERM"));
+      return true;
+    };
+    child.stdin = {
+      destroyed: false,
+      unrefCalled: false,
+      write(chunk) {
+        assert.strictEqual(chunk, "read\n");
+        process.nextTick(() => stdout.emit("data", `${JSON.stringify({ ok: true, sensors: [sensor("CPU Package", 42)] })}\n`));
+        return true;
+      },
+      destroy() { this.destroyed = true; },
+      unref() { this.unrefCalled = true; },
+    };
+    child.stdout = stdout;
+    child.stdout.destroyed = false;
+    child.stdout.unrefCalled = false;
+    child.stdout.setEncoding = (encoding) => { child.stdout.encoding = encoding; };
+    child.stdout.destroy = () => { child.stdout.destroyed = true; };
+    child.stdout.unref = () => { child.stdout.unrefCalled = true; };
+    child.stderr = {
+      destroyed: false,
+      unrefCalled: false,
+      destroy() { this.destroyed = true; },
+      unref() { this.unrefCalled = true; },
+    };
+    fakeProvider = child;
+    return child;
+  };
+  try {
+    const reading = await telemetry.readWindowsHardwareTemperature({ helperPath: __filename, timeoutMs: 1000 });
+    assert.strictEqual(reading.available, true, "Mocked provider should return a valid reading.");
+    assert.strictEqual(fakeProvider.unrefCalled, true, "Provider child process must be unref'd.");
+    assert.strictEqual(fakeProvider.stdin.unrefCalled, true, "Provider stdin pipe must be unref'd.");
+    assert.strictEqual(fakeProvider.stdout.unrefCalled, true, "Provider stdout pipe must be unref'd.");
+    assert.strictEqual(fakeProvider.stdout.encoding, "utf8");
+    telemetry.stopWindowsHardwareTemperatureProvider();
+    assert.strictEqual(fakeProvider.stdin.destroyed, true, "Stopping the provider must destroy stdin.");
+    assert.strictEqual(fakeProvider.stdout.destroyed, true, "Stopping the provider must destroy stdout.");
+    assert.strictEqual(fakeProvider.stderr.destroyed, true, "Stopping the provider must destroy stderr when present.");
+    assert.strictEqual(fakeProvider.killCalled, true, "Stopping the provider must terminate the helper.");
+  } finally {
+    childProcess.spawn = originalSpawn;
+    telemetry.stopWindowsHardwareTemperatureProvider();
+  }
+}
+
 Promise.resolve(telemetry.readWindowsHardwareTemperature({ helperPath: path.join(__dirname, "missing-helper.exe") }))
-  .then((missing) => {
+  .then(async (missing) => {
     assert.strictEqual(missing.reason, "provider_missing", "Missing bundled provider must have an explicit reason.");
+    await assertProviderHandlesAreReleased();
     const systemSource = fs.readFileSync(path.join(__dirname, "../src/services/systemService.js"), "utf8");
     assert(systemSource.includes('target.type === "agent"') && systemSource.includes("getLocalSystemSnapshot()"), "Selected Agent and Local Application Host metrics must stay routed separately.");
     assert(systemSource.includes("readWindowsHardwareTemperature"), "Local Application Host must use the shared Windows provider.");

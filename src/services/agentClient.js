@@ -16,6 +16,9 @@ const DEFAULT_BACKEND_MODE = "local";
 const DEFAULT_AGENT_URL = "http://127.0.0.1:47131";
 const REQUEST_TIMEOUT_MS = 30000;
 const FILE_WRITE_REQUEST_TIMEOUT_MS = 300000;
+const FILE_WRITE_TIMEOUT_MS = FILE_WRITE_REQUEST_TIMEOUT_MS;
+const FILE_WRITE_RETRY_DELAY_MS = 250;
+const TRANSIENT_FILE_WRITE_ERROR_CODES = new Set(["UND_ERR_SOCKET", "ECONNRESET", "EPIPE"]);
 const DOCKER_REQUEST_TIMEOUT_MS = 12000;
 const VALID_BACKEND_MODES = new Set(["local", "agent", "auto"]);
 
@@ -438,6 +441,26 @@ function logAgentRequestFailure(pathname, status, errorCode = null, details = {}
 
 function getTransportErrorCode(error) {
   return error?.cause?.code || error?.code || null;
+}
+
+function isTransientFileWriteTransportError(error) {
+  if (Number.isInteger(error?.status) && error.status > 0) return false;
+  const code = error?.code
+    || error?.cause?.code
+    || error?.details?.causeCode
+    || error?.payload?.error?.details?.causeCode
+    || null;
+  return TRANSIENT_FILE_WRITE_ERROR_CODES.has(code);
+}
+
+async function retryTransientFileWrite(request) {
+  try {
+    return await request();
+  } catch (error) {
+    if (!isTransientFileWriteTransportError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, FILE_WRITE_RETRY_DELAY_MS));
+    return request();
+  }
 }
 
 function getAgentTransportErrorMessage(errorCode, requestUrl) {
@@ -1185,11 +1208,12 @@ class NodeAgentClient {
   }
 
   writeInstanceFile(instanceId, filePath, content, options = {}) {
-    return this.put(`/instances/${encodeInstanceId(instanceId)}/file`, {
+    const request = () => this.put(`/instances/${encodeInstanceId(instanceId)}/file`, {
       path: filePath,
       content,
       encoding: options.encoding,
-    });
+    }, { timeoutMs: FILE_WRITE_REQUEST_TIMEOUT_MS });
+    return retryTransientFileWrite(request);
   }
 
   deleteInstanceFile(instanceId, filePath) {
@@ -2645,7 +2669,7 @@ async function writeInstanceFile(instanceId, filePath, content, options = {}, co
   if (shouldUseLocalInstanceService(effectiveConfig)) {
     return getLocalInstanceService().writeInstanceFile(instanceId, filePath, content, options);
   }
-  return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
+  const request = () => requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/file`, {
     config: effectiveConfig,
     method: "PUT",
     timeoutMs: FILE_WRITE_REQUEST_TIMEOUT_MS,
@@ -2655,6 +2679,7 @@ async function writeInstanceFile(instanceId, filePath, content, options = {}, co
       encoding: options.encoding,
     },
   });
+  return retryTransientFileWrite(request);
 }
 
 async function deleteInstanceFile(instanceId, filePath, configOverride = null) {

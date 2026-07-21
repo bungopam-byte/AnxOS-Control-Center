@@ -509,6 +509,8 @@ let agentControlRefreshInFlight = false;
 let agentControlPollTimer = null;
 let agentControlLastRuntimeSnapshot = null;
 let activeAgentPairingCode = "";
+let activeAgentPairingExpiresAt = "";
+let activeAgentPairingExpiryTimer = null;
 let activeAgentPairingTarget = null;
 let activeAgentGeneratedToken = "";
 const remoteDiagnosticsInFlight = new Set();
@@ -1217,39 +1219,34 @@ let settingsPermissionState = {
 let previousSettingsOwnerState = false;
 const ONBOARDING_STEPS = [
   {
-    id: "welcome",
-    title: "Welcome",
-    description: "AnxOS helps you install, manage, monitor, and access services running on this computer or another system.",
+    id: "sign-in",
+    title: "Sign In",
+    description: "Sign in to your AnxOS account for cloud and remote features, or continue with local-only setup.",
   },
   {
-    id: "setup-type",
-    title: "Choose Setup Type",
-    description: "Choose whether AnxOS should prepare this PC, connect a remote server, or do both.",
+    id: "local-owner",
+    title: "Local Owner",
+    description: "Create or unlock the protected Local Owner account used for privileged settings on this device.",
   },
   {
-    id: "prepare-this-pc",
-    title: "Prepare This PC",
-    description: "AnxOS checks the desktop app, Windows readiness, and managed Local Agent folders.",
+    id: "connect-agent",
+    title: "Connect Local Agent",
+    description: "Install, start, and securely pair the Local Agent that performs trusted management work.",
   },
   {
-    id: "install-local-agent",
-    title: "Install Local Agent",
-    description: "Install the Local Agent when you want AnxOS to manage servers, files, backups, and services on this computer.",
+    id: "prepare-node",
+    title: "Prepare Node",
+    description: "Check the selected computer and prepare the dependencies used by servers and Marketplace templates.",
   },
   {
-    id: "pair-securely",
-    title: "Pair Securely",
-    description: "Create a secure local connection between the desktop app and the Local Agent without copying tokens.",
+    id: "first-server",
+    title: "Create First Server",
+    description: "Choose a beginner-friendly Marketplace template and create your first managed server.",
   },
   {
-    id: "scan-dependencies",
-    title: "Scan Dependencies",
-    description: "Check the tools used by Marketplace templates and local server features.",
-  },
-  {
-    id: "choose-storage",
-    title: "Choose Storage",
-    description: "Review where AnxOS stores local instances, backups, logs, and temporary downloads.",
+    id: "public-access",
+    title: "Configure Public Access",
+    description: "Optionally choose how other people or devices can connect to your server.",
   },
   {
     id: "finish",
@@ -3999,8 +3996,26 @@ function renderLocalAgentInstallerSteps(steps = []) {
 }
 
 function renderAgentPairingSetup(session = null, options = {}) {
-  if (session?.pairingCode || options.clearCode) {
-    activeAgentPairingCode = session?.pairingCode || "";
+  if (session?.pairingCode) {
+    activeAgentPairingCode = session.pairingCode;
+    activeAgentPairingExpiresAt = session.expiresAt || "";
+  } else if (options.clearCode) {
+    activeAgentPairingCode = "";
+    activeAgentPairingExpiresAt = "";
+  }
+  if (activeAgentPairingCode && activeAgentPairingExpiresAt && Date.parse(activeAgentPairingExpiresAt) <= Date.now()) {
+    activeAgentPairingCode = "";
+    activeAgentPairingExpiresAt = "";
+  }
+  if (activeAgentPairingExpiryTimer) {
+    clearTimeout(activeAgentPairingExpiryTimer);
+    activeAgentPairingExpiryTimer = null;
+  }
+  if (activeAgentPairingCode && activeAgentPairingExpiresAt) {
+    const remainingMs = Date.parse(activeAgentPairingExpiresAt) - Date.now();
+    if (remainingMs > 0) {
+      activeAgentPairingExpiryTimer = setTimeout(() => renderAgentPairingSetup(null, { clearCode: true }), remainingMs);
+    }
   }
   activeAgentPairingTarget = session ? {
     nodeId: session.nodeId || null,
@@ -4025,7 +4040,7 @@ function renderAgentPairingSetup(session = null, options = {}) {
     agentPairingCode.textContent = session?.displayCode || activeAgentPairingCode || "Not generated";
   }
   if (agentPairingExpires) {
-    agentPairingExpires.textContent = session?.expiresAt ? formatDateTime(session.expiresAt) : "Unavailable";
+    agentPairingExpires.textContent = activeAgentPairingExpiresAt ? formatDateTime(activeAgentPairingExpiresAt) : "Unavailable";
   }
   if (agentPairingUrl) {
     agentPairingUrl.textContent = session?.agentUrl || "Unavailable";
@@ -5653,6 +5668,7 @@ async function runAgentControlAction(action) {
       showToast("Pairing code generated.", "success");
     }
     else if (action === "copyPairingCode") {
+      renderAgentPairingSetup(null);
       if (!activeAgentPairingCode) throw new Error("Generate a pairing code before copying.");
       await navigator.clipboard.writeText(activeAgentPairingCode);
       showToast("Pairing code copied.", "success");
@@ -25660,11 +25676,14 @@ async function refreshAccountState() {
     };
   }
   renderAccountState();
+  if (accountState.pending) {
+    startAccountPolling(accountState.pending.intervalMs);
+  }
 }
 
 function stopAccountPolling() {
   if (accountPollTimer) {
-    clearInterval(accountPollTimer);
+    clearTimeout(accountPollTimer);
     accountPollTimer = null;
   }
   if (accountCountdownTimer) {
@@ -25678,9 +25697,12 @@ function startAccountPolling(intervalMs = 3000) {
   accountCountdownTimer = setInterval(() => {
     if (accountState.pending) renderAccountState();
   }, 1000);
-  accountPollTimer = setInterval(async () => {
+  const poll = async () => {
     const desktopApiState = getDesktopApiState();
-    if (!desktopApiState.hasAccount) return;
+    if (!desktopApiState.hasAccount) {
+      accountPollTimer = setTimeout(poll, 3000);
+      return;
+    }
     try {
       accountState = assertAccountResultOk(await desktopApiState.api.account.checkDeviceLogin(), "AnxOS account sign-in failed.");
       renderAccountState();
@@ -25696,6 +25718,11 @@ function startAccountPolling(intervalMs = 3000) {
         if (accountState.message) {
           setAccountMessage(accountState.message);
         }
+      } else {
+        accountPollTimer = setTimeout(
+          poll,
+          Math.max(1500, Number.parseInt(accountState.pending?.intervalMs, 10) || 3000),
+        );
       }
     } catch (error) {
       stopAccountPolling();
@@ -25703,7 +25730,8 @@ function startAccountPolling(intervalMs = 3000) {
       setAccountMessage(message);
       showToast(message);
     }
-  }, Math.max(1500, Number.parseInt(intervalMs, 10) || 3000));
+  };
+  accountPollTimer = setTimeout(poll, Math.max(1500, Number.parseInt(intervalMs, 10) || 3000));
 }
 
 window.addEventListener("beforeunload", stopAccountPolling);
@@ -28954,6 +28982,7 @@ async function pairNodeFromSettings(options = {}) {
     if (submissionSerial !== nodePairingSubmissionSerial) return;
     if (nodePairingCodeInput) nodePairingCodeInput.value = "";
     nodePairingLastSubmittedCode = "";
+    renderAgentPairingSetup(null, { clearCode: true });
     setNodeModalVisible(false);
     await refreshNodes();
     if (result?.selectedNodeId) {
@@ -29418,7 +29447,7 @@ async function saveSettingsPatch(patch = {}, { statusMessage = null } = {}) {
   if (desktopApiState.hasPreferences) {
     try {
       const payload = await desktopApiState.api.settings.savePreferences(Object.fromEntries(
-        Object.entries(settings).filter(([key]) => isSettingKeyAuthorized(key)),
+        Object.entries(patch || {}).filter(([key]) => isSettingKeyAuthorized(key)),
       ));
       const saved = { ...DEFAULT_SETTINGS, ...(payload?.settings || settings) };
       writeStoredSettings(saved);
@@ -29471,6 +29500,86 @@ function maybeOpenOnboardingWelcome(settings = getCurrentSettings()) {
 function getOnboardingStepIndex(stepId = getCurrentSettings()["onboarding.currentStep"]) {
   const index = ONBOARDING_STEPS.findIndex((step) => step.id === stepId);
   return index >= 0 ? index : 0;
+}
+
+function appendOnboardingPageAction(container, label, page, beforeOpen = null) {
+  const button = createTextElement("button", label, "inline-action");
+  button.type = "button";
+  button.addEventListener("click", () => {
+    beforeOpen?.();
+    setOnboardingWizardVisible(false);
+    showPage(page);
+  });
+  container.append(button);
+  return button;
+}
+
+function renderOnboardingSignInStep(container) {
+  const signedIn = accountState.authenticated === true;
+  const pending = Boolean(accountState.pending);
+  container.append(createTextElement("p", "Your AnxOS account is separate from Local Owner. Account sign-in enables cloud and remote features; local server management can be set up without it."));
+  container.append(onboardingStatus("AnxOS account", signedIn ? "Completed" : pending ? "Waiting for sign-in" : "Optional", signedIn ? "ok" : pending ? "warning" : "planned", signedIn ? "This device has an active account session." : "You can skip this optional step and sign in later from Security."));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  if (!signedIn) {
+    const signIn = createTextElement("button", pending ? "Resume Sign In" : "Sign In", "primary-button");
+    signIn.type = "button";
+    signIn.disabled = accountStartInFlight;
+    signIn.addEventListener("click", () => startAnxOsAccountLogin().finally(renderOnboardingWizard));
+    actions.append(signIn);
+  }
+  appendOnboardingPageAction(actions, "Open Account Settings", "security");
+  container.append(actions);
+}
+
+function renderOnboardingLocalOwnerStep(container) {
+  const available = getDesktopApiState().hasSecurity;
+  const ready = securityState.setupRequired === false;
+  const unlocked = securityState.authenticated === true;
+  container.append(createTextElement("p", "Local Owner protects privileged settings on this computer. It is stored locally and is not your online AnxOS account."));
+  container.append(onboardingStatus("Local Owner", !available ? "Unavailable" : unlocked ? "Completed" : ready ? "Locked" : "Setup required", unlocked ? "ok" : available ? "warning" : "critical", unlocked ? "Privileged local settings are unlocked." : ready ? "Unlock Local Owner to continue privileged setup." : "Create Local Owner to protect privileged actions."));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  appendOnboardingPageAction(actions, securityState.setupRequired ? "Create Local Owner" : "Unlock Local Owner", "security", showRemoteControlSetup);
+  container.append(actions);
+}
+
+function renderOnboardingConnectAgentStep(container) {
+  container.append(createTextElement("p", "The Local Agent is the trusted service that installs servers, manages files, creates backups, and checks system health. The desktop interface never replaces its authorization checks."));
+  renderOnboardingInstallLocalAgentStep(container);
+  renderOnboardingPairSecurelyStep(container);
+}
+
+function renderOnboardingPrepareNodeStep(container) {
+  renderOnboardingPrepareThisPcStep(container);
+  renderOnboardingDependenciesStep(container);
+  const actions = container.querySelector(".onboarding-inline-actions:last-of-type") || document.createElement("div");
+  if (!actions.parentNode) {
+    actions.className = "onboarding-inline-actions";
+    container.append(actions);
+  }
+  appendOnboardingPageAction(actions, "Open Prepare Node", "agent-control");
+}
+
+function renderOnboardingFirstServerStep(container) {
+  const instances = Array.isArray(instancesState?.instances) ? instancesState.instances : [];
+  const ready = instances.length > 0;
+  container.append(createTextElement("p", "Marketplace uses supported providers and the Local Agent to check dependencies and install into managed storage. You will review the template before anything is installed."));
+  container.append(onboardingStatus("First server", ready ? "Completed" : "Current", ready ? "ok" : "warning", ready ? `${instances.length} managed ${instances.length === 1 ? "server is" : "servers are"} available.` : "Choose a Marketplace template to create your first server."));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  const create = appendOnboardingPageAction(actions, ready ? "Open Instances" : "Create First Server", ready ? "instances" : "marketplace");
+  if (!ready) create.addEventListener("click", () => window.setTimeout(openFirstServerGuide, 0));
+  container.append(actions);
+}
+
+function renderOnboardingPublicAccessStep(container) {
+  container.append(createTextElement("p", "Public Access is optional. Playit is the easiest public option, Tailscale is private to your tailnet, and Cloudflare is shown only for the HTTP capabilities currently supported."));
+  container.append(onboardingStatus("Public Access", "Optional", "planned", "Keep services on LAN or localhost unless outside access is needed. Avoid exposing unnecessary ports."));
+  const actions = document.createElement("div");
+  actions.className = "onboarding-inline-actions";
+  appendOnboardingPageAction(actions, "Configure Public Access", "playit");
+  container.append(actions);
 }
 
 function setOnboardingWizardVisible(visible) {
@@ -29860,19 +29969,23 @@ function renderOnboardingWizard() {
     onboardingWizardTrack.replaceChildren();
     ONBOARDING_STEPS.forEach((candidate, candidateIndex) => {
       const marker = document.createElement("span");
-      marker.className = candidateIndex === index ? "is-active" : candidateIndex < index ? "is-complete" : "";
-      marker.title = candidate.title;
+      const optional = candidate.id === "sign-in" || candidate.id === "public-access";
+      const blocked = candidate.id === "local-owner" && !getDesktopApiState().hasSecurity;
+      const visualState = candidateIndex === index ? "current" : candidateIndex < index ? "completed" : blocked ? "blocked" : optional ? "optional" : "upcoming";
+      marker.className = visualState === "current" ? "is-active" : visualState === "completed" ? "is-complete" : visualState === "blocked" ? "is-blocked" : visualState === "optional" ? "is-optional" : "";
+      marker.dataset.state = visualState;
+      marker.title = `${candidate.title} · ${visualState}`;
+      marker.setAttribute("aria-label", `${candidate.title}: ${visualState}`);
       onboardingWizardTrack.append(marker);
     });
   }
   onboardingWizardBody.replaceChildren();
-  if (step.id === "welcome") onboardingWizardBody.append(createTextElement("p", "AnxOS helps you install, manage, monitor, and access services running on this computer or another system."));
-  else if (step.id === "setup-type") renderOnboardingSetupTypeStep(onboardingWizardBody);
-  else if (step.id === "prepare-this-pc") renderOnboardingPrepareThisPcStep(onboardingWizardBody);
-  else if (step.id === "install-local-agent") renderOnboardingInstallLocalAgentStep(onboardingWizardBody);
-  else if (step.id === "pair-securely") renderOnboardingPairSecurelyStep(onboardingWizardBody);
-  else if (step.id === "scan-dependencies") renderOnboardingDependenciesStep(onboardingWizardBody);
-  else if (step.id === "choose-storage") renderOnboardingStorageStep(onboardingWizardBody);
+  if (step.id === "sign-in") renderOnboardingSignInStep(onboardingWizardBody);
+  else if (step.id === "local-owner") renderOnboardingLocalOwnerStep(onboardingWizardBody);
+  else if (step.id === "connect-agent") renderOnboardingConnectAgentStep(onboardingWizardBody);
+  else if (step.id === "prepare-node") renderOnboardingPrepareNodeStep(onboardingWizardBody);
+  else if (step.id === "first-server") renderOnboardingFirstServerStep(onboardingWizardBody);
+  else if (step.id === "public-access") renderOnboardingPublicAccessStep(onboardingWizardBody);
   else renderOnboardingFinishStep(onboardingWizardBody);
   onboardingWizardButtons.forEach((button) => {
     const action = button.dataset.onboardingWizardAction;
@@ -29918,7 +30031,7 @@ async function handleOnboardingAction(action) {
         "onboarding.started": true,
         "onboarding.completed": false,
         "onboarding.skipped": false,
-        "onboarding.currentStep": "welcome",
+        "onboarding.currentStep": "sign-in",
         "onboarding.setupType": "this-pc",
         "onboarding.welcomeGuidance": true,
         "onboarding.contextualTips": true,
@@ -29939,7 +30052,7 @@ async function handleOnboardingAction(action) {
       "onboarding.started": false,
       "onboarding.completed": false,
       "onboarding.skipped": true,
-      "onboarding.currentStep": "welcome",
+      "onboarding.currentStep": "sign-in",
       "onboarding.setupType": "this-pc",
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,
@@ -29951,7 +30064,7 @@ async function handleOnboardingAction(action) {
       "onboarding.started": false,
       "onboarding.completed": false,
       "onboarding.skipped": false,
-      "onboarding.currentStep": "welcome",
+      "onboarding.currentStep": "sign-in",
       "onboarding.setupType": "this-pc",
       "onboarding.welcomeGuidance": true,
       "onboarding.contextualTips": true,

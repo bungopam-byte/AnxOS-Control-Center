@@ -8418,6 +8418,14 @@ body.has-open-modal {
   background: linear-gradient(90deg, rgba(182, 108, 255, .95), rgba(115, 220, 202, .8));
 }
 
+.onboarding-step-track span.is-optional {
+  background: rgba(182, 108, 255, .38);
+}
+
+.onboarding-step-track span.is-blocked {
+  background: rgba(255, 104, 119, .82);
+}
+
 .onboarding-choice-grid,
 .onboarding-status-grid {
   display: grid;
@@ -12258,6 +12266,41 @@ button:disabled {
 }
 
 @media (max-width: 1320px) {
+  .marketplace-toolbar {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.8fr);
+  }
+
+  .marketplace-categories {
+    align-self: center;
+  }
+
+  .marketplace-layout,
+  .backup-workspace,
+  .settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .file-manager-shell {
+    grid-template-columns: minmax(200px, 240px) 10px minmax(0, 1fr);
+  }
+
+  .file-manager-shell:not(.is-edit-mode) .file-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .file-manager-shell:not(.is-edit-mode) .file-browser {
+    grid-template-columns: minmax(170px, 0.42fr) minmax(280px, 1fr);
+  }
+
+  .file-manager-shell:not(.is-edit-mode) .file-panel-divider,
+  .file-manager-shell:not(.is-edit-mode) .file-details-panel {
+    display: none;
+  }
+
+  .backup-toolbar {
+    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  }
+
   .ssh-workspace-shell {
     grid-template-columns: minmax(250px, 0.5fr) minmax(600px, 1.5fr);
   }
@@ -12284,15 +12327,26 @@ button:disabled {
   }
 
   .instances-shell {
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .instances-toolbar {
-    grid-template-columns: minmax(280px, 1fr) minmax(180px, 0.42fr) auto;
+  .instances-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .instances-toolbar__future {
-    grid-column: 1 / 2;
+  .instances-controlbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .instances-controlbar .docker-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .instances-details-panel {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .instance-files-grid {

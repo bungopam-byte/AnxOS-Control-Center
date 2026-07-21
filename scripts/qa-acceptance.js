@@ -59,19 +59,38 @@ async function main() {
   record("qa-indicator", "[data-testid=qa-mode-indicator]", "QA MODE is visible", await window.locator("[data-testid=qa-mode-indicator]").textContent().catch(() => "missing"), await window.locator("[data-testid=qa-mode-indicator]").isVisible().catch(() => false), await shot("launch"));
   const navInventory = await navigationInventory(window).catch(() => []);
   fs.writeFileSync(path.join(artifactDir, "navigation-inventory.json"), JSON.stringify(navInventory, null, 2));
+  const dismissSetupOverlays = async () => {
+    const skip = window.locator('[data-onboarding-welcome] [data-onboarding-action="skip"]');
+    if (await skip.count() && await skip.isVisible().catch(() => false)) {
+      await skip.evaluate((element) => element.click());
+      await window.locator("[data-onboarding-welcome]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    }
+    const useDevice = window.locator('[data-local-setup-action="use-device"]');
+    if (await useDevice.count() && await useDevice.isVisible().catch(() => false)) {
+      await useDevice.evaluate((element) => element.click());
+      await window.locator("[data-local-setup-gate]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    }
+    const dismissUpdate = window.locator('[data-update-modal] [data-update-action="dismiss"]').first();
+    if (await dismissUpdate.count() && await dismissUpdate.isVisible().catch(() => false)) {
+      await dismissUpdate.evaluate((element) => element.click());
+      await window.locator("[data-update-modal]").waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+    }
+  };
   for (const page of ["dashboard", "nodes", "agent-control", "marketplace", "instances", "public-access", "diagnostics", "settings"]) {
+    await dismissSetupOverlays();
     const navigationTarget = page === "public-access" ? "playit" : page === "diagnostics" ? "agent-control" : page;
     const link = page === "public-access"
       ? window.locator('[data-page-target="playit"], [data-testid="nav-public-access"], button[aria-label="Public Access"], a[aria-label="Public Access"]').first()
       : window.locator(`[data-page-target="${navigationTarget}"], [data-testid="nav-${navigationTarget}"]`).first();
     if (await link.count()) {
       await link.scrollIntoViewIfNeeded().catch(() => {});
-      await link.click();
+      await link.evaluate((element) => element.click());
       await window.waitForTimeout(300);
+      await dismissSetupOverlays();
       if (page === "diagnostics") {
         await window.waitForTimeout(500);
         const diagnosticsSection = window.locator('[data-agent-control-section-target="diagnostics"], [data-testid="agent-control-diagnostics"], button[aria-label="Diagnostics"]').first();
-        if (await diagnosticsSection.count() && await diagnosticsSection.isVisible().catch(() => false) && !await diagnosticsSection.isDisabled().catch(() => false)) await diagnosticsSection.click();
+        if (await diagnosticsSection.count() && await diagnosticsSection.isVisible().catch(() => false) && !await diagnosticsSection.isDisabled().catch(() => false)) await diagnosticsSection.evaluate((element) => element.click());
       }
       const visible = page === "diagnostics"
         ? await window.locator('[data-agent-control-section="diagnostics"]').isVisible().catch(() => false)

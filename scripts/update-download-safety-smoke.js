@@ -22,7 +22,10 @@ async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anx-update-download-"));
   const payload = Buffer.from("verified update artifact\n".repeat(4096));
   const sha256 = crypto.createHash("sha256").update(payload).digest("hex");
+  const uppercaseSha256 = sha256.toUpperCase();
+  const prefixedSha256 = `sha256:${sha256}`;
   let slowInterval = null;
+  let artifactRequests = 0;
   const server = http.createServer((request, response) => {
     if (request.url === "/slow") {
       response.writeHead(200, { "Content-Length": payload.length * 100 });
@@ -32,6 +35,9 @@ async function main() {
         slowInterval = null;
       });
       return;
+    }
+    if (request.url === "/artifact") {
+      artifactRequests += 1;
     }
     response.writeHead(200, { "Content-Length": payload.length });
     response.end(payload);
@@ -53,6 +59,66 @@ async function main() {
     assert.deepStrictEqual(fs.readFileSync(committedPath), payload, "verified downloads must be committed intact.");
     assert.deepStrictEqual(fs.readdirSync(root), ["update.bin"], "successful downloads must not leave temporary files.");
     await verifyUpdateArtifact(committedPath, { size: payload.length, sha256 });
+    await verifyUpdateArtifact(committedPath, { size: payload.length, sha256: prefixedSha256 });
+    await verifyUpdateArtifact(committedPath, { size: payload.length, sha256: uppercaseSha256 });
+    await assert.rejects(
+      verifyUpdateArtifact(committedPath, { size: payload.length, sha256: `sha512:${sha256}` }),
+      (error) => error?.code === "UPDATE_CHECKSUM_REQUIRED",
+      "SHA-512 metadata must not be accepted as a SHA-256 checksum.",
+    );
+    await assert.rejects(
+      verifyUpdateArtifact(committedPath, { size: payload.length, sha256: `md5:${sha256}` }),
+      (error) => error?.code === "UPDATE_CHECKSUM_REQUIRED",
+      "unknown checksum prefixes must not be accepted.",
+    );
+    await assert.rejects(
+      verifyUpdateArtifact(committedPath, { size: payload.length, sha256: sha256.slice(0, 63) }),
+      (error) => error?.code === "UPDATE_CHECKSUM_REQUIRED",
+      "partial SHA-256 digests must not be accepted.",
+    );
+    await assert.rejects(
+      verifyUpdateArtifact(committedPath, { size: payload.length, sha256: `${sha256.slice(0, 32)} ${sha256.slice(32)}` }),
+      (error) => error?.code === "UPDATE_CHECKSUM_REQUIRED",
+      "SHA-256 digests containing whitespace must not be accepted.",
+    );
+    await assert.rejects(
+      verifyUpdateArtifact(committedPath, { size: payload.length, sha256: `${sha256.slice(0, 63)}z` }),
+      (error) => error?.code === "UPDATE_CHECKSUM_REQUIRED",
+      "non-hex SHA-256 digests must not be accepted.",
+    );
+
+    const uppercasePath = path.join(root, "uppercase.bin");
+    await manager.downloadFile(`http://127.0.0.1:${port}/artifact`, uppercasePath, {
+      size: payload.length,
+      sha256: uppercaseSha256,
+    });
+    assert.deepStrictEqual(fs.readFileSync(uppercasePath), payload, "uppercase SHA-256 metadata must verify downloads.");
+
+    const prefixedPath = path.join(root, "prefixed.bin");
+    await manager.downloadFile(`http://127.0.0.1:${port}/artifact`, prefixedPath, {
+      size: payload.length,
+      sha256: prefixedSha256,
+    });
+    assert.deepStrictEqual(fs.readFileSync(prefixedPath), payload, "GitHub digest-form SHA-256 metadata must verify downloads.");
+
+    const requestsBeforeMissingChecksum = artifactRequests;
+    let missingChecksumProgress = false;
+    const missingChecksumPath = path.join(root, "missing-checksum.bin");
+    await assert.rejects(
+      manager.downloadFile(`http://127.0.0.1:${port}/artifact`, missingChecksumPath, {
+        size: payload.length,
+        onProgress: () => {
+          missingChecksumProgress = true;
+        },
+      }),
+      (error) => error?.code === "UPDATE_CHECKSUM_REQUIRED",
+      "missing checksums must fail before starting the download.",
+    );
+    assert.strictEqual(artifactRequests, requestsBeforeMissingChecksum, "missing checksums must not start an HTTP artifact request.");
+    assert.strictEqual(missingChecksumProgress, false, "missing checksums must not report download progress.");
+    assert(!fs.existsSync(missingChecksumPath), "missing checksums must not expose a final artifact.");
+    assert(!fs.readdirSync(root).some((name) => name.includes("missing-checksum") || name.endsWith(".part")), "missing checksums must not create temporary artifacts.");
+
     fs.appendFileSync(committedPath, "tampered");
     await assert.rejects(
       verifyUpdateArtifact(committedPath, { size: payload.length, sha256 }),
@@ -101,6 +167,27 @@ async function main() {
     assert.strictEqual(pickUpdateAsset({ assets: [asset(incompatibleName)] }), null, "asset selection must reject another operating system.");
     assert.strictEqual(pickUpdateAsset({ assets: [asset(compatibleName, process.arch === "x64" ? "arm64" : "x64")] }), null, "asset selection must reject another architecture.");
     assert.strictEqual(pickUpdateAsset({ assets: [asset(compatibleName)] })?.name, compatibleName, "asset selection must accept the current platform and architecture.");
+
+    const prereleaseResult = manager.resolveUpdateResult({
+      draft: false,
+      prerelease: true,
+      tag_name: "v99.9-build999",
+      name: "Version 99.9 Build 999",
+      published_at: "2099-01-01T00:00:00Z",
+      assets: [{
+        ...asset(compatibleName),
+        digest: prefixedSha256,
+      }],
+    }, "https://api.github.com/repos/example/releases?per_page=20");
+    assert.strictEqual(prereleaseResult.hasUpdate, true, "prereleases discovered through the GitHub Releases API must remain eligible updates.");
+    assert.strictEqual(prereleaseResult.asset.sha256, sha256, "GitHub API digest fields must normalize to raw lowercase SHA-256.");
+
+    const prereleasePath = path.join(root, "prerelease.bin");
+    await manager.downloadFile(`http://127.0.0.1:${port}/artifact`, prereleasePath, {
+      size: payload.length,
+      sha256: prereleaseResult.asset.sha256,
+    });
+    assert.deepStrictEqual(fs.readFileSync(prereleasePath), payload, "prerelease GitHub API digest metadata must download and verify successfully.");
   } finally {
     if (slowInterval) clearInterval(slowInterval);
     await close(server);

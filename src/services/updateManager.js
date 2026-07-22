@@ -106,8 +106,10 @@ function sanitizeFileName(value) {
 }
 
 function normalizeSha256(value) {
-  const digest = String(value || "").trim().toLowerCase();
-  return /^[a-f0-9]{64}$/.test(digest) ? digest : null;
+  const digest = String(value || "").trim();
+  const prefixed = digest.match(/^sha256:([a-f0-9]{64})$/i);
+  if (prefixed) return prefixed[1].toLowerCase();
+  return /^[a-f0-9]{64}$/i.test(digest) ? digest.toLowerCase() : null;
 }
 
 function normalizeAssetPlatform(value) {
@@ -662,9 +664,13 @@ class UpdateManager extends EventEmitter {
 
   downloadFile(url, destinationPath, options = {}) {
     return new Promise((resolve, reject) => {
+      const expectedSha256 = normalizeSha256(options.sha256);
+      if (!expectedSha256) {
+        reject(Object.assign(new Error("Update metadata does not include a SHA-256 checksum."), { code: "UPDATE_CHECKSUM_REQUIRED" }));
+        return;
+      }
       fs.mkdirSync(path.dirname(destinationPath), { recursive: true });
       const tempPath = `${destinationPath}.${process.pid}.${Date.now()}.${crypto.randomBytes(6).toString("hex")}.part`;
-      const expectedSha256 = normalizeSha256(options.sha256);
       const expectedSize = Number(options.size || 0);
       const controller = new AbortController();
       this.activeDownload = controller;

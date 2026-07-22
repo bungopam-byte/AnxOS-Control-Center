@@ -1,6 +1,23 @@
 [
   {
     "version": "1.7",
+    "build": 160,
+    "channel": "Private Alpha",
+    "tag": "v1.7-build160",
+    "date": "July 22, 2026",
+    "datetime": "2026-07-22",
+    "title": "Build 160 updater reliability maintenance release",
+    "summary": "Maintenance release for GitHub prerelease updater checksum compatibility.",
+    "changes": [
+      "Fixed compatibility with GitHub prerelease SHA-256 digest metadata.",
+      "Updater now accepts GitHub API sha256:<digest> values.",
+      "Updater now fails before download when required checksum metadata is unavailable.",
+      "Existing post-download and install-time SHA-256 verification remain unchanged."
+    ],
+    "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build160"
+  },
+  {
+    "version": "1.7",
     "build": 159,
     "channel": "Private Alpha",
     "tag": "v1.7-build159",

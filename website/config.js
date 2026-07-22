@@ -5,18 +5,18 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   siteUrl: "https://anxoscontrolcenter.org",
   logoPath: "/assets/anxos-logo.png",
   latestVersion: "1.7",
-  build: "159",
-  buildNumber: "159",
+  build: "160",
+  buildNumber: "160",
   channel: "Private Alpha",
-  releaseLabel: "Version 1.7 Build 159 Private Alpha",
-  releaseDate: "July 21, 2026",
-  releaseTag: "v1.7-build159",
+  releaseLabel: "Version 1.7 Build 160 Private Alpha",
+  releaseDate: "July 22, 2026",
+  releaseTag: "v1.7-build160",
   releaseRepository: {
     owner: "bungopam-byte",
     repo: "AnxOS-Control-Center-Releases",
   },
   repositoryUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases",
-  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build159",
+  releaseUrl: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build160",
   githubReleasesApiUrl: "https://api.github.com/repos/bungopam-byte/AnxOS-Control-Center-Releases/releases?per_page=20",
   stableDownloadEndpoints: {
     windows: "/api/download/latest/windows",
@@ -26,23 +26,40 @@ window.ANXOS_DOWNLOAD_CONFIG = {
   },
   releaseAssets: [
       {
-          fileName: "AnxOS-Control-Center-Setup-1.7-build159.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build159/AnxOS-Control-Center-Setup-1.7-build159.exe"
+          fileName: "AnxOS-Control-Center-Setup-1.7-build160.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build160/AnxOS-Control-Center-Setup-1.7-build160.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build159-portable.exe",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build159/AnxOS-Control-Center-1.7-build159-portable.exe"
+          fileName: "AnxOS-Control-Center-1.7-build160-portable.exe",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build160/AnxOS-Control-Center-1.7-build160-portable.exe"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build159.AppImage",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build159/AnxOS-Control-Center-1.7-build159.AppImage"
+          fileName: "AnxOS-Control-Center-1.7-build160.AppImage",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build160/AnxOS-Control-Center-1.7-build160.AppImage"
       },
       {
-          fileName: "AnxOS-Control-Center-1.7-build159.deb",
-          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build159/AnxOS-Control-Center-1.7-build159.deb"
+          fileName: "AnxOS-Control-Center-1.7-build160.deb",
+          url: "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/download/v1.7-build160/AnxOS-Control-Center-1.7-build160.deb"
       }
   ],
   releaseNotes: [
+      {
+          "version": "1.7",
+          "build": 160,
+          "channel": "Private Alpha",
+          "tag": "v1.7-build160",
+          "date": "July 22, 2026",
+          "datetime": "2026-07-22",
+          "title": "Build 160 updater reliability maintenance release",
+          "summary": "Maintenance release for GitHub prerelease updater checksum compatibility.",
+          "changes": [
+              "Fixed compatibility with GitHub prerelease SHA-256 digest metadata.",
+              "Updater now accepts GitHub API sha256:<digest> values.",
+              "Updater now fails before download when required checksum metadata is unavailable.",
+              "Existing post-download and install-time SHA-256 verification remain unchanged."
+          ],
+          "url": "https://github.com/bungopam-byte/AnxOS-Control-Center-Releases/releases/tag/v1.7-build160"
+      },
       {
           "version": "1.7",
           "build": 159,

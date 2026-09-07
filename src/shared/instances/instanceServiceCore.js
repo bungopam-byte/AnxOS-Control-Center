@@ -64,7 +64,7 @@ const MAX_LOG_LINES = 1000;
 const STARTUP_EARLY_EXIT_MS = 8000;
 const RESTART_BACKOFF_BASE_MS = 1000;
 const RESTART_BACKOFF_MAX_MS = 30000;
-const RESTART_BACKOFF_MAX_IMMEDIATE_FAILURES = 5;
+const RESTART_BACKOFF_MAX_IMMEDIATE_FAILURES = 3;
 const PROCESS_TAIL_LINE_LIMIT = 20;
 const PORT_CONNECT_TIMEOUT_MS = 500;
 const PROC_STAT_TICKS_PER_SECOND = 100;
@@ -82,6 +82,13 @@ const FIVEM_LICENSE_PLACEHOLDERS = new Set([
   "YOUR_LICENSE_KEY",
   "YOUR_FIVEM_LICENSE_KEY",
   "LICENSE_KEY_HERE",
+  "PLACEHOLDER",
+  "CHANGEME",
+  "EXAMPLE_KEY",
+  "NONE",
+  "NULL",
+  "TEST",
+  "XXXX",
 ]);
 const FIVEM_LICENSE_FAILURE_PATTERN = /Invalid key format specified|Could not authenticate server license key|HTTP 429/i;
 const DEFAULT_EXECUTABLE_ROOTS = [
@@ -205,7 +212,13 @@ function getInstallationSession(instanceId) {
 }
 
 function validateInstallationSession(session, operationId, token) {
-  if (!session || session.operationId !== operationId || !token || session.token !== token) {
+  if (!token) {
+    // Distinct from a wrong token: the caller never supplied the session
+    // credential at all, so clients can prompt for it instead of reporting
+    // "invalid session".
+    throw createInstanceError("INSTALLATION_SESSION_TOKEN_REQUIRED", 400);
+  }
+  if (!session || session.operationId !== operationId || session.token !== token) {
     throw createInstanceError("INSTALLATION_SESSION_INVALID", 403);
   }
   if (session.closed) {
@@ -1051,21 +1064,22 @@ function buildTypeCommand(type, payload) {
     };
   }
 
-  if (type === "node-app") {
-    const executable = validateExecutable(payload.executable || "node");
-    const entrypoint = validateRelativeAssetPath(payload.entrypoint || "index.js", "ENTRYPOINT");
+  if (type === "node-app" || type === "python-app") {
+    const defaultExecutable = type === "node-app" ? "node" : "python3";
+    const defaultEntrypoint = type === "node-app" ? "index.js" : "app.py";
+    const executable = validateExecutable(payload.executable || defaultExecutable);
+    const entrypoint = payload.entrypoint
+      ? validateRelativeAssetPath(payload.entrypoint, "ENTRYPOINT")
+      : null;
+    // Only inject the entrypoint when the caller set one explicitly or gave no
+    // arguments — otherwise their args define the whole interpreter invocation
+    // (e.g. node -e "<script>") and prepending a default would silently break it.
+    const baseArgs = entrypoint || rawArgs.length === 0
+      ? [entrypoint || validateRelativeAssetPath(defaultEntrypoint, "ENTRYPOINT")]
+      : [];
     return {
       executable,
-      args: [entrypoint, ...normalizeShellWrapperArgs(executable, rawArgs)],
-    };
-  }
-
-  if (type === "python-app") {
-    const executable = validateExecutable(payload.executable || "python3");
-    const entrypoint = validateRelativeAssetPath(payload.entrypoint || "app.py", "ENTRYPOINT");
-    return {
-      executable,
-      args: [entrypoint, ...normalizeShellWrapperArgs(executable, rawArgs)],
+      args: [...baseArgs, ...normalizeShellWrapperArgs(executable, rawArgs)],
     };
   }
 
@@ -1261,7 +1275,7 @@ function resolveInstanceJavaRuntime(config) {
 
 function publicConfig(config) {
   config = clearInstallerRuntimeJarMetadata(config);
-  const { installationOperationId: _installationOperationId, ...safeConfig } = config;
+  const { crashLoopDetectedAt: _crashLoopDetectedAt, ...safeConfig } = config;
   const crashLoop = config.state === INSTANCE_STATES.FAILED && config.failureReason === "CRASH_LOOP";
   const processRunning = [INSTANCE_STATES.STARTING, INSTANCE_STATES.RUNNING, INSTANCE_STATES.STOPPING, INSTANCE_STATES.RESTARTING].includes(config.state);
   const readinessState = config.state === INSTANCE_STATES.RUNNING ? config.readinessState || "unknown"
@@ -1270,7 +1284,7 @@ function publicConfig(config) {
         : config.state === INSTANCE_STATES.FAILED ? "failed"
           : config.state === INSTANCE_STATES.UNKNOWN ? "unknown" : "stopped";
   const healthState = crashLoop ? "crash-loop"
-    : config.state === INSTANCE_STATES.FAILED ? "crashed"
+    : config.state === INSTANCE_STATES.FAILED ? (config.failureReason === "PROCESS_KILLED" ? "terminated" : "crashed")
       : config.state === INSTANCE_STATES.RUNNING ? (readinessState === "ready" ? "healthy" : "degraded")
         : config.state === INSTANCE_STATES.SETUP_REQUIRED ? "degraded" : "unknown";
   return {
@@ -1282,7 +1296,9 @@ function publicConfig(config) {
     serverReady: readinessState === "ready",
     healthy: healthState === "healthy",
     degraded: healthState === "degraded",
-    lifecycleState: crashLoop ? "Crash Loop" : config.state === INSTANCE_STATES.FAILED && config.failureReason ? "Crashed" : config.state,
+    lifecycleState: crashLoop ? "Crash Loop"
+      : config.state === INSTANCE_STATES.FAILED && config.failureReason === "PROCESS_KILLED" ? "Terminated"
+        : config.state === INSTANCE_STATES.FAILED && config.failureReason ? "Crashed" : config.state,
     crashed: config.state === INSTANCE_STATES.FAILED && Boolean(config.failureReason),
     crashLoop,
     instancePath: instancePath(config.id),
@@ -1802,7 +1818,10 @@ function extractFiveMLicenseKey(configText) {
 
 function isValidFiveMLicenseKey(value) {
   const key = String(value || "").trim();
-  return Boolean(key) && !FIVEM_LICENSE_PLACEHOLDERS.has(key.toUpperCase()) && !/[{}<>$]/.test(key) && /^[A-Za-z0-9_-]{8,}$/.test(key);
+  // Cfx.re Keymaster issues 32-character alphanumeric keys; anything else
+  // (placeholders, prose, truncated pastes) must fail validation before the
+  // instance can report READY.
+  return /^[A-Za-z0-9]{32}$/.test(key);
 }
 
 function buildFiveMReadiness(reasonCode, config = {}, extra = {}) {
@@ -1932,7 +1951,7 @@ function normalizeFiveMLicenseInput(value) {
   if (!isValidFiveMLicenseKey(key)) {
     const error = createInstanceError("INVALID_FIVEM_LICENSE_KEY", 400, {
       field: "sv_licenseKey",
-      expected: "a non-placeholder Cfx.re license key containing letters, numbers, underscores, or dashes",
+      expected: "the 32-character alphanumeric license key issued by the Cfx.re Keymaster service",
       received: key ? "[provided]" : "",
       suggestion: "Generate a key through the official Cfx.re Keymaster service, then paste it here.",
     });
@@ -4214,7 +4233,13 @@ async function updateInstance(instanceId, payload = {}) {
     tags: payload.tags !== undefined ? normalizeTags(payload.tags) : current.tags,
     installationState: normalizeInstallationState(payload.installationState, current.installationState || "active"),
     installationOperationId: normalizeInstallationState(payload.installationState, current.installationState || "active") === "installing"
-      ? current.installationOperationId || null
+      ? (
+        // Allow PATCH to (re)assign the operation id so API clients can run
+        // the documented begin-session sequence without source access.
+        payload.installationOperationId !== undefined
+          ? (INSTALLATION_OPERATION_ID_PATTERN.test(String(payload.installationOperationId || "")) ? String(payload.installationOperationId) : current.installationOperationId || null)
+          : current.installationOperationId || null
+      )
       : null,
     installStage: payload.installStage !== undefined ? (payload.installStage ? String(payload.installStage).slice(0, 80) : null) : current.installStage,
     lastInstallError: payload.lastInstallError !== undefined ? (payload.lastInstallError ? String(payload.lastInstallError).slice(0, 500) : null) : current.lastInstallError,
@@ -4318,6 +4343,12 @@ async function deleteInstance(instanceId) {
       }
 
       const existed = await pathExists(basePath);
+      if (!existed) {
+        // Neither a record nor files on disk: the caller is deleting something
+        // that does not exist (or lost a race with a concurrent delete), so the
+        // correct answer is 404 rather than a misleading idempotent success.
+        throw createInstanceError("INSTANCE_NOT_FOUND", 404);
+      }
       await fs.rm(basePath, { recursive: true, force: true });
       runningProcesses.delete(id);
       metricsSamples.delete(id);
@@ -4332,9 +4363,9 @@ async function deleteInstance(instanceId) {
         id,
         instanceId: id,
         deleted: true,
-        filesDeleted: existed,
-        metadataRemoved: true,
-        alreadyMissing: !existed,
+        filesDeleted: true,
+        metadataRemoved: false,
+        alreadyMissing: false,
         stale: true,
       };
     }
@@ -4637,7 +4668,7 @@ async function startInstanceImpl(instanceId, options = {}) {
   if (discoveredRuntime) {
     const runningConfig = await adoptDiscoveredRuntime(config, discoveredRuntime, { reason: "start-preflight" });
     const error = createInstanceError("INSTANCE_ALREADY_RUNNING", 409, {
-      state: "ALREADY_RUNNING",
+      state: "INSTANCE_ALREADY_RUNNING",
       runtime: discoveredRuntime,
       instance: publicConfig(runningConfig),
     });
@@ -4647,7 +4678,7 @@ async function startInstanceImpl(instanceId, options = {}) {
 
   if (getActiveRunningProcess(config.id) || (config.pid && isProcessAlive(config.pid))) {
     const error = createInstanceError("INSTANCE_ALREADY_RUNNING", 409, {
-      state: "ALREADY_RUNNING",
+      state: "INSTANCE_ALREADY_RUNNING",
       pid: config.pid || getActiveRunningProcess(config.id)?.child?.pid || null,
     });
     error.message = "The instance is already running.";
@@ -4760,6 +4791,7 @@ async function startInstanceImpl(instanceId, options = {}) {
       failureReason: null,
       startupTimer: null,
       discoveryTimer: null,
+      readinessPortTimer: null,
       outputTail: [],
       commandDiagnostics,
     });
@@ -4882,11 +4914,18 @@ async function startInstanceImpl(instanceId, options = {}) {
     if (entry?.startupTimer) {
       clearTimeout(entry.startupTimer);
     }
+    if (entry?.readinessPortTimer) {
+      clearInterval(entry.readinessPortTimer);
+    }
 
     const failed = !requestedStop && (exitCode !== 0 || earlyCleanExit);
+    // A signal termination the agent did not request (external kill, OOM
+    // killer, systemd) is not a normal "process exited" crash — label it so
+    // the UI can say "Terminated" instead of implying an application crash.
+    const externallyKilled = !requestedStop && failed && signal && exitCode == null;
     const resolvedFailureReason = earlyCleanExit
       ? "EARLY_CLEAN_EXIT"
-      : failed ? failureReason : null;
+      : failed ? (externallyKilled ? "PROCESS_KILLED" : failureReason) : null;
 
     if (entry) {
       entry.exitObserved = true;
@@ -4912,6 +4951,9 @@ async function startInstanceImpl(instanceId, options = {}) {
         }
         if (entry?.discoveryTimer) {
           clearInterval(entry.discoveryTimer);
+        }
+        if (entry?.readinessPortTimer) {
+          clearInterval(entry.readinessPortTimer);
         }
         runningProcesses.delete(config.id);
         return updated;
@@ -5012,6 +5054,42 @@ async function startInstanceImpl(instanceId, options = {}) {
     }
   }, config.startupTimeoutMs);
 
+  // Port-based readiness: an instance that declares ports should not have to
+  // wait for a log-line match (or the startup timeout's degraded verdict) to
+  // report healthy — a listening primary port IS readiness for most servers.
+  const readinessPort = normalizePid(config.primaryPort)
+    || (Array.isArray(config.ports) && config.ports.length > 0 ? config.ports[0] : null);
+  const readinessDeadlineAt = Date.now() + Math.max(config.startupTimeoutMs, 1000);
+  const readinessPortTimer = readinessPort ? setInterval(() => {
+    const entry = runningProcesses.get(config.id);
+    if (!entry || entry.child !== child || entry.requestedStop) {
+      clearInterval(readinessPortTimer);
+      return;
+    }
+    if (Date.now() > readinessDeadlineAt || entry.readinessState === "ready") {
+      clearInterval(readinessPortTimer);
+      return;
+    }
+    checkPort(readinessPort).then(async ({ open }) => {
+      if (!open || entry.readinessState === "ready" || !isCurrentRunningProcess(config.id, child)) {
+        return;
+      }
+      entry.readinessState = "ready";
+      clearInterval(readinessPortTimer);
+      if (entry.startupTimer) {
+        clearTimeout(entry.startupTimer);
+      }
+      await updateRuntimeState(config.id, {
+        state: INSTANCE_STATES.RUNNING,
+        pid: child.pid,
+        readinessState: "ready",
+        healthState: "healthy",
+      }).catch(() => {});
+      scheduleVersionRefresh(config.id, 1000);
+    }).catch(() => {});
+  }, 1000) : null;
+  readinessPortTimer?.unref?.();
+
   const discoveryTimer = isPalworldRuntimeCandidate(config) ? setInterval(() => {
     const entry = runningProcesses.get(config.id);
     if (!entry || entry.child !== child || entry.requestedStop) {
@@ -5042,6 +5120,7 @@ async function startInstanceImpl(instanceId, options = {}) {
     readinessState: existingEntry?.readinessState || null,
     startupTimer,
     discoveryTimer,
+    readinessPortTimer,
     outputTail: existingEntry?.outputTail || [],
     commandDiagnostics,
   });
@@ -5084,7 +5163,12 @@ async function forceKillInstance(instanceId) {
   const pid = entry?.child?.pid || config.pid;
 
   if (!pid || !isProcessAlive(pid)) {
-    throw createInstanceError("INSTANCE_NOT_RUNNING", 409);
+    // Reconcile may briefly disagree with actual liveness (exit observed
+    // between the caller's snapshot and this check). Force-kill is a recovery
+    // action, so a target that is already dead is a successful no-op rather
+    // than a 409 that leaves the UI's Force Kill button failing spuriously.
+    appendLog(config.id, "stdout", "Force kill requested but no live process found; treating as already stopped.").catch(() => {});
+    return publicConfig(config);
   }
 
   if (entry) {
@@ -5094,6 +5178,9 @@ async function forceKillInstance(instanceId) {
     }
     if (entry.startupTimer) {
       clearTimeout(entry.startupTimer);
+    }
+    if (entry.readinessPortTimer) {
+      clearInterval(entry.readinessPortTimer);
     }
   }
 
@@ -5192,6 +5279,9 @@ async function stopInstance(instanceId, options = {}) {
     }
     if (entry.startupTimer) {
       clearTimeout(entry.startupTimer);
+    }
+    if (entry.readinessPortTimer) {
+      clearInterval(entry.readinessPortTimer);
     }
   }
 
@@ -5524,12 +5614,19 @@ function serializeProperties(properties) {
 }
 
 async function readMinecraftProperties(instanceId) {
-  const config = await readGameServerConfig(instanceId, { adapterId: "minecraft" });
+  const config = await loadInstanceConfig(instanceId);
+  if (inferGameFamily(config) !== "minecraft") {
+    // Same gating readGameServerConfig applies for inferred adapters — an
+    // explicit adapterId must not bypass it and fabricate server.properties
+    // files inside non-Minecraft instance directories.
+    throw createInstanceError("UNSUPPORTED_GAME_CONFIG", 404);
+  }
+  const gameConfig = await readGameServerConfig(instanceId, { adapterId: "minecraft" });
   return {
     id: validateInstanceId(instanceId),
-    path: config.filePath || "server.properties",
-    properties: stringifyProperties(config.values || {}),
-    sourceHash: config.sourceHash,
+    path: gameConfig.filePath || "server.properties",
+    properties: stringifyProperties(gameConfig.values || {}),
+    sourceHash: gameConfig.sourceHash,
   };
 }
 

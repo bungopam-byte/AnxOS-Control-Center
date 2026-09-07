@@ -165,7 +165,7 @@ async function assertDetachedRuntimeReconciliation() {
       () => instanceService.startInstance("palworld-runtime-smoke"),
       (error) => {
         assert.strictEqual(error.code, "INSTANCE_ALREADY_RUNNING", "Duplicate start should return already-running compatibility code.");
-        assert.strictEqual(error.state, "ALREADY_RUNNING", "Duplicate start should include structured ALREADY_RUNNING state.");
+        assert.strictEqual(error.state, "INSTANCE_ALREADY_RUNNING", "Duplicate start should include structured INSTANCE_ALREADY_RUNNING state.");
         assert.strictEqual(error.runtime?.pid, 580981, "Duplicate start should report the reconciled runtime PID.");
         return true;
       },
@@ -862,14 +862,16 @@ async function assertRestartBackoffBounds() {
   await withTempService(async (instanceService) => {
     const instanceId = "restart-backoff-smoke";
     const delays = [];
-    for (let index = 0; index < 5; index += 1) {
+    // Ceiling of 3 immediate failures (QA finding: CRASH_LOOP should engage
+    // within seconds, not after ~31s of a 1/2/4/8/16s backoff ladder).
+    for (let index = 0; index < 3; index += 1) {
       const decision = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });
       assert.strictEqual(decision.allowed, true, "Immediate exit should be restartable before the retry ceiling.");
       delays.push(decision.delayMs);
     }
     const blocked = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });
     assert.strictEqual(blocked.allowed, false, "Immediate exit should stop restarting after the retry ceiling.");
-    assert.deepStrictEqual(delays, [1000, 2000, 4000, 8000, 16000], "Immediate restart delays should back off exponentially.");
+    assert.deepStrictEqual(delays, [1000, 2000, 4000], "Immediate restart delays should back off exponentially.");
 
     instanceService._test.resetRestartBackoff(instanceId);
     const reset = instanceService._test.getRestartBackoffDecision(instanceId, { immediateExit: true });

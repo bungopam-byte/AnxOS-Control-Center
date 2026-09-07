@@ -105,7 +105,7 @@ function getRuntimeErrorDetails(error) {
   if (error?.code === "INSTANCE_ALREADY_RUNNING") {
     return {
       code: error.code,
-      state: error.state || "ALREADY_RUNNING",
+      state: error.state || "INSTANCE_ALREADY_RUNNING",
       pid: error.pid || error.runtime?.pid || error.instance?.pid || null,
       runtime: error.runtime ? {
         pid: error.runtime.pid || null,

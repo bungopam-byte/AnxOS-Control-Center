@@ -90,17 +90,24 @@ function getCpuUsagePercent() {
   return round((1 - idleDelta / totalDelta) * 100);
 }
 
-function buildDiskUsage(total, free, mount) {
+function buildDiskUsage(total, free, mount, freeIncludingReserved = null) {
   if (!Number.isFinite(total) || !Number.isFinite(free) || total <= 0) {
     return null;
   }
 
   const used = Math.max(total - free, 0);
+  // `free`/`used` count filesystem-reserved blocks as unavailable (statfs
+  // bavail); expose the df-style figures alongside so UIs can show either.
+  const usedExact = Number.isFinite(freeIncludingReserved) && freeIncludingReserved >= 0
+    ? Math.max(total - freeIncludingReserved, 0)
+    : null;
   return {
     mount: mount || null,
     total,
     used,
     free,
+    usedExact,
+    reservedBytes: usedExact != null ? Math.max(used - usedExact, 0) : null,
     percent: round((used / total) * 100),
   };
 }
@@ -215,7 +222,8 @@ async function readStatfsDiskUsage(statPath, mountPath) {
   const blockSize = Number(stats.bsize || stats.frsize || 0);
   const total = Number(stats.blocks) * blockSize;
   const free = Number(stats.bavail ?? stats.bfree) * blockSize;
-  return buildDiskUsage(total, free, mountPath || statPath);
+  const freeIncludingReserved = Number(stats.bfree) * blockSize;
+  return buildDiskUsage(total, free, mountPath || statPath, freeIncludingReserved);
 }
 
 async function getDiskMountPoint(targetPath, platform = process.platform) {
@@ -631,6 +639,9 @@ async function getSystemSummary() {
       total: totalMemory,
       used: usedMemory,
       free: freeMemory,
+      // os.freemem() reports MemAvailable on Linux (and available physical
+      // memory on Windows) — expose the unambiguous name for new consumers.
+      available: freeMemory,
       percent: round((usedMemory / totalMemory) * 100),
     },
     disk,

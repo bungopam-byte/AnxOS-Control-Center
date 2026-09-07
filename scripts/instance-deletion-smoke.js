@@ -32,10 +32,21 @@ async function main() {
   assert.strictEqual(deleted.metadataRemoved, true, "normal deletion should remove metadata");
   assert(!(await exists(path.join(process.env.AGENT_INSTANCE_ROOT, "normal-delete"))), "normal deletion should remove the instance directory");
 
-  const stale = await service.deleteInstance("missing-folder");
-  assert.strictEqual(stale.deleted, true, "missing folder delete should succeed as stale");
-  assert.strictEqual(stale.alreadyMissing, true, "missing folder delete should report already missing");
-  assert.strictEqual(stale.metadataRemoved, true, "missing folder delete should report metadata removed/idempotent");
+  // QA finding: deleting something with neither a record nor files must be a
+  // 404, not a misleading idempotent success. "Stale" deletes (files exist but
+  // the record is gone) remain a graceful 200.
+  await assert.rejects(
+    () => service.deleteInstance("missing-folder"),
+    (error) => error?.code === "INSTANCE_NOT_FOUND" && error?.statusCode === 404,
+    "fully missing delete should reject with 404 INSTANCE_NOT_FOUND",
+  );
+  const staleDirId = "orphan-folder";
+  await fs.promises.mkdir(path.join(process.env.AGENT_INSTANCE_ROOT, staleDirId, "data"), { recursive: true });
+  const stale = await service.deleteInstance(staleDirId);
+  assert.strictEqual(stale.deleted, true, "stale orphan folder delete should succeed");
+  assert.strictEqual(stale.filesDeleted, true, "stale orphan folder delete should remove the files it found");
+  assert.strictEqual(stale.metadataRemoved, false, "stale orphan folder delete had no metadata to remove");
+  assert.strictEqual(stale.stale, true, "stale orphan folder delete should be flagged stale");
 
   const oldId = "old-record";
   await fs.promises.mkdir(path.join(process.env.AGENT_INSTANCE_ROOT, oldId), { recursive: true });

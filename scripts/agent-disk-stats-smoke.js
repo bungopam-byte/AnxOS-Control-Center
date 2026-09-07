@@ -61,11 +61,15 @@ async function main() {
   }, async (systemService) => {
     assert.strictEqual(systemService._test.resolveDiskRoot(windowsPath, "win32"), "C:\\");
     const disk = await systemService._test.getDiskUsage(windowsPath);
+    // bfree (300 blocks incl. reserved) vs bavail (250) must surface as
+    // df-style usedExact plus reservedBytes, on top of the legacy fields.
     assert.deepStrictEqual(disk, {
       mount: "C:\\",
       total: 4096000,
       used: 3072000,
       free: 1024000,
+      usedExact: 2867200,
+      reservedBytes: 204800,
       percent: 75,
     });
     const summary = await systemService.getSystemSummary();

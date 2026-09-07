@@ -69,6 +69,23 @@ function fingerprint(value) {
   return value ? crypto.createHash("sha256").update(value).digest("hex").slice(0, 12) : null;
 }
 
+// Tracks whether the configured key is actually accepted upstream so /status
+// cannot report a healthy integration while every proxied call 403s.
+let curseForgeKeyHealth = { state: "unknown", lastStatus: null, lastCheckedAt: null, lastErrorCode: null };
+
+function recordCurseForgeKeyAccepted() {
+  curseForgeKeyHealth = { state: "ok", lastStatus: 200, lastCheckedAt: new Date().toISOString(), lastErrorCode: null };
+}
+
+function recordCurseForgeKeyRejected(status, code) {
+  curseForgeKeyHealth = {
+    state: status === 401 || status === 403 ? "rejected" : "unknown",
+    lastStatus: status || null,
+    lastCheckedAt: new Date().toISOString(),
+    lastErrorCode: code || null,
+  };
+}
+
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -133,12 +150,20 @@ function getCurseForgeProxyStatus() {
       configured: Boolean(resolved.key),
       source: resolved.source,
       fingerprint: fingerprint(resolved.key),
+      keyState: curseForgeKeyHealth.state,
+      keyLastStatus: curseForgeKeyHealth.lastStatus,
+      keyLastCheckedAt: curseForgeKeyHealth.lastCheckedAt,
+      keyLastErrorCode: curseForgeKeyHealth.lastErrorCode,
     };
   } catch (error) {
     return {
       configured: false,
       source: null,
       fingerprint: null,
+      keyState: "unconfigured",
+      keyLastStatus: curseForgeKeyHealth.lastStatus,
+      keyLastCheckedAt: curseForgeKeyHealth.lastCheckedAt,
+      keyLastErrorCode: curseForgeKeyHealth.lastErrorCode,
       errorCode: error?.code || error?.name || "CURSEFORGE_KEY_UNREADABLE",
     };
   }
@@ -256,12 +281,16 @@ async function fetchCurseForgeApiUrl(target, resolved = requireApiKey()) {
     }, 502);
   }
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      recordCurseForgeKeyRejected(response.status, "CURSEFORGE_REQUEST_FAILED");
+    }
     throw new CurseForgeProxyError("CurseForge API request failed.", "CURSEFORGE_REQUEST_FAILED", {
       status: response.status,
       body: body.slice(0, 1000),
       path: target.pathname,
     }, response.status);
   }
+  recordCurseForgeKeyAccepted();
   return {
     statusCode: 200,
     body: JSON.parse(body),

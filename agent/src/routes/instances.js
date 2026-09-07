@@ -437,8 +437,10 @@ async function handleInstances(request, url) {
 
     const startId = getInstanceIdFromPath(url.pathname, "/start");
     if (request.method === "POST" && startId) {
+      const startBody = parseJsonBody(request);
+      const startOptions = startBody && startBody.role === "installer" ? { role: "installer" } : {};
       return result(200, {
-        instance: await startInstance(startId),
+        instance: await startInstance(startId, startOptions),
       });
     }
 

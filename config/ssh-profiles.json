@@ -5,7 +5,7 @@
       "id": "debian-server",
       "displayName": "Debian",
       "host": "192.168.1.134",
-      "nodeId": "application-host"
+      "nodeId": "agent-device-b4c39d2e-efdf-4b3b-864e-721c50f0a7e5"
     }
   ],
   "profiles": [
@@ -18,7 +18,7 @@
       "username": "anx",
       "authType": "password",
       "privateKeyPath": null,
-      "nodeId": "application-host"
+      "nodeId": "agent-device-b4c39d2e-efdf-4b3b-864e-721c50f0a7e5"
     }
   ],
   "defaultServerId": "debian-server",

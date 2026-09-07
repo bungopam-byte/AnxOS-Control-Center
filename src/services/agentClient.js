@@ -1352,8 +1352,8 @@ class NodeAgentClient {
     return this.put(`/instances/${encodeInstanceId(instanceId)}/fivem/license-key`, { licenseKey });
   }
 
-  startInstance(instanceId) {
-    return this.post(`/instances/${encodeInstanceId(instanceId)}/start`);
+  startInstance(instanceId, payload = {}) {
+    return this.post(`/instances/${encodeInstanceId(instanceId)}/start`, payload);
   }
 
   beginInstallationSession(instanceId, payload = {}) {
@@ -3009,13 +3009,14 @@ async function saveFiveMLicenseKey(instanceId, licenseKey, configOverride = null
   });
 }
 
-async function startInstance(instanceId, configOverride = null) {
+async function startInstance(instanceId, configOverride = null, options = {}) {
   if (shouldUseLocalInstanceService(configOverride)) {
-    return getLocalInstanceService().startInstance(instanceId);
+    return getLocalInstanceService().startInstance(instanceId, options);
   }
   return requestJson(`/api/v1/instances/${encodeInstanceId(instanceId)}/start`, {
     config: configOverride,
     method: "POST",
+    body: options.role === "installer" ? { role: "installer" } : null,
   });
 }
 

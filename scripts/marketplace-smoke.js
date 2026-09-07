@@ -1327,6 +1327,193 @@ async function assertFiveMSetupLifecycle() {
   }
 }
 
+async function assertFiveMInstallerStartBypassesSetupGuard() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-fivem-installer-smoke-"));
+  const previousRoot = process.env.AGENT_INSTANCE_ROOT;
+  process.env.AGENT_INSTANCE_ROOT = path.join(root, "instances");
+
+  const servicePath = require.resolve("../agent/src/services/instances/instanceService");
+  delete require.cache[servicePath];
+  const instanceService = require(servicePath);
+
+  try {
+    await instanceService.createInstance({
+      id: "fivem-installer-smoke",
+      displayName: "FiveM Installer Smoke",
+      type: "custom-command",
+      workingDirectory: "data/server",
+      executable: "bash",
+      args: ["-lc", "exit 0"],
+      restartPolicy: "never",
+      tags: ["fivem"],
+      templateId: "fivem",
+    });
+    await assert.rejects(
+      () => instanceService.startInstance("fivem-installer-smoke"),
+      (error) => error?.code === "FIVEM_SETUP_REQUIRED" && /setup is required/i.test(error.message || ""),
+      "A runtime start without FiveM setup must still be rejected."
+    );
+    // Installer starts (archive extraction etc.) run through the start pipeline
+    // with role "installer" and must not be blocked by runtime readiness checks.
+    const installerStart = await instanceService.startInstance("fivem-installer-smoke", { role: "installer" });
+    assert(installerStart, "An installer-role start must be allowed while FiveM setup is incomplete.");
+    const status = await instanceService.getStatus("fivem-installer-smoke");
+    assert(!["Setup Required"].includes(status.state), "Installer-role start must not mark the instance setup-required.");
+    // The installer command exits quickly; wait for the process to be reaped so
+    // the smoke does not leak a child process or a running instance record.
+    for (let waited = 0; waited < 5000; waited += 100) {
+      const current = await instanceService.getStatus("fivem-installer-smoke");
+      if (["Stopped", "Failed", "Setup Required"].includes(current.state)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    await instanceService.stopInstance("fivem-installer-smoke").catch(() => {});
+    await instanceService.deleteInstance("fivem-installer-smoke");
+  } finally {
+    if (previousRoot === undefined) {
+      delete process.env.AGENT_INSTANCE_ROOT;
+    } else {
+      process.env.AGENT_INSTANCE_ROOT = previousRoot;
+    }
+    delete require.cache[servicePath];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function assertFailedMarketplaceInstallRetainsInstanceAndRetriesReuse() {
+  const agentClient = require("../src/services/agentClient");
+  const originalFetch = global.fetch;
+  const originalAgent = {};
+  const patchedAgentMethods = [
+    "createInstance",
+    "listInstances",
+    "createInstanceFolder",
+    "writeInstanceFile",
+    "readInstanceFile",
+    "updateInstance",
+    "getInstanceStatus",
+    "startInstance",
+    "deleteInstance",
+    "getFiveMReadiness",
+    "checkDependencies",
+    "installDependencies",
+  ];
+  patchedAgentMethods.forEach((name) => {
+    originalAgent[name] = agentClient[name];
+  });
+
+  const instanceId = "fivem-retention-smoke";
+  const trace = [];
+  const instances = new Map();
+  const files = new Map();
+  let installerStartFailures = 1;
+
+  function currentInstance(id) {
+    const instance = instances.get(id);
+    if (!instance) {
+      throw new Error(`Missing mocked instance ${id}`);
+    }
+    return instance;
+  }
+
+  function makeTextResponse(body) {
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      text: async () => body,
+      arrayBuffer: async () => Buffer.from(body).buffer,
+    };
+  }
+
+  try {
+    global.fetch = async (url) => {
+      const href = String(url);
+      if (href.startsWith("https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/")) {
+        return makeTextResponse('<a href="10000-abc123/fx.tar.xz">fx.tar.xz</a>');
+      }
+      if (href === "https://runtime.fivem.net/artifacts/fivem/build_proot_linux/master/10000-abc123/fx.tar.xz") {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          text: async () => "",
+          arrayBuffer: async () => Buffer.from("fx-archive-data").buffer,
+        };
+      }
+      throw new Error(`Unexpected mocked fetch URL: ${href}`);
+    };
+    agentClient.createInstance = async (payload) => {
+      instances.set(payload.id, { ...payload, state: "Stopped", pid: null });
+      trace.push("agent:createInstance");
+      return { instance: currentInstance(payload.id) };
+    };
+    agentClient.listInstances = async () => ({ root: "/mock/instances", instances: [...instances.values()] });
+    agentClient.createInstanceFolder = async () => ({ ok: true });
+    agentClient.writeInstanceFile = async (id, filePath, content) => {
+      files.set(`${id}:${filePath}`, content);
+      return { path: filePath, size: String(content || "").length };
+    };
+    agentClient.readInstanceFile = async (id, filePath) => ({ path: filePath, content: files.get(`${id}:${filePath}`) ?? "" });
+    agentClient.updateInstance = async (id, patch) => {
+      const next = { ...currentInstance(id), ...patch };
+      instances.set(id, next);
+      if (patch.installStage !== undefined || patch.lastInstallError !== undefined) {
+        trace.push(`agent:updateInstallStage:${patch.installStage || ""}`);
+      }
+      return { instance: next };
+    };
+    agentClient.getInstanceStatus = async (id) => ({ instance: currentInstance(id) });
+    agentClient.startInstance = async (id, _configOverride, options) => {
+      trace.push(`agent:startInstance:${options?.role || "runtime"}`);
+      if (installerStartFailures > 0) {
+        installerStartFailures--;
+        throw new Error("Simulated archive extraction failure");
+      }
+      const next = { ...currentInstance(id), state: "Stopped", pid: null };
+      instances.set(id, next);
+      return { instance: next };
+    };
+    agentClient.deleteInstance = async (id) => {
+      trace.push(`agent:deleteInstance:${id}`);
+      instances.delete(id);
+      return { id, deleted: true };
+    };
+    agentClient.getFiveMReadiness = async () => ({ readiness: { setupRequired: true, reasonCode: "FIVEM_LICENSE_REQUIRED" } });
+    agentClient.checkDependencies = async () => ({ ok: true, dependencies: [], missingDependencyIds: [] });
+    agentClient.installDependencies = async () => ({ ok: true, results: [], dependencies: [], missingDependencyIds: [] });
+
+    const installOptions = { id: instanceId, name: "FiveM Retention Smoke", memory: "2G" };
+
+    await assert.rejects(
+      () => marketplaceService.installTemplate({ templateId: "fivem", options: installOptions }),
+      /Simulated archive extraction failure/i,
+      "The real installer failure must be preserved, not replaced by a FiveM start-readiness error."
+    );
+
+    // Failed install keeps the instance with install-failure diagnostics.
+    assert(!trace.some((entry) => entry.startsWith("agent:deleteInstance:")), "A failed install must not delete the instance.");
+    assert.strictEqual(trace.filter((entry) => entry === "agent:createInstance").length, 1, "A failed install must not create extra instances.");
+    assert(trace.some((entry) => entry === "agent:startInstance:installer"), "Installer starts must use the installer role.");
+    const retained = instances.get(instanceId);
+    assert(retained, "The failed install must leave the instance on the Instances page.");
+    assert.strictEqual(retained.installStage, "extracting", "The retained instance must record the failing install stage.");
+    assert(/Simulated archive extraction failure/.test(retained.lastInstallError || ""), "The retained instance must record the underlying failure message.");
+    assert(!Number.isNaN(Date.parse(retained.lastInstallAttemptAt || "invalid")), "The retained instance must record the last install attempt time.");
+
+    const retry = await marketplaceService.installTemplate({ templateId: "fivem", options: installOptions });
+    assert(retry, "The retried install must complete.");
+    assert.strictEqual(trace.filter((entry) => entry === "agent:createInstance").length, 1, "Retry must reuse the retained instance instead of creating an orphaned duplicate.");
+    assert.strictEqual(instances.get(instanceId)?.installStage, "ready", "A successful retry must mark the instance install stage ready.");
+  } finally {
+    global.fetch = originalFetch;
+    patchedAgentMethods.forEach((name) => {
+      agentClient[name] = originalAgent[name];
+    });
+  }
+}
+
 async function assertStoppedAndStaleInstancesCanBeDeleted() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "anxhub-instance-delete-smoke-"));
   const previousRoot = process.env.AGENT_INSTANCE_ROOT;
@@ -1413,8 +1600,14 @@ async function assertScriptMarketplaceStartupIsNotJarWrapped() {
       tags: ["minecraft", "forge"],
     });
     await instanceService.startInstance("invalid-script-startup-smoke");
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const invalidStatus = await instanceService.getStatus("invalid-script-startup-smoke");
+    // The child exits asynchronously; poll instead of a fixed sleep so a loaded
+    // machine cannot lose the race before the exit code is recorded.
+    let invalidStatus = null;
+    for (let i = 0; i < 50; i += 1) {
+      invalidStatus = await instanceService.getStatus("invalid-script-startup-smoke");
+      if (invalidStatus.exitCode !== null && invalidStatus.exitCode !== undefined) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     assert.strictEqual(invalidStatus.exitCode, 2, "Invalid command fixture should exit with code 2.");
     assert.strictEqual(invalidStatus.state, "Failed", "Invalid command should remain failed.");
     assert.strictEqual(invalidStatus.failureReason, "PROCESS_EXITED", "Non-zero command exit should be marked explicitly.");
@@ -3614,6 +3807,8 @@ async function main() {
   assertMarketplaceVersionMetadata();
   assertFiveMStartupSafety();
   await assertFiveMSetupLifecycle();
+  await assertFiveMInstallerStartBypassesSetupGuard();
+  await assertFailedMarketplaceInstallRetainsInstanceAndRetriesReuse();
   await assertStoppedAndStaleInstancesCanBeDeleted();
   await assertScriptMarketplaceStartupIsNotJarWrapped();
   await assertPaperMetadataBackfill();

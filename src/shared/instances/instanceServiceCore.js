@@ -1181,6 +1181,9 @@ function normalizeInstanceConfig(payload, existingConfig = null) {
     installationOperationId: payload.installationState === "installing" && INSTALLATION_OPERATION_ID_PATTERN.test(String(payload.installationOperationId || ""))
       ? String(payload.installationOperationId)
       : null,
+    installStage: payload.installStage !== undefined ? (payload.installStage ? String(payload.installStage).slice(0, 80) : null) : (existingConfig?.installStage || null),
+    lastInstallError: payload.lastInstallError !== undefined ? (payload.lastInstallError ? String(payload.lastInstallError).slice(0, 500) : null) : (existingConfig?.lastInstallError || null),
+    lastInstallAttemptAt: payload.lastInstallAttemptAt !== undefined ? (payload.lastInstallAttemptAt ? String(payload.lastInstallAttemptAt).slice(0, 40) : null) : (existingConfig?.lastInstallAttemptAt || null),
     createdAt,
     updatedAt: nowIso(),
     lastStartedAt: existingConfig?.lastStartedAt || null,
@@ -3566,6 +3569,19 @@ function isPalworldRuntimeCandidate(config = {}) {
     ].join(" "));
 }
 
+function isFiveMRuntimeCandidate(config = {}) {
+  return inferGameFamily(config) === "fivem" ||
+    /fivem|fxserver|cfx-server/i.test([
+      config.templateId,
+      config.displayName,
+      config.id,
+      config.executable,
+      config.game,
+      ...(Array.isArray(config.args) ? config.args : []),
+      ...(Array.isArray(config.tags) ? config.tags : []),
+    ].join(" "));
+}
+
 function isBenignPalworldStderrLine(line = "", options = {}) {
   const text = String(line || "").trim();
   if (!text) {
@@ -3613,6 +3629,22 @@ async function safeRealpath(filePath) {
 }
 
 async function buildDetachedRuntimeSpec(config = {}) {
+  if (isFiveMRuntimeCandidate(config)) {
+    const instanceRoot = await safeRealpath(instancePath(config.id));
+    const workingDirectory = await safeRealpath(resolveRelativeManagedPath(config.id, config.workingDirectory, "data"));
+    return {
+      kind: "fivem",
+      instanceRoot,
+      workingDirectory,
+      processNames: new Set(["fxserver"]),
+      executableFragments: [
+        path.join("alpine", "opt", "cfx-server", "FXServer"),
+        path.join("opt", "cfx-server", "FXServer"),
+        path.join("cfx-server", "FXServer.exe"),
+      ],
+      ports: configuredRuntimePorts(config),
+    };
+  }
   if (!isPalworldRuntimeCandidate(config)) {
     return null;
   }
@@ -4184,6 +4216,9 @@ async function updateInstance(instanceId, payload = {}) {
     installationOperationId: normalizeInstallationState(payload.installationState, current.installationState || "active") === "installing"
       ? current.installationOperationId || null
       : null,
+    installStage: payload.installStage !== undefined ? (payload.installStage ? String(payload.installStage).slice(0, 80) : null) : current.installStage,
+    lastInstallError: payload.lastInstallError !== undefined ? (payload.lastInstallError ? String(payload.lastInstallError).slice(0, 500) : null) : current.lastInstallError,
+    lastInstallAttemptAt: payload.lastInstallAttemptAt !== undefined ? (payload.lastInstallAttemptAt ? String(payload.lastInstallAttemptAt).slice(0, 40) : null) : current.lastInstallAttemptAt,
     updatedAt: nowIso(),
   };
 
@@ -4634,7 +4669,12 @@ async function startInstanceImpl(instanceId, options = {}) {
   const workingDirectory = resolveRelativeManagedPath(config.id, config.workingDirectory, "data");
   assertExecutableAllowed(config.executable);
   await fs.mkdir(workingDirectory, { recursive: true });
-  await assertFiveMCanStart(config);
+  // Installer processes (marketplace archive extraction, SteamCMD, etc.) reuse the
+  // start pipeline to launch their helper command. Runtime-only readiness checks
+  // such as the FiveM license guard must not apply to those starts.
+  if (options.role !== "installer") {
+    await assertFiveMCanStart(config);
+  }
   const neoForgeRuntimeValidation = await validateNeoForgeRuntimeFiles(config);
   if (neoForgeRuntimeValidation?.ok === false) {
     await appendLog(config.id, "stderr", neoForgeRuntimeValidation.message).catch(() => {});

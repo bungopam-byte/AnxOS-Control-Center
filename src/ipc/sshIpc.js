@@ -2,7 +2,7 @@ const { ipcMain } = require("electron");
 const { SshService } = require("../services/sshService");
 const { audit, checkRateLimit, requirePermission } = require("../services/securityService");
 const { createIpcError } = require("../shared/ipcError");
-const { redactString, sanitize } = require("../shared/redaction");
+const { sanitize } = require("../shared/redaction");
 
 const sshService = new SshService();
 let sshIpcRegistered = false;
@@ -19,7 +19,11 @@ function sanitizeSshEventPayload(payload = {}) {
   const safePayload = sanitize(rest);
   if (session !== undefined) safePayload.session = sanitize(session);
   if (sessionId !== undefined) safePayload.sessionId = String(sessionId).slice(0, 160);
-  if (chunk !== undefined) safePayload.chunk = redactString(chunk).slice(0, 16000);
+  // Terminal chunks are the user's own live shell session, not a log or
+  // diagnostic. Redacting them corrupts real output (paths, env vars, grep
+  // hits) and makes the terminal unusable; only cap the size to protect the
+  // renderer from pathological payloads.
+  if (chunk !== undefined) safePayload.chunk = String(chunk).slice(0, 16000);
   return safePayload;
 }
 

@@ -67,7 +67,10 @@ async function main() {
   serviceInstance.emit("session-updated", { id: "session-a", connected: true, workingDirectory: operationalWorkingDirectory });
   const serializedEvents = JSON.stringify(rendererEvents);
   assert(!serializedEvents.includes("event-secret"));
-  assert(!serializedEvents.includes("output-secret"));
+  // Terminal output chunks are the user's live shell session and must NOT be
+  // redacted (paths/env/grep output would be corrupted); status/error payloads
+  // stay redacted. See sanitizeSshEventPayload in src/ipc/sshIpc.js.
+  assert(rendererEvents.some((event) => event.payload?.chunk === "Authorization: Bearer output-secret"), "SSH terminal output must pass through unredacted.");
   assert(serializedEvents.includes("[redacted]"));
   assert(rendererEvents.some((event) => event.payload?.session?.workingDirectory === "[redacted-path] Servers/Palworld"), "SSH operational session state must retain default sanitizer behavior rather than enabling full path-field redaction.");
   console.log("SSH IPC error contract smoke checks passed.");

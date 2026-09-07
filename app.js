@@ -11431,6 +11431,9 @@ function formatInstanceCommandForDisplay(instance) {
 function getInstanceFailureReason(instance) {
   return formatInstanceValue(
     instance?.failureReason ||
+    // Marketplace installer failures retain the instance and record the error
+    // here instead of deleting it; surface it so the failure is visible.
+    instance?.lastInstallError ||
     instance?.lastExitReason ||
     instance?.runtime?.failureReason ||
     instance?.restartBackoff?.reason ||
@@ -13441,6 +13444,19 @@ function renderInstanceAttentionStrip(summary) {
 
 function renderInstanceSummary(instances) {
   const healthSummary = summarizeInstanceHealthBuckets(instances);
+  const healthFieldMap = {
+    running: "instancesHealthRunning",
+    stopped: "instancesHealthStopped",
+    starting: "instancesHealthStarting",
+    stopping: "instancesHealthStopping",
+    unavailable: "instancesUnavailable",
+    unhealthy: "instancesUnhealthy",
+    failed: "instancesFailed",
+    unknown: "instancesUnknown",
+  };
+  Object.entries(healthFieldMap).forEach(([bucket, field]) => {
+    setField(field, String(healthSummary.counts?.[bucket] || 0));
+  });
   const runningInstances = instances.filter(isInstanceRunning);
   const stoppedInstances = instances.filter((instance) => !isInstanceRunning(instance));
   const aggregateMetrics = instances.reduce((totals, instance) => {
@@ -17301,6 +17317,9 @@ function renderMarketplaceDownloads(downloads = []) {
     const eta = Number.isFinite(download.etaSeconds) && download.status !== "failed" ? ` · ETA ${formatDuration(download.etaSeconds)}` : "";
     const stage = download.stage || "Preparing";
     const installer = download.installerType ? ` · ${download.installerType}` : "";
+    // Failed downloads must show the stage where the install failed (matching the
+    // logged stage), not the installer mechanism.
+    const terminalDetail = normalizedStatus === "failed" && download.stage ? ` · ${download.stage}` : installer;
     const terminalState = terminal ? normalizedStatus : "";
     const speedText = terminalState ? "" : ` · ${formatDownloadSpeed(download.speedBytesPerSecond)}`;
     const completedBytes = Number(download.bytesReceived);
@@ -17309,7 +17328,7 @@ function renderMarketplaceDownloads(downloads = []) {
       ? ` · ${formatBytes(completedBytes)}${Number.isFinite(totalBytes) && totalBytes > 0 ? ` / ${formatBytes(totalBytes)}` : " downloaded"}`
       : "";
     const baseText = terminal
-      ? `${operationStatusLabel(normalizedStatus)}${installer}`
+      ? `${operationStatusLabel(normalizedStatus)}${terminalDetail}`
       : `${download.body || `${stage}${installer}`} · ${download.progress || 0}%${byteText}${speedText}${eta}`;
     meta.textContent = getFriendlyOperationText(baseText);
 

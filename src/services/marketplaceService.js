@@ -2856,6 +2856,12 @@ async function waitForInstanceInstaller(instanceId, timeoutMs, agentConfig = nul
     if (state === "Stopped") {
       return last;
     }
+    // Installer runs on FiveM instances end in "Setup Required" (the agent
+    // persists license readiness after the start pipeline), which is a clean
+    // installer exit — not a hang.
+    if (state === "Setup Required") {
+      return last;
+    }
     if (state === "Failed") {
       const instance = last?.instance || last || {};
       if (Number(instance.exitCode) === 0 && instance.failureReason === "EARLY_CLEAN_EXIT") {
@@ -2911,7 +2917,10 @@ function getEffectiveInstallerTimeoutMs(template, fallbackMs = 600000) {
 
 async function startAndWaitForInstanceInstaller(instanceId, timeoutMs, agentConfig = null, context = {}) {
   try {
-    await agentClient.startInstance(instanceId, agentConfig);
+    // Installer processes run through the instance start pipeline, but they are
+    // installation work — runtime start-readiness guards (e.g. the FiveM license
+    // check) must not apply here.
+    await agentClient.startInstance(instanceId, agentConfig, { role: "installer" });
   } catch (error) {
     if (getAgentErrorCode(error) !== "INSTANCE_ALREADY_RUNNING") {
       throw error;
@@ -3748,6 +3757,19 @@ async function downloadToInstance(template, options, instanceId, progress, agent
   return { downloaded, records, metadata };
 }
 
+async function setInstanceInstallStage(instanceId, stage, agentConfig = null, extraFields = null) {
+  // Stage tracking is diagnostics only — it must never break an install.
+  try {
+    await agentClient.updateInstance(instanceId, { installStage: stage, ...extraFields }, agentConfig);
+  } catch (error) {
+    console.warn("[Marketplace] Could not update instance install stage.", {
+      instanceId,
+      stage,
+      error: error?.message || String(error),
+    });
+  }
+}
+
 async function installTemplate(payload = {}) {
   const requestId = payload.requestId || require("crypto").randomUUID();
   const baseTemplate = findTemplate(payload.templateId, payload.template);
@@ -3846,8 +3868,26 @@ async function installTemplate(payload = {}) {
     });
     pushStep(progress, "Create instance", "running", `Creating ${instancePayload.id}.`);
     updateDownload(parentRecord, { stage: "Create instance", progress: 15 });
-    const createResult = await agentClient.createInstance(instancePayload, agentConfig);
-    createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
+    // Retry safety: if a previous failed install left the instance behind (it is
+    // retained on purpose), reuse it instead of creating an orphaned duplicate.
+    const existingStatus = await agentClient.getInstanceStatus(instancePayload.id, agentConfig).catch(() => null);
+    const existingInstance = existingStatus?.instance || existingStatus || null;
+    const busyStates = ["Starting", "Running", "Stopping", "Restarting"];
+    if (existingInstance?.id && busyStates.includes(existingInstance.state)) {
+      throw createMarketplaceError(`Instance ${instancePayload.id} is running and cannot be reinstalled. Stop it first.`, "INSTALL_TARGET_RUNNING", { templateId: template.id, instanceId: existingInstance.id, retryable: false });
+    }
+    const reuseExistingInstance = Boolean(existingInstance?.id) && (!existingInstance.templateId || existingInstance.templateId === template.id);
+    if (existingInstance?.id && !reuseExistingInstance) {
+      throw createMarketplaceError(`An instance named ${instancePayload.id} already exists for a different template.`, "INSTANCE_ALREADY_EXISTS", { templateId: template.id, instanceId: existingInstance.id, retryable: false });
+    }
+    let createResult;
+    if (reuseExistingInstance) {
+      createResult = existingInstance;
+      createdInstanceId = existingInstance.id;
+    } else {
+      createResult = await agentClient.createInstance({ ...instancePayload, installStage: "instance-create" }, agentConfig);
+      createdInstanceId = resolveCreatedInstanceId(createResult, instancePayload.id);
+    }
     const createRecord = createResult?.instance || createResult?.data?.instance || createResult?.data || createResult || {};
     const instance = typeof createRecord === "object" ? { ...createRecord, id: createdInstanceId } : { id: createdInstanceId };
     console.info("[Marketplace] Create result.", {
@@ -3863,8 +3903,9 @@ async function installTemplate(payload = {}) {
       resolvedCreatedId: createdInstanceId,
       refreshedInstanceIds: createdIds,
     });
-    pushStep(progress, "Create instance", "complete", `Created ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
+    pushStep(progress, "Create instance", "complete", `${reuseExistingInstance ? "Reused existing instance" : "Created"} ${createdInstanceId}. Agent instances: ${createdIds.join(", ") || "none"}.`);
     console.info("[Marketplace][Stage]", { stage: "instance.create.complete", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId });
+    await setInstanceInstallStage(createdInstanceId, "instance-create", agentConfig);
 
     pushStep(progress, "Create folders", "running");
     updateDownload(parentRecord, { stage: "Create folders", progress: 25 });
@@ -3878,9 +3919,11 @@ async function installTemplate(payload = {}) {
       pushStep(progress, "Download files", "complete", "Starter project generated.");
     }
 
+    await setInstanceInstallStage(createdInstanceId, "archive-download", agentConfig);
     const downloadResult = await downloadToInstance(template, options, createdInstanceId, progress, agentConfig, parentRecord);
     console.info("[Marketplace][Stage]", { stage: "download.complete", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId });
     const installerStageLabel = manifestValidation.installerType === "steamcmd-native" ? "Install SteamCMD app" : "Extract files";
+    await setInstanceInstallStage(createdInstanceId, "archive-extract", agentConfig);
     updateDownload(parentRecord, {
       stage: installerStageLabel,
       progress: Math.max(Number(parentRecord.progress) || 0, downloadResult.downloaded ? 55 : 40),
@@ -3912,6 +3955,7 @@ async function installTemplate(payload = {}) {
 
     pushStep(progress, "Write config", "running");
     updateDownload(parentRecord, { stage: "Write config", progress: 70 });
+    await setInstanceInstallStage(createdInstanceId, "configuration", agentConfig);
     if (isMinecraft) {
       await writeInstanceText(createdInstanceId, "eula.txt", `eula=${options.acceptEula ? "true" : "false"}\n`, agentConfig);
       await applyMinecraftServerProperties(agentClient, createdInstanceId, options, ports[0], agentConfig);
@@ -4000,16 +4044,22 @@ async function installTemplate(payload = {}) {
 
     if (template.manualStartRequired) {
       pushStep(progress, "Optional start", "skipped", template.manualStartMessage || "Manual setup is required before this server can start.");
-    } else if (options.start !== false && (!needsDownloadedArtifact || downloadResult.downloaded)) {
+    } else if (options.start !== false && !setupRequiredResult?.readiness?.setupRequired && (!needsDownloadedArtifact || downloadResult.downloaded)) {
       pushStep(progress, "Optional start", "running");
       updateDownload(parentRecord, { stage: "Optional start", progress: 92 });
       const started = await agentClient.startInstance(createdInstanceId, agentConfig);
       startedInstance = started.instance || started;
       pushStep(progress, "Optional start", "complete", "Instance start requested.");
     } else {
-      pushStep(progress, "Optional start", "skipped", needsDownloadedArtifact ? "Start skipped until the server jar is available." : "Start was disabled for this install.");
+      const skipReason = setupRequiredResult?.readiness?.setupRequired
+        ? "Start skipped: FiveM setup is required before this server can start."
+        : needsDownloadedArtifact
+          ? "Start skipped until the server jar is available."
+          : "Start was disabled for this install.";
+      pushStep(progress, "Optional start", "skipped", skipReason);
     }
 
+    await setInstanceInstallStage(createdInstanceId, "ready", agentConfig);
     pushStep(progress, "Complete", "complete", setupRequiredResult?.readiness?.setupRequired ? "Installation finished. FiveM setup is required before startup." : "Installation finished.");
     if (setupRequiredResult?.readiness?.setupRequired) {
       updateDownload(parentRecord, {
@@ -4037,17 +4087,23 @@ async function installTemplate(payload = {}) {
     };
   } catch (error) {
     console.error("[Marketplace][Stage]", { stage: "install.error", timestamp: new Date().toISOString(), requestId, nodeId: installNodeId, templateId: template.id, instanceId: createdInstanceId, errorCode: error?.code || null, errorMessage: error?.message || null });
-    if (createdInstanceId && template.rollbackOnFailure !== false) {
-      try {
-        await agentClient.deleteInstance(createdInstanceId, agentConfig);
-        pushStep(progress, "Rollback", "complete", `Removed incomplete instance ${createdInstanceId}.`);
-      } catch {
-        pushStep(progress, "Rollback", "failed", `Could not remove incomplete instance ${createdInstanceId}.`);
-      }
-    }
     pushStep(progress, "Failed", "failed", mapMarketplaceError(error));
     const errorDetails = getErrorDetails(error);
     const failureStage = getErrorStage(error, createdInstanceId ? "Failed" : "Create instance");
+    if (createdInstanceId) {
+      // Failed installs keep the instance so it stays visible on the Instances
+      // page and can be retried without creating an orphaned duplicate.
+      try {
+        await agentClient.updateInstance(createdInstanceId, {
+          installStage: failureStage,
+          lastInstallError: String(mapMarketplaceError(error)).slice(0, 500),
+          lastInstallAttemptAt: new Date().toISOString(),
+        }, agentConfig);
+        pushStep(progress, "Retain instance", "complete", `Instance ${createdInstanceId} retained and marked as a failed install.`);
+      } catch (markError) {
+        pushStep(progress, "Retain instance", "failed", `Could not record the install failure on instance ${createdInstanceId}: ${markError?.message || "unknown error"}.`);
+      }
+    }
     finalizeInstallTaskRecord(parentRecord, "failed", mapMarketplaceError(error), {
       ...errorDetails,
       stage: failureStage,

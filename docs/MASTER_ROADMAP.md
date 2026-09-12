@@ -1,9 +1,13 @@
 # AnxOS Master Roadmap
 
-**Product:** AnxOS — Control Center, self-hosted server platform, and future server OS  
-**Updated:** 2026-09-03  
-**Edition:** 0.2 — Expanded reconstructed product roadmap  
-**Planning status:** Proposed sequence; implementation and release acceptance NOT VERIFIED in this revision  
+**Product:** AnxOS — Control Center, self-hosted server platform, and future server OS
+
+**Updated:** 2026-09-12
+
+**Edition:** 0.3 — Infrastructure Update vision integrated into V2 planning
+
+**Planning status:** Proposed sequence; implementation and release acceptance NOT VERIFIED in this revision
+
 **Progression:** V1 Control Center → V2 self-hosted/server-management platform → Linux-based AnxOS server OS/appliance
 
 ## 1. Product direction
@@ -293,6 +297,60 @@ Automated checks, live UI acceptance, real workload behavior, and packaged relea
 
 **Deferred beyond the V2 core unless explicitly adopted:** General-purpose virtual-machine orchestration, high-availability clustering, automatic live migration, full hosting-reseller billing, complete mail hosting, arbitrary storage-pool administration and universal game support. Basic web/service/domain administration belongs in V2-H; a complete commercial hosting suite requires a separate scope decision.
 
+## 6A. V2 Infrastructure Update — user-supplied vision (2026-09-12)
+
+**Label:** USER DIRECTION — the user supplied this vision document on 2026-09-12 under the title "AnxOS Control Center V2 — The Infrastructure Update." It establishes product intent, not implementation. All milestone IDs, mappings, ordering, and acceptance framing below are **RECONSTRUCTED / PROPOSED** operationalization of that intent. Nothing here is implemented or verified; existing V2-A…V2-K gates continue to apply.
+
+**Vision statement (as supplied):** V2 transforms AnxOS from a server management application into a *local-first intelligent infrastructure platform* managing applications, game servers, containers, networking, storage, automation, AI-assisted operations, and multi-node environments.
+
+### 6A.1 Mapping of vision centers to existing V2 milestones
+
+Most named centers are the same work as existing tracks, expressed as user-facing centers. Where a center maps to an existing milestone, it extends that milestone's scope rather than replacing it:
+
+| Vision center | Roadmap mapping | Notes |
+| --- | --- | --- |
+| 🏠 Home Server Center | **V2-B** | Homelab dashboard, one-click installs, guided onboarding, resource monitoring |
+| 🐳 Container Center | **V2-C** | Docker + Compose first; Podman/Kubernetes/Nomad remain future-ready architecture only (matches Section 6 deferrals) |
+| 🌐 Network Center | **V2-H** | DNS, domains, reverse proxies, certificates, public access; Playit/Tailscale/Cloudflare Tunnel as first providers; WireGuard/ZeroTier/Traefik/Caddy/Nginx future |
+| 💾 Storage Center | **V2-F** | SMART health, capacity, mounts, filesystem monitoring; RAID/pools/snapshots future |
+| 📂 Shared Folder Center | **V2-F** | SMB/NFS/local shares with capacity, clients, permissions |
+| 📊 Monitoring Center | **V2-J** | CPU/RAM/GPU/storage/network/temps, historical graphs, alerts, thresholds |
+| 🩺 Health Center | **V2-J** + AnxOS Intelligence (6A.2) | Prioritized recommendations on one page |
+| 🛒 Marketplace 2.0 | **V2-D** | One-click packages declaring dependencies, ports, permissions, storage, compatibility, updates |
+| 🌍 Multi-Node Infrastructure | **V2-G** (+ V2-A identities) | Windows, Debian, Ubuntu, Fedora, Raspberry Pi, VPS, dedicated; per-node resources/capabilities/health |
+| 💻 Integrated Terminal | **V2-H** (existing Shell track) | PowerShell/Bash/SSH first; tmux/multi-session future |
+| 📱 Remote Dashboard | **V2-A** (authenticated browser surface) → later web/mobile | Monitoring, backups, containers, nodes, apps |
+| 🔐 Security Improvements | **V2-A + V2-I** | Secure IPC, sandboxing, RBAC, permissions, feature flags, secret handling |
+| 🎮 Native Game Server Platform | **V2-E** | Minecraft, Palworld, FiveM, Terraria, Factorio, Valheim; mod support via adapter contract |
+| 💽 Backup Center | **V2-F** | Local/NAS/cloud destinations, verification, restore validation, retention |
+| 🔔 Notification Center | **V2-J** (alerts) | Desktop/Discord/Email first; mobile push future |
+| 🔍 Diagnostics Center | **V2-J** (observability) | Logs, configs, versions, health reports, redacted exports |
+| 📦 Dependency Center | **V2-D** (runtimes) | Missing runtime detection, version checks, one-click repair |
+| 🎨 Themes & Customization | **New proposed milestone** (6A.3) | Themes, widgets, dashboards, layouts, plugin customization |
+| 📈 Analytics Center | **New proposed milestone** (6A.3) | Historical analytics for nodes, marketplace, apps, performance, storage growth |
+
+### 6A.2 New capabilities introduced by the vision (proposed additions)
+
+These do not exist in the current V2-A…V2-K sequence. Each requires scoping, dependency definition, and an acceptance gate before implementation. Proposed IDs follow the existing naming scheme; ordering is undecided.
+
+- **V2-L — AnxOS Intelligence (flagship-adjacent):** Translate raw technical failures (e.g., `ECONNRESET`) into plain-language explanations with recommended actions; root-cause analysis, health scoring, configuration validation, performance/security suggestions, AI maintenance reports, and *safe* repair workflows. Example target: Agent connection interruption → "the remote node stopped responding" + retry/restart/verify actions. **Hard requirement:** AI assistance must remain advisory; no repair action executes without explicit user approval, and diagnostics must use existing redaction rules.
+- **V2-M — Automation Engine:** User-defined workflows (conditions → triggers → actions → notifications) with cooldowns, retry limits, and notification routing (e.g., CPU > 90% → restart service → notify Discord). Requires V2-A job lifecycle; destructive actions must respect V2-I permissions and require confirmation policies.
+- **V2-N — Plugin SDK:** Sandboxed, permission-based plugins adding pages, widgets, marketplace apps, automation hooks, diagnostics, AI providers, and node capabilities. Manifest validation, safe mode, and version compatibility required before any third-party executable content; integrates with V2-D trust model and V2-I isolation.
+- **V2-O — Mission Control (flagship):** Users define missions ("Deploy Minecraft Network," "Build Home Media Server," "Deploy FiveM") and AnxOS coordinates dependencies, storage, networking, containers, public access, health checks, AI validation, deployment, and backups. The **user reviews and approves the execution plan before deployment** — consistent with the ADP approval philosophy.
+- **V2-P — Themes & Customization Center:** Themes, widgets, dashboard layouts, plugin-driven customization.
+- **V2-Q — Analytics Center:** Historical analytics across nodes, marketplace usage, application performance, downloads, and storage growth (retention budgets per V2-J).
+
+### 6A.3 Future architecture interfaces (explicitly out of initial V2 scope)
+
+The vision names Hyper-V, Proxmox, VMware, Kubernetes, Podman, Nomad, and distributed clusters as architectural foundations only. These align with the existing Section 6 deferral list and remain interface-level preparation, **not** initial V2 implementation.
+
+### 6A.4 Planning status
+
+- [ ] Scope each proposed milestone (V2-L…V2-Q) with owners, dependencies, and acceptance gates.
+- [ ] Decide sequencing relative to V2-A…V2-K (recommendation: land V2-A first, then fold Intelligence/Health groundwork into V2-B/J scopes).
+- [ ] Confirm which "future-ready" items (Podman, Kubernetes, WireGuard, ZeroTier, mobile push, RAID) remain explicitly deferred.
+- [ ] Reconcile vision feature lists with the V1 feature set to avoid re-implementing existing capabilities (game adapters, terminal, agent health already have V1/V2-A foundations).
+
 ## 7. AnxOS becomes a Linux server OS/appliance
 
 All OS milestones are **RECONSTRUCTED / PROPOSED**. The destination is user-requested; distribution choice, kernel policy, hardware matrix, installer technology and version branding are undecided. A Linux-based appliance can build on an established distribution without inventing a new kernel.
@@ -445,6 +503,7 @@ Preserve recovered historical phase numbers verbatim. Do not infer Phase 1–10 
 | --- | --- | --- |
 | 2026-09-03 | 0.1 | Reconstructed roadmap fragments, Phase 11A history and R0–R4 Alpha/Beta continuation. |
 | 2026-09-03 | 0.2 | Expanded into V1 → V2 platform → Linux OS/appliance progression; added practical tracks, dependencies, checkboxes, release gates, integrated acceptance and decisions; retained evidence/history with explicit limits. |
+| 2026-09-12 | 0.3 | Integrated the user-supplied "V2 — The Infrastructure Update" vision as Section 6A: mapped its centers to V2-A…V2-K tracks and added proposed milestones V2-L…V2-Q (AnxOS Intelligence, Automation Engine, Plugin SDK, Mission Control, Themes, Analytics). Planning edits only; no implementation claimed. |
 
 ## Appendix A — Preserved evidence and engineering history
 

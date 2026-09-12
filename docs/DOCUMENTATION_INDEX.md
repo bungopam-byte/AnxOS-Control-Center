@@ -41,6 +41,12 @@ artifact.
 historical workflows. Their current replacements are the final readiness report
 and the RC real-machine test sheet.
 
+Per-build release notes are historical evidence too. The notes file for the
+current release candidate lives at the repository root as
+`RELEASE_NOTES_<version>-build<build>.md` (the Desktop Release workflow attaches
+it to the GitHub release, and `scripts/versioning-smoke.js` asserts the naming
+contract). All older notes are archived under `releases/` in this directory.
+
 ## Generated Release Data
 
 `release.json` is the source of public version, build, and channel identity.

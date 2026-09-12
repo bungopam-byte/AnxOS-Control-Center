@@ -5,28 +5,23 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 .env
+.env.*
+!.env.example
 
 dist-verify/
-
 artifacts/
-
-dist/
-
 .npm-cache/
-
-.tmp-agent-config-test/
-
-.tmp-agent-config-test-save/
+release-artifacts/
 
 # Codex temporary Electron smoke test profiles
 .tmp-electron-smoke-profile*
 .tmp-sidebar-*.js
 
-# Local Discord bot runtime data if bind mounts are used instead of Docker named volumes.
-data/
-logs/
-bot-config/
-.env
+# AI tooling local state
+.mimosa/
+.v2c/
+
+# Agent mode runtime data if bind mounts are used instead of named volumes.
 config/marketplace.json
 config/agent.json
 config/owner-accounts.json
@@ -41,7 +36,6 @@ agent/config/
 *.env
 agent/*.log
 release-build.json
-release-artifacts/
 resources/hardware-telemetry/
 resources/bundled-runtimes/
 tools/windows-hardware-telemetry/bin/

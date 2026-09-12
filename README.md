@@ -1,82 +1,54 @@
 # AnxOS Control Center
 
-AnxOS Control Center is a private, lightweight local desktop dashboard for a homelab server. It uses Electron to open the existing static HTML/CSS/JS interface in a desktop window and reads local system metrics through a narrow Electron IPC service.
+AnxOS Control Center is a private, local-first desktop control center for homelab
+servers, built as an Electron desktop app for Windows and Linux. It manages remote
+AnxOS Agent nodes over a narrow, token-authenticated REST API: nodes, instances,
+marketplace installs, files, backups, SSH, Docker resources, diagnostics, and
+updates — from a single desktop window.
 
 Official website: https://anxoscontrolcenter.org
 
 This project intentionally does not include secrets, tokens, API keys, credentials, or backend service controls.
 
-## Private Alpha Status
+## Current Status
 
 Current public app metadata comes from `release.json`:
 
 ```json
 {
-  "version": "1.7",
-  "build": 142,
+  "version": "1.9",
+  "build": 199,
   "channel": "Private Alpha"
 }
 ```
 
-Private Alpha means AnxOS Control Center is intended for a small group of trusted testers on known Windows and Debian machines. It is not a public beta and it is not a v1.0 release.
+AnxOS Control Center is intended for a small group of trusted testers on known
+Windows and Debian machines. It is not a public beta.
 
 Start here:
 
 - [New User Guide](docs/NEW_USER_GUIDE.md)
-- [Onboarding Validation](docs/ONBOARDING_VALIDATION.md)
 - [Private Alpha Tester Guide](docs/PRIVATE_ALPHA_TESTER_GUIDE.md)
 - [Known Limitations](docs/KNOWN_LIMITATIONS.md)
-- [Real-Machine Validation](docs/REAL_MACHINE_VALIDATION.md)
-- [Tester Commands](docs/TEST_COMMANDS.md)
-- [Private Alpha Readiness Audit](docs/PRIVATE_ALPHA_READINESS_AUDIT.md)
-- [Private Alpha Final Release Gate](docs/PRIVATE_ALPHA_RELEASE_GATE.md)
+- [Test Commands](docs/TEST_COMMANDS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Documentation Index](docs/DOCUMENTATION_INDEX.md)
 
 Do not paste tokens, passwords, pairing codes, private URLs, exported config files, or unredacted logs into bug reports. Use Diagnostics export or copied summaries only after confirming redaction.
 
-## Files
-
-```text
-AnxOS-Control-Center/
-├── README.md
-├── app.js
-├── anxhub.desktop
-├── index.html
-├── main.js
-├── package.json
-├── package-lock.json
-├── preload.js
-├── src
-│   ├── api
-│   ├── amp
-│   ├── assets
-│   ├── backups
-│   ├── components
-│   ├── docker
-│   ├── ipc
-│   │   └── systemIpc.js
-│   ├── minecraft
-│   ├── pages
-│   ├── playit
-│   ├── services
-│   │   └── systemService.js
-│   ├── ssh
-│   ├── system
-│   └── utils
-├── start-anxhub.sh
-└── styles.css
-```
-
-## Current Dashboard Features
+## Current Capabilities
 
 The desktop application includes workspaces for:
 
 - Dashboard metrics for the local desktop and selected Agent node
 - Nodes and Node Details
 - Agent Control and Diagnostics
-- Marketplace installs and dependency checks
-- Instances, console logs, files, backups, and operations
+- Marketplace installs and dependency checks, including CurseForge integration
+- Instances, console logs, files, backups, and long-running operations
+- Game server configuration editing (Minecraft, Palworld, FiveM)
 - Public Access provider status
 - Docker resources when Docker is available on the selected node
+- SSH terminal access to managed nodes
 - Owner and security workflows
 
 Long-running renderer actions preserve resource identity. Reload, download,
@@ -100,38 +72,37 @@ backup of the previous file. Paths are confined to the instance directory.
 
 Missing platform data is shown as unavailable, unknown, or not tested instead of using fake values.
 
-## AMP API Integration For Source Development
-
-AnxOS Control Center can connect to a local AMP API using `@cubecoders/ampapi`. In a source-development checkout, credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed. Packaged normal-user workflows should use the in-app setup surfaces instead of editing environment files.
-
-Create your local environment file:
-
-```bash
-cd /home/anx/Projects/AnxOS-Control-Center
-cp .env.example .env
-```
-
-Edit `.env` with your local AMP details:
+## Repository Layout
 
 ```text
-AMP_URL=http://192.168.1.134:8080
-AMP_USERNAME=your_amp_username
-AMP_PASSWORD=your_amp_password
+AnxOS-Control-Center/
+├── main.js               Electron main process
+├── preload.js            Context-isolated renderer bridge (window.anx, window.anxhub)
+├── app.js                Renderer application logic
+├── index.html            Renderer UI markup
+├── styles.css            Renderer styles
+├── release.json          Source of truth for public version/build/channel
+├── src/
+│   ├── assets/           App runtime assets (logo, startup sound)
+│   ├── ipc/              Electron IPC route registration
+│   ├── services/         Application services (instances, marketplace, SSH, ...)
+│   └── shared/           Logic shared between main process, renderer, and Agent
+├── agent/                AnxOS Agent (standalone Node service for managed nodes)
+├── backend/              Account device-authorization handlers (shared reference)
+├── config/               Shipped example/runtime config templates
+├── windows/              Windows installer assets and scheduled-task scripts
+├── assets/               App icons and branding
+├── scripts/              Smoke tests, QA harnesses, release/build tooling
+├── docs/                 Product, architecture, QA, and release documentation
+│   └── releases/         Historical per-build release notes
+├── website/              Public website deployed to Cloudflare Pages
+├── supabase/             Supabase Edge Functions and migrations (account system)
+├── functions/            Cloudflare Pages download functions
+├── tools/                Windows hardware telemetry helper (C#)
+└── .github/              CI workflows (Desktop Release, Cloudflare Pages deploy)
 ```
 
-The dashboard reports AMP connection status, instances, server state, player count, TPS, CPU usage, and RAM usage when those values are exposed by the AMP API. Missing or unavailable AMP data is shown as unavailable without crashing the app.
-
-## Architecture
-
-- `main.js` creates the Electron desktop window and blocks in-app navigation to external URLs.
-- `preload.js` exposes a small `window.anxhub` API to the browser context.
-- `src/ipc/systemIpc.js` registers the system metrics IPC route.
-- `src/ipc/ampIpc.js` registers the AMP IPC route.
-- `src/services/systemService.js` reads local OS metrics with Node APIs and platform commands.
-- `src/services/ampService.js` authenticates with AMP and normalizes available instance metrics.
-- Empty domain folders under `src/` reserve clean module boundaries for Minecraft, AMP, playit.gg, SSH, Docker, backups, pages, and shared UI as those integrations are implemented.
-
-The renderer still uses plain HTML/CSS/JavaScript. Node integration remains disabled in the browser window.
+The renderer uses plain HTML/CSS/JavaScript. Node integration remains disabled in the browser window, and navigation to external URLs is blocked in the main process.
 
 ## Run From Source For Development
 
@@ -140,7 +111,6 @@ This section is for developers running the repository checkout. Normal users sho
 Install dependencies once:
 
 ```bash
-cd /home/anx/Projects/AnxOS-Control-Center
 npm install
 ```
 
@@ -151,6 +121,11 @@ npm start
 ```
 
 This opens AnxOS Control Center as a local desktop window. The app loads `index.html` from disk and does not start a public web server.
+
+For a guided launcher, use `AnxDev.cmd` (Windows) or `./AnxDev.sh` (Linux). The
+launcher installs dependencies when needed, sets the trusted-development
+environment flags, and offers DevTools and smoke-test menu entries. See
+`AnxDev.ps1` for the exact environment it sets.
 
 ## Pair An Agent
 
@@ -172,57 +147,57 @@ Manual URL/token setup remains available under Advanced Setup for development, r
 
 Developer and headless recovery helpers such as token status, token rotation, and source-checkout pairing scripts remain available from `package.json`, but they are not the normal setup path.
 
-### One-Click Development Launcher
+## AMP API Integration For Source Development
 
-For local source development, use the AnxDev launcher instead of typing npm commands.
+AnxOS Control Center can connect to a local AMP API using `@cubecoders/ampapi`. In a source-development checkout, credentials are loaded from `.env` with `dotenv`; `.env` is ignored by git and must not be committed. Packaged normal-user workflows should use the in-app setup surfaces instead of editing environment files.
 
-Linux:
+Create your local environment file:
 
 ```bash
-./AnxDev.sh
+cp .env.example .env
 ```
 
-You can also double-click `AnxDev.sh` from a file manager if your desktop environment allows launching executable scripts.
-
-Windows:
+Edit `.env` with your local AMP details:
 
 ```text
-Double-click AnxDev.cmd
+AMP_URL=http://your-amp-host:8080
+AMP_USERNAME=your_amp_username
+AMP_PASSWORD=your_amp_password
 ```
 
-The launcher menu can:
+The dashboard reports AMP connection status, instances, server state, player count, TPS, CPU usage, and RAM usage when those values are exposed by the AMP API. Missing or unavailable AMP data is shown as unavailable without crashing the app.
 
-- Launch AnxOS Development with `npm run start`
-- Launch AnxOS Development with DevTools
-- Run `npm run owner:smoke`
-- Run `npm run marketplace:smoke`
+## Testing
 
-AnxDev sets only trusted source-development flags supported by the app:
+Validation is tiered; each tier is a set of smoke-test scripts (no test framework):
 
-- `NODE_ENV=development`
-- `ANXOS_TRUSTED_DEVELOPMENT_MODE=1`
-- `ANXOS_OPEN_DEVTOOLS=1` only for the DevTools option
+```bash
+npm run qa:fast       # fast tier: syntax checks, versioning, redaction, core contracts
+npm run qa:feature    # feature tier: adds domain smoke suites
+npm run qa:release    # release tier: full RC validation command set
+npm run rc:validate   # runs every registered *:smoke suite as subprocesses
+npm run qa:dirty-check  # verifies the working tree is clean
+```
 
-The development owner fallback password is available only in an unpackaged Electron run with trusted development mode enabled. Packaged releases continue to reject the development fallback and weak production setup passwords. The app shows a subtle `Development Mode` badge only when the main process confirms trusted unpackaged development mode.
-
-Troubleshooting:
-
-- If Node.js is missing, install the current LTS from https://nodejs.org/ and reopen the launcher.
-- If npm is missing, repair/reinstall Node.js because npm ships with the standard Node installer.
-- If dependency installation fails, delete an incomplete `node_modules` folder and run the launcher again, or run `npm install` manually to see the full npm error.
-- If Windows blocks PowerShell scripts, use `AnxDev.cmd`; it runs PowerShell with `-ExecutionPolicy Bypass` for this local script only.
+See [QA Automation](docs/QA_AUTOMATION.md) and [Test Commands](docs/TEST_COMMANDS.md) for the full picture.
 
 ## Build Desktop Packages
 
-The standard build command remains:
+The standard build command is:
 
 ```bash
 npm run dist
 ```
 
-On Windows, this keeps the existing Windows installer workflow and produces the NSIS `.exe` installer.
+On Windows, this produces the NSIS `.exe` installer and portable build.
 
-On Debian/Linux, the build produces Linux release artifacts:
+On Debian/Linux, use:
+
+```bash
+npm run dist:linux
+```
+
+to produce Linux release artifacts:
 
 - `AnxOS-Control-Center-<version>-build<build>.deb`
 - `AnxOS-Control-Center-<version>-build<build>.AppImage`
@@ -260,19 +235,21 @@ Public release metadata lives in `release.json`:
 
 ```json
 {
-  "version": "1.7",
-  "build": 142,
+  "version": "1.9",
+  "build": 199,
   "channel": "Private Alpha"
 }
 ```
 
 `package.json` keeps a SemVer-compatible internal package version for npm and Electron tooling only. User-facing app, updater, diagnostics, installer, and website metadata use `release.json`.
 
+Per-build release notes live at the repository root as `RELEASE_NOTES_<version>-build<build>.md` for the current candidate, with historical notes archived under `docs/releases/`. The Desktop Release workflow attaches the matching notes file to the GitHub release.
+
 Useful versioning commands:
 
 ```bash
 npm run build:increment
-npm run version:set 1.8
+npm run version:set 1.9
 npm run channel:set beta
 ```
 
@@ -282,7 +259,7 @@ For a local updater-ready release, run:
 npm run release:update -- --message "fix: describe the change"
 ```
 
-That command increments the release build, runs the Marketplace smoke checks, builds the Windows installer plus Linux packages, refreshes `dist/update-manifest.json` and website metadata, commits, tags, and pushes. Add `--version 1.8` for a meaningful product version milestone, `--channel beta` for channel changes, and `--github-release` when GitHub CLI is authenticated and you want the built artifacts uploaded to the latest GitHub Release source used by Check for update.
+That command increments the release build, runs the Marketplace smoke checks, builds the Windows installer plus Linux packages, refreshes `dist/update-manifest.json` and website metadata, commits, tags, and pushes. Add `--version 1.9` for a meaningful product version milestone, `--channel beta` for channel changes, and `--github-release` when GitHub CLI is authenticated and you want the built artifacts uploaded to the latest GitHub Release source used by Check for update.
 
 Recommended GitHub Releases layout:
 
@@ -294,9 +271,6 @@ Windows
 Linux
 - AnxOS-Control-Center-<version>-build<build>.deb
 - AnxOS-Control-Center-<version>-build<build>.AppImage
-
-Future
-- macOS DMG
 ```
 
 Validation checklist before publishing a release:
@@ -309,52 +283,6 @@ Validation checklist before publishing a release:
 - Desktop launcher appears and opens the app.
 - App icons display correctly in the launcher and package metadata.
 - Auto-updater behavior remains unchanged if an updater is added or enabled later.
-
-## Discord Bot Docker Deployment
-
-The repository includes a production Docker setup for a Node.js Discord bot. Secrets are loaded from `.env`; never commit real Discord tokens.
-
-The Docker setup assumes it is placed beside the Discord bot's own `package.json` and that `npm start` is the bot start command. If the bot code lives in a subdirectory, update `docker-compose.yml` `build.context` to that directory or move the Docker files beside the bot package.
-
-Create the environment file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and set:
-
-```text
-DISCORD_TOKEN=your_real_discord_bot_token
-CLIENT_ID=your_discord_application_client_id
-GUILD_ID=your_development_guild_id_if_needed
-```
-
-Deploy on Debian:
-
-```bash
-docker compose up -d --build
-```
-
-Follow logs:
-
-```bash
-docker compose logs -f
-```
-
-Restart:
-
-```bash
-docker compose restart
-```
-
-Stop and remove the container:
-
-```bash
-docker compose down
-```
-
-The container uses Node.js LTS, installs dependencies with `npm ci` when `package-lock.json` exists, and starts with `npm start` from `package.json`. Docker named volumes persist `/app/data`, `/app/logs`, and `/app/config` for bots that store JSON, SQLite, logs, or local config.
 
 ## Debian Agent: Playit Metadata Permissions
 
@@ -414,49 +342,14 @@ stat -c '%F %a %U %G %n' /run/playit /run/playit/playitd.sock
 
 Do not use `chmod 777` on the Playit socket and do not run the entire AnxOS Agent as root. If socket access is still denied, `/api/v1/playit/snapshot` will keep `installed` and `running` detection but will leave tunnel metadata null and include a `diagnostics.playitIpcAccess` permission message.
 
-## Add to the Debian App Launcher For Source Development
+## Troubleshooting
 
-After `npm install` in a source checkout, developers can copy or symlink the desktop entry into a local applications folder:
-
-```bash
-mkdir -p ~/.local/share/applications
-cp /home/anx/Projects/AnxOS-Control-Center/anxhub.desktop ~/.local/share/applications/
-chmod +x /home/anx/Projects/AnxOS-Control-Center/start-anxhub.sh
-```
-
-Then look for `AnxOS Control Center` in your desktop app launcher. You can also double-click `anxhub.desktop` from a file manager if your desktop environment allows trusted launchers.
-
-## Run as a Static Web Page
-
-From the project directory:
-
-```bash
-cd /home/anx/Projects/AnxOS-Control-Center
-python3 -m http.server 8088
-```
-
-Open:
-
-```text
-http://127.0.0.1:8088
-```
-
-From another device on the same LAN, replace `127.0.0.1` with the Debian server IP address:
-
-```text
-http://192.168.1.134:8088
-```
-
-## Static Hosting on Debian
-
-Because AnxOS Control Center is static, it can be served by any local web server, including Apache, nginx, Caddy, or Python's built-in server.
-
-For a simple local-only setup, keep it bound to your LAN or localhost. Do not expose it publicly until you add proper hardening such as HTTPS, authentication, firewall rules, and reverse proxy access controls.
-
-## Quick Links Included
-
-- AMP panel: `http://192.168.1.134:8080`
-- Minecraft address: `coolpals.playit.fan`
+- If Node.js is missing, install the current LTS from https://nodejs.org/ and reopen the launcher.
+- If npm is missing, repair/reinstall Node.js because npm ships with the standard Node installer.
+- If dependency installation fails, delete an incomplete `node_modules` folder and run the launcher again, or run `npm install` manually to see the full npm error.
+- If Windows blocks PowerShell scripts, use `AnxDev.cmd`; it runs PowerShell with `-ExecutionPolicy Bypass` for this local script only.
+- See [Local Agent Troubleshooting](docs/LOCAL_AGENT_TROUBLESHOOTING.md) for agent-side issues.
+- See [Known Limitations](docs/KNOWN_LIMITATIONS.md) before filing issues for intentionally unsupported capabilities.
 
 ## Private Alpha Notes
 
